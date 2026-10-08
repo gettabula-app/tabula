@@ -85,7 +85,7 @@ Each placed sticker copies its body into the board document, and every duplicate
 - **Colour.** Stickers have no colour control. `HAS_STROKE` excludes stickers, which hides the Colour swatch in the properties panel and the Line swatch in the quick bar. The properties title reads "Sticker".
 - **Resize and rotate.** Unchanged from icons: resize keeps aspect, rotation works.
 - **Double-click.** Does nothing, as for icons.
-- **Reactions.** A React button in the quick bar, built with the existing `menu` helper, opens `reactionPicker(app)`: the 16 `REACTIONS` as a 4 × 4 grid. Clicking one closes the popover and calls `placeSticker` at `REACTION_SIZE`, with its centre 20 units right of and 20 units above the top-right corner of the selection's bounds. A reaction is a plain sticker: it does not follow its item, has no count, and is removed like any object (delete or Ctrl+Z). With several items selected, one reaction is placed at the bounds of the selection. Reaction bodies are fetched on first use and are not bundled.
+- **Reactions.** A React button in the quick bar, built with the existing `menu` helper, opens `reactionPicker(app)`: the 16 `REACTIONS` as a 4 × 4 grid. Clicking one closes the popover and calls `placeSticker` at `REACTION_SIZE`, with its centre 20 units right of and 20 units above the top-right corner of the selection's bounds. A reaction is a plain sticker: it does not follow its item, has no count, and is removed like any object (delete or Ctrl+Z). With several items selected, one reaction is placed at the bounds of the selection. Reaction previews and bodies come from one pin file the build writes (`docs/icons-selfhost.md`).
 - **Failure.** A sticker that cannot be fetched shows the existing toast ("That icon could not be loaded. Check your connection and try again.") and places nothing.
 - **Copy.** Copy, paste and duplicate clone the body and give a new id; the render-time scope keeps the copy's ids apart.
 - **Emoji typed as text.** Unchanged. Emoji typed into text and sticky notes are plain Unicode text and are not affected.
@@ -99,7 +99,7 @@ Each placed sticker copies its body into the board document, and every duplicate
   - a "Set" label over a segmented control of set labels, one per `STICKER_SETS` entry, with `fluent-emoji-flat` selected by default;
   - a grid of square hairline tiles (`.sticker-grid` with `.sticker-tile` buttons holding a 28 px image), each with title and aria-label "`<name>`. Click to add, or drag onto the board.";
   - with an empty search, `collectionIcons(set)` (limit 160), as the Icons tab does; with a query, `searchIcons(query, set)`.
-- **Note.** Under the grid: "`<set label>` stickers are licensed CC BY and need attribution when you publish." when the chosen set has `attribution` (from `iconSets()`), otherwise "Stickers are emoji from open-source sets via Iconify. Placed stickers are stored in the board and work offline."
+- **Note.** Under the grid: "`<set label>` stickers are licensed CC BY and need attribution when you publish." when the chosen set has `attribution` (from `iconSets()`), otherwise "Stickers are emoji from open-source sets. Placed stickers are stored in the board and work offline." A Licences link opens the icon credits dialog.
 - **Quick bar.** One React button (`menu('stickers', 'React with a sticker', …)`), placed after the arrange group and before the Delete group. It is shown for any non-empty selection on a board that is not read-only. Its popover uses the quick bar's own `popover` placement.
 - **Style.** Swiss rules on the tray: theme variables only (no literal colours), radius 0, no shadows, 1px hairlines and a 2px rule under the search box, labels 11px uppercase, spacing on an 8px grid. The active set chip is the only signal-coloured element, with on-signal text; text uses only the pairs the theme test checks (tray text and tray muted on tray, on-signal on signal). The React popover shows a "React" label over a 4 × 4 grid.
 - **Mobile.** At 360 px the quick bar with React must fit without horizontal scroll, and the drawer keeps a 16px gutter with no horizontal scroll. The bar already has `max-width: calc(100% - 24px)` and an inner scroller (`src/styles.css`); the check is that a single sticker's bar, and a single sticky's bar, fit at 360 px without the inner scroller activating.
@@ -136,10 +136,12 @@ The comments room holds only comment text, so comments cannot carry stickers.
 
 ## Offline
 
+Updated for TAB-101: the sets are hosted by Tabula (`docs/icons-selfhost.md`), so the drawer no longer depends on Iconify.
+
 - **Placed stickers.** The body is in the board document, persisted in IndexedDB. A placed sticker renders offline with no fetch, and PNG and SVG export work offline.
-- **Stickers drawer.** Search, browsing and placing a new sticker need the network, as the Icons tab does. The service worker's stale-while-revalidate cache (`public/sw.js`, the `THIRD_PARTY` rule for `api.iconify.design`) keeps every preview and JSON response the device has fetched, so a set seen once is available offline for its previews and its collection listing.
-- **Reactions.** The first use of each reaction name fetches its body. After that, the service worker serves the same JSON URL offline. A reaction never fetched on this device fails offline with the existing toast.
-- **Unchanged.** `public/sw.js` is not edited. A custom Iconify host (`setIconHost`) is not in its list, so previews from a custom host are not cached. This is an existing limit.
+- **Stickers drawer.** Search, browsing and placing a new sticker read `/icons/` on the relay. The service worker keeps every index and shard the device fetched in the `tabula-icons-v1` cache (cache first; the manifest is network first), so anything seen once works offline. A "Download for offline" row stores the three sticker sets (6.8 MB to send, about 42 MB stored) on purpose, and shows when an update is available.
+- **Reactions.** The 16 bodies are in one file (`pin.<hash>.json`, about 6 KB), so the picker costs one request, and the service worker keeps it. A test requires the pinned names to equal `REACTIONS`.
+- **Service worker.** `public/sw.js` has an `/icons/` branch and a cache that outlives app versions; `VERSION` is `tabula-v2`. The Iconify rule stays for sets that are not hosted.
 
 ## Tests
 

@@ -5,6 +5,11 @@ import type { AccessScope, AccessToken, UserRole } from '../api';
 /** The name tools register this server under; MCP_SERVER_NAME in server/mcp.mjs (a test keeps them equal). */
 export const SERVER_NAME = 'board';
 
+/** AI tool access is offered only when the server has turned it on for this person (`me.mcp`). */
+export function aiToolsAvailable(me: { mcp?: boolean } | null | undefined): boolean {
+  return me?.mcp === true;
+}
+
 export const NAME_MAX = 80;
 export const MAX_BOARDS = 20;
 export const EXPIRY_DAYS = [7, 30, 90, 365] as const;

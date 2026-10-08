@@ -5,7 +5,8 @@
 import fs from 'node:fs';
 import { BOARD_ID_RE } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
-import { CloudError, addsSeat, validateLimits } from './cloud.mjs';
+import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
+import { createMailer } from './mailer.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -127,7 +128,7 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, mailer = createMailer(config) }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -867,6 +868,17 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             const checked = validateLimits(body);
             if (checked.error) throw badRequest(checked.error);
             return [200, cloud.setLimits(checked.patch)];
+          }),
+          // Mails the workspace owners (a retried call is answered without mailing again); open while read-only like the limits.
+          compile('POST', 'internal/notify', { internal: true, body: true, readOnlyOk: true }, async ({ body }) => {
+            const checked = validateNotify(body);
+            if (checked.error) throw badRequest(checked.error);
+            try {
+              return [200, await cloud.notify(checked.notice, { mailer, baseUrl: config.baseUrl })];
+            } catch (err) {
+              if (err instanceof CloudError) throw new HttpError(502, 'bad_gateway', err.message);
+              throw err;
+            }
           }),
           // Open while read-only: an owner whose workspace was locked for billing needs it to put that right.
           compile('POST', 'billing/portal', { readOnlyOk: true }, async ({ user }) => {

@@ -16,6 +16,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
@@ -27,6 +28,7 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { saveDelay } from './save-delay.mjs';
+import { createCommentGuard } from './comment-authz.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -50,6 +52,9 @@ const MSG_AWARENESS = 1;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
 const MSG_WORKSPACE = 4;
+// Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
+// (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
+const MSG_COMMENT_NOTICE = 5;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -149,14 +154,18 @@ class Room {
       }
     }
 
+    /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
+    this.held = null;
     this.doc.on('update', (update) => {
       this.dirty = true;
-      const enc = encoding.createEncoder();
-      encoding.writeVarUint(enc, MSG_SYNC);
-      syncProtocol.writeUpdate(enc, update);
-      this.broadcast(encoding.toUint8Array(enc));
+      if (this.held) this.held.push(update);
+      else this.broadcastUpdate(update);
       this.scheduleSave();
     });
+    // Accounts mode: the relay checks comment authorship on every write to a comments room.
+    this.guard = directory && this.kind === 'comments'
+      ? createCommentGuard(this.doc, { isAccount: (id) => directory.getUser(id) !== null })
+      : null;
 
     this.awareness.on('update', ({ added, updated, removed }, conn) => {
       const changed = added.concat(updated, removed);
@@ -174,6 +183,34 @@ class Room {
 
   broadcast(msg) {
     for (const ws of this.conns.keys()) send(ws, msg);
+  }
+
+  broadcastUpdate(update) {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, MSG_SYNC);
+    syncProtocol.writeUpdate(enc, update);
+    this.broadcast(encoding.toUint8Array(enc));
+  }
+
+  /** Applies a comments-room sync message as the socket's user, then corrects what their rules forbid. */
+  guarded(ws, apply) {
+    const user = directory.getUser(ws.userId);
+    const actor = { id: ws.userId, role: ws.role, name: user?.name ?? '' };
+    this.held = [];
+    let undone = [];
+    try {
+      undone = this.guard.run(actor, apply);
+    } finally {
+      const held = this.held;
+      this.held = null;
+      if (held.length) this.broadcastUpdate(held.length === 1 ? held[0] : Y.mergeUpdates(held));
+    }
+    if (undone.length) {
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, MSG_COMMENT_NOTICE);
+      encoding.writeVarString(enc, JSON.stringify({ undone }));
+      send(ws, encoding.toUint8Array(enc));
+    }
   }
 
   // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
@@ -274,7 +311,10 @@ class Room {
         if (ws.canWrite !== true && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) return;
         const enc = encoding.createEncoder();
         encoding.writeVarUint(enc, MSG_SYNC);
-        syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
+        const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
+        // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
+        if (this.guard && ws.userId && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
+        else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(dec), ws);
@@ -369,10 +409,102 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+const DOCS = path.join(DIST, 'docs');
+
+function sendFile(res, file, status, cache) {
+  const ext = path.extname(file);
+  const headers = {
+    'content-type': MIME[ext] || 'application/octet-stream',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'cache-control': cache,
+  };
+  if (ext === '.html') headers['content-security-policy'] = CSP;
+  res.writeHead(status, headers);
+  fs.createReadStream(file).pipe(res);
+}
+
+// The user guide: files are resolved inside dist/docs only and never fall back to the app shell.
+function serveDocs(req, res, url) {
+  const decoded = decodeURIComponent(url.pathname);
+  const notFound = () => {
+    const page = path.join(DOCS, '404.html');
+    if (fs.existsSync(page)) sendFile(res, page, 404, 'no-cache');
+    else res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Not found');
+  };
+  if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some((seg) => seg === '..' || seg === '.')) {
+    res.writeHead(404).end();
+    return;
+  }
+  const rel = decoded.slice('/docs'.length).replace(/^\/+|\/+$/g, '');
+  const ext = path.extname(rel);
+  const file = path.resolve(DOCS, rel === '' ? 'index.html' : ext ? rel : path.join(rel, 'index.html'));
+  if (!file.startsWith(DOCS + path.sep)) {
+    res.writeHead(404).end();
+    return;
+  }
+  const isFile = fs.existsSync(file) && fs.statSync(file).isFile();
+  if (!isFile || file === path.join(DOCS, '404.html')) {
+    if (!ext || ext === '.html') notFound();
+    else res.writeHead(404).end();
+    return;
+  }
+  sendFile(res, file, 200, 'no-cache');
+}
+
+// The icon sets built by scripts/build-icons.mjs (docs/icons-selfhost.md). Files are stored as <name>.gz and sent
+// under the name without .gz. A missing file is a real 404: the single-page app's index.html must never stand in
+// for an icon file, or a client could not tell "not hosted" from "offline" and a cache would keep an HTML page.
+const ICONS_DIR = path.join(DIST, 'icons');
+const HASHED_ICON = /\.[0-9a-f]{8}\.json$/;
+
+const acceptsGzip = (header) => {
+  for (const part of String(header || '').split(',')) {
+    const [coding, ...params] = part.trim().toLowerCase().split(';');
+    if (coding !== 'gzip' && coding !== '*') continue;
+    const q = params.map((x) => x.trim()).find((x) => x.startsWith('q='));
+    return !q || Number(q.slice(2)) > 0;
+  }
+  return false;
+};
+
+function serveIcons(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { allow: 'GET, HEAD' }).end();
+    return;
+  }
+  const file = path.resolve(ICONS_DIR, decodeURIComponent(url.pathname).slice('/icons/'.length));
+  // checked before any file system call, so a path outside the icons folder is never even looked at
+  if (!file.startsWith(ICONS_DIR + path.sep) || file.endsWith('.gz') || file.includes('\0')) return sendJson(res, 404, { error: 'not_found' });
+  const isFile = (f) => fs.existsSync(f) && fs.statSync(f).isFile();
+  const zipped = isFile(`${file}.gz`);
+  const source = zipped ? `${file}.gz` : file;
+  if (!isFile(source)) return sendJson(res, 404, { error: 'not_found' });
+  const gzip = zipped && acceptsGzip(req.headers['accept-encoding']);
+  const headers = {
+    'content-type': file.endsWith('.txt') ? 'text/plain; charset=utf-8' : 'application/json',
+    'cache-control': HASHED_ICON.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    vary: 'Accept-Encoding',
+  };
+  if (gzip) headers['content-encoding'] = 'gzip';
+  if (gzip || !zipped) headers['content-length'] = fs.statSync(source).size;
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') return res.end();
+  const body = fs.createReadStream(source).on('error', () => res.destroy());
+  if (zipped && !gzip) body.pipe(zlib.createGunzip()).on('error', () => res.destroy()).pipe(res);
+  else body.pipe(res);
+}
+
 function serveStatic(req, res, url) {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('The app has not been built yet. Run `npm run build`, then restart the relay. (In development, open the Vite URL instead.)');
+    return;
+  }
+  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) {
+    serveDocs(req, res, url);
     return;
   }
   let rel = decodeURIComponent(url.pathname);
@@ -419,6 +551,8 @@ async function onRequest(req, res) {
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
+    } else if (url.pathname.startsWith('/icons/')) {
+      serveIcons(req, res, url);
     } else {
       serveStatic(req, res, url);
     }

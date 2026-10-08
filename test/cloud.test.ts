@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApi } from '../server/api.mjs';
 import { SeatLimitError, createAuth } from '../server/auth.mjs';
-import { CloudError, addsSeat, createCloud, validateLimits } from '../server/cloud.mjs';
+import { CloudError, addsSeat, createCloud, validateLimits, validateNotify } from '../server/cloud.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 
@@ -13,7 +13,7 @@ import { openDirectory } from '../server/directory.mjs';
 type Dir = ReturnType<typeof openDirectory>;
 type Role = 'owner' | 'admin' | 'member' | 'guest';
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
-type Mail = { to: string; text: string };
+type Mail = { to: string; text: string; subject?: string; template?: string; params?: Record<string, unknown> };
 
 const OWNER = 'owner@example.com';
 const TOKEN = 'k'.repeat(40);
@@ -24,6 +24,7 @@ const CLOUD_ENV = {
 };
 const AUTH_ENV = { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER };
 const PORTAL = 'https://billing.example.com/session/abc';
+const DATE = '7 Nov 2026';
 
 const opened: Dir[] = [];
 const servers: http.Server[] = [];
@@ -207,6 +208,49 @@ describe('validateLimits', () => {
   ])('refuses %s', (_name, body, message) => {
     const result = validateLimits(body);
     expect(result).toEqual({ error: expect.stringContaining(message) });
+  });
+});
+
+describe('validateNotify', () => {
+  it.each<[string, string]>([
+    ['a one digit day', '7 Nov 2026'],
+    ['a two digit day', '31 Dec 2026'],
+    ['a day with a leading zero', '07 Jan 2027'],
+  ])('accepts %s', (_name, date) => {
+    expect(validateNotify({ template: 'trial-ending', date })).toEqual({ notice: { template: 'trial-ending', date } });
+  });
+
+  it.each<[string, unknown, string]>([
+    ['an array', [], 'JSON object'],
+    ['a string', 'x', 'JSON object'],
+    ['null', null, 'JSON object'],
+    ['an empty object', {}, 'template'],
+    ['a missing date', { template: 'trial-ending' }, 'date'],
+    ['a missing template', { date: '7 Nov 2026' }, 'template'],
+    ['an unknown template', { template: 'welcome', date: '7 Nov 2026' }, 'template must be one of trial-ending'],
+    ['a template in another case', { template: 'Trial-Ending', date: '7 Nov 2026' }, 'template'],
+    ['a template with padding', { template: 'trial-ending ', date: '7 Nov 2026' }, 'template'],
+    ['a numeric template', { template: 1, date: '7 Nov 2026' }, 'template'],
+    ['a null template', { template: null, date: '7 Nov 2026' }, 'template'],
+    ['an inherited property as the template', { template: 'constructor', date: '7 Nov 2026' }, 'template'],
+    ['another inherited property as the template', { template: '__proto__', date: '7 Nov 2026' }, 'template'],
+    ['an unknown field', { template: 'trial-ending', date: '7 Nov 2026', to: 'a@example.com' }, 'Unknown field: to'],
+    ['a prototype key', JSON.parse('{"__proto__": {"template": "trial-ending"}, "template": "trial-ending", "date": "7 Nov 2026"}'), 'Unknown field: __proto__'],
+    ['an ISO date', { template: 'trial-ending', date: '2026-11-07' }, 'date'],
+    ['a long month name', { template: 'trial-ending', date: '7 November 2026' }, 'date'],
+    ['a lower case month', { template: 'trial-ending', date: '7 nov 2026' }, 'date'],
+    ['a two digit year', { template: 'trial-ending', date: '7 Nov 26' }, 'date'],
+    ['a three digit day', { template: 'trial-ending', date: '107 Nov 2026' }, 'date'],
+    ['padding', { template: 'trial-ending', date: ' 7 Nov 2026' }, 'date'],
+    ['a trailing newline', { template: 'trial-ending', date: '7 Nov 2026\n' }, 'date'],
+    ['two spaces', { template: 'trial-ending', date: '7  Nov 2026' }, 'date'],
+    ['non-ASCII digits', { template: 'trial-ending', date: '٧ Nov 2026' }, 'date'],
+    ['a number', { template: 'trial-ending', date: 20261107 }, 'date'],
+    ['null', { template: 'trial-ending', date: null }, 'date'],
+    ['a date of 41 characters', { template: 'trial-ending', date: `7 Nov 2026${' '.repeat(30)}` }, 'date'],
+    ['a long text', { template: 'trial-ending', date: 'x'.repeat(5000) }, 'date'],
+  ])('refuses %s', (_name, body, message) => {
+    expect(validateNotify(body)).toEqual({ error: expect.stringContaining(message) });
   });
 });
 
@@ -574,13 +618,20 @@ describe('API in cloud mode', () => {
   async function serve(env: Record<string, string> = {}, fetchImpl?: Fetch) {
     const c = setup(env, fetchImpl);
     const sent: Mail[] = [];
-    const auth = createAuth({
-      directory: c.directory,
-      config: c.config,
-      mailer: { send: async (m: Mail) => void sent.push(m) },
-      seatsAvailable: c.cloud?.seatsAvailable,
-    });
-    const api = createApi({ directory: c.directory, auth, config: c.config, roomExists: () => false, events: c.events, cloud: c.cloud as never });
+    // Addresses the fake mailer fails for: `reject` answers with a rejected promise, `throw` throws before it returns one.
+    const failing = new Map<string, 'reject' | 'throw'>();
+    const gate: { open: Promise<void> | null } = { open: null };
+    const mailer = {
+      async send(m: Mail) {
+        await gate.open;
+        const how = failing.get(m.to);
+        if (how === 'throw') throw new Error(`mailer broke for <${m.to}>`);
+        if (how === 'reject') throw new Error(`550 5.1.1 <${m.to}> rejected`);
+        sent.push(m);
+      },
+    };
+    const auth = createAuth({ directory: c.directory, config: c.config, mailer, seatsAvailable: c.cloud?.seatsAvailable });
+    const api = createApi({ directory: c.directory, auth, config: c.config, roomExists: () => false, events: c.events, cloud: c.cloud as never, mailer });
     const server = http.createServer((req, res) => {
       void api.handle(req, res).then((handled: boolean) => {
         if (!handled) res.writeHead(404).end();
@@ -631,7 +682,11 @@ describe('API in cloud mode', () => {
       return { team, invite };
     }
 
-    return { ...c, base, call, person, put, patchMember, signIn, invitation, sent };
+    const notify = (body: unknown = { template: 'trial-ending', date: DATE }, token: string | null = TOKEN) =>
+      call('/api/internal/notify', { method: 'POST', token, body });
+    const notices = () => sent.filter((m) => m.template === 'trial-ending');
+
+    return { ...c, base, call, person, put, patchMember, signIn, invitation, sent, failing, gate, notify, notices };
   }
 
   describe('internal endpoints', () => {
@@ -641,6 +696,8 @@ describe('API in cloud mode', () => {
       expect((await s.call('/api/internal/usage', { token: TOKEN })).status).toBe(404);
       expect((await s.call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { readOnly: true } })).status).toBe(404);
       expect((await s.call('/api/billing/portal', { method: 'POST', cookie: owner.cookie })).status).toBe(404);
+      expect((await s.notify()).status).toBe(404);
+      expect(s.sent).toEqual([]);
       expect((await s.call('/api/me', { cookie: owner.cookie })).body).not.toHaveProperty('workspace');
     });
 
@@ -662,9 +719,12 @@ describe('API in cloud mode', () => {
         expect(usage.body).toMatchObject({ error: 'unauthenticated' });
         expect(usage.headers.get('www-authenticate')).toBe('Bearer');
         expect((await s.call('/api/internal/limits', { method: 'PUT', headers, body: { readOnly: true } })).status).toBe(401);
+        expect((await s.call('/api/internal/notify', { method: 'POST', headers, body: { template: 'trial-ending', date: DATE } })).status).toBe(401);
       }
       expect(s.cloud!.limits().readOnly).toBe(false);
       expect(s.directory.listAudit()).toEqual([]);
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBeNull();
+      expect(s.sent).toEqual([]);
     });
 
     it('take the right token with no cookie and no CSRF header, and ignore a cookie that comes along', async () => {
@@ -698,6 +758,8 @@ describe('API in cloud mode', () => {
       const s = await serve();
       expect((await s.call('/api/internal/usage', { method: 'POST', token: TOKEN, body: {} })).status).toBe(405);
       expect((await s.call('/api/internal/limits', { method: 'GET', token: TOKEN })).status).toBe(405);
+      expect((await s.call('/api/internal/notify', { method: 'GET', token: TOKEN })).status).toBe(405);
+      expect((await s.call('/api/internal/notify', { method: 'PUT', token: TOKEN, body: {} })).status).toBe(405);
       expect((await s.call('/api/internal/nothing', { token: TOKEN })).status).toBe(404);
     });
 
@@ -753,6 +815,187 @@ describe('API in cloud mode', () => {
       s.events.on('limits-changed', changed);
       await s.put({ readOnly: true });
       expect(changed).toHaveBeenCalledWith({ seatLimit: null, readOnly: true, banner: null });
+    });
+  });
+
+  describe('POST /api/internal/notify', () => {
+    const body = { template: 'trial-ending', date: DATE };
+    const audit = (s: { directory: Dir }) => s.directory.listAudit().filter((r) => r.action === 'cloud.notify');
+
+    it('mails every enabled owner and nobody else, with the template, the link and the date', async () => {
+      const s = await serve();
+      seed(s.directory, 'first@example.com', 'owner');
+      seed(s.directory, 'second@example.com', 'owner');
+      seed(s.directory, 'gone@example.com', 'owner', true);
+      seed(s.directory, 'admin@example.com', 'admin');
+      seed(s.directory, 'member@example.com', 'member');
+      seed(s.directory, 'guest@example.com', 'guest');
+      seed(s.directory, 'off@example.com', 'member', true);
+
+      const res = await s.notify();
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ sent: 2 });
+      expect(s.notices().map((m) => m.to)).toEqual(['first@example.com', 'second@example.com']);
+      expect(s.sent).toHaveLength(2);
+      const link = `${s.config.baseUrl}/`;
+      for (const mail of s.notices()) {
+        expect(mail).toMatchObject({ template: 'trial-ending', params: { link, date: DATE }, subject: 'Your Tabula trial ends on 7 Nov 2026' });
+        expect(Object.keys(mail.params!).sort()).toEqual(['date', 'link']);
+        expect(mail.text).toContain('The free trial of this Tabula workspace ends on 7 Nov 2026.');
+        expect(mail.text).toContain('starts automatically with the card on file');
+        expect(mail.text).toContain('Admin, Overview, Manage billing');
+        expect(mail.text.split('\n')).toContain(link);
+      }
+    });
+
+    it('takes the bearer token alone: no cookie, no CSRF header', async () => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      const res = await fetch(`${s.base}/api/internal/notify`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ sent: 1 });
+    });
+
+    it('is open while the workspace is read-only', async () => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      await s.put({ readOnly: true });
+      expect((await s.notify()).body).toEqual({ sent: 1 });
+    });
+
+    it.each<[string, unknown]>([
+      ['an empty body', undefined],
+      ['an empty object', {}],
+      ['an unknown template', { template: 'welcome', date: DATE }],
+      ['an unknown field', { ...body, to: 'someone@example.com' }],
+      ['a date in another format', { template: 'trial-ending', date: '2026-11-07' }],
+      ['a body that is not an object', ['trial-ending']],
+    ])('refuses %s and sends and stores nothing', async (_name, payload) => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      const res = await s.call('/api/internal/notify', { method: 'POST', token: TOKEN, body: payload });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: 'bad_request' });
+      expect(s.sent).toEqual([]);
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBeNull();
+      expect(audit(s)).toEqual([]);
+    });
+
+    it('refuses a body that is not valid JSON', async () => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      const res = await fetch(`${s.base}/api/internal/notify`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: 'nope{',
+      });
+      expect(res.status).toBe(400);
+      expect(s.sent).toEqual([]);
+    });
+
+    it('answers a repeat of the same date without mailing again, and mails again for a new date', async () => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      expect((await s.notify()).body).toEqual({ sent: 1 });
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBe(DATE);
+
+      const repeat = await s.notify();
+      expect(repeat.status).toBe(200);
+      expect(repeat.body).toEqual({ sent: 0, duplicate: true });
+      expect(s.sent).toHaveLength(1);
+      expect(audit(s)).toHaveLength(1);
+
+      expect((await s.notify({ template: 'trial-ending', date: '21 Nov 2026' })).body).toEqual({ sent: 1 });
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBe('21 Nov 2026');
+      expect(s.sent).toHaveLength(2);
+      expect(s.sent[1].subject).toBe('Your Tabula trial ends on 21 Nov 2026');
+    });
+
+    it('answers a call that arrives while the same date is being mailed as a repeat', async () => {
+      const s = await serve();
+      seed(s.directory, OWNER, 'owner');
+      let release!: () => void;
+      s.gate.open = new Promise<void>((resolve) => (release = resolve));
+      const first = s.notify();
+      await settle();
+      expect((await s.notify()).body).toEqual({ sent: 0, duplicate: true });
+      release();
+      expect((await first).body).toEqual({ sent: 1 });
+      expect(s.notices()).toHaveLength(1);
+      expect((await s.notify()).body).toEqual({ sent: 0, duplicate: true });
+    });
+
+    it('answers 200 with sent: 0 when there is no enabled owner, and remembers nothing', async () => {
+      const s = await serve();
+      seed(s.directory, 'admin@example.com', 'admin');
+      seed(s.directory, 'gone@example.com', 'owner', true);
+      const none = await s.notify();
+      expect(none.status).toBe(200);
+      expect(none.body).toEqual({ sent: 0 });
+      expect(s.sent).toEqual([]);
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBeNull();
+      expect(audit(s)).toEqual([]);
+
+      seed(s.directory, OWNER, 'owner');
+      expect((await s.notify()).body).toEqual({ sent: 1 });
+    });
+
+    it.each<['reject' | 'throw']>([['reject'], ['throw']])('still answers 200 when a mail fails (%s), logs it without the address and remembers the date', async (how) => {
+      const s = await serve();
+      seed(s.directory, 'works@example.com', 'owner');
+      seed(s.directory, 'fails@example.com', 'owner');
+      s.failing.set('fails@example.com', how);
+
+      const res = await s.notify();
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ sent: 1 });
+      expect(s.notices().map((m) => m.to)).toEqual(['works@example.com']);
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBe(DATE);
+      expect(audit(s)).toHaveLength(1);
+      expect(audit(s)[0].detail).toEqual({ template: 'trial-ending', count: 1 });
+      expect(s.logs).toHaveLength(1);
+      expect(s.logs[0]).toContain('1 of 2 trial-ending mails could not be sent');
+      expect(s.logs.join('\n')).not.toMatch(/@|fails|works/);
+    });
+
+    it('answers 502 when every mail fails, so the control plane retries, and nothing is remembered', async () => {
+      const s = await serve();
+      seed(s.directory, 'one@example.com', 'owner');
+      seed(s.directory, 'two@example.com', 'owner');
+      s.failing.set('one@example.com', 'reject');
+      s.failing.set('two@example.com', 'throw');
+
+      const res = await s.notify();
+      expect(res.status).toBe(502);
+      expect(res.body).toMatchObject({ error: 'bad_gateway' });
+      expect(JSON.stringify(res.body)).not.toContain('@');
+      expect(s.sent).toEqual([]);
+      expect(s.directory.getSetting('cloud.trialEndingNotified')).toBeNull();
+      expect(audit(s)).toEqual([]);
+      expect(s.logs).toHaveLength(1);
+      expect(s.logs[0]).toContain('2 of 2 trial-ending mails could not be sent');
+      expect(s.logs.join('\n')).not.toMatch(/@|one|two/);
+
+      s.failing.clear();
+      const retry = await s.notify();
+      expect(retry.status).toBe(200);
+      expect(retry.body).toEqual({ sent: 2 });
+    });
+
+    it('writes an audit row with no actor, the template and the count, and no address', async () => {
+      const s = await serve();
+      seed(s.directory, 'one@example.com', 'owner');
+      seed(s.directory, 'two@example.com', 'owner');
+      await s.notify();
+      const rows = audit(s);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actorId: null, action: 'cloud.notify', detail: { template: 'trial-ending', count: 2 } });
+      expect(Object.keys(rows[0].detail).sort()).toEqual(['count', 'template']);
+      expect(JSON.stringify(s.directory.listAudit())).not.toMatch(/@|one|two/);
     });
   });
 

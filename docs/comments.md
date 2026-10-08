@@ -36,6 +36,7 @@ anchor      // { x, y, obj?, fx?, fy? } (JSON object)
 resolved    // boolean (own field, so resolving never overwrites a concurrent reply)
 resolvedBy?, resolvedAt?
 replies     // Y.Map: replyId -> { id, authorId, authorName, authorColor, text, createdAt, editedAt? } (one entry per reply)
+imported?, importedBy?, legacy?   // marks on a thread or a reply (see Authorship)
 ```
 
 Each reply is its own map entry and `resolved` is its own field, so two people replying or resolving at once merge without losing anything. Ids are `newId()` from `src/store.ts`. The comments document is never part of the board's `UndoManager`, so Ctrl+Z never touches comments.
@@ -46,13 +47,23 @@ Each reply is its own map entry and `resolved` is its own field, so two people r
 
 ### Authorship
 
-`authorId` is the account id in accounts mode (`me.user.id`), otherwise the device's local user id; `authorName`/`authorColor` come from the presence identity at the time. Authorship is asserted by the client (the relay does not check it): good enough for "delete your own comment", not a security boundary. The UI lets a person delete or edit their own threads and replies, and only the board owner deletes anyone else's. An author cannot delete their own thread while other people have replied to it (that would delete their comments too). The data layer enforces this on the local client; like authorship it is not a server-side guarantee.
+In accounts mode the relay enforces these rules on every write to a comments room (`server/comment-authz.mjs`; the design and the decisions are in [comment-authz.md](comment-authz.md)). `authorId` and `authorName` are the account's: the relay stamps them on every new comment and reply, so a client cannot post under another name, and `authorColor` is the presence colour at the time.
+
+- Everyone may edit only their own words, and delete their own replies.
+- A moderator (board role `owner`: the board owner, workspace admins and team admins of the board's team) may delete any comment but edits only their own words.
+- An author may delete their own thread only while nobody else has replied to it, because that would delete other people's comments too.
+- The comment's author, and anyone who may edit the board (owner or editor), may resolve or reopen a thread.
+- A change that breaks these rules is undone by the relay with a correcting update, so every client ends up with the corrected state. The sender gets a short notice (a toast that says which rule applied).
+
+Imported comments (from a `.drift` or JSON file, opened by the board owner) keep their authors and carry `imported` and `importedBy`: nobody edits them, and the importer or a moderator deletes them. Comments written before accounts were turned on carry `legacy` (their author is a device id): nobody edits them, and only a moderator deletes them. Both marks are shown as a small badge.
+
+In open mode there is no identity to check, so the same rules are only what the app enforces: the data layer applies the same delete rule and the UI hides what the rules forbid. Authorship is then a device id the client picks.
 
 ## Behaviour
 
 - **Visibility**: pins are drawn in the board overlay (never in PNG/SVG exports). A pin on an object that private writing hides (`flow.isHidden`) is hidden too and its thread cannot be opened, so comments cannot leak hidden notes.
 - **Tool**: a Comment tool (`C`) in the toolbar. Click the canvas or an object to place a pin and open the composer; the thread is created only when the first message is posted (Enter posts, Shift+Enter inserts a newline, Escape cancels).
-- **Thread popover**: messages in order with author, relative time and an edit/delete menu for your own, a reply box, **Resolve** / **Reopen**. Resolved threads are drawn faded.
+- **Thread popover**: messages in order with author, relative time and an edit/delete menu for your own, a reply box, **Resolve** / **Reopen** (offered only where the rules allow). Imported and legacy comments carry a badge. Resolved threads are drawn faded.
 - **Comments panel**: a list of all threads (Open / Resolved filter, newest first); picking one flies to its pin and opens it. A toggle in the board menu shows or hides pins (remembered on this device).
 - **Hit priority**: clicking a pin opens its thread (even over a locked object and even when the board is read-only); it never starts a drag.
 - **Input isolation**: typing in the composer or reply box never triggers tool shortcuts, Delete or nudging.
@@ -60,8 +71,8 @@ Each reply is its own map entry and `resolved` is its own field, so two people r
 
 ## Export and import
 
-- `.drift` files (zip) include the comments document state as `comments.yjs` when there is any; opening a `.drift` file restores it. The JSON snapshot gets optional `comments` (an array of thread objects with their replies) which import restores. PNG, SVG, Mermaid and Markdown exports never contain comments or pins.
+- `.drift` files (zip) include the comments document state as `comments.yjs` when there is any; opening a `.drift` file restores it. The JSON snapshot gets optional `comments` (an array of thread objects with their replies) which import restores. Restored threads and replies keep their authors and are marked `imported` by whoever opens the file. PNG, SVG, Mermaid and Markdown exports never contain comments or pins.
 
 ## Not in this slice
 
-Mentions and notifications, emoji reactions, attachments, comment search, and enforcing authorship on the server.
+Mentions and notifications, emoji reactions, attachments and comment search.

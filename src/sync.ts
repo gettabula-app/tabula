@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import * as decoding from 'lib0/decoding';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
@@ -6,6 +7,7 @@ import { Store } from './store';
 import { Comments } from './comments';
 import type { User } from './types';
 import { USER_COLORS } from './palette';
+import { isDesktop } from './desktop-env';
 
 // ---------------------------------------------------------------- identity
 
@@ -36,7 +38,11 @@ export function saveUser(u: User) {
 
 const RELAY_KEY = 'driftboard:relay';
 
-/** 'auto' = same origin as the app (the relay also serves the app), 'off' = local only. */
+/**
+ * 'auto' = same origin as the app (the relay also serves the app), 'off' = local only. The desktop app has no relay
+ * of its own origin (on Windows its page is http://tauri.localhost, which would be tried as ws://tauri.localhost/sync),
+ * so there 'auto' means off and only an address typed in Board settings connects.
+ */
 export function getRelaySetting(): string {
   return localStorage.getItem(RELAY_KEY) || 'auto';
 }
@@ -48,7 +54,7 @@ export function relayUrl(): string | null {
   const s = getRelaySetting();
   if (s === 'off') return null;
   if (s === 'auto') {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return null;
+    if (isDesktop() || (location.protocol !== 'http:' && location.protocol !== 'https:')) return null;
     return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/sync`;
   }
   return s.replace(/\/+$/, '');
@@ -76,10 +82,42 @@ export function touchBoard(id: string, patch: Partial<BoardEntry> = {}) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(all));
 }
 
+const deleteHooks = new Set<(id: string) => void | Promise<void>>();
+
+/** Calls `fn` after a board was deleted from this device. The desktop app removes the board's backup copy with it. */
+export function onBoardDeleted(fn: (id: string) => void | Promise<void>): () => void {
+  deleteHooks.add(fn);
+  return () => deleteHooks.delete(fn);
+}
+
 export async function deleteBoard(id: string) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(listBoards().filter((b) => b.id !== id)));
   await clearLocal(`driftboard:${id}`);
   await clearLocal(`driftboard:${commentsRoom(id)}`);
+  for (const hook of deleteHooks) {
+    try {
+      await hook(id);
+    } catch (e) {
+      console.warn('after-delete hook failed', e);
+    }
+  }
+}
+
+/**
+ * Writes a board into this device's storage under `id` without opening it: no relay connection, no board UI. `fill`
+ * puts the content in (the import path); the databases are closed when it has been written.
+ */
+export async function writeLocalBoard(id: string, fill: (target: { doc: Y.Doc; store: Store; comments: Comments }) => void) {
+  const doc = new Y.Doc();
+  const idb = new IndexeddbPersistence(`driftboard:${id}`, doc);
+  const cdoc = new Y.Doc();
+  const cidb = new IndexeddbPersistence(`driftboard:${commentsRoom(id)}`, cdoc);
+  await Promise.all([idb.whenSynced, cidb.whenSynced]);
+  fill({ doc, store: new Store(doc), comments: new Comments(cdoc) });
+  // A closing database lets its pending write transactions finish, and a later open of it queues behind them.
+  await Promise.all([idb.destroy(), cidb.destroy()]);
+  doc.destroy();
+  cdoc.destroy();
 }
 
 // ---------------------------------------------------------------- connection
@@ -146,6 +184,30 @@ export function onWorkspaceHint(provider: HintTarget, callback: () => void): voi
   };
 }
 
+/**
+ * Comments rooms (docs/comment-authz.md): the relay tells the socket whose change it undid, with JSON { undone: [...] }
+ * (the kinds: edit, delete, resolve, author, other). Like the hint above, it is not a y-websocket type, the handler
+ * writes nothing back, and a malformed notice is ignored.
+ */
+export const MSG_COMMENT_NOTICE = 5;
+
+export function onCommentNotice(provider: HintTarget, callback: (undone: string[]) => void): void {
+  provider.messageHandlers[MSG_COMMENT_NOTICE] = (_encoder, decoder) => {
+    let undone: unknown;
+    try {
+      undone = (JSON.parse(decoding.readVarString(decoder)) as { undone?: unknown }).undone;
+    } catch {
+      return;
+    }
+    if (!Array.isArray(undone)) return;
+    try {
+      callback(undone.filter((k): k is string => typeof k === 'string'));
+    } catch {
+      /* a failing listener must not break the socket */
+    }
+  };
+}
+
 /** The part of a room provider that a resync restarts. */
 type Resyncable = { disconnect: () => void; connect: () => void };
 
@@ -184,6 +246,8 @@ export interface BoardConn {
   onDenied: (fn: (r: DeniedReason) => void) => () => void;
   /** The relay says a hosted workspace's read-only switch flipped (either room's socket; one flip arrives once per socket). */
   onWorkspaceHint: (fn: () => void) => () => void;
+  /** The relay undid changes this person made in the comments (accounts mode); `undone` lists the kinds. */
+  onCommentNotice: (fn: (undone: string[]) => void) => () => void;
   /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
   resync: () => void;
   destroy: () => void;
@@ -205,6 +269,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const statusListeners = new Set<(s: SyncStatus) => void>();
   const deniedListeners = new Set<(r: DeniedReason) => void>();
   const hintListeners = new Set<() => void>();
+  const noticeListeners = new Set<(undone: string[]) => void>();
   const conn: BoardConn = {
     id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
@@ -219,6 +284,10 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     onWorkspaceHint: (fn) => {
       hintListeners.add(fn);
       return () => hintListeners.delete(fn);
+    },
+    onCommentNotice: (fn) => {
+      noticeListeners.add(fn);
+      return () => noticeListeners.delete(fn);
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
@@ -261,6 +330,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
     onWorkspaceHint(commentsProvider, hinted);
+    onCommentNotice(commentsProvider, (undone) => noticeListeners.forEach((l) => l(undone)));
   } else {
     awareness = new Awareness(doc);
   }
@@ -296,6 +366,7 @@ export function scratchBoard(id: string, user: User): BoardConn {
     onStatus: () => () => undefined,
     onDenied: () => () => undefined,
     onWorkspaceHint: () => () => undefined,
+    onCommentNotice: () => () => undefined,
     resync: () => undefined,
     destroy: () => {
       awareness.destroy();

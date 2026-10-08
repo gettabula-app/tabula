@@ -9,10 +9,15 @@ export interface Anchor { x: number; y: number; obj?: string; fx?: number; fy?: 
 /** Who is deleting: their author id, and whether they moderate the board (the board owner). */
 export interface Actor { id: string; moderator: boolean }
 
-export interface Reply { id: string; authorId: string; authorName: string; authorColor: string; text: string; createdAt: number; editedAt?: number }
+/** `imported` and `importedBy` mark comments from a file (kept as they were written); `legacy` marks comments from before accounts. */
+export interface Reply {
+  id: string; authorId: string; authorName: string; authorColor: string; text: string; createdAt: number; editedAt?: number;
+  imported?: boolean; importedBy?: string; legacy?: boolean;
+}
 export interface Thread {
   id: string; createdAt: number; authorId: string; authorName: string; authorColor: string; text: string; editedAt?: number;
   anchor: Anchor; resolved: boolean; resolvedBy?: string; resolvedAt?: number; replies: Reply[];
+  imported?: boolean; importedBy?: string; legacy?: boolean;
 }
 
 /** Transaction origin for comment writes. Never LOCAL, so the board's undo history cannot reach comments. */
@@ -44,6 +49,16 @@ function cleanAnchor(a: Anchor): Anchor {
   if (a.fx !== undefined) out.fx = a.fx;
   if (a.fy !== undefined) out.fy = a.fy;
   return out;
+}
+
+/**
+ * Whether `actor` may delete a comment; the relay applies the same rule (docs/comment-authz.md). A moderator deletes
+ * anything. Imported comments belong to whoever imported them, and a legacy comment to nobody but a moderator.
+ */
+export function mayDelete(c: { authorId?: string; imported?: boolean; importedBy?: string; legacy?: boolean }, actor: Actor): boolean {
+  if (actor.moderator) return true;
+  if (c.imported === true) return c.importedBy === actor.id;
+  return c.authorId === actor.id && c.legacy !== true;
 }
 
 const byTime = (a: { createdAt: number; id: string }, b: { createdAt: number; id: string }) =>
@@ -197,8 +212,8 @@ export class Comments {
   removeThread(threadId: string, actor: Actor): boolean {
     const t = this.threads.get(threadId);
     if (this._readOnly || !t) return false;
-    if (!actor.moderator) {
-      if (t.get('authorId') !== actor.id) return false;
+    if (!mayDelete(t.toJSON(), actor)) return false;
+    if (!actor.moderator && t.get('authorId') === actor.id) {
       const others = [...(this.repliesOf(threadId)?.values() ?? [])].some((r) => r.authorId !== actor.id);
       if (others) return false;
     }
@@ -206,18 +221,21 @@ export class Comments {
     return true;
   }
 
-  /** Deletes a reply. Only its author or a moderator (the board owner) may. */
+  /** Deletes a reply. Only its author, whoever imported it, or a moderator (the board owner) may. */
   removeReply(threadId: string, replyId: string, actor: Actor): boolean {
     const replies = this.repliesOf(threadId);
     const r = replies?.get(replyId);
     if (this._readOnly || !replies || !r) return false;
-    if (!actor.moderator && r.authorId !== actor.id) return false;
+    if (!mayDelete(r, actor)) return false;
     this.transact(() => replies.delete(replyId));
     return true;
   }
 
-  /** Adds threads from a JSON export. Threads whose id already exists are skipped; invalid ones too. */
-  importThreads(threads: Thread[]): number {
+  /**
+   * Adds threads from a JSON export. Threads whose id already exists are skipped; invalid ones too. The authors stay as
+   * they were written, and the threads and replies are marked imported by `importedBy` (docs/comment-authz.md).
+   */
+  importThreads(threads: Thread[], importedBy: string): number {
     if (this._readOnly) return 0;
     let added = 0;
     this.transact(() => {
@@ -228,17 +246,37 @@ export class Comments {
         const replies: Reply[] = [];
         for (const r of t.replies ?? []) {
           const rt = cleanText(r.text);
-          if (typeof r.id === 'string' && r.id && rt) replies.push({ ...r, authorName: cleanName(r.authorName), text: rt });
+          if (typeof r.id === 'string' && r.id && rt) replies.push({ ...r, authorName: cleanName(r.authorName), text: rt, imported: true, importedBy });
         }
         this.threads.set(t.id, threadMap({
           id: t.id, createdAt: t.createdAt, authorId: t.authorId, authorName: cleanName(t.authorName), authorColor: t.authorColor,
           text, editedAt: t.editedAt, anchor: cleanAnchor(t.anchor), resolved: t.resolved === true,
-          resolvedBy: t.resolvedBy, resolvedAt: t.resolvedAt,
+          resolvedBy: t.resolvedBy, resolvedAt: t.resolvedAt, imported: true, importedBy,
         }, replies));
         added++;
       }
     });
     return added;
+  }
+
+  /**
+   * Applies the comments document of a .drift file in one change, marking the threads it adds (and their replies)
+   * imported, so they reach the relay already marked. Threads that already exist here are left alone.
+   */
+  importUpdate(update: Uint8Array, importedBy: string): void {
+    if (this._readOnly) return;
+    this.transact(() => {
+      const known = new Set(this.threads.keys());
+      Y.applyUpdate(this.doc, update);
+      this.threads.forEach((m, id) => {
+        if (known.has(id) || !(m instanceof Y.Map)) return;
+        m.set('imported', true);
+        m.set('importedBy', importedBy);
+        const replies = m.get('replies');
+        if (!(replies instanceof Y.Map)) return;
+        replies.forEach((r, rid) => replies.set(rid, { ...(r as Reply), imported: true, importedBy }));
+      });
+    });
   }
 
   private repliesOf(threadId: string): Y.Map<Reply> | undefined {
@@ -258,6 +296,22 @@ export class Comments {
       this.changeListeners.forEach((l) => l());
     });
   }
+}
+
+// ---------------------------------------------------------------- notices
+
+const NOTICE_TEXT: Record<string, string> = {
+  edit: 'Only the author can edit a comment, so that edit was undone.',
+  delete: 'Only the author or a moderator (a board owner or admin) can delete a comment, so that delete was undone.',
+  resolve: 'Only the author or a board editor can resolve a comment, so that change was undone.',
+  author: 'Comments are posted under your own account name, so that was corrected.',
+  other: 'That change to the comments is not allowed, so it was undone.',
+};
+
+/** What the relay's notice says, for the kinds it undid (docs/comment-authz.md). */
+export function commentNoticeText(undone: readonly string[]): string {
+  const lines = [...new Set(undone)].map((k) => NOTICE_TEXT[k]).filter((s): s is string => s !== undefined);
+  return lines.join(' ') || 'A change to the comments was undone.';
 }
 
 // ---------------------------------------------------------------- anchors

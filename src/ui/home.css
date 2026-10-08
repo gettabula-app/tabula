@@ -36,6 +36,7 @@
   color: var(--graphite); text-decoration: none; white-space: nowrap;
 }
 .topbar-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-family: inherit; cursor: pointer; }
 .topbar-link.on { color: var(--ink); border-bottom-color: var(--ink); text-decoration: none; }
 .topbar-end { display: flex; align-items: center; gap: 16px; margin-left: auto; min-width: 0; }
 .topbar-me { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

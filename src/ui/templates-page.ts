@@ -10,6 +10,7 @@ import { duplicateSavedTemplate, getTemplate, listTemplates, onTemplatesChange, 
 import { accountId, mayChange, scopeLabel, splitMine } from '../template-share';
 import { NAME_MAX, builtinToCustom, duplicateTemplate, exportTemplateFile, parseTemplateFile } from '../template-file';
 import type { CustomTemplate } from '../custom-templates';
+import { storedWhere } from '../desktop-env';
 import type { AuthState } from '../auth';
 import type { HomeNav } from './home';
 import { createWorkspaceBanner } from './workspace';
@@ -135,7 +136,7 @@ interface MenuItem {
 /** The ⋯ button of a card, with a square popover of actions. */
 function moreButton(name: string, items: MenuItem[]): HTMLButtonElement {
   const more: HTMLButtonElement = h('button', {
-    class: 'icon-btn', title: 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',
+    class: 'icon-btn', 'data-tip': 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',
     onclick: () => {
       const menu = h('div', { class: 'menu' }, ...items.map((item) => h('button', {
         class: 'menu-item', onclick: () => {
@@ -294,7 +295,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
             paint();
           }))),
       h('div', { class: 'tpl-results' }, count, mineSection, sharedSection, builtinSection, empty),
-      pageFooter(me ? 'Boards sync through your workspace server when it is reachable.' : 'Boards are stored in this browser.'))));
+      pageFooter(me ? 'Boards sync through your workspace server when it is reachable.' : `Boards are stored ${storedWhere()}.`))));
   paint();
   load();
   const off = onTemplatesChange(() => {

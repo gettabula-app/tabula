@@ -208,19 +208,19 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     const locked = sel.every((o) => o.locked);
     blocks.push(h('div', { class: 'btn-row arrange' },
-      btn('front', 'Bring to front ( ] )', () => app.bringToFront()),
-      btn('back', 'Send to back ( [ )', () => app.sendToBack()),
-      btn('dup', 'Duplicate (Ctrl/Cmd+D)', () => app.duplicate()),
+      btn('front', 'Bring to front', () => app.bringToFront(), '', ']'),
+      btn('back', 'Send to back', () => app.sendToBack(), '', '['),
+      btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       btn(locked ? 'unlock' : 'lock', locked ? 'Unlock' : 'Lock', () => app.toggleLock()),
       sel.some((o) => o.type === 'uml-class' || o.type === 'shape') ? btn('mermaid', 'Copy as Mermaid', () => {
         const ids = new Set(app.selection);
         const objs = [...app.store.cache.values()].filter((o) => ids.has(o.id) || (isConnector(o) && o.from.kind === 'bound' && o.to.kind === 'bound' && ids.has(o.from.id) && ids.has(o.to.id)));
         navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
       }) : null,
-      btn('trash', 'Delete (Del)', () => app.deleteSelection(), 'danger'),
+      btn('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ));
 
-    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18))), ...blocks.filter(Boolean) as HTMLElement[]);
+    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18))), ...blocks.filter(Boolean) as HTMLElement[]);
     // keep keyboard focus on the same control across the rebuild that follows each change
     if (focused) panel.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focused)}"]`)?.focus();
   }
@@ -233,8 +233,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
   return { toggle, isOpen: () => open, onToggle: (fn: () => void) => { toggled.push(fn); } };
 }
 
-function btn(name: Parameters<typeof icon>[0], label: string, onClick: () => void, cls = '') {
-  return h('button', { class: `icon-btn ${cls}`, title: label, 'aria-label': label, onclick: onClick }, icon(name, 18));
+function btn(name: Parameters<typeof icon>[0], label: string, onClick: () => void, cls = '', key?: string) {
+  return h('button', { class: `icon-btn ${cls}`, 'aria-label': label, 'data-tip-key': key, onclick: onClick }, icon(name, 18));
 }
 
 function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {

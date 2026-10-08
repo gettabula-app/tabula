@@ -90,7 +90,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
-  'cloud.limits',
+  'cloud.limits', 'cloud.notify',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -223,6 +223,11 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       if (flag(d.readOnly) === true) limits.push('read-only');
       return `${who} updated the workspace limits${limits.length ? ` (${limits.join(', ')})` : ''}`;
     }
+    case 'cloud.notify': {
+      const count = typeof d.count === 'number' ? d.count : null;
+      const notice = d.template === 'trial-ending' ? 'the trial-ending notice' : 'a notice';
+      return `${who} sent ${notice} to ${count === null ? 'the workspace owners' : countLabel(count, 'workspace owner', 'workspace owners')}`;
+    }
     default:
       return entry.action;
   }
@@ -305,4 +310,9 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
     { label: 'Sign-ins, last 7 days', value: o.signIns7d },
     { label: 'Live connections', value: o.live.connections, sub: `${countLabel(o.live.rooms, 'room', 'rooms')} open` },
   ];
+}
+
+/** Admin sections to show: Access tokens only when AI tool access is on for this server. */
+export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined): T[] {
+  return tabs.filter((t) => t !== 'tokens' || mcp === true);
 }

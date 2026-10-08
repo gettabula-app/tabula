@@ -50,7 +50,7 @@ function renderBanner(reason: DeniedReason, handlers: AccessHandlers, dismiss: (
   return h('div', { class: 'access-banner', role: 'alert' },
     h('span', { class: 'access-text' }, TEXT[reason]),
     h('div', { class: 'access-actions' }, actions),
-    h('button', { class: 'icon-btn', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: dismiss }, icon('close', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', onclick: dismiss }, icon('close', 18)),
   );
 }
 

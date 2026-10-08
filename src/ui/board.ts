@@ -7,6 +7,7 @@ import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
+import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
 import { mountHistory } from './history';
@@ -16,11 +17,13 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
+import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
+import { SHORTCUTS } from '../shortcuts';
 import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
@@ -68,7 +71,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = 'The server refused this connection. Your changes are still saved on this device.';
     }
     status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
-    status.title = tip;
+    status.dataset.tip = tip;
   };
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
@@ -77,7 +80,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
   const homeLabel = scratch ? 'Back to templates' : 'All boards';
   const topLeft = h('div', { class: 'tray top-left' },
-    h('button', { class: 'icon-btn', title: homeLabel, 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
     scratch ? null : name, scratch ? null : status, badge,
   );
 
@@ -86,14 +89,14 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
     people.replaceChildren(...ps.slice(0, 6).map((p) => h('button', {
-      class: 'avatar', style: `--c:${p.user.color}`, title: p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`,
+      class: 'avatar', style: `--c:${p.user.color}`, 'data-tip': p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`,
       'aria-label': p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`,
       onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)),
     }, initials(p.user.name))), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
   };
   app.on('presence', renderPeople);
   renderPeople();
-  const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 18));
+  const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch ? null : mountHistory(app, chrome);
   menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch));
   const comments = mountComments(app, chrome);
@@ -107,19 +110,19 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // ---------------------------------------------------------------- rail
   const library = mountLibrary(app, chrome);
   const toolBtn = (label: string, ic: IconName, tool: Tool, key: string) => {
-    const b = h('button', { class: 'rail-btn', title: `${label} (${key})`, 'aria-label': label, 'aria-keyshortcuts': key, onclick: () => app.setTool(tool) }, icon(ic, 22));
+    const b = h('button', { class: 'rail-btn', 'aria-label': label, 'aria-keyshortcuts': key, 'data-tip-key': key.toLowerCase(), onclick: () => app.setTool(tool) }, icon(ic, 22));
     b.dataset.tool = tool.kind;
     return b;
   };
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates') => {
-    const b = h('button', { class: 'rail-btn', title: label, 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
+    const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
     return b;
   };
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
-  const shapesBtn = h('button', { class: 'rail-btn', title: 'Shapes', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
+  const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
-  const voteBtn = h('button', { class: 'rail-btn', title: 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
+  const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
       toast('A dot vote is running. Change dots per person or finish it from the bar at the bottom.');
@@ -134,7 +137,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     voteBtn.setAttribute('aria-pressed', String(on));
   };
   app.on('flow', syncVote);
-  const pollBtn = h('button', { class: 'rail-btn', title: 'Start a quick poll', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
+  const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
     toolBtn('Select', 'select', { kind: 'select' }, 'V'),
@@ -155,8 +158,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     voteBtn,
     pollBtn,
     h('hr'),
-    h('button', { class: 'rail-btn', title: 'Undo (Ctrl/Cmd+Z)', 'aria-label': 'Undo', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
-    h('button', { class: 'rail-btn', title: 'Redo (Shift+Ctrl/Cmd+Z)', 'aria-label': 'Redo', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
+    h('button', { class: 'rail-btn', 'aria-label': 'Undo', 'data-tip-key': 'mod+z', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
+    h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
   );
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
@@ -216,23 +219,24 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderPen();
 
   // ---------------------------------------------------------------- bottom right
-  const zoomLabel = h('button', { class: 'zoom-label', title: 'Reset to 100% (Shift+0)', onclick: () => app.zoomTo(1) });
+  const zoomLabel = h('button', { class: 'zoom-label', 'data-tip': 'Reset to 100%', 'data-tip-key': 'shift+0', onclick: () => app.zoomTo(1) });
   const updateZoom = () => (zoomLabel.textContent = `${Math.round(app.zoom * 100)}%`);
   app.r.onCamera(updateZoom);
   updateZoom();
   const mini = minimap(app);
   const zoomTray = h('div', { class: 'tray zoom-tray' },
-    h('button', { class: 'icon-btn', title: 'Zoom out (Ctrl/Cmd −)', 'aria-label': 'Zoom out', onclick: () => app.zoomBy(0.8) }, icon('minus', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': 'Zoom out', 'data-tip-key': 'mod+-', onclick: () => app.zoomBy(0.8) }, icon('minus', 18)),
     zoomLabel,
-    h('button', { class: 'icon-btn', title: 'Zoom in (Ctrl/Cmd +)', 'aria-label': 'Zoom in', onclick: () => app.zoomBy(1.25) }, icon('plus', 18)),
-    h('button', { class: 'icon-btn', title: 'Fit board (Shift+1)', 'aria-label': 'Fit board', onclick: () => app.zoomToFit() }, icon('fit', 18)),
-    h('button', { class: 'icon-btn', title: 'Minimap', 'aria-label': 'Toggle minimap', onclick: (e: Event) => { mini.toggle(); (e.currentTarget as HTMLElement).classList.toggle('on', mini.visible()); } }, icon('map', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': 'Zoom in', 'data-tip-key': 'mod+=', onclick: () => app.zoomBy(1.25) }, icon('plus', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': 'Fit board', 'data-tip-key': 'shift+1', onclick: () => app.zoomToFit() }, icon('fit', 18)),
+    h('button', { class: 'icon-btn', 'data-tip': 'Minimap', 'aria-label': 'Toggle minimap', onclick: (e: Event) => { mini.toggle(); (e.currentTarget as HTMLElement).classList.toggle('on', mini.visible()); } }, icon('map', 18)),
   );
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
+  mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   if (!scratch) firstRunHint(app, chrome);
 
@@ -245,7 +249,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     });
     // Commenters have a read-only board but may still comment, so the tool follows the comments document.
     commentBtn.disabled = app.comments.readOnly();
-    commentBtn.title = commentBtn.disabled ? 'You can\'t comment on this board' : 'Comment (C)';
+    commentBtn.dataset.tip = commentBtn.disabled ? 'You can\'t comment on this board' : 'Comment';
+    if (commentBtn.disabled) commentBtn.removeAttribute('data-tip-key');
+    else commentBtn.dataset.tipKey = 'c';
     name.readOnly = ro;
     badge.textContent = boardAccess(app.role, workspaceOf(authState()), app.deleted).badge ?? 'View only';
     badge.classList.toggle('show', ro);
@@ -438,6 +444,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     scratch ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('user', 'Your name and colour', () => openProfile(app)),
+    mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
     scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
@@ -462,6 +469,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     }),
     h('div', { class: 'list-label' }, 'Help'),
     item('menu', 'Keyboard shortcuts', () => openShortcuts()),
+    item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab'),
     fileInput,
   ), { side: 'bottom' });
 }
@@ -551,7 +559,9 @@ function openSettings(app: BoardApp) {
     h('div', { class: 'row2' }, field('Heading font', fontBtn('headingFont')), field('Body font', fontBtn('bodyFont'))),
     h('p', { class: 'muted small' }, 'New notes, shapes and frames use these fonts. Hold Alt while dragging to place things off the grid.'),
     field('Relay', relay),
-    h('p', { class: 'muted small' }, '“auto” uses the relay that serves this app. “off” keeps every board on this device only. Changing it reloads the board.'),
+    h('p', { class: 'muted small' }, isDesktop()
+      ? '“auto” and “off” keep every board on this computer only. To collaborate, enter the address of a relay. Changing it reloads the board.'
+      : '“auto” uses the relay that serves this app. “off” keeps every board on this device only. Changing it reloads the board.'),
   ), [{ label: 'Close', primary: true, onClick: () => {
     const v = relay.value.trim() || 'auto';
     if (v !== getRelaySetting()) {
@@ -562,13 +572,10 @@ function openSettings(app: BoardApp) {
 }
 
 function openShortcuts() {
-  const rows: [string, string][] = [
-    ['V', 'Select'], ['H or hold Space', 'Pan'], ['N', 'Sticky note'], ['T', 'Text'], ['R / O / D', 'Rectangle / ellipse / diamond'],
-    ['L', 'Connector'], ['P', 'Pen'], ['F', 'Frame'], ['Double-click', 'Edit text, or add text on empty canvas'],
-    ['Ctrl/Cmd + scroll, pinch', 'Zoom'], ['Shift+1 / Shift+2 / Shift+0', 'Fit board / fit selection / 100%'],
-    ['Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z', 'Undo, redo'], ['Ctrl/Cmd+C / V / D', 'Copy, paste, duplicate'],
-    ['Delete', 'Delete selection'], ['Arrows (Shift for grid steps)', 'Nudge'], ['[ and ]', 'Send back, bring forward'],
-    ['Alt while dragging', 'Ignore grid and guides'], ['Shift while resizing', 'Keep proportions'], ['Shift-click while voting', 'Remove a vote'],
-  ];
-  dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows.map(([k, v]) => h('tr', null, h('td', null, h('kbd', null, k)), h('td', null, v)))), [{ label: 'Close', primary: true }]);
+  const groups = [...new Set(SHORTCUTS.map((s) => s.group))];
+  const rows = groups.flatMap((group) => [
+    h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
+    ...SHORTCUTS.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+  ]);
+  dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }

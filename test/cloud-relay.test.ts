@@ -27,6 +27,13 @@ type Server = { port: number; base: string; dir: string; proc: ChildProcess };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** A comment thread as the relay accepts it: anything else in the threads map is taken out again. */
+const threadValue = (id: string) => {
+  const m = new Y.Map<unknown>([['id', id], ['createdAt', 1], ['text', 'hi'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+  m.set('replies', new Y.Map());
+  return m;
+};
+
 async function until(fn: () => boolean, ms = 5000) {
   const t0 = Date.now();
   while (!fn()) {
@@ -249,7 +256,7 @@ function client(srv: Server) {
     await until(() => [...to.provider.awareness.getStates().values()].some((s) => s.user?.name === name));
   }
 
-  return { api, internal, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };
+  return { api, internal, mails, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };
 }
 
 // ---------------------------------------------------------------- configuration
@@ -358,6 +365,31 @@ describe('a hosted workspace', () => {
     });
   });
 
+  describe('trial-ending notice', () => {
+    it('mails the owner through the mail setting, once per date, and leaves an audit row without the address', async () => {
+      const notice = { template: 'trial-ending', date: '14 Nov 2026' };
+      expect((await c.internal('POST', '/api/internal/notify', notice, null)).status).toBe(401);
+      expect((await c.internal('POST', '/api/internal/notify', { ...notice, date: 'soon' })).status).toBe(400);
+
+      const before = c.mails().length;
+      const sent = await c.internal('POST', '/api/internal/notify', notice);
+      expect(sent).toMatchObject({ status: 200, body: { sent: 1 } });
+      const mails = c.mails().slice(before).map((line) => JSON.parse(line));
+      expect(mails).toHaveLength(1);
+      expect(mails[0]).toMatchObject({ to: OWNER, subject: 'Your Tabula trial ends on 14 Nov 2026' });
+      expect(mails[0].text.split('\n')).toContain(`${srv.base}/`);
+
+      const repeat = await c.internal('POST', '/api/internal/notify', notice);
+      expect(repeat).toMatchObject({ status: 200, body: { sent: 0, duplicate: true } });
+      expect(c.mails()).toHaveLength(before + 1);
+
+      const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.notify');
+      expect(audit.body.entries).toHaveLength(1);
+      expect(audit.body.entries[0]).toMatchObject({ action: 'cloud.notify', actorId: null, detail: { template: 'trial-ending', count: 1 } });
+      expect(JSON.stringify(audit.body.entries)).not.toContain('@');
+    });
+  });
+
   describe('read-only', () => {
     it('refuses writes over HTTP while sign-in, reading and the limits endpoint keep working', async () => {
       const member = await c.joinTeam(owner.cookie, (await c.newTeam(owner.cookie)).id);
@@ -394,13 +426,13 @@ describe('a hosted workspace', () => {
       for (const x of [boardA, boardB, talkA, talkB, quietBoard, quietTalk]) await c.synced(x);
 
       boardA.doc.getMap('objects').set('before', 1);
-      talkA.doc.getMap('threads').set('before', 1);
-      await until(() => boardB.doc.getMap('objects').get('before') === 1 && talkB.doc.getMap('threads').get('before') === 1);
+      talkA.doc.getMap('threads').set('before', threadValue('before'));
+      await until(() => boardB.doc.getMap('objects').get('before') === 1 && talkB.doc.getMap('threads').has('before'));
 
       expect((await c.internal('PUT', '/api/internal/limits', { readOnly: true })).status).toBe(200);
       try {
         boardA.doc.getMap('objects').set('during', 2);
-        talkA.doc.getMap('threads').set('during', 2);
+        talkA.doc.getMap('threads').set('during', threadValue('during'));
         const late = c.connect(board, editor.cookie);
         await c.synced(late);
         late.doc.getMap('objects').set('late', 3);
@@ -416,8 +448,8 @@ describe('a hosted workspace', () => {
       }
 
       quietBoard.doc.getMap('objects').set('after', 4);
-      quietTalk.doc.getMap('threads').set('after', 4);
-      await until(() => boardB.doc.getMap('objects').get('after') === 4 && talkB.doc.getMap('threads').get('after') === 4);
+      quietTalk.doc.getMap('threads').set('after', threadValue('after'));
+      await until(() => boardB.doc.getMap('objects').get('after') === 4 && talkB.doc.getMap('threads').has('after'));
     });
   });
 
@@ -543,7 +575,7 @@ describe('a hosted workspace', () => {
         await until(() => writer.hints.count === 1 && writerTalk.hints.count === 1);
         // Typed after the flip and before the client has acted on the message, as the app would see it.
         writer.doc.getMap('objects').set('during', 2);
-        writerTalk.doc.getMap('threads').set('during', 2);
+        writerTalk.doc.getMap('threads').set('during', threadValue('during'));
         await c.flush(writer, reader);
         await c.flush(writerTalk, readerTalk);
         expect(reader.doc.getMap('objects').get('during')).toBeUndefined();
@@ -559,7 +591,7 @@ describe('a hosted workspace', () => {
 
       resyncRooms({ denied: null }, [writer.provider, writerTalk.provider]);
       await until(() => reader.doc.getMap('objects').get('during') === 2 && reader.doc.getMap('objects').get('after') === 3);
-      await until(() => readerTalk.doc.getMap('threads').get('during') === 2);
+      await until(() => readerTalk.doc.getMap('threads').has('during'));
       expect(reader.doc.getMap('objects').get('before')).toBe(1);
 
       const late = c.connect(board, owner.cookie);

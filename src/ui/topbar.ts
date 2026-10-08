@@ -1,6 +1,9 @@
 import { h, icon } from './dom';
 import { signOut, type AuthState } from '../auth';
 import type { Me } from '../api';
+import { aiToolsAvailable } from './tokens-logic';
+import { openTokensDialog } from './tokens';
+import { openIconCredits } from './icon-credits';
 
 export type TopbarPage = 'boards' | 'templates';
 
@@ -26,7 +29,9 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
     h('nav', { class: 'topbar-nav', 'aria-label': 'Main' },
       link('boards', 'Boards', '#/'),
       link('templates', 'Templates', '#/templates'),
-      admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null),
+      admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
+      me && aiToolsAvailable(me) ? h('button', { class: 'topbar-link', type: 'button', onclick: () => openTokensDialog(me) }, 'AI tool access') : null,
+      h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
       h('span', { class: 'topbar-me' }, me.user.name || me.user.email),
       h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out')) : null);
@@ -43,5 +48,5 @@ export function searchField(label: string, value: string, onInput: (query: strin
 }
 
 export function pageFooter(note: string): HTMLElement {
-  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icons by Iconify.');
+  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icon sets by their authors, see ', h('button', { class: 'link-btn', onclick: openIconCredits }, 'Icon credits'), '.');
 }

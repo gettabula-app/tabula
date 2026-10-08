@@ -673,11 +673,14 @@ describe('editing', () => {
       })));
     }, 'local');
     await until(() => h.savedDoc(mine).getMap('objects').has('secret1'));
-    const pinned = await h.tool(token, 'add_comment', { boardId: mine, text: 'pinned elsewhere', objectId: open });
     const room = h.connect(`${mine}~comments`, me.cookie);
     await room.synced();
+    // a pin on the private note, written by a person: an anchor is set once, so it cannot be moved there later
+    const pinnedId = 'pinned-on-secret';
     room.doc.transact(() => {
-      (room.doc.getMap('threads').get(pinned.data.threadId) as Y.Map<unknown>).set('anchor', { x: 800, y: 800, obj: 'secret1' });
+      const thread = new Y.Map<unknown>([['id', pinnedId], ['createdAt', 1], ['text', 'pinned elsewhere'], ['anchor', { x: 800, y: 800, obj: 'secret1' }], ['resolved', false]]);
+      thread.set('replies', new Y.Map());
+      room.doc.getMap('threads').set(pinnedId, thread);
     }, 'local');
     await sleep(300);
 
@@ -690,7 +693,7 @@ describe('editing', () => {
     expect((await h.tool(token, 'update_objects', { boardId: mine, updates: [{ id: 'secret1', text: 'x' }] })).error).toBe('not_found');
     expect((await h.tool(token, 'delete_objects', { boardId: mine, ids: ['secret1'] })).error).toBe('not_found');
     expect((await h.tool(token, 'list_comments', { boardId: mine })).data.threads).toEqual([]);
-    expect((await h.tool(token, 'reply_to_comment', { boardId: mine, threadId: pinned.data.threadId, text: 'x' })).error).toBe('not_found');
+    expect((await h.tool(token, 'reply_to_comment', { boardId: mine, threadId: pinnedId, text: 'x' })).error).toBe('not_found');
 
     browser.doc.transact(() => browser.doc.getMap('flow').set('reveal', true), 'flow');
     await until(async () => (await h.tool(token, 'get_board', { boardId: mine })).data.hiddenCount === 0);

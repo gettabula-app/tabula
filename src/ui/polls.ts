@@ -168,7 +168,7 @@ export function pollResultsBlock(app: BoardApp, poll: Poll, onHide: () => void):
     h('button', { class: 'btn ghost poll-btn', disabled: !poll.revealed || app.readOnly, onclick: () => attempt(() => polls.addResultsSticky(poll.id), 'Results added to the board') }, 'Add results to board'),
     poll.revealed ? null : h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(poll.id)) }, icon('eye', 16), 'Reveal results'),
     h('button', { class: 'btn ghost poll-btn', disabled: app.readOnly, onclick: () => attempt(() => app.flow.clearPoll(poll.id), 'Poll cleared') }, icon('trash', 16), 'Clear poll'),
-    h('button', { class: 'icon-btn', title: 'Hide', 'aria-label': 'Hide', onclick: onHide }, icon('close', 18)),
+    h('button', { class: 'icon-btn', 'aria-label': 'Hide', onclick: onHide }, icon('close', 18)),
   );
 }
 
