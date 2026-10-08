@@ -1,5 +1,5 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id, Obj, ShapeKind, Step, StepMode } from './types';
+import type { BaseObj, BoardMeta, Id, Obj, ShapeKind, Step, StepMode } from './types';
 import { newId } from './store';
 import { STICKY_COLORS } from './palette';
 
@@ -16,11 +16,17 @@ const TINT = {
 };
 const ST = Object.fromEntries(STICKY_COLORS.map((c) => [c.name.toLowerCase(), c.fill])) as Record<string, string>;
 
+/** What a Builder reads from the board: the local user and the board fonts. */
+export interface BuilderHost {
+  user: { id: string };
+  store: { getMeta(): Pick<BoardMeta, 'bodyFont' | 'headingFont'> };
+}
+
 /** Collects objects and steps for a template, positioned from an origin. */
 export class Builder {
   objs: Obj[] = [];
   steps: Step[] = [];
-  constructor(private app: BoardApp, readonly ox: number, readonly oy: number) {}
+  constructor(private app: BuilderHost, readonly ox: number, readonly oy: number) {}
 
   private base(type: BaseObj['type'], x: number, y: number, w: number, h: number, extra: Partial<BaseObj>): BaseObj {
     const o: BaseObj = {

@@ -11,6 +11,7 @@ import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
 import { featuredTemplates, useTemplate } from './templates-page';
+import { builtinThumbnail } from '../template-thumb';
 
 // Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
 const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
@@ -327,6 +328,7 @@ function templateStrip(nav: HomeNav, down: boolean) {
         h('a', { class: 'link-more', href: '#/templates' }, 'All templates', h('span', { 'aria-hidden': 'true' }, '→')))),
     h('ul', { class: 'tpl-strip' }, ...featuredTemplates().map((t) => h('li', null,
       h('button', { class: 'tpl-tile', disabled: down, onclick: () => useTemplate(nav, t.id) },
+        h('span', { class: 'tpl-thumb', html: builtinThumbnail(t) }),
         h('span', { class: 'tpl-label' }, t.category),
         h('span', { class: 'tpl-title' }, t.name))))));
 }

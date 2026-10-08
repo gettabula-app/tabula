@@ -2,6 +2,7 @@ import './home.css';
 import { h } from './dom';
 import { newId } from '../store';
 import { TEMPLATES, type TemplateDef } from '../templates';
+import { builtinThumbnail } from '../template-thumb';
 import type { AuthState } from '../auth';
 import type { HomeNav } from './home';
 import { createWorkspaceBanner } from './workspace';
@@ -49,6 +50,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     count.textContent = `${shown.length} ${shown.length === 1 ? 'template' : 'templates'}`;
     grid.replaceChildren(...shown.map((t) => h('li', null,
       h('article', { class: 'tpl-card' },
+        h('div', { class: 'tpl-thumb', html: builtinThumbnail(t) }),
         h('p', { class: 'tpl-label' }, t.category),
         h('h2', { class: 'tpl-title' }, t.name),
         h('p', { class: 'tpl-text' }, t.description),

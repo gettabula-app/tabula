@@ -101,6 +101,10 @@
 }
 .board-actions .icon-btn:not(:disabled):hover { border-color: var(--danger); background: transparent; color: var(--danger); }
 
+/* Template thumbnails: the objects drawn small in a 16:10 box, flush with the top edge of the card or tile. */
+.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); }
+.tpl-thumb svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
 /* Templates strip on the home page. */
 .tpl-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .tpl-tile {
@@ -109,6 +113,7 @@
 }
 .tpl-tile:not(:disabled):hover { border-color: var(--ink); }
 .tpl-tile .tpl-title { font: 700 16px/1.25 var(--display); letter-spacing: -0.02em; }
+.tpl-tile .tpl-thumb { width: calc(100% + 32px); margin: -16px -16px 8px; }
 .link-more { display: inline-flex; align-items: center; gap: 6px; height: 32px; color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .link-more:hover { text-decoration: underline; text-underline-offset: 4px; }
 
@@ -131,6 +136,7 @@
 .tpl-card .tpl-label { margin: 0; }
 .tpl-card .tpl-title { margin: 0; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tpl-card .tpl-text { flex: 1; margin: 0; color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
+.tpl-card .tpl-thumb { width: calc(100% + 48px); margin: -24px -24px 16px; }
 .tpl-card .btn { margin-top: 16px; }
 
 .home-foot { padding-top: 16px; border-top: 1px solid var(--rule); color: var(--graphite); font-size: 13px; }
