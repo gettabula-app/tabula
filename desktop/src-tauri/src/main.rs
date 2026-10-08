@@ -98,7 +98,7 @@ fn main() {
     // macOS never passes the file as an argument: LaunchServices sends an open event, at launch or to the running app.
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Opened { urls } = event {
-      receive(app, urls.into_iter().filter_map(|u| u.to_file_path().ok()).collect());
+      receive(app, urls.into_iter().filter_map(|u| u.to_file_path().ok()).filter(|p| is_drift(p)).collect());
     }
   });
 }
