@@ -7,7 +7,7 @@
     "frontendDist": "../../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": { "script": "npm run dev", "cwd": "../..", "wait": false },
-    "beforeBuildCommand": { "script": "npm run build", "cwd": "../.." }
+    "beforeBuildCommand": { "script": "npm run build:app", "cwd": "../.." }
   },
   "app": {
     "windows": [

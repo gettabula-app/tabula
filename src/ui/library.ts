@@ -239,7 +239,10 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
   const fill = previewFiller(signal);
   const offline = offlineRow(() => {
     const p = setSel.value;
-    if (!p) return { label: 'Popular sets', prefixes: POPULAR_SETS.filter((x) => sets[x]) };
+    if (!p) {
+      const prefixes = POPULAR_SETS.filter((x) => sets[x]);
+      return { label: `Popular icon sets (${prefixes.length})`, prefixes };
+    }
     return sets[p]?.hosted ? { label: sets[p].name, prefixes: [p] } : null;
   }, signal);
   let sets: Record<string, IconSet> = {};

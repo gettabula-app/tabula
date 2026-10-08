@@ -301,11 +301,12 @@ describe('build over a fixture', () => {
       secret: { prefix: 'secret', info: info({ hidden: true }), icons: { x: { body: path24('x') } } },
       sharealike: { prefix: 'sharealike', info: info({ license: { title: 'CC BY-SA 4.0', spdx: 'CC-BY-SA-4.0' } }), icons: { x: { body: path24('x') } } },
       dropped: { prefix: 'dropped', info: info(), icons: { x: { body: path24('x') } } },
+      old: { prefix: 'old', info: info({ category: 'Archive / Unmaintained' }), icons: { x: { body: path24('x') } } },
     });
     const out = path.join(tmp(), 'icons');
     const r = await buildIcons({ source, out, pinned: [], exclude: ['dropped'] });
     expect(r.sets.map((s: { p: string }) => s.p)).toEqual(['alpha', 'beta']);
-    expect(r.skipped).toEqual({ hidden: 1, licence: 1 });
+    expect(r.skipped).toEqual({ hidden: 1, licence: 1, archived: 1 });
   });
 
   it('stops the build for a listed set with a blocked licence, naming the set and the licence', async () => {

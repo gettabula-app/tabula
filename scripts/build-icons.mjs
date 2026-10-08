@@ -22,8 +22,11 @@ export const CURATED_SETS = [
   'noto', 'bi', 'ri', 'ion', 'iconoir', 'octicon', 'circle-flags',
 ];
 
-/** Sets that pass the licence rule but are never hosted: Font Awesome 6, which Iconify files under "Archive / Unmaintained". */
+/** Sets that pass the licence rule but are never hosted, besides every set in EXCLUDED_CATEGORY. */
 export const EXCLUDED_SETS = ['fa6-solid', 'fa6-regular', 'fa6-brands'];
+
+/** Iconify's category for sets nobody maintains (Font Awesome 4 to 6, older Heroicons and others): none of them are hosted. */
+export const EXCLUDED_CATEGORY = 'Archive / Unmaintained';
 
 // Keep equal to REACTIONS in src/stickers.ts; test/stickers.test.ts compares them.
 export const PINNED = [
@@ -88,7 +91,7 @@ function copyTree(from, to) {
  * `priority` sets come first in the manifest; the rest follow by prefix. With a `cacheDir`, output is kept per
  * (source version, set selection, limits, build code) and an unchanged rebuild is a copy.
  * @param {{ source?: string, out?: string, sets?: 'all' | string[], exclude?: string[], priority?: string[], pinned?: string[], shardIcons?: number, shardBytes?: number, cacheDir?: string | null, log?: (message: string) => void }} [options]
- * @returns {Promise<{ cached: boolean, sets: { p: string, n: number }[], skipped?: { hidden: number, licence: number }, ms: number }>}
+ * @returns {Promise<{ cached: boolean, sets: { p: string, n: number }[], skipped?: { hidden: number, licence: number, archived: number }, ms: number }>}
  */
 export async function buildIcons({
   source = path.join(root, 'node_modules', '@iconify', 'json'), out = path.join(root, 'dist', 'icons'), sets = 'all',
@@ -98,7 +101,7 @@ export async function buildIcons({
   const t0 = Date.now();
   const version = (await readJson(path.join(source, 'package.json'))).version;
   const key = sha256(JSON.stringify([
-    version, sets, exclude, priority, pinned, shardIcons, shardBytes, GZIP_LEVEL,
+    version, sets, exclude, EXCLUDED_CATEGORY, priority, pinned, shardIcons, shardBytes, GZIP_LEVEL,
     sourceFiles.map((f) => fs.readFileSync(f, 'utf8')),
   ])).slice(0, 16);
   fs.rmSync(out, { recursive: true, force: true });
@@ -134,11 +137,13 @@ export async function buildIcons({
     listed = await readJson(path.join(source, 'collections.json'));
   } catch { /* the set files are the truth */ }
   const pinnedSet = new Set(pinned);
-  const skipped = { hidden: 0, licence: 0 };
+  const skipped = { hidden: 0, licence: 0, archived: 0 };
   const built = await runPool(chosen, 6, async (prefix) => {
     const skip = (info) => { skipped[info?.hidden ? 'hidden' : 'licence']++; return null; };
     if (sets === 'all' && listed[prefix] && !checkSet(listed[prefix]).ok) return skip(listed[prefix]);
+    if (sets === 'all' && listed[prefix]?.category === EXCLUDED_CATEGORY) { skipped.archived++; return null; }
     const data = await readJson(path.join(jsonDir, `${prefix}.json`));
+    if (sets === 'all' && data.info?.category === EXCLUDED_CATEGORY) { skipped.archived++; return null; }
     const verdict = checkSet(data.info);
     if (!verdict.ok) {
       if (sets !== 'all') throw new Error(`${prefix}: ${verdict.reason} (licence ${data.info?.license?.spdx ?? 'missing'})`);
@@ -180,7 +185,7 @@ export async function buildIcons({
   const count = manifest.sets.reduce((n, s) => n + s.n, 0);
   const gzBytes = manifest.sets.reduce((n, s) => n + s.gz, 0);
   log(`icons: ${manifest.sets.length} sets, ${count.toLocaleString('en')} icons, ${(gzBytes / 1048576).toFixed(1)} MB gzip in ${((Date.now() - t0) / 1000).toFixed(1)} s`
-    + ` (skipped ${skipped.hidden} hidden, ${skipped.licence} by licence${sets === 'all' ? `, ${exclude.length} excluded` : ''})`);
+    + ` (skipped ${skipped.hidden} hidden, ${skipped.licence} by licence, ${skipped.archived} unmaintained${sets === 'all' ? `, ${exclude.length} excluded` : ''})`);
   return { cached: false, sets: manifest.sets, skipped, ms: Date.now() - t0 };
 }
 

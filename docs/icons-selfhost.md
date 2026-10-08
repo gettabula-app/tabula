@@ -6,9 +6,9 @@ This page began as the plan with measurements and now also records what was buil
 
 ## Decision in short
 
-- **Host every set whose licence we may ship, baked into the image.** 210 sets, 355,218 icons, 77.7 MB of gzip shards plus 1.9 MB of search index (83.5 MB of files, 92 MB on disk). The image grows from about 67 MB to about 147 MB. This is the default build (`npm run build`, the Docker image).
+- **Host every set whose licence we may ship, baked into the image.** 188 sets, 344,033 icons, 75.6 MB of gzip shards plus the search index (77.5 MB of files, 90 MB on disk). The image grows from about 67 MB to about 141 MB (estimated, see Docker below). This is the default build (`npm run build`, the Docker image).
 - **`ICON_SETS=curated` builds a short list instead**: 19 sets, 74,686 icons, 18.1 MB of shards and 0.5 MB of index (the 22 sets of the plan minus the three Font Awesome 6 sets). The list is one exported constant, `CURATED_SETS`, in `scripts/build-icons.mjs`. `docker build --build-arg ICON_SETS=curated` uses it.
-- **Left out of both**: the three Font Awesome 6 sets that Iconify files under "Archive / Unmaintained" (`EXCLUDED_SETS`), every set Iconify marks `hidden`, and every set whose licence is not on the allowlist. The logo sets stay, with a trademark note.
+- **Left out of both**: every set Iconify files under "Archive / Unmaintained" (`EXCLUDED_CATEGORY`: Font Awesome 4 to 6, the old Heroicons sets and others; the Font Awesome 6 sets are also named in `EXCLUDED_SETS`), every set Iconify marks `hidden`, and every set whose licence is not on the allowlist. The logo sets stay, with a trademark note.
 - **Sets we do not host stay reachable online through the existing Iconify API layer**, only when the person asks for them, never for a hosted set, and only if their licence passes the same allowlist. Hosted sets never touch the API, which is what ends the 429s.
 - **Build step `scripts/build-icons.mjs`**, run by `npm run build` after `vite build`. Per-set index, 96-icon or 64 KiB shards, a manifest, a pin file, all gzip-9 and content-hashed, into `dist/icons/`, plus `LICENSES.txt`. Gzip only. Output is cached by `@iconify/json` version and build inputs, so an unchanged rebuild is a copy.
 - **Search is client side**, over a per-set name index. Previews are `data:` URLs built from shards. Cache Storage through the service worker keeps what was fetched; "Download for offline" fetches every shard of a set. No IndexedDB.
@@ -368,7 +368,7 @@ Manual, in the dev server and in a built image:
 - **Credit lines in exports and a "credits used on this board" list.**
 - **Brotli**, HTTP/2 on the relay, compressing the app's own script and stylesheet.
 - **Storing compressed shards in the cache** (4 to 6 times less stored space, a decompress per read).
-- **Search in a worker.** The scan is 17 to 28 ms for the curated list and 70 to 85 ms for all 210 sets.
+- **Search in a worker.** The scan is 17 to 28 ms for the curated list and 70 to 85 ms for all 210 sets (measured before the unmaintained sets were dropped).
 - **Synonyms and fuzzy matching.** Matching is on names, aliases and categories only.
 - **Alias transforms on the online path.** The Iconify fallback keeps ignoring them, as today.
 - **A size limit for a placed body.** `devicon:nano-wordmark` is 350 KB in every board that uses it; that already happens today.
@@ -406,12 +406,12 @@ Untouched: `src/app.ts`, `src/render.ts`, `src/geometry.ts`, `src/markup.ts`, `s
 ## As built
 
 - **Source.** `@iconify/json` (one package, exact-pinned), not 22 `@iconify-json/*` packages: the default build needs every set. The CI install downloads it in every job.
-- **Sets.** 210 sets, 355,218 icons (the plan counted 213 sets and 357,248 icons, including the three Font Awesome 6 sets). 16 sets are hidden and 15 fail the licence rule; both are skipped. `ICON_SETS=curated` is 19 sets, not 22, for the same reason.
+- **Sets.** 188 sets, 344,033 icons (the plan counted 213 sets and 357,248 icons). 16 sets are hidden, 15 fail the licence rule, and 22 more are unmaintained (besides the three Font Awesome 6 sets); all are skipped. `ICON_SETS=curated` is 19 sets, not 22, for the same reason.
 - **Manifest.** Entries carry no `h` or `pal`: nothing reads them. They add `tm` for logo sets (category "Logos", and the `devicon` sets).
 - **Alias transforms.** 36 aliases in the built sets are flipped (`fa` 29, `fluent-emoji-flat` 6, `fluent-emoji-high-contrast` 1; no alias has a rotation or a size of its own). Each becomes an icon with a `<g transform>` around the parent's body. Rotation and own sizes are handled as well.
 - **Set-wide `left` and `top`.** One set (`jam`) has them. A shard carries them as `l` and `t` when they are not zero.
 - **Online sets.** The Iconify list is filtered by the licence rule and by `hidden`, and hosted sets are removed from it. With the default build that leaves the three Font Awesome 6 sets and anything Iconify adds after the build.
-- **Offline for "All icon sets".** The row offers the popular sets (13 MB), not all 210 (78 MB to send, about 310 MB to store). Any single set can be downloaded.
+- **Offline for "All icon sets".** The row is labelled "Popular icon sets (12)" and offers those sets (13 MB), not all 188 (78 MB to send, about 310 MB to store). Any single set can be downloaded.
 - **Search.** The first cross-set query loads the popular sets' indexes and shows results from them; the other indexes load in batches of 24 and the grid updates as they arrive. A query's results are capped at 8 per set for 48, scaling with the limit. "Show more" raises the limit by 48.
 - **Failures.** A failed hosted load uses the same messages and Retry as the online path. The offline message is unchanged: a set is available offline once downloaded or visited.
 - **Docker.** The daemon was not running when this was written, so no image was built. The final image is estimated from the parts: 64.0 MB base, 2.6 MB production modules, 0.7 MB app and 79.7 MB of icon files, about 147 MB compressed (about +80 MB).
