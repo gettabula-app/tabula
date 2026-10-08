@@ -12,9 +12,10 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
-import { USER_COLORS, STICKY_COLORS } from '../palette';
+import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
+import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 
 type IconName = keyof typeof ICONS;
@@ -176,7 +177,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const pb = penBtn();
     if (pb && app.tool.kind === 'pen') penTray.style.top = `${pb.getBoundingClientRect().top - 6}px`;
     penTray.replaceChildren(
-      ...['#18212B', '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': `Pen colour ${c}`, onclick: () => { app.penColor = c; renderPen(); } })),
+      ...[CANVAS_INK, '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': c === CANVAS_INK ? 'Pen colour ink' : `Pen colour ${c}`, onclick: () => { app.penColor = c; renderPen(); } })),
       h('hr'),
       ...[2, 4, 8].map((w) => h('button', { class: `icon-btn${app.penWidth === w ? ' on' : ''}`, 'aria-label': `Pen width ${w}`, onclick: () => { app.penWidth = w; renderPen(); } }, h('span', { class: 'pen-dot', style: `--s:${w + 2}px` }))),
     );
@@ -325,12 +326,31 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
     if (f) importInto(app, f);
   });
   const sel = app.selection.length ? app.selection : undefined;
+  const themeRows = THEMES.map((t) => {
+    const check = h('span', { class: 'theme-check' });
+    const row = h('button', { class: 'menu-item theme-item', role: 'menuitemradio', onclick: () => { setTheme(t.id); paintThemes(); } },
+      h('div', { class: 'theme-preview', 'aria-hidden': 'true', style: `--c:${t.vars['--canvas']};--t:${t.vars['--tray']};--a:${t.vars['--signal']}` }),
+      h('span', null, t.name),
+      check);
+    return { id: t.id, row, check };
+  });
+  const paintThemes = () => {
+    const current = getStoredTheme();
+    for (const r of themeRows) {
+      const on = r.id === current;
+      r.row.setAttribute('aria-checked', String(on));
+      r.check.replaceChildren(on ? icon('check', 16) : '');
+    }
+  };
+  paintThemes();
   const pop = popover(anchor, h('div', { class: 'menu' },
     h('div', { class: 'list-label' }, 'Board'),
     item('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),
     item('upload', 'Import a board file into this board', () => fileInput.click()),
     item('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
+    h('div', { class: 'list-label' }, 'Appearance'),
+    themeRows.map((r) => r.row),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
     item('download', 'PNG image', async () => {
       toast('Preparing image…');

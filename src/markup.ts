@@ -7,7 +7,7 @@ import { headMarkup, shapeDecor, shapePath, textBox } from './shapes';
 import { escapeXml, fitText, fontCss, measure, wrap } from './text';
 import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
-import { GRAPHITE, INK, PAPER, RULE, inkOn } from './palette';
+import { CANVAS_INK, INK, PAPER, inkOn } from './palette';
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -22,11 +22,11 @@ const n = (v: number) => Math.round(v * 100) / 100;
 export const DEFAULTS = {
   shape: { fill: '#FFFFFF', stroke: INK, strokeWidth: 2, textColor: INK, fontSize: 16, fontWeight: 500, align: 'center' as const, valign: 'middle' as const },
   sticky: { fill: '#FFE16B', stroke: 'none', strokeWidth: 0, textColor: '#1D1A12', fontSize: 20, fontWeight: 500, align: 'center' as const, valign: 'middle' as const },
-  text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
-  frame: { fill: '#FFFFFF', stroke: RULE, strokeWidth: 1, textColor: GRAPHITE, fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
+  text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
+  frame: { fill: '#FFFFFF', stroke: 'var(--canvas-rule, #C9D1DA)', strokeWidth: 1, textColor: 'var(--graphite, #5B6672)', fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
   uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
-  path: { fill: 'none', stroke: INK, strokeWidth: 3, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
-  icon: { fill: 'none', stroke: INK, strokeWidth: 0, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
+  path: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 3, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
+  icon: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
 };
 
 export function defaultsFor(o: Obj) {
@@ -248,7 +248,7 @@ function pathMarkup(o: BaseObj) {
 function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
   const g = connectorGeom(ctx.get, c);
   if (!g) return '';
-  const color = c.stroke ?? INK;
+  const color = c.stroke ?? CANVAS_INK;
   const sw = c.strokeWidth ?? 2;
   const sh = headMarkup(c.startHead, g.start, g.startDir, color, sw);
   const eh = headMarkup(c.endHead, g.end, g.endDir, color, sw);
@@ -274,7 +274,7 @@ function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
     const w = Math.max(...lines.map((l) => measure(l, font))) + 12;
     const h = lines.length * 17 + 6;
     out += `<rect x="${n(g.mid.x - w / 2)}" y="${n(g.mid.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="4" fill="${PAPER}"/>`;
-    out += `<text font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" font-weight="500" fill="${escapeXml(color === 'none' ? INK : color)}" text-anchor="middle">` +
+    out += `<text font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" font-weight="500" fill="${escapeXml(color === 'none' || color === CANVAS_INK ? INK : color)}" text-anchor="middle">` +
       lines.map((l, i) => `<tspan x="${n(g.mid.x)}" y="${n(g.mid.y - h / 2 + 3 + 17 * i + 13)}">${escapeXml(l)}</tspan>`).join('') + '</text>';
   }
   const op = c.opacity !== undefined && c.opacity < 1 ? ` opacity="${c.opacity}"` : '';

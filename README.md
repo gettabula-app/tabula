@@ -48,6 +48,8 @@ The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boar
 | ![Shapes panel with Basic, Arrows, Callouts and Flowchart groups](docs/images/shapes-panel.png) | ![Quick-action bar above a selected ellipse](docs/images/quick-actions.png) |
 | **Text options** | **Locked item** |
 | ![Text popover with horizontal and vertical alignment](docs/images/text-options.png) | ![Lock badge shown when hovering a locked item](docs/images/locked-badge.png) |
+| **Themes (Matrix, with the picker)** | **Ayu** |
+| ![Board menu with the theme picker, Matrix theme active](docs/images/themes-menu-matrix.png) | ![Ayu theme on a board](docs/images/theme-ayu.png) |
 
 ## What works today
 
@@ -58,6 +60,7 @@ The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boar
 | Infinite canvas | Pan (space/middle-drag/trackpad/hand), zoom 2%–3200% around the pointer, pinch zoom, fit (Shift+1/2/0), minimap, viewport culling |
 | Grid | Dots, lines (with major lines), isometric, none; adaptive density; snap to grid, alignment guides to nearby objects, Alt to bypass |
 | Geometry | 31 shapes in four groups (Basic, Arrows, Callouts, Flowchart), picked from one **Shapes** button on the left toolbar that opens a searchable shapes-only panel (click a shape to draw it, or drag it onto the board); sticky notes (own toolbar button) with a folded corner (8 colours plus any custom colour, auto-shrinking text, ink switches to white on dark notes); text (in shapes and sticky notes: aligned left/centre/right and top/middle/bottom, and it stays where it will render while you type), frames (nested, carry their contents), freehand pen; resize, rotate (Shift snaps 15°), align, distribute, z-order, lock (locked items are click-through background; press and hold 0.6 s to unlock; hovering shows a lock badge), duplicate, copy/paste (also plain text → stickies); click an item for a quick-action bar above it (colour, shape, text, align, lock, duplicate, delete); More opens the full properties panel |
+| Themes | Default, Ayu, Kanagawa, Matrix and Evergreen, chosen under Appearance in the board menu; the whole app (canvas, grid, toolbars, and the default colour of text, drawings, icons and connectors) follows the theme; the choice is remembered on this device; exports always use the light colours on white |
 | Sticky colours | Pick a colour before placing (tray beside the toolbar while the sticky tool is on), recolour selected notes, or choose any colour with “+”; custom colours are saved to the board (up to 12) and shared with everyone; your last colour is remembered on your device |
 | Connectors | Bound or free ends, straight/elbow/curved routing, 10 arrowheads incl. UML and crow's foot, labels, reverse; drag from a shape's blue dots, or click a dot to add a connected copy; deleting a shape keeps its lines; connectors meet a shape's visible outline, including triangles, stars, arrows and callouts |
 | UML | Class/interface/abstract/enum (edited as text: name, `--`, members), actor, use case, lifeline, state, initial/final, package, component, note; 13 relationship presets; Mermaid import (flowchart, classDiagram, stateDiagram-v2, sequenceDiagram) with auto-layout; copy selection as Mermaid |
