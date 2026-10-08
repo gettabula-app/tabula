@@ -208,6 +208,34 @@ export function onCommentNotice(provider: HintTarget, callback: (undone: string[
   };
 }
 
+/**
+ * Board rooms (docs/ai.md, "Live runs"): the relay tells every socket about the board's AI runs, as JSON
+ * { kind: 'snapshot', runs } when it joins while runs are open, then { kind: 'patch', run } per change. Like the notices
+ * above, the handler writes nothing back and a malformed message is ignored. The runs themselves are checked by their reader.
+ */
+export const MSG_AI_RUNS = 6;
+
+export type AiRunsMessage = { kind: 'snapshot'; runs: unknown[] } | { kind: 'patch'; run: unknown };
+
+export function onAiRuns(provider: HintTarget, callback: (message: AiRunsMessage) => void): void {
+  provider.messageHandlers[MSG_AI_RUNS] = (_encoder, decoder) => {
+    let message: AiRunsMessage;
+    try {
+      const data = JSON.parse(decoding.readVarString(decoder)) as { kind?: unknown; runs?: unknown; run?: unknown } | null;
+      if (data?.kind === 'snapshot' && Array.isArray(data.runs)) message = { kind: 'snapshot', runs: data.runs };
+      else if (data?.kind === 'patch' && typeof data.run === 'object' && data.run !== null) message = { kind: 'patch', run: data.run };
+      else return;
+    } catch {
+      return;
+    }
+    try {
+      callback(message);
+    } catch {
+      /* a failing listener must not break the socket */
+    }
+  };
+}
+
 /** The part of a room provider that a resync restarts. */
 type Resyncable = { disconnect: () => void; connect: () => void };
 
@@ -248,6 +276,8 @@ export interface BoardConn {
   onWorkspaceHint: (fn: () => void) => () => void;
   /** The relay undid changes this person made in the comments (accounts mode); `undone` lists the kinds. */
   onCommentNotice: (fn: (undone: string[]) => void) => () => void;
+  /** The relay sent the board's live AI runs (a snapshot on joining, then a patch per change). */
+  onAiRuns: (fn: (message: AiRunsMessage) => void) => () => void;
   /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
   resync: () => void;
   destroy: () => void;
@@ -270,6 +300,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const deniedListeners = new Set<(r: DeniedReason) => void>();
   const hintListeners = new Set<() => void>();
   const noticeListeners = new Set<(undone: string[]) => void>();
+  const aiRunListeners = new Set<(message: AiRunsMessage) => void>();
   const conn: BoardConn = {
     id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
@@ -288,6 +319,10 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     onCommentNotice: (fn) => {
       noticeListeners.add(fn);
       return () => noticeListeners.delete(fn);
+    },
+    onAiRuns: (fn) => {
+      aiRunListeners.add(fn);
+      return () => aiRunListeners.delete(fn);
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
@@ -326,6 +361,8 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     });
     provider.on('connection-close', onClose);
     onWorkspaceHint(provider, hinted);
+    // registered even with no listener yet, so an app that does not draw runs does not log every message as unknown
+    onAiRuns(provider, (message) => aiRunListeners.forEach((l) => l(message)));
     commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
@@ -367,6 +404,7 @@ export function scratchBoard(id: string, user: User): BoardConn {
     onDenied: () => () => undefined,
     onWorkspaceHint: () => () => undefined,
     onCommentNotice: () => () => undefined,
+    onAiRuns: () => () => undefined,
     resync: () => undefined,
     destroy: () => {
       awareness.destroy();

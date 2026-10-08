@@ -126,9 +126,9 @@ describe('live AI runs through the relay', () => {
     expect([a.runs, b.runs]).toEqual([[], []]);
 
     provider.state.hold = true;
-    const running = post('/api/ai/run', { feature: 'generate', boardId: 'board1', input: { prompt: 'CANARY-prompt' } });
+    const running = post('/api/ai/run', { feature: 'generate', boardId: 'board1', input: { prompt: 'CANARY-prompt', selection: ['s1'] }, presence: { name: 'Sam', color: '#1E9A6A' } });
     await until(() => a.runs.length >= 1 && b.runs.length >= 1);
-    expect(a.runs[0]).toMatchObject({ kind: 'patch', run: { feature: 'generate', status: 'running', by: { id: null, name: null } } });
+    expect(a.runs[0]).toMatchObject({ kind: 'patch', run: { feature: 'generate', status: 'running', by: { id: null, name: 'Sam', color: '#1E9A6A' }, target: { ids: ['s1'] } } });
     const id = a.runs[0].run.id;
 
     // a socket that joins while the run is going is told about it

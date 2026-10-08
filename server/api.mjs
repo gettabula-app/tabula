@@ -1017,7 +1017,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       if (err instanceof HttpError) {
         if (err.allow) res.setHeader('allow', err.allow);
         if (err.status === 413) res.setHeader('connection', 'close');
-        send(res, err.status, { error: err.code, message: err.message });
+        send(res, err.status, { error: err.code, message: err.message, ...err.extra });
       } else {
         console.error('api: unexpected error:', describeError(err));
         send(res, 500, { error: 'internal', message: 'Something went wrong' });

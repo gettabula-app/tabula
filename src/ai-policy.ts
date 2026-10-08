@@ -11,7 +11,8 @@ export const RUNNER_FIRST_MS = 30_000;
 const ROLES = new Set(['owner', 'editor', 'commenter', 'viewer']);
 const EDIT_ROLES = new Set(['owner', 'editor']);
 
-export const canSeeRun = (role: string | null): boolean => role !== null && ROLES.has(role);
+export const canSeeRun = (viewer: { role: string | null; userId: string | null }, run?: { private?: boolean; by: { id: string | null } }): boolean =>
+  viewer.role !== null && ROLES.has(viewer.role) && (!run?.private || (viewer.userId !== null && viewer.userId === run.by.id));
 
 export interface PolicyViewer {
   role: string | null;

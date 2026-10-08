@@ -8,6 +8,7 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { createApi } from '../server/api.mjs';
 import { createKeyRing } from '../server/ai/keys.mjs';
+import { createLiveRuns } from '../server/ai/live.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
@@ -119,6 +120,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
       },
     };
   };
+  const live = createLiveRuns({ now: () => state.t });
   const cloud = { limits: () => ({ readOnly: state.readOnly, seatLimit: null, banner: null }), workspaceView: () => ({}), seatsAvailable: () => true, tokenOk: () => false };
 
   const api = createApi({
@@ -138,6 +140,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
         return fn(docOf(name));
       },
       now: () => state.t,
+      live,
       timeoutMs: options.timeoutMs,
     },
   });
@@ -209,7 +212,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
       (a) => a.action.startsWith('ai.') && !['ai.settings', 'ai.key.set', 'ai.key.delete'].includes(a.action),
     );
 
-  return { dir, config, directory, ring, state, calls, made, logged, docs, docOf, reads, person, board, share, enable, run, call, audits, base };
+  return { dir, config, directory, ring, live, state, calls, made, logged, docs, docOf, reads, person, board, share, enable, run, call, audits, base };
 }
 
 export type World = Awaited<ReturnType<typeof setup>>;

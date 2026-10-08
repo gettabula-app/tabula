@@ -15,7 +15,7 @@ function world() {
   return { clock, live, changes };
 }
 
-const ana = { id: 'u-ana', name: 'Ana' };
+const ana = { id: 'u-ana', name: 'Ana', color: '#D64545' };
 const editor = { role: 'editor', userId: 'u-ben' };
 const proposal = { kind: 'create', objects: [{ text: 'A risk' }] };
 
@@ -123,12 +123,13 @@ describe('boards', () => {
 describe('what each person is sent', () => {
   it('shows a ready run to everyone who can open the board, viewers too, with the proposal', () => {
     const { live } = world();
-    const id = live.start('b1', { by: ana, feature: 'generate', prompt: 'risks' });
+    const target = { ids: ['s1', 's2'] };
+    const id = live.start('b1', { by: ana, feature: 'generate', prompt: 'risks', target });
     live.ready(id, { proposal });
     for (const role of ['owner', 'editor', 'commenter', 'viewer']) {
       expect(live.snapshotFor('b1', { role, userId: 'u-x' })).toEqual({
         kind: 'snapshot',
-        runs: [{ id, feature: 'generate', status: 'ready', by: ana, startedAt: 1_000_000, readyAt: 1_000_000, proposal, cut: false }],
+        runs: [{ id, feature: 'generate', status: 'ready', by: ana, startedAt: 1_000_000, target, readyAt: 1_000_000, proposal, cut: false }],
       });
     }
   });
@@ -162,10 +163,24 @@ describe('what each person is sent', () => {
     });
   });
 
-  it('an open-mode runner has neither id nor name', () => {
+  it('an open-mode runner has no id', () => {
     const { live } = world();
-    const id = live.start('b1', { by: { id: null, name: null }, feature: 'generate' });
-    expect(live.patchFor(live.get(id), { role: 'owner', userId: null })!.run.by).toEqual({ id: null, name: null });
+    const id = live.start('b1', { by: { id: null, name: 'Sam', color: '#1E9A6A' }, feature: 'generate' });
+    expect(live.patchFor(live.get(id), { role: 'owner', userId: null })!.run.by).toEqual({ id: null, name: 'Sam', color: '#1E9A6A' });
+  });
+
+  it('sends a private run to its runner only, in every message, settled too', () => {
+    const { live } = world();
+    const id = live.start('b1', { by: ana, feature: 'generate', private: true });
+    const mine = { role: 'editor', userId: ana.id };
+    const others = [editor, { role: 'owner', userId: 'u-admin' }, { role: 'viewer', userId: 'u-cy' }, { role: 'owner', userId: null }];
+    expect(live.patchFor(live.get(id), mine)!.run).toMatchObject({ id, private: true });
+    for (const v of others) expect(live.patchFor(live.get(id), v)).toBeNull();
+    live.ready(id, { proposal });
+    expect(live.snapshotFor('b1', mine)!.runs).toHaveLength(1);
+    for (const v of others) expect(live.snapshotFor('b1', v)).toEqual({ kind: 'snapshot', runs: [] });
+    live.resolve(id, 'discard', ana);
+    for (const v of others) expect(live.patchFor(live.get(id), v)).toBeNull();
   });
 });
 
@@ -199,7 +214,10 @@ describe('policy', () => {
     expect(app.RESOLVE_POLICY).toBe(server.RESOLVE_POLICY);
     expect(app.RUNNER_FIRST_MS).toBe(server.RUNNER_FIRST_MS);
     const roles = ['owner', 'editor', 'commenter', 'viewer', 'stranger', null];
-    for (const role of roles) expect(app.canSeeRun(role)).toBe(server.canSeeRun(role));
+    for (const role of roles)
+      for (const userId of ['u-ana', 'u-ben', null])
+        for (const run of [undefined, { by: { id: 'u-ana' } }, { private: true, by: { id: 'u-ana' } }, { private: true, by: { id: null } }])
+          expect(app.canSeeRun({ role, userId }, run)).toBe(server.canSeeRun({ role, userId }, run));
     for (const visibility of ['everyone', 'runner', 'none'] as const) expect(app.showsPrompt(visibility)).toBe(server.showsPrompt(visibility));
     for (const role of roles)
       for (const canEdit of [true, false])
