@@ -9,6 +9,7 @@ import {
   rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
+import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { STICKY_COLORS, normalizeHex, parseHex } from './palette';
 
@@ -824,7 +825,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'frame': return { w: 960, h: 600 };
-      case 'shape': return t.shape === 'ellipse' || t.shape === 'diamond' || t.shape === 'star' ? { w: 144, h: 144 } : { w: 192, h: 96 };
+      case 'shape': return shapeDefaultSize(t.shape);
       case 'uml': return { w: t.def.w, h: t.def.h };
       default: return { w: 160, h: 100 };
     }

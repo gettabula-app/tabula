@@ -1,14 +1,13 @@
 import type { BoardApp } from '../app';
-import type { BaseObj, ConnectorObj, End, Point, UmlRelation } from '../types';
+import type { BaseObj, ConnectorObj, End, Point, ShapeKind, UmlRelation } from '../types';
 import { h, icon } from './dom';
 import { dialog, toast } from './common';
-import { SHAPE_KINDS, shapePath } from '../shapes';
+import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
 import { TEMPLATES, insertTemplate } from '../templates';
 import { POPULAR_SETS, iconData, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
-import { normalizeHex } from '../palette';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'templates';
 
@@ -26,7 +25,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     listeners.forEach((l) => l(tab));
     if (!tab) return drawer.replaceChildren();
     const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', templates: 'Templates' }[tab];
-    const body = tab === 'shapes' ? shapesTab(app) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app) : templatesTab(app, () => open(null));
+    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app) : templatesTab(app, () => open(null));
     drawer.replaceChildren(
       h('div', { class: 'drawer-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
@@ -53,8 +52,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
 }
 
 type DropItem =
-  | { kind: 'shape'; shape: (typeof SHAPE_KINDS)[number]['kind'] }
-  | { kind: 'sticky'; fill: string }
+  | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'uml'; index: number }
   | { kind: 'icon'; name: string };
 
@@ -62,12 +60,8 @@ async function dropItem(app: BoardApp, item: DropItem, p?: Point) {
   const place = (type: BaseObj['type'], w: number, hh: number, extra: Partial<BaseObj>) =>
     p ? app.placeAt(type, p, w, hh, extra) : app.placeAtCenter(type, w, hh, extra);
   if (item.kind === 'shape') {
-    const sq = item.shape === 'ellipse' || item.shape === 'diamond' || item.shape === 'star' || item.shape === 'octagon';
-    place('shape', sq ? 144 : 192, sq ? 144 : 96, { kind: item.shape });
-  } else if (item.kind === 'sticky') {
-    app.stickyColor = item.fill;
-    const o = place('sticky', 192, 192, { fill: item.fill });
-    app.editor.start(o.id);
+    const sz = defaultSize(item.shape);
+    place('shape', sz.w, sz.h, { kind: item.shape });
   } else if (item.kind === 'uml') {
     const def = UML_ELEMENTS[item.index];
     const extra = structuredClone(def.defaults || {}) as Partial<BaseObj>;
@@ -96,41 +90,32 @@ function draggable(el: HTMLElement, item: DropItem) {
   return el;
 }
 
-function shapesTab(app: BoardApp) {
-  const tile = (kind: (typeof SHAPE_KINDS)[number]) => {
-    const w = 44, hh = kind.kind === 'ellipse' || kind.kind === 'diamond' || kind.kind === 'star' || kind.kind === 'octagon' ? 36 : 28;
+function shapesTab(app: BoardApp, close: () => void) {
+  const input = h('input', { type: 'search', class: 'input shape-search', placeholder: 'Search shapes', 'aria-label': 'Search shapes', autocomplete: 'off' });
+  const results = h('div', null);
+  const tile = (kind: ShapeKind, label: string) => {
+    const active = app.tool.kind === 'shape' && app.tool.shape === kind;
     const b = h('button', {
-      class: 'tile', title: `${kind.label}. Click to draw, or drag onto the board.`, 'aria-label': kind.label,
-      onclick: () => app.setTool({ kind: 'shape', shape: kind.kind }),
-      html: `<svg width="52" height="40" viewBox="-4 -4 ${w + 8} ${hh + 8}" style="overflow:visible"><g transform="translate(0 ${(36 - hh) / 2})"><path d="${shapePath(kind.kind, w, hh)}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></g></svg><span>${kind.label}</span>`,
+      class: `tile${active ? ' on' : ''}`, title: `${label}. Click to draw, or drag onto the board.`, 'aria-label': label,
+      onclick: () => { app.setTool({ kind: 'shape', shape: kind }); close(); },
+      html: `${shapePreviewSvg(kind)}<span>${label}</span>`,
     });
-    return draggable(b, { kind: 'shape', shape: kind.kind });
+    return draggable(b, { kind: 'shape', shape: kind });
   };
-  const stickyChip = (name: string, fill: string) =>
-    draggable(h('button', { class: 'sticky-chip', style: `--c:${fill}`, title: `${name} sticky note. Click to draw, or drag onto the board.`, 'aria-label': `${name} sticky note`, onclick: () => { app.stickyColor = fill; app.setTool({ kind: 'sticky' }); } }), { kind: 'sticky', fill });
-  const pickInput = h('input', { type: 'color', value: app.stickyColor, 'aria-label': 'Sticky note in any colour', tabindex: '-1' });
-  pickInput.addEventListener('change', () => {
-    const c = normalizeHex(pickInput.value);
-    app.addStickyColor(c);
-    app.stickyColor = c;
-    app.setTool({ kind: 'sticky' });
-  });
-  const pickChip = h('label', { class: 'sticky-chip add', title: 'Sticky note in any colour', role: 'button', tabindex: '0', 'aria-label': 'Sticky note in any colour' }, icon('plus', 16), pickInput);
-  pickChip.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      pickInput.click();
-    }
-  });
-  const stickies = h('div', { class: 'sticky-row' },
-    ...app.stickyPalette().map((c) => stickyChip(c.name, c.value)),
-    pickChip);
+  const render = () => {
+    const query = input.value.trim();
+    const q = query.toLowerCase();
+    const groups = SHAPE_GROUPS.flatMap(([group, label]) => {
+      const kinds = SHAPE_KINDS.filter((k) => k.group === group && (k.label.toLowerCase().includes(q) || k.kind.includes(q)));
+      return kinds.length ? [h('div', { class: 'list-label' }, label), h('div', { class: 'tiles' }, ...kinds.map((k) => tile(k.kind, k.label)))] : [];
+    });
+    results.replaceChildren(...(groups.length ? groups : [h('div', { class: 'empty' }, `No shapes match “${query}”.`)]));
+  };
+  input.addEventListener('input', render);
+  render();
   return h('div', { class: 'drawer-body' },
-    h('div', { class: 'list-label' }, 'Sticky notes'), stickies,
-    h('div', { class: 'list-label' }, 'Basic'),
-    h('div', { class: 'tiles' }, ...SHAPE_KINDS.filter((k) => k.group === 'basic').map(tile)),
-    h('div', { class: 'list-label' }, 'Flowchart'),
-    h('div', { class: 'tiles' }, ...SHAPE_KINDS.filter((k) => k.group === 'flow').map(tile)),
+    input,
+    results,
     h('p', { class: 'muted small hint' }, 'Hover a shape on the board and drag from a blue dot to connect it. Click a dot to add a connected copy.'),
   );
 }

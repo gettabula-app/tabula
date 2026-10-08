@@ -118,7 +118,11 @@ hr { border: 0; }
 .input:focus { border-color: var(--signal); }
 textarea.input { height: auto; padding: 8px 10px; line-height: 1.5; }
 textarea.code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-select.input { padding-right: 4px; }
+select.input {
+  appearance: none; -webkit-appearance: none; padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23E9EDF2' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 16px;
+}
 .range { width: 100%; accent-color: var(--signal); }
 
 .top-left { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px); }
@@ -165,21 +169,21 @@ select.input { padding-right: 4px; }
 .sticky-swatches { gap: 6px; }
 .swatch.sticky-swatch { display: grid; place-items: center; border-radius: 4px; background: transparent; box-shadow: none; }
 .swatch.sticky-swatch.on { box-shadow: 0 0 0 2px var(--signal); }
-.sticky-swatch .note, .sticky-chip {
+.sticky-swatch .note {
   position: relative; display: block; background: var(--c);
   clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
 }
 .sticky-swatch .note { width: 20px; height: 20px; }
 .sticky-swatches.lg .swatch { width: 28px; height: 28px; }
 .sticky-swatches.lg .note { width: 26px; height: 26px; }
-.sticky-swatch .note::after, .sticky-chip::after {
+.sticky-swatch .note::after {
   content: ''; position: absolute; right: 0; bottom: 0; width: 28%; height: 28%;
   background: linear-gradient(315deg, transparent 50%, color-mix(in srgb, var(--c) 60%, #fff) 50%);
 }
 .swatch.add { position: relative; display: grid; place-items: center; border-radius: 4px; background: var(--c, transparent); box-shadow: inset 0 0 0 1.5px rgba(233, 237, 242, 0.35); color: var(--tray-muted); cursor: pointer; }
 .swatch.add:hover { color: var(--tray-text); box-shadow: inset 0 0 0 1.5px var(--tray-text); }
 .swatch.add.on { color: transparent; box-shadow: 0 0 0 2px var(--signal); }
-.swatch.add input, .sticky-chip.add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.swatch.add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .sticky-swatches.lg .swatch.add { width: 28px; height: 28px; }
 .pen-dot { display: block; width: var(--s); height: var(--s); border-radius: 50%; background: currentColor; }
 
@@ -200,18 +204,11 @@ select.input { padding-right: 4px; }
   background: rgba(233, 237, 242, 0.04); color: var(--tray-text); font-size: 11.5px; line-height: 1.2; text-align: center;
 }
 .tile:hover { background: var(--tray-hover); border-color: var(--tray-line); }
-.tile svg { color: var(--tray-text); }
+.tile.on { background: var(--tray-hover); border-color: var(--signal); }
+.tile svg { color: var(--tray-text); display: block; flex: none; }
 .tile.uml svg { background: #fff; border-radius: 6px; }
 .uml-tiles { grid-template-columns: repeat(3, 1fr); }
-.sticky-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-.sticky-chip { aspect-ratio: 1; border: 0; padding: 0; cursor: pointer; }
-.sticky-chip:hover { transform: translateY(-1px); }
-.sticky-chip.add {
-  clip-path: none; display: grid; place-items: center; border-radius: 4px; background: transparent;
-  box-shadow: inset 0 0 0 1.5px rgba(233, 237, 242, 0.35); color: var(--tray-muted);
-}
-.sticky-chip.add::after { display: none; }
-.sticky-chip.add:hover { color: var(--tray-text); box-shadow: inset 0 0 0 1.5px var(--tray-text); }
+.shape-search { margin-bottom: 4px; }
 .rels { display: flex; flex-direction: column; gap: 2px; }
 .rel-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tray-text); text-align: left; font-size: 13px; }
 .rel-row:hover { background: var(--tray-hover); }
