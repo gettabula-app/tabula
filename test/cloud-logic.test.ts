@@ -64,7 +64,7 @@ describe('boardAccess', () => {
   it.each<[BoardRole | null | undefined, boolean, boolean, boolean, string | null]>([
     ['owner', false, false, false, null],
     ['editor', false, false, false, null],
-    ['commenter', false, true, false, 'View only'],
+    ['commenter', false, true, false, 'Can comment'],
     ['viewer', false, true, true, 'View only'],
     [null, false, false, false, null],
     [undefined, false, false, false, null],
@@ -82,7 +82,7 @@ describe('boardAccess', () => {
     expect(boardAccess('owner', null, true)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: DELETED_BADGE });
     expect(boardAccess(undefined, workspace({ readOnly: true }), true).badge).toBe(DELETED_BADGE);
     expect(boardAccess('viewer', undefined)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });
-    expect(boardAccess('commenter', null)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: 'View only' });
+    expect(boardAccess('commenter', null)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: 'Can comment' });
   });
 
   it('lets a viewer stay a viewer once the workspace is writable again', () => {

@@ -8,7 +8,7 @@ import { h, icon } from './dom';
 import { tokensAdminPanel } from './tokens';
 import {
   activeOwnerCount, auditActor, auditSentence, countLabel, deviceLabel, disableVerdict, focusTarget, isKnownAuditAction, matchesQuery, overviewTiles, removeVerdict,
-  revokeVerdict, roleLock, roleOptions, roleVerdict, type Actor, type Lookup,
+  revokeVerdict, roleLock, roleOptions, roleVerdict, visibleAdminTabs, type Actor, type Lookup,
 } from './admin-logic';
 
 const TAB_LABELS: Record<AdminTab, string> = {
@@ -647,8 +647,10 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
 };
 
 /** The admin dashboard. The caller has checked that `me` is an owner or admin. */
-export function renderAdmin(root: HTMLElement, tab: AdminTab, me: Me): void {
+export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): void {
   document.title = 'Admin - Tabula';
+  const tabs = visibleAdminTabs(ADMIN_TABS, me.mcp);
+  const tab = tabs.includes(requested) ? requested : 'overview';
   clearTimeout(statusTimer);
   statusLine = h('p', { class: 'admin-status', role: 'status', 'aria-live': 'polite' });
   root.replaceChildren(h('main', { class: 'admin' },
@@ -659,13 +661,13 @@ export function renderAdmin(root: HTMLElement, tab: AdminTab, me: Me): void {
       h('span', { class: 'muted small admin-me' }, me.user.name || me.user.email)),
     h('div', { class: 'admin-body' },
       h('nav', { class: 'admin-tabs', 'aria-label': 'Admin sections' },
-        ADMIN_TABS.map((t, i) => h('a', {
+        tabs.map((t, i) => h('a', {
           class: t === tab ? 'admin-tab on' : 'admin-tab',
           href: `#/admin/${t}`,
           'aria-current': t === tab ? 'page' : undefined,
         }, h('span', { class: 'admin-tab-num', 'aria-hidden': 'true' }, pad2(i + 1)), TAB_LABELS[t]))),
       h('section', { class: 'admin-panel', 'aria-label': TAB_LABELS[tab] },
-        h('p', { class: 'admin-kicker', 'aria-hidden': 'true' }, `${pad2(ADMIN_TABS.indexOf(tab) + 1)} / ${pad2(ADMIN_TABS.length)}`),
+        h('p', { class: 'admin-kicker', 'aria-hidden': 'true' }, `${pad2(tabs.indexOf(tab) + 1)} / ${pad2(tabs.length)}`),
         h('h2', { class: 'admin-heading' }, TAB_LABELS[tab]),
         PANELS[tab](me)))));
 }

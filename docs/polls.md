@@ -2,7 +2,7 @@
 
 A facilitated question with a fixed list of answers. A poll is a session step, so it reuses the session bar, the timer and the reveal from dot voting. It works offline and syncs like the rest of the board. A **quick poll** button starts one with no template, as the dot vote button does.
 
-Status: spec for review. Nothing is built yet.
+Status: built. The user guide's Polls page (`docs/guide/polls.md`) describes it as shipped; this page keeps the spec and its reasoning.
 
 ## Summary
 
