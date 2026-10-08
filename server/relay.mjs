@@ -62,9 +62,10 @@ function parseRoom(name) {
 }
 
 // Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
-// while a hosted workspace is read-only.
-function canWriteRoom(role, kind) {
-  if (cloud?.limits().readOnly) return false;
+// while a hosted workspace is read-only, or to a deleted board (workspace admins may still open one, to look before
+// restoring it).
+function canWriteRoom(role, kind, deleted = false) {
+  if (deleted || cloud?.limits().readOnly) return false;
   if (kind === 'board') return role === 'owner' || role === 'editor';
   if (kind === 'comments') return role === 'owner' || role === 'editor' || role === 'commenter';
   return false;
@@ -361,7 +362,7 @@ function authorise(req, board) {
   if (!row || (row.deletedAt != null && !isWorkspaceAdmin(session.user))) return { code: CLOSE_NOT_FOUND, reason: 'board_not_found' };
   const role = directory.boardRole(board, session.user.id);
   if (role === null) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
-  return { session, role };
+  return { session, role, deleted: row.deletedAt != null };
 }
 
 function deny(ws, code, reason) {
@@ -388,7 +389,8 @@ function refresh(ws, force) {
       ws.sessionExpiresAt = session.expiresAt;
     }
     ws.role = role;
-    ws.canWrite = canWriteRoom(role, ws.roomKind);
+    ws.deleted = directory.getBoard(ws.boardId)?.deletedAt != null;
+    ws.canWrite = canWriteRoom(role, ws.roomKind, ws.deleted);
   } catch (err) {
     log(`room ${ws.roomName}: could not resolve a role`, err?.message);
     deny(ws, 1011, 'internal_error');
@@ -476,7 +478,8 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomName = name;
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
-    ws.canWrite = canWriteRoom(verdict.role, parsed.kind);
+    ws.deleted = verdict.deleted;
+    ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;

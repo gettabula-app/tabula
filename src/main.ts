@@ -108,6 +108,21 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
   return list.find((b) => b.id === id)?.role;
 }
 
+/**
+ * Whether a board missing from the person's list is a deleted one. Only workspace admins can open those, and only
+ * while online; the relay refuses their writes either way, so the board opens read-only instead of silently
+ * dropping edits.
+ */
+async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['role'] | undefined): Promise<boolean> {
+  if (role !== undefined || auth.mode !== 'signed-in') return false;
+  if (auth.me.user.role !== 'owner' && auth.me.user.role !== 'admin') return false;
+  try {
+    return (await api.adminBoard(id)).deletedAt !== null;
+  } catch {
+    return false;
+  }
+}
+
 async function route() {
   const seq = ++routeSeq;
   releaseBanner?.();
@@ -158,13 +173,14 @@ async function route() {
   const me = accounts ? auth.me : null;
   const user = me ? { ...getUser(), name: me.user.name } : getUser();
   const [conn, role] = await Promise.all([openBoard(id, user), boardRole(id, auth)]);
+  const deleted = await isDeletedBoard(id, auth, role);
   if (seq !== routeSeq) {
     conn.destroy();
     return;
   }
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
   const applyAccess = () => {
-    const access = boardAccess(role, workspaceOf(authState()));
+    const access = boardAccess(role, workspaceOf(authState()), deleted);
     conn.store.setReadOnly(access.storeReadOnly);
     conn.comments.setReadOnly(access.commentsReadOnly);
   };
@@ -189,6 +205,7 @@ async function route() {
   root.replaceChildren();
   const app = new BoardApp(conn, user, root);
   app.role = role ?? null;
+  app.deleted = deleted;
   current = app;
   // Inspection handle for automated tests and debugging (?debug in the URL).
   if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;

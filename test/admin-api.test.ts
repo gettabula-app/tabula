@@ -220,6 +220,7 @@ describe('admin API access', () => {
       ['GET', '/api/admin/boards'],
       ['POST', `/api/admin/boards/${board}/restore`],
       ['GET', '/api/admin/audit'],
+      ['GET', `/api/admin/boards/${board}`],
     ];
   });
 
@@ -582,6 +583,12 @@ describe('admin boards', () => {
     expect((await c.api(member.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
     expect(await within(c.rawSocket(board, member.cookie).closed)).toBe(4404);
     expect(((await c.api(member.cookie, 'GET', '/api/boards')).body as Body[]).map((b) => b.id)).not.toContain(board);
+    // an admin can still look a deleted board up, so the app can open it read-only
+    const one = await c.api(admin.cookie, 'GET', `/api/admin/boards/${board}`);
+    expect(one.status).toBe(200);
+    expect(keys(one.body)).toEqual(BOARD_KEYS);
+    expect(one.body).toMatchObject({ id: board, deletedAt: expect.any(Number) });
+    expect((await c.api(admin.cookie, 'GET', '/api/admin/boards/nobody')).status).toBe(404);
 
     const res = await c.api(admin.cookie, 'POST', `/api/admin/boards/${board}/restore`);
     expect(res.status).toBe(200);

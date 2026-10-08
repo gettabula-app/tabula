@@ -125,7 +125,7 @@ In accounts mode the relay decides **before it touches the room** (`getRoom()` m
 
 0. The `Origin` header must equal the origin of `TABULA_BASE_URL`; otherwise answer `403` and destroy the socket before upgrading (stops a page on another workspace's sibling subdomain from riding the cookie).
 1. Read the session cookie. No or invalid session: close with code `4401` (`unauthenticated`).
-2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`).
+2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`). Workspace admins may open a deleted board, but read-only: the relay drops their writes to both rooms until the board is restored, and the app opens it read-only with a **Deleted board** badge.
 3. No access: `4403` (never deletes anything on the client).
 4. Otherwise `getRoom()` and join. The connection remembers `userId`.
 
