@@ -128,7 +128,7 @@ Covers CRDT merging of concurrent and offline edits, undo scope, ordering, conne
 
 GitHub Actions (`.github/workflows/`):
 
-- **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the production build run on Linux, macOS and Windows with Node 22 and 24. The Docker image then builds with layer caching and is pushed to `ghcr.io/saldestechnology/mira` on pushes to `main` and on tags. Use the `CI passed` job as the single required check for branch protection.
+- **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the production build run on Linux, macOS and Windows with Node 22 and 24. The Docker image then builds with layer caching and is pushed to `ghcr.io/gettabula-app/tabula` on pushes to `main` and on tags. Use the `CI passed` job as the single required check for branch protection.
 - **CodeQL** scans the code on pushes, PRs and weekly. **Dependency review** blocks PRs that add dependencies with high-severity advisories.
 - A newer push to the same branch or PR cancels the run in progress, so a burst of commits only builds the last one. Docs-only pushes to `main` skip CI.
 - Dependabot opens grouped weekly updates for npm, Actions and the Docker base image.
