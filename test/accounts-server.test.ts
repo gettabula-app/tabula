@@ -701,6 +701,11 @@ describe('accounts mode server', () => {
       expect(viewer.status).toBe(201);
       expect(viewer.body).toMatchObject({ principalType: 'user', principalId: mate.user.id, role: 'viewer' });
       expect(await roleOn(mate.cookie, board)).toBe('viewer');
+      const commenter = await api(creator.cookie, 'POST', `/api/boards/${board}/shares`, { principalType: 'user', principalId: mate.user.id, role: 'commenter' });
+      expect(commenter.status).toBe(201);
+      expect(commenter.body).toMatchObject({ principalType: 'user', principalId: mate.user.id, role: 'commenter' });
+      expect(await roleOn(mate.cookie, board)).toBe('commenter');
+      expect(((await api(creator.cookie, 'GET', `/api/boards/${board}/shares`)).body as Body[]).map((s) => s.role)).toEqual(['commenter']);
       await api(creator.cookie, 'POST', `/api/boards/${board}/shares`, { principalType: 'user', principalId: mate.user.id, role: 'editor' });
       expect(await roleOn(mate.cookie, board)).toBe('editor');
 
@@ -714,12 +719,17 @@ describe('accounts mode server', () => {
       }
       for (const body of [
         { principalType: 'user', principalId: mate.user.id, role: 'owner' },
+        { principalType: 'user', principalId: mate.user.id, role: 'admin' },
+        { principalType: 'user', principalId: mate.user.id, role: 'Commenter' },
+        { principalType: 'user', principalId: mate.user.id, role: ['commenter'] },
+        { principalType: 'user', principalId: mate.user.id, role: '' },
         { principalType: 'group', principalId: mate.user.id, role: 'viewer' },
         { principalType: 'user', role: 'viewer' },
         { principalType: 'user', principalId: mate.user.id },
       ]) {
         expect((await api(creator.cookie, 'POST', `/api/boards/${board}/shares`, body)).status).toBe(400);
       }
+      expect(await roleOn(mate.cookie, board)).toBe('editor');
 
       // a workspace owner may share with anyone; the board creator then does not learn about it
       expect((await api(owner.cookie, 'POST', `/api/boards/${board}/shares`, { principalType: 'team', principalId: theirs.id, role: 'viewer' })).status).toBe(201);
@@ -734,6 +744,24 @@ describe('accounts mode server', () => {
       expect((await api(creator.cookie, 'DELETE', `/api/boards/${board}/shares/team/${theirs.id}`)).status).toBe(204);
       expect(await roleOn(stranger.cookie, board)).toBeNull();
       expect((await api(creator.cookie, 'DELETE', `/api/boards/${board}/shares/everyone/x`)).status).toBe(400);
+    });
+
+    it('gives a commenter no say over the board itself', async () => {
+      const team = await newTeam(owner.cookie);
+      const creator = await joinTeam(owner.cookie, team.id);
+      const commenter = await joinTeam(owner.cookie, team.id);
+      const board = await newBoard(creator.cookie);
+      const grant = { principalType: 'user', principalId: commenter.user.id, role: 'commenter' };
+      expect((await api(creator.cookie, 'POST', `/api/boards/${board}/shares`, grant)).status).toBe(201);
+
+      const listed = ((await api(commenter.cookie, 'GET', '/api/boards')).body as Body[]).find((b) => b.id === board);
+      expect(listed).toMatchObject({ role: 'commenter', ownerId: creator.user.id });
+      expect((await api(commenter.cookie, 'PATCH', `/api/boards/${board}`, { title: 'Hijack' })).status).toBe(403);
+      expect((await api(commenter.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(403);
+      expect((await api(commenter.cookie, 'GET', `/api/boards/${board}/shares`)).status).toBe(403);
+      expect((await api(commenter.cookie, 'POST', `/api/boards/${board}/shares`, { ...grant, role: 'editor' })).status).toBe(403);
+      expect((await api(commenter.cookie, 'DELETE', `/api/boards/${board}/shares/user/${commenter.user.id}`)).status).toBe(403);
+      expect(await roleOn(commenter.cookie, board)).toBe('commenter');
     });
   });
 

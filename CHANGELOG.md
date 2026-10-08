@@ -6,6 +6,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 
 ### Added
 - Comments data layer: each board has a sibling comments document (synced in its own room, persisted offline, included in .drift and JSON exports); the UI follows.
+- Board role `commenter`: can read the board and write its comments, but not edit it (server side; the comments feature itself follows).
 - Accounts and teams mode (opt-in with `MIRA_AUTH=on`): email sign-in links, workspace and team roles, per-board sharing, a server-side HTTP API for all of it, and a relay that checks access on every connection and makes viewers read-only. Open mode is unchanged. See `docs/accounts.md`.
 - Sign-in screens, team-based home screen, read-only viewer boards, access banners and an Account section in the board menu for accounts mode.
 - CI tests and builds on Node 26 as well as 22 and 24, matching the Docker image's Node 26 base.
