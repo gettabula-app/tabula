@@ -82,7 +82,6 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     if (lock) {
       const locked = sel.length > 0 && sel.every((o) => o.locked);
       lock.replaceChildren(icon(locked ? 'unlock' : 'lock', 18));
-      lock.title = locked ? 'Unlock' : 'Lock';
       lock.setAttribute('aria-label', locked ? 'Unlock' : 'Lock');
     }
     if (more) {
@@ -109,7 +108,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
   function swatch(label: string, current: () => string, content: () => HTMLElement) {
     const chip = h('span', { class: 'qb-chip' });
-    const b: HTMLButtonElement = h('button', { class: 'icon-btn qb-swatch', title: label, 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, chip);
+    const b: HTMLButtonElement = h('button', { class: 'icon-btn qb-swatch', 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, chip);
     const paint = () => {
       const v = current();
       b.style.setProperty('--c', v);
@@ -121,12 +120,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   }
 
   function menu(name: IconName, label: string, content: () => HTMLElement) {
-    const b: HTMLButtonElement = h('button', { class: 'icon-btn', title: label, 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
+    const b: HTMLButtonElement = h('button', { class: 'icon-btn', 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
     return b;
   }
 
-  function action(name: IconName, label: string, onClick: () => void, cls = '') {
-    return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, title: label, 'aria-label': label, onclick: onClick }, icon(name, 18));
+  function action(name: IconName, label: string, onClick: () => void, cls = '', key?: string) {
+    return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, 'aria-label': label, 'data-tip-key': key, onclick: onClick }, icon(name, 18));
   }
 
   function build() {
@@ -160,7 +159,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         return h('div', null, ...SHAPE_GROUPS.flatMap(([group, label]) => [
           h('div', { class: 'list-label' }, label),
           h('div', { class: 'qb-shapes' }, ...SHAPE_KINDS.filter((k) => k.group === group).map((k) => h('button', {
-            class: k.kind === cur ? 'on' : '', title: k.label, 'aria-label': k.label, html: shapePreviewSvg(k.kind, { w: 36, h: 28 }, 3),
+            class: k.kind === cur ? 'on' : '', 'data-tip': k.label, 'aria-label': k.label, html: shapePreviewSvg(k.kind, { w: 36, h: 28 }, 3),
             onclick: () => app.updateSelected({ kind: k.kind }, (o) => o.type === 'shape'),
           }))),
         ]));
@@ -224,12 +223,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([menu('stickers', 'React with a sticker', () => reactionPicker(app))]);
 
     lock = h('button', { class: 'icon-btn', onclick: () => app.toggleLock() });
-    more = h('button', { class: 'icon-btn', title: 'More properties', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));
+    more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));
     groups.push([
       lock,
-      action('dup', 'Duplicate (Ctrl/Cmd+D)', () => app.duplicate()),
+      action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection])),
-      action('trash', 'Delete (Del)', () => app.deleteSelection(), 'danger'),
+      action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ]);
     groups.push([more]);
 

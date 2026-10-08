@@ -107,7 +107,7 @@ export function swatches(colors: { name: string; value: string }[], current: str
   for (const c of colors) {
     const b = h('button', {
       class: `swatch${c.value === 'none' ? ' none' : ''}${current?.toLowerCase() === c.value.toLowerCase() ? ' on' : ''}`,
-      title: c.name, 'aria-label': c.name, role: 'radio', 'aria-checked': String(current?.toLowerCase() === c.value.toLowerCase()),
+      'data-tip': c.name, 'aria-label': c.name, role: 'radio', 'aria-checked': String(current?.toLowerCase() === c.value.toLowerCase()),
       style: c.value === 'none' ? undefined : `--c:${c.value}`,
       onclick: () => {
         for (const x of buttons) {
@@ -129,7 +129,7 @@ export function segmented<T extends string | number>(options: { value: T; label:
   for (const o of options) {
     const b = h('button', {
       class: o.value === current ? 'on' : '', role: 'radio', 'aria-checked': String(o.value === current),
-      title: o.label, 'aria-label': o.label,
+      'data-tip': o.icon ? o.label : undefined, 'aria-label': o.label,
       onclick: () => {
         for (const x of buttons) {
           x.classList.toggle('on', x === b);

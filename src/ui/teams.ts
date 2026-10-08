@@ -76,7 +76,7 @@ export function openTeamManager(team: Team, me: Me, onChange: () => void): void 
     ]);
   };
 
-  const removeButton = (m: TeamMember) => h('button', { class: 'icon-btn danger', title: 'Remove from team', 'aria-label': `Remove ${m.name}`, onclick: () => {
+  const removeButton = (m: TeamMember) => h('button', { class: 'icon-btn danger', 'data-tip': 'Remove from team', 'aria-label': `Remove ${m.name}`, onclick: () => {
     dialog(`Remove ${m.name}?`, h('p', null, `${m.name} loses access to this team’s boards. Boards shared with them directly stay shared.`), [
       { label: 'Cancel' },
       { label: 'Remove', primary: true, onClick: async () => {
@@ -295,7 +295,7 @@ export function openWorkspaceMembers(me: Me, onChange: () => void): void {
       void load();
       onChange();
     } }, m.disabled ? 'Enable' : 'Disable');
-    const remove = h('button', { class: 'icon-btn danger', title: 'Remove from workspace', 'aria-label': `Remove ${m.name}`, onclick: () => confirmRemove(m) }, icon('trash', 18));
+    const remove = h('button', { class: 'icon-btn danger', 'data-tip': 'Remove from workspace', 'aria-label': `Remove ${m.name}`, onclick: () => confirmRemove(m) }, icon('trash', 18));
     return h('div', { class: 'member-row' }, who, role, h('div', { class: 'btn-row' }, toggle, remove));
   };
 

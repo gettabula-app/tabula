@@ -53,3 +53,15 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'While dragging', keys: 'Alt while dragging', action: 'Ignore grid and guides', ids: [] },
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
 ];
+
+/**
+ * The keys the shortcuts dialog lists for one key id (a tool letter, or 'mod+z' style as in `ids`), for tooltips.
+ * Undefined when no row documents the id, so a tooltip never shows a shortcut the dialog does not.
+ */
+export function shortcutKeys(id: string): string | undefined {
+  const row = SHORTCUTS.find((s) => s.ids.includes(id));
+  if (!row) return undefined;
+  if (row.ids.length < 2) return row.keys;
+  const alternatives = row.keys.split(/, | or | \/ /);
+  return alternatives.length === row.ids.length ? alternatives[row.ids.indexOf(id)] : row.keys;
+}

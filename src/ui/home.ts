@@ -259,8 +259,8 @@ function localRow(b: BoardEntry, done: () => void, add?: (anchor: HTMLElement) =
   };
 }
 
-function deleteButton(label: string, title: string, disabled: boolean, onclick: () => void) {
-  return h('button', { class: 'icon-btn', title, 'aria-label': label, disabled, onclick }, icon('trash', 18));
+function deleteButton(label: string, tip: string, disabled: boolean, onclick: () => void) {
+  return h('button', { class: 'icon-btn', 'data-tip': tip, 'aria-label': label, disabled, onclick }, icon('trash', 18));
 }
 
 /** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */

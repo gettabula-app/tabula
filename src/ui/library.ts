@@ -107,7 +107,7 @@ function shapesTab(app: BoardApp, close: () => void) {
   const tile = (kind: ShapeKind, label: string) => {
     const active = app.tool.kind === 'shape' && app.tool.shape === kind;
     const b = h('button', {
-      class: `tile${active ? ' on' : ''}`, title: `${label}. Click to draw, or drag onto the board.`, 'aria-label': label,
+      class: `tile${active ? ' on' : ''}`, 'data-tip': `${label}. Click to draw, or drag onto the board.`, 'aria-label': label,
       onclick: () => { app.setTool({ kind: 'shape', shape: kind }); close(); },
       html: `${shapePreviewSvg(kind)}<span>${label}</span>`,
     });
@@ -141,7 +141,7 @@ function umlPreview(app: BoardApp, def: UmlElementDef): string {
 function umlTab(app: BoardApp) {
   const tiles = UML_ELEMENTS.map((def, i) => {
     const b = h('button', {
-      class: 'tile uml', title: `${def.label}. Click to draw, or drag onto the board.`, 'aria-label': def.label,
+      class: 'tile uml', 'data-tip': `${def.label}. Click to draw, or drag onto the board.`, 'aria-label': def.label,
       onclick: () => app.setTool({ kind: 'uml', def }),
       html: `${umlPreview(app, def)}<span>${def.label}</span>`,
     });
@@ -152,7 +152,7 @@ function umlTab(app: BoardApp) {
     const from: End = { kind: 'free', x: 4, y: 10 }, to: End = { kind: 'free', x: 92, y: 10 };
     const c: ConnectorObj = { id: 'p', type: 'connector', z: 'a', from, to, route: 'straight', startHead: r.startHead, endHead: r.endHead, dash: r.dash, strokeWidth: 1.5, stroke: 'currentColor' };
     return h('button', {
-      class: 'rel-row', title: `Draw a ${r.label.toLowerCase()} connector`,
+      class: 'rel-row', 'data-tip': `Draw a ${r.label.toLowerCase()} connector`,
       onclick: () => app.setTool({ kind: 'connector', relation: k }),
       html: `<svg width="96" height="20" viewBox="0 0 96 20">${objectMarkup(c, { get: () => undefined }).replace(/var\(--paper, #fff\)/g, 'var(--tray)')}</svg><span>${r.label}</span>`,
     });
@@ -234,7 +234,7 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
       return;
     }
     grid.replaceChildren(...names.map((n) => draggable(h('button', {
-      class: 'icon-tile', title: `${n}. Click to add, or drag onto the board.`, 'aria-label': n, role: 'listitem',
+      class: 'icon-tile', 'data-tip': `${n}. Click to add, or drag onto the board.`, 'aria-label': n, role: 'listitem',
       onclick: () => dropItem(app, { kind: 'icon', name: n }),
     }, h('img', { src: previewUrl(n), alt: '', loading: 'lazy', width: 28, height: 28 })), { kind: 'icon', name: n })));
     const prefixes = [...new Set(names.map((n) => n.split(':')[0]))];

@@ -20,11 +20,13 @@ import { ApiError, api, type ServerBoard } from './api';
 import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
+import { installTooltips } from './ui/tooltip';
 import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
 import { isDesktop } from './desktop-env';
 import type { Desktop } from './desktop';
 
 applyTheme(getStoredTheme());
+installTooltips();
 
 const RETURN_KEY = 'driftboard:return';
 

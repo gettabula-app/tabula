@@ -80,7 +80,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
   let flightUntil = 0;
 
   const count = h('span', { class: 'comment-count', 'aria-hidden': 'true' });
-  const button = h('button', { class: 'icon-btn comment-toggle', title: 'Comments', 'aria-label': 'Comments', 'aria-pressed': 'false', onclick: () => togglePanel() }, icon('comment', 18), count);
+  const button = h('button', { class: 'icon-btn comment-toggle', 'aria-label': 'Comments', 'aria-pressed': 'false', onclick: () => togglePanel() }, icon('comment', 18), count);
   const panel = h('aside', { class: 'comments-panel tray', 'aria-label': 'Comments' });
   chrome.appendChild(panel);
 
@@ -124,7 +124,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
     panel.replaceChildren(
       h('div', { class: 'comments-head' },
         h('h2', null, 'Comments'),
-        h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close comments', onclick: () => togglePanel() }, icon('close', 18))),
+        h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close comments', onclick: () => togglePanel() }, icon('close', 18))),
       segmented<Filter>([
         { value: 'open', label: `Open (${open.length})` },
         { value: 'resolved', label: `Resolved (${resolved.length})` },
@@ -152,7 +152,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
     const head = h('div', { class: 'comment-head' });
     const body = h('div', { class: 'comment-body' });
     const el = h('div', { class: 'comment-card tray', role: 'dialog', 'aria-label': 'Comment' }, head, body);
-    const closeBtn = h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', onclick: () => close(true) }, icon('close', 18));
+    const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close(true) }, icon('close', 18));
 
     const composeArea = textArea('Add a comment', () => post(), () => close(true));
     const composeSubmit = h('button', { class: 'btn primary', disabled: true, onclick: () => post() }, 'Comment');
