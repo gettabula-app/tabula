@@ -27,7 +27,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
       env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    p.stdout!.on('data', (d) => String(d).includes('Mira relay') && resolve(p));
+    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
     setTimeout(() => reject(new Error('relay did not start')), 8000);
@@ -77,12 +77,12 @@ const SAVE_WINDOW_MS = 1400; // longer than the relay's save debounce
 // ---------------------------------------------------------------- open mode
 
 describe('comments rooms in open mode', { timeout: 20_000 }, () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-comments-open-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-comments-open-'));
   let relay: ChildProcess;
   const providers = new Set<WebsocketProvider>();
 
   beforeAll(async () => {
-    relay = await startRelay(OPEN_PORT, dir, { MIRA_AUTH: 'off' });
+    relay = await startRelay(OPEN_PORT, dir, { TABULA_AUTH: 'off' });
   });
   afterEach(() => {
     for (const p of providers) p.destroy();
@@ -208,7 +208,7 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
 
 describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
   const baseUrl = `http://127.0.0.1:${ACCOUNTS_PORT}`;
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-comments-accounts-'));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-comments-accounts-'));
   const outbox = path.join(dataDir, 'outbox.jsonl');
   let relay: ChildProcess;
   let owner: Account;
@@ -223,7 +223,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     const res = await fetch(baseUrl + urlPath, {
       method,
       headers: {
-        'x-mira': '1',
+        'x-tabula': '1',
         ...(cookie ? { cookie } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...headers,
@@ -247,7 +247,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     if (res.status !== 200 || mails.length !== 1) throw new Error(`no sign-in mail for ${email} (status ${res.status})`);
     const verify = await api(undefined, 'POST', '/api/auth/verify', { token: tokenOf(mails[0]) });
     if (verify.status !== 200) throw new Error(`verify failed with ${verify.status}`);
-    const cookie = /mira_session=[^;]+/.exec(verify.headers.getSetCookie()[0])![0];
+    const cookie = /tabula_session=[^;]+/.exec(verify.headers.getSetCookie()[0])![0];
     return { cookie, user: verify.body.user, email };
   }
 
@@ -368,11 +368,11 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
   beforeAll(async () => {
     relay = await startRelay(ACCOUNTS_PORT, dataDir, {
-      MIRA_AUTH: 'on',
-      MIRA_OWNER_EMAIL: OWNER,
-      MIRA_MAIL: 'file',
-      MIRA_BASE_URL: baseUrl,
-      MIRA_TRUST_PROXY: '1',
+      TABULA_AUTH: 'on',
+      TABULA_OWNER_EMAIL: OWNER,
+      TABULA_MAIL: 'file',
+      TABULA_BASE_URL: baseUrl,
+      TABULA_TRUST_PROXY: '1',
     });
     owner = await signIn(OWNER);
   });
@@ -584,7 +584,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
     const attempts = [
       rawSocket(rooms[0]),
-      rawSocket(rooms[0], 'mira_session=not-a-session'),
+      rawSocket(rooms[0], 'tabula_session=not-a-session'),
       rawSocket(rooms[0], outsider.cookie),
       rawSocket(rooms[1], commenter.cookie),
       rawSocket(rooms[2], outsider.cookie),

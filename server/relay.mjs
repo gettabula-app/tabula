@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Mira relay: serves the built app and relays Yjs sync + awareness
+// Tabula relay: serves the built app and relays Yjs sync + awareness
 // messages between everyone in a board room. It keeps each room's document on
 // disk so someone joining later catches up even if the author is offline.
 //
@@ -9,7 +9,7 @@
 // client can connect to ws://host:PORT/sync/<boardId>. Every board also has a
 // sibling comments room, ws://host:PORT/sync/<boardId>~comments (docs/comments.md).
 //
-// With MIRA_AUTH=on (accounts mode, docs/accounts.md) the relay also serves the
+// With TABULA_AUTH=on (accounts mode, docs/accounts.md) the relay also serves the
 // HTTP API and decides who may join which room before it touches the room.
 
 import http from 'node:http';
@@ -24,11 +24,13 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
+import { withLegacyEnv } from './env.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// settings (and secrets such as MIRA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
+// settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
 try { process.loadEnvFile(); } catch { /* no .env file */ }
-const config = loadConfig();
+const env = withLegacyEnv();
+const config = loadConfig(env);
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
@@ -86,12 +88,12 @@ if (config.authEnabled) {
     import('./cloud.mjs'),
   ]);
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
-  // Hosted workspaces (docs/cloud.md): null unless MIRA_CLOUD_* is set, and then every hook below is inert.
+  // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud });
-} else if (process.env.MIRA_CLOUD_TOKEN || process.env.MIRA_CLOUD_URL || process.env.MIRA_CLOUD_WORKSPACE_ID) {
-  console.error('MIRA_CLOUD_* is ignored: hosted workspace mode needs MIRA_AUTH=on');
+} else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
+  console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
 
 // ---------------------------------------------------------------- rooms
@@ -515,5 +517,5 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 server.listen(PORT, HOST, () => {
-  log(`Mira relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}`);
+  log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}`);
 });

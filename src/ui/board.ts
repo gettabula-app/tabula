@@ -37,9 +37,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   });
   app.on('meta', () => {
     if (document.activeElement !== name) name.value = app.store.getMeta().name;
-    document.title = `${app.store.getMeta().name} - Mira`;
+    document.title = `${app.store.getMeta().name} - Tabula`;
   });
-  document.title = `${app.store.getMeta().name} - Mira`;
+  document.title = `${app.store.getMeta().name} - Tabula`;
   const status = h('button', { class: 'sync-status', onclick: () => openShare(app) });
   const renderStatus = () => {
     const s = app.conn.status;

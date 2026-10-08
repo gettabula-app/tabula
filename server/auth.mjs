@@ -74,8 +74,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       to: email,
       template: 'sign-in',
       params: { link, minutes },
-      subject: 'Your Mira sign-in link',
-      text: `Sign in to Mira with this link:\n\n${link}\n\nThe link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.\n`,
+      subject: 'Your Tabula sign-in link',
+      text: `Sign in to Tabula with this link:\n\n${link}\n\nThe link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.\n`,
     };
     // Not awaited and never rethrown: a failure or a slow mail server must not tell the caller
     // whether this address exists.
@@ -160,7 +160,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
 
   function csrfOk(req) {
     if (SAFE_METHODS.has(String(req.method).toUpperCase())) return true;
-    if (req.headers['x-mira'] !== '1') return false;
+    if (req.headers['x-tabula'] !== '1' && req.headers['x-mira'] !== '1') return false;
     const origin = req.headers.origin;
     if (origin === undefined) return true;
     const host = req.headers.host;

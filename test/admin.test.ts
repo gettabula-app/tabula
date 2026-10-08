@@ -291,13 +291,13 @@ describe('admin API client', () => {
   ])('%s carries the CSRF header', async (_name, call) => {
     const { fetchFn, calls } = recorder(undefined, 204);
     await call(createApi(fetchFn));
-    expect(calls.map((c) => headersOf(c)['x-mira'])).toEqual(['1']);
+    expect(calls.map((c) => headersOf(c)['x-tabula'])).toEqual(['1']);
   });
 
   it('reads send no CSRF header', async () => {
     const { fetchFn, calls } = recorder({});
     await createApi(fetchFn).adminAudit();
-    expect(calls.map((c) => headersOf(c)['x-mira'])).toEqual([undefined]);
+    expect(calls.map((c) => headersOf(c)['x-tabula'])).toEqual([undefined]);
   });
 
   it('turns a forbidden answer into an ApiError', async () => {

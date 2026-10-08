@@ -37,17 +37,17 @@ const baseEnv = (port: number, dir: string): Record<string, string> => ({
   PORT: String(port),
   DATA_DIR: dir,
   HOST: '127.0.0.1',
-  MIRA_AUTH: 'on',
-  MIRA_OWNER_EMAIL: OWNER,
-  MIRA_MAIL: 'file',
-  MIRA_BASE_URL: `http://127.0.0.1:${port}`,
-  MIRA_TRUST_PROXY: '1',
+  TABULA_AUTH: 'on',
+  TABULA_OWNER_EMAIL: OWNER,
+  TABULA_MAIL: 'file',
+  TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+  TABULA_TRUST_PROXY: '1',
 });
 
 const startRelay = (port: number, dir: string, env: Record<string, string>) =>
   new Promise<ChildProcess>((resolve, reject) => {
     const p = spawn(process.execPath, ['server/relay.mjs'], { env: { ...baseEnv(port, dir), ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout!.on('data', (d) => String(d).includes('Mira relay') && resolve(p));
+    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
     setTimeout(() => reject(new Error('relay did not start')), 8000);
@@ -91,9 +91,9 @@ afterAll(() => new Promise<void>((resolve) => controlPlane.close(() => resolve()
 const servers: Server[] = [];
 let launched = 0;
 
-const CLOUD_ENV = () => ({ MIRA_CLOUD_TOKEN: TOKEN, MIRA_CLOUD_URL: controlUrl, MIRA_CLOUD_WORKSPACE_ID: WORKSPACE });
+const CLOUD_ENV = () => ({ TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: controlUrl, TABULA_CLOUD_WORKSPACE_ID: WORKSPACE });
 
-async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-cloud-'))): Promise<Server> {
+async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-'))): Promise<Server> {
   const port = BASE_PORT + launched++;
   const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
   servers.push(server);
@@ -130,7 +130,7 @@ function client(srv: Server) {
     const res = await fetch(srv.base + urlPath, {
       method,
       headers: {
-        ...(method === 'GET' ? {} : { 'x-mira': '1' }),
+        ...(method === 'GET' ? {} : { 'x-tabula': '1' }),
         ...(cookie ? { cookie } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...headers,
@@ -159,7 +159,7 @@ function client(srv: Server) {
     if (res.status !== 200 || !token) throw new Error(`no sign-in mail for ${email} (status ${res.status})`);
     const verify = await api(undefined, 'POST', '/api/auth/verify', { token });
     if (verify.status !== 200) throw new Error(`verify failed with ${verify.status}`);
-    return { cookie: /mira_session=[^;]+/.exec(verify.headers.getSetCookie()[0])![0], user: verify.body.user, email };
+    return { cookie: /tabula_session=[^;]+/.exec(verify.headers.getSetCookie()[0])![0], user: verify.body.user, email };
   }
 
   async function newTeam(cookie: string) {
@@ -216,10 +216,10 @@ function client(srv: Server) {
 // ---------------------------------------------------------------- configuration
 
 describe('startup', () => {
-  const LOCAL_CLOUD_ENV = { MIRA_CLOUD_TOKEN: TOKEN, MIRA_CLOUD_URL: 'https://cloud.example.com', MIRA_CLOUD_WORKSPACE_ID: WORKSPACE };
+  const LOCAL_CLOUD_ENV = { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.com', TABULA_CLOUD_WORKSPACE_ID: WORKSPACE };
 
   const run = (env: Record<string, string>) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-cloud-cfg-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-cfg-'));
     try {
       const out = spawnSync(process.execPath, ['server/relay.mjs'], {
         env: { ...baseEnv(BASE_PORT + 800 + launched++, dir), ...env },
@@ -233,13 +233,21 @@ describe('startup', () => {
   };
 
   it.each<[string, Record<string, string>, string]>([
-    ['only the token is set', { MIRA_CLOUD_TOKEN: TOKEN }, 'MIRA_CLOUD_TOKEN, MIRA_CLOUD_URL, MIRA_CLOUD_WORKSPACE_ID must be set together (missing MIRA_CLOUD_URL, MIRA_CLOUD_WORKSPACE_ID)'],
-    ['the token is too short', { ...LOCAL_CLOUD_ENV, MIRA_CLOUD_TOKEN: 'short' }, 'MIRA_CLOUD_TOKEN must be at least 32 characters'],
-    ['the URL is plain http to a remote host', { ...LOCAL_CLOUD_ENV, MIRA_CLOUD_URL: 'http://cloud.example.com' }, 'MIRA_CLOUD_URL must be an https:// URL'],
+    ['only the token is set', { TABULA_CLOUD_TOKEN: TOKEN }, 'TABULA_CLOUD_TOKEN, TABULA_CLOUD_URL, TABULA_CLOUD_WORKSPACE_ID must be set together (missing TABULA_CLOUD_URL, TABULA_CLOUD_WORKSPACE_ID)'],
+    ['the token is too short', { ...LOCAL_CLOUD_ENV, TABULA_CLOUD_TOKEN: 'short' }, 'TABULA_CLOUD_TOKEN must be at least 32 characters'],
+    ['the URL is plain http to a remote host', { ...LOCAL_CLOUD_ENV, TABULA_CLOUD_URL: 'http://cloud.example.com' }, 'TABULA_CLOUD_URL must be an https:// URL'],
   ])('fails with a clear message when %s', (_name, env, message) => {
     const out = run(env);
     expect(out.status).not.toBe(0);
     expect(out.stderr).toContain(message);
+  });
+
+  it('reads a deprecated MIRA_ cloud variable, names the TABULA_ ones and warns once', () => {
+    const out = run({ MIRA_CLOUD_TOKEN: TOKEN });
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toContain('must be set together (missing TABULA_CLOUD_URL, TABULA_CLOUD_WORKSPACE_ID)');
+    expect(out.stderr.match(/Deprecated environment variables/g)).toHaveLength(1);
+    expect(out.stderr).toContain('MIRA_CLOUD_TOKEN (use TABULA_CLOUD_TOKEN)');
   });
 });
 
@@ -258,7 +266,7 @@ describe('without the cloud variables', () => {
   });
 
   it('ignores the variables when accounts mode is off', async () => {
-    const srv = await launch({ ...CLOUD_ENV(), MIRA_AUTH: 'off' });
+    const srv = await launch({ ...CLOUD_ENV(), TABULA_AUTH: 'off' });
     const c = client(srv);
     expect((await c.api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false });
     expect((await c.internal('GET', '/api/internal/usage')).status).toBe(404);
@@ -457,7 +465,7 @@ describe('a hosted workspace', () => {
 
   describe('restart', () => {
     it('keeps the limits', async () => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-cloud-keep-'));
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-keep-'));
       const first = await launch(CLOUD_ENV(), dir);
       const a = client(first);
       const who = await a.signIn(OWNER);

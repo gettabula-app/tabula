@@ -172,7 +172,7 @@ const inviteActive = (invite, now) =>
 function migrate(db) {
   const version = Number(db.prepare('PRAGMA user_version').get().user_version);
   if (version > MIGRATIONS.length) {
-    throw new Error(`directory was written by a newer Mira (schema ${version}, this build knows ${MIGRATIONS.length})`);
+    throw new Error(`directory was written by a newer Tabula (schema ${version}, this build knows ${MIGRATIONS.length})`);
   }
   for (let i = version; i < MIGRATIONS.length; i++) {
     db.exec('BEGIN IMMEDIATE');

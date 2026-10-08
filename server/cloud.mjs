@@ -1,5 +1,5 @@
 // Hosted workspaces (docs/cloud.md): what an instance does when a control plane runs it. Everything here exists only
-// when MIRA_CLOUD_TOKEN, MIRA_CLOUD_URL and MIRA_CLOUD_WORKSPACE_ID are set in accounts mode; createCloud() answers
+// when TABULA_CLOUD_TOKEN, TABULA_CLOUD_URL and TABULA_CLOUD_WORKSPACE_ID are set in accounts mode; createCloud() answers
 // null otherwise and the rest of the server never mentions it.
 
 import crypto from 'node:crypto';

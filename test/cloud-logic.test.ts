@@ -363,7 +363,7 @@ describe('billing portal request', () => {
     const [path, init] = fetchFn.mock.calls[0];
     expect(path).toBe('/api/billing/portal');
     expect(init?.method).toBe('POST');
-    expect(init?.headers).toMatchObject({ 'x-mira': '1' });
+    expect(init?.headers).toMatchObject({ 'x-tabula': '1' });
   });
 
   it('surfaces the 502 and 403 of the server', async () => {
