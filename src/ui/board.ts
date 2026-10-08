@@ -32,6 +32,7 @@ import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { canManageShares } from './share-logic';
+import { trackPanelTop } from './panel-top';
 
 type IconName = keyof typeof ICONS;
 
@@ -236,6 +237,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
+  trackPanelTop(chrome, [topLeft, topRight]);
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
