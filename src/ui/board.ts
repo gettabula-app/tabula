@@ -7,6 +7,7 @@ import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
+import { mountComments } from './comments';
 import { openFontPicker } from './fontpicker';
 import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
@@ -82,8 +83,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 18));
   menuBtn.addEventListener('click', () => openMenu(app, menuBtn));
+  const comments = mountComments(app, chrome);
   const topRight = h('div', { class: 'tray top-right' },
     people,
+    comments.button,
     h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
@@ -102,6 +105,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', title: 'Shapes', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
+  const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
   const voteBtn = h('button', { class: 'rail-btn', title: 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
@@ -127,6 +131,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
     toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
     toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+    commentBtn,
     h('hr'),
     drawerBtn('UML', 'uml', 'uml'),
     drawerBtn('Icons', 'icons', 'icons'),
@@ -218,13 +223,19 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const syncReadOnly = () => {
     const ro = app.readOnly;
     rail.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      if (b === commentBtn) return;
       b.disabled = ro && b.dataset.tool !== 'select' && b.dataset.tool !== 'hand';
     });
+    // Commenters have a read-only board but may still comment, so the tool follows the comments document.
+    commentBtn.disabled = app.comments.readOnly();
+    commentBtn.title = commentBtn.disabled ? 'You can\'t comment on this board' : 'Comment (C)';
     name.readOnly = ro;
     badge.classList.toggle('show', ro);
     if (ro && library.tab) library.open(null);
   };
   app.on('readonly', syncReadOnly);
+  app.on('comments', syncReadOnly);
+  app.comments.onReadOnly(syncReadOnly);
   syncReadOnly();
 
   // Drop .drift / .json files onto the board to import them.
@@ -394,11 +405,14 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
       location.hash = '#/signin';
     }),
   ] : [];
+  const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
+  if (app.commentsVisible) showComments.append(icon('check', 16));
   const pop = popover(anchor, h('div', { class: 'menu' },
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),
+    showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
     h('div', { class: 'list-label' }, 'Appearance'),
