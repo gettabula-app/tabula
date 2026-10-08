@@ -1,7 +1,8 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id, Obj, ShapeKind, Step, StepMode } from './types';
+import type { BaseObj, BoardMeta, Id, Obj, ShapeKind, Step, StepMode } from './types';
 import { newId } from './store';
 import { STICKY_COLORS } from './palette';
+import { instantiate, type CustomTemplate } from './custom-templates';
 
 export interface TemplateDef {
   id: string;
@@ -16,11 +17,17 @@ const TINT = {
 };
 const ST = Object.fromEntries(STICKY_COLORS.map((c) => [c.name.toLowerCase(), c.fill])) as Record<string, string>;
 
+/** What a Builder reads from the board: the local user and the board fonts. */
+export interface BuilderHost {
+  user: { id: string };
+  store: { getMeta(): Pick<BoardMeta, 'bodyFont' | 'headingFont'> };
+}
+
 /** Collects objects and steps for a template, positioned from an origin. */
 export class Builder {
   objs: Obj[] = [];
   steps: Step[] = [];
-  constructor(private app: BoardApp, readonly ox: number, readonly oy: number) {}
+  constructor(private app: BuilderHost, readonly ox: number, readonly oy: number) {}
 
   private base(type: BaseObj['type'], x: number, y: number, w: number, h: number, extra: Partial<BaseObj>): BaseObj {
     const o: BaseObj = {
@@ -344,23 +351,54 @@ export const TEMPLATES: TemplateDef[] = [
   },
 ];
 
-/** Add a template to the board, to the right of existing content. */
-export function insertTemplate(app: BoardApp, def: TemplateDef) {
+/** Template ids with this prefix name a saved template; anything else is a built-in id. */
+export const CUSTOM_PREFIX = 'custom:';
+
+/** The category a saved template gets when none of the built-in ones fits. */
+export const CUSTOM_CATEGORY = 'Custom';
+
+/** The built-in categories, in the order the templates first use them. */
+export const CATEGORIES: TemplateDef['category'][] = [...new Set(TEMPLATES.map((t) => t.category))];
+
+/** Where a template goes: to the right of existing content, snapped to the grid. */
+function templateOrigin(app: BoardApp) {
   const content = app.r.contentBounds();
   const ox = content ? content.x + content.w + 400 : Math.round(app.r.viewport().x + 80);
   const oy = content ? content.y + 160 : Math.round(app.r.viewport().y + 200);
-  const b = new Builder(app, Math.round(ox / 24) * 24, Math.round(oy / 24) * 24);
-  def.build(b);
-  const zs = app.store.topZs(b.objs.length);
-  b.objs.forEach((o, i) => (o.z = zs[i]));
+  return { x: Math.round(ox / 24) * 24, y: Math.round(oy / 24) * 24 };
+}
+
+/** Create the objects in one undo step, replace the flow when `steps` is given, and fly to them. */
+function place(app: BoardApp, objs: Obj[], steps: Step[] | null) {
+  const zs = app.store.topZs(objs.length);
+  objs.forEach((o, i) => (o.z = zs[i]));
   app.store.undo.stopCapturing();
-  app.store.transact(() => b.objs.forEach((o) => app.store.create(o)));
-  const existing = app.flow.state().steps;
-  // A board runs one session at a time; a new template replaces the old flow.
-  app.flow.setSteps(b.steps);
-  if (existing.length) app.flow.end();
+  app.store.transact(() => objs.forEach((o) => app.store.create(o)));
+  if (steps) {
+    const existing = app.flow.state().steps;
+    // A board runs one session at a time; a new template replaces the old flow.
+    app.flow.setSteps(steps);
+    if (existing.length) app.flow.end();
+  }
   app.setSelection([]);
-  const bounds = app.r.contentBounds(b.objs.map((o) => o.id));
+  const bounds = app.r.contentBounds(objs.map((o) => o.id));
   if (bounds) app.r.flyTo(bounds, 60, 1);
+}
+
+/** Add a template to the board, to the right of existing content. */
+export function insertTemplate(app: BoardApp, def: TemplateDef) {
+  const o = templateOrigin(app);
+  const b = new Builder(app, o.x, o.y);
+  def.build(b);
+  place(app, b.objs, b.steps);
   return b;
+}
+
+/** Add a saved template to the board like a built-in one; the board's flow is replaced only when the template has steps. */
+export function insertCustomTemplate(app: BoardApp, t: CustomTemplate) {
+  const { objects, steps } = instantiate(t.content, templateOrigin(app), app.user.id);
+  const now = Date.now();
+  for (const o of objects) o.updatedAt = now;
+  place(app, objects, steps.length ? steps : null);
+  return objects;
 }
