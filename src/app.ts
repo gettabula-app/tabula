@@ -1,6 +1,9 @@
 import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
+import type { Anchor, Comments, Thread } from './comments';
+import { threadVisible } from './comments';
+import type { BoardRole } from './api';
 import type { Store } from './store';
 import { newId } from './store';
 import { Renderer, handlesFor, type HandleId } from './render';
@@ -34,6 +37,7 @@ export type Tool =
   | { kind: 'connector'; relation?: UmlRelation }
   | { kind: 'pen' }
   | { kind: 'frame' }
+  | { kind: 'comment' }
   | { kind: 'uml'; def: UmlElementDef };
 
 type Drag =
@@ -47,10 +51,19 @@ type Drag =
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
   | { mode: 'pen'; pts: Point[] };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments';
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
+
+const COMMENTS_VISIBLE_KEY = 'driftboard:comments-visible';
+function loadCommentsVisible(): boolean {
+  try {
+    return localStorage.getItem(COMMENTS_VISIBLE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
 
 export class BoardApp {
   readonly store: Store;
@@ -200,9 +213,68 @@ export class BoardApp {
     return this.store.readOnly;
   }
 
-  /** On a read-only board only select and hand are allowed; anything else falls back to select. */
+  // ---------------------------------------------------------------- comments (see docs/comments.md)
+
+  /** The user's role on this board in accounts mode; null in open mode. Set by the router. */
+  role: BoardRole | null = null;
+
+  get comments(): Comments {
+    return this.conn.comments;
+  }
+
+  /** Set by the comments UI: opens a thread (`threadId`) or the composer for a new one (`anchor`) near `screen`. */
+  onOpenComment: ((target: { threadId?: string; anchor?: Anchor; screen: Point }) => void) | null = null;
+
+  private _openThreadId: string | null = null;
+  private _commentsVisible = loadCommentsVisible();
+
+  get openThreadId(): string | null {
+    return this._openThreadId;
+  }
+
+  openThread(id: string | null) {
+    if (this._openThreadId === id) return;
+    this._openThreadId = id;
+    this.emit('comments');
+  }
+
+  closeThread() {
+    this.openThread(null);
+  }
+
+  get commentsVisible(): boolean {
+    return this._commentsVisible;
+  }
+
+  setCommentsVisible(v: boolean) {
+    if (v === this._commentsVisible) return;
+    this._commentsVisible = v;
+    try {
+      localStorage.setItem(COMMENTS_VISIBLE_KEY, v ? '1' : '0');
+    } catch { /* storage unavailable */ }
+    this.emit('comments');
+  }
+
+  /** Threads whose pin may be shown: not anchored to something private writing hides. */
+  visibleThreads(): Thread[] {
+    const get = (id: string) => this.store.get(id);
+    return this.comments.list().filter((t) => threadVisible(t, get, (o) => this.flow.isHidden(o)));
+  }
+
+  /** Shows a draft pin at `anchor` while its composer is open; null clears it. (Implemented with the pins.) */
+  setDraftPin(anchor: Anchor | null) {
+    void anchor;
+  }
+
+  /** Centres the camera on a thread's pin. (Implemented with the pins.) */
+  flyToThread(id: string) {
+    void id;
+  }
+
+  /** On a read-only board only select and hand (and, where comments are writable, the comment tool) are allowed; anything else falls back to select. */
   setTool(t: Tool) {
-    const allowed = !this.readOnly || t.kind === 'select' || t.kind === 'hand';
+    // Select and hand always work; the comment tool needs a writable comments document (commenters have a read-only board); everything else needs a writable board.
+    const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly);
     const next: Tool = allowed ? t : { kind: 'select' };
     this.cancelLongPress();
     this.tool = next;

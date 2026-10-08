@@ -170,6 +170,7 @@ async function route() {
 
   root.replaceChildren();
   const app = new BoardApp(conn, user, root);
+  app.role = role ?? null;
   current = app;
   // Inspection handle for automated tests and debugging (?debug in the URL).
   if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
