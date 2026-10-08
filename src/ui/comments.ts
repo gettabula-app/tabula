@@ -21,10 +21,9 @@ function authorOf(app: BoardApp): Author {
   return { id: auth.mode === 'signed-in' ? auth.me.user.id : app.user.id, name: app.user.name, color: app.user.color };
 }
 
-/** Board owners and workspace owners or admins may delete anyone's comments. */
+/** Only the board owner may delete other people's comments. */
 function canModerate(app: BoardApp): boolean {
-  const auth = authState();
-  return app.role === 'owner' || (auth.mode === 'signed-in' && (auth.me.user.role === 'owner' || auth.me.user.role === 'admin'));
+  return app.role === 'owner';
 }
 
 function avatar(name: string, color: string): HTMLSpanElement {
@@ -262,16 +261,17 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
         return;
       }
       confirming = null;
+      const actor = { id: authorOf(app).id, moderator: canModerate(app) };
       if (m.root) {
-        if (app.comments.removeThread(id)) close(true);
+        if (app.comments.removeThread(id, actor)) close(true);
         else toast('Could not delete the comment.');
         return;
       }
-      if (!app.comments.removeReply(id, m.id)) toast('Could not delete the comment.');
+      if (!app.comments.removeReply(id, m.id, actor)) toast('Could not delete the comment.');
       renderThread();
     }
 
-    function messageEl(m: Msg, ro: boolean, mine: string, mod: boolean): HTMLElement {
+    function messageEl(m: Msg, ro: boolean, mine: string, mod: boolean, othersReplied: boolean): HTMLElement {
       const meta = h('div', { class: 'comment-meta' },
         avatar(m.authorName, m.authorColor),
         h('span', { class: 'comment-name' }, m.authorName),
@@ -282,7 +282,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
       const own = m.authorId === mine;
       const acts: HTMLElement[] = [];
       if (!ro && own) acts.push(h('button', { class: 'btn ghost small', onclick: () => startEdit(m) }, 'Edit'));
-      if (!ro && (own || mod)) {
+      if (!ro && (mod || (own && !(m.root && othersReplied)))) {
         const armed = confirming === m.id;
         if (armed) acts.push(h('span', { class: 'comment-muted' }, 'Delete this comment?'));
         acts.push(h('button', { class: `btn ghost small${armed ? ' armed' : ''}`, onclick: () => onDelete(m) }, armed ? 'Click again to delete' : 'Delete'));
@@ -316,7 +316,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
           t.resolved ? h('span', { class: 'comment-badge' }, 'Resolved') : null),
         closeBtn,
       );
-      msgs.replaceChildren(...list.map((m) => messageEl(m, ro, mine, mod)));
+      msgs.replaceChildren(...list.map((m) => messageEl(m, ro, mine, mod, list.some((x) => !x.root && x.authorId !== mine))));
       if (ro !== footRo) {
         footRo = ro;
         foot.replaceChildren(...(ro ? [readonlyLine] : [replyArea, replyRow]));

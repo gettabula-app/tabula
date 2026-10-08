@@ -7,6 +7,8 @@ import type { BaseObj, Obj } from '../src/types';
 
 const ALICE: Author = { id: 'alice', name: 'Alice', color: '#f00' };
 const BOB: Author = { id: 'bob', name: 'Bob', color: '#0f0' };
+const OWNER = { id: 'owner', moderator: true };
+const asUser = (a: Author) => ({ id: a.id, moderator: false });
 const CAROL: Author = { id: 'carol', name: 'Carol', color: '#00f' };
 const AT = { x: 10, y: 20 };
 
@@ -87,12 +89,27 @@ describe('threads and replies', () => {
     const c = new Comments(new Y.Doc());
     const t = c.addThread(ALICE, AT, 'x')!;
     const r = c.reply(t, BOB, 'y')!;
-    expect(c.removeReply(t, r)).toBe(true);
+    expect(c.removeReply(t, r, OWNER)).toBe(true);
     expect(c.get(t)?.replies).toEqual([]);
-    expect(c.removeReply(t, r)).toBe(false);
-    expect(c.removeThread(t)).toBe(true);
+    expect(c.removeReply(t, r, OWNER)).toBe(false);
+    expect(c.removeThread(t, OWNER)).toBe(true);
     expect(c.list()).toEqual([]);
-    expect(c.removeThread(t)).toBe(false);
+    expect(c.removeThread(t, OWNER)).toBe(false);
+  });
+
+  it('lets authors delete their own comments and the owner delete anyone\'s, nobody else', () => {
+    const c = new Comments(new Y.Doc());
+    const t = c.addThread(ALICE, AT, 'x')!;
+    const r = c.reply(t, BOB, 'y')!;
+    expect(c.removeReply(t, r, asUser(ALICE))).toBe(false);
+    expect(c.removeThread(t, asUser(BOB))).toBe(false);
+    expect(c.removeThread(t, asUser(ALICE))).toBe(false); // Bob's reply is not hers to take down
+    expect(c.removeReply(t, r, asUser(BOB))).toBe(true);
+    expect(c.removeThread(t, asUser(ALICE))).toBe(true);
+    const t2 = c.addThread(ALICE, AT, 'z')!;
+    const r2 = c.reply(t2, BOB, 'w')!;
+    expect(c.removeReply(t2, r2, OWNER)).toBe(true);
+    expect(c.removeThread(t2, OWNER)).toBe(true);
   });
 
   it('refuses writes to threads that do not exist', () => {
@@ -100,7 +117,7 @@ describe('threads and replies', () => {
     expect(c.reply('missing', BOB, 'hi')).toBeNull();
     expect(c.editThread('missing', 'hi')).toBe(false);
     expect(c.setResolved('missing', true, BOB)).toBe(false);
-    expect(c.removeThread('missing')).toBe(false);
+    expect(c.removeThread('missing', OWNER)).toBe(false);
   });
 
   it('rejects empty, blank and over-long text on every write', () => {
@@ -168,8 +185,8 @@ describe('read-only', () => {
     expect(b.editThread(t, 'nope')).toBe(false);
     expect(b.editReply(t, r, 'nope')).toBe(false);
     expect(b.setResolved(t, true, BOB)).toBe(false);
-    expect(b.removeReply(t, r)).toBe(false);
-    expect(b.removeThread(t)).toBe(false);
+    expect(b.removeReply(t, r, OWNER)).toBe(false);
+    expect(b.removeThread(t, OWNER)).toBe(false);
     expect(b.importThreads(a.list())).toBe(0);
     expect(b.list()).toEqual(before);
     expect(Y.encodeStateVector(docs[1])).toEqual(state);

@@ -6,6 +6,9 @@ import { newId } from './store';
 
 export interface Author { id: string; name: string; color: string }
 export interface Anchor { x: number; y: number; obj?: string; fx?: number; fy?: number }
+/** Who is deleting: their author id, and whether they moderate the board (the board owner). */
+export interface Actor { id: string; moderator: boolean }
+
 export interface Reply { id: string; authorId: string; authorName: string; authorColor: string; text: string; createdAt: number; editedAt?: number }
 export interface Thread {
   id: string; createdAt: number; authorId: string; authorName: string; authorColor: string; text: string; editedAt?: number;
@@ -187,15 +190,28 @@ export class Comments {
     return true;
   }
 
-  removeThread(threadId: string): boolean {
-    if (this._readOnly || !this.threads.has(threadId)) return false;
+  /**
+   * Deletes a thread. Only its author or a moderator (the board owner) may; an author cannot take other people's
+   * replies down with their own comment, so for them the thread must have no replies by anyone else.
+   */
+  removeThread(threadId: string, actor: Actor): boolean {
+    const t = this.threads.get(threadId);
+    if (this._readOnly || !t) return false;
+    if (!actor.moderator) {
+      if (t.get('authorId') !== actor.id) return false;
+      const others = [...(this.repliesOf(threadId)?.values() ?? [])].some((r) => r.authorId !== actor.id);
+      if (others) return false;
+    }
     this.transact(() => this.threads.delete(threadId));
     return true;
   }
 
-  removeReply(threadId: string, replyId: string): boolean {
+  /** Deletes a reply. Only its author or a moderator (the board owner) may. */
+  removeReply(threadId: string, replyId: string, actor: Actor): boolean {
     const replies = this.repliesOf(threadId);
-    if (this._readOnly || !replies?.has(replyId)) return false;
+    const r = replies?.get(replyId);
+    if (this._readOnly || !replies || !r) return false;
+    if (!actor.moderator && r.authorId !== actor.id) return false;
     this.transact(() => replies.delete(replyId));
     return true;
   }
