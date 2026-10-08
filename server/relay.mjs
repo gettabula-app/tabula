@@ -27,6 +27,7 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { saveDelay } from './save-delay.mjs';
+import { createCommentGuard } from './comment-authz.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -50,6 +51,9 @@ const MSG_AWARENESS = 1;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
 const MSG_WORKSPACE = 4;
+// Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
+// (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
+const MSG_COMMENT_NOTICE = 5;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -149,14 +153,18 @@ class Room {
       }
     }
 
+    /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
+    this.held = null;
     this.doc.on('update', (update) => {
       this.dirty = true;
-      const enc = encoding.createEncoder();
-      encoding.writeVarUint(enc, MSG_SYNC);
-      syncProtocol.writeUpdate(enc, update);
-      this.broadcast(encoding.toUint8Array(enc));
+      if (this.held) this.held.push(update);
+      else this.broadcastUpdate(update);
       this.scheduleSave();
     });
+    // Accounts mode: the relay checks comment authorship on every write to a comments room.
+    this.guard = directory && this.kind === 'comments'
+      ? createCommentGuard(this.doc, { isAccount: (id) => directory.getUser(id) !== null })
+      : null;
 
     this.awareness.on('update', ({ added, updated, removed }, conn) => {
       const changed = added.concat(updated, removed);
@@ -174,6 +182,34 @@ class Room {
 
   broadcast(msg) {
     for (const ws of this.conns.keys()) send(ws, msg);
+  }
+
+  broadcastUpdate(update) {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, MSG_SYNC);
+    syncProtocol.writeUpdate(enc, update);
+    this.broadcast(encoding.toUint8Array(enc));
+  }
+
+  /** Applies a comments-room sync message as the socket's user, then corrects what their rules forbid. */
+  guarded(ws, apply) {
+    const user = directory.getUser(ws.userId);
+    const actor = { id: ws.userId, role: ws.role, name: user?.name ?? '' };
+    this.held = [];
+    let undone = [];
+    try {
+      undone = this.guard.run(actor, apply);
+    } finally {
+      const held = this.held;
+      this.held = null;
+      if (held.length) this.broadcastUpdate(held.length === 1 ? held[0] : Y.mergeUpdates(held));
+    }
+    if (undone.length) {
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, MSG_COMMENT_NOTICE);
+      encoding.writeVarString(enc, JSON.stringify({ undone }));
+      send(ws, encoding.toUint8Array(enc));
+    }
   }
 
   // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
@@ -274,7 +310,10 @@ class Room {
         if (ws.canWrite !== true && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) return;
         const enc = encoding.createEncoder();
         encoding.writeVarUint(enc, MSG_SYNC);
-        syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
+        const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
+        // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
+        if (this.guard && ws.userId && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
+        else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(dec), ws);

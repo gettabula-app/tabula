@@ -85,9 +85,16 @@ const until = async (fn: () => boolean, ms = 5000) => {
 const within = <T>(p: Promise<T>, ms = 4000) =>
   Promise.race([p, sleep(ms).then(() => Promise.reject(new Error('timed out')))]) as Promise<T>;
 
+/** A comment thread as the relay accepts it: anything else in the threads map is taken out again. */
+const threadValue = (id: string) => {
+  const m = new Y.Map<unknown>([['id', id], ['createdAt', 1], ['text', 'hi'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+  m.set('replies', new Y.Map());
+  return m;
+};
+
 const updateFrame = (map: string, key: string) => {
   const doc = new Y.Doc();
-  doc.getMap(map).set(key, 1);
+  doc.getMap(map).set(key, map === 'threads' ? threadValue(key) : 1);
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, 0);
   syncProtocol.writeUpdate(enc, Y.encodeStateAsUpdate(doc));

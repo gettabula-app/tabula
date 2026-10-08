@@ -1,13 +1,13 @@
 import './comments.css';
 import type { BoardApp } from '../app';
-import type { Anchor, Author, Reply, Thread } from '../comments';
+import { mayDelete, type Anchor, type Author, type Reply, type Thread } from '../comments';
 import type { Point } from '../types';
 import { authState } from '../auth';
 import { h, icon } from './dom';
 import { fmtAgo, segmented, toast } from './common';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
-type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt'> & { root: boolean };
+type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt' | 'imported' | 'importedBy' | 'legacy'> & { root: boolean };
 type Filter = 'open' | 'resolved';
 
 const GAP = 12;
@@ -15,10 +15,15 @@ const MARGIN = 12;
 /** A row's camera flight takes about 420ms; moves inside this window do not close the card it opens. */
 const FLIGHT_MS = 600;
 
-/** Writes are attributed to the account in accounts mode, otherwise to this device's user. */
+/**
+ * Writes are attributed to the account in accounts mode, otherwise to this device's user. The account's current name is
+ * read from the signed-in session, so a rename made in another tab is not undone by the relay.
+ */
 function authorOf(app: BoardApp): Author {
   const auth = authState();
-  return { id: auth.mode === 'signed-in' ? auth.me.user.id : app.user.id, name: app.user.name, color: app.user.color };
+  return auth.mode === 'signed-in'
+    ? { id: auth.me.user.id, name: auth.me.user.name, color: app.user.color }
+    : { id: app.user.id, name: app.user.name, color: app.user.color };
 }
 
 /** Only the board owner may delete other people's comments. */
@@ -275,14 +280,17 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
       const meta = h('div', { class: 'comment-meta' },
         avatar(m.authorName, m.authorColor),
         h('span', { class: 'comment-name' }, m.authorName),
+        m.imported ? h('span', { class: 'comment-badge' }, 'imported') : m.legacy ? h('span', { class: 'comment-badge' }, 'legacy') : null,
         h('span', { class: 'comment-time' }, `${fmtAgo(m.createdAt)}${m.editedAt ? ' · edited' : ''}`));
       if (editing === m.id) {
         return h('div', { class: 'comment-msg' }, meta, editArea, h('div', { class: 'comment-actions' }, editCancel, editSave));
       }
-      const own = m.authorId === mine;
+      const own = m.authorId === mine && !m.imported && !m.legacy;
       const acts: HTMLElement[] = [];
       if (!ro && own) acts.push(h('button', { class: 'btn ghost small', onclick: () => startEdit(m) }, 'Edit'));
-      if (!ro && (mod || (own && !(m.root && othersReplied)))) {
+      // The same rule as the relay: a moderator, the author (not once others replied), or whoever imported the comment.
+      const deletable = mayDelete(m, { id: mine, moderator: mod }) && !(m.root && !mod && m.authorId === mine && othersReplied);
+      if (!ro && deletable) {
         const armed = confirming === m.id;
         if (armed) acts.push(h('span', { class: 'comment-muted' }, 'Delete this comment?'));
         acts.push(h('button', { class: `btn ghost small${armed ? ' armed' : ''}`, onclick: () => onDelete(m) }, armed ? 'Click again to delete' : 'Delete'));
@@ -302,7 +310,10 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
       const mine = authorOf(app).id;
       const mod = canModerate(app);
       const list: Msg[] = [
-        { id: t.id, root: true, authorId: t.authorId, authorName: t.authorName, authorColor: t.authorColor, text: t.text, createdAt: t.createdAt, editedAt: t.editedAt },
+        {
+          id: t.id, root: true, authorId: t.authorId, authorName: t.authorName, authorColor: t.authorColor, text: t.text, createdAt: t.createdAt,
+          editedAt: t.editedAt, imported: t.imported, importedBy: t.importedBy, legacy: t.legacy,
+        },
         ...t.replies.map((r) => ({ ...r, root: false })),
       ];
       if (!list.some((m) => m.id === editing)) editing = null;
@@ -322,6 +333,8 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
         foot.replaceChildren(...(ro ? [readonlyLine] : [replyArea, replyRow]));
       }
       if (!ro) resolveBtn.replaceChildren(icon('check', 16), t.resolved ? 'Reopen' : 'Resolve');
+      // The relay undoes a resolve by anyone else: the author, or whoever may edit the board, may resolve.
+      resolveBtn.hidden = !(!app.role || app.role === 'owner' || app.role === 'editor' || t.authorId === mine);
       if (hadFocus) editArea.focus();
       placeCard(el, origin);
     }

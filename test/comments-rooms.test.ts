@@ -74,6 +74,13 @@ const awarenessFrame = (name: string) => {
 const COMMENTS = '~comments';
 const SAVE_WINDOW_MS = 1400; // longer than the relay's save debounce
 
+/** A comment thread as the relay accepts it: anything else in the threads map is taken out again. */
+const threadValue = (id: string) => {
+  const m = new Y.Map<unknown>([['id', id], ['createdAt', 1], ['text', 'hi'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+  m.set('replies', new Y.Map());
+  return m;
+};
+
 // ---------------------------------------------------------------- open mode
 
 describe('comments rooms in open mode', { timeout: 20_000 }, () => {
@@ -332,7 +339,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
   /** `from` writes `key` into `map`; resolves to whether `to` received it. */
   async function lands(from: Conn, to: Conn, map: string, key: string) {
-    from.doc.getMap(map).set(key, 1);
+    from.doc.getMap(map).set(key, map === 'threads' ? threadValue(key) : 1);
     await flush(from, to);
     return to.doc.getMap(map).has(key);
   }
@@ -415,7 +422,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     // edits made before connecting travel in the client's sync step 2, which is dropped for the board room too
     const cc = pair(board, commenter.cookie, {
       board: (d) => d.getMap('objects').set('offlineBoardEdit', 1),
-      comments: (d) => d.getMap('threads').set('offlineThread', 1),
+      comments: (d) => d.getMap('threads').set('offlineThread', threadValue('offlineThread')),
     });
     await Promise.all([pairSynced(ce), pairSynced(cc)]);
 
@@ -474,7 +481,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     const ce = pair(board, editor.cookie);
     const cv = pair(board, viewer.cookie, {
       board: (d) => d.getMap('objects').set('offlineBoardEdit', 1),
-      comments: (d) => d.getMap('threads').set('offlineThread', 1),
+      comments: (d) => d.getMap('threads').set('offlineThread', threadValue('offlineThread')),
     });
     await Promise.all([pairSynced(ce), pairSynced(cv)]);
 
