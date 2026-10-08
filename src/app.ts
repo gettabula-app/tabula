@@ -1357,15 +1357,11 @@ export class BoardApp {
   }
 
   bringToFront() {
-    this.store.transact(() => {
-      for (const o of this.store.ordered().filter((o) => this.selection.includes(o.id))) this.store.update(o.id, { z: this.store.topZ() });
-    });
+    this.store.bringToFront(this.selection);
   }
 
   sendToBack() {
-    this.store.transact(() => {
-      for (const o of this.store.ordered().filter((o) => this.selection.includes(o.id)).reverse()) this.store.update(o.id, { z: this.store.bottomZ() });
-    });
+    this.store.sendToBack(this.selection);
   }
 
   updateSelected(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
