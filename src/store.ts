@@ -168,6 +168,31 @@ export class Store {
     return generateKeyBetween(null, min);
   }
 
+  /** `n` ascending keys below everything on the board. */
+  bottomZs(n: number): string[] {
+    let min: string | null = null;
+    for (const o of this.cache.values()) if (min === null || o.z < min) min = o.z;
+    return generateNKeysBetween(null, min, n);
+  }
+
+  /** Put the given objects above everything else, keeping their order among themselves. */
+  bringToFront(ids: Iterable<Id>) {
+    const set = new Set(ids);
+    const sel = this.ordered().filter((o) => set.has(o.id));
+    if (!sel.length) return;
+    const zs = this.topZs(sel.length);
+    this.transact(() => sel.forEach((o, i) => this.update(o.id, { z: zs[i] })));
+  }
+
+  /** Put the given objects below everything else, keeping their order among themselves. */
+  sendToBack(ids: Iterable<Id>) {
+    const set = new Set(ids);
+    const sel = this.ordered().filter((o) => set.has(o.id));
+    if (!sel.length) return;
+    const zs = this.bottomZs(sel.length);
+    this.transact(() => sel.forEach((o, i) => this.update(o.id, { z: zs[i] })));
+  }
+
   create(o: Obj) {
     const entries = Object.entries(o).filter(([, v]) => v !== undefined);
     this.objects.set(o.id, new Y.Map(entries));
