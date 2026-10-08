@@ -6,7 +6,7 @@ import { ADMIN_TABS, type AdminTab } from '../route';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
 import {
-  activeOwnerCount, auditActor, auditSentence, countLabel, disableVerdict, focusTarget, isKnownAuditAction, matchesQuery, removeVerdict,
+  activeOwnerCount, auditActor, auditSentence, countLabel, deviceLabel, disableVerdict, focusTarget, isKnownAuditAction, matchesQuery, removeVerdict,
   revokeVerdict, roleLock, roleOptions, roleVerdict, type Actor, type Lookup,
 } from './admin-logic';
 
@@ -29,6 +29,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Boards', prefix: 'board.' },
   { label: 'Invites', prefix: 'invite.' },
   { label: 'Sign-ins', prefix: 'auth.login' },
+  { label: 'Sessions', prefix: 'admin.session' },
 ];
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -38,6 +39,12 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDateTime = (t: number) =>
   new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+/**
+ * A cell's own label ("Signed in", "Edited"). On desktop the column heading already says it, so it is hidden there;
+ * on phone widths the headings are hidden and each row labels itself.
+ */
+const cellLabel = (label: string) => h('span', { class: 'admin-cell-label' }, `${label} `);
 
 function describe(e: unknown): string {
   const hosted = cloudErrorMessage(e);
@@ -360,6 +367,7 @@ function membersPanel(me: Me): HTMLElement {
     const signOutVerdict = revokeVerdict(actor, m);
     const toggleVerdict = disableVerdict(actor, m, !m.disabled, owners);
     const removal = removeVerdict(actor, m, owners);
+    const teamNames = m.teams.map((t) => t.name).join(', ');
     // Enable and Disable share one slot, so toggling moves nothing either
     const toggleLabels = ['Enable', 'Disable'];
     const toggleOpts = { disabled: !toggleVerdict.allowed, title: toggleVerdict.reason, focus: `${m.id}:toggle`, reserve: toggleLabels };
@@ -369,12 +377,12 @@ function membersPanel(me: Me): HTMLElement {
 
     return h('div', { class: 'admin-row' },
       h('div', { class: 'admin-who' },
-        h('div', null,
+        h('div', { title: m.name || m.email },
           h('span', { class: 'admin-name' }, m.name || m.email),
           self ? h('span', { class: 'muted' }, ' · You') : null,
           m.disabled ? h('span', { class: 'admin-badge' }, 'Disabled') : null),
-        h('div', { class: 'muted small' }, m.email),
-        h('div', { class: 'muted small' }, m.teams.length ? m.teams.map((t) => t.name).join(', ') : 'No teams')),
+        h('div', { class: 'muted small', title: m.email }, m.email),
+        h('div', { class: 'muted small', title: teamNames || undefined }, teamNames || 'No teams')),
       h('div', { class: 'admin-cell' }, h('div', { class: 'admin-select' }, select, icon('chevron', 16))),
       h('div', { class: 'admin-cell muted small' },
         h('div', null, m.lastSeenAt === null ? 'Never seen' : `Seen ${fmtAgo(m.lastSeenAt)}`),
@@ -480,14 +488,14 @@ function boardsPanel(): HTMLElement {
     const gone = b.deletedAt !== null;
     return h('div', { class: 'admin-row' },
       h('div', { class: 'admin-who' },
-        h('div', null,
+        h('div', { title: b.title || 'Untitled board' },
           h('span', { class: 'admin-name' }, b.title || 'Untitled board'),
           gone ? h('span', { class: 'admin-badge' }, 'Deleted') : null),
-        h('div', { class: 'muted small' }, `Owner ${b.ownerName ?? 'removed member'}`)),
+        h('div', { class: 'muted small', title: `Owner ${b.ownerName ?? 'removed member'}` }, `Owner ${b.ownerName ?? 'removed member'}`)),
       h('div', { class: 'admin-cell muted small' },
         h('div', null, b.teamName ?? 'Personal'),
         h('div', null, countLabel(b.shareCount, 'share', 'shares'))),
-      h('div', { class: 'admin-cell muted small' }, `Edited ${fmtAgo(b.updatedAt)}`),
+      h('div', { class: 'admin-cell muted small' }, cellLabel('Edited'), fmtAgo(b.updatedAt)),
       h('div', { class: 'btn-row admin-actions' },
         h('a', { class: 'btn', href: `#/b/${b.id}`, 'data-focus': `${b.id}:open` }, 'Open'),
         gone
@@ -540,13 +548,14 @@ function sessionsPanel(): HTMLElement {
 
   const sessionRow = (s: AdminSession): HTMLElement => h('div', { class: 'admin-row' },
     h('div', { class: 'admin-who' },
-      h('div', null,
+      h('div', { title: s.userName || s.email },
         h('span', { class: 'admin-name' }, s.userName || s.email),
         s.current ? h('span', { class: 'admin-badge' }, 'This session') : null),
-      h('div', { class: 'muted small' }, s.email)),
-    h('div', { class: 'admin-cell muted small' }, `Signed in ${fmtDate(s.createdAt)}`),
-    h('div', { class: 'admin-cell muted small' }, `Last seen ${fmtAgo(s.lastSeen)}`),
-    h('div', { class: 'admin-cell muted small' }, `Expires ${fmtDate(s.expiresAt)}`),
+      h('div', { class: 'muted small', title: s.email }, s.email),
+      h('div', { class: 'muted small', title: s.userAgent ?? undefined }, deviceLabel(s.userAgent))),
+    h('div', { class: 'admin-cell muted small' }, cellLabel('Signed in'), fmtDateTime(s.createdAt)),
+    h('div', { class: 'admin-cell muted small' }, cellLabel('Last seen'), fmtAgo(s.lastSeen)),
+    h('div', { class: 'admin-cell muted small' }, cellLabel('Expires'), fmtDate(s.expiresAt)),
     h('div', { class: 'btn-row admin-actions' }, s.current
       ? armable('Sign out', 'Click again to sign out', () => endSession(s), { focus: `${s.id}:end` })
       : armable('Revoke', 'Click again to revoke', () => endSession(s), { focus: `${s.id}:end` })));

@@ -56,7 +56,7 @@ Effective board role for a user, highest wins:
 ```
 users(id PK, email UNIQUE COLLATE NOCASE, name, role CHECK(owner|admin|member|guest), disabled INT DEFAULT 0, created_at)
 login_tokens(token_hash PK, email, invite_id NULL, expires_at, used_at NULL, created_at)
-sessions(id PK, token_hash UNIQUE, user_id FK, created_at, last_seen, expires_at, revoked INT DEFAULT 0)
+sessions(id PK, token_hash UNIQUE, user_id FK, created_at, last_seen, expires_at, revoked INT DEFAULT 0, user_agent NULL)   -- user_agent: the browser it signed in from (schema 4)
 teams(id PK, name, archived INT DEFAULT 0, created_at)
 team_members(team_id FK, user_id FK, role CHECK(admin|member), PRIMARY KEY(team_id,user_id))
 invites(id PK, token_hash UNIQUE, team_id FK, role CHECK(admin|member), created_by FK, expires_at, max_uses NULL, uses DEFAULT 0, revoked INT DEFAULT 0, created_at)

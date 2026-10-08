@@ -49,6 +49,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Admin dashboard polish: names, emails and board titles that are cut off show in full as a tooltip; Sessions shows the browser and system each session signed in from (recorded from now on) and the time of sign-in; the audit log has a Sessions filter for revoked sessions; on desktop, cells no longer repeat their column heading ("Signed in", "Edited").
 - Admin dashboard: arming or toggling a row action (Remove, Disable/Enable, Archive, Delete, Revoke) no longer moves the buttons; an armed button reads "Click again" and names the action for screen readers and in its tooltip. Focus stays on the same control after a change, or moves to the next row's when a row is removed. Outcomes show in the top bar instead of a toast that covered rows, and clear when you switch tabs.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).

@@ -109,7 +109,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
     return { ok: true };
   }
 
-  function verifyLogin(token) {
+  /** @param {string} token @param {{ userAgent?: string | null }} [opts] */
+  function verifyLogin(token, { userAgent = null } = {}) {
     return directory.transaction(() => {
       const t = now();
       const consumed = directory.consumeLoginToken(token, t);
@@ -137,7 +138,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         directory.recordInviteUse(invite.id);
       }
 
-      const session = directory.createSession(user.id, { ttlMs: config.sessionMs, now: t });
+      const session = directory.createSession(user.id, { ttlMs: config.sessionMs, now: t, userAgent });
       return { user, sessionToken: session.token, maxAgeMs: config.sessionMs };
     });
   }

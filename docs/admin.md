@@ -28,7 +28,7 @@ POST /api/admin/members/:id/revoke-sessions   -> 204
   Revokes every session of that person and closes their open sync sockets (the same effect as disabling, without disabling). Allowed on yourself.
 
 GET  /api/admin/sessions
-  -> [{id, userId, userName, email, createdAt, lastSeen, expiresAt, current: boolean}]   (non-revoked, non-expired, newest `lastSeen` first)
+  -> [{id, userId, userName, email, createdAt, lastSeen, expiresAt, userAgent: string|null, current: boolean}]   (non-revoked, non-expired, newest `lastSeen` first)
 DELETE /api/admin/sessions/:id   -> 204
   Revokes that one session and closes that person's open sync sockets (they reconnect and are checked again; a person with another valid session stays in). 404 for an unknown or already revoked id.
 
@@ -52,7 +52,7 @@ New module `src/ui/admin.ts` (+ `admin.css`), route `{ name: 'admin' }` for `#/a
 ```ts
 export interface AdminOverview { /* shape above */ }
 export interface AdminMember { id; email; name; role: UserRole; disabled: boolean; createdAt: number; lastSeenAt: number | null; activeSessions: number; boardCount: number; teams: { id: string; name: string; role: TeamRole }[] }
-export interface AdminSession { id; userId; userName; email; createdAt; lastSeen; expiresAt; current: boolean }
+export interface AdminSession { id; userId; userName; email; createdAt; lastSeen; expiresAt; userAgent: string | null; current: boolean }
 export interface AdminBoard { id; title; ownerId; ownerName; teamId: string | null; teamName: string | null; createdAt; updatedAt; deletedAt: number | null; shareCount: number }
 export interface AuditEntry { id: number; ts: number; actorId: string | null; actorName: string | null; actorEmail: string | null; action: string; detail: Record<string, unknown> }
 ```
@@ -64,7 +64,7 @@ Layout (Swiss, symmetric padding, theme variables only, no new colours): a full-
 - **Teams**: all teams (name, members, archived badge) with archive/unarchive.
 - **Boards**: searchable table with a "Show deleted" toggle; open, delete (confirm), restore.
 - **Sessions**: table with revoke per row; the current session is marked and its revoke button is labelled "Sign out".
-- **Audit log**: newest first, action filter (All, Members, Teams, Boards, Invites, Sign-ins), "Load more" using `next`. Each entry reads as a sentence (for example "ana@example.com changed owner@… to admin") built from `action` and `detail`, with the raw action as a tooltip; unknown actions fall back to the raw action string.
+- **Audit log**: newest first, action filter (All, Members, Teams, Boards, Invites, Sign-ins, Sessions: revoked sessions and sign-outs everywhere), "Load more" using `next`. Each entry reads as a sentence (for example "ana@example.com changed owner@… to admin") built from `action` and `detail`, with the raw action as a tooltip; unknown actions fall back to the raw action string.
 
 All lists show an empty state and an error state with Retry. Mutations update the row in place and toast the outcome. Non-admins who open `#/admin` are sent home.
 

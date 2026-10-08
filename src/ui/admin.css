@@ -121,6 +121,8 @@
 .admin-name { font-weight: 600; }
 .admin-cell { min-width: 0; line-height: 1.5; }
 .admin-cell > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A cell's own label is the column heading's job on desktop; it shows on phone widths, where the headings are hidden. */
+.admin-cell-label { display: none; }
 .admin .btn-row.admin-actions { justify-content: flex-end; gap: 8px; }
 .admin-badge {
   display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink);
@@ -168,6 +170,7 @@
   .admin-box { display: block; }
   .admin-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .admin-head { display: none; }
+  .admin-cell-label { display: inline; }
   .admin-box > .admin-head + .admin-row { border-top: 0; }
   .admin .btn-row.admin-actions { justify-content: flex-start; }
 }

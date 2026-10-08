@@ -242,10 +242,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       }
       return [200, { ok: true }];
     }),
-    compile('POST', 'auth/verify', { public: true, body: true, readOnlyOk: true }, ({ res, body }) => {
+    compile('POST', 'auth/verify', { public: true, body: true, readOnlyOk: true }, ({ req, res, body }) => {
       let result = null;
       try {
-        result = typeof body.token === 'string' ? auth.verifyLogin(body.token) : null;
+        result = typeof body.token === 'string' ? auth.verifyLogin(body.token, { userAgent: req.headers['user-agent'] }) : null;
       } catch (err) {
         if (!(err instanceof SeatLimitError)) throw err;
         throw conflict('seat_limit', 'This workspace has no free seat right now. Ask the workspace owner to add seats, then open this link again.');
