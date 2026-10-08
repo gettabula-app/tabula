@@ -5,6 +5,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 ## [Unreleased]
 
 ### Added
+- Sign-in screens, team-based home screen, read-only viewer boards, access banners and an Account section in the board menu for accounts mode.
 - CI tests and builds on Node 26 as well as 22 and 24, matching the Docker image's Node 26 base.
 - Toolbars and panels get a hairline outline on the non-default themes so they stay visible on dark canvases.
 - App themes: Default, Ayu, Kanagawa, Matrix and Evergreen. Pick one under Appearance in the board menu; the choice is remembered on this device and applied before the page paints. Every text and accent colour pair meets WCAG AA contrast (checked in tests).

@@ -12,6 +12,8 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
+import { api } from '../api';
+import { authState, setSignedOut, signOut } from '../auth';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
@@ -41,15 +43,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
     status.dataset.state = s;
-    status.replaceChildren(
-      icon(s === 'live' ? 'wifi' : 'cloudOff', 16),
-      h('span', null, s === 'live' ? (others ? `Live with ${others}` : 'Live') : s === 'connecting' ? 'Saved on this device' : 'Local only'),
-    );
-    status.title = s === 'live'
-      ? 'Connected to the relay. Changes sync in real time.'
-      : s === 'connecting'
-        ? 'Every change is saved on this device. Waiting for the relay to sync with others.'
-        : 'Sync is off. Every change is saved on this device.';
+    let label = 'Local only';
+    let tip = 'Sync is off. Every change is saved on this device.';
+    if (s === 'live') {
+      label = others ? `Live with ${others}` : 'Live';
+      tip = 'Connected to the relay. Changes sync in real time.';
+    } else if (s === 'connecting') {
+      label = 'Saved on this device';
+      tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
+    } else if (s === 'denied') {
+      label = app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = 'The server refused this connection. Your changes are still saved on this device.';
+    }
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
+    status.title = tip;
   };
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
@@ -364,7 +371,31 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
     }
   };
   paintThemes();
+  const auth = authState();
+  const account = auth.mode === 'signed-in' ? [
+    h('div', { class: 'list-label' }, 'Account'),
+    h('div', { style: 'display:flex;align-items:center;gap:10px;padding:8px 10px' },
+      icon('user', 18),
+      h('div', { style: 'min-width:0;overflow-wrap:anywhere' },
+        h('div', null, auth.me.user.name),
+        h('div', { class: 'muted small' }, auth.me.user.email))),
+    item('user', 'Sign out', async () => {
+      await signOut().catch(() => undefined);
+      location.hash = '#/signin';
+    }),
+    item('user', 'Sign out everywhere', async () => {
+      try {
+        await api.logoutAll();
+      } catch {
+        toast('Could not sign out everywhere. Check your connection and try again.');
+        return;
+      }
+      setSignedOut();
+      location.hash = '#/signin';
+    }),
+  ] : [];
   const pop = popover(anchor, h('div', { class: 'menu' },
+    account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),

@@ -61,6 +61,9 @@ export function toast(msg: string, ms = 2600) {
   toastTimer = window.setTimeout(() => el!.classList.remove('show'), ms);
 }
 
+/** Open dialogs, oldest first: Escape closes only the last one. */
+const openDialogs: object[] = [];
+
 /** Modal dialog. Resolves when closed. */
 export function dialog(title: string, body: HTMLElement, actions: { label: string; primary?: boolean; onClick?: () => void | boolean | Promise<void | boolean> }[] = []) {
   const back = h('div', { class: 'modal-back' });
@@ -79,8 +82,10 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
   );
   back.appendChild(box);
   document.body.appendChild(back);
+  const self = {};
+  openDialogs.push(self);
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape' && openDialogs[openDialogs.length - 1] === self) close();
   };
   window.addEventListener('keydown', onKey);
   back.addEventListener('pointerdown', (e) => {
@@ -88,6 +93,8 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
   });
   function close() {
     window.removeEventListener('keydown', onKey);
+    const i = openDialogs.indexOf(self);
+    if (i >= 0) openDialogs.splice(i, 1);
     back.remove();
   }
   requestAnimationFrame(() => (box.querySelector('input, textarea, button.primary') as HTMLElement | null)?.focus());

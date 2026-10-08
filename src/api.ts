@@ -90,6 +90,9 @@ export class ApiError extends Error {
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
+/** A hung server must not freeze the app: a timeout rejects like any other network failure. */
+const REQUEST_TIMEOUT_MS = 8000;
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
@@ -116,6 +119,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (method !== 'GET') headers['x-mira'] = '1';
     const init: RequestInit = { method, credentials: 'same-origin', headers };
+    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     if (payload !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(payload);
