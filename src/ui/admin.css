@@ -1,129 +1,174 @@
-/* Admin dashboard: a page of lists on the canvas, Swiss rules and hairlines. Theme variables only. */
+/* Admin dashboard: a Swiss grid of flush-left type, strong rules and hairlines. Theme variables only. */
 
 .admin-root { min-height: 100%; background: var(--canvas); }
 .admin { min-height: 100vh; color: var(--ink); }
-.admin .icon-btn:hover { background: var(--rule); }
+.admin .small { font-size: 13px; }
+.admin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.admin .input:focus-visible { outline: none; }
 
+/* Label style: 11px uppercase meta for nav, column heads, tile labels, filters, badges and the count. */
+.admin .admin-me,
+.admin .admin-kicker,
+.admin .admin-count,
+.admin .admin-tab,
+.admin .admin-head,
+.admin .admin-tile-label,
+.admin .admin-fact dt,
+.admin .admin-chip,
+.admin .admin-badge {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.admin .admin-me,
+.admin .admin-kicker,
+.admin .admin-count,
+.admin .admin-head,
+.admin .admin-tile-label,
+.admin .admin-fact dt { color: var(--graphite); }
+
+/* Top bar: wordmark flush left, the signed-in user as a label on the right, aligned to the 1120px column. */
 .admin-top {
-  display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 24px;
-  border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 16px; height: 56px;
+  padding: 0 max(24px, calc((100% - 1120px) / 2 + 24px));
+  border-bottom: 2px solid var(--ink);
 }
-.admin-title { margin: 0; font: 700 18px var(--display); letter-spacing: 0.01em; }
-.admin-me { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-title { margin: 0; font: 800 20px/1 var(--display); letter-spacing: -0.03em; }
+.admin .admin-me { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Asymmetric grid: a narrow numbered index beside a wide panel, 24px gutter. */
 .admin-body {
-  max-width: 1120px; margin: 0 auto; padding: 32px 24px 48px;
-  display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 40px;
+  max-width: 1120px; margin: 0 auto; padding: 48px 24px;
+  display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px;
 }
-.admin-tabs { display: flex; flex-direction: column; align-self: start; position: sticky; top: 24px; }
-.admin-tab {
-  display: flex; align-items: center; min-height: 36px; padding: 0 12px;
-  border-top: 1px solid var(--rule); color: var(--graphite); font-weight: 500; text-decoration: none;
+.admin-tabs { display: flex; flex-direction: column; align-self: start; position: sticky; top: 24px; border-bottom: 1px solid var(--rule); }
+.admin .admin-tab {
+  display: block; padding: 12px 0 12px 12px; line-height: 16px; text-decoration: none;
+  border-top: 1px solid var(--rule); border-left: 4px solid var(--canvas); color: var(--graphite);
 }
-.admin-tab:last-child { border-bottom: 1px solid var(--rule); }
-.admin-tab:hover { color: var(--ink); }
-.admin-tab.on { color: var(--ink); font-weight: 700; box-shadow: inset 2px 0 0 var(--ink); }
+.admin .admin-tab:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+.admin .admin-tab.on { color: var(--ink); border-left-color: var(--signal); }
+.admin .admin-tab-num { margin-right: 12px; }
 
 .admin-panel { min-width: 0; }
-.admin-heading { margin: 0 0 16px; font: 700 20px var(--display); }
-.admin-sub { margin: 32px 0 12px; font: 700 16px var(--display); }
+.admin .admin-kicker { margin: 0 0 8px; }
+.admin-heading { margin: 0 0 32px; font: 800 40px/1 var(--display); letter-spacing: -0.03em; }
+.admin-sub { margin: 48px 0 16px; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 
-.admin-state { margin: 0; padding: 20px; color: var(--graphite); }
+.admin-state { margin: 0; padding: 16px 0; color: var(--graphite); }
 .admin-error {
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
-  border-radius: 10px; background: var(--paper); color: var(--ink); box-shadow: inset 3px 0 0 var(--danger);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  padding: 16px 16px 16px 20px; border-left: 4px solid var(--danger); background: var(--paper); color: var(--ink);
 }
 .admin-error span { flex: 1 1 200px; }
 
-.admin-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
-.admin-tile { min-width: 0; padding: 16px 18px; border-radius: 10px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); }
-.admin-tile-label { color: var(--graphite); font-size: 12.5px; font-weight: 600; }
-.admin-tile-value { margin-top: 6px; font: 700 30px/1 var(--display); }
+/* Overview figures: one band under a 2px rule, hairlines between figures, no boxes. */
+.admin-tiles {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 24px;
+  border-top: 2px solid var(--ink);
+}
+.admin-tile { min-width: 0; padding: 16px 12px 0; border-left: 1px solid var(--rule); }
+.admin .admin-tile-label { min-height: 32px; line-height: 16px; }
+.admin-tile:first-child { padding-left: 0; border-left: 0; }
+.admin-tile-value { margin-top: 24px; font: 700 48px/1 var(--display); letter-spacing: -0.03em; }
 .admin-tile-sub { margin-top: 8px; line-height: 1.35; overflow-wrap: anywhere; }
 
-.admin-facts { margin: 0; border-radius: 10px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); }
-.admin-fact { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; padding: 12px 16px; border-top: 1px solid var(--rule); }
+/* Instance facts: a two-column definition list on hairlines. */
+.admin-facts { margin: 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); }
+.admin-fact {
+  display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 24px; align-items: baseline;
+  padding: 16px 0; border-top: 1px solid var(--rule);
+}
 .admin-fact:first-child { border-top: 0; }
-.admin-fact dt { color: var(--graphite); }
 .admin-fact dd { margin: 0; overflow-wrap: anywhere; }
 
-.admin-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
-.admin-count { margin: 0 0 0 auto; }
+.admin-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-bottom: 16px; }
+.admin .admin-count { margin: 0 0 0 auto; }
 .admin-search { position: relative; flex: 1 1 220px; max-width: 320px; }
-.admin-search .input { padding-left: 34px; }
-.admin-search .ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
+.admin .admin-search .input { padding-left: 34px; }
+.admin .admin-search .ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
 .admin-check { display: inline-flex; align-items: center; gap: 8px; color: var(--graphite); }
-.admin-check input { width: 16px; height: 16px; accent-color: var(--signal); }
-.admin-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
-.admin-chip {
-  height: 30px; padding: 0 12px; border: 0; border-radius: 99px; background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--rule); color: var(--graphite); font-size: 13px; font-weight: 500;
-}
-.admin-chip:hover { color: var(--ink); }
-.admin-chip.on { background: var(--ink); color: var(--paper); box-shadow: none; }
+.admin-check input { width: 16px; height: 16px; accent-color: var(--ink); }
+.admin-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--graphite); }
+.admin .admin-chip:hover { border-color: var(--ink); color: var(--ink); }
+.admin .admin-chip.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 
-/* One grid per list: each row is a subgrid of it, so the header and every row share the same column lines. */
+/* One grid per list: each row is a subgrid of it, so the header and every row share the same column lines.
+   The heavy rule sits above the header (or the first row, where there is no header). */
 .admin-box {
-  display: grid; grid-template-columns: var(--cols, minmax(0, 1fr)); column-gap: 12px; row-gap: 0;
-  overflow: hidden; border-radius: 10px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule);
+  display: grid; grid-template-columns: var(--cols, minmax(0, 1fr)); column-gap: 24px;
+  border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule);
 }
 .admin-box > .admin-state,
 .admin-box > .admin-row { grid-column: 1 / -1; }
+.admin-box > :first-child { border-top: 0; }
 .admin-row {
   display: grid; grid-template-columns: subgrid; align-items: center;
-  padding: 12px 16px; border-top: 1px solid var(--rule);
+  padding: 16px 0; border-top: 1px solid var(--rule);
 }
-.admin-box > :first-child { border-top: 0; }
-.admin-head { padding-top: 10px; padding-bottom: 10px; color: var(--graphite); font-size: 12px; font-weight: 600; }
+.admin-head { padding-top: 12px; padding-bottom: 12px; }
 .admin-who { min-width: 0; }
 .admin-who > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-name { font-weight: 600; }
 .admin-cell { min-width: 0; line-height: 1.5; }
 .admin-cell > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-actions { justify-content: flex-end; }
+.admin .btn-row.admin-actions { justify-content: flex-end; gap: 8px; }
 .admin-badge {
-  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 99px; vertical-align: 1px;
-  background: var(--rule); color: var(--ink); font-size: 11.5px; font-weight: 600;
+  display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink);
+  line-height: 18px; vertical-align: 1px;
 }
 .admin-select { position: relative; min-width: 0; }
-.admin-select .input { padding-right: 32px; }
-.admin-select .ico { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
+.admin .admin-select .input { padding-right: 32px; }
+.admin .admin-select .ico { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
 .admin select.input { appearance: none; -webkit-appearance: none; background-image: none; }
-.admin-foot { display: flex; justify-content: center; padding: 12px 0; }
+.admin-foot { display: flex; justify-content: flex-start; padding-top: 24px; }
 
-.admin-row.audit-row { display: block; padding: 10px 16px; }
+.admin-row.audit-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; align-items: baseline; padding: 12px 0;
+}
 .audit-text { overflow-wrap: anywhere; }
 
+/* Buttons: rectangular, 32px. Default is an ink outline that inverts on hover; primary is the one signal fill. */
 .admin .btn {
-  height: 32px; padding: 0 12px; border: 0; border-radius: 8px; font-size: 13px; text-decoration: none;
-  background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule);
+  height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: none; color: var(--ink);
+  font-size: 13px; font-weight: 600; text-decoration: none;
 }
-.admin .btn:hover { background: var(--canvas); }
-.admin .btn:disabled:hover { background: var(--paper); }
-.admin .btn.primary { background: var(--signal); color: var(--on-signal); box-shadow: none; }
-.admin .btn.primary:hover { background: var(--signal); }
-.admin .btn.armed { color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
-.admin .input { height: 32px; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); }
-.admin .input:focus { border-color: var(--signal); }
+.admin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
+.admin .btn:disabled { opacity: 0.5; }
+.admin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+.admin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
+.admin .btn.armed { border-color: var(--danger); color: var(--danger); }
+.admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--paper); }
+
+.admin .input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink);
+}
+.admin .input:focus { border-color: var(--ink); }
 .admin .input[type='search'] { min-width: 0; width: 100%; }
+.admin .icon-btn { border-radius: 0; }
+.admin .icon-btn:hover { background: var(--ink); color: var(--paper); }
 
 @media (max-width: 900px) {
+  .admin-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .admin-tile:nth-child(4n + 1) { padding-left: 0; border-left: 0; }
   .admin-box { display: block; }
   .admin-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .admin-head { display: none; }
-  .admin-actions { justify-content: flex-start; }
+  .admin-box > .admin-head + .admin-row { border-top: 0; }
+  .admin .btn-row.admin-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 720px) {
   .admin-top { padding: 0 16px; }
-  .admin-body { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px 16px 40px; }
-  .admin-tabs {
-    flex-direction: row; position: static; overflow-x: auto; scrollbar-width: none;
-    border-bottom: 1px solid var(--rule);
+  .admin-body { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px 16px 40px; }
+  .admin-tabs { flex-direction: row; position: static; overflow-x: auto; scrollbar-width: none; }
+  .admin .admin-tab {
+    flex: none; padding: 12px 0 10px; margin-right: 24px; white-space: nowrap;
+    border-top: 0; border-left: 0; border-bottom: 2px solid var(--canvas);
   }
-  .admin-tab { flex: none; min-height: 40px; border-top: 0; }
-  .admin-tab:last-child { border-bottom: 0; }
-  .admin-tab.on { box-shadow: inset 0 -2px 0 var(--ink); }
-  .admin-fact { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .admin-count { margin-left: 0; }
+  .admin .admin-tab.on { border-bottom-color: var(--ink); }
+  .admin-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-tile:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
+  .admin-fact { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .admin .admin-count { margin-left: 0; }
+  .admin-row.audit-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
 }

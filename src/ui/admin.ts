@@ -34,6 +34,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDateTime = (t: number) =>
   new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -190,7 +191,7 @@ function overviewView(o: AdminOverview): HTMLElement {
 
 /** Hosted workspaces only (docs/cloud.md): the owner's way into the billing portal. */
 function billingBlock(): HTMLElement {
-  const button = h('button', { class: 'btn' }, 'Manage billing');
+  const button = h('button', { class: 'btn primary' }, 'Manage billing');
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
@@ -573,12 +574,13 @@ export function renderAdmin(root: HTMLElement, tab: AdminTab, me: Me): void {
       h('span', { class: 'muted small admin-me' }, me.user.name || me.user.email)),
     h('div', { class: 'admin-body' },
       h('nav', { class: 'admin-tabs', 'aria-label': 'Admin sections' },
-        ADMIN_TABS.map((t) => h('a', {
+        ADMIN_TABS.map((t, i) => h('a', {
           class: t === tab ? 'admin-tab on' : 'admin-tab',
           href: `#/admin/${t}`,
           'aria-current': t === tab ? 'page' : undefined,
-        }, TAB_LABELS[t]))),
+        }, h('span', { class: 'admin-tab-num', 'aria-hidden': 'true' }, pad2(i + 1)), TAB_LABELS[t]))),
       h('section', { class: 'admin-panel', 'aria-label': TAB_LABELS[tab] },
+        h('p', { class: 'admin-kicker', 'aria-hidden': 'true' }, `${pad2(ADMIN_TABS.indexOf(tab) + 1)} / ${pad2(ADMIN_TABS.length)}`),
         h('h2', { class: 'admin-heading' }, TAB_LABELS[tab]),
         PANELS[tab](me)))));
 }
