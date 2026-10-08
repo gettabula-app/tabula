@@ -137,6 +137,7 @@ While connected:
 - The role is re-resolved at most every 5 seconds per connection, and immediately after any access change, so a demoted editor becomes read-only (or comment-only) without reconnecting and a member who lost access is disconnected with close code **`4410` (`access_removed`)**. `4410` is the only code the client may treat as "your access was taken away"; it is distinct from `4403` (no access at join time).
 - Revoking a session closes its sockets with `4401`. Disabling or removing a user, removing them from a team, unsharing a board or deleting a board closes the affected sockets with `4410`. A user's sockets for the board room and the comments room are treated alike.
 - When a board room is saved, the relay copies the board title from the document (`doc.getMap('meta').get('name')`) into `boards.title` and bumps `updated_at`.
+- The other way round: when the relay loads a board room whose document has no name, it sets the name from `boards.title` (unless that is the default "Untitled board"), so a board created with `POST /api/boards {title}` (outside the app) opens under that name. `PATCH /api/boards/:id {title}` also renames the document, loading the room if nobody has it open.
 
 Open mode (`TABULA_AUTH=off`) skips all of this.
 
