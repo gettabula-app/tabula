@@ -24,7 +24,7 @@ Status: spec for review. Nothing is built yet.
 
 ## Data model
 
-Two new root maps in the board document (`doc.getMap('polls')`, `doc.getMap('pollAnswers')`) and one new step mode.
+Three root maps in the board document (`doc.getMap('polls')`, `doc.getMap('pollAnswers')`, `doc.getMap('pollState')`) and one new step mode.
 
 ```
 Step (src/types.ts)
@@ -56,7 +56,11 @@ PollAnswer {
   name?: string             // named polls only
   color?: string            // named polls only
 }
+
+pollState: Y.Map<boolean | number>  // key: `${pollId}:${field}`, field = revealed | openedAt | closedAt
 ```
+
+**Changing fields have their own keys.** A poll's definition (question, options, `multiple`, `anonymous`) only changes before it opens. `revealed`, `openedAt` and `closedAt` change later, and often at the same time on different devices: the facilitator reveals while someone moves the session on. As one JSON value the later write replaced the earlier one, so a reveal or a close could be lost. Each now has its own key in `pollState`, so both survive. Reading combines `pollState` with the same fields in the definition: they only move one way, so `revealed` is true if either says so and the earliest time wins. Writes set the `pollState` key and also update the definition, for clients from before `pollState`. A writable client copies these fields from definitions into `pollState` when it loads a board and whenever a definition changes (polls from before this change, or written by an older client), so a later rewrite by an older client cannot take them back.
 
 Rules:
 
