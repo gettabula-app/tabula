@@ -46,6 +46,9 @@ const ROLE_RECHECK_MS = 5_000;
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+// Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
+// workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
+const MSG_WORKSPACE = 4;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -311,6 +314,13 @@ if (config.mcp) {
   mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
 }
 
+function workspaceHint(readOnly) {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_WORKSPACE);
+  encoding.writeVarString(enc, JSON.stringify({ readOnly }));
+  return encoding.toUint8Array(enc);
+}
+
 function send(ws, msg) {
   if (ws.readyState !== ws.OPEN) return;
   ws.send(msg, (err) => {
@@ -483,9 +493,18 @@ if (config.authEnabled) {
   events.on('user-removed', ({ userId } = {}) => {
     for (const ws of socketsOf(userId)) refresh(ws, true);
   });
-  // A workspace that turns read-only (or back) applies to sockets that are already open.
-  events.on('limits-changed', () => {
-    for (const ws of allSockets()) refresh(ws, true);
+  // A workspace that turns read-only (or back) applies to sockets that are already open, and only a flip of that switch
+  // (not a banner, a seat limit or a repeated value) tells the clients, who then ask /api/me what is true. `send` skips
+  // a socket that is closing, such as one the refresh just denied.
+  let knownReadOnly = cloud?.limits().readOnly === true;
+  events.on('limits-changed', ({ readOnly } = {}) => {
+    const flipped = (readOnly === true) !== knownReadOnly;
+    knownReadOnly = readOnly === true;
+    const hint = flipped ? workspaceHint(knownReadOnly) : null;
+    for (const ws of allSockets()) {
+      refresh(ws, true);
+      if (hint) send(ws, hint);
+    }
   });
   setInterval(() => {
     for (const ws of allSockets()) refresh(ws, false);

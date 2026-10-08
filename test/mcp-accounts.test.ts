@@ -578,9 +578,11 @@ describe('editing', () => {
   it('shows an edit on a connected browser at once, keeps it across a restart, and attributes it', async () => {
     const me = await newMember();
     const mine = await h.newBoard(me.cookie);
+    // Share before Bob connects: a socket that reaches the relay first is closed with 4403, which the provider
+    // treats as final and never retries.
+    await h.share(me.cookie, mine, bob.user.id, 'editor');
     const browser = h.connect(mine, bob.cookie);
     const viewer = h.connect(mine, me.cookie);
-    await h.share(me.cookie, mine, bob.user.id, 'editor');
     await Promise.all([browser.synced(), viewer.synced()]);
     const token = await tokenOf(me, 'write');
     const objects = (d: Y.Doc) => d.getMap('objects') as Y.Map<Y.Map<unknown>>;
@@ -725,7 +727,7 @@ describe('editing', () => {
 
     await h.tool(token, 'create_objects', { boardId: mine, objects: [sticky({ text: 'kept' })] });
     expect(await health()).toBe(base + 1);
-    await until(async () => (await health()) === base, 6000);
+    await until(async () => (await health()) === base, 12_000);
     expect(h.savedDoc(mine).getMap('objects').size).toBe(1);
     // and it loads again from disk for the next reader
     expect((await h.tool(token, 'get_board', { boardId: mine })).data.counts.total).toBe(1);

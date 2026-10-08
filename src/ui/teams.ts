@@ -222,7 +222,7 @@ export function openTeamManager(team: Team, me: Me, onChange: () => void): void 
     ));
     sections.push(h('div', { class: 'team-section danger-zone' },
       h('div', { class: 'list-label' }, 'Danger zone'),
-      h('button', { class: 'btn', onclick: confirmArchive }, 'Archive team'),
+      h('button', { class: 'btn danger', onclick: confirmArchive }, 'Archive team'),
     ));
   }
 

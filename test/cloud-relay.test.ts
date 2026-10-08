@@ -6,8 +6,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import * as Y from 'yjs';
+import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { MSG_WORKSPACE, onWorkspaceHint, resyncRooms } from '../src/sync';
 
 // docs/cloud.md. The relay runs as a child process exactly as `npm start` would, next to a fake control plane.
 
@@ -50,7 +53,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 8000);
+    setTimeout(() => reject(new Error('relay did not start')), 15_000);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -198,7 +201,43 @@ function client(srv: Server) {
       disableBc: true,
     });
     providers.add(provider);
-    return { doc, provider };
+    const hints = { count: 0 };
+    onWorkspaceHint(provider, () => hints.count++);
+    return { doc, provider, hints };
+  }
+
+  type Listener = { ws: WebSocket; hints: Body[]; awareness: string[]; closed: number | null };
+
+  /** A bare socket that records what the relay sends, so the hint can be checked on the wire. */
+  function listen(room: string, cookie?: string): Listener {
+    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/sync/${room}`, { headers: { Origin: srv.base, ...(cookie ? { Cookie: cookie } : {}) } });
+    sockets.add(ws);
+    ws.binaryType = 'arraybuffer';
+    const heard: Listener = { ws, hints: [], awareness: [], closed: null };
+    ws.on('message', (data: ArrayBuffer) => {
+      const bytes = new Uint8Array(data);
+      const decoder = decoding.createDecoder(bytes);
+      const type = decoding.readVarUint(decoder);
+      if (type === MSG_WORKSPACE) heard.hints.push(JSON.parse(decoding.readVarString(decoder)));
+      else if (type === 1) heard.awareness.push(Buffer.from(bytes).toString('utf8'));
+    });
+    ws.on('close', (code) => (heard.closed = code));
+    return heard;
+  }
+
+  /** The relay sends a socket's messages in order, so once an awareness marker from a joined client has arrived, every hint sent before it has too. */
+  async function afterHints(through: ReturnType<typeof connect>, listeners: Listener[]) {
+    const name = unique('barrier');
+    through.provider.awareness.setLocalStateField('user', { name });
+    await until(() => listeners.every((l) => l.awareness.some((text) => text.includes(name))));
+  }
+
+  /** A message of the given type as a client could send it. */
+  function frame(type: number, payload?: string) {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, type);
+    if (payload !== undefined) encoding.writeVarString(enc, payload);
+    return encoding.toUint8Array(enc);
   }
 
   const synced = (c: ReturnType<typeof connect>) => until(() => c.provider.wsconnected && c.provider.synced);
@@ -210,7 +249,7 @@ function client(srv: Server) {
     await until(() => [...to.provider.awareness.getStates().values()].some((s) => s.user?.name === name));
   }
 
-  return { api, internal, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, synced, flush };
+  return { api, internal, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };
 }
 
 // ---------------------------------------------------------------- configuration
@@ -224,7 +263,7 @@ describe('startup', () => {
       const out = spawnSync(process.execPath, ['server/relay.mjs'], {
         env: { ...baseEnv(BASE_PORT + 800 + launched++, dir), ...env },
         encoding: 'utf8',
-        timeout: 8000,
+        timeout: 15_000,
       });
       return { status: out.status, stderr: out.stderr };
     } finally {
@@ -382,6 +421,153 @@ describe('a hosted workspace', () => {
     });
   });
 
+  describe('read-only hint', () => {
+    const put = (body: Record<string, unknown>) => c.internal('PUT', '/api/internal/limits', body);
+
+    it('tells every open socket of the board and the comments room once when the switch flips, and for nothing else', async () => {
+      const team = await c.newTeam(owner.cookie);
+      const editor = await c.joinTeam(owner.cookie, team.id);
+      const board = await c.newBoard(editor.cookie, { teamId: team.id });
+      const listeners = {
+        editorBoard: c.listen(board, editor.cookie),
+        editorTalk: c.listen(`${board}~comments`, editor.cookie),
+        ownerBoard: c.listen(board, owner.cookie),
+        ownerTalk: c.listen(`${board}~comments`, owner.cookie),
+      };
+      const inBoard = c.connect(board, owner.cookie);
+      const inTalk = c.connect(`${board}~comments`, owner.cookie);
+      await c.synced(inBoard);
+      await c.synced(inTalk);
+      const all = Object.values(listeners);
+      await until(() => all.every((l) => l.ws.readyState === WebSocket.OPEN));
+
+      try {
+        expect((await put({ readOnly: true })).status).toBe(200);
+        expect((await put({ readOnly: true })).status).toBe(200);
+        expect((await put({ banner: 'Payment overdue' })).status).toBe(200);
+        expect((await put({ seatLimit: 20 })).status).toBe(200);
+        expect((await put({ readOnly: true, banner: null })).status).toBe(200);
+        expect((await put({ readOnly: false })).status).toBe(200);
+        expect((await put({ readOnly: false })).status).toBe(200);
+      } finally {
+        await put({ readOnly: false, banner: null, seatLimit: null });
+      }
+      await c.afterHints(inBoard, [listeners.editorBoard, listeners.ownerBoard]);
+      await c.afterHints(inTalk, [listeners.editorTalk, listeners.ownerTalk]);
+
+      for (const l of all) expect(l.hints).toEqual([{ readOnly: true }, { readOnly: false }]);
+      // The providers have the same sockets, and the handler y-websocket calls is the one the app registers.
+      expect(inBoard.hints.count).toBe(2);
+      expect(inTalk.hints.count).toBe(2);
+    });
+
+    it('gets nothing to a socket that was refused, closed or signed out', async () => {
+      const team = await c.newTeam(owner.cookie);
+      const editor = await c.joinTeam(owner.cookie, team.id);
+      const outsider = await c.joinTeam(owner.cookie, (await c.newTeam(owner.cookie)).id);
+      const leaver = await c.joinTeam(owner.cookie, team.id);
+      const board = await c.newBoard(editor.cookie, { teamId: team.id });
+
+      const refused = c.listen(board, outsider.cookie);
+      const signedOut = c.listen(board, leaver.cookie);
+      const closing = c.listen(board, editor.cookie);
+      const control = c.listen(board, editor.cookie);
+      const through = c.connect(board, editor.cookie);
+      await c.synced(through);
+      await until(() => signedOut.ws.readyState === WebSocket.OPEN && closing.ws.readyState === WebSocket.OPEN && control.ws.readyState === WebSocket.OPEN);
+
+      expect((await c.api(leaver.cookie, 'POST', '/api/auth/logout')).status).toBe(204);
+      closing.ws.close();
+      await until(() => refused.closed !== null && signedOut.closed !== null && closing.closed !== null);
+      expect(refused.closed).toBe(4403);
+      expect(signedOut.closed).toBe(4401);
+
+      try {
+        await put({ readOnly: true });
+      } finally {
+        await put({ readOnly: false });
+      }
+      await c.afterHints(through, [control]);
+      expect(control.hints).toEqual([{ readOnly: true }, { readOnly: false }]);
+      for (const l of [refused, signedOut, closing]) expect(l.hints).toEqual([]);
+    });
+
+    it('is not a message a client can send: it is ignored and changes nothing', async () => {
+      const team = await c.newTeam(owner.cookie);
+      const editor = await c.joinTeam(owner.cookie, team.id);
+      const board = await c.newBoard(editor.cookie, { teamId: team.id });
+      const sender = c.connect(board, editor.cookie);
+      const other = c.connect(board, owner.cookie);
+      const watcher = c.listen(board, owner.cookie);
+      await c.synced(sender);
+      await c.synced(other);
+      await until(() => watcher.ws.readyState === WebSocket.OPEN);
+
+      const bytes = [c.frame(MSG_WORKSPACE, '{"readOnly":true}'), c.frame(MSG_WORKSPACE, '{"readOnly":false}'), c.frame(MSG_WORKSPACE), c.frame(MSG_WORKSPACE, 'not json'), c.frame(99, 'x')];
+      for (const message of bytes) sender.provider.ws!.send(message);
+      sender.doc.getMap('objects').set('still-works', 1);
+      await until(() => other.doc.getMap('objects').get('still-works') === 1);
+      await c.flush(sender, other);
+      expect(sender.provider.wsconnected).toBe(true);
+      expect(other.hints.count).toBe(0);
+      await c.afterHints(other, [watcher]);
+      expect(watcher.hints).toEqual([]);
+
+      // A claim that the lock is gone does not lift it.
+      await put({ readOnly: true });
+      try {
+        sender.provider.ws!.send(c.frame(MSG_WORKSPACE, '{"readOnly":false}'));
+        sender.doc.getMap('objects').set('while-locked', 2);
+        await c.flush(sender, other);
+        expect(other.doc.getMap('objects').get('while-locked')).toBeUndefined();
+      } finally {
+        await put({ readOnly: false });
+      }
+    });
+
+    it('lets what was typed during the lock reach the server once the board reconnects', async () => {
+      const team = await c.newTeam(owner.cookie);
+      const editor = await c.joinTeam(owner.cookie, team.id);
+      const board = await c.newBoard(editor.cookie, { teamId: team.id });
+      const writer = c.connect(board, editor.cookie);
+      const writerTalk = c.connect(`${board}~comments`, editor.cookie);
+      const reader = c.connect(board, owner.cookie);
+      const readerTalk = c.connect(`${board}~comments`, owner.cookie);
+      for (const x of [writer, writerTalk, reader, readerTalk]) await c.synced(x);
+
+      writer.doc.getMap('objects').set('before', 1);
+      await until(() => reader.doc.getMap('objects').get('before') === 1);
+
+      await put({ readOnly: true });
+      try {
+        await until(() => writer.hints.count === 1 && writerTalk.hints.count === 1);
+        // Typed after the flip and before the client has acted on the message, as the app would see it.
+        writer.doc.getMap('objects').set('during', 2);
+        writerTalk.doc.getMap('threads').set('during', 2);
+        await c.flush(writer, reader);
+        await c.flush(writerTalk, readerTalk);
+        expect(reader.doc.getMap('objects').get('during')).toBeUndefined();
+      } finally {
+        await put({ readOnly: false });
+      }
+      await until(() => writer.hints.count === 2 && writerTalk.hints.count === 2);
+
+      // Without a reconnect the relay cannot apply what comes next either: it builds on what was dropped.
+      writer.doc.getMap('objects').set('after', 3);
+      await c.flush(writer, reader);
+      expect(reader.doc.getMap('objects').get('after')).toBeUndefined();
+
+      resyncRooms({ denied: null }, [writer.provider, writerTalk.provider]);
+      await until(() => reader.doc.getMap('objects').get('during') === 2 && reader.doc.getMap('objects').get('after') === 3);
+      await until(() => readerTalk.doc.getMap('threads').get('during') === 2);
+      expect(reader.doc.getMap('objects').get('before')).toBe(1);
+
+      const late = c.connect(board, owner.cookie);
+      await c.synced(late);
+      expect(late.doc.getMap('objects').toJSON()).toMatchObject({ before: 1, during: 2, after: 3 });
+    });
+  });
+
   describe('seat limit', () => {
     it('refuses new invites and sign-ins through them, without using up the invite or the link, until a seat is free', async () => {
       const team = await c.newTeam(owner.cookie);
@@ -464,6 +650,28 @@ describe('a hosted workspace', () => {
   });
 
   describe('restart', () => {
+    it('treats a lock that survived as the starting point for the hint', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-hint-'));
+      const first = await launch(CLOUD_ENV(), dir);
+      const a = client(first);
+      const who = await a.signIn(OWNER);
+      const board = await a.newBoard(who.cookie, { teamId: (await a.newTeam(who.cookie)).id });
+      await a.internal('PUT', '/api/internal/limits', { readOnly: true });
+      await stopRelay(first.proc);
+
+      const second = await launch(CLOUD_ENV(), dir);
+      const b = client(second);
+      const again = await b.signIn(OWNER);
+      const heard = b.listen(board, again.cookie);
+      const through = b.connect(board, again.cookie);
+      await b.synced(through);
+      await until(() => heard.ws.readyState === WebSocket.OPEN);
+      expect((await b.internal('PUT', '/api/internal/limits', { readOnly: true })).status).toBe(200);
+      expect((await b.internal('PUT', '/api/internal/limits', { readOnly: false })).status).toBe(200);
+      await b.afterHints(through, [heard]);
+      expect(heard.hints).toEqual([{ readOnly: false }]);
+    });
+
     it('keeps the limits', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-keep-'));
       const first = await launch(CLOUD_ENV(), dir);

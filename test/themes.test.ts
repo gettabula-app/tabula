@@ -12,7 +12,18 @@ const TEXT_PAIRS: [ThemeVar, ThemeVar][] = [
   ['--graphite', '--paper'],
   ['--danger', '--paper'],
   ['--danger', '--canvas'],
+  // Armed (confirm) buttons: danger text at rest, paper text on a danger fill when hovered.
+  ['--paper', '--danger'],
 ];
+
+function srgbMix(a: string, pct: number, b: string): string {
+  const [pa, pb] = [pct / 100, 1 - pct / 100];
+  const channels = [1, 3, 5].map((i) => {
+    const [ca, cb] = [a, b].map((hex) => parseInt(hex.slice(i, i + 2), 16));
+    return Math.round(ca * pa + cb * pb).toString(16).padStart(2, '0');
+  });
+  return `#${channels.join('').toUpperCase()}`;
+}
 
 function fakeRoot() {
   const values = new Map<string, string>();
@@ -70,6 +81,18 @@ describe('contrast', () => {
 
   it('keeps paper text on ink at 4.5:1 or better in every theme', () => {
     const failing = THEMES.filter((t) => !(contrast(t.vars['--paper'], t.vars['--ink']) >= 4.5)).map((t) => t.id);
+    expect(failing).toEqual([]);
+  });
+
+  it('keeps danger text on trays at 4.5:1 or better in every theme', () => {
+    const failing = THEMES.flatMap((t) =>
+      (['--tray', '--tray-2'] as const).map((bg) => ({
+        label: `${t.id} danger mix on ${bg}`,
+        ratio: contrast(srgbMix(t.vars['--danger'], 54, t.vars['--tray-text']), t.vars[bg]),
+      })),
+    )
+      .filter(({ ratio }) => !(ratio >= 4.5))
+      .map(({ label, ratio }) => `${label} ${ratio.toFixed(2)}`);
     expect(failing).toEqual([]);
   });
 });

@@ -43,11 +43,19 @@ PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banne
 
 While `readOnly` is true:
 
-- **Relay**: every connection is read-only for the board room and the comments room, whatever the person's role. Sockets that are already open are re-evaluated the moment the limits change, in both directions. Document updates are dropped, state requests and awareness (cursors) still work.
+- **Relay**: every connection is read-only for the board room and the comments room, whatever the person's role. Sockets that are already open are re-evaluated the moment the limits change, in both directions, and told about it (see below). Document updates are dropped, state requests and awareness (cursors) still work.
 - **API**: every mutating route answers `402 {error: 'read_only', message}`. Not blocked: all `GET`s, `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `POST /api/auth/logout-all`, `PUT /api/internal/limits` and `POST /api/billing/portal` (the owner has to reach billing to put things right). Signed-out writers still get `401` first.
-- **App**: boards open read-only (the same switch as for viewers) with a **Workspace is read-only** badge instead of **View only**; the banner shows as described below.
+- **App**: boards open read-only (the same switch as for viewers) with a **Workspace is read-only** badge instead of **View only**; the banner shows as described below. An open board switches within a request round trip of the change, and reconnects when the workspace is writable again.
 
-Known limitation: the app learns about a change from the next `/api/me` refresh (up to five minutes, or at once after a reload). Edits typed in that window are dropped by the relay, and until the socket reconnects the relay cannot apply later edits from that client either, because they build on the dropped ones. They are not lost: they stay in the browser, and a reconnect after the lock is lifted brings them to the server. Nothing here forces that reconnect.
+### Telling open boards at once
+
+A workspace that turns read-only (or writable again) does not wait for the app's next `/api/me` refresh:
+
+- **Hint.** When `PUT /api/internal/limits` changes `readOnly`, the relay sends one small message on every open sync socket, board and comments room alike, after it has re-evaluated that socket. It is binary type **4** (y-websocket uses 0 sync, 1 awareness, 2 auth and 3 query awareness) followed by a `varString` with the JSON `{"readOnly": <bool>}`. Only a change of `readOnly` sends it: not a banner or seat limit change, and not a `PUT` that repeats the value. Sockets that are refused or already closed get nothing, and sockets that connect later need nothing, because they are checked on connect and the app reads `/api/me` on load. The relay never acts on this type when a client sends it (like any unknown type, it is ignored).
+- **The app does not trust it.** The payload is only a hint. The handler (`onWorkspaceHint` in `src/sync.ts`, registered on both providers of an open board through y-websocket's per-provider `messageHandlers`) asks `/api/me` and applies the answer exactly as the five minute refresh does: store and comments read-only switch, badge and banner. The board socket and the comments socket each get the hint, and hints within 150 ms become one request. An old client that does not know type 4 logs "Unable to compute message" once per hint and carries on; the five minute refresh still catches it up.
+- **Back to writable.** When a refresh shows `readOnly` going from true to false, the board disconnects and reconnects both of its rooms. The fresh state exchange (sync step 1 and 2) sends everything that was typed while the relay was dropping updates, which also clears the stuck socket described below. It is a normal CRDT merge, so nothing is overwritten. This happens whichever refresh learns about the unlock: the one the hint brought forward, the five minute one, or the first one after a hidden tab is seen again. Turning read-only never reconnects, and neither does signing out or a board the relay has refused.
+
+What remains: edits typed in the moments between the relay flipping the switch and the hint reaching the browser are dropped by the relay. They stay in the browser and are sent by the reconnect once the workspace is writable. Until that reconnect the relay cannot apply later edits from that client either, because they build on the dropped ones, so a client that is not told about the unlock (an old client, or a lock and unlock that both fall between two refreshes of a tab that missed the hint) stays stuck until it reconnects or reloads.
 
 ## Seats
 
@@ -69,7 +77,7 @@ Everything else keeps working: people who already have an account sign in, roles
 - Read-only boards and the badge described above. A viewer stays a viewer when the workspace becomes writable again.
 - Toasts with the server's message when a seat limit or the read-only lock stops an invite, a role change, an enable or a sign-in link.
 - **Manage billing** on the admin dashboard's Overview, for the workspace owner only. It asks the instance for the portal address and opens it in the same tab.
-- A refresh of `/api/me` every five minutes while the tab is open (skipped while the tab is hidden and run when it is seen again; nothing at all in open mode and on servers without cloud mode).
+- A refresh of `/api/me` every five minutes while the tab is open (skipped while the tab is hidden and run when it is seen again; nothing at all in open mode and on servers without cloud mode), and at once when the relay sends the read-only hint. The five minute refresh is the fallback if the hint is missed.
 
 ## Calls to the control plane
 
@@ -90,4 +98,4 @@ Sent 30 seconds after the last change to the people in the workspace (an account
 
 ## Tests
 
-`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal and the usage reports in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints, the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules.
+`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal and the usage reports in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints, the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules, including the coalescing of hints and the unlock watcher, and `test/workspace-hint.test.ts` runs a board's chain from hint to refresh to reconnect with fake providers. The hint on the wire, who gets it, that clients cannot send it and that a reconnect sends what was typed during the lock are in `test/cloud-relay.test.ts`.
