@@ -1,9 +1,21 @@
 import type { BoardApp } from '../app';
 import type { Id, Poll } from '../types';
-import { POLL_LIMITS, type PollInput, type PollTally } from '../polls';
+import { POLL_LIMITS, answeredLabel, countPeople, type PollInput, type PollTally } from '../polls';
 import { h, icon } from './dom';
 import { dialog, field, popover, toast } from './common';
 import './polls.css';
+
+/** "N of M answered" for the card and the bar alike. */
+function answeredText(app: BoardApp, pollId: Id): string {
+  return answeredLabel(app.flow.polls.tally(pollId).responses, countPeople(app.participants()));
+}
+
+/** Rewrites the "N of M answered" texts under `root` in place, so cursor moves do not redraw the card or bar. */
+export function refreshAnswered(app: BoardApp, root: ParentNode) {
+  root.querySelectorAll<HTMLElement>('[data-answered]').forEach((el) => {
+    el.textContent = answeredText(app, el.dataset.answered!);
+  });
+}
 
 /** Runs an action; a refusal shows its reason. */
 function attempt(fn: () => void, done?: string) {
@@ -47,10 +59,7 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
   const open = polls.isOpen(poll.id);
   const canAnswer = open && !app.readOnly;
   const canClear = canAnswer && mine.length > 0;
-  const people = app.participants().length;
-  const status = poll.revealed
-    ? plural(tally.responses, 'response', 'responses')
-    : `${tally.responses}${people > tally.responses ? ` of ${people}` : ''} answered`;
+  const status = poll.revealed ? plural(tally.responses, 'response', 'responses') : answeredText(app, poll.id);
   const questionId = `poll-q-${poll.id}`;
   const choices = poll.options.map((o) => {
     const input = h('input', { type: poll.multiple ? 'checkbox' : 'radio', name: `poll-${poll.id}`, checked: mine.includes(o.id), 'data-option': o.id });
@@ -61,7 +70,8 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
     ? 'Your answer saves as you choose and can change until the poll closes.'
     : open ? 'View only. Only people who can edit the board can answer.' : 'This poll is closed.';
   return h('div', { class: 'poll-body' },
-    h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'), h('span', { class: 'poll-label' }, status)),
+    h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'),
+      h('span', { class: 'poll-label', 'data-answered': poll.revealed ? undefined : poll.id }, status)),
     h('h2', { class: 'poll-question', id: questionId }, poll.question),
     h('div', { class: 'poll-scroll' },
       h('fieldset', { class: 'poll-choices', disabled: !canAnswer, 'aria-labelledby': questionId }, ...choices),
@@ -84,6 +94,7 @@ export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLEleme
     card.style.setProperty('--poll-dock', `${inset + bar.offsetHeight + 12}px`);
   };
   new ResizeObserver(place).observe(bar);
+  app.on('presence', () => refreshAnswered(app, card));
   const render = () => {
     const f = app.flow.state();
     const step = f.active >= 0 ? f.steps[f.active] : undefined;
@@ -116,7 +127,7 @@ export function pollBarControls(app: BoardApp, pollId: Id): HTMLElement[] {
   if (!poll) return [];
   if (!poll.revealed) {
     return [
-      h('span', { class: 'poll-label poll-chip' }, `${polls.tally(pollId).responses} answered`),
+      h('span', { class: 'poll-label poll-chip', 'data-answered': pollId }, answeredText(app, pollId)),
       h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(pollId)) }, icon('eye', 16), 'Reveal results'),
     ];
   }

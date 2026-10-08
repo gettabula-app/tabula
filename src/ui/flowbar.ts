@@ -5,7 +5,7 @@ import { newId } from '../store';
 import { h, icon } from './dom';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
-import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock } from './polls';
+import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
 
 const MODE_LABEL: Record<StepMode, string> = {
   write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
@@ -141,6 +141,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     loop();
   });
   app.on('readonly', render);
+  app.on('presence', () => refreshAnswered(app, bar));
   // A timer that already ran out before this screen opened does not chime.
   const t0 = app.flow.state().timer;
   if (t0 && app.flow.remainingMs() === 0) lastBeepKey = `${t0.startedAt}:${t0.durationMs}`;

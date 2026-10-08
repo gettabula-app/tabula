@@ -40,6 +40,16 @@ const earliest = (a: unknown, b: unknown): number | undefined => {
   return ts.length ? Math.min(...ts) : undefined;
 };
 
+/** Distinct people among the board's presences: one person in two tabs counts once, and a presence without a user is not a person. */
+export function countPeople(presences: { user?: { id: string } }[]): number {
+  return new Set(presences.map((p) => p.user?.id).filter((id): id is string => !!id)).size;
+}
+
+/** "2 of 3 answered": responses out of the people on the board. The total is never below the responses. */
+export function answeredLabel(responses: number, people: number): string {
+  return `${responses} of ${Math.max(people, responses)} answered`;
+}
+
 export const pollInstructions = (poll: Pick<Poll, 'multiple'>) => (poll.multiple ? 'Pick any number of options.' : 'Pick one option.');
 
 /** Trims and checks a poll definition. Throws a PollError with the message to show. */
