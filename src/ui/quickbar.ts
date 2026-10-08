@@ -58,7 +58,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const sel = app.selected();
     if (lock) {
       const locked = sel.length > 0 && sel.every((o) => o.locked);
-      lock.replaceChildren(icon(locked ? 'unlock' : 'lock', 20));
+      lock.replaceChildren(icon(locked ? 'unlock' : 'lock', 18));
       lock.title = locked ? 'Unlock' : 'Lock';
       lock.setAttribute('aria-label', locked ? 'Unlock' : 'Lock');
     }
@@ -98,12 +98,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   }
 
   function menu(name: IconName, label: string, content: () => HTMLElement) {
-    const b: HTMLButtonElement = h('button', { class: 'icon-btn', title: label, 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 20));
+    const b: HTMLButtonElement = h('button', { class: 'icon-btn', title: label, 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
     return b;
   }
 
   function action(name: IconName, label: string, onClick: () => void, cls = '') {
-    return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, title: label, 'aria-label': label, onclick: onClick }, icon(name, 20));
+    return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, title: label, 'aria-label': label, onclick: onClick }, icon(name, 18));
   }
 
   function build() {
@@ -200,7 +200,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push(arrange);
 
     lock = h('button', { class: 'icon-btn', onclick: () => app.toggleLock() });
-    more = h('button', { class: 'icon-btn', title: 'More properties', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 20));
+    more = h('button', { class: 'icon-btn', title: 'More properties', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));
     groups.push([
       lock,
       action('dup', 'Duplicate (Ctrl/Cmd+D)', () => app.duplicate()),
