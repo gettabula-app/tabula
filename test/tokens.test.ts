@@ -130,7 +130,15 @@ describe('access tokens in the directory', () => {
     d.revokeAccessToken(revoked.id, T0);
     d.createAccessToken({ userId: u.id, name: 'expired', scope: 'read', ttlMs: DAY, now: T0 });
     d.createAccessToken({ userId: u.id, name: 'recent', scope: 'read', ttlMs: 100 * DAY, now: T0 });
-    const rows = () => (new DatabaseSync(file).prepare('SELECT name FROM access_tokens ORDER BY name').all() as { name: string }[]).map((r) => r.name);
+    const rows = () => {
+      // Close each read handle: Windows cannot remove the temp directory while one is open.
+      const raw = new DatabaseSync(file);
+      try {
+        return (raw.prepare('SELECT name FROM access_tokens ORDER BY name').all() as { name: string }[]).map((r) => r.name);
+      } finally {
+        raw.close();
+      }
+    };
     expect(rows()).toEqual(['expired', 'recent', 'revoked']);
     d.createAccessToken({ userId: u.id, name: 'new', scope: 'read', ttlMs: DAY, now: T0 + 20 * DAY });
     expect(rows()).toEqual(['expired', 'new', 'recent', 'revoked']);

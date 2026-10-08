@@ -143,7 +143,9 @@ describe('the endpoint', () => {
     const revoked = await h.newToken(bob.cookie, { scope: 'read' });
     await h.api(bob.cookie, 'DELETE', `/api/me/tokens/${revoked.id}`);
     const expired = await h.newToken(bob.cookie, { scope: 'read' });
-    new DatabaseSync(path.join(h.dir, 'directory.sqlite')).prepare('UPDATE access_tokens SET expires_at = ? WHERE id = ?').run(Date.now() - 1000, expired.id);
+    const raw = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
+    raw.prepare('UPDATE access_tokens SET expires_at = ? WHERE id = ?').run(Date.now() - 1000, expired.id);
+    raw.close();
     const disabledUser = await h.joinTeam(wsOwner.cookie, (await h.newTeam(wsOwner.cookie)).id);
     const ofDisabled = await h.newToken(disabledUser.cookie, { scope: 'read' });
     expect((await h.call(ofDisabled.token, 'ping')).status).toBe(200);
