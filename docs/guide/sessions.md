@@ -40,7 +40,7 @@ Click the step name on the bar, or **Edit steps** on the **Session ready** bar. 
 - Click the number to jump to that step.
 - Click **Add step**. If a frame is selected on the board, the new step is linked to that frame.
 - Remove a step with the trash button.
-- Click **Summary** to download a Markdown summary of the session.
+- Click **Summary** to download a Markdown summary of the session. It leaves out other people's private notes and the running vote's counts until you reveal them.
 - Click **End session** to stop a running session.
 
 ### Step modes
