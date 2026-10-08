@@ -121,6 +121,14 @@ const newToken = () => crypto.randomBytes(32).toString('base64url');
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const validToken = (token) => typeof token === 'string' && token.length > 0 && token.length <= 256;
 const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+const parseDetail = (json) => {
+  try {
+    const value = JSON.parse(json);
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+};
 
 const toUser = (r) => ({
   id: r.id,
@@ -241,6 +249,44 @@ export function openDirectory(file) {
 
   const listUsers = () => all('SELECT * FROM users ORDER BY created_at, email').map(toUser);
 
+  // lastSeenAt is the newest sessions.last_seen of any session (revoked ones too); null for someone who never signed in.
+  function listMembersAdmin(now = Date.now()) {
+    return all(
+      `SELECT u.*,
+              (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
+              (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked = 0 AND s.expires_at > ?) AS active_sessions,
+              (SELECT COUNT(*) FROM boards b WHERE b.owner_id = u.id AND b.deleted_at IS NULL) AS board_count
+         FROM users u ORDER BY u.created_at, u.email`,
+      now,
+    ).map((r) => ({
+      ...toUser(r),
+      lastSeenAt: r.last_seen_at ?? null,
+      activeSessions: Number(r.active_sessions),
+      boardCount: Number(r.board_count),
+    }));
+  }
+
+  function adminStats(now = Date.now()) {
+    const byRole = { owner: 0, admin: 0, member: 0, guest: 0 };
+    let active = 0;
+    let disabled = 0;
+    for (const r of all('SELECT role, disabled, COUNT(*) AS n FROM users GROUP BY role, disabled')) {
+      const n = Number(r.n);
+      byRole[r.role] += n;
+      if (r.disabled) disabled += n;
+      else active += n;
+    }
+    const teams = get('SELECT COUNT(*) AS total, COALESCE(SUM(archived <> 0), 0) AS archived FROM teams');
+    const boards = get('SELECT COUNT(*) AS total, COALESCE(SUM(deleted_at IS NOT NULL), 0) AS deleted FROM boards');
+    return {
+      members: { total: active + disabled, active, disabled, byRole },
+      teams: { total: Number(teams.total), archived: Number(teams.archived) },
+      boards: { total: Number(boards.total), deleted: Number(boards.deleted) },
+      sessions: { active: Number(get('SELECT COUNT(*) AS n FROM sessions WHERE revoked = 0 AND expires_at > ?', now).n) },
+      signIns7d: Number(get("SELECT COUNT(*) AS n FROM audit WHERE action = 'auth.login' AND ts >= ?", now - 7 * DAY_MS).n),
+    };
+  }
+
   const countOwners = () => Number(get("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'").n);
 
   function updateUser(id, patch) {
@@ -357,6 +403,35 @@ export function openDirectory(file) {
 
   function revokeUserSessions(userId) {
     return run('UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0', userId);
+  }
+
+  // Sessions for the admin console. Explicit columns: the token hash never leaves this module.
+  const toActiveSession = (r) => ({
+    id: r.id,
+    userId: r.user_id,
+    userName: r.name,
+    email: r.email,
+    createdAt: r.created_at,
+    lastSeen: r.last_seen,
+    expiresAt: r.expires_at,
+  });
+  const ACTIVE_SESSION_COLUMNS = `s.id, s.user_id, s.created_at, s.last_seen, s.expires_at, u.name, u.email
+    FROM sessions s JOIN users u ON u.id = s.user_id`;
+
+  function listActiveSessions(now = Date.now()) {
+    return all(
+      `SELECT ${ACTIVE_SESSION_COLUMNS} WHERE s.revoked = 0 AND s.expires_at > ?
+        ORDER BY s.last_seen DESC, s.created_at DESC, s.id`,
+      now,
+    ).map(toActiveSession);
+  }
+
+  function getActiveSession(id, now = Date.now()) {
+    const row =
+      typeof id === 'string'
+        ? get(`SELECT ${ACTIVE_SESSION_COLUMNS} WHERE s.id = ? AND s.revoked = 0 AND s.expires_at > ?`, id, now)
+        : undefined;
+    return row ? toActiveSession(row) : null;
   }
 
   // teams
@@ -549,6 +624,37 @@ export function openDirectory(file) {
     run('UPDATE boards SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', Date.now(), id);
   }
 
+  function restoreBoard(id) {
+    return run('UPDATE boards SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL', id) === 1;
+  }
+
+  // The owner can be gone (boards.owner_id is set to NULL when a user is removed), hence the nullable owner fields.
+  const toAdminBoard = (r) => ({
+    id: r.id,
+    title: r.title,
+    ownerId: r.owner_id,
+    ownerName: r.owner_name ?? null,
+    teamId: r.team_id,
+    teamName: r.team_name ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    deletedAt: r.deleted_at,
+    shareCount: Number(r.share_count),
+  });
+  const ADMIN_BOARD_SELECT = `SELECT b.id, b.title, b.owner_id, u.name AS owner_name, b.team_id, t.name AS team_name,
+      b.created_at, b.updated_at, b.deleted_at,
+      (SELECT COUNT(*) FROM board_shares s WHERE s.board_id = b.id) AS share_count
+    FROM boards b LEFT JOIN users u ON u.id = b.owner_id LEFT JOIN teams t ON t.id = b.team_id`;
+
+  function listBoardsAdmin({ includeDeleted = false } = {}) {
+    return all(`${ADMIN_BOARD_SELECT} WHERE ? = 1 OR b.deleted_at IS NULL ORDER BY b.updated_at DESC, b.id`, includeDeleted ? 1 : 0).map(toAdminBoard);
+  }
+
+  function getBoardAdmin(id) {
+    const row = typeof id === 'string' ? get(`${ADMIN_BOARD_SELECT} WHERE b.id = ?`, id) : undefined;
+    return row ? toAdminBoard(row) : null;
+  }
+
   // the title comes straight from a client-controlled document, so it is bounded like every other title
   function touchBoard(id, fields) {
     const title = fields?.title;
@@ -658,6 +764,33 @@ export function openDirectory(file) {
     }));
   }
 
+  // `action` is a literal prefix: LIKE wildcards in it are escaped, and substr() makes the match case sensitive
+  // (LIKE ignores ASCII case). `next` is the id to pass as `before`, null at the end.
+  /** @param {{ limit?: number, before?: number | null, action?: string | null }} [options] */
+  function listAuditPage({ limit = 50, before = null, action = null } = {}) {
+    const n = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 200) : 50;
+    const raw = typeof action === 'string' && action !== '' ? action : null;
+    const prefix = raw === null ? null : `${raw.replace(/[\\%_]/g, '\\$&')}%`;
+    const rows = all(
+      `SELECT a.id, a.ts, a.actor_id, a.action, a.detail, u.name AS actor_name, u.email AS actor_email
+         FROM audit a LEFT JOIN users u ON u.id = a.actor_id
+        WHERE ($before IS NULL OR a.id < $before)
+          AND ($prefix IS NULL OR (a.action LIKE $prefix ESCAPE '\\' AND substr(a.action, 1, length($raw)) = $raw))
+        ORDER BY a.id DESC LIMIT $limit`,
+      { before, prefix, raw, limit: n + 1 },
+    );
+    const entries = rows.slice(0, n).map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      actorId: r.actor_id,
+      actorName: r.actor_name ?? null,
+      actorEmail: r.actor_email ?? null,
+      action: r.action,
+      detail: parseDetail(r.detail),
+    }));
+    return { entries, next: rows.length > n ? entries[entries.length - 1].id : null };
+  }
+
   return {
     close() {
       if (closed) return;
@@ -670,6 +803,8 @@ export function openDirectory(file) {
     getUser,
     getUserByEmail,
     listUsers,
+    listMembersAdmin,
+    adminStats,
     countOwners,
     updateUser,
     removeUser,
@@ -679,6 +814,8 @@ export function openDirectory(file) {
     getSession,
     revokeSession,
     revokeUserSessions,
+    listActiveSessions,
+    getActiveSession,
     createTeam,
     getTeam,
     listTeamsFor,
@@ -701,6 +838,9 @@ export function openDirectory(file) {
     listBoardsFor,
     updateBoard,
     deleteBoard,
+    restoreBoard,
+    listBoardsAdmin,
+    getBoardAdmin,
     touchBoard,
     boardRole,
     shareBoard,
@@ -708,5 +848,6 @@ export function openDirectory(file) {
     listShares,
     audit,
     listAudit,
+    listAuditPage,
   };
 }

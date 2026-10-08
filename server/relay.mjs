@@ -83,13 +83,18 @@ if (config.authEnabled) {
   ]);
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
   auth = createAuth({ directory, config, mailer: createMailer(config) });
-  api = createApi({ directory, auth, config, roomExists, events });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats });
 }
 
 // ---------------------------------------------------------------- rooms
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+
+// Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
+function liveStats() {
+  return { rooms: rooms.size, connections: [...rooms.values()].reduce((n, r) => n + r.conns.size, 0) };
+}
 
 class Room {
   constructor(name) {
@@ -292,7 +297,7 @@ async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, rooms: rooms.size, connections: [...rooms.values()].reduce((n, r) => n + r.conns.size, 0) });
+      sendJson(res, 200, { ok: true, ...liveStats() });
     } else if (url.pathname.startsWith('/api/')) {
       // Anything under /api/ is answered here and never falls through to the single-page app.
       if (api) {
