@@ -18,7 +18,7 @@ Open mode must keep working unchanged, including every existing test.
 | `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
 | `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Included in webhook payloads as `from` |
 | `MIRA_SESSION_DAYS` | `30` | Session lifetime |
-| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry and a request counts as https when `X-Forwarded-Proto` is `https`. Off by default, because anyone can forge those headers when there is no proxy |
+| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `MIRA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
 
 The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer).
 

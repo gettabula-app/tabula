@@ -656,6 +656,7 @@ describe('loadConfig', () => {
       loginTokenMs: 15 * MIN,
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
+      trustProxy: false,
       mail: { mode: 'log', webhookUrl: null, from: 'Mira <no-reply@localhost>' },
     });
   });

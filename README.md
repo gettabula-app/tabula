@@ -98,7 +98,7 @@ The full design (roles, the HTTP API, the relay rules and the SQLite schema) is 
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, enforced roles, comments, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
+End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, a full admin dashboard, comments, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
 
 ## Fonts and icons
 
