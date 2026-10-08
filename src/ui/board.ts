@@ -7,6 +7,7 @@ import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
+import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
 import { mountHistory } from './history';
@@ -233,6 +234,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
+  mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   if (!scratch) firstRunHint(app, chrome);
 
@@ -438,6 +440,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     scratch ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('user', 'Your name and colour', () => openProfile(app)),
+    mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
     scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),

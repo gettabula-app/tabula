@@ -1,0 +1,35 @@
+/* Focus requests: the cards that ask you to look at someone's view, the follow chip and the muted list. Theme variables only. */
+
+/* Above the toast and above the session bar (focus.ts measures the bar, which wraps and grows on a phone); the stack itself takes no clicks, only the cards in it do. */
+.chrome > .focus-stack {
+  position: absolute; left: 50%; bottom: var(--focus-bottom, 124px); transform: translateX(-50%); width: min(440px, calc(100% - 32px));
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.focus-stack > * { pointer-events: auto; }
+
+.focus-card, .focus-chip {
+  display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; border-left: 4px solid var(--signal); border-radius: 0;
+  background: var(--tray); color: var(--tray-text);
+  box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
+}
+.focus-chip { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; }
+.focus-chip-text { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+
+.focus-text { margin: 0; display: flex; align-items: flex-start; gap: 10px; font-weight: 500; overflow-wrap: anywhere; }
+.focus-swatch { flex: none; width: 10px; height: 10px; margin-top: 6px; background: var(--c, var(--signal)); box-shadow: 0 0 0 1px var(--tray-line); }
+.focus-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.focus-card .btn, .focus-chip .btn { height: 32px; padding: 0 12px; border: 1px solid var(--tray-line); border-radius: 0; background: transparent; }
+.focus-card .btn:hover, .focus-chip .btn:hover { background: var(--tray-hover); }
+.focus-card .btn.primary { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
+.focus-card .btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }
+.focus-card .focus-mute { margin-left: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; border-color: transparent; color: var(--tray-muted); }
+
+.focus-muted { list-style: none; margin: 0; padding: 0; }
+.focus-muted li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--tray-line); }
+.focus-muted-name { min-width: 0; overflow-wrap: anywhere; }
+.focus-muted .btn { height: 32px; padding: 0 12px; border: 1px solid var(--tray-line); border-radius: 0; background: transparent; }
+
+@media (max-width: 860px) {
+  .chrome > .focus-stack { left: var(--rail-clear); right: 12px; transform: none; width: auto; }
+}
