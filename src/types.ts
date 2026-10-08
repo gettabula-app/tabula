@@ -119,7 +119,7 @@ export type Obj = BaseObj | ConnectorObj;
 export const isConnector = (o: Obj | undefined): o is ConnectorObj => !!o && o.type === 'connector';
 export const isBox = (o: Obj | undefined): o is BaseObj => !!o && o.type !== 'connector';
 
-export type StepMode = 'write' | 'private-write' | 'cluster' | 'vote' | 'discuss';
+export type StepMode = 'write' | 'private-write' | 'cluster' | 'vote' | 'discuss' | 'poll';
 
 export interface Step {
   id: Id;
@@ -132,6 +132,8 @@ export interface Step {
   votesPerPerson?: number;
   /** Added with the one-click dot vote; removed from the flow when the session ends. */
   quick?: boolean;
+  /** Set iff mode is 'poll'; the poll lives in the `polls` map (see docs/polls.md). */
+  pollId?: Id;
 }
 
 export interface Timer {
@@ -144,6 +146,36 @@ export interface Vote {
   itemId: Id;
   userId: string;
   stepId: Id;
+}
+
+export interface PollOption {
+  id: Id;
+  text: string;
+}
+
+export interface Poll {
+  id: Id;
+  question: string;
+  options: PollOption[];
+  multiple: boolean;
+  anonymous: boolean;
+  revealed: boolean;
+  createdAt: number;
+  createdBy: string;
+  /** First time the flow moved onto the poll's step. The definition locks from here. */
+  openedAt?: number;
+  /** First time the flow moved off the step, or the session ended. Answers lock from here. */
+  closedAt?: number;
+}
+
+export interface PollAnswer {
+  pollId: Id;
+  userId: string;
+  optionIds: Id[];
+  updatedAt: number;
+  /** Named polls only. */
+  name?: string;
+  color?: string;
 }
 
 export type GridType = 'dots' | 'lines' | 'iso' | 'none';

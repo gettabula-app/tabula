@@ -105,12 +105,13 @@ The full design (roles, the HTTP API, the relay rules and the SQLite schema) is 
 | Iconify | Search 200k+ icons, filter by set, licence notice for CC BY sets, failover to backup hosts; placed icons store their SVG (sanitised) and render offline |
 | Team exercises | 14 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem); session bar with steps, shared timer with chime, private writing + reveal, bring everyone to my view, step editor, Markdown summary |
 | Dot voting | One-click dot vote from the toolbar on any board (no template needed); dots per person can be any number or unlimited, set per step or changed live for everyone mid-vote, with the number of people on the board and dots placed so far shown alongside; click to add a dot, shift-click to remove; totals hidden until reveal; many dots on one note collapse into a counted badge; results stay on the board after the vote until cleared, with ranked results to copy |
+| Polls | Facilitated polls from the toolbar's quick poll button or as a session step: a question with 2–10 options, single or multiple choice, anonymous by default or named; one answer per person, changeable until the poll closes; a card above the session bar for answering and, after reveal, a ranked list with percentages; reveal, copy results as Markdown, or add them to the board as a sticky; answers sync live and work offline, travel in `.drift` and JSON exports, and appear in the Markdown summary once revealed |
 | Comments | Threaded comments pinned to a spot or an object (press C or use the speech-bubble tool): post, reply, edit, delete, resolve and reopen; pins follow the object through move, resize and rotate; a Comments panel lists open and resolved threads and flies to a pin; pins can be hidden from the board menu; comments sync live in their own room, work offline, travel in `.drift` and JSON exports, and never appear in PNG/SVG exports. In accounts mode the new **commenter** role can comment on a board without being able to edit it |
 | Import/export | `.drift` (zip of readable `board.json` + full CRDT history), JSON, SVG, PNG (2×, real fonts), Markdown summary, Mermaid; drop files on the board or open them from the home screen |
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, a full admin dashboard, comment mentions and notifications, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
+End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
 
 ## Fonts and icons
 
@@ -149,6 +150,7 @@ src/render.ts        camera, grid, culling, overlay (selection, handles, guides,
 src/app.ts           tools, selection, drag/resize/rotate, snapping, clipboard, presence
 src/editor.ts        in-place text editing
 src/flow.ts          facilitation: steps, timer, private writing, voting
+src/polls.ts         polls: questions, answers, open and closed, reveal, results
 src/templates.ts     team exercise templates
 src/uml.ts, src/mermaid.ts, src/fonts.ts, src/icons.ts, src/exporters.ts
 src/ui/              rail, library drawer, properties, font picker, session bar, home

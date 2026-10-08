@@ -9,6 +9,9 @@ const TEXT_PAIRS: [ThemeVar, ThemeVar][] = [
   ['--tray-text', '--tray'],
   ['--tray-muted', '--tray'],
   ['--ink', '--paper'],
+  ['--graphite', '--paper'],
+  ['--danger', '--paper'],
+  ['--danger', '--canvas'],
 ];
 
 function fakeRoot() {

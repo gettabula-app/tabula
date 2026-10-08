@@ -1,8 +1,9 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id, Obj, Step, Vote } from './types';
+import type { BaseObj, Id, Obj, Poll, Step, Vote } from './types';
 import { isBox, isConnector } from './types';
 import { newId, type FlowState } from './store';
 import { boxBounds } from './geometry';
+import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 
 /** `votesPerPerson` value meaning no limit. */
 export const UNLIMITED = 0;
@@ -17,9 +18,11 @@ const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' 
 export class Flow {
   private lastActive = -2;
   private lastFocusTs = 0;
+  readonly polls: Polls;
 
   constructor(private app: BoardApp) {
     const s = app.store;
+    this.polls = new Polls(app);
     s.flow.observe(() => this.onFlowChange());
     s.votes.observe(() => this.refreshVotes());
     // initial state
@@ -41,6 +44,12 @@ export class Flow {
 
   isVoting() {
     return this.activeStep()?.mode === 'vote';
+  }
+
+  /** True while a poll step is running and still open for answers. */
+  pollOpen(): boolean {
+    const pollId = this.activeStep()?.pollId;
+    return !!pollId && this.polls.isOpen(pollId);
   }
 
   isHidden(o: BaseObj): boolean {
@@ -135,6 +144,44 @@ export class Flow {
     }
   }
 
+  /** Start a poll right now: as a quick step after the running one, or as the whole session. */
+  quickPoll(input: PollInput) {
+    if (this.pollOpen()) throw new PollError('A poll is open. Finish it or move on first.');
+    const step = this.pollStep(this.polls.create(input), true);
+    const f = this.state();
+    if (f.active >= 0) {
+      const steps = [...f.steps];
+      steps.splice(f.active + 1, 0, step);
+      this.setSteps(steps);
+      this.goto(f.active + 1);
+    } else {
+      this.setSteps([...f.steps, step]);
+      this.goto(f.steps.length);
+    }
+  }
+
+  /** Create the poll for a step, or edit it while it has not opened. */
+  setStepPoll(stepId: Id, input: PollInput) {
+    const f = this.state();
+    const i = f.steps.findIndex((s) => s.id === stepId);
+    if (i < 0) throw new PollError('That step is gone.');
+    const step = f.steps[i];
+    const poll = step.pollId && this.polls.get(step.pollId) ? this.polls.update(step.pollId, input) : this.polls.create(input);
+    const next: Step = { ...step, mode: 'poll', pollId: poll.id, title: poll.question, instructions: pollInstructions(poll) };
+    this.setSteps(f.steps.map((s, n) => (n === i ? next : s)));
+  }
+
+  /** Remove a poll, its answers and, if the session still lists it, its step. */
+  clearPoll(pollId: Id) {
+    const steps = this.state().steps;
+    if (steps.some((s) => s.pollId === pollId)) this.setSteps(steps.filter((s) => s.pollId !== pollId));
+    else this.polls.remove(pollId);
+  }
+
+  private pollStep(poll: Poll, quick = false): Step {
+    return { id: newId(), title: poll.question, instructions: pollInstructions(poll), mode: 'poll', pollId: poll.id, ...(quick ? { quick: true } : {}) };
+  }
+
   /** Vote handling for clicks during a vote step. Returns true if the click was consumed. */
   handleClick(hit: Obj, remove: boolean): boolean {
     const step = this.activeStep();
@@ -216,7 +263,13 @@ export class Flow {
   // ---------------------------------------------------------------- session control
 
   setSteps(steps: Step[]) {
+    const f = this.state();
+    const kept = (s: Step) => steps.some((n) => n.id === s.id && n.pollId === s.pollId);
+    const active = this.activeStep();
+    if (active?.pollId && !kept(active)) this.polls.moveTo(active, null);
     this.app.store.setFlow({ steps });
+    if (this.app.store.readOnly) return;
+    for (const s of f.steps) if (s.pollId && !kept(s)) this.polls.remove(s.pollId);
   }
 
   goto(i: number) {
@@ -224,6 +277,7 @@ export class Flow {
     if (!f.steps.length) return;
     const idx = Math.max(-1, Math.min(f.steps.length - 1, i));
     const step = f.steps[idx];
+    this.polls.moveTo(this.activeStep(), idx >= 0 ? step ?? null : null);
     this.app.store.setFlow({
       active: idx,
       reveal: false,
@@ -258,6 +312,7 @@ export class Flow {
         break;
       }
     }
+    this.polls.moveTo(this.activeStep(), null);
     this.app.store.setFlow({ active: -1, timer: null, reveal: false, results, steps: f.steps.filter((st) => !st.quick) });
   }
 
@@ -352,6 +407,7 @@ export class Flow {
       }
       lines.push('');
     }
+    lines.push(...this.polls.markdownLines());
     return lines.join('\n');
   }
 }

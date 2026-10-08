@@ -5,3 +5,6 @@ data/
 .env
 .env.*
 !.env.example
+
+# agent worktrees
+.claude/worktrees/

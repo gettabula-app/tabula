@@ -1,7 +1,7 @@
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
-import type { BaseObj, BoardMeta, Id, Obj } from './types';
+import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer } from './types';
 import { SCHEMA_VERSION, isBox } from './types';
 import type { FlowState } from './store';
 import type { Thread } from './comments';
@@ -16,6 +16,8 @@ export interface BoardJson {
   objects: Obj[];
   flow: FlowState;
   comments?: Thread[];
+  polls?: Poll[];
+  pollAnswers?: PollAnswer[];
 }
 
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list()): BoardJson {
@@ -29,6 +31,11 @@ export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.
     flow: app.store.getFlow(),
   };
   if (comments.length && !ids) json.comments = comments;
+  if (!ids) {
+    const { polls, answers } = app.flow.polls.snapshot();
+    if (polls.length) json.polls = polls;
+    if (answers.length) json.pollAnswers = answers;
+  }
   return json;
 }
 
@@ -64,6 +71,7 @@ function validate(j: unknown): BoardJson {
   const b = j as BoardJson;
   if (!b || b.format !== 'driftboard' || !Array.isArray(b.objects)) throw new Error('This file is not a Tabula board.');
   if (b.comments && !Array.isArray(b.comments)) throw new Error('This file is not a Tabula board.');
+  if ((b.polls && !Array.isArray(b.polls)) || (b.pollAnswers && !Array.isArray(b.pollAnswers))) throw new Error('This file is not a Tabula board.');
   if (b.schemaVersion > SCHEMA_VERSION) throw new Error('This board was made with a newer version of Tabula. Update the app to open it.');
   return b;
 }

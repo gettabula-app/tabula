@@ -10,6 +10,7 @@ import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
 import { TEMPLATES, insertTemplate } from './templates';
+import { answerKey } from './polls';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import type { Obj } from './types';
@@ -182,6 +183,8 @@ async function route() {
         for (const [k, v] of Object.entries(json.meta || {})) conn.store.meta.set(k, v);
         for (const o of json.objects as Obj[]) conn.store.create(o);
         for (const [k, v] of Object.entries(json.flow || {})) conn.store.flow.set(k, v);
+        for (const p of json.polls ?? []) conn.store.polls.set(p.id, p);
+        for (const a of json.pollAnswers ?? []) conn.store.pollAnswers.set(answerKey(a.pollId, a.userId), a);
       });
     }
     if (comments) Y.applyUpdate(conn.comments.doc, comments);

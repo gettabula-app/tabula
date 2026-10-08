@@ -6,6 +6,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 
 ### Added
 - Templates page (`#/templates`): every template on a solid card, with category filters and search. The home screen links to it from a short Start from a template row.
+- Polls: a facilitated question with 2–10 options, run as a session step (new `poll` step mode) or started from a quick poll button on the toolbar. One answer per person, changeable until the poll closes; results stay hidden until reveal, and ranked results copy as Markdown or go on the board as a sticky. Answers live in the board document, so they work offline, sync, and travel in `.drift` and JSON exports; the Markdown summary includes revealed polls. See `docs/polls.md`.
 - Hosted workspaces (`MIRA_CLOUD_TOKEN`, `MIRA_CLOUD_URL`, `MIRA_CLOUD_WORKSPACE_ID`, accounts mode only; off and invisible when unset): a control plane can read seat counts (`GET /api/internal/usage`) and set a seat limit, a read-only switch and a banner (`PUT /api/internal/limits`, bearer token, stored in the new `settings` table). A read-only workspace drops board and comment updates on open and new sockets and answers writes with `402 read_only`; a full workspace refuses new invites, invite sign-ins and seat-taking role changes with `409 seat_limit`; `/api/me` reports the workspace. The instance opens the billing portal for the owner (`POST /api/billing/portal`) and reports seat counts to the control plane. The app shows the banner on the home screen and boards, a Workspace is read-only badge, and an owner-only Manage billing button in the admin Overview, and refreshes `/api/me` every five minutes. See `docs/cloud.md`.
 - `npm run dev:accounts` runs the dev server in accounts mode (sign-in links printed to the console).
 - `MIRA_MAIL_WEBHOOK_TOKEN`: sent as a bearer token with each mail webhook request, so a hosted mail relay can authenticate the instance.
@@ -51,6 +52,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Secondary grey text on panels in Ayu, and red error and delete text in Default, Kanagawa and Evergreen, were below WCAG AA contrast; the theme colours are adjusted slightly (same hue) so every text colour now reaches 4.5:1 on both the page and panel backgrounds, checked in tests.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).
 - On the home screen, boards that someone shared with you no longer appear under Personal, and the sign-in card is centred on the page.
