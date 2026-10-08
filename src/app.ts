@@ -2,7 +2,8 @@ import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKi
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
 import type { Anchor, Comments, Thread } from './comments';
-import { threadVisible } from './comments';
+import { anchorFor, anchorPosition, threadVisible } from './comments';
+import { pinAt, pinViews } from './pins';
 import type { BoardRole } from './api';
 import type { Store } from './store';
 import { newId } from './store';
@@ -143,6 +144,7 @@ export class BoardApp {
         const o = this.store.get(id);
         if (o && 'font' in o && o.font) ensureFont(o.font, [o.fontWeight || 400, 700]);
       }
+      this.refreshPins();
       this.emit('objects');
     });
 
@@ -167,6 +169,11 @@ export class BoardApp {
     this.bindPresence();
     this.loadBoardFonts();
     conn.onStatus(() => this.emit('status'));
+    this.disposers.push(
+      this.comments.onChange(() => this.refreshPins()),
+      this.on('flow', () => this.refreshPins()),
+      this.on('comments', () => this.refreshPins()),
+    );
 
     // Start centred on existing content.
     requestAnimationFrame(() => {
@@ -174,6 +181,7 @@ export class BoardApp {
       if (b) this.r.fit(b, 120, 1);
       else this.r.setCamera({ x: -this.r.size().w / 2, y: -this.r.size().h / 2, zoom: 1 });
     });
+    this.refreshPins();
   }
 
   // ---------------------------------------------------------------- events
@@ -227,6 +235,7 @@ export class BoardApp {
 
   private _openThreadId: string | null = null;
   private _commentsVisible = loadCommentsVisible();
+  private draftPoint: Point | null = null;
 
   get openThreadId(): string | null {
     return this._openThreadId;
@@ -261,14 +270,27 @@ export class BoardApp {
     return this.comments.list().filter((t) => threadVisible(t, get, (o) => this.flow.isHidden(o)));
   }
 
-  /** Shows a draft pin at `anchor` while its composer is open; null clears it. (Implemented with the pins.) */
+  /** Shows a draft pin at `anchor` while its composer is open; null clears it. */
   setDraftPin(anchor: Anchor | null) {
-    void anchor;
+    this.draftPoint = anchor ? anchorPosition(anchor, (id) => this.store.get(id)) : null;
+    this.refreshPins();
   }
 
-  /** Centres the camera on a thread's pin. (Implemented with the pins.) */
+  /** Centres the camera on a thread's pin, keeping the zoom (at least 1). */
   flyToThread(id: string) {
-    void id;
+    const t = this.visibleThreads().find((x) => x.id === id);
+    if (!t) return;
+    this.r.flyToCenter(anchorPosition(t.anchor, (oid) => this.store.get(oid)), Math.max(1, this.zoom));
+  }
+
+  private refreshPins() {
+    this.r.setPins(pinViews({
+      threads: this.visibleThreads(),
+      get: (id) => this.store.get(id),
+      openId: this.openThreadId,
+      draft: this.draftPoint,
+      visible: this.commentsVisible,
+    }));
   }
 
   /** On a read-only board only select and hand (and, where comments are writable, the comment tool) are allowed; anything else falls back to select. */
@@ -527,8 +549,19 @@ export class BoardApp {
     if (e.button !== 0) return;
     this.store.undo.stopCapturing();
 
-    // Handles of the current selection
-    const hh = this.handleAt(p);
+    // Pins open their thread before anything else: locked objects, read-only boards and voting included
+    if (this.tool.kind === 'select' || this.tool.kind === 'comment') {
+      const pin = pinAt(this.r.pins, p, this.zoom);
+      if (pin) {
+        this.setDraftPin(null);
+        this.openThread(pin);
+        this.onOpenComment?.({ threadId: pin, screen: { x: e.clientX, y: e.clientY } });
+        return;
+      }
+    }
+
+    // Handles of the current selection (the comment tool never starts a drag)
+    const hh = this.tool.kind === 'comment' ? undefined : this.handleAt(p);
     if (hh) {
       const o = this.store.get(hh.id)!;
       if (hh.h === 'from' || hh.h === 'to') this.drag = { mode: 'endpoint', id: o.id, end: hh.h };
@@ -575,6 +608,18 @@ export class BoardApp {
         const hit = this.hit(p, { connectors: false, frames: false });
         const from: End = CONNECTABLE(hit) ? { kind: 'bound', id: hit.id, anchor: 'auto' } : { kind: 'free', ...this.snapPoint(p, e) };
         this.drag = { mode: 'connect', from, relation: t.relation, moved: false };
+        return;
+      }
+      case 'comment': {
+        if (this.comments.readOnly()) return;
+        const obj = this.hit(p, { locked: true });
+        // a hidden object would take its thread out of sight as soon as it was posted, so the pin stays free
+        const target = isBox(obj) && obj.type !== 'path' && !this.flow.isHidden(obj) ? obj : undefined;
+        const anchor = anchorFor(p, target);
+        this.closeThread();
+        this.setDraftPin(anchor);
+        this.onOpenComment?.({ anchor, screen: { x: e.clientX, y: e.clientY } });
+        this.setTool({ kind: 'select' });
         return;
       }
       case 'pen':
@@ -713,9 +758,11 @@ export class BoardApp {
     // keep anchors visible while the pointer is on one of them
     const an = this.anchorAt(p);
     const anchorsFor = an ? an.id : anchorHost;
-    const hh = this.handleAt(p);
+    const overPin = (t === 'select' || t === 'comment') && pinAt(this.r.pins, p, this.zoom) !== null;
+    const hh = t === 'comment' ? undefined : this.handleAt(p);
     let cursor = '';
-    if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
+    if (overPin) cursor = 'pointer';
+    else if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
@@ -1006,6 +1053,8 @@ export class BoardApp {
 
   private onDblClick(e: MouseEvent) {
     const p = this.worldOf(e);
+    // a double click on a pin must not edit the object underneath or add a text box
+    if ((this.tool.kind === 'select' || this.tool.kind === 'comment') && pinAt(this.r.pins, p, this.zoom)) return;
     const top = this.hit(p, { locked: true });
     if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
@@ -1087,6 +1136,8 @@ export class BoardApp {
         this.cancelLongPress();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         this.setSelection([]);
+        this.closeThread();
+        this.setDraftPin(null);
         this.setTool({ kind: 'select' });
         return;
       }
@@ -1105,9 +1156,10 @@ export class BoardApp {
       const tools: Record<string, Tool> = {
         v: { kind: 'select' }, h: { kind: 'hand' }, n: { kind: 'sticky' }, s: { kind: 'sticky' }, t: { kind: 'text' },
         r: { kind: 'shape', shape: 'rect' }, o: { kind: 'shape', shape: 'ellipse' }, d: { kind: 'shape', shape: 'diamond' },
-        l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' },
+        l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' },
       };
-      if (tools[k] && (!ro || k === 'v' || k === 'h')) this.setTool(tools[k]);
+      // commenters have a read-only board but may still use the comment tool; setTool checks the comments document
+      if (tools[k] && (!ro || k === 'v' || k === 'h' || k === 'c')) this.setTool(tools[k]);
     }, { signal });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {
