@@ -7,6 +7,7 @@ import { Store } from './store';
 import { Comments } from './comments';
 import type { User } from './types';
 import { USER_COLORS } from './palette';
+import { isDesktop } from './desktop-env';
 
 // ---------------------------------------------------------------- identity
 
@@ -37,7 +38,11 @@ export function saveUser(u: User) {
 
 const RELAY_KEY = 'driftboard:relay';
 
-/** 'auto' = same origin as the app (the relay also serves the app), 'off' = local only. */
+/**
+ * 'auto' = same origin as the app (the relay also serves the app), 'off' = local only. The desktop app has no relay
+ * of its own origin (on Windows its page is http://tauri.localhost, which would be tried as ws://tauri.localhost/sync),
+ * so there 'auto' means off and only an address typed in Board settings connects.
+ */
 export function getRelaySetting(): string {
   return localStorage.getItem(RELAY_KEY) || 'auto';
 }
@@ -49,7 +54,7 @@ export function relayUrl(): string | null {
   const s = getRelaySetting();
   if (s === 'off') return null;
   if (s === 'auto') {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return null;
+    if (isDesktop() || (location.protocol !== 'http:' && location.protocol !== 'https:')) return null;
     return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/sync`;
   }
   return s.replace(/\/+$/, '');
@@ -77,10 +82,42 @@ export function touchBoard(id: string, patch: Partial<BoardEntry> = {}) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(all));
 }
 
+const deleteHooks = new Set<(id: string) => void | Promise<void>>();
+
+/** Calls `fn` after a board was deleted from this device. The desktop app removes the board's backup copy with it. */
+export function onBoardDeleted(fn: (id: string) => void | Promise<void>): () => void {
+  deleteHooks.add(fn);
+  return () => deleteHooks.delete(fn);
+}
+
 export async function deleteBoard(id: string) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(listBoards().filter((b) => b.id !== id)));
   await clearLocal(`driftboard:${id}`);
   await clearLocal(`driftboard:${commentsRoom(id)}`);
+  for (const hook of deleteHooks) {
+    try {
+      await hook(id);
+    } catch (e) {
+      console.warn('after-delete hook failed', e);
+    }
+  }
+}
+
+/**
+ * Writes a board into this device's storage under `id` without opening it: no relay connection, no board UI. `fill`
+ * puts the content in (the import path); the databases are closed when it has been written.
+ */
+export async function writeLocalBoard(id: string, fill: (target: { doc: Y.Doc; store: Store; comments: Comments }) => void) {
+  const doc = new Y.Doc();
+  const idb = new IndexeddbPersistence(`driftboard:${id}`, doc);
+  const cdoc = new Y.Doc();
+  const cidb = new IndexeddbPersistence(`driftboard:${commentsRoom(id)}`, cdoc);
+  await Promise.all([idb.whenSynced, cidb.whenSynced]);
+  fill({ doc, store: new Store(doc), comments: new Comments(cdoc) });
+  // A closing database lets its pending write transactions finish, and a later open of it queues behind them.
+  await Promise.all([idb.destroy(), cidb.destroy()]);
+  doc.destroy();
+  cdoc.destroy();
 }
 
 // ---------------------------------------------------------------- connection

@@ -1,5 +1,4 @@
 import './styles.css';
-import * as Y from 'yjs';
 import { BoardApp } from './app';
 import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
@@ -13,17 +12,17 @@ import { loadCatalogue } from './fonts';
 import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
 import { getTemplate } from './template-store';
 import type { CustomTemplate } from './custom-templates';
-import { answerKey } from './polls';
-import type { ImportedBoard } from './exporters';
+import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
-import type { Obj } from './types';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, type ServerBoard } from './api';
 import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
+import { isDesktop } from './desktop-env';
+import type { Desktop } from './desktop';
 
 applyTheme(getStoredTheme());
 
@@ -35,6 +34,7 @@ let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
 let pending: { id: string; template?: string; custom?: CustomTemplate; imported?: ImportedBoard } | null = null;
 let registering = false;
+let desktop: Desktop | null = null;
 let routeSeq = 0;
 
 function saveReturn(hash: string) {
@@ -229,6 +229,7 @@ async function route() {
   const user = boardUser(auth);
   const [conn, role] = await Promise.all([openBoard(id, user), boardRole(id, auth)]);
   const deleted = await isDeletedBoard(id, auth, role);
+  await desktop?.mergeBackup(conn);
   if (seq !== routeSeq) {
     conn.destroy();
     return;
@@ -248,21 +249,8 @@ async function route() {
   pending = null;
 
   if (job?.imported) {
-    const { json, update, comments } = job.imported;
-    if (update) Y.applyUpdate(conn.doc, update);
-    else {
-      conn.doc.transact(() => {
-        for (const [k, v] of Object.entries(json.meta || {})) conn.store.meta.set(k, v);
-        for (const o of json.objects as Obj[]) conn.store.create(o);
-        for (const [k, v] of Object.entries(json.flow || {})) conn.store.flow.set(k, v);
-        for (const p of json.polls ?? []) conn.store.polls.set(p.id, p);
-        for (const a of json.pollAnswers ?? []) conn.store.pollAnswers.set(answerKey(a.pollId, a.userId), a);
-      });
-    }
     // The importer owns the new board, so the comments in the file are marked imported by the account (or device) that opens it.
-    const importer = auth.mode === 'signed-in' ? auth.me.user.id : user.id;
-    if (comments) conn.comments.importUpdate(comments, importer);
-    else if (json.comments) conn.comments.importThreads(json.comments, importer);
+    applyImported(conn, job.imported, auth.mode === 'signed-in' ? auth.me.user.id : user.id);
   }
 
   root.replaceChildren();
@@ -270,6 +258,7 @@ async function route() {
   app.role = role ?? null;
   app.deleted = deleted;
   current = app;
+  desktop?.watchBoard(app);
   // Inspection handle for automated tests and debugging (?debug in the URL).
   if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });
@@ -327,6 +316,13 @@ async function boot() {
   onAuth((s) => {
     if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
   });
+  if (isDesktop()) {
+    try {
+      desktop = await (await import('./desktop')).startDesktop(nav);
+    } catch (e) {
+      console.error('The desktop features did not start; carrying on as a plain web page.', e);
+    }
+  }
   window.addEventListener('hashchange', route);
   route();
 }
@@ -334,6 +330,6 @@ async function boot() {
 loadCatalogue();
 boot();
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);
 }

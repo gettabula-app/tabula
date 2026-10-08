@@ -4,7 +4,8 @@ import { h, icon } from './dom';
 import { dialog, fmtAgo, popover, toast } from './common';
 import { deleteBoard, listBoards, relayUrl, touchBoard, type BoardEntry } from '../sync';
 import { newId } from '../store';
-import { readBoardFile, type ImportedBoard } from '../exporters';
+import { importedBoardName, readBoardFile, type ImportedBoard } from '../exporters';
+import { storedWhere } from '../desktop-env';
 import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, setSignedOut, type AuthState } from '../auth';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
@@ -74,8 +75,8 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
       groups,
       templateStrip(nav, false),
       pageFooter(relay
-        ? `Boards are stored in this browser and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.`
-        : 'Sync is off. Boards are stored in this browser only.'))));
+        ? `Boards are stored ${storedWhere()} and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.`
+        : `Sync is off. Boards are stored ${storedWhere()} only.`))));
   paint();
 }
 
@@ -357,16 +358,21 @@ function templateStrip(nav: HomeNav, down: boolean) {
     list);
 }
 
+/** Imports a board file as a new board on this device and opens it. Throws if the file is not a board. */
+export async function importBoardFile(file: File, nav: HomeNav): Promise<void> {
+  const imported = await readBoardFile(file);
+  const id = newId();
+  touchBoard(id, { name: importedBoardName(imported, file.name) });
+  nav.open(id, { imported });
+}
+
 function boardFileInput(nav: HomeNav) {
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files?.[0];
     if (!f) return;
     try {
-      const imported = await readBoardFile(f);
-      const id = newId();
-      touchBoard(id, { name: imported.json.meta?.name || f.name.replace(/\.\w+$/, '') });
-      nav.open(id, { imported });
+      await importBoardFile(f, nav);
     } catch (e) {
       toast((e as Error).message);
     }

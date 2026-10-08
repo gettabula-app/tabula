@@ -17,6 +17,7 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
+import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
@@ -556,7 +557,9 @@ function openSettings(app: BoardApp) {
     h('div', { class: 'row2' }, field('Heading font', fontBtn('headingFont')), field('Body font', fontBtn('bodyFont'))),
     h('p', { class: 'muted small' }, 'New notes, shapes and frames use these fonts. Hold Alt while dragging to place things off the grid.'),
     field('Relay', relay),
-    h('p', { class: 'muted small' }, '“auto” uses the relay that serves this app. “off” keeps every board on this device only. Changing it reloads the board.'),
+    h('p', { class: 'muted small' }, isDesktop()
+      ? '“auto” and “off” keep every board on this computer only. To collaborate, enter the address of a relay. Changing it reloads the board.'
+      : '“auto” uses the relay that serves this app. “off” keeps every board on this device only. Changing it reloads the board.'),
   ), [{ label: 'Close', primary: true, onClick: () => {
     const v = relay.value.trim() || 'auto';
     if (v !== getRelaySetting()) {

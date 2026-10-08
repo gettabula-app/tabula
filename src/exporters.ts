@@ -3,8 +3,9 @@ import * as Y from 'yjs';
 import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer } from './types';
 import { SCHEMA_VERSION, isBox } from './types';
-import type { FlowState } from './store';
-import type { Thread } from './comments';
+import type { FlowState, Store } from './store';
+import type { Comments, Thread } from './comments';
+import { answerKey } from './polls';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
 
@@ -67,6 +68,35 @@ export async function readBoardFile(file: File): Promise<ImportedBoard> {
   return { json: validate(JSON.parse(strFromU8(buf))) };
 }
 
+/** The name a board gets when it is imported from a file: the one it was saved with, else the file's name. */
+export function importedBoardName(imported: ImportedBoard, fileName: string): string {
+  return imported.json.meta?.name || fileName.replace(/\.\w+$/, '');
+}
+
+/**
+ * Puts an imported board into an empty one: the saved sync state if the file has it, else the readable snapshot.
+ * `importedBy` is the account (or device) that imports the file: it owns the new board, so the file's comments are
+ * marked imported by it. `null` restores this device's own backup copy, whose comments stay as they were.
+ */
+export function applyImported(target: { doc: Y.Doc; store: Store; comments: Comments }, imported: ImportedBoard, importedBy: string | null) {
+  const { json, update, comments } = imported;
+  if (update) Y.applyUpdate(target.doc, update);
+  else {
+    target.doc.transact(() => {
+      for (const [k, v] of Object.entries(json.meta || {})) target.store.meta.set(k, v);
+      for (const o of json.objects as Obj[]) target.store.create(o);
+      for (const [k, v] of Object.entries(json.flow || {})) target.store.flow.set(k, v);
+      for (const p of json.polls ?? []) target.store.polls.set(p.id, p);
+      for (const a of json.pollAnswers ?? []) target.store.pollAnswers.set(answerKey(a.pollId, a.userId), a);
+    });
+  }
+  if (importedBy === null) {
+    // toDrift keeps comments in comments.yjs only, so a backup has no readable comments to fall back to.
+    if (comments) Y.applyUpdate(target.comments.doc, comments);
+  } else if (comments) target.comments.importUpdate(comments, importedBy);
+  else if (json.comments) target.comments.importThreads(json.comments, importedBy);
+}
+
 function validate(j: unknown): BoardJson {
   const b = j as BoardJson;
   if (!b || b.format !== 'driftboard' || !Array.isArray(b.objects)) throw new Error('This file is not a Tabula board.');
@@ -76,7 +106,19 @@ function validate(j: unknown): BoardJson {
   return b;
 }
 
+type SaveFile = (data: Blob | Uint8Array | string, name: string) => void;
+let nativeSave: SaveFile | null = null;
+
+/** The desktop app replaces the browser download with a native Save dialog (`desktop.ts`). */
+export function setNativeSave(save: SaveFile | null) {
+  nativeSave = save;
+}
+
 export function download(data: Blob | Uint8Array | string, name: string, type = 'application/octet-stream') {
+  if (nativeSave) {
+    nativeSave(data, name);
+    return;
+  }
   const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
