@@ -55,7 +55,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
-    if (p.exitCode !== null) return r();
+    if (p.exitCode !== null || p.signalCode !== null) return r();
     p.once('exit', () => r());
     p.kill('SIGTERM');
   });

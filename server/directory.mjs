@@ -190,8 +190,13 @@ function migrate(db) {
 export function openDirectory(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
-  db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
-  migrate(db);
+  try {
+    db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
+    migrate(db);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 
   /** @type {Map<string, import('node:sqlite').StatementSync>} */
   const cache = new Map();
