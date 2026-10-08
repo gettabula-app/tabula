@@ -140,6 +140,7 @@ select.input {
   background: rgba(233, 237, 242, 0.08); color: var(--tray-muted); font-size: 12.5px; font-weight: 500; white-space: nowrap;
 }
 .sync-status[data-state='live'] { color: #8EE3B5; }
+.sync-status[data-state='denied'] { color: #FF9A9D; }
 
 .top-right { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px; }
 .people { display: flex; padding-right: 4px; }
