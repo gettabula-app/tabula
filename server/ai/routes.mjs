@@ -7,7 +7,7 @@ import { AiError, describeError } from './errors.mjs';
 import { createKeyRing } from './keys.mjs';
 import { createSaveThrottle } from './limits.mjs';
 import { createProvider } from './providers.mjs';
-import { createRunRoute } from './run.mjs';
+import { createRunRoutes } from './run.mjs';
 
 const UNCONFIGURED = 'AI keys cannot be saved because the server has no TABULA_AI_SECRET. Set it (32 random bytes as base64) and restart.';
 
@@ -25,7 +25,7 @@ export function openAiConfig(config) {
 export function createAiRoutes({
   directory, config, compile, audit, requireAdmin, isAdmin, errors, cloud = null,
   canWriteRoom = () => false, readRoom = () => { throw new Error('This server has no room access'); },
-  createProvider: makeProvider = createProvider, log = console.error, now = Date.now, timeoutMs,
+  createProvider: makeProvider = createProvider, live = null, log = console.error, now = Date.now, timeoutMs,
 }) {
   const { HttpError, badRequest, forbidden, conflict } = errors;
   const ring = createKeyRing({ secret: config.ai.secret, previous: config.ai.previous });
@@ -148,7 +148,7 @@ export function createAiRoutes({
       return [200, adminView()];
     }),
 
-    createRunRoute({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, log, now, timeoutMs }),
+    ...createRunRoutes({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, live, log, now, timeoutMs }),
 
     compile('DELETE', 'admin/ai/key', { readOnlyOk: true }, ({ user }) => {
       requireAdmin(user);

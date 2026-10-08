@@ -112,6 +112,8 @@ describe('auditSentence', () => {
     ['ai.generate declined', entry('ai.generate', { boardId: 'b1', outcome: 'ai_refused' }), 'ana@example.com generated stickies on “Roadmap” (declined by the AI)'],
     ['ai.generate failed', entry('ai.generate', { boardId: 'b1', outcome: 'ai_invalid_proposal' }), 'ana@example.com generated stickies on “Roadmap” (failed)'],
     ['ai.generate with no outcome', entry('ai.generate', { boardId: 'b1' }), 'ana@example.com generated stickies on “Roadmap”'],
+    ['ai.run.accept', entry('ai.run.accept', { boardId: 'b1', feature: 'generate' }), 'ana@example.com added an AI proposal to “Roadmap”'],
+    ['ai.run.discard', entry('ai.run.discard', { boardId: 'b1', feature: 'cluster' }), 'ana@example.com discarded an AI proposal on “Roadmap”'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -160,7 +162,7 @@ describe('auditSentence', () => {
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
-      'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster',
+      'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });

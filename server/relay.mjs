@@ -33,6 +33,7 @@ import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
 import { createOpenRun } from './ai/run.mjs';
+import { createLiveRuns } from './ai/live.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -61,6 +62,10 @@ const MSG_WORKSPACE = 4;
 // Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
 // (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
 const MSG_COMMENT_NOTICE = 5;
+// Relay to client only, on a board room: the board's live AI runs (docs/ai.md, "Live runs"). Payload: JSON
+// { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
+const MSG_AI_RUNS = 6;
+const AI_SWEEP_MS = 30_000;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -104,6 +109,9 @@ function boardState(id) {
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
 
+// Live AI runs, shared by the run routes of both modes and the board rooms below.
+const aiLive = createLiveRuns();
+
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
 let directory = null;
@@ -123,7 +131,7 @@ if (config.authEnabled) {
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn) } });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive } });
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
@@ -277,6 +285,9 @@ class Room {
       encoding.writeVarUint8Array(a, awarenessProtocol.encodeAwarenessUpdate(this.awareness, [...states.keys()]));
       send(ws, encoding.toUint8Array(a));
     }
+    // only when there are runs: a client starts with none, and an app older than the message logs each one it gets
+    const snapshot = this.kind === 'board' ? aiLive.snapshotFor(this.name, aiViewer(ws)) : null;
+    if (snapshot?.runs.length) sendAiRuns(ws, snapshot);
   }
 
   leave(ws) {
@@ -298,6 +309,7 @@ class Room {
         this.save();
         this.doc.destroy();
         rooms.delete(this.name);
+        if (this.kind === 'board') aiLive.dropBoard(this.name);
         log(`room ${this.name}: unloaded`);
       }
     }, UNLOAD_AFTER_MS);
@@ -387,7 +399,26 @@ const roomAccess = {
 };
 
 // AI features in open mode (docs/ai.md): the operator's key, counted per client address. Accounts mode has the route in api.mjs.
-const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), log });
+const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), live: aiLive, log });
+
+// Who a socket's person is to the AI policy. Open mode has no roles or names: everyone edits and nobody is the runner.
+const aiViewer = (ws) => (config.authEnabled ? { role: ws.denied ? null : ws.role, userId: ws.userId } : { role: 'owner', userId: null });
+
+function sendAiRuns(ws, payload) {
+  if (!payload) return;
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_AI_RUNS);
+  encoding.writeVarString(enc, JSON.stringify(payload));
+  send(ws, encoding.toUint8Array(enc));
+}
+
+// Each socket gets its own copy, shaped by policy.mjs for its person; nobody is sent what they may not see.
+aiLive.onChange(({ boardId, run }) => {
+  const room = rooms.get(boardId);
+  if (!room) return;
+  for (const ws of room.conns.keys()) sendAiRuns(ws, aiLive.patchFor(run, aiViewer(ws)));
+});
+setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 
 let mcp = null;
 if (config.mcp) {
@@ -573,6 +604,8 @@ async function onRequest(req, res) {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
         await openAiRun.handle(req, res);
+      } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
+        await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
