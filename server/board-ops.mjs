@@ -234,6 +234,20 @@ function addDetail(out, o) {
   if (typeof o.createdBy === 'string') out.createdBy = id64(o.createdBy);
 }
 
+/** The box around all boxes with a usable position, or null on an empty board. */
+function overallBounds(boxes) {
+  const rects = boxes.filter((o) => [o.x, o.y, o.w, o.h].every(Number.isFinite));
+  if (!rects.length) return null;
+  const x0 = Math.min(...rects.map((o) => o.x));
+  const y0 = Math.min(...rects.map((o) => o.y));
+  const x1 = Math.max(...rects.map((o) => o.x + o.w));
+  const y1 = Math.max(...rects.map((o) => o.y + o.h));
+  return { x: r2(x0), y: r2(y0), w: r2(x1 - x0), h: r2(y1 - y0) };
+}
+
+/** A free spot to the right of everything, which is what get_board reports as nextFree. */
+const nextFreeOf = (overall) => (overall ? { x: Math.round(overall.x + overall.w + 80), y: Math.round(overall.y) } : { x: 0, y: 0 });
+
 const encodeCursor = (key) => Buffer.from(JSON.stringify(key)).toString('base64url');
 
 function decodeCursor(cursor) {
@@ -264,15 +278,7 @@ export function summariseBoard(doc, options = {}) {
     const type = str40(o.type);
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
   }
-  const rects = boxes.filter((o) => [o.x, o.y, o.w, o.h].every(Number.isFinite));
-  let overall = null;
-  if (rects.length) {
-    const x0 = Math.min(...rects.map((o) => o.x));
-    const y0 = Math.min(...rects.map((o) => o.y));
-    const x1 = Math.max(...rects.map((o) => o.x + o.w));
-    const y1 = Math.max(...rects.map((o) => o.y + o.h));
-    overall = { x: r2(x0), y: r2(y0), w: r2(x1 - x0), h: r2(y1 - y0) };
-  }
+  const overall = overallBounds(boxes);
 
   const wanted = types ? new Set(types) : null;
   const chosen = boxes.filter(
@@ -299,7 +305,7 @@ export function summariseBoard(doc, options = {}) {
   return {
     counts: { total: boxes.length + connectors.length, byType: Object.fromEntries(typeCounts) },
     bounds: overall,
-    nextFree: overall ? { x: Math.round(overall.x + overall.w + 80), y: Math.round(overall.y) } : { x: 0, y: 0 },
+    nextFree: nextFreeOf(overall),
     objects: fitted.items,
     nextCursor: more && returned > 0 ? encodeCursor(pageItems[returned - 1].key) : null,
     hiddenCount: withheld.size,
@@ -745,6 +751,67 @@ export function planDelete(doc, ids) {
     ops,
     result: { deleted: [...doomed], alsoDeleted: also, removed },
     audit: { count: doomed.size + also.length, ids: [...doomed, ...also] },
+  };
+}
+
+/**
+ * The objects of a saved template as a create plan. The content was checked when the template was saved; this only places
+ * it: new ids, the origin added to every position, fresh z keys above the board, connector ends and parents pointing at
+ * the new ids. Session steps and fonts are not applied (facilitation is not an MCP tool). Writes nothing.
+ * @param {{ objects?: any[], steps?: any[] }} content
+ * @param {{ createdBy: string, now?: number, at?: { x: number, y: number } | null }} options
+ */
+export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at = null }) {
+  const list = Array.isArray(content?.objects) ? content.objects : [];
+  const { map } = snapshot(doc);
+  if (map.size + list.length > LIMITS.boardObjects) {
+    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'boardId');
+  }
+  const overall = overallBounds(readAll(doc).boxes);
+  const origin = at ?? nextFreeOf(overall);
+  const taken = new Set();
+  const freshId = () => {
+    for (;;) {
+      const id = newObjectId();
+      if (!map.has(id) && !taken.has(id)) {
+        taken.add(id);
+        return id;
+      }
+    }
+  };
+  const ids = new Map(list.map((o) => [o.id, freshId()]));
+  const ordered = list.map((o, i) => ({ o, i })).sort((a, b) => (a.o.z < b.o.z ? -1 : a.o.z > b.o.z ? 1 : a.i - b.i));
+  const zs = topKeys(map, ordered.length);
+  const place = (e) => (e.kind === 'free' ? { kind: 'free', x: r2(e.x + origin.x), y: r2(e.y + origin.y) } : { ...e, id: ids.get(e.id) });
+
+  const ops = ordered.map(({ o }, k) => {
+    const fields = JSON.parse(JSON.stringify(o));
+    fields.id = ids.get(o.id);
+    fields.z = zs[k];
+    fields.createdBy = createdBy;
+    fields.updatedAt = now;
+    if (o.type === 'connector') {
+      fields.from = place(o.from);
+      fields.to = place(o.to);
+    } else {
+      fields.x = r2(o.x + origin.x);
+      fields.y = r2(o.y + origin.y);
+      if (typeof o.parent === 'string') fields.parent = ids.get(o.parent);
+    }
+    return { op: 'create', id: fields.id, fields };
+  });
+
+  const bounds = content?.bounds;
+  return {
+    ops,
+    result: {
+      created: ops.length,
+      origin: { x: origin.x, y: origin.y },
+      bounds: bounds ? { x: origin.x, y: origin.y, w: r2(bounds.w), h: r2(bounds.h) } : null,
+      objectCount: map.size + ops.length,
+      stepsSkipped: Array.isArray(content?.steps) ? content.steps.length : 0,
+    },
+    audit: { count: ops.length, ids: ops.map((op) => op.id) },
   };
 }
 
