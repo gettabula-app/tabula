@@ -1,8 +1,8 @@
 import './home.css';
 import type { BoardApp } from '../app';
-import type { Id } from '../types';
+import type { Id, Obj } from '../types';
 import { isBox } from '../types';
-import { toTemplateContent, validateContent, type CustomTemplate } from '../custom-templates';
+import { toTemplateContent, validateContent, type CustomTemplate, type TemplateContent } from '../custom-templates';
 import { putTemplate } from '../template-store';
 import { thumbnailSvg } from '../template-thumb';
 import { CATEGORIES, CUSTOM_CATEGORY } from '../templates';
@@ -12,48 +12,63 @@ import { dialog, field, toast } from './common';
 
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 280;
+const CATEGORY_OPTIONS: string[] = [...CATEGORIES, CUSTOM_CATEGORY];
 
-/** Opens the Save as template dialog for some objects of the board, or for the whole board. */
-export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
-  const ids = source === 'board' ? app.store.ordered().map((o) => o.id) : source;
-  const objs = app.gather(ids);
-  if (!objs.length) {
-    toast('Add something to the board first.');
-    return;
-  }
+/** What the form asks for; the content comes from the board. */
+export interface TemplateDetails {
+  name: string;
+  category: string;
+  description: string;
+  includeSteps: boolean;
+}
+
+/** The template content for some gathered objects, with the board's session steps and fonts. */
+export function boardTemplateContent(app: BoardApp, objs: Obj[], includeSteps: boolean): TemplateContent {
   const meta = app.store.getMeta();
-  const steps = app.flow.state().steps;
-  const only = ids.length === 1 ? app.store.get(ids[0]) : undefined;
-  const prefill = (isBox(only) && only.type === 'frame' && only.name?.trim()) || meta.name;
+  return toTemplateContent(objs, app.flow.state().steps, {
+    includeSteps,
+    fonts: { heading: meta.headingFont, body: meta.bodyFont },
+  }, (id) => app.store.get(id));
+}
 
-  const name = h('input', { class: 'input', maxlength: NAME_MAX, value: prefill.slice(0, NAME_MAX), 'aria-label': 'Name', spellcheck: 'false', autocomplete: 'off' });
-  const category = h('select', { class: 'input', 'aria-label': 'Category' }, ...[...CATEGORIES, CUSTOM_CATEGORY].map((c) => h('option', { value: c }, c)));
-  category.value = CUSTOM_CATEGORY;
+/** Why content cannot be saved (over the size limits, say in plain words), or null when it can. */
+export function contentProblem(content: TemplateContent): string | null {
+  try {
+    validateContent(content);
+    return null;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
+interface DialogSpec {
+  title: string;
+  confirm: string;
+  details: TemplateDetails;
+  objs: Obj[];
+  /** Runs with a valid form. Throwing keeps the dialog open and shows the message. */
+  onSubmit: (details: TemplateDetails, content: TemplateContent) => void | Promise<void>;
+}
+
+function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
+  const { objs } = spec;
+  const steps = app.flow.state().steps;
+
+  const name = h('input', { class: 'input', maxlength: NAME_MAX, value: spec.details.name.slice(0, NAME_MAX), 'aria-label': 'Name', spellcheck: 'false', autocomplete: 'off' });
+  const category = h('select', { class: 'input', 'aria-label': 'Category' }, ...CATEGORY_OPTIONS.map((c) => h('option', { value: c }, c)));
+  category.value = CATEGORY_OPTIONS.includes(spec.details.category) ? spec.details.category : CUSTOM_CATEGORY;
   const description = h('textarea', { class: 'input', rows: 3, maxlength: DESCRIPTION_MAX, 'aria-label': 'Description', placeholder: 'What is it for? (optional)' });
-  const include = h('input', { type: 'checkbox', checked: true });
+  description.value = spec.details.description;
+  const include = h('input', { type: 'checkbox', checked: spec.details.includeSteps });
   const error = h('div', { class: 'error', role: 'alert' });
   const preview = h('div', { class: 'tpl-thumb' });
   const summary = h('p', { class: 'muted small' });
 
-  const build = () => toTemplateContent(objs, steps, {
-    includeSteps: include.checked,
-    fonts: { heading: meta.headingFont, body: meta.bodyFont },
-  }, (id) => app.store.get(id));
-  // Over the size limits validateContent says so in plain words; nothing is saved then.
-  const problem = (content: ReturnType<typeof build>): string | null => {
-    try {
-      validateContent(content);
-      return null;
-    } catch (e) {
-      return (e as Error).message;
-    }
-  };
-
-  let content = build();
+  let content = boardTemplateContent(app, objs, include.checked);
   let limit: string | null = null;
   const refresh = () => {
-    content = build();
-    limit = problem(content);
+    content = boardTemplateContent(app, objs, include.checked);
+    limit = contentProblem(content);
     error.textContent = limit ?? '';
     const save = dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary');
     if (save) save.disabled = limit !== null;
@@ -62,7 +77,7 @@ export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
   };
   preview.innerHTML = thumbnailSvg(content.objects);
 
-  const dlg = dialog('Save as template', h('div', { class: 'save-tpl' },
+  const dlg = dialog(spec.title, h('div', { class: 'save-tpl' },
     h('div', { class: 'save-tpl-form' },
       field('Name', name),
       field('Category', category),
@@ -73,7 +88,7 @@ export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
   ), [
     { label: 'Cancel' },
     {
-      label: 'Save template', primary: true,
+      label: spec.confirm, primary: true,
       onClick: async () => {
         const title = name.value.trim();
         if (!title) {
@@ -83,18 +98,14 @@ export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
         }
         refresh();
         if (limit) return false;
-        const now = Date.now();
-        const t: CustomTemplate = {
-          id: newId(), version: 1, name: title, category: category.value, description: description.value.trim(),
-          content, createdBy: app.user.id, createdAt: now, updatedAt: now,
-        };
         try {
-          await putTemplate(t);
+          await spec.onSubmit({
+            name: title, category: category.value, description: description.value.trim(), includeSteps: include.checked,
+          }, content);
         } catch (e) {
           error.textContent = (e as Error).message;
           return false;
         }
-        toast(`Saved “${title}” to My templates.`);
       },
     },
   ]);
@@ -103,4 +114,44 @@ export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
     if (e.key === 'Enter' && !e.isComposing) dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary')?.click();
   });
   refresh();
+}
+
+/** Opens the Save as template dialog for some objects of the board, or for the whole board. */
+export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
+  const ids = source === 'board' ? app.store.ordered().map((o) => o.id) : source;
+  const objs = app.gather(ids);
+  if (!objs.length) {
+    toast('Add something to the board first.');
+    return;
+  }
+  const meta = app.store.getMeta();
+  const only = ids.length === 1 ? app.store.get(ids[0]) : undefined;
+  const prefill = (isBox(only) && only.type === 'frame' && only.name?.trim()) || meta.name;
+
+  openTemplateDialog(app, {
+    title: 'Save as template',
+    confirm: 'Save template',
+    details: { name: prefill, category: CUSTOM_CATEGORY, description: '', includeSteps: true },
+    objs,
+    onSubmit: async (d, content) => {
+      const now = Date.now();
+      const t: CustomTemplate = {
+        id: newId(), version: 1, name: d.name, category: d.category, description: d.description,
+        content, createdBy: app.user.id, createdAt: now, updatedAt: now,
+      };
+      await putTemplate(t);
+      toast(`Saved “${d.name}” to My templates.`);
+    },
+  });
+}
+
+/** The Save as template form for the template being edited: changes the details held by the editor, saves nothing. */
+export function openTemplateDetails(app: BoardApp, details: TemplateDetails, onDone: (details: TemplateDetails) => void): void {
+  openTemplateDialog(app, {
+    title: 'Template details',
+    confirm: 'Done',
+    details,
+    objs: app.gather(app.store.ordered().map((o) => o.id)),
+    onSubmit: (d) => onDone(d),
+  });
 }
