@@ -391,6 +391,8 @@ select.input {
 .modal-head h2 { font: 700 20px var(--display); letter-spacing: -0.02em; }
 .modal-head .icon-btn:hover { background: var(--tray-text); color: var(--tray); }
 .modal-body { padding: 16px 20px 4px; overflow-y: auto; }
+/* Without an actions row the body is the last thing in the dialog: pad its end like its sides. */
+.modal-body:last-child { padding-bottom: 20px; }
 .modal-body p { margin: 0 0 8px; max-width: 64ch; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 18px; }
 
@@ -407,8 +409,8 @@ select.input {
 .modal .btn.primary:not(:disabled):hover, .popover .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
 .modal .btn.ghost, .popover .btn.ghost { border: 0; }
 .modal .btn.ghost:not(:disabled):hover, .popover .btn.ghost:not(:disabled):hover { background: transparent; color: var(--tray-text); text-decoration: underline; text-underline-offset: 4px; }
-.modal .btn.armed, .popover .btn.armed { border-color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
-.modal .btn.armed:not(:disabled):hover, .popover .btn.armed:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
+.modal .btn.armed, .popover .btn.armed, .modal .btn.danger { border-color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
+.modal .btn.armed:not(:disabled):hover, .popover .btn.armed:not(:disabled):hover, .modal .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 .modal .input, .popover .input { border-radius: 0; }
 .modal .input:focus, .popover .input:focus { border-color: var(--tray-text); }
 .modal .input:focus-visible, .popover .input:focus-visible { outline: none; }
