@@ -195,9 +195,12 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
       submit();
     }
   });
-  // The popover or dialog that holds this composer is attached after it is built.
-  requestAnimationFrame(() => question.focus());
   return root;
+}
+
+/** Puts the cursor in the question once the composer is in the page. Synchronous: animation frames do not run in a hidden tab. */
+function focusQuestion(root: HTMLElement) {
+  root.querySelector<HTMLInputElement>('input[aria-label="Question"]')?.focus();
 }
 
 /** Quick poll from the rail: a popover that starts the poll on save. */
@@ -217,6 +220,7 @@ export function openQuickPoll(app: BoardApp, anchor: HTMLElement) {
     toast('Poll started. Answers show above the bar.');
   }, close);
   pop = popover(anchor, body, { side: 'right', className: 'poll-pop' });
+  focusQuestion(body);
 }
 
 /** Step editor: create or edit the poll of a step. `onDone` runs after save or cancel. */
@@ -232,8 +236,10 @@ export function openStepPoll(app: BoardApp, stepId: Id, onDone: () => void) {
     d?.close();
     onDone();
   };
-  d = dialog('Poll', composer(initial, 'Save poll', (input) => {
+  const body = composer(initial, 'Save poll', (input) => {
     app.flow.setStepPoll(stepId, input);
     done();
-  }, done));
+  }, done);
+  d = dialog('Poll', body);
+  focusQuestion(body);
 }
