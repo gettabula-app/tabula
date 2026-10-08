@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { curlSize, labelBox, layoutText, objectMarkup, styleOf } from '../src/markup';
-import { textBox } from '../src/shapes';
+import { SHAPE_KINDS, textBox } from '../src/shapes';
 import type { BaseObj } from '../src/types';
 
 const shape = (extra: Partial<BaseObj> = {}): BaseObj => ({
@@ -60,6 +60,22 @@ describe('labelBox', () => {
 
   it('uses the shape text box for shapes', () => {
     expect(labelBox(shape({ kind: 'ellipse' }))).toEqual(textBox('ellipse', 200, 100));
+  });
+
+  it('keeps a small sticky label box at least 1 px in each direction', () => {
+    const box = labelBox(sticky({ w: 20, h: 20 }));
+    expect(box.w).toBeGreaterThanOrEqual(1);
+    expect(box.h).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('textBox at small sizes', () => {
+  it.each([[12, 12], [20, 30], [30, 20]])('keeps every kind at least 1 px in each direction at %dx%d', (w, h) => {
+    for (const { kind } of SHAPE_KINDS) {
+      const box = textBox(kind, w, h);
+      expect(box.w, kind).toBeGreaterThanOrEqual(1);
+      expect(box.h, kind).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 
