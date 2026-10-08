@@ -100,11 +100,11 @@ async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(pat
   return server;
 }
 
+// Stop every relay before removing any directory: a restart test runs two relays on one directory, and Windows
+// refuses to remove files the second one still holds open.
 afterAll(async () => {
-  for (const s of servers) {
-    await stopRelay(s.proc);
-    fs.rmSync(s.dir, { recursive: true, force: true });
-  }
+  await Promise.all(servers.map((s) => stopRelay(s.proc)));
+  for (const dir of new Set(servers.map((s) => s.dir))) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 const sockets = new Set<WebSocket>();
