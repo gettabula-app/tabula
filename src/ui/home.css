@@ -101,6 +101,10 @@
 }
 .board-actions .icon-btn:not(:disabled):hover { border-color: var(--danger); background: transparent; color: var(--danger); }
 
+/* Template thumbnails: the objects drawn small in a 16:10 box, flush with the top edge of the card or tile. */
+.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); }
+.tpl-thumb svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
 /* Templates strip on the home page. */
 .tpl-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .tpl-tile {
@@ -109,6 +113,7 @@
 }
 .tpl-tile:not(:disabled):hover { border-color: var(--ink); }
 .tpl-tile .tpl-title { font: 700 16px/1.25 var(--display); letter-spacing: -0.02em; }
+.tpl-tile .tpl-thumb { width: calc(100% + 32px); margin: -16px -16px 8px; }
 .link-more { display: inline-flex; align-items: center; gap: 6px; height: 32px; color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .link-more:hover { text-decoration: underline; text-underline-offset: 4px; }
 
@@ -120,7 +125,7 @@
 .tpl-chip[aria-pressed='true'] { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 .tpl-toolbar .home-search { flex: 0 1 320px; width: 100%; margin-top: 0; }
 .tpl-count { margin: 0 0 24px; padding-top: 12px; border-top: 2px solid var(--ink); }
-.tpl-results .home-empty { border-top: 0; }
+.tpl-results > .home-empty { border-top: 0; }
 .tpl-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .tpl-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; height: 100%; padding: 24px;
@@ -131,9 +136,31 @@
 .tpl-card .tpl-label { margin: 0; }
 .tpl-card .tpl-title { margin: 0; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tpl-card .tpl-text { flex: 1; margin: 0; color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
+.tpl-card .tpl-thumb { width: calc(100% + 48px); margin: -24px -24px 16px; }
 .tpl-card .btn { margin-top: 16px; }
+.tpl-section + .tpl-section { margin-top: 48px; }
+.tpl-section-title { margin: 0 0 16px; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
+.tpl-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.tpl-actions .btn { margin-top: 0; }
+.tpl-actions .icon-btn {
+  width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: 0; background: transparent; color: var(--ink);
+}
+.tpl-actions .icon-btn:hover { border-color: var(--ink); background: transparent; }
+
+/* The card menu: a square popover like the rest of the page. */
+.tpl-pop { border-radius: 0; border: 1px solid var(--tray-line); }
+.tpl-pop .menu { min-width: 180px; }
+.tpl-pop .menu-item { border-radius: 0; }
 
 .home-foot { padding-top: 16px; border-top: 1px solid var(--rule); color: var(--graphite); font-size: 13px; }
+
+/* Save as template dialog, on the board: the form on the left, the live thumbnail on the right. */
+.save-tpl { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; align-items: start; }
+.save-tpl .field:first-child { margin-top: 0; }
+.save-tpl textarea { resize: vertical; }
+.save-tpl .check { margin-top: 8px; }
+.save-tpl-preview .tpl-thumb { border: 1px solid var(--tray-line); }
+.save-tpl-preview p { margin: 8px 0 0; }
 
 @media (min-width: 640px) {
   .tpl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -177,4 +204,9 @@
 
 @media (max-width: 480px) {
   .tpl-strip { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .save-tpl { grid-template-columns: minmax(0, 1fr); }
+  .save-tpl-preview { order: -1; }
 }

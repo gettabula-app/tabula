@@ -7,6 +7,7 @@ type Mode = AuthState['mode'];
 const home: Route = { name: 'home' };
 const templates: Route = { name: 'templates' };
 const signin: Route = { name: 'signin' };
+const templateEdit = (id: string): Route => ({ name: 'template-edit', id });
 const board = (id: string): Route => ({ name: 'board', id });
 const verify = (token: string): Route => ({ name: 'verify', token });
 const invite = (token: string): Route => ({ name: 'invite', token });
@@ -30,6 +31,17 @@ describe('parseRoute', () => {
     ['#/templates/extra', home],
     ['#/templates?x=1', home],
     ['#/template', home],
+    ['#/t/abc123/edit', templateEdit('abc123')],
+    ['#/t/A_b-9/edit', templateEdit('A_b-9')],
+    ['#/t/' + 'a'.repeat(64) + '/edit', templateEdit('a'.repeat(64))],
+    ['#/t/' + 'a'.repeat(65) + '/edit', home],
+    ['#/t//edit', home],
+    ['#/t/abc', home],
+    ['#/t/abc/', home],
+    ['#/t/abc/edit/', home],
+    ['#/t/abc/edit/x', home],
+    ['#/t/has space/edit', home],
+    ['#/t/abc/view', home],
     ['#/admin', admin('overview')],
     ['#/admin/', admin('overview')],
     ['#/admin/overview', admin('overview')],
@@ -67,6 +79,7 @@ describe('resolveRoute', () => {
     ['#/admin/members', home],
     ['#/b/abc', board('abc')],
     ['#/templates', templates],
+    ['#/t/abc/edit', templateEdit('abc')],
     ['#/', home],
   ])('open mode: %j', (hash, route) => {
     expect(resolveRoute(hash, 'open')).toEqual(route);
@@ -84,6 +97,9 @@ describe('resolveRoute', () => {
     ['signed-in', '#/templates', templates],
     ['signed-out', '#/templates', templates],
     ['offline', '#/templates', templates],
+    ['signed-in', '#/t/abc/edit', templateEdit('abc')],
+    ['signed-out', '#/t/abc/edit', templateEdit('abc')],
+    ['offline', '#/t/abc/edit', templateEdit('abc')],
   ])('%s: %j', (mode, hash, route) => {
     expect(resolveRoute(hash, mode)).toEqual(route);
   });
@@ -93,6 +109,7 @@ describe('needsSignIn', () => {
   const routes: [string, Route][] = [
     ['home', home],
     ['templates', templates],
+    ['template-edit', templateEdit('abc')],
     ['board', board('abc')],
     ['signin', signin],
     ['verify', verify('abc')],
@@ -104,7 +121,7 @@ describe('needsSignIn', () => {
     open: [],
     offline: [],
     'signed-in': [],
-    'signed-out': ['home', 'templates', 'board', 'admin'],
+    'signed-out': ['home', 'templates', 'template-edit', 'board', 'admin'],
   };
 
   it.each(Object.entries(gated).flatMap(([mode, names]) =>
@@ -122,6 +139,7 @@ describe('returnHash', () => {
     ['#/', null],
     ['', null],
     ['#/templates', null],
+    ['#/t/abc/edit', null],
     ['#/signin', null],
     ['#/signin/verify?token=abc', null],
     ['#/invite/abc', null],

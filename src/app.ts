@@ -13,6 +13,7 @@ import {
   neighborInDirection, rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
+import { remapObjects } from './custom-templates';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex } from './palette';
@@ -1278,7 +1279,7 @@ export class BoardApp {
   }
 
   /** Selected objects plus connectors between them, as a portable list. */
-  private gather(ids: Id[]): Obj[] {
+  gather(ids: Id[]): Obj[] {
     const set = new Set(ids);
     const stack = [...ids];
     while (stack.length) {
@@ -1311,32 +1312,15 @@ export class BoardApp {
   insertObjects(objs: Obj[], offset: Point) {
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
-    const out: Obj[] = [];
+    const out = remapObjects(objs, map, offset, (id) => {
+      const src = this.store.get(id);
+      return src && isBox(src) ? center(src) : null;
+    });
     const zs = this.store.topZs(objs.length);
-    for (const o of objs) {
-      const c = structuredClone(o) as Obj;
-      c.id = map.get(o.id)!;
-      c.z = zs[out.length];
-      c.createdBy = this.user.id;
-      if (isConnector(c)) {
-        const fix = (e: End): End => {
-          if (e.kind === 'free') return { kind: 'free', x: e.x + offset.x, y: e.y + offset.y };
-          const nid = map.get(e.id);
-          if (nid) return { ...e, id: nid };
-          const src = this.store.get(e.id);
-          const pt = src && isBox(src) ? center(src) : { x: 0, y: 0 };
-          return { kind: 'free', x: pt.x + offset.x, y: pt.y + offset.y };
-        };
-        c.from = fix(c.from);
-        c.to = fix(c.to);
-      } else {
-        c.x += offset.x;
-        c.y += offset.y;
-        c.parent = c.parent ? map.get(c.parent) : undefined;
-        delete c.privateStep;
-      }
-      out.push(c);
-    }
+    out.forEach((o, i) => {
+      o.z = zs[i];
+      o.createdBy = this.user.id;
+    });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
     this.setSelection(out.filter((o) => !o.parent || !map.has(o.parent!)).map((o) => o.id).filter((id) => {

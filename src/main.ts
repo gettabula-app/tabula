@@ -1,15 +1,18 @@
 import './styles.css';
 import * as Y from 'yjs';
 import { BoardApp } from './app';
-import { deleteBoard, getUser, openBoard } from './sync';
+import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
+import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
-import { TEMPLATES, insertTemplate } from './templates';
+import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
+import { getTemplate } from './template-store';
+import type { CustomTemplate } from './custom-templates';
 import { answerKey } from './polls';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
@@ -29,7 +32,7 @@ const root = document.getElementById('app')!;
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
-let pending: { id: string; template?: string; imported?: ImportedBoard } | null = null;
+let pending: { id: string; template?: string; custom?: CustomTemplate; imported?: ImportedBoard } | null = null;
 let registering = false;
 let routeSeq = 0;
 
@@ -74,12 +77,20 @@ const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBo
 const nav: HomeNav = {
   open: async (id, opts = {}) => {
     if (registering) return;
+    let custom: CustomTemplate | undefined;
+    if (opts.template?.startsWith(CUSTOM_PREFIX)) {
+      custom = await getTemplate(opts.template.slice(CUSTOM_PREFIX.length));
+      if (!custom) {
+        toast('That template is no longer available.');
+        return;
+      }
+    }
     if (authState().mode === 'signed-in' && isNewBoard(id, opts)) {
       registering = true;
       try {
         await api.createBoard({
           id,
-          title: TEMPLATES.find((t) => t.id === opts.template)?.name ?? 'Untitled board',
+          title: custom?.name ?? TEMPLATES.find((t) => t.id === opts.template)?.name ?? 'Untitled board',
           teamId: opts.teamId,
         });
       } catch (err) {
@@ -90,7 +101,7 @@ const nav: HomeNav = {
       }
       refreshBoardCache();
     }
-    pending = { id, ...opts };
+    pending = { id, ...opts, custom };
     location.hash = `#/b/${id}`;
   },
 };
@@ -110,6 +121,35 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
   return list.find((b) => b.id === id)?.role;
 }
 
+/** The user as the board shows them: in accounts mode the account's name on this device's identity. */
+function boardUser(auth: AuthState) {
+  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+  return me ? { ...getUser(), name: me.user.name } : getUser();
+}
+
+/** Edit a saved template on a scratch board: in memory only, no relay room, not stored with the boards. */
+async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
+  root.className = 'board-root';
+  root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening template…' }));
+  const tpl = await getTemplate(id);
+  if (seq !== routeSeq) return;
+  if (!tpl) {
+    toast('That template is no longer available.');
+    location.replace('#/templates');
+    return;
+  }
+  const user = boardUser(auth);
+  const conn = scratchBoard(`template-${tpl.id}`, user);
+  loadTemplate(conn.store, tpl, user.id);
+  root.replaceChildren();
+  const app = new BoardApp(conn, user, root);
+  current = app;
+  if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
+  mountTemplateEditor(app, root, tpl);
+}
+
+let shownHash = location.hash;
+
 /**
  * Whether a board missing from the person's list is a deleted one. Only workspace admins can open those, and only
  * while online; the relay refuses their writes either way, so the board opens read-only instead of silently
@@ -126,6 +166,13 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
 }
 
 async function route() {
+  // Leaving the template editor with unsaved changes: put the editor's address back and let it ask first.
+  const leaving = templateLeaveGuard();
+  if (leaving && location.hash !== shownHash && !leaving(location.hash)) {
+    history.replaceState(null, '', shownHash || '#/');
+    return;
+  }
+  shownHash = location.hash;
   const seq = ++routeSeq;
   releaseBanner?.();
   releaseBanner = null;
@@ -153,6 +200,11 @@ async function route() {
     return;
   }
 
+  if (r.name === 'template-edit') {
+    await routeTemplateEdit(r.id, auth, seq);
+    return;
+  }
+
   if (r.name !== 'board') {
     root.className = 'home-root';
     const view = document.createElement('div');
@@ -173,8 +225,7 @@ async function route() {
   root.className = 'board-root';
   root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening board…' }));
   const accounts = auth.mode === 'signed-in' || auth.mode === 'offline';
-  const me = accounts ? auth.me : null;
-  const user = me ? { ...getUser(), name: me.user.name } : getUser();
+  const user = boardUser(auth);
   const [conn, role] = await Promise.all([openBoard(id, user), boardRole(id, auth)]);
   const deleted = await isDeletedBoard(id, auth, role);
   if (seq !== routeSeq) {
@@ -245,7 +296,12 @@ async function route() {
     });
   }
 
-  if (job?.template) {
+  const custom = job?.custom;
+  if (custom) {
+    const fonts = custom.content.fonts;
+    conn.store.setMeta({ name: custom.name, ...(fonts ? { headingFont: fonts.heading, bodyFont: fonts.body } : {}) });
+    requestAnimationFrame(() => insertCustomTemplate(app, custom));
+  } else if (job?.template) {
     const t = TEMPLATES.find((x) => x.id === job.template);
     if (t) {
       conn.store.setMeta({ name: t.name });

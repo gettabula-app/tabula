@@ -25,10 +25,16 @@ import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openTokensDialog } from './tokens';
+import { openSaveTemplate } from './save-template';
 
 type IconName = keyof typeof ICONS;
 
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }) {
+/**
+ * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
+ * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
+ */
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean } = {}) {
+  const scratch = opts.scratch === true;
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
@@ -69,9 +75,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderStatus();
 
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
+  const homeLabel = scratch ? 'Back to templates' : 'All boards';
   const topLeft = h('div', { class: 'tray top-left' },
-    h('button', { class: 'icon-btn', title: 'All boards', 'aria-label': 'All boards', onclick: nav.home }, icon('home', 18)),
-    name, status, badge,
+    h('button', { class: 'icon-btn', title: homeLabel, 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
+    scratch ? null : name, scratch ? null : status, badge,
   );
 
   // ---------------------------------------------------------------- top right
@@ -87,13 +94,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('presence', renderPeople);
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 18));
-  const history = mountHistory(app, chrome);
-  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history.open));
+  const history = scratch ? null : mountHistory(app, chrome);
+  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch));
   const comments = mountComments(app, chrome);
   const topRight = h('div', { class: 'tray top-right' },
-    people,
-    comments.button,
-    h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch ? null : people,
+    scratch ? null : comments.button,
+    scratch ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
 
@@ -227,7 +234,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
   mountFlowBar(app, chrome);
-  firstRunHint(app, chrome);
+  if (!scratch) firstRunHint(app, chrome);
 
   // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
   const syncReadOnly = () => {
@@ -362,7 +369,7 @@ function minimap(app: BoardApp) {
 
 // ---------------------------------------------------------------- menus & dialogs
 
-function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: () => void) {
+function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
   // Items that change the board are disabled while it is view only.
@@ -428,9 +435,10 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: () => void) {
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app)),
-    canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    scratch ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
+    openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('user', 'Your name and colour', () => openProfile(app)),
-    showComments,
+    scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
     h('div', { class: 'list-label' }, 'Appearance'),

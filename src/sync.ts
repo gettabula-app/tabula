@@ -277,3 +277,30 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   });
   return conn;
 }
+
+/**
+ * A board that lives only in memory: a fresh document with no IndexedDB persistence, no relay rooms and no entry in
+ * the board index, so it never syncs, never appears on the Boards page and is gone when it is destroyed. Comments are
+ * read-only, since a scratch board has nowhere to keep them. Used to edit a saved template.
+ */
+export function scratchBoard(id: string, user: User): BoardConn {
+  const doc = new Y.Doc();
+  const cdoc = new Y.Doc();
+  const store = new Store(doc);
+  const comments = new Comments(cdoc);
+  comments.setReadOnly(true);
+  const awareness = new Awareness(doc);
+  awareness.setLocalStateField('user', user);
+  return {
+    id, doc, store, comments, awareness, provider: null, status: 'local', denied: null,
+    onStatus: () => () => undefined,
+    onDenied: () => () => undefined,
+    onWorkspaceHint: () => () => undefined,
+    resync: () => undefined,
+    destroy: () => {
+      awareness.destroy();
+      doc.destroy();
+      cdoc.destroy();
+    },
+  };
+}
