@@ -38,7 +38,9 @@ export function scopeSvgIds(body: string, objectId: string): string {
   const defined = new Set<string>();
   for (const m of body.matchAll(/\sid\s*=\s*(["'])([^"']*)\1/g)) if (m[2]) defined.add(m[2]);
   if (!defined.size) return body;
-  const scope = (id: string) => `i${objectId}-${id}`;
+  // Object ids reach us from peers and imported files, and this runs after the sanitiser: keep only id-safe characters.
+  const prefix = `i${objectId.replace(/[^A-Za-z0-9_-]/g, '_')}-`;
+  const scope = (id: string) => `${prefix}${id}`;
   return body
     .replace(/(\sid\s*=\s*)(["'])([^"']*)\2/g, (all, lead: string, q: string, id: string) => (defined.has(id) ? `${lead}${q}${scope(id)}${q}` : all))
     .replace(/(url\(\s*)(['"]?)#([^'")\s]+)\2(\s*\))/g, (all, pre: string, q: string, id: string, post: string) => (defined.has(id) ? `${pre}${q}#${scope(id)}${q}${post}` : all))

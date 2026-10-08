@@ -10,6 +10,12 @@ const sticker = (id: string): BaseObj => ({
 });
 
 describe('scopeSvgIds', () => {
+  it('never lets a crafted object id break out of the attribute', () => {
+    const out = scopeSvgIds('<linearGradient id="g"/><path fill="url(#g)"/>', 'x"><script>alert(1)</script><a b="');
+    expect(out).not.toMatch(/<script|<a /);
+    expect(out).toContain('id="ix___script_alert_1___script__a_b__-g"');
+  });
+
   it('rewrites defined ids and every reference to them, with double quotes', () => {
     const body = '<defs><linearGradient id="g"/></defs><path fill="url(#g)" d="M0 0"/><use href="#g"/><use xlink:href="#g"/>';
     const out = scopeSvgIds(body, 'o1');
