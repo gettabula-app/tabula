@@ -1,6 +1,6 @@
 {
-  "name": "Driftboard",
-  "short_name": "Driftboard",
+  "name": "Mira",
+  "short_name": "Mira",
   "description": "Local-first infinite whiteboard for diagrams, UML and team exercises.",
   "start_url": "/",
   "display": "standalone",

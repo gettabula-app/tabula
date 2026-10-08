@@ -1,4 +1,4 @@
-# Driftboard
+# Mira
 
 A local-first infinite whiteboard: sticky notes, shapes on a snapping grid, connectors that stay attached, UML, Fontshare typography, Iconify icons, and facilitated team exercises with timers, private writing and dot voting.
 
@@ -25,8 +25,8 @@ npm run dev
 Docker:
 
 ```bash
-docker build -t driftboard .
-docker run -p 8787:8787 -v driftboard-data:/data driftboard
+docker build -t mira .
+docker run -p 8787:8787 -v mira-data:/data mira
 ```
 
 ### Relay settings
@@ -76,7 +76,7 @@ End-to-end encryption, enforced roles, comments, version history, the Tauri desk
 
 ## Fonts and icons
 
-Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Driftboard therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
+Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Mira therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
 
 Iconify icon sets carry their own licences (MIT, Apache 2.0, CC BY 4.0, …). The icon picker shows each set's licence and flags sets that require attribution.
 

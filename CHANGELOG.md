@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Driftboard are documented here, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Mira are documented here, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
@@ -20,6 +20,7 @@ All notable changes to Driftboard are documented here, newest first. The format 
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- The app is now called Mira (it was called Driftboard in the interface and documentation). Saved boards, settings and old .drift files keep working: only user-visible text changed.
 - Text, drawings, icons, connectors and frame titles drawn on the canvas now follow the theme's ink colour, and exports (SVG and PNG) always use the light default colours on white.
 - The properties panel is hidden until you press More in the quick-action bar, and has a close button. Its Shape list is grouped.
 - Locked items are click-through background: clicks and marquee selection pass over them, Select All skips them, and they can't be edited or used as connector targets. Press and hold for 0.6 seconds to unlock one. Dot voting still works on locked notes.

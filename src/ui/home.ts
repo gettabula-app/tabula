@@ -11,7 +11,7 @@ export interface HomeNav {
 
 /** Board list: everything here lives in this browser; nothing is fetched. */
 export function renderHome(root: HTMLElement, nav: HomeNav) {
-  document.title = 'Driftboard';
+  document.title = 'Mira';
   const boards = listBoards();
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
   fileInput.addEventListener('change', async () => {
@@ -45,7 +45,7 @@ export function renderHome(root: HTMLElement, nav: HomeNav) {
   const relay = relayUrl();
   root.replaceChildren(h('main', { class: 'home' },
     h('header', { class: 'home-head' },
-      h('div', { class: 'wordmark', 'aria-label': 'Driftboard' }, 'Driftboard'),
+      h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),
       h('p', { class: 'home-lede' }, 'An infinite whiteboard that lives on your device. Sketch, diagram and run workshops offline; sync with your team when you are online.'),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary big', onclick: () => nav.open(newId()) }, icon('plus', 18), 'New board'),

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Driftboard relay: serves the built app and relays Yjs sync + awareness
+// Mira relay: serves the built app and relays Yjs sync + awareness
 // messages between everyone in a board room. It keeps each room's document on
 // disk so someone joining later catches up even if the author is offline.
 //
@@ -269,5 +269,5 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 server.listen(PORT, HOST, () => {
-  log(`Driftboard relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})`);
+  log(`Mira relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})`);
 });
