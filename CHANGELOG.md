@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- Templates page (`#/templates`): every template on a solid card, with category filters and search. The home screen links to it from a short Start from a template row.
 - Hosted workspaces (`MIRA_CLOUD_TOKEN`, `MIRA_CLOUD_URL`, `MIRA_CLOUD_WORKSPACE_ID`, accounts mode only; off and invisible when unset): a control plane can read seat counts (`GET /api/internal/usage`) and set a seat limit, a read-only switch and a banner (`PUT /api/internal/limits`, bearer token, stored in the new `settings` table). A read-only workspace drops board and comment updates on open and new sockets and answers writes with `402 read_only`; a full workspace refuses new invites, invite sign-ins and seat-taking role changes with `409 seat_limit`; `/api/me` reports the workspace. The instance opens the billing portal for the owner (`POST /api/billing/portal`) and reports seat counts to the control plane. The app shows the banner on the home screen and boards, a Workspace is read-only badge, and an owner-only Manage billing button in the admin Overview, and refreshes `/api/me` every five minutes. See `docs/cloud.md`.
 - `npm run dev:accounts` runs the dev server in accounts mode (sign-in links printed to the console).
 - `MIRA_MAIL_WEBHOOK_TOKEN`: sent as a bearer token with each mail webhook request, so a hosted mail relay can authenticate the instance.
@@ -33,6 +34,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- The home screen is now a Boards page in the Swiss style: a shared top bar (Boards, Templates, Admin, your name, Sign out), one New board action, a search field, and each team's boards as a table with name, last edit and access. The marketing text and the dot grid behind the page are gone, which also fixes the template list being hard to read on dark themes.
 - Admin dashboard redesigned in a Swiss style: numbered section index, large flush-left headings, overview figures in a ruled band, tables on hairlines instead of rounded cards, square buttons, chips and badges, and no shadows. Manage billing is now the primary action.
 - The app is now called Tabula (it was called Mira). Saved boards, settings and old .drift files keep working: only user-visible text changed. Server settings are now `TABULA_*` (`TABULA_AUTH`, `TABULA_BASE_URL`, `TABULA_OWNER_EMAIL`, `TABULA_CLOUD_TOKEN` and so on); the old `MIRA_*` names are still read, with a deprecation warning at startup, and the `TABULA_` name wins when both are set. The session cookie is now `tabula_session` (`__Host-tabula_session` over https), so everyone signs in once more after the upgrade. The browser app sends the CSRF header `x-tabula: 1`; the server still accepts the old `x-mira: 1` as well (deprecated). The service worker cache is renamed, and the old one is deleted on first load. Docker commands in the README use `tabula`.
 - Minimum Node version is now 22.13 (built-in SQLite for the upcoming accounts mode).
