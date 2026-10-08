@@ -199,6 +199,11 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
   }
 }
 
+/** A count with its noun: "1 owner", "2 owners", "0 owners". */
+export function countLabel(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 /** Case-insensitive substring match over the given fields; an empty query matches everything. */
 export function matchesQuery(query: string, fields: (string | null | undefined)[]): boolean {
   const q = query.trim().toLowerCase();

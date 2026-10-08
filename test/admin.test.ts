@@ -4,6 +4,7 @@ import {
   activeOwnerCount,
   auditActor,
   auditSentence,
+  countLabel,
   disableVerdict,
   isKnownAuditAction,
   KNOWN_AUDIT_ACTIONS,
@@ -219,6 +220,17 @@ describe('role rules', () => {
   ])('revoke: %s', (_name, verdict, allowed) => {
     expect(verdict.allowed).toBe(allowed);
     expect(Boolean(verdict.reason)).toBe(!allowed);
+  });
+});
+
+describe('countLabel', () => {
+  it.each<[number, string]>([
+    [0, '0 owners'],
+    [1, '1 owner'],
+    [2, '2 owners'],
+    [12, '12 owners'],
+  ])('%i', (n, label) => {
+    expect(countLabel(n, 'owner', 'owners')).toBe(label);
   });
 });
 

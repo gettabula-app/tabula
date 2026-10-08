@@ -5,7 +5,7 @@ import { ADMIN_TABS, type AdminTab } from '../route';
 import { fmtAgo, toast } from './common';
 import { h, icon } from './dom';
 import {
-  activeOwnerCount, auditActor, auditSentence, disableVerdict, isKnownAuditAction, matchesQuery, removeVerdict,
+  activeOwnerCount, auditActor, auditSentence, countLabel, disableVerdict, isKnownAuditAction, matchesQuery, removeVerdict,
   revokeVerdict, roleLock, roleOptions, roleVerdict, type Actor, type Lookup,
 } from './admin-logic';
 
@@ -36,7 +36,6 @@ const GENERIC = 'Something went wrong. Try again.';
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDateTime = (t: number) =>
   new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function describe(e: unknown): string {
   if (e instanceof ApiError) {
@@ -170,13 +169,18 @@ function overviewView(o: AdminOverview): HTMLElement {
   ];
   return h('div', null,
     h('div', { class: 'admin-tiles' },
-      tile('Active members', o.members.active, `${r.owner} owners · ${r.admin} admins · ${r.member} members · ${r.guest} guests`),
+      tile('Active members', o.members.active, [
+        countLabel(r.owner, 'owner', 'owners'),
+        countLabel(r.admin, 'admin', 'admins'),
+        countLabel(r.member, 'member', 'members'),
+        countLabel(r.guest, 'guest', 'guests'),
+      ].join(' · ')),
       tile('Disabled members', o.members.disabled, `${o.members.total} in total`),
       tile('Teams', o.teams.total, `${o.teams.archived} archived`),
       tile('Boards', o.boards.total, `${o.boards.deleted} deleted`),
       tile('Active sessions', o.sessions.active),
       tile('Sign-ins, last 7 days', o.signIns7d),
-      tile('Live connections', o.live.connections, `${plural(o.live.rooms, 'room', 'rooms')} open`)),
+      tile('Live connections', o.live.connections, `${countLabel(o.live.rooms, 'room', 'rooms')} open`)),
     h('h3', { class: 'admin-sub' }, 'Instance'),
     h('dl', { class: 'admin-facts' }, facts.map(([k, v]) => h('div', { class: 'admin-fact' }, h('dt', null, k), h('dd', null, v)))));
 }
@@ -197,7 +201,7 @@ function membersPanel(me: Me): HTMLElement {
   const paint = () => {
     const owners = activeOwnerCount(members);
     const shown = members.filter((m) => matchesQuery(query, [m.name, m.email]));
-    count.textContent = query.trim() ? `${shown.length} of ${members.length}` : plural(members.length, 'member', 'members');
+    count.textContent = query.trim() ? `${shown.length} of ${members.length}` : countLabel(members.length, 'member', 'members');
     if (!members.length) {
       box.replaceChildren(emptyLine('No members yet.'));
     } else if (!shown.length) {
@@ -271,8 +275,8 @@ function membersPanel(me: Me): HTMLElement {
       h('div', { class: 'admin-cell' }, h('div', { class: 'admin-select' }, select, icon('chevron', 16))),
       h('div', { class: 'admin-cell muted small' },
         h('div', null, m.lastSeenAt === null ? 'Never seen' : `Seen ${fmtAgo(m.lastSeenAt)}`),
-        h('div', null, plural(m.activeSessions, 'active session', 'active sessions')),
-        h('div', null, plural(m.boardCount, 'board', 'boards'))),
+        h('div', null, countLabel(m.activeSessions, 'active session', 'active sessions')),
+        h('div', null, countLabel(m.boardCount, 'board', 'boards'))),
       h('div', { class: 'btn-row admin-actions' },
         armable('Sign out everywhere', 'Click again to sign out', () => signOutEverywhere(m), {
           disabled: !signOutVerdict.allowed, title: signOutVerdict.reason,
@@ -315,7 +319,7 @@ function teamsPanel(): HTMLElement {
   const teamRow = (t: Team): HTMLElement => h('div', { class: 'admin-row' },
     h('div', { class: 'admin-who' },
       h('div', null, h('span', { class: 'admin-name' }, t.name), t.archived ? h('span', { class: 'admin-badge' }, 'Archived') : null)),
-    h('div', { class: 'admin-cell muted small' }, plural(t.memberCount, 'member', 'members')),
+    h('div', { class: 'admin-cell muted small' }, countLabel(t.memberCount, 'member', 'members')),
     h('div', { class: 'btn-row admin-actions' }, t.archived
       ? h('button', { class: 'btn', onclick: () => setArchived(t, false) }, 'Unarchive')
       : armable('Archive', 'Click again to archive', () => setArchived(t, true))));
@@ -336,7 +340,7 @@ function boardsPanel(): HTMLElement {
 
   const paint = () => {
     const shown = boards.filter((b) => matchesQuery(query, [b.title, b.ownerName ?? '', b.teamName ?? '']));
-    count.textContent = query.trim() ? `${shown.length} of ${boards.length}` : plural(boards.length, 'board', 'boards');
+    count.textContent = query.trim() ? `${shown.length} of ${boards.length}` : countLabel(boards.length, 'board', 'boards');
     if (!boards.length) {
       box.replaceChildren(emptyLine('No boards yet.'));
     } else if (!shown.length) {
@@ -373,7 +377,7 @@ function boardsPanel(): HTMLElement {
         h('div', { class: 'muted small' }, `Owner ${b.ownerName ?? 'removed member'}`)),
       h('div', { class: 'admin-cell muted small' },
         h('div', null, b.teamName ?? 'Personal'),
-        h('div', null, plural(b.shareCount, 'share', 'shares'))),
+        h('div', null, countLabel(b.shareCount, 'share', 'shares'))),
       h('div', { class: 'admin-cell muted small' }, `Edited ${fmtAgo(b.updatedAt)}`),
       h('div', { class: 'btn-row admin-actions' },
         h('a', { class: 'btn', href: `#/b/${b.id}` }, 'Open'),
