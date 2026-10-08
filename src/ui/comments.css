@@ -24,7 +24,7 @@
 .comment-foot .comment-actions { justify-content: space-between; }
 .comment-card .comment-input { resize: vertical; min-height: 60px; font-size: 13.5px; }
 .comment-msg .btn.small { height: 28px; padding: 0 8px; font-size: 12.5px; }
-.comment-msg .btn.armed { color: var(--danger); }
+.comment-msg .btn.armed { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 .comment-muted { margin: 0; color: var(--tray-muted); font-size: 12.5px; }
 
 /* comment tool button and its count */

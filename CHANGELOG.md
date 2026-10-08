@@ -58,6 +58,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- The Delete button in comment threads used the plain theme red on the dark comment panel, which was hard to read; it now uses the lighter tray red like other error text on toolbars and dialogs, and a test checks red text on trays reaches 4.5:1 in every theme.
 - Secondary grey text on panels in Ayu, and red error and delete text in Default, Kanagawa and Evergreen, were below WCAG AA contrast; the theme colours are adjusted slightly (same hue) so every text colour now reaches 4.5:1 on both the page and panel backgrounds, checked in tests.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - Icons whose SVG bodies use element ids, such as emoji gradients, no longer draw each other's gradients: ids are scoped per object at render and export time.
