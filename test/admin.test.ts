@@ -21,7 +21,9 @@ import {
   type Lookup,
   type Target,
   type Verdict,
+  visibleAdminTabs,
 } from '../src/ui/admin-logic';
+import { ADMIN_TABS } from '../src/route';
 
 const entry = (action: string, detail: Record<string, unknown> = {}, actor: Partial<AuditEntry> = {}): AuditEntry => ({
   id: 1,
@@ -404,5 +406,13 @@ describe('overviewTiles', () => {
     expect(overviewTiles(overview).map((t) => t.label)).toEqual(
       ['Members', 'Disabled members', 'Teams', 'Boards', 'Active sessions', 'Sign-ins, last 7 days', 'Live connections']);
     expect(tile('Live connections')).toMatchObject({ value: 3, sub: '1 room open' });
+  });
+});
+
+describe('visibleAdminTabs', () => {
+  it('shows Access tokens only when AI tool access is on', () => {
+    expect(visibleAdminTabs(ADMIN_TABS, true)).toEqual([...ADMIN_TABS]);
+    expect(visibleAdminTabs(ADMIN_TABS, undefined)).not.toContain('tokens');
+    expect(visibleAdminTabs(ADMIN_TABS, false)).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
   });
 });

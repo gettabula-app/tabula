@@ -64,7 +64,7 @@ Each board has one role per person, and the highest one that applies wins.
 
 You are the owner of boards you create. Members of a team can edit its boards. Workspace owners and admins own every board.
 
-On the home screen, the **Access** column marks boards where your access is limited: **Can comment** or **View only**. Boards you can edit have no badge. Commenters and viewers see a **View only** badge next to the board name. Drawing tools are disabled, and text editing does not start. Comments stay available to commenters.
+On the home screen, the **Access** column marks boards where your access is limited: **Can comment** or **View only**. Boards you can edit have no badge. Next to the board name, commenters see a **Can comment** badge and viewers a **View only** badge. Drawing tools are disabled, and text editing does not start. Comments stay available to commenters.
 
 ## Teams
 

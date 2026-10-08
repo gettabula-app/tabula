@@ -297,3 +297,8 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
     { label: 'Live connections', value: o.live.connections, sub: `${countLabel(o.live.rooms, 'room', 'rooms')} open` },
   ];
 }
+
+/** Admin sections to show: Access tokens only when AI tool access is on for this server. */
+export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined): T[] {
+  return tabs.filter((t) => t !== 'tokens' || mcp === true);
+}

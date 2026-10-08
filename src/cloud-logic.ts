@@ -46,7 +46,7 @@ export function boardAccess(role: BoardRole | null | undefined, workspace: Works
   return {
     storeReadOnly: locked || viewer || commenter,
     commentsReadOnly: locked || viewer,
-    badge: locked ? READ_ONLY_BADGE : viewer || commenter ? 'View only' : null,
+    badge: locked ? READ_ONLY_BADGE : commenter ? 'Can comment' : viewer ? 'View only' : null,
   };
 }
 
