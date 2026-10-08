@@ -44,7 +44,7 @@ Select an item and a small bar appears next to it. Depending on what you selecte
 
 ### Board menu
 
-The **Menu** button at the top right holds board-level actions: **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first. See [Boards and the home screen](boards.md).
+The **Menu** button at the top right holds board-level actions: **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first, and it includes **Your AI key** when your administrator allows personal keys. See [Boards and the home screen](boards.md).
 
 ## Move around
 
