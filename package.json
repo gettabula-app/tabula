@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:accounts": "node scripts/dev.mjs --accounts",
     "build": "tsc --noEmit && vite build",
     "start": "node server/relay.mjs",
     "typecheck": "tsc --noEmit",
