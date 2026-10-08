@@ -24,9 +24,9 @@ While a session runs, the bar at the bottom shows:
 - The step count (for example 2/5), the step title, its mode and its instructions. Click it to open the full list of steps.
 - A timer with **Start timer** or **Pause timer**, and **+1** to add a minute.
 - Buttons specific to the step mode (see below).
-- **Bring everyone to my view**.
+- **Ask everyone to look here**, a button with a target icon. See [Focus requests](#focus-requests).
 
-If a step is linked to a frame, everyone's view moves to that frame when the step starts.
+If a step is linked to a frame, the screen of the person who moves the session to that step flies to the frame. Everyone else gets a card that says who moved to which step, and chooses whether to go there. See [Focus requests](#focus-requests).
 
 ## Who can run a session
 
@@ -38,7 +38,7 @@ Click the step name on the bar, or **Edit steps** on the **Session ready** bar. 
 
 - Rename a step, set its minutes, and change its **mode**.
 - Click the number to jump to that step.
-- Click **Add step**. If a frame is selected on the board, the new step focuses everyone on it.
+- Click **Add step**. If a frame is selected on the board, the new step is linked to that frame.
 - Remove a step with the trash button.
 - Click **Summary** to download a Markdown summary of the session.
 - Click **End session** to stop a running session.
@@ -80,9 +80,35 @@ When the session ends, dots stay on the board. The bar shows **Vote results** wi
 
 A **Poll** step shows an answering card above the bar. The bar has **Reveal results**, then **Copy results** and **Add results to board**. Moving to the next step closes the poll. Details are in [Polls](polls.md).
 
-## Bring everyone to my view
+## Focus requests
 
-Click **Bring everyone to my view** on the bar. Everyone else's screen moves to the centre of your view at your zoom level, and a message says "Everyone is now looking where you are." Your own view does not change. People can pan away afterwards.
+Nobody can move your view or make you follow them. To get people to look at something, you send a request, and each person decides what to do with it.
+
+### Ask people to look
+
+1. Move your view to what you want people to see.
+2. Click **Ask everyone to look here** on the session bar. A message says "Asked everyone to look at your view".
+
+Your own view does not change. The button is not limited to people who can edit, so viewers and commenters can ask too. After you ask, the button is disabled for 10 seconds and its tooltip counts down ("Ask again in 7 s"). Requests that arrive from the same person within 10 seconds of each other are ignored.
+
+When a session moves to a step with a frame, only the person who moved it flies there. The others get a request that names the person and the step.
+
+<!-- screenshot: the request card at the bottom of the board with Go to, Follow, Dismiss and Mute buttons -->
+
+### When someone asks you
+
+A card appears at the bottom of your screen: "Name asks you to look at their view", or "Name moved to step "Title"". It goes away on its own after 20 seconds. Up to three cards show at once. Choose one:
+
+- **Go to** moves your view to where they were. You stay free to move away.
+- **Follow** keeps your view on theirs as they pan and zoom. A chip says "Following Name. Pan, zoom or press Esc to stop." Following ends when you pan or zoom, press `Esc`, click **Stop**, or the other person leaves the board.
+- **Dismiss** closes the card.
+- **Mute Name** ignores their requests from now on.
+
+You do not get a card for your own requests, or from someone you already follow.
+
+### Mute and unmute
+
+Mute is remembered for that person on that board, on this device only. When anyone is muted, the board menu shows **Muted people** with a count. Open it and click **Unmute** next to a name to see their requests again.
 
 Outside a session, you can look at where someone else is by clicking their avatar in the top bar. This moves only your own view.
 

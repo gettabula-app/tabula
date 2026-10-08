@@ -58,8 +58,8 @@ Each board has one role per person, and the highest one that applies wins.
 | Role | Can do |
 |---|---|
 | **Owner** | Everything on the board, including deleting it. |
-| **Editor** | Edit the board and comment. |
-| **Commenter** | Read the board and add [comments](comments.md). Cannot change the board. |
+| **Editor** | Edit the board and comment. Can resolve any comment thread, but delete only their own comments. |
+| **Commenter** | Read the board and add [comments](comments.md). Can resolve and delete only their own. Cannot change the board. |
 | **Viewer** | Read only. Cursors still show. |
 
 You are the owner of boards you create. Members of a team can edit its boards. Workspace owners and admins own every board.

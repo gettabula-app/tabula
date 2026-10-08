@@ -25,10 +25,31 @@ Typing in a comment box never triggers board shortcuts, so you can use any lette
 
 ## Edit and delete
 
-- **Edit** changes the text of your own comment. Edited comments show "edited" next to the time.
+- **Edit** changes the text of your own comment. Nobody can edit someone else's comment, not even a board owner. Edited comments show "edited" next to the time.
 - **Delete** removes your own comment. Click it, then click **Click again to delete** to confirm.
 - You cannot delete your own first comment while other people have replied to it, because that would remove their replies too.
-- Board owners can delete anyone's comment.
+- Moderators can delete anyone's comment. If your workspace uses sign-in, moderators are the board owner, workspace admins and the admins of the board's team. Without sign-in there are no moderators, so you can delete only your own comments.
+
+### Imported and older comments
+
+A comment brought in from a `.drift` or JSON file keeps its original author and shows an **imported** badge. Nobody can edit it. The person who imported it, or a moderator, can delete it.
+
+If your workspace turned on sign-in after a comment was written, that comment shows a **legacy** badge. Nobody can edit it, and only a moderator can delete it.
+
+### Resolve and reopen
+
+You can resolve or reopen a thread if you wrote it or if you can edit the board. The **Resolve** button is hidden on other people's threads for everyone else, such as commenters.
+
+### When a change is undone
+
+If your workspace uses sign-in, the server checks every comment change against these rules. When it undoes one of yours, a message appears and the comment goes back to how it was:
+
+- "Only the author can edit a comment, so that edit was undone."
+- "Only the author or a moderator (a board owner or admin) can delete a comment, so that delete was undone."
+- "Only the author or a board editor can resolve a comment, so that change was undone."
+- "Comments are posted under your own account name, so that was corrected."
+
+You see these only if something other than the normal buttons made the change, for example when your role changed while a thread was open. Comments are always posted under your account name.
 
 ## The Comments panel
 
@@ -42,15 +63,16 @@ Click the speech-bubble button in the top bar to open the **Comments** panel. A 
 
 Open the board menu and choose **Show comments** to switch pins on or off. A check mark means they are showing. The choice is remembered on this device only, and it does not delete anything.
 
-Pins are never included in PNG or SVG exports. Comments are saved in `.drift` files and JSON exports, and restored when you import them. See [Export and import](export-import.md).
+Pins are never included in PNG or SVG exports. Comments are saved in `.drift` files and JSON exports, and restored when you import them, marked as **imported**. See [Export and import](export-import.md).
 
 ## Who can comment
 
-| Role | Read comments | Add, reply, resolve |
-|---|---|---|
-| Owner, editor | Yes | Yes |
-| Commenter | Yes | Yes |
-| Viewer | Yes | No |
+| Role | Read comments | Add and reply | Resolve | Delete |
+|---|---|---|---|---|
+| Owner | Yes | Yes | Any thread | Any comment |
+| Editor | Yes | Yes | Any thread | Your own |
+| Commenter | Yes | Yes | Your own threads | Your own |
+| Viewer | Yes | No | No | No |
 
 A **commenter** can comment but cannot change the board. This suits a stakeholder who reviews your work. Viewers see the pins and threads; the **Comment** tool is disabled for them, and an open thread says "You can read comments on this board but not add them."
 
