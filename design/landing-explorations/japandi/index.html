@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula: a calm board for your team</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams. Sticky notes, connectors, facilitated sessions and templates. Works offline, syncs live.">
+<script>document.documentElement.classList.add('js-anim')</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* Palette, defined once (the same hex values are in every Codex image brief) */
+:root{
+  --oat:#EDE6D8;      /* page background */
+  --linen:#F6F2E9;    /* raised surfaces */
+  --oak:#D8C6A6;      /* pale oak: rules, pills */
+  --grey:#8A837A;     /* warm grey: decoration only, never text */
+  --charcoal:#2A2927; /* text, primary buttons, dark section */
+  --sage:#6B7D67;     /* the one accent, fills and art */
+  --sage-ink:#4D5C49; /* deeper sage for text and small fills (contrast) */
+  --stone:#5A544B;    /* secondary text */
+  --mist:#B9B1A4;     /* secondary text on charcoal */
+  --pad:clamp(20px,5vw,72px); --gut:clamp(16px,2vw,32px);
+  --t-s:.9375rem; --t-0:1.0625rem; --t-1:1.3125rem; --t-2:1.75rem; --t-3:2.375rem; --t-4:clamp(2.5rem,5.4vw,4.25rem);
+  --ease:cubic-bezier(.25,.6,.3,1);
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--oat);color:var(--charcoal);font:400 var(--t-0)/1.65 "Jost","Helvetica Neue",Arial,sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--sage-ink);outline-offset:4px;border-radius:8px}
+.dark :focus-visible{outline-color:var(--oat)}
+.wrap{max-width:1360px;margin:0 auto;padding:0 var(--pad)}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut)}
+.grid>*{min-width:0}
+
+h1,h2,h3{font-weight:300;letter-spacing:-.015em;line-height:1.12}
+h1{font-size:var(--t-4);line-height:1.06;letter-spacing:-.025em}
+h2{font-size:clamp(2rem,3.6vw,var(--t-3))}
+h3{font-size:var(--t-1);font-weight:400;line-height:1.3;letter-spacing:0}
+p{max-width:58ch}
+.lead{font-size:var(--t-1);line-height:1.55;color:var(--stone);font-weight:300}
+.eyebrow{display:block;font-size:.8125rem;letter-spacing:.16em;text-transform:uppercase;color:var(--sage-ink);font-weight:500;margin-bottom:24px}
+.dark .eyebrow{color:var(--mist)}
+.muted{color:var(--stone)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:12px;min-height:52px;padding:0 32px;border-radius:999px;border:1px solid var(--charcoal);background:var(--charcoal);color:var(--linen);font:500 var(--t-0)/1 "Jost",sans-serif;text-decoration:none;transition:background .4s ease,color .4s ease,border-color .4s ease}
+.btn:hover{background:var(--sage-ink);border-color:var(--sage-ink)}
+.btn.alt{background:transparent;color:var(--charcoal)}
+.btn.alt:hover{background:var(--charcoal);color:var(--linen);border-color:var(--charcoal)}
+.dark .btn{background:var(--oat);border-color:var(--oat);color:var(--charcoal)}
+.dark .btn:hover{background:var(--linen);border-color:var(--linen)}
+.dark .btn.alt{background:transparent;color:var(--oat);border-color:var(--oat)}
+.dark .btn.alt:hover{background:var(--oat);color:var(--charcoal)}
+.btn svg{width:18px;height:18px}
+.cta{display:flex;gap:16px;flex-wrap:wrap}
+
+/* header */
+header.top{position:sticky;top:0;z-index:20;background:rgba(237,230,216,.94);border-bottom:1px solid var(--oak)}
+header.top .bar{display:flex;align-items:center;justify-content:space-between;min-height:72px;gap:24px}
+.mark{font-size:1.5rem;font-weight:400;letter-spacing:.01em;text-decoration:none;display:inline-flex;align-items:center;gap:10px}
+.mark i{width:10px;height:10px;border-radius:50%;background:var(--sage);display:block}
+header.top nav{display:flex;gap:40px}
+header.top nav a{text-decoration:none;font-size:var(--t-s);color:var(--stone);padding:8px 0;border-bottom:1px solid transparent;transition:color .3s,border-color .3s}
+header.top nav a:hover{color:var(--charcoal);border-color:var(--sage)}
+header.top .go{min-height:44px;padding:0 24px;font-size:var(--t-s)}
+
+/* hero: copy and art share row 1 */
+.hero{padding:clamp(48px,7vw,104px) 0 clamp(72px,9vw,136px)}
+.hero .grid{align-items:center}
+.hero .copy{grid-column:1/6;grid-row:1}
+.hero .art{grid-column:6/13;grid-row:1}
+.hero h1{margin-bottom:32px}
+.hero .lead{margin-bottom:40px}
+.hero .note{margin-top:32px;font-size:var(--t-s);color:var(--stone)}
+
+/* board art with overlays */
+.stage{position:relative;border-radius:28px;overflow:hidden;background:var(--linen);box-shadow:0 1px 0 var(--oak)}
+.stage img{width:100%}
+.stage svg.ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.ov .line{fill:none;stroke:var(--charcoal);stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.ov .head{fill:var(--charcoal)}
+.ov .dot{fill:var(--charcoal)}
+.cur{position:absolute;display:block;width:0;height:0;pointer-events:none}
+.cur svg{position:absolute;left:-7px;top:-5px;width:60px;height:60px;filter:drop-shadow(0 1px 1.5px rgba(42,41,39,.35))}
+.cur b{position:absolute;left:30px;top:40px;white-space:nowrap;font-weight:500;font-size:.9375rem;line-height:1;padding:7px 12px 8px;border-radius:999px;color:var(--linen);background:var(--sage-ink);border:1.5px solid var(--linen)}
+.cur.jon b{background:var(--charcoal)}
+.cur.jon svg path{fill:var(--charcoal)}
+.cur svg path{fill:var(--sage-ink);stroke:var(--linen);stroke-width:1.6;stroke-linejoin:round}
+
+/* sections */
+.sec{padding:clamp(72px,10vw,152px) 0}
+.sec+.sec{border-top:1px solid var(--oak)}
+.head{max-width:720px;margin-bottom:clamp(40px,6vw,88px)}
+.head h2{margin-bottom:24px}
+.dark{background:var(--charcoal);color:var(--oat);border-top:0!important}
+.dark .lead{color:var(--mist)}
+.dark p{color:var(--mist)}
+
+/* features */
+.feat .still{grid-column:1/6;grid-row:1;border-radius:28px;overflow:hidden;align-self:start}
+.feat .list{grid-column:7/13;grid-row:1}
+.feat .item{padding:28px 0;border-top:1px solid var(--oak)}
+.feat .item:last-child{border-bottom:1px solid var(--oak)}
+.feat .item h3{margin-bottom:8px}
+.feat .item p{color:var(--stone)}
+.feat .intro{margin-bottom:32px}
+
+/* sessions */
+.steps{margin-top:clamp(32px,4vw,56px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gut)}
+.steps div{padding-top:20px;border-top:1px solid var(--oak)}
+.steps b{display:block;font-weight:400;font-size:var(--t-1);margin-bottom:8px}
+.steps span{color:var(--stone)}
+.steps small{display:block;font-size:.8125rem;letter-spacing:.14em;color:var(--sage-ink);font-weight:500;margin-bottom:12px}
+
+/* offline */
+.off .copy{grid-column:1/6;grid-row:1;align-self:center}
+.off .copy h2{margin-bottom:24px}
+.off .copy p+p{margin-top:16px}
+.off .photo{grid-column:7/13;grid-row:1;border-radius:28px;overflow:hidden}
+.off dl{margin-top:40px}
+.off dl div{display:grid;grid-template-columns:1fr 2fr;gap:16px;padding:16px 0;border-top:1px solid #4A4742}
+.off dt{color:var(--oat)}
+.off dd{color:var(--mist)}
+
+/* templates */
+.pills{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:12px}
+.pills li{padding:14px 24px;border-radius:999px;background:var(--linen);border:1px solid var(--oak);font-size:var(--t-0);transition:background .4s,border-color .4s}
+.pills li:hover{background:var(--oak);border-color:var(--oak)}
+.pills li.s{background:var(--sage-ink);border-color:var(--sage-ink);color:var(--linen)}
+.pills li.s:hover{background:var(--charcoal);border-color:var(--charcoal)}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gut)}
+.plan{background:var(--linen);border:1px solid var(--oak);border-radius:28px;padding:40px 32px;display:flex;flex-direction:column}
+.plan h3{margin-bottom:24px;color:var(--stone);font-size:var(--t-0);font-weight:500;letter-spacing:.02em}
+.plan .fig{font-size:clamp(3rem,5vw,4rem);font-weight:300;line-height:1;letter-spacing:-.03em;margin-bottom:8px}
+.plan .fig small{font-size:var(--t-0);letter-spacing:0;color:var(--stone);font-weight:400}
+.plan p{color:var(--stone);margin-top:16px}
+.plan .btn{margin-top:32px;align-self:flex-start}
+.plan.feat2{background:var(--charcoal);border-color:var(--charcoal);color:var(--oat)}
+.plan.feat2 h3,.plan.feat2 .fig small,.plan.feat2 p{color:var(--mist)}
+.plan .tagline{display:inline-block;margin-bottom:16px;font-size:.8125rem;letter-spacing:.12em;text-transform:uppercase;color:var(--sage-ink);font-weight:500}
+.plan.feat2 .tagline{color:var(--oak)}
+
+/* final */
+.final .grid{align-items:center}
+.final .txt{grid-column:2/12;text-align:center}
+.final .txt .cta{justify-content:center}
+.final h2{font-size:clamp(2.25rem,4.6vw,3.5rem);margin-bottom:40px}
+
+footer{border-top:1px solid var(--oak);padding:56px 0 40px}
+footer .grid{row-gap:24px}
+footer .mark{grid-column:1/5}
+footer .col{grid-column:span 3;display:flex;flex-direction:column}
+footer .col a{text-decoration:none;color:var(--stone);padding:4px 0}
+footer .col a:hover{color:var(--charcoal);text-decoration:underline;text-underline-offset:5px}
+footer .legal{grid-column:1/-1;padding-top:24px;border-top:1px solid var(--oak);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--stone);font-size:var(--t-s);max-width:none}
+
+/* motion: slow, subtle, once */
+.js-anim .rise{opacity:0;transform:translateY(10px);transition:opacity .85s var(--ease),transform .85s var(--ease)}
+.js-anim .rise.in{opacity:1;transform:none}
+.js-anim .hero .art .stage{opacity:0;transition:opacity .9s var(--ease) .15s}
+.js-anim .hero .art.in .stage{opacity:1}
+.js-anim .ov .line{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset .9s var(--ease) 1s}
+.js-anim .ov .head,.js-anim .ov .dot,.js-anim .cur{opacity:0;transition:opacity .8s var(--ease) 1.5s}
+.js-anim .cur.jon{transition-delay:1.9s}
+.js-anim .in .ov .line{stroke-dashoffset:0}
+.js-anim .in .ov .head,.js-anim .in .ov .dot,.js-anim .in .cur{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .js-anim .rise,.js-anim .hero .art .stage,.js-anim .ov .line,.js-anim .ov .head,.js-anim .ov .dot,.js-anim .cur{opacity:1!important;transform:none!important;transition:none!important;stroke-dashoffset:0!important}
+}
+
+@media (max-width:960px){
+  header.top nav{display:none}
+  .hero .copy,.hero .art{grid-column:1/-1}
+  .hero .art{grid-row:2;margin-top:48px}
+  .feat .still{grid-column:1/-1;grid-row:2;margin-top:48px;max-width:520px}
+  .feat .list{grid-column:1/-1}
+  .off .copy,.off .photo{grid-column:1/-1}
+  .off .photo{grid-row:2;margin-top:48px;max-width:520px}
+  .plans{grid-template-columns:1fr}
+  footer .mark{grid-column:1/-1}
+  footer .col{grid-column:span 6}
+  .steps{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .cta .btn{width:100%;justify-content:center}
+  header.top .go{width:auto}
+  .stage{border-radius:20px}
+  .off dl div{grid-template-columns:1fr;gap:4px}
+  .plan{padding:32px 24px}
+  .pills li{padding:12px 18px;font-size:var(--t-s)}
+  .cur svg{width:52px;height:52px;left:-6px;top:-4px}
+  .cur b{left:26px;top:34px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap"><div class="bar">
+    <a class="mark" href="#top" aria-label="Tabula, home"><i aria-hidden="true"></i>Tabula</a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#sessions">Sessions</a>
+      <a href="#offline">Offline</a>
+      <a href="#templates">Templates</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <a class="btn go" href="https://gettabula.app">Start a board</a>
+  </div></div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap"><div class="grid">
+    <div class="copy rise">
+      <h1>A quiet place for your team to think.</h1>
+      <p class="lead">Tabula is an infinite whiteboard with sticky notes, connectors and facilitated sessions. It opens in your browser first, works offline, and syncs live when you are online.</p>
+      <div class="cta">
+        <a class="btn" href="https://gettabula.app">Start a board <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h13M11 5l5 5-5 5"/></svg></a>
+        <a class="btn alt" href="#pricing">See pricing</a>
+      </div>
+      <p class="note">Open source. Self-host for free, or use hosted workspaces.</p>
+    </div>
+    <div class="art" id="heroart">
+      <div class="stage">
+        <img src="img/hero.webp" width="1448" height="1086" alt="The Tabula board on an oak shelf: a dark toolbar on the left, three frames of sticky notes on a dotted canvas, a connector between two notes and two live cursors.">
+        <svg class="ov" viewBox="0 0 1448 1086" preserveAspectRatio="none" aria-hidden="true">
+          <circle class="dot" cx="517" cy="485" r="6"/>
+          <path class="line" pathLength="1" d="M517 485 V548 Q517 560 529 560 H780 Q792 560 792 548 V510"/>
+          <polygon class="head" points="779,512 805,512 792,486"/>
+        </svg>
+        <span class="cur" style="left:21%;top:52%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8-7 2.5L10 20z"/></svg><b>Mika</b></span>
+        <span class="cur jon" style="left:68%;top:52%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8-7 2.5L10 20z"/></svg><b>Jon</b></span>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<section class="sec feat" id="features">
+  <div class="wrap">
+    <div class="head rise"><span class="eyebrow">Features</span><h2>Everything a workshop needs, nothing it does not.</h2></div>
+    <div class="grid">
+      <figure class="still rise"><img src="img/still.webp" width="900" height="1125" loading="lazy" decoding="async" alt="An oak tray holding a ceramic bowl, three folded linen cloths and a smooth stone."></figure>
+      <div class="list">
+        <div class="item rise"><h3>Notes, shapes and connectors</h3><p>Sticky notes and shapes snap to a grid. Connectors stay attached when you move things. UML and flowchart shapes, icons, and Mermaid import for diagrams you already have.</p></div>
+        <div class="item rise"><h3>Facilitated sessions</h3><p>Run a workshop in steps, each with a timer. Write privately, then dot vote, run a poll and talk it through in comment threads.</p></div>
+        <div class="item rise"><h3>Teams and roles</h3><p>Workspaces with owners, admins, members and guests. Per board, people can edit, comment or view. Sign in with an email link.</p></div>
+        <div class="item rise"><h3>Five themes</h3><p>Default, Ayu, Kanagawa, Matrix and Evergreen. Choose the one that is easy on your eyes during a long retro.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="sessions">
+  <div class="wrap">
+    <div class="head rise"><span class="eyebrow">Sessions</span><h2>Quiet first, then together.</h2><p class="lead">Private writing keeps notes hidden until the facilitator reveals them, so the loudest voice does not set the agenda.</p></div>
+    <div class="rise">
+      <div class="stage">
+        <img src="img/board.webp" width="1400" height="875" loading="lazy" decoding="async" alt="Tabula board close up: three frames with four sticky notes each, a connector between two notes and two named cursors.">
+        <svg class="ov" viewBox="0 0 1584 990" preserveAspectRatio="none" aria-hidden="true">
+          <circle class="dot" cx="534" cy="230" r="7"/>
+          <path class="line" pathLength="1" d="M534 230 H606"/>
+          <polygon class="head" points="598,212 628,230 598,248"/>
+        </svg>
+        <span class="cur" style="left:14%;top:64%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8-7 2.5L10 20z"/></svg><b>Mika</b></span>
+        <span class="cur jon" style="left:72%;top:62%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8-7 2.5L10 20z"/></svg><b>Jon</b></span>
+      </div>
+      <div class="steps">
+        <div><small>01</small><b>Write alone</b><span>Everyone adds notes privately, with a timer running.</span></div>
+        <div><small>02</small><b>Reveal together</b><span>The facilitator shows every note at once.</span></div>
+        <div><small>03</small><b>Vote and discuss</b><span>Dot votes and polls, then comment threads on what matters.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec dark off" id="offline">
+  <div class="wrap"><div class="grid">
+    <div class="copy rise">
+      <span class="eyebrow">Offline first</span>
+      <h2>Your board opens before the network does.</h2>
+      <p class="lead">Every board lives in your browser first and works offline.</p>
+      <p>A small relay syncs live cursors, selections and presence when it can be reached, and merges everything later when it cannot.</p>
+      <dl>
+        <div><dt>Local first</dt><dd>Boards save to your browser.</dd></div>
+        <div><dt>Live relay</dt><dd>Cursors, selections and presence.</dd></div>
+        <div><dt>Merge later</dt><dd>Offline edits join when you reconnect.</dd></div>
+      </dl>
+    </div>
+    <figure class="photo rise"><img src="img/branch.webp" width="1000" height="1000" loading="lazy" decoding="async" alt="A single leafy branch in a grey ceramic vase on an oak shelf."></figure>
+  </div></div>
+</section>
+
+<section class="sec" id="templates">
+  <div class="wrap">
+    <div class="head rise"><span class="eyebrow">Templates</span><h2>Begin from a format that works.</h2><p class="lead">Fourteen templates for retros, planning and discovery.</p></div>
+    <ul class="pills rise">
+      <li>Start / Stop / Continue</li><li class="s">4Ls</li><li>Mad / Sad / Glad</li><li>Sailboat</li><li>Crazy 8s</li>
+      <li class="s">Brainstorm + affinity map</li><li>Lean Coffee</li><li>Impact / Effort matrix</li><li>MoSCoW</li>
+      <li class="s">User story map</li><li>Customer journey map</li><li>Empathy map</li><li>SWOT</li><li class="s">Pre-mortem</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="pricing">
+  <div class="wrap">
+    <div class="head rise"><span class="eyebrow">Pricing</span><h2>Simple, per seat.</h2><p class="lead">Host it yourself for nothing, or let us run it.</p></div>
+    <div class="plans">
+      <div class="plan rise"><h3>Hosted, monthly</h3><div class="fig">€8<small> per seat</small></div><p>Billed monthly. Your workspace at your-team.gettabula.app.</p></div>
+      <div class="plan feat2 rise"><span class="tagline">Two months free</span><h3>Hosted, yearly</h3><div class="fig">€80<small> per seat</small></div><p>Pay for ten months and use twelve.</p></div>
+      <div class="plan rise"><h3>Self-hosted</h3><div class="fig">Free</div><p>Open source. Run it with Docker on your own server.</p><a class="btn alt" href="https://github.com/gettabula-app/tabula">Read the code</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec final">
+  <div class="wrap"><div class="grid">
+    <div class="txt rise"><h2>Give your team one calm board.</h2>
+      <div class="cta">
+        <a class="btn" href="https://gettabula.app">Start a board <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h13M11 5l5 5-5 5"/></svg></a>
+        <a class="btn alt" href="#pricing">See pricing</a>
+      </div>
+    </div>
+  </div></div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap"><div class="grid">
+    <a class="mark" href="#top"><i aria-hidden="true"></i>Tabula</a>
+    <div class="col"><a href="https://gettabula.app">gettabula.app</a><a href="https://github.com/gettabula-app/tabula">GitHub gettabula-app/tabula</a></div>
+    <div class="col"><a href="#features">Features</a><a href="#templates">Templates</a><a href="#pricing">Pricing</a></div>
+    <p class="legal"><span>© 2026 Tabula</span><span>Open source. Local first.</span></p>
+  </div></div>
+</footer>
+
+<script>
+(function(){
+  var els=[].slice.call(document.querySelectorAll('.rise,#heroart,.stage'));
+  if(!('IntersectionObserver' in window)||matchMedia('(prefers-reduced-motion: reduce)').matches){els.forEach(function(e){e.classList.add('in')});return}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.15});
+  els.forEach(function(e){io.observe(e)});
+})();
+</script>
+</body>
+</html>

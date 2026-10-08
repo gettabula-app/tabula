@@ -71,8 +71,10 @@
       "thumb": "_thumbs/pop-art.webp"
     },
     "japandi": {
-      "status": "progress",
-      "started": "2026-10-08T20:36:44Z"
+      "status": "ready",
+      "started": "2026-10-08T20:36:44Z",
+      "ready": "2026-10-08T21:20:57.704Z",
+      "thumb": "_thumbs/japandi.webp"
     },
     "pointillism": {
       "status": "ready",
@@ -97,7 +99,8 @@
       "started": "2026-10-08T21:20:24.628Z"
     },
     "textured": {
-      "status": "queued"
+      "status": "progress",
+      "started": "2026-10-08T21:20:57.669Z"
     },
     "solarpunk": {
       "status": "queued"
@@ -115,5 +118,5 @@
       "status": "queued"
     }
   },
-  "updated": "2026-10-08T21:20:24.794Z"
+  "updated": "2026-10-08T21:20:57.881Z"
 }
