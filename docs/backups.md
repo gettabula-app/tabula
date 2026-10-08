@@ -4,7 +4,7 @@ Tabula can copy its data directory to an S3-compatible bucket on a schedule, **e
 
 > **Losing the key means losing the backups.** Everything in the bucket is encrypted with `TABULA_BACKUP_KEY`. Without that key (and, after a key change, the older keys that sealed older backups) the backups **cannot be read by anyone, including us**. There is no recovery and no reset. Keep a copy of the key somewhere that is not the server it protects, such as a password manager. On the hosted service, the operator holds the master copy of each workspace's key.
 
-What is not in this feature yet: **restore** (a restore engine with a safety backup, staging and verification is the next piece of work, B3) and a **Backups tab in the admin dashboard** (B4). Today you can see that backups work (the status endpoint, the log, the audit log) and read what is in the bucket (see [Reading a backup](#reading-a-backup)); putting it back is manual. The engine has been tested against a faithful in-memory S3 that verifies every signature; it has **not** been run against a real provider yet, and a backup that has never been restored is not a backup. Do a restore drill before you rely on it.
+What is not in this feature yet: a **Backups tab in the admin dashboard** (B4). Restore is built, as owner-only API routes and as functions of the server (see [Restoring](#restoring)); it has been tested against a faithful in-memory S3 and with crashes injected at every step of the swap, but **not against a real provider and not on a real Fly machine**, and a backup that has never been restored is not a backup. Do a restore drill before you rely on it.
 
 ## What is backed up
 
@@ -22,7 +22,7 @@ Everything below is relative to `DATA_DIR`.
 
 This is everything the server writes into `DATA_DIR`. Images and other uploads are **not** separate files: they are embedded in the board documents (`.yjs`), so they are backed up with the board. There is no upload directory.
 
-In the database copy the engine leaves out its own traces (the `backup.status` setting and the `backup.run` and `backup.failed` audit rows) and fixes the SQLite file change counter. Without that, every run would change the database it is about to copy, and no run would ever be "nothing changed". A restored database therefore has no backup status and no backup audit rows.
+In the database copy the engine leaves out its own traces (the `backup.status` setting and the `backup.run` and `backup.failed` audit rows) and fixes the SQLite file change counter. Without that, every run would change the database it is about to copy, and no run would ever be "nothing changed". A restored database therefore has no backup status and no backup audit rows (a restore removes them from a database that carries them).
 
 ## Turning it on
 
@@ -94,9 +94,83 @@ decipher.setAuthTag(sealed.subarray(sealed.length - 16));
 process.stdout.write(Buffer.concat([decipher.update(sealed.subarray(17, sealed.length - 16)), decipher.final()]));
 ```
 
-Decrypt the newest manifest (`manifest:20261008T193000Z.json.enc`), read its `files`, decrypt each object (`obj:<objectId>`) and write it to its `path` under an empty data directory. `directory.sqlite` is a complete SQLite database. That is a manual restore, which has not been drilled; the restore engine will do the same with a safety backup and verification.
+Decrypt the newest manifest (`manifest:20261008T193000Z.json.enc`), read its `files`, decrypt each object (`obj:<objectId>`) and write it to its `path` under an empty data directory. `directory.sqlite` is a complete SQLite database. That is a manual restore without any of the checks of [Restoring](#restoring); use that when you can.
 
-In code, the engine exposes the read side that restore will use (`createBackup(...)` in `server/backup.mjs`): `listManifests()` (newest first), `readManifest(name)` (verified, decrypted, paths validated) and `readObject(objectId)` (verified twice: the GCM tag and the keyed hash of the contents). They throw a `BackupError` with a stable `code`: `bad_format`, `unknown_key`, `tamper` (a flipped bit, a truncated file, or an object or manifest under another name look the same to GCM), `content_mismatch`, `invalid_manifest`, `invalid_path`, `not_found`, `s3`, `network`, `timeout`, `too_large`, `readback`.
+In code, the engine exposes the read side that restore uses (`createBackup(...)` in `server/backup.mjs`): `listManifests()` (newest first), `readManifest(name)` (verified, decrypted, paths validated) and `readObject(objectId)` (verified twice: the GCM tag and the keyed hash of the contents). They throw a `BackupError` with a stable `code`: `bad_format`, `unknown_key`, `tamper` (a flipped bit, a truncated file, or an object or manifest under another name look the same to GCM), `content_mismatch`, `invalid_manifest`, `invalid_path`, `not_found`, `s3`, `network`, `timeout`, `too_large`, `readback`.
+
+## Restoring
+
+Restore needs **accounts mode and a working backup configuration, including the key** that sealed the backup you want back (the current `TABULA_BACKUP_KEY`, or the old one in `TABULA_BACKUP_KEY_PREVIOUS`). Without the key a backup cannot be read, listed or restored by anyone. Both kinds of restore are for the workspace **owner** (not admins), are written to the audit log, and are refused with `{error: 'backups_off'}` while backups are not configured. There is no screen for them yet (B4); the routes and the functions below are what the screen and an operator use.
+
+### Two kinds of restore
+
+| | One board, as a copy | The whole workspace |
+| --- | --- | --- |
+| What it does | Puts one board of a backup into the live workspace as a **new board** | Replaces everything in `DATA_DIR` with the backup |
+| Downtime | none | the server restarts (a minute or less) |
+| What it touches | adds one board; the live board, its history and everything else are never changed | everything: people, teams, boards, rooms, history, settings |
+| Sessions | untouched | **everybody is signed out** and signs in again |
+| Version history | not restored (the copy starts without any) | restored with the rest |
+| Undo | delete the copy | the previous data is kept aside (see [The old data](#the-old-data)) |
+
+**A board copy** reads the backup's database and the board's two room files (`<id>.yjs`, `<id>~comments.yjs`), checks them, and creates a board with a fresh id, owned by the person who restored it, titled `Restored: <title> <YYYY-MM-DD>` (cut to 200 characters; the date stays). The copy goes to the board's original team only if that team still exists **and** the person is a member of it (the rule board creation has); otherwise it goes to their personal space and the answer says so (`fallback: 'personal'` and the message "The original team no longer exists or you cannot see it, so the copy is in your personal space."). It never refuses because of the team. The room files are written first (a temporary file, then a rename) and the board becomes visible last; if anything fails, what was written is removed. A board that is not in the backup, or has no saved content in it, is `board_not_in_backup`. Board creation's own limits apply: guests cannot create boards, and a hosted workspace that is read-only refuses the copy (402). The document inside the copy carries the new name, so the board's first save does not turn it back into the old title.
+
+**A whole restore** goes through these steps, and nothing live changes until step 4 is done:
+
+1. **Confirmation and guards.** The owner types the word `RESTORE`. One restore (of either kind) runs at a time per process (a second answers 409 `restore_in_progress`), and at most one whole restore is started in 10 minutes, counting the restart a restore causes (429 `rate_limited` with `Retry-After`). Board copies are limited to ten in ten minutes.
+2. **Safety backup.** A backup run of the live data, now. It must succeed: if it fails or is stopped, the restore is refused with `safety_backup_failed` and nothing changes (a backup that is already running is waited for, then a new one is taken). The manifest it produced, and the manifest being restored, are **protected from pruning for 7 days** (setting `backup.protected`; the retention rules cannot delete them, and an expired protection is dropped at the next prune). There is no override.
+3. **Download and checks, into `DATA_DIR/.restore-<id>/`** (the same volume, so the final moves are renames). Space is checked first: the volume must have at least twice the size of the backup plus 64 MB free, else `not_enough_space` with `needed` and `free`. Every file is verified three ways (the AES-GCM tag with the object id, the keyed hash equal to the object id, and the size equal to the manifest's), every path must be one the backup engine writes (`directory.sqlite`, a top-level room `*.yjs`, `history/<board>/index.json` and `*.yjs.gz`) and nothing else, duplicate paths (also under another letter case) are refused, and a file is never written outside the staging directory. Then the staged database is opened on a copy: `PRAGMA integrity_check` must be `ok`, a schema newer than this Tabula is refused (`schema_too_new`; an older one is fine and is migrated before the swap), the app's own code must be able to open it, it must not be owned only by disabled owners, and every room is applied to a throwaway document, every history index read as JSON and every history version unzipped and read. Anything wrong deletes the staging directory and refuses; the live data was not touched.
+4. **The staged database is made ready**, inside the staging directory: every session and login token is deleted, **every access token (MCP) and every invite link in it is revoked** (a restore must not bring back a credential that was revoked after the backup), the backup status and backup audit rows are removed, the hosted workspace's limits (`cloud.*` settings: read-only, seats, banner) are the **live** ones, not the backup's, and the restore is recorded (`restore.status`, `restore.keep`, the protection of step 2 and an audit row `restore.done` with the manifest name and counts).
+5. **Maintenance mode.** The API answers `503 {error: 'restoring'}` to everything except `GET /api/internal/backup-status` and `/api/health`; every open socket is closed with code **`4503`** and new ones are closed with it; every open room is saved to its file, once, and then nothing may save again; the live AI runs (docs/ai.md) are dropped without a broadcast, and a provider call still out finds its run gone and changes nothing, since the AI routes answer 503 and the sockets that carried the runs are closed; the backup schedule stops and the database is closed.
+6. **The swap.** A journal `DATA_DIR/restore.json` is written (atomically, flushed) before the first rename. Then every live file (`directory.sqlite` with its `-wal` and `-shm`, every room file, `history/`) is **moved** into `DATA_DIR/.pre-restore-<ms>/`, the staged files are moved into place, and the directory is flushed. Files that are not Tabula's data (`outbox.jsonl`, notes) stay where they are.
+7. **Leave.** The HTTP answer `202 {ok: true, restarting: true, keepOldFor}` is sent and flushed first, then the process exits with code **75**. Provisioning sets Fly's restart policy to `on-failure`, so a non-zero code starts the machine again; exit code 0 would leave it stopped. Under systemd or Docker, `Restart=on-failure` or `restart: on-failure` (or `always`) does the same; a server started by hand has to be started again by hand. On the next start the journal is deleted and the restored data is what the server serves. If the owner's connection is gone, the process leaves after at most five seconds.
+
+Edits made while the backup was downloading are not in the safety backup (it was taken first) but they are not lost: the rooms are saved at step 5 and end up in the old data directory with everything else that was live at the swap.
+
+### If the server stops in the middle
+
+`restore.json` says how far the swap got, and **`recoverOnStart()` runs before the database is opened** (also in open mode). Every step checks before it renames, so it can itself be interrupted and run again. Phases of the journal: `swapping`, `moved-old`, `moved-new`, `done`, and for an undo `rolling-back` and `rolled-back`.
+
+- `swapping`: no new file has moved, so the old files go back. Undone.
+- `moved-old`: all old files are out of the way. If every new file is already in place the swap is **finished**; otherwise the new files go back out and the old files go back in. Undone.
+- `moved-new`: finished; the staging directory is removed.
+- `done`: the journal is deleted. This is also the normal start after a restore.
+- `rolled-back`: stays until the server is up and has written the failure to the database and the audit log (`restore.failed`, error `interrupted` or `swap_failed`); then it is deleted.
+
+The data directory is therefore **either wholly the old data or wholly the new data**, never a mixture (the tests stop the process at every boundary of the swap, and again at every boundary of the recovery). A journal that cannot be read, or a file in the way of an undo, makes the server refuse to start with a message instead of guessing; nothing is deleted, and the message says to look at this page. Staging directories of a crashed download are removed at start by name (`.restore-` and 16 hex digits). If the swap itself fails with an I/O error (a full or failing disk), it is undone at once, the answer is `500 restore_failed` with `restarting: true`, and the process still exits with 75 so it starts clean.
+
+### The old data
+
+Everything that was live is in `DATA_DIR/.pre-restore-<ms>/` (the time of the swap), whole, including `directory.sqlite`: stop the server and move the files back to undo a restore by hand. It is kept **7 days**. If keeping it would put the volume above about **80% used** (checked after the download, so the new data is counted), it is kept only until the **next successful backup after the restore, and at least 24 hours**; the confirmation step says which applies (`keepOldFor`: `7 days` or `until the next successful backup (at least 24 h)`, with a `reason`). Whichever applies, it is **never removed before a backup has succeeded after the restore**. A sweep runs a minute after start and then hourly; it removes only directories named `.pre-restore-` and digits, exactly, that are real directories (a link or a file with such a name is left alone), whose age (the time in the name) can be told, and it never follows a link. `keepOldData: false` is not supported in this version.
+
+### Routes
+
+All need a signed-in **owner** (401 signed out, 403 for anyone else, admins included) and, for the POSTs, the `x-tabula: 1` header. Both POSTs also work while a hosted workspace is read-only (an owner locked out for billing may need them), except that a board copy is refused there (402). Unknown fields are refused with 400.
+
+```
+GET  /api/admin/backups
+  -> { backups: [{name, createdAt, files, bytes, keyId, protected, protectedUntil, readable, error?}],
+       truncated, restore: {inProgress, maintenance, last, protectedBackups, oldData} }
+GET  /api/admin/backups/:name
+  -> { name, createdAt, appVersion, keyId, files, bytes, boards, protected, confirmWord: 'RESTORE',
+       keepOldFor, reason, space: {needed, free, enough} }
+POST /api/admin/backups/restore-board   { manifest, boardId }
+  -> 200 { ok, boardId, title, teamId, fallback?, message? }
+POST /api/admin/backups/restore         { manifest, confirm: 'RESTORE' }
+  -> 202 { ok: true, restarting: true, keepOldFor }
+```
+
+The list is newest first, at most 200 backups, each read (and so verified) once; a backup that cannot be read is listed with `readable: false` and the reason (`unknown_key`, `tamper`, ...). Errors are `{error, message}` plus plain facts: `needed` and `free` for `not_enough_space`, `detail` for `safety_backup_failed` (the short storage error), `restarting: true` when the server is about to restart. Codes: `bad_request`, `confirmation_mismatch` (400), `read_only` (402), `forbidden`, `manifest_not_found`, `board_not_in_backup` (404), `backups_off`, `restore_in_progress` (409), `rate_limited` (429), `unknown_key`, `tamper`, `content_mismatch`, `invalid_manifest`, `invalid_path`, `unexpected_file`, `duplicate_path`, `size_mismatch`, `backup_incomplete`, `no_directory`, `invalid_backup`, `schema_too_new`, `integrity_check_failed`, `no_active_owner` (422), `s3`, `network`, `timeout`, `safety_backup_failed` (502), `not_enough_space`, `space_unknown` (507), `restore_failed` (500). The same operations are plain functions of `createRestore(...)` in `server/restore.mjs` (`listBackups`, `previewManifest`, `restoreBoardCopy`, `restoreWorkspace`, `recoverOnStart`, `status`), so an operator tool can use them without HTTP.
+
+`restore` in `GET /api/internal/backup-status` (and in the list above) is `{inProgress: null | 'workspace' | 'board', maintenance, last: {kind, result: 'done' | 'failed', at, manifest, error?, files?, bytes?, boards?, keepOldFor?} | null, protectedBackups: [{manifest, until}], oldData: [{name, restoredAt, keepOldFor}]}`. It holds names, times, counts and codes, never content. The audit log gets `restore.started`, `restore.done` and `restore.failed` (owner as actor, manifest name, counts and an error code only), `backup.list` and `backup.preview` for the reads, and `restore.old_data_removed` (no actor) when the sweep removes an old directory.
+
+### Not covered
+
+- Edits made between the safety backup and the swap exist only in `.pre-restore-<ms>/`, not in the bucket.
+- AI provider keys (`ai_keys`) come back as they were in the backup.
+- A hosted workspace's people and seat usage change with a restore; the control plane is told (the usage report is sent after the restart).
+- The app's boards that are open in a browser get close code `4503` and keep reconnecting until the server is back, then fail with "sign in again" (`4401`), because every session is gone.
+- Not tested against a real S3 provider, a real Fly restart, or a data directory of production size.
 
 ## Status
 
@@ -108,14 +182,15 @@ GET /api/internal/backup-status
   -> { enabled: true, running, keyId, intervalMinutes,
        lastRunAt, lastSuccessAt, lastError,
        lastFailureAt, lastFailureError, consecutiveFailures,
-       lastManifest, bytesStored, objects, manifests, nextRunAt, prune }
+       lastManifest, bytesStored, objects, manifests, nextRunAt, prune,
+       restore }                                               restore: see Restoring
 ```
 
 Times are milliseconds since the epoch (UTC) or `null`.
 
 - `lastRunAt` is when the latest run started, `lastSuccessAt` when the latest successful run ended. A run that finds nothing changed is a success. `lastError` is the error of the latest run (`null` after a success); `lastFailureAt` and `lastFailureError` are the latest failure ever and stay after a later success; `consecutiveFailures` counts failed runs since the last success. Errors are short and contain a status and an S3 error code at most, never a header, a URL, a key or a file's contents. A stopped run (shutdown) is not a failure.
 - `lastManifest` is the newest manifest; `bytesStored` is the stored (encrypted) size of the objects it refers to, counting a shared object once; `manifests` is how many manifests are kept and `objects` how many objects the bucket holds under the prefix after the last cleanup.
-- `prune` is `{at, manifestsDeleted, objectsDeleted, gcSkipped, error}` for the latest cleanup. `gcSkipped` is `unreadable_manifest` or `inconsistent_listing` when objects were deliberately not deleted. A cleanup that fails (`error`) does not fail the backup.
+- `prune` is `{at, manifestsDeleted, objectsDeleted, gcSkipped, error}` for the latest cleanup. `gcSkipped` is `unreadable_manifest`, `unreadable_protection` or `inconsistent_listing` when objects were deliberately not deleted. A cleanup that fails (`error`) does not fail the backup.
 - `nextRunAt` is the scheduled time of the next run, `null` while a scheduled run is in progress or when stopped; `running` is true during any run.
 
 A sensible alert: `lastSuccessAt` older than three intervals, or `consecutiveFailures` of two or more. The status is kept in the directory's `settings` table (`backup.status`), so it survives a restart. In open mode (no directory) it lives in memory and there is no endpoint.

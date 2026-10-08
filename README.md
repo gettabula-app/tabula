@@ -111,7 +111,7 @@ In accounts mode, open **AI tool access** in the board menu, name a token, pick 
 
 ### Backups
 
-Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted on the instance first (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). It is off unless the five required variables are all set; some but not all is a startup error that names the missing ones. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). Restore and the admin screen are not built yet.
+Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted on the instance first (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). It is off unless the five required variables are all set; some but not all is a startup error that names the missing ones. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). **Restore** is built as owner-only routes (`GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` for one board as a copy, `POST /api/admin/backups/restore` for the whole workspace, which restarts the server with exit code 75 and keeps the previous data aside); see [Restoring](docs/backups.md#restoring). The admin screen for it is not built yet.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

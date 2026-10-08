@@ -106,6 +106,23 @@ describe('boards', () => {
     expect(live.get(a)).toBeNull();
   });
 
+  it('drops every run of every board without telling anyone, as a restore does, and leaves a late provider answer with nothing to change', () => {
+    const { live, changes } = world();
+    const a = live.start('b1', { by: ana, feature: 'generate' });
+    const b = live.start('b2', { by: ana, feature: 'generate' });
+    live.ready(b, { proposal });
+    const before = changes.length;
+    live.dropAll();
+    expect(changes.length).toBe(before);
+    expect(live.get(a)).toBeNull();
+    expect(live.get(b)).toBeNull();
+    expect(live.openRuns('b1')).toEqual([]);
+    live.ready(a, { proposal });
+    live.fail(a, 'internal');
+    expect(live.resolve(b, 'accept', { id: null, name: null })).toEqual({ ok: false, reason: 'gone' });
+    expect(changes.length).toBe(before);
+  });
+
   it(`holds at most ${MAX_RUNS_PER_BOARD} open runs on a board: the oldest ready one makes room`, () => {
     const { live, clock } = world();
     const ids: string[] = [];
