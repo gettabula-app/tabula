@@ -46,7 +46,7 @@ describe('migrations', () => {
     second.close();
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 });
+    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
     expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'users'").get()).toEqual({ n: 1 });
     raw.close();
   });
@@ -83,7 +83,7 @@ describe('migrations', () => {
 
     const raw = new DatabaseSync(file);
     raw.exec('PRAGMA foreign_keys = ON');
-    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 });
+    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
     const run = (sql: string, ...params: string[]) => raw.prepare(sql).run(...params);
     expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'user', 'u1', 'owner')")).toThrow(/CHECK/);
     expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'group', 'u1', 'viewer')")).toThrow(/CHECK/);

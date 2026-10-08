@@ -10,7 +10,7 @@ import { newId } from './store';
 import { Renderer, handlesFor, type HandleId } from './render';
 import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, pointInRect, rectContains, rectOfPoints,
-  rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
+  neighborInDirection, rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
 import { remapObjects } from './custom-templates';
@@ -29,6 +29,7 @@ function loadStickyColor(): string {
 import { ensureFont } from './fonts';
 import { Flow } from './flow';
 import { TextEditor } from './editor';
+import { StyleEdit } from './style-edit';
 
 export type Tool =
   | { kind: 'select' }
@@ -72,6 +73,8 @@ export class BoardApp {
   readonly r: Renderer;
   readonly flow: Flow;
   readonly editor: TextEditor;
+  /** Live previews from the properties panel; see style-edit.ts. */
+  readonly styleEdit: StyleEdit;
   tool: Tool = { kind: 'select' };
   selection: Id[] = [];
   /** Shows a short toast; the UI assigns it. */
@@ -123,6 +126,7 @@ export class BoardApp {
     this.r.readOnly = this.readOnly;
     this.flow = new Flow(this);
     this.editor = new TextEditor(this);
+    this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
 
     const meta = this.store.getMeta();
@@ -226,6 +230,8 @@ export class BoardApp {
 
   /** The user's role on this board in accounts mode; null in open mode. Set by the router. */
   role: BoardRole | null = null;
+  /** A deleted board that a workspace admin opened: read-only until it is restored. Set by the router. */
+  deleted = false;
 
   get comments(): Comments {
     return this.conn.comments;
@@ -485,6 +491,15 @@ export class BoardApp {
       if (Math.abs(h.p.x - p.x) <= tol && Math.abs(h.p.y - p.y) <= tol) return { id: o.id, h: h.id };
     }
     return null;
+  }
+
+  /** Whether `p` is on the shape `id` or in the ring around it where its connection dots are. */
+  private nearAnchors(id: Id, p: Point): boolean {
+    const o = this.store.get(id);
+    if (!CONNECTABLE(o) || o.locked) return false;
+    const l = toLocal(o, p);
+    const m = 26 / this.zoom; // the dots are 14px out with a 9px reach
+    return l.x >= -m && l.x <= o.w + m && l.y >= -m && l.y <= o.h + m;
   }
 
   private anchorAt(p: Point): { id: Id; side: 'top' | 'right' | 'bottom' | 'left' } | null {
@@ -756,9 +771,13 @@ export class BoardApp {
     const live = top?.locked ? this.hit(p) : top;
     const lockedTop = !live && top?.locked ? top : undefined;
     const anchorHost = !this.readOnly && CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
-    // keep anchors visible while the pointer is on one of them
+    // Keep anchors visible while the pointer is on one of them, or still close to the shape that shows them. The
+    // dots sit just outside the edge, often on a connector that already leaves that side; hovering that connector
+    // on the way to the dot must not hide them, or a second connector could never start there.
     const an = this.anchorAt(p);
-    const anchorsFor = an ? an.id : anchorHost;
+    const shown = this.r.overlay.anchorsFor;
+    const stay = !anchorHost && shown !== null && this.nearAnchors(shown, p) ? shown : null;
+    const anchorsFor = an ? an.id : anchorHost ?? stay;
     const overPin = (t === 'select' || t === 'comment') && pinAt(this.r.pins, p, this.zoom) !== null;
     const hh = t === 'comment' ? undefined : this.handleAt(p);
     let cursor = '';
@@ -940,10 +959,25 @@ export class BoardApp {
     return this.anchorAt(p)?.side ?? 'right';
   }
 
-  /** Clicking a connection dot creates a copy of the shape on that side, connected. */
+  /**
+   * Clicking a connection dot connects the shape to its neighbour on that side, if there is one; otherwise it creates
+   * a copy of the shape there, connected. A neighbour that is already connected to it is only selected.
+   */
   private quickConnect(id: Id, side: 'top' | 'right' | 'bottom' | 'left') {
     const src = this.store.get(id);
     if (!isBox(src)) return;
+    const candidates = this.store.ordered().filter((o): o is BaseObj => CONNECTABLE(o) && !this.flow.isHidden(o));
+    const next = neighborInDirection(src, side, candidates);
+    if (next) {
+      const linked = this.store.connectorsOf(src.id).some((c) =>
+        (c.from.kind === 'bound' && c.from.id === next.id) || (c.to.kind === 'bound' && c.to.id === next.id));
+      if (!linked) {
+        this.store.undo.stopCapturing();
+        this.store.transact(() => this.store.create(this.connectorFrom({ kind: 'bound', id: src.id, anchor: 'auto' }, { kind: 'bound', id: next.id, anchor: 'auto' })));
+      }
+      this.setSelection([next.id]);
+      return;
+    }
     const gap = 96;
     const dx = side === 'right' ? src.w + gap : side === 'left' ? -(src.w + gap) : 0;
     const dy = side === 'bottom' ? src.h + gap : side === 'top' ? -(src.h + gap) : 0;
@@ -1347,13 +1381,20 @@ export class BoardApp {
     this.store.transact(() => {
       for (const o of this.selected()) {
         if (filter && !filter(o)) continue;
-        this.store.update(o.id, patch);
-        if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
-          const n = { ...o, ...patch } as BaseObj;
-          this.store.update(o.id, { h: textHeight(n) });
-        }
+        this.writeStyle(o, patch);
       }
     });
+  }
+
+  /** One object's style change, with the size it implies: a text box's height, a class's header. */
+  private writeStyle(o: Obj, patch: Record<string, unknown>) {
+    this.store.update(o.id, patch);
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+      this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
+    }
+    if (o.type === 'uml-class' && 'stereotype' in patch) {
+      this.store.update(o.id, { h: classHeight({ ...o, ...patch } as BaseObj) });
+    }
   }
 
   align(mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom') {

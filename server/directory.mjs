@@ -124,6 +124,10 @@ export const MIGRATIONS = [
   `,
   // Personal access tokens for the MCP endpoint (docs/mcp.md).
   TOKENS_MIGRATION,
+  // The browser a session signed in from, so admins can tell one person's sessions apart. NULL for older sessions.
+  `
+  ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -386,19 +390,21 @@ export function openDirectory(file) {
 
   // sessions
 
-  function createSession(userId, { ttlMs, now = Date.now() }) {
+  /** @param {string} userId @param {{ ttlMs: number, now?: number, userAgent?: string | null }} opts */
+  function createSession(userId, { ttlMs, now = Date.now(), userAgent = null }) {
     if (!(ttlMs > 0)) throw new Error('invalid ttl');
     const id = newId();
     const token = newToken();
     run('DELETE FROM sessions WHERE expires_at < ?', now - DAY_MS);
     run(
-      'INSERT INTO sessions (id, token_hash, user_id, created_at, last_seen, expires_at, revoked) VALUES (?, ?, ?, ?, ?, ?, 0)',
+      'INSERT INTO sessions (id, token_hash, user_id, created_at, last_seen, expires_at, revoked, user_agent) VALUES (?, ?, ?, ?, ?, ?, 0, ?)',
       id,
       hashToken(token),
       userId,
       now,
       now,
       now + ttlMs,
+      text(userAgent, 400) || null,
     );
     return { id, token, expiresAt: now + ttlMs };
   }
@@ -442,8 +448,9 @@ export function openDirectory(file) {
     createdAt: r.created_at,
     lastSeen: r.last_seen,
     expiresAt: r.expires_at,
+    userAgent: r.user_agent ?? null,
   });
-  const ACTIVE_SESSION_COLUMNS = `s.id, s.user_id, s.created_at, s.last_seen, s.expires_at, u.name, u.email
+  const ACTIVE_SESSION_COLUMNS = `s.id, s.user_id, s.created_at, s.last_seen, s.expires_at, s.user_agent, u.name, u.email
     FROM sessions s JOIN users u ON u.id = s.user_id`;
 
   function listActiveSessions(now = Date.now()) {

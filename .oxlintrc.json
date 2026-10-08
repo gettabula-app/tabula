@@ -9,5 +9,5 @@
     "node": true,
     "es2022": true
   },
-  "ignorePatterns": ["dist", "data", "public/sw.js", ".claude"]
+  "ignorePatterns": ["dist", "data", "public/sw.js", ".claude", "desktop/src-tauri/target"]
 }

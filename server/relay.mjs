@@ -40,6 +40,7 @@ const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'))
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = 1000;
 const SAVE_MAX_WAIT_MS = 30_000;
+const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
 const ROLE_RECHECK_MS = 5_000;
@@ -68,9 +69,10 @@ function parseRoom(name) {
 }
 
 // Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
-// while a hosted workspace is read-only.
-function canWriteRoom(role, kind) {
-  if (cloud?.limits().readOnly) return false;
+// while a hosted workspace is read-only, or to a deleted board (workspace admins may still open one, to look before
+// restoring it).
+function canWriteRoom(role, kind, deleted = false) {
+  if (deleted || cloud?.limits().readOnly) return false;
   if (kind === 'board') return role === 'owner' || role === 'editor';
   if (kind === 'comments') return role === 'owner' || role === 'editor' || role === 'commenter';
   return false;
@@ -245,6 +247,23 @@ class Room {
       }
     }, UNLOAD_AFTER_MS);
   }
+  /**
+   * A board named through POST or PATCH /api/boards (outside the app) has its title only in the directory, and the
+   * board would open as "Untitled board". A board document without a name takes the
+   * directory's title; one with a name keeps it (saving copies it to the directory, as before).
+   */
+  nameFromDirectory() {
+    if (!directory || this.kind !== 'board') return;
+    const title = directory.getBoard(this.name)?.title;
+    const meta = this.doc.getMap('meta');
+    if (typeof title === 'string' && title !== DEFAULT_TITLE && !meta.has('name')) this.setName(title);
+  }
+
+  setName(title) {
+    const meta = this.doc.getMap('meta');
+    if (meta.get('name') !== title) this.doc.transact(() => meta.set('name', title), 'relay');
+  }
+
 
   onMessage(ws, data) {
     try {
@@ -272,6 +291,7 @@ function getRoom(name) {
     r = new Room(name);
     rooms.set(name, r);
     log(`room ${name}: loaded`);
+    r.nameFromDirectory();
   }
   return r;
 }
@@ -443,7 +463,7 @@ function authorise(req, board) {
   if (!row || (row.deletedAt != null && !isWorkspaceAdmin(session.user))) return { code: CLOSE_NOT_FOUND, reason: 'board_not_found' };
   const role = directory.boardRole(board, session.user.id);
   if (role === null) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
-  return { session, role };
+  return { session, role, deleted: row.deletedAt != null };
 }
 
 function deny(ws, code, reason) {
@@ -470,7 +490,8 @@ function refresh(ws, force) {
       ws.sessionExpiresAt = session.expiresAt;
     }
     ws.role = role;
-    ws.canWrite = canWriteRoom(role, ws.roomKind);
+    ws.deleted = directory.getBoard(ws.boardId)?.deletedAt != null;
+    ws.canWrite = canWriteRoom(role, ws.roomKind, ws.deleted);
   } catch (err) {
     log(`room ${ws.roomName}: could not resolve a role`, err?.message);
     deny(ws, 1011, 'internal_error');
@@ -488,6 +509,17 @@ if (config.authEnabled) {
       if (sessionId && ws.sessionId !== sessionId) continue;
       ws.sessionRevoked = true;
       refresh(ws, true);
+    }
+  });
+  // PATCH /api/boards/:id renamed it: the board itself shows the new name, and the next save keeps it.
+  events.on('board-renamed', ({ boardId, title } = {}) => {
+    if (typeof boardId !== 'string' || typeof title !== 'string' || !parseRoom(boardId)) return;
+    try {
+      const room = getRoom(boardId);
+      room.setName(title);
+      room.releaseIfIdle();
+    } catch (err) {
+      log(`room ${boardId}: could not rename`, err?.message);
     }
   });
   events.on('user-removed', ({ userId } = {}) => {
@@ -567,7 +599,8 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomName = name;
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
-    ws.canWrite = canWriteRoom(verdict.role, parsed.kind);
+    ws.deleted = verdict.deleted;
+    ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;

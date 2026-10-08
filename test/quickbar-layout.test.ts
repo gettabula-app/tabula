@@ -35,4 +35,14 @@ describe('placeBar', () => {
     expect(p.y).toBeGreaterThanOrEqual(0);
     expect(p.y + bar.h).toBeLessThanOrEqual(600);
   });
+
+  it('moves below the target when above would cover one of its connectors, and below would not', () => {
+    const target = { x: 400, y: 300, w: 200, h: 100 };
+    const connector = { x: 480, y: 250, w: 200, h: 20 }; // runs right above the shape
+    expect(placeBar(target, bar, view, 0, undefined, undefined, undefined, [connector])).toEqual({ x: 350, y: 412, below: true });
+    // nothing in the way: above, as before
+    expect(placeBar(target, bar, view, 0, undefined, undefined, undefined, [{ x: 0, y: 700, w: 10, h: 10 }]).below).toBe(false);
+    // covered either way: stays above
+    expect(placeBar(target, bar, view, 0, undefined, undefined, undefined, [connector, { x: 400, y: 420, w: 300, h: 30 }]).below).toBe(false);
+  });
 });

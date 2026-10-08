@@ -30,6 +30,26 @@ export interface PollTally {
 
 export const answerKey = (pollId: Id, userId: string) => `${pollId}:${userId}`;
 
+/** The fields of a poll that change after it is created, each set by a different event. */
+export type PollStateField = 'revealed' | 'openedAt' | 'closedAt';
+const STATE_FIELDS: PollStateField[] = ['revealed', 'openedAt', 'closedAt'];
+export const stateKey = (pollId: Id, field: PollStateField) => `${pollId}:${field}`;
+
+const earliest = (a: unknown, b: unknown): number | undefined => {
+  const ts = [a, b].filter((t): t is number => typeof t === 'number');
+  return ts.length ? Math.min(...ts) : undefined;
+};
+
+/** Distinct people among the board's presences: one person in two tabs counts once, and a presence without a user is not a person. */
+export function countPeople(presences: { user?: { id: string } }[]): number {
+  return new Set(presences.map((p) => p.user?.id).filter((id): id is string => !!id)).size;
+}
+
+/** "2 of 3 answered": responses out of the people on the board. The total is never below the responses. */
+export function answeredLabel(responses: number, people: number): string {
+  return `${responses} of ${Math.max(people, responses)} answered`;
+}
+
 export const pollInstructions = (poll: Pick<Poll, 'multiple'>) => (poll.multiple ? 'Pick any number of options.' : 'Pick one option.');
 
 /** Trims and checks a poll definition. Throws a PollError with the message to show. */
@@ -57,22 +77,69 @@ function rankedLines(t: PollTally): string[] {
 /**
  * Polls on the board: definitions and answers in the shared doc, the open and
  * closed lifecycle, reveal, results and exports. Steps stay in the flow; see flow.ts.
+ *
+ * A poll's definition is one JSON value in `polls`, and it only changes before the poll opens. The fields that
+ * change later (revealed, openedAt, closedAt) each have their own key in `pollState`, so a reveal on one device and
+ * a step change on another both survive; as one JSON value, the later write replaced the earlier one. Reading
+ * combines both places: the fields only move one way (revealed stays true, a poll opens and closes once), so true
+ * wins and the earliest time wins. That also covers polls written before `pollState` existed, and older clients that
+ * still rewrite the whole value, which is why writes also update the definition.
  */
 export class Polls {
   constructor(private app: BoardApp) {
-    app.store.polls.observe(() => app.emit('flow'));
+    app.store.polls.observe((e) => {
+      this.migrate([...e.keysChanged]);
+      app.emit('flow');
+    });
     app.store.pollAnswers.observe(() => app.emit('flow'));
+    app.store.pollState.observe(() => app.emit('flow'));
+    this.migrate([...app.store.polls.keys()]);
   }
 
   get(id: Id): Poll | undefined {
-    return this.app.store.polls.get(id);
+    const def = this.app.store.polls.get(id);
+    return def ? this.withState(def) : undefined;
   }
 
   /** Every poll, oldest first. */
   list(): Poll[] {
     const out: Poll[] = [];
-    this.app.store.polls.forEach((p) => out.push(p));
+    this.app.store.polls.forEach((p) => out.push(this.withState(p)));
     return out.sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** The definition with its changing fields, from `pollState` and from the definition itself. */
+  private withState(def: Poll): Poll {
+    const state = (f: PollStateField) => this.app.store.pollState.get(stateKey(def.id, f));
+    const poll: Poll = { ...def, revealed: def.revealed === true || state('revealed') === true };
+    const openedAt = earliest(def.openedAt, state('openedAt'));
+    const closedAt = earliest(def.closedAt, state('closedAt'));
+    if (openedAt === undefined) delete poll.openedAt;
+    else poll.openedAt = openedAt;
+    if (closedAt === undefined) delete poll.closedAt;
+    else poll.closedAt = closedAt;
+    return poll;
+  }
+
+  /**
+   * Copies changing fields that only the definition holds (polls from before `pollState`, or written by an older
+   * client) into `pollState`, where a later rewrite of the definition cannot drop them. Safe to run on several
+   * devices at once: they write the same values. Read-only viewers skip it; reading combines both places anyway.
+   */
+  private migrate(ids: Id[]) {
+    if (this.app.store.readOnly) return;
+    const sets: [string, unknown][] = [];
+    for (const id of ids) {
+      const def = this.app.store.polls.get(id);
+      if (!def) continue;
+      for (const f of STATE_FIELDS) {
+        const value = def[f];
+        if ((f === 'revealed' ? value === true : typeof value === 'number') && !this.app.store.pollState.has(stateKey(id, f))) {
+          sets.push([stateKey(id, f), value]);
+        }
+      }
+    }
+    if (sets.length) this.app.store.transactAs(() => sets.forEach(([k, v]) => this.app.store.pollState.set(k, v)), 'polls');
   }
 
   /** Polls and answers as stored, for the JSON snapshot. */
@@ -192,7 +259,7 @@ export class Polls {
   reveal(pollId: Id) {
     const poll = this.require(pollId);
     if (poll.openedAt === undefined) throw new PollError('Run the poll before revealing its results.');
-    this.write(() => this.app.store.polls.set(pollId, { ...poll, revealed: true }));
+    this.setState(poll, 'revealed', true);
   }
 
   /** Deletes the poll, its answers and its record. Steps are handled by Flow. */
@@ -203,6 +270,7 @@ export class Polls {
     });
     this.write(() => {
       for (const k of keys) this.app.store.pollAnswers.delete(k);
+      for (const f of STATE_FIELDS) this.app.store.pollState.delete(stateKey(pollId, f));
       this.app.store.polls.delete(pollId);
     });
   }
@@ -265,8 +333,19 @@ export class Polls {
     const poll = this.get(pollId);
     if (!poll || poll[field] !== undefined) return;
     if (field === 'closedAt' && poll.openedAt === undefined) return;
-    const now = Date.now();
-    this.write(() => this.app.store.polls.set(pollId, { ...poll, ...(field === 'openedAt' ? { openedAt: now } : { closedAt: now }) }));
+    this.setState(poll, field, Date.now());
+  }
+
+  /**
+   * Sets one changing field in its own key. The definition gets the same value, for clients that predate
+   * `pollState`; if two devices rewrite the definition at once one rewrite is lost there, but never here.
+   */
+  private setState(poll: Poll, field: PollStateField, value: boolean | number) {
+    const def = this.app.store.polls.get(poll.id);
+    this.write(() => {
+      this.app.store.pollState.set(stateKey(poll.id, field), value);
+      if (def) this.app.store.polls.set(poll.id, { ...this.withState(def), [field]: value });
+    });
   }
 
   private require(pollId: Id): Poll {

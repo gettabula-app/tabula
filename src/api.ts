@@ -147,6 +147,8 @@ export interface AdminSession {
   email: string;
   createdAt: number;
   lastSeen: number;
+  /** The browser the session signed in from; null for sessions older than this field. */
+  userAgent: string | null;
   expiresAt: number;
   current: boolean;
 }
@@ -360,6 +362,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     adminSessions: () => call<AdminSession[]>('GET', '/api/admin/sessions'),
     revokeSession: (id: string) => call<void>('DELETE', `/api/admin/sessions/${seg(id)}`),
     adminBoards: (deleted = false) => call<AdminBoard[]>('GET', `/api/admin/boards${qs({ deleted: deleted ? 1 : undefined })}`),
+    adminBoard: (id: string) => call<AdminBoard>('GET', `/api/admin/boards/${seg(id)}`),
     restoreBoard: (id: string) => call<void>('POST', `/api/admin/boards/${seg(id)}/restore`),
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),

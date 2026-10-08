@@ -256,10 +256,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       }
       return [200, { ok: true }];
     }),
-    compile('POST', 'auth/verify', { public: true, body: true, readOnlyOk: true }, ({ res, body }) => {
+    compile('POST', 'auth/verify', { public: true, body: true, readOnlyOk: true }, ({ req, res, body }) => {
       let result = null;
       try {
-        result = typeof body.token === 'string' ? auth.verifyLogin(body.token) : null;
+        result = typeof body.token === 'string' ? auth.verifyLogin(body.token, { userAgent: req.headers['user-agent'] }) : null;
       } catch (err) {
         if (!(err instanceof SeatLimitError)) throw err;
         throw conflict('seat_limit', 'This workspace has no free seat right now. Ask the workspace owner to add seats, then open this link again.');
@@ -442,6 +442,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         return next;
       });
       if (patch.teamId !== undefined && patch.teamId !== board.teamId) emit('access-changed', { boardId: board.id });
+      if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
       return [200, boardView(updated, directory.boardRole(board.id, user.id))];
     }),
     compile('DELETE', 'boards/:id', {}, ({ user, params }) => {
@@ -601,6 +602,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const deleted = query.get('deleted');
       return [200, directory.listBoardsAdmin({ includeDeleted: deleted === '1' || deleted === 'true' })];
     }),
+    compile('GET', 'admin/boards/:id', {}, ({ user, params }) => {
+      requireAdmin(user);
+      const board = directory.getBoardAdmin(params.id);
+      if (!board) throw notFound('Board not found');
+      return [200, board];
+    }),
     compile('POST', 'admin/boards/:id/restore', {}, ({ user, params }) => {
       requireAdmin(user);
       const board = directory.getBoardAdmin(params.id);
@@ -611,6 +618,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.restore', { boardId: board.id });
         return directory.getBoardAdmin(board.id);
       });
+      // admins who had it open while it was deleted may write again
+      emit('access-changed', { boardId: board.id });
       return [200, { ...restored, role: directory.boardRole(board.id, user.id) }];
     }),
 

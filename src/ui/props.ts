@@ -7,10 +7,11 @@ import { field, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS } from '../palette';
 import { stickyColorField } from './colors';
 import { SHAPE_GROUPS, SHAPE_KINDS, HEADS } from '../shapes';
-import { RELATIONS, classHeight } from '../uml';
+import { RELATIONS } from '../uml';
 import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
 import { openFontPicker } from './fontpicker';
+import { closeOpenCombo, combo, numberField } from './controls';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
 
@@ -24,7 +25,8 @@ export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'uml
 export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
 export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
-const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128];
+/** Font size steps by 1, or 10 with Shift. */
+const FONT_SIZE_STEPS = { min: 6, max: 400, step: 1, big: 10 };
 const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extralight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extrabold', 900: 'Black' };
 
 export function mountProps(app: BoardApp, parent: HTMLElement) {
@@ -40,12 +42,22 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
   app.on('selection', schedule);
   app.on('meta', schedule);
   app.on('objects', () => {
-    // never rebuild while the user is typing in the panel
+    // never rebuild while the user is typing in the panel, or while a control previews a value (it would close)
+    if (app.styleEdit.active) return;
     if (panel.contains(document.activeElement) && (document.activeElement as HTMLElement).tagName === 'INPUT') return;
     schedule();
   });
+  app.styleEdit.onEnd(schedule);
+
+  let generation = 0;
 
   function render() {
+    // never rebuild under a live preview (a list, the font picker, a wheel burst): the control would vanish and its
+    // preview with it. The preview's end (commit or revert) schedules the rebuild that was skipped.
+    if (app.styleEdit.active) return;
+    closeOpenCombo();
+    const gen = ++generation;
+    const focused = panel.contains(document.activeElement) ? (document.activeElement as HTMLElement).getAttribute('aria-label') : null;
     const sel = app.selected();
     const show = open && sel.length > 0 && !app.readOnly;
     panel.classList.toggle('show', show);
@@ -58,6 +70,20 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     const title = sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
     const s = styleOf(first);
     const up = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelected(patch, filter);
+    const edit = app.styleEdit;
+    /** Live preview, revert and commit of one patch shape, for a control. */
+    // a control from an earlier render (a stray timer) must not write to whatever is selected now
+    const current = () => gen === generation;
+    const live = <T,>(toPatch: (v: T) => Record<string, unknown>, filter?: (o: Obj) => boolean) => ({
+      onPreview: (v: T) => current() && edit.preview(toPatch(v), filter),
+      onCommit: (v: T) => current() && edit.commit(toPatch(v), filter),
+      onRevert: () => current() && edit.revert(),
+    });
+    /** The value every matching selected object shares, or null when they differ (shown as "Mixed"). */
+    const shared = <T,>(read: (o: Obj) => T, filter: (o: Obj) => boolean = () => true): T | null => {
+      const vals = sel.filter(filter).map(read);
+      return vals.length && vals.every((v) => v === vals[0]) ? vals[0] : null;
+    };
     const blocks: (HTMLElement | null)[] = [];
 
     // ---- type-specific
@@ -72,9 +98,11 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       })));
     }
     if (same && first.type === 'shape') {
-      const sel2 = h('select', { class: 'input', 'aria-label': 'Shape', onchange: (e: Event) => up({ kind: (e.target as HTMLSelectElement).value as ShapeKind }) },
-        ...SHAPE_GROUPS.map(([group, label]) => h('optgroup', { label }, ...SHAPE_KINDS.filter((k) => k.group === group).map((k) => h('option', { value: k.kind, selected: (first as BaseObj).kind === k.kind }, k.label)))));
-      blocks.push(field('Shape', sel2));
+      const kinds = SHAPE_GROUPS.flatMap(([group, label]) => SHAPE_KINDS.filter((k) => k.group === group).map((k) => ({ value: k.kind, label: k.label, group: label })));
+      blocks.push(field('Shape', combo<ShapeKind>({
+        label: 'Shape', options: kinds, value: shared((o) => (o as BaseObj).kind ?? 'rect'),
+        ...live((v) => ({ kind: v }), (o) => o.type === 'shape'),
+      })));
     }
     if (same && first.type === 'frame' && sel.length === 1) {
       const name = h('input', { class: 'input', value: (first as BaseObj).name ?? '', 'aria-label': 'Frame name' });
@@ -82,17 +110,12 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       blocks.push(field('Name', name));
     }
     if (same && first.type === 'uml-class') {
-      const cur = (first as BaseObj).stereotype ?? '';
-      const st = h('select', { class: 'input', 'aria-label': 'Stereotype', onchange: (e: Event) => {
-        const v = (e.target as HTMLSelectElement).value || undefined;
-        app.store.transact(() => {
-          for (const o of app.selected()) if (isBox(o)) {
-            app.store.update(o.id, { stereotype: v });
-            app.store.update(o.id, { h: classHeight({ ...o, stereotype: v }) });
-          }
-        });
-      } }, ...[['', 'Class'], ['interface', 'Interface'], ['abstract', 'Abstract'], ['enumeration', 'Enumeration'], ['entity', 'Entity'], ['service', 'Service']].map(([v, l]) => h('option', { value: v, selected: cur === v }, l)));
-      blocks.push(field('Kind', st));
+      const kinds = [['', 'Class'], ['interface', 'Interface'], ['abstract', 'Abstract'], ['enumeration', 'Enumeration'], ['entity', 'Entity'], ['service', 'Service']]
+        .map(([value, label]) => ({ value, label }));
+      blocks.push(field('Kind', combo<string>({
+        label: 'Stereotype', options: kinds, value: shared((o) => (o as BaseObj).stereotype ?? ''),
+        ...live((v) => ({ stereotype: v || undefined }), (o) => o.type === 'uml-class'),
+      })));
       if (sel.length === 1) blocks.push(h('button', { class: 'btn wide', onclick: () => app.editor.start(first.id) }, 'Edit name and members'));
     }
 
@@ -127,15 +150,25 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       const fb = h('button', { class: 'input font-btn', style: `font-family:"${fontName(s.font)}", system-ui`, 'aria-label': `Font: ${fontName(s.font)}` }, fontName(s.font), icon('chevron', 16));
       fb.addEventListener('click', () => {
         const used = [...new Set([...app.store.cache.values()].map((o) => (o as BaseObj).font).filter(Boolean))] as string[];
-        openFontPicker(fb, s.font, (slug) => up({ font: slug, fontWeight: nearestWeight(slug, s.fontWeight) }, HAS_TEXT), { pinned: used });
+        const fontPatch = (slug: string) => ({ font: slug, fontWeight: nearestWeight(slug, s.fontWeight) });
+        openFontPicker(fb, s.font, (slug) => edit.commit(fontPatch(slug), HAS_TEXT), {
+          pinned: used,
+          onPreview: (slug) => edit.preview(fontPatch(slug), HAS_TEXT),
+          onRevert: () => edit.revert(),
+        });
       });
       blocks.push(field('Font', fb));
       const entry = getCatalogue().find((f) => f.slug === s.font);
       const weights = entry?.weights ?? [400, 500, 700];
-      const size = h('select', { class: 'input', 'aria-label': 'Font size', onchange: (e: Event) => up({ fontSize: Number((e.target as HTMLSelectElement).value) }, HAS_TEXT) },
-        ...[...new Set([...FONT_SIZES, s.fontSize])].sort((a, b) => a - b).map((n) => h('option', { value: n, selected: n === s.fontSize }, `${n}`)));
-      const weight = h('select', { class: 'input', 'aria-label': 'Font weight', onchange: (e: Event) => up({ fontWeight: Number((e.target as HTMLSelectElement).value) }, HAS_TEXT) },
-        ...weights.map((w) => h('option', { value: w, selected: w === nearestWeight(s.font, s.fontWeight) }, WEIGHT_NAMES[w] ?? String(w))));
+      const size = numberField({
+        label: 'Font size', value: shared((o) => styleOf(o).fontSize, HAS_TEXT), ...FONT_SIZE_STEPS,
+        ...live((v: number) => ({ fontSize: v }), HAS_TEXT),
+      });
+      const weight = combo<number>({
+        label: 'Font weight', value: shared((o) => nearestWeight(s.font, styleOf(o).fontWeight), HAS_TEXT),
+        options: weights.map((w) => ({ value: w, label: WEIGHT_NAMES[w] ?? String(w), style: `font-family:"${fontName(s.font)}", system-ui;font-weight:${w}` })),
+        ...live((v) => ({ fontWeight: v }), HAS_TEXT),
+      });
       blocks.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
       blocks.push(field('Align', segmented([
         { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
@@ -153,9 +186,11 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
 
     // ---- opacity
-    const op = h('input', { type: 'range', min: '10', max: '100', step: '5', value: String(Math.round((first.opacity ?? 1) * 100)), class: 'range', 'aria-label': 'Opacity' });
-    op.addEventListener('input', () => up({ opacity: Number(op.value) / 100 >= 1 ? undefined : Number(op.value) / 100 }));
-    blocks.push(field('Opacity', op));
+    blocks.push(field('Opacity', numberField({
+      label: 'Opacity', unit: '%', min: 10, max: 100, step: 1, big: 10,
+      value: shared((o) => Math.round((o.opacity ?? 1) * 100)),
+      ...live((v: number) => ({ opacity: v >= 100 ? undefined : v / 100 })),
+    })));
 
     // ---- arrange
     const boxes = sel.filter(isBox).length;
@@ -186,6 +221,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     ));
 
     panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18))), ...blocks.filter(Boolean) as HTMLElement[]);
+    // keep keyboard focus on the same control across the rebuild that follows each change
+    if (focused) panel.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focused)}"]`)?.focus();
   }
   function toggle() {
     open = !open;
@@ -210,25 +247,30 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
     up({ route: v });
     app.connectorDefaults.route = v;
   }, 'Connector route')));
-  const headSel = (cur: Head, key: 'startHead' | 'endHead', label: string) => h('select', {
-    class: 'input', 'aria-label': label,
-    onchange: (e: Event) => {
-      const v = (e.target as HTMLSelectElement).value as Head;
-      up({ [key]: v, relation: undefined });
+  const edit = app.styleEdit;
+  const same = <T,>(read: (x: ConnectorObj) => T): T | null => (sel.every((x) => read(x) === read(c)) ? read(c) : null);
+  const headSel = (key: 'startHead' | 'endHead', label: string) => combo<Head>({
+    label, options: HEADS.map((x) => ({ value: x.head, label: x.label })), value: same((x) => x[key]),
+    onPreview: (v) => edit.preview({ [key]: v, relation: undefined }, isConnector),
+    onRevert: () => edit.revert(),
+    onCommit: (v) => {
+      edit.commit({ [key]: v, relation: undefined }, isConnector);
       app.connectorDefaults[key] = v;
     },
-  }, ...HEADS.map((x) => h('option', { value: x.head, selected: x.head === cur }, x.label)));
-  out.push(h('div', { class: 'row2' }, field('Start', headSel(c.startHead, 'startHead', 'Start arrowhead')), field('End', headSel(c.endHead, 'endHead', 'End arrowhead'))));
-  const rel = h('select', {
-    class: 'input', 'aria-label': 'UML relationship',
-    onchange: (e: Event) => {
-      const v = (e.target as HTMLSelectElement).value as UmlRelation | '';
-      if (!v) return up({ relation: undefined });
-      const r = RELATIONS[v];
-      up({ relation: v, startHead: r.startHead, endHead: r.endHead, dash: r.dash });
-    },
-  }, h('option', { value: '' }, 'None'), ...Object.entries(RELATIONS).map(([k, r]) => h('option', { value: k, selected: c.relation === k }, r.label)));
-  out.push(field('UML relationship', rel));
+  });
+  out.push(h('div', { class: 'row2' }, field('Start', headSel('startHead', 'Start arrowhead')), field('End', headSel('endHead', 'End arrowhead'))));
+  const relPatch = (v: UmlRelation | '') => {
+    if (!v) return { relation: undefined };
+    const r = RELATIONS[v];
+    return { relation: v, startHead: r.startHead, endHead: r.endHead, dash: r.dash };
+  };
+  out.push(field('UML relationship', combo<UmlRelation | ''>({
+    label: 'UML relationship', value: same((x) => x.relation ?? ''),
+    options: [{ value: '', label: 'None' }, ...Object.entries(RELATIONS).map(([k, r]) => ({ value: k as UmlRelation, label: r.label }))],
+    onPreview: (v) => edit.preview(relPatch(v), isConnector),
+    onRevert: () => edit.revert(),
+    onCommit: (v) => edit.commit(relPatch(v), isConnector),
+  })));
   if (sel.length === 1) {
     const lab = h('input', { class: 'input', value: c.label ?? '', placeholder: 'Add a label', 'aria-label': 'Connector label' });
     lab.addEventListener('change', () => up({ label: lab.value || undefined }));

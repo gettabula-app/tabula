@@ -56,7 +56,7 @@ Effective board role for a user, highest wins:
 ```
 users(id PK, email UNIQUE COLLATE NOCASE, name, role CHECK(owner|admin|member|guest), disabled INT DEFAULT 0, created_at)
 login_tokens(token_hash PK, email, invite_id NULL, expires_at, used_at NULL, created_at)
-sessions(id PK, token_hash UNIQUE, user_id FK, created_at, last_seen, expires_at, revoked INT DEFAULT 0)
+sessions(id PK, token_hash UNIQUE, user_id FK, created_at, last_seen, expires_at, revoked INT DEFAULT 0, user_agent NULL)   -- user_agent: the browser it signed in from (schema 4)
 teams(id PK, name, archived INT DEFAULT 0, created_at)
 team_members(team_id FK, user_id FK, role CHECK(admin|member), PRIMARY KEY(team_id,user_id))
 invites(id PK, token_hash UNIQUE, team_id FK, role CHECK(admin|member), created_by FK, expires_at, max_uses NULL, uses DEFAULT 0, revoked INT DEFAULT 0, created_at)
@@ -127,7 +127,7 @@ In accounts mode the relay decides **before it touches the room** (`getRoom()` m
 
 0. The `Origin` header must equal the origin of `TABULA_BASE_URL`; otherwise answer `403` and destroy the socket before upgrading (stops a page on another workspace's sibling subdomain from riding the cookie).
 1. Read the session cookie. No or invalid session: close with code `4401` (`unauthenticated`).
-2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`).
+2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`). Workspace admins may open a deleted board, but read-only: the relay drops their writes to both rooms until the board is restored, and the app opens it read-only with a **Deleted board** badge.
 3. No access: `4403` (never deletes anything on the client).
 4. Otherwise `getRoom()` and join. The connection remembers `userId`.
 
@@ -137,6 +137,7 @@ While connected:
 - The role is re-resolved at most every 5 seconds per connection, and immediately after any access change, so a demoted editor becomes read-only (or comment-only) without reconnecting and a member who lost access is disconnected with close code **`4410` (`access_removed`)**. `4410` is the only code the client may treat as "your access was taken away"; it is distinct from `4403` (no access at join time).
 - Revoking a session closes its sockets with `4401`. Disabling or removing a user, removing them from a team, unsharing a board or deleting a board closes the affected sockets with `4410`. A user's sockets for the board room and the comments room are treated alike.
 - When a board room is saved, the relay copies the board title from the document (`doc.getMap('meta').get('name')`) into `boards.title` and bumps `updated_at`.
+- The other way round: when the relay loads a board room whose document has no name, it sets the name from `boards.title` (unless that is the default "Untitled board"), so a board created with `POST /api/boards {title}` (outside the app) opens under that name. `PATCH /api/boards/:id {title}` also renames the document, loading the room if nobody has it open.
 
 Open mode (`TABULA_AUTH=off`) skips all of this.
 

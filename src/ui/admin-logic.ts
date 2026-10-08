@@ -1,4 +1,4 @@
-import type { AuditEntry, UserRole } from '../api';
+import type { AdminOverview, AuditEntry, UserRole } from '../api';
 
 /** Pure rules and text for the admin dashboard: no DOM, so they can be unit tested. */
 
@@ -229,4 +229,71 @@ export function matchesQuery(query: string, fields: (string | null | undefined)[
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return fields.some((f) => (f ?? '').toLowerCase().includes(q));
+}
+
+/**
+ * Where focus goes after a list re-renders. Keys name focusable controls as `<row id>:<control>`, in
+ * document order. Focus goes back to the same control, or, when its row is gone, to the same control
+ * of the row that took its place (the next row, or the new last one). Undefined when there is none.
+ */
+export function focusTarget(before: string[], key: string, after: string[]): string | undefined {
+  if (after.includes(key)) return key;
+  const control = key.slice(key.lastIndexOf(':'));
+  const was = before.filter((k) => k.endsWith(control)).indexOf(key);
+  const now = after.filter((k) => k.endsWith(control));
+  if (was < 0 || !now.length) return undefined;
+  return now[Math.min(was, now.length - 1)];
+}
+
+const BROWSERS: [RegExp, string][] = [
+  [/\bEdg(e|A|iOS)?\//, 'Edge'],
+  [/\bOPR\/|\bOpera\b/, 'Opera'],
+  [/\bFirefox\/|\bFxiOS\//, 'Firefox'],
+  [/\bChrome\/|\bCriOS\//, 'Chrome'],
+  [/\bSafari\//, 'Safari'],
+];
+const SYSTEMS: [RegExp, string][] = [
+  [/\biPhone|\biPad|\biPod/, 'iOS'],
+  [/\bAndroid\b/, 'Android'],
+  [/\bCrOS\b/, 'ChromeOS'],
+  [/\bMac OS X\b|\bMacintosh\b/, 'macOS'],
+  [/\bWindows\b/, 'Windows'],
+  [/\bLinux\b/, 'Linux'],
+];
+
+/**
+ * A short name for the browser a session signed in from, such as "Chrome on macOS". Enough to tell one person's
+ * sessions apart; not a fingerprint. Order matters: Edge and Opera also say Chrome, and Chrome also says Safari.
+ */
+export function deviceLabel(userAgent: string | null | undefined): string {
+  if (!userAgent?.trim()) return 'Unknown device';
+  const browser = BROWSERS.find(([re]) => re.test(userAgent))?.[1];
+  const system = SYSTEMS.find(([re]) => re.test(userAgent))?.[1];
+  if (browser && system) return `${browser} on ${system}`;
+  if (browser || system) return (browser ?? system)!;
+  return userAgent.trim().split(/[\s/;(]/)[0].slice(0, 40) || 'Unknown device';
+}
+
+/** A stat tile on the Overview: its label, its number and the line under it. */
+export interface OverviewTile { label: string; value: number; sub?: string }
+
+/**
+ * The Overview's stat tiles. Members, teams and boards each count everything, with the part that is out of use
+ * (disabled, archived, deleted) on the line under the number, so the role breakdown adds up to the number above it.
+ */
+export function overviewTiles(o: AdminOverview): OverviewTile[] {
+  const r = o.members.byRole;
+  return [
+    {
+      label: 'Members',
+      value: o.members.total,
+      sub: [countLabel(r.owner, 'owner', 'owners'), countLabel(r.admin, 'admin', 'admins'), countLabel(r.member, 'member', 'members'), countLabel(r.guest, 'guest', 'guests')].join(' · '),
+    },
+    { label: 'Disabled members', value: o.members.disabled, sub: `${o.members.active} active` },
+    { label: 'Teams', value: o.teams.total, sub: `${o.teams.archived} archived` },
+    { label: 'Boards', value: o.boards.total, sub: `${o.boards.deleted} deleted` },
+    { label: 'Active sessions', value: o.sessions.active },
+    { label: 'Sign-ins, last 7 days', value: o.signIns7d },
+    { label: 'Live connections', value: o.live.connections, sub: `${countLabel(o.live.rooms, 'room', 'rooms')} open` },
+  ];
 }

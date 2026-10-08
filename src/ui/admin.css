@@ -30,16 +30,26 @@
   display: flex; align-items: center; gap: 16px; height: 56px;
   padding: 0 max(24px, calc((100% - 1120px) / 2 + 24px));
   border-bottom: 2px solid var(--ink);
+  position: sticky; top: 0; z-index: 5; background: var(--canvas);
 }
 .admin-title { margin: 0; font: 800 20px/1 var(--display); letter-spacing: -0.03em; }
 .admin .admin-me { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Outcomes of changes show in the top bar, in place of the signed-in name, so they never cover a row. */
+.admin-status {
+  margin: 0 0 0 auto; min-width: 0; padding-left: 10px; border-left: 4px solid var(--graphite);
+  font-size: 13px; font-weight: 600; line-height: 16px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.admin-status[data-kind='error'] { border-left-color: var(--danger); }
+.admin-status:empty { display: none; }
+.admin-status:not(:empty) + .admin-me { display: none; }
 
 /* Asymmetric grid: a narrow numbered index beside a wide panel, 24px gutter. */
 .admin-body {
   max-width: 1120px; margin: 0 auto; padding: 48px 24px;
   display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px;
 }
-.admin-tabs { display: flex; flex-direction: column; align-self: start; position: sticky; top: 24px; border-bottom: 1px solid var(--rule); }
+.admin-tabs { display: flex; flex-direction: column; align-self: start; position: sticky; top: 80px; border-bottom: 1px solid var(--rule); }
 .admin .admin-tab {
   display: block; padding: 12px 0 12px 12px; line-height: 16px; text-decoration: none;
   border-top: 1px solid var(--rule); border-left: 4px solid var(--canvas); color: var(--graphite);
@@ -111,6 +121,8 @@
 .admin-name { font-weight: 600; }
 .admin-cell { min-width: 0; line-height: 1.5; }
 .admin-cell > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A cell's own label is the column heading's job on desktop; it shows on phone widths, where the headings are hidden. */
+.admin-cell-label { display: none; }
 .admin .btn-row.admin-actions { justify-content: flex-end; gap: 8px; }
 .admin-badge {
   display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink);
@@ -136,6 +148,11 @@
 .admin .btn:disabled { opacity: 0.5; }
 .admin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
 .admin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
+.admin .btn[aria-disabled='true'] { opacity: 0.5; }
+/* A button that changes its label (armable, Enable/Disable) keeps the width of its longest label. */
+.admin .btn.btn-slot { display: inline-grid; place-items: center; }
+.admin .btn-slot > * { grid-area: 1 / 1; }
+.admin .btn-slot > .btn-reserve { visibility: hidden; }
 .admin .btn.armed { border-color: var(--danger); color: var(--danger); }
 .admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--paper); }
 
@@ -153,6 +170,7 @@
   .admin-box { display: block; }
   .admin-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .admin-head { display: none; }
+  .admin-cell-label { display: inline; }
   .admin-box > .admin-head + .admin-row { border-top: 0; }
   .admin .btn-row.admin-actions { justify-content: flex-start; }
 }

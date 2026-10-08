@@ -7,10 +7,11 @@ import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml
 import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import type { CustomTemplate } from '../custom-templates';
-import { POPULAR_SETS, iconData, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
+import { POPULAR_SETS, iconData, iconLoader, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
-import { placeSticker, stickersTab, type StickerDrag } from './stickers';
+import { gridView, placeSticker, stickersTab, type StickerDrag } from './stickers';
+import { reopenSession } from './idle-bar';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
 
@@ -20,15 +21,18 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
   const drawer = h('aside', { class: 'drawer tray', 'aria-label': 'Library' });
   parent.appendChild(drawer);
   let tab: DrawerTab | null = null;
+  let stop = new AbortController();
   const listeners = new Set<(t: DrawerTab | null) => void>();
 
   const open = (t: DrawerTab | null) => {
+    stop.abort();
+    stop = new AbortController();
     tab = tab === t ? null : t;
     drawer.classList.toggle('show', !!tab);
     listeners.forEach((l) => l(tab));
     if (!tab) return drawer.replaceChildren();
     const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', stickers: 'Stickers', templates: 'Templates' }[tab];
-    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app) : tab === 'stickers' ? stickersTab(app, draggable) : templatesTab(app, () => open(null));
+    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app, stop.signal) : tab === 'stickers' ? stickersTab(app, draggable, stop.signal) : templatesTab(app, () => open(null));
     drawer.replaceChildren(
       h('div', { class: 'drawer-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
@@ -216,13 +220,13 @@ export function openMermaidImport(app: BoardApp) {
   ]);
 }
 
-function iconsTab(app: BoardApp) {
+function iconsTab(app: BoardApp, signal: AbortSignal) {
   const input = h('input', { type: 'search', class: 'input', placeholder: 'Search 200,000+ icons', 'aria-label': 'Search icons' });
   const setSel = h('select', { class: 'input', 'aria-label': 'Icon set' }, h('option', { value: '' }, 'All icon sets'));
   const grid = h('div', { class: 'icon-grid', role: 'list' });
   const note = h('p', { class: 'muted small' });
   let sets: Record<string, IconSet> = {};
-  let seq = 0;
+  let setsState: 'idle' | 'loading' | 'ready' = 'idle';
 
   const show = (names: string[]) => {
     if (!names.length) {
@@ -240,36 +244,39 @@ function iconsTab(app: BoardApp) {
       : 'Icons are from open-source sets via Iconify. Placed icons are stored in the board and work offline.';
   };
 
-  const run = async () => {
-    const my = ++seq;
+  const loader = iconLoader((s) => {
     const q = input.value.trim();
     const prefix = setSel.value || undefined;
-    grid.classList.add('loading');
-    try {
-      const names = q ? await searchIcons(q, prefix) : prefix ? await collectionIcons(prefix) : await searchIcons('arrow', 'lucide', 48);
-      if (my === seq) show(names);
-    } catch {
-      if (my === seq) grid.replaceChildren(h('div', { class: 'empty' }, 'Icons need a connection the first time. Icons already on your boards still work offline.'));
-    } finally {
-      if (my === seq) grid.classList.remove('loading');
-    }
-  };
+    loadSets();
+    return q ? searchIcons(q, prefix, 96, s) : prefix ? collectionIcons(prefix, 160, s) : searchIcons('arrow', 'lucide', 48, s);
+  }, gridView(grid, show), signal);
+
   let t = 0;
   input.addEventListener('input', () => {
     clearTimeout(t);
-    t = window.setTimeout(run, 250);
+    t = window.setTimeout(loader.reload, 250);
   });
-  setSel.addEventListener('change', run);
-  iconSets().then((s) => {
-    sets = s;
-    const popular = POPULAR_SETS.filter((p) => s[p]);
-    const others = Object.values(s).filter((x) => !popular.includes(x.prefix)).sort((a, b) => a.name.localeCompare(b.name));
-    setSel.append(
-      h('optgroup', { label: 'Popular' }, ...popular.map((p) => h('option', { value: p }, `${s[p].name} (${s[p].license})`))),
-      h('optgroup', { label: 'All sets' }, ...others.map((x) => h('option', { value: x.prefix }, `${x.name} (${x.license})`))),
-    );
-  }).catch(() => undefined);
-  run();
+  signal.addEventListener('abort', () => clearTimeout(t), { once: true });
+  setSel.addEventListener('change', loader.reload);
+  const loadSets = () => {
+    if (setsState !== 'idle') return;
+    setsState = 'loading';
+    iconSets(signal).then((s) => {
+      if (signal.aborted) return;
+      setsState = 'ready';
+      sets = s;
+      const popular = POPULAR_SETS.filter((p) => s[p]);
+      const others = Object.values(s).filter((x) => !popular.includes(x.prefix)).sort((a, b) => a.name.localeCompare(b.name));
+      setSel.append(
+        h('optgroup', { label: 'Popular' }, ...popular.map((p) => h('option', { value: p }, `${s[p].name} (${s[p].license})`))),
+        h('optgroup', { label: 'All sets' }, ...others.map((x) => h('option', { value: x.prefix }, `${x.name} (${x.license})`))),
+      );
+    }).catch(() => {
+      setsState = 'idle';
+    });
+  };
+  loadSets();
+  loader.reload();
   requestAnimationFrame(() => input.focus());
   return h('div', { class: 'drawer-body' }, input, setSel, grid, note);
 }
@@ -309,6 +316,7 @@ function templatesTab(app: BoardApp, close: () => void) {
       ...TEMPLATES.filter((t) => t.category === c).map((t) => h('button', {
         class: 'template-row',
         onclick: () => {
+          reopenSession(app.user.id, app.conn.id);
           insertTemplate(app, t);
           close();
           toast(`${t.name} added. Start the session from the bar at the bottom.`);
