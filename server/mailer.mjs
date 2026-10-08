@@ -4,7 +4,7 @@ import path from 'node:path';
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
 export function createMailer(config) {
-  const { mode, webhookUrl, from } = config.mail;
+  const { mode, webhookUrl, from, mailgun } = config.mail;
 
   async function send({ to, subject, text }) {
     if (mode === 'log') {
@@ -24,6 +24,16 @@ export function createMailer(config) {
       });
       await res.body?.cancel();
       if (!res.ok) throw new Error(`mail webhook answered ${res.status}`);
+    } else if (mode === 'mailgun') {
+      if (!mailgun) throw new Error('mailgun is not configured');
+      const res = await fetch(`${mailgun.apiBase}/v3/${encodeURIComponent(mailgun.domain)}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Basic ${Buffer.from(`api:${mailgun.apiKey}`).toString('base64')}` },
+        body: new URLSearchParams({ from, to, subject, text }),
+        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+      });
+      await res.body?.cancel();
+      if (!res.ok) throw new Error(`mailgun answered ${res.status}`);
     } else {
       throw new Error(`unknown mail mode "${mode}"`);
     }

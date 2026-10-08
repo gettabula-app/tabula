@@ -26,6 +26,8 @@ import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// settings (and secrets such as MAILGUN_API_KEY) may live in a .env file next to where the server starts; real environment variables win
+try { process.loadEnvFile(); } catch { /* no .env file */ }
 const config = loadConfig();
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';

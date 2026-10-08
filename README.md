@@ -50,9 +50,12 @@ By default Mira is open: anyone who can reach the relay and knows a board link c
 | `MIRA_AUTH` | `off` | `on` turns accounts mode on |
 | `MIRA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `MIRA_AUTH=on` |
 | `MIRA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
-| `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `webhook` POSTs `{to, subject, text}` as JSON to `MIRA_MAIL_WEBHOOK_URL` |
+| `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `webhook` POSTs `{to, subject, text}` as JSON to `MIRA_MAIL_WEBHOOK_URL`, `mailgun` sends through the Mailgun API |
 | `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
-| `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Included in webhook payloads as `from` |
+| `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` (`Mira <postmaster@MAILGUN_DOMAIN>` with Mailgun) | Sender address; included in webhook payloads as `from` |
+| `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | none | Required for `MIRA_MAIL=mailgun`. A Mailgun sandbox domain only delivers to recipients you have authorised in the Mailgun dashboard |
+| `MAILGUN_API_BASE` | `https://api.mailgun.net` | Use `https://api.eu.mailgun.net` for EU accounts |
+| `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
 | `MIRA_SESSION_DAYS` | `30` | Session lifetime |
 | `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 

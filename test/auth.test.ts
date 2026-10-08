@@ -710,6 +710,9 @@ describe('loadConfig', () => {
       webhookUrl: 'https://hooks.example.com/mail',
     });
     expect(() => loadConfig({ MIRA_MAIL: 'smtp' })).toThrow('MIRA_MAIL must be one of');
+    expect(() => loadConfig({ MIRA_MAIL: 'mailgun', MAILGUN_API_KEY: 'k' })).toThrow('MAILGUN_API_KEY and MAILGUN_DOMAIN are required');
+    const mg = loadConfig({ MIRA_MAIL: 'mailgun', MAILGUN_API_KEY: 'k', MAILGUN_DOMAIN: 'mg.example.org', MAILGUN_API_BASE: 'https://api.eu.mailgun.net/' }).mail;
+    expect(mg).toMatchObject({ mode: 'mailgun', from: 'Mira <postmaster@mg.example.org>', mailgun: { apiKey: 'k', domain: 'mg.example.org', apiBase: 'https://api.eu.mailgun.net' } });
     expect(() => loadConfig({ MIRA_MAIL: 'webhook' })).toThrow('MIRA_MAIL_WEBHOOK_URL is required');
   });
 });
@@ -740,6 +743,22 @@ describe('mailer', () => {
     const first = JSON.parse(lines[0]);
     expect(first).toEqual({ ...msg, from: 'Mira <m@x.io>', ts: expect.any(Number) });
     expect(JSON.parse(lines[1]).to).toBe('b@example.com');
+  });
+
+  it('posts to the Mailgun API with basic auth and the configured sender', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const mailgun = { apiKey: 'key-123', domain: 'mg.example.org', apiBase: 'https://api.mailgun.net' };
+    await createMailer(configFor({ mode: 'mailgun', from: 'Mira <postmaster@mg.example.org>', mailgun })).send(msg);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.mailgun.net/v3/mg.example.org/messages');
+    expect((init.headers as Record<string, string>).authorization).toBe(`Basic ${Buffer.from('api:key-123').toString('base64')}`);
+    const form = init.body as URLSearchParams;
+    expect(Object.fromEntries(form)).toEqual({ from: 'Mira <postmaster@mg.example.org>', to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' });
+
+    fetchMock.mockResolvedValueOnce(new Response('nope', { status: 401 }));
+    await expect(createMailer(configFor({ mode: 'mailgun', mailgun })).send(msg)).rejects.toThrow('mailgun answered 401');
+    vi.unstubAllGlobals();
   });
 
   async function hook(status: number) {
