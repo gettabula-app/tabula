@@ -55,13 +55,13 @@ const stopRelay = (p: ChildProcess) =>
 async function launch(env: Record<string, string> = {}): Promise<Server> {
   const port = BASE_PORT + launched++;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-relay-'));
-  const accounts = env.MIRA_AUTH === 'on';
+  const accounts = env.TABULA_AUTH === 'on';
   const server = {
     port,
     base: `http://127.0.0.1:${port}`,
     dir,
     proc: await startRelay(port, dir, {
-      ...(accounts ? { MIRA_OWNER_EMAIL: OWNER, MIRA_MAIL: 'file', MIRA_BASE_URL: `http://127.0.0.1:${port}`, MIRA_TRUST_PROXY: '1' } : {}),
+      ...(accounts ? { TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`, TABULA_TRUST_PROXY: '1' } : {}),
       ...env,
     }),
   };
@@ -152,7 +152,7 @@ function put(c: ReturnType<typeof connect>, from: number, count: number) {
 describe('version history in open mode', { timeout: 40_000 }, () => {
   let s: Server;
   beforeAll(async () => {
-    s = await launch({ MIRA_AUTH: 'off' });
+    s = await launch({ TABULA_AUTH: 'off' });
   });
 
   it('writes a version when a board is first saved, and serves the list and the state without a session', async () => {
@@ -313,7 +313,7 @@ describe('version history in accounts mode', { timeout: 60_000 }, () => {
   }
 
   beforeAll(async () => {
-    s = await launch({ MIRA_AUTH: 'on' });
+    s = await launch({ TABULA_AUTH: 'on' });
     owner = await signIn(s, OWNER);
     teamId = (await call(s, owner.cookie, 'POST', '/api/teams', { name: 'Design' })).body.id;
     const elsewhere = (await call(s, owner.cookie, 'POST', '/api/teams', { name: 'Elsewhere' })).body.id;
@@ -470,10 +470,10 @@ describe('version history in accounts mode', { timeout: 60_000 }, () => {
 describe('version history in a read-only hosted workspace', { timeout: 40_000 }, () => {
   it('still lists and previews, and answers every change with 402', async () => {
     const s = await launch({
-      MIRA_AUTH: 'on',
-      MIRA_CLOUD_TOKEN: TOKEN,
-      MIRA_CLOUD_URL: 'http://127.0.0.1:9',
-      MIRA_CLOUD_WORKSPACE_ID: 'ws_history',
+      TABULA_AUTH: 'on',
+      TABULA_CLOUD_TOKEN: TOKEN,
+      TABULA_CLOUD_URL: 'http://127.0.0.1:9',
+      TABULA_CLOUD_WORKSPACE_ID: 'ws_history',
     });
     const owner = await signIn(s, OWNER);
     const board = unique('ro');
