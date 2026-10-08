@@ -1,6 +1,6 @@
 // Pure SVG markup for board objects. Used by the live renderer and by SVG/PNG export.
 
-import type { BaseObj, ConnectorObj, Obj, Point } from './types';
+import type { BaseObj, ConnectorObj, Obj, Point, VAlign } from './types';
 import { isConnector } from './types';
 import { connectorGeom, pathPoints } from './geometry';
 import { headMarkup, shapeDecor, shapePath, textBox } from './shapes';
@@ -20,13 +20,13 @@ export interface MarkupCtx {
 const n = (v: number) => Math.round(v * 100) / 100;
 
 export const DEFAULTS = {
-  shape: { fill: '#FFFFFF', stroke: INK, strokeWidth: 2, textColor: INK, fontSize: 16, fontWeight: 500, align: 'center' as const },
-  sticky: { fill: '#FFE16B', stroke: 'none', strokeWidth: 0, textColor: '#1D1A12', fontSize: 20, fontWeight: 500, align: 'center' as const },
-  text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: INK, fontSize: 20, fontWeight: 400, align: 'left' as const },
-  frame: { fill: '#FFFFFF', stroke: RULE, strokeWidth: 1, textColor: GRAPHITE, fontSize: 14, fontWeight: 600, align: 'left' as const },
-  uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const },
-  path: { fill: 'none', stroke: INK, strokeWidth: 3, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const },
-  icon: { fill: 'none', stroke: INK, strokeWidth: 0, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const },
+  shape: { fill: '#FFFFFF', stroke: INK, strokeWidth: 2, textColor: INK, fontSize: 16, fontWeight: 500, align: 'center' as const, valign: 'middle' as const },
+  sticky: { fill: '#FFE16B', stroke: 'none', strokeWidth: 0, textColor: '#1D1A12', fontSize: 20, fontWeight: 500, align: 'center' as const, valign: 'middle' as const },
+  text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
+  frame: { fill: '#FFFFFF', stroke: RULE, strokeWidth: 1, textColor: GRAPHITE, fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
+  uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
+  path: { fill: 'none', stroke: INK, strokeWidth: 3, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
+  icon: { fill: 'none', stroke: INK, strokeWidth: 0, textColor: INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
 };
 
 export function defaultsFor(o: Obj) {
@@ -54,6 +54,7 @@ export function styleOf(o: Obj) {
     fontSize: b.fontSize ?? d.fontSize,
     textColor: b.textColor ?? (o.type === 'sticky' ? inkOn(b.fill ?? d.fill) : d.textColor),
     align: b.align ?? d.align,
+    valign: b.valign ?? d.valign,
   };
 }
 
@@ -66,12 +67,11 @@ function strokeAttrs(stroke: string, sw: number, dash: string | undefined) {
   return `stroke="${escapeXml(stroke)}" stroke-width="${sw}"${da ? ` stroke-dasharray="${da}"` : ''}${dash === 'dotted' ? ' stroke-linecap="round"' : ''} stroke-linejoin="round"`;
 }
 
-/** Text lines laid out in a box. `valign` center or top. */
-export function textBlock(
+/** Wrapped lines of a text in a box, and the y of the first line's top edge. Shared by the renderer and the editor. */
+export function layoutText(
   text: string, box: { x: number; y: number; w: number; h: number },
-  s: ReturnType<typeof styleOf>, opts: { valign?: 'center' | 'top'; shrink?: boolean; italic?: boolean } = {},
-): string {
-  if (!text) return '';
+  s: ReturnType<typeof styleOf>, opts: { valign?: VAlign; shrink?: boolean } = {},
+): { lines: string[]; size: number; lineHeight: number; height: number; top: number } {
   const { lines, size, lineHeight, height } = opts.shrink
     ? fitText(text, s.font, s.fontWeight, s.fontSize, box.w, box.h)
     : (() => {
@@ -79,7 +79,17 @@ export function textBlock(
         const ls = wrap(text, fontCss(s.font, s.fontSize, s.fontWeight), box.w);
         return { lines: ls, size: s.fontSize, lineHeight: lh, height: ls.length * lh };
       })();
-  const top = opts.valign === 'top' ? box.y : box.y + (box.h - height) / 2;
+  const v = opts.valign ?? 'middle';
+  const top = v === 'top' ? box.y : v === 'bottom' ? box.y + box.h - height : box.y + (box.h - height) / 2;
+  return { lines, size, lineHeight, height, top };
+}
+
+export function textBlock(
+  text: string, box: { x: number; y: number; w: number; h: number },
+  s: ReturnType<typeof styleOf>, opts: { valign?: VAlign; shrink?: boolean; italic?: boolean } = {},
+): string {
+  if (!text) return '';
+  const { lines, size, lineHeight, top } = layoutText(text, box, s, opts);
   const anchor = s.align === 'left' ? 'start' : s.align === 'right' ? 'end' : 'middle';
   const x = s.align === 'left' ? box.x : s.align === 'right' ? box.x + box.w : box.x + box.w / 2;
   const tspans = lines
@@ -136,12 +146,18 @@ function shapeMarkup(o: BaseObj, ctx: MarkupCtx) {
   let inner = `<path d="${shapePath(kind, o.w, o.h)}" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>`;
   const decor = shapeDecor(kind, o.w, o.h);
   if (decor) inner += `<path d="${decor}" fill="none" ${strokeAttrs(s.stroke, s.strokeWidth, 'solid')}/>`;
-  if (ctx.editingId !== o.id) inner += textBlock(o.text || '', textBox(kind, o.w, o.h), s, { shrink: true });
+  if (ctx.editingId !== o.id) inner += textBlock(o.text || '', labelBox(o), s, { shrink: true, valign: s.valign });
   return wrapG(o, inner, s.opacity);
 }
 
 /** Size of a sticky note's folded corner. */
 export const curlSize = (w: number, h: number) => Math.max(10, Math.min(w, h) * 0.15);
+
+/** The box a shape's or sticky's label is laid out in, in object-local coordinates. */
+export function labelBox(o: BaseObj) {
+  if (o.type === 'sticky') return { x: 14, y: 14, w: o.w - 28, h: o.h - 28 - curlSize(o.w, o.h) * 0.35 };
+  return textBox(o.kind || 'rect', o.w, o.h);
+}
 
 /**
  * A sticky note with its bottom-right corner folded over: the note's edge
@@ -172,7 +188,7 @@ function stickyMarkup(o: BaseObj, ctx: MarkupCtx) {
     inner += `<path d="M14 ${n(h / 2 - 8)}h${n(w - 28)}M14 ${n(h / 2 + 4)}h${n(w * 0.5)}" stroke="${faint}" stroke-width="6" stroke-linecap="round"/>`;
     inner += `<text x="${n((w - k) / 2)}" y="${n(h - 14)}" font-family="${escapeXml(fontFamily('satoshi'))}" font-size="11" fill="${ink === '#FFFFFF' ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.5)'}" text-anchor="middle">Hidden until reveal</text>`;
   } else if (ctx.editingId !== o.id) {
-    inner += textBlock(o.text || '', { x: 14, y: 14, w: w - 28, h: h - 28 - k * 0.35 }, s, { shrink: true });
+    inner += textBlock(o.text || '', labelBox(o), s, { shrink: true, valign: s.valign });
   }
   return wrapG(o, inner, s.opacity);
 }

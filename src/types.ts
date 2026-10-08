@@ -17,6 +17,7 @@ export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'path' | 
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
+export type VAlign = 'top' | 'middle' | 'bottom';
 
 export type Head =
   | 'none' | 'arrow' | 'open' | 'triangle' | 'diamond' | 'diamond-open'
@@ -46,6 +47,7 @@ export interface StyleFields {
   fontSize: number;
   textColor: string;
   align: Align;
+  valign: VAlign;
 }
 
 export interface Member {
