@@ -602,19 +602,40 @@ describe('status and audit', () => {
     expect(engine.status().running).toBe(false);
   });
 
-  it('writes an audit row per run with counts only and no actor', async () => {
+  it('writes an audit row for a run that did something, with counts only and no actor', async () => {
     h = await harness({ accounts: true });
     const engine = h.engine();
     await engine.runNow();
+    const rows = h.directory!.listAudit(10).filter((r) => r.action === 'backup.run');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorId: null, detail: { changed: true, files: h.expectedPaths().length, uploaded: h.expectedPaths().length, skipped: 0 } });
+    for (const value of Object.values(rows[0].detail)) expect(typeof value === 'number' || typeof value === 'boolean').toBe(true);
+  });
+
+  it('leaves a run that found nothing to do out of the audit log, but still records it in the status', async () => {
+    h = await harness({ accounts: true });
+    const engine = h.engine();
+    await engine.runNow();
+    const first = engine.status().lastSuccessAt;
     h.clock.now += HOUR;
     await engine.runNow();
-    const rows = h.directory!.listAudit(10).filter((r) => r.action === 'backup.run');
-    expect(rows).toHaveLength(2);
-    expect(rows[1]).toMatchObject({ actorId: null, detail: { changed: true, files: h.expectedPaths().length, uploaded: h.expectedPaths().length, skipped: 0 } });
-    expect(rows[0]).toMatchObject({ actorId: null, detail: { changed: false, uploaded: 0 } });
-    for (const row of rows) {
-      for (const value of Object.values(row.detail)) expect(typeof value === 'number' || typeof value === 'boolean').toBe(true);
-    }
+    h.clock.now += HOUR;
+    await engine.runNow();
+    expect(h.directory!.listAudit(20).filter((r) => r.action === 'backup.run')).toHaveLength(1);
+    expect(engine.status().lastSuccessAt).toBe(first! + 2 * HOUR);
+  });
+
+  it('audits a quiet run once it deleted something', async () => {
+    h = await harness({ accounts: true, env: { TABULA_BACKUP_KEEP_HOURLY_HOURS: '0', TABULA_BACKUP_KEEP_DAILY_DAYS: '1' } });
+    const engine = h.engine();
+    await engine.runNow();
+    h.write('b2.yjs', docBytes('edit'));
+    h.clock.now += 2 * HOUR;
+    await engine.runNow();
+    h.clock.now += 3 * DAY;
+    await engine.runNow();
+    const rows = h.directory!.listAudit(20).filter((r) => r.action === 'backup.run');
+    expect(rows.some((r) => (r.detail.manifestsDeleted as number) > 0 || (r.detail.objectsDeleted as number) > 0)).toBe(true);
   });
 
   it('keeps the status in memory without a directory', async () => {

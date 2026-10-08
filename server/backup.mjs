@@ -1272,15 +1272,18 @@ export function createBackup({
       prune: { at: pruned.at, manifestsDeleted: pruned.manifestsDeleted, objectsDeleted: pruned.objectsDeleted, gcSkipped: pruned.gcSkipped, error: pruned.error },
     };
     persist();
-    auditRow('backup.run', {
-      changed: summary.changed,
-      files: summary.files,
-      uploaded: summary.uploaded,
-      bytes: summary.bytesUploaded,
-      skipped: summary.skipped,
-      manifestsDeleted: pruned.manifestsDeleted,
-      objectsDeleted: pruned.objectsDeleted,
-    });
+    // A run that found nothing to do is in the status (lastSuccessAt) but not in the audit log: at hourly that would be 24 rows a day of nothing.
+    if (summary.changed || summary.uploaded > 0 || summary.repaired > 0 || pruned.manifestsDeleted > 0 || pruned.objectsDeleted > 0) {
+      auditRow('backup.run', {
+        changed: summary.changed,
+        files: summary.files,
+        uploaded: summary.uploaded,
+        bytes: summary.bytesUploaded,
+        skipped: summary.skipped,
+        manifestsDeleted: pruned.manifestsDeleted,
+        objectsDeleted: pruned.objectsDeleted,
+      });
+    }
     say(
       summary.changed
         ? `ok: ${summary.files} files, ${summary.uploaded} uploaded, manifest ${summary.manifestName}`
