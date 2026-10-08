@@ -13,7 +13,7 @@ import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { api } from '../api';
-import { authState, setSignedOut, signOut } from '../auth';
+import { authState, setSignedIn, setSignedOut, signOut } from '../auth';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
@@ -431,12 +431,16 @@ function openShare(app: BoardApp) {
   const relay = relayUrl();
   const input = h('input', { class: 'input', value: url, readOnly: true, 'aria-label': 'Board link' });
   const live = app.conn.status === 'live';
+  const auth = authState();
+  const accounts = auth.mode === 'signed-in' || (auth.mode === 'offline' && auth.me !== null);
   dialog('Share this board', h('div', { class: 'stack' },
-    h('p', null, live
-      ? 'Anyone who opens this link while connected to the same relay can edit the board with you in real time. They do not need an account.'
-      : relay
-        ? 'The relay is not reachable right now, so this board is only on your device. Your changes are saved and will sync when the relay is back.'
-        : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
+    h('p', null, accounts
+      ? 'Only people with access to this board can open this link: members of the board\'s team, and anyone it has been shared with. Add people from a team on the home screen, or share the board from there.'
+      : live
+        ? 'Anyone who opens this link while connected to the same relay can edit the board with you in real time. They do not need an account.'
+        : relay
+          ? 'The relay is not reachable right now, so this board is only on your device. Your changes are saved and will sync when the relay is back.'
+          : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
     h('div', { class: 'copy-row' }, input, h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => { input.select(); }) }, icon('link', 16), 'Copy link')),
     h('p', { class: 'muted small' }, relay ? `Relay: ${relay.replace(/^ws/, 'http')}` : 'Relay: off'),
   ), [{ label: 'Done', primary: true }]);
@@ -453,12 +457,28 @@ function openProfile(app: BoardApp) {
     } });
     return b;
   }));
+  const accountName = authState().mode === 'signed-in';
   dialog('Your name and colour', h('div', { class: 'stack' },
-    h('p', { class: 'muted' }, 'Shown next to your cursor and on the notes you write.'),
+    h('p', { class: 'muted' }, accountName
+      ? 'Your name comes from your account and is shown next to your cursor and on the notes you write. The colour is stored on this device.'
+      : 'Shown next to your cursor and on the notes you write.'),
     field('Name', name), field('Colour', colors),
   ), [{ label: 'Cancel' }, {
-    label: 'Save', primary: true, onClick: () => {
-      u.name = name.value.trim() || u.name;
+    label: 'Save', primary: true, onClick: async () => {
+      const auth = authState();
+      const typed = name.value.trim();
+      if (auth.mode === 'signed-in' && typed && typed !== u.name) {
+        try {
+          const updated = await api.updateMe(typed);
+          setSignedIn({ ...auth.me, user: updated });
+          u.name = updated.name;
+        } catch (err) {
+          toast(err instanceof Error ? err.message : 'Could not save your name.');
+          return false;
+        }
+      } else {
+        u.name = typed || u.name;
+      }
       Object.assign(app.user, u);
       saveUser(app.user);
       app.conn.awareness.setLocalStateField('user', app.user);
