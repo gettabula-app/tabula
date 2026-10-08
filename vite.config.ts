@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 // In dev, the relay runs on 8787 and Vite proxies the sync socket to it,
 // so the client always connects to same-origin /sync.
@@ -11,4 +11,6 @@ export default defineConfig({
     },
   },
   build: { target: 'es2022', sourcemap: true },
+  // agent worktrees live under .claude/worktrees; never collect their tests
+  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
 });
