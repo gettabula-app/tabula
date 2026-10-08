@@ -1,10 +1,29 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id } from './types';
+import type { BaseObj, ConnectorObj, Id, Obj } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
-import { labelBox, layoutText, styleOf, textHeight } from './markup';
+import { LABEL_FONT, labelBox, labelPill, layoutText, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
+import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
+
+type EditMode = 'text' | 'class' | 'frame' | 'label';
+
+/**
+ * Colours for the edit box. The class and label editors sit in a white box with dark ink
+ * (styles.css) unless the object has its own colours; an empty string keeps that default.
+ */
+export function editColours(o: Obj, mode: EditMode): { color: string; background: string } {
+  if (mode === 'text') return { color: styleOf(o).textColor, background: '' };
+  if (mode === 'frame') return { color: 'var(--ink)', background: '' };
+  if (mode === 'label') {
+    // the renderer draws a label in the connector's own colour
+    const stroke = (o as ConnectorObj).stroke;
+    return { color: stroke && stroke !== 'none' && stroke !== CANVAS_INK ? stroke : '', background: '' };
+  }
+  const b = o as BaseObj;
+  return { color: b.textColor ?? '', background: b.fill && b.fill !== 'none' ? b.fill : '' };
+}
 
 /**
  * In-place text editing: a textarea laid over the object in world space
@@ -14,7 +33,7 @@ import { classHeight, formatClass, parseClass } from './uml';
 export class TextEditor {
   private ta: HTMLTextAreaElement;
   private id: Id | null = null;
-  private mode: 'text' | 'class' | 'frame' | 'label' = 'text';
+  private mode: EditMode = 'text';
   private unsubCam: (() => void) | null = null;
   private original = '';
 
@@ -90,18 +109,25 @@ export class TextEditor {
     const st = styleOf(o);
     ta.style.fontFamily = fontFamily(st.font);
     ta.style.fontWeight = String(st.fontWeight);
-    // Class and label editors sit on white; the frame editor sits on the canvas.
-    ta.style.color = this.mode === 'text' ? st.textColor : this.mode === 'frame' ? 'var(--ink)' : '#18212B';
+    const colours = editColours(o, this.mode);
+    ta.style.color = colours.color;
+    ta.style.background = colours.background;
     ta.style.textAlign = st.align;
+    ta.style.padding = ''; // the label editor sets all four sides; the other modes set only the top
 
     if (isConnector(o)) {
+      // the same pill as the rendered label, sized to the text as it is typed (wide enough for the caret when empty)
       const g = connectorGeom((x) => this.app.store.get(x), o);
       if (!g) return;
-      const w = 220, h = 40;
+      const pill = labelPill(ta.value);
+      const w = Math.max(pill.w, 24) + 2, h = pill.h; // 2 units of slack so the textarea never wraps sooner than the label
       this.place(g.mid.x - w / 2, g.mid.y - h / 2, w, h, 0, z);
-      ta.style.fontSize = '13px';
+      ta.style.fontFamily = fontFamily('satoshi');
+      ta.style.fontWeight = String(LABEL_FONT.weight);
+      ta.style.fontSize = `${LABEL_FONT.size}px`;
+      ta.style.lineHeight = `${LABEL_FONT.line}px`;
+      ta.style.padding = `${LABEL_FONT.padY}px ${LABEL_FONT.padX}px`;
       ta.style.textAlign = 'center';
-      ta.style.paddingTop = '10px';
       return;
     }
     const b = o as BaseObj;
@@ -168,6 +194,7 @@ export class TextEditor {
       s.transact(() => s.update(o.id, { name: v }));
     } else if (this.mode === 'label') {
       s.transact(() => s.update(o.id, { label: v || undefined }));
+      this.reposition(); // the pill grows and wraps with the text
     }
     if (o.type === 'text') this.reposition();
     else if (this.mode === 'text') {

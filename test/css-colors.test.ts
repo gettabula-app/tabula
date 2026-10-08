@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Fixed colours that stay the same in every theme: sticky notes, white avatars and cursor labels,
-// the modal scrim, and the white field behind the class and label editors (editor.ts draws their
-// text in a literal dark ink, so that field cannot follow the theme).
+// the modal scrim, and the white field behind the class and label editors (the fallback when the
+// object has no colours of its own; editor.ts sets those inline).
 const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
   { file: 'src/styles.css', selector: '.remote-cursor span', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.avatar', literals: ['#fff'] },
