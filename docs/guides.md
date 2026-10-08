@@ -23,7 +23,7 @@ Status: spec for review. Nothing is built yet.
 
 - **Extend `doMove`/`doResize`, do not add a second system.** The new module replaces the inline candidate loop in `doMove` and adds the same call to `doResize`. The overlay field `guides` stays the single channel to the renderer.
 - **Pure module, built once per drag.** Today every pointer move walks all objects. The index is built on the first move of a drag and each query is a handful of binary searches. The module takes plain rectangles and imports no DOM, store or renderer code, so it is unit-tested like `geometry.ts`.
-- **Body bounds, not renderer bounds.** References and the moving rectangle use `boxBounds`: the axis-aligned bounds of the box, rotation included. A frame's 28 px title band (which `Renderer.bounds` adds) is ignored, so a note aligns with the frame's border and not with the top of its label. See open question 1.
+- **Body bounds, not renderer bounds.** References and the moving rectangle use `boxBounds`: the axis-aligned bounds of the box, rotation included. A frame's 28 px title band (which `Renderer.bounds` adds) is ignored, so a note aligns with the frame's border and not with the top of its label. The decision is in Decisions at the end.
 - **Edges that move are the only edges that snap in a resize.** The opposite edge stays put. The centre of a resized object moves at half speed, so snapping it would feel like a pull in the wrong direction.
 - **Snap, then show what is true.** The query first picks the correction per axis, then re-checks the corrected rectangle and reports every alignment and every equal gap that holds there. So two lines appear when both edges happen to align, and a gap marker appears on each equal gap, not only the one that caused the snap.
 - **Alignment and spacing share the 6 px threshold**, in screen pixels divided by zoom, as today. Equal spacing gets a 2 px head start over alignment (see Choosing a correction).
@@ -134,8 +134,8 @@ The query is skipped while the proposed width or height is below the 8 px minimu
   ```
 
   The types live in `src/guides.ts`; `src/render.ts` imports them as types.
-- **Line**: 1 screen px, `var(--guide, #E0559B)`.
-- **Gap marker**: a line from `from` to `to` at `at`, 1 screen px, with an 8 px tick at each end across the gap, in `var(--guide, #E0559B)`. The label sits centred on the line in a pill filled with `var(--canvas, #EEF1F4)`, outlined 1 px in the guide colour, text in `var(--canvas-ink, #18212B)`, 11 px, weight 600, in the font stack the vote badges use. The pill hides the line behind it, as a dimension line does. Sizes are `px(n) = n / zoom`, so everything stays the same on screen at every zoom.
+- **Line**: 1 screen px, `var(--guide, #D6247F)`.
+- **Gap marker**: a line from `from` to `to` at `at`, 1 screen px, with an 8 px tick at each end across the gap, in `var(--guide, #D6247F)`. The label sits centred on the line in a pill filled with `var(--canvas, #EEF1F4)`, outlined 1 px in the guide colour, text in `var(--canvas-ink, #18212B)`, 11 px, weight 600, in the font stack the vote badges use. The pill hides the line behind it, as a dimension line does. Sizes are `px(n) = n / zoom`, so everything stays the same on screen at every zoom.
 - The fallback hex values are in TypeScript strings, as `CANVAS_INK` in `palette.ts` does. No hex literal is added to any CSS file outside `:root`, so `test/css-colors.test.ts` is unaffected.
 - Guides are part of the overlay, so PNG, SVG, `.drift` and the Markdown summary never contain them.
 
@@ -145,7 +145,7 @@ A new token `--guide`, one per theme:
 
 | Theme | `--guide` | on `--canvas` | on `--paper` |
 | --- | --- | --- | --- |
-| Default | `#E0559B` (unchanged from today) | 3.12 | 3.53 |
+| Default | `#D6247F` (deeper than today's `#E0559B`, which was 3.12:1) | 4.19 | 4.75 |
 | Ayu | `#FF7EB6` | 6.59 | 5.87 |
 | Kanagawa | `#D27E99` | 5.59 | 4.84 |
 | Matrix | `#FF4FA3` | 6.56 | 6.16 |
@@ -194,7 +194,7 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 
 - A setting to turn guides off separately from Alt, or a board-level "smart guides" switch.
 - Guides for the create drag, the pen, connector endpoints, rotation and arrow-key nudging.
-- Guides while resizing a rotated object, or while the aspect ratio is locked (Shift, icons, UML actors). With the ratio locked, one edge is derived from the other, which needs its own rule.
+- Guides while resizing a rotated object, or while the aspect ratio is locked (Shift, icons, UML actors). With the ratio locked, one edge is derived from the other, which needs its own rule. This is the likely first follow-up.
 - Spacing scoped to siblings inside one frame. A container that fully contains the moving rectangle is skipped; objects inside and outside a frame can still be neighbours.
 - Equal spacing across a grid of rows and columns together (Figma's distribution of rows and columns), and spacing between more than the nearest neighbours.
 - Snapping to a frame's title band, to objects far outside the viewport, or to the rotated outline of a rotated object.
@@ -206,14 +206,14 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 
 ### New
 
-- `src/guides.ts`: pure module. `referenceRects`, `startGuides`, `guidesCover`, `snapMove`, `snapResize`, `gapsInBand`, the `Guide` types and the constants (`SNAP_PX`, `EPS`, `MIN_GAP_PX`). It imports types from `./types` and `boxBounds`, `unionRects` from `./geometry`, nothing else.
+- `src/guides.ts`: pure module. `referenceRects`, `startGuides`, `guidesCover`, `snapMove`, `snapResize`, `gapsInBand`, the `Guide` types and the constants (`SNAP_PX`, `EPS`, `MIN_GAP_PX`). It imports `isBox` and types from `./types` and `boxBounds`, `rectsIntersect`, `unionRects` from `./geometry`, nothing else.
 - `test/guides.test.ts`: the tests above.
 - `docs/guides.md`: this document.
 
 ### Existing (touched)
 
 - `src/app.ts`, kept small:
-  - one new import line, `import { ... } from './guides';`, as its own line below the others. The existing `./geometry` import line is not edited.
+  - one new import line, `import { ... } from './guides';`, as its own line below the others. The `./geometry` import list changes only by dropping `rectsIntersect`, which the old inline loop was the last user of (an unused import fails the typecheck).
   - `Drag`: an optional `guides?: GuideSession` on the `move` and `resize` variants (the two lines that declare them).
   - `doMove`: the inline candidate loop is replaced by a session built on first use and one `snapMove` call; the grid fallback stays as it is.
   - `doResize`: one session and one `snapResize` call before the grid snap, under the gate given in Resize.
@@ -227,17 +227,19 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 
 Not touched: `src/geometry.ts` (all new geometry lives in `src/guides.ts`), `src/store.ts`, `src/types.ts`, `src/flow.ts`, `src/ui/`, `server/`, `src/markup.ts`, `src/exporters.ts`.
 
-## Open questions
+## Decisions
 
-1. Frames: ignore the 28 px title band (recommended, body edges) or keep the renderer's bounds as the current guides do? Keeping them is less code but aligns a note with the top of a frame's label.
-2. The 2 px head start for spacing over alignment. The alternative is plain nearest-wins with ties going to alignment. Spacing would then often lose on a busy board.
-3. Resize with Shift (aspect ratio locked) and rotated objects: no guides in this slice. Is that acceptable? Shift-resize is common; supporting it means choosing which edge snaps and deriving the other.
-4. Resize spacing: match the moving edge to existing gaps and to the fixed-side gap, no midway. Enough?
-5. Containers: a frame or backdrop that contains the moving rectangle is skipped for spacing. Should spacing instead be limited to siblings of the same frame?
-6. A separate switch for guides (board menu) in addition to Alt? Guides today ignore `meta.snap`; someone who turns off grid snapping still gets them.
-7. Colours: keep Default at `#E0559B` (3.12:1 against the canvas, just over the line) or deepen it to `#D6247F` (4.19:1)? Evergreen is `#D6247F` because its canvas is light too.
-8. Label text in the canvas ink with a guide-coloured outline (recommended) or in the guide colour? The second needs every `--guide` to reach 4.5:1 against the canvas, which changes the Default theme.
-9. Labels in world units, rounded. Show one decimal below 10?
-10. Candidate region of 50% of the viewport on each side, and a rebuild when the camera leaves it. Larger or smaller?
-11. Cap of six markers per axis (two next to the object, four others). Fewer?
-12. Should TAB-74 use `gapsInBand` as described, or does the neighbour search it already adds to `geometry.ts` make a shared helper unnecessary? The two could be unified later without changing either public API.
+Answers to the questions raised in review.
+
+1. Frames: the 28 px title band is ignored; guides use body edges.
+2. Spacing keeps its 2 screen px head start over alignment.
+3. No guides for Shift-resize (aspect ratio locked) or for resizing a rotated object in this slice. It is listed above as a likely follow-up.
+4. Resize spacing is as described: the moving edge matches existing gaps and the fixed-side gap, with no midway.
+5. A container that fully contains the moving rectangle is skipped for spacing. Spacing is not scoped to siblings of one frame.
+6. No separate switch for guides; Alt is the bypass.
+7. Default `--guide` is deepened to `#D6247F` (4.19:1 on the canvas) because 3.12:1 was too close to the 3:1 line. Distance from Default `--danger` (`#D41E24`) in CIELAB is 51 (the old `#E0559B` was 56), so it is still clearly a different colour; no other pink was needed.
+8. Labels use the canvas ink on a canvas-coloured pill with a guide-coloured outline.
+9. Labels are whole numbers in world units.
+10. The candidate region is the viewport grown by 50% on each side.
+11. At most six markers per axis.
+12. The question of sharing `gapsInBand` with the connect-handle placement (TAB-74) is left for later.
