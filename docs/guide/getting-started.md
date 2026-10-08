@@ -92,7 +92,7 @@ Your name and colour appear next to your cursor and on the notes you write. Clic
 
 ## Keyboard shortcuts
 
-On Mac, use `Cmd` where the table says `Ctrl`. The board menu also lists many of these under **Keyboard shortcuts**.
+On Mac, use `Cmd` where the table says `Ctrl`. The board menu lists every shortcut under **Keyboard shortcuts**.
 
 ### Tools
 

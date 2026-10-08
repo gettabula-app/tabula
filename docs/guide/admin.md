@@ -75,7 +75,7 @@ Active [personal access tokens](ai-tools.md) for AI tools, across the workspace:
 
 ## Audit log
 
-A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Hover an entry to see the underlying action name.
+A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Hover an entry to see the underlying action name.
 
 - Filter by **All**, **Members**, **Teams**, **Boards**, **Invites**, **Sign-ins** or **Sessions**.
 - Select **Load more** to go further back.
