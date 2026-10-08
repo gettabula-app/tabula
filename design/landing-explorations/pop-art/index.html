@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula - the whiteboard for teams that think together</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams: sticky notes, connectors, facilitated sessions and templates. Open source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=DM+Sans:opsz,wght@9..40,400..800&display=swap" rel="stylesheet">
+<style>
+/* Palette (one source of truth; the same hex values were given to the image briefs):
+   red #E8202A  yellow #FFD500  blue #0057B8  hot pink #FF2E93  black #111111  white #FFFFFF */
+:root{
+  --red:#E8202A; --yel:#FFD500; --blu:#0057B8; --pnk:#FF2E93; --ink:#111111; --wht:#FFFFFF;
+  --f-display:'Bangers','Impact','Arial Narrow',sans-serif;
+  --f-body:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  /* type scale 1.25 */
+  --t-0:1.0625rem; --t-1:1.328rem; --t-2:1.66rem; --t-3:2.075rem; --t-4:2.594rem; --t-5:3.242rem; --t-6:4.053rem; --t-7:5.066rem;
+  --gut:24px; --max:1200px; --bw:4px;
+  --dot-ink:radial-gradient(circle,var(--ink) 1.6px,transparent 2.1px);
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{background:var(--wht);color:var(--ink);font:400 var(--t-0)/1.6 var(--f-body);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+:focus-visible{outline:4px solid var(--blu);outline-offset:3px;box-shadow:0 0 0 7px var(--wht)}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 var(--gut)}
+h1,h2,h3{font-family:var(--f-display);font-weight:400;letter-spacing:.02em;line-height:1}
+.skip{position:absolute;left:-999px;top:8px}.skip:focus{left:8px;background:var(--ink);color:var(--wht);padding:8px 12px;z-index:99}
+
+/* halftone helpers (decoration only; never behind text) */
+.dots{background-image:radial-gradient(circle,var(--c,var(--red)) 2.4px,transparent 3px);background-size:14px 14px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:56px;padding:0 28px;font:400 1.5rem/1 var(--f-display);letter-spacing:.04em;text-decoration:none;border:var(--bw) solid var(--ink);background:var(--red);color:var(--wht);box-shadow:6px 6px 0 var(--ink);transition:transform .12s,box-shadow .12s}
+.btn:hover{transform:translate(3px,3px);box-shadow:3px 3px 0 var(--ink)}
+.btn:active{transform:translate(6px,6px);box-shadow:0 0 0 var(--ink)}
+.btn.secondary{background:var(--wht);color:var(--ink)}
+
+/* header */
+header{border-bottom:var(--bw) solid var(--ink);background:var(--wht);position:relative;z-index:5}
+.bar{display:flex;align-items:center;justify-content:space-between;height:76px;gap:16px}
+.logo{font:400 2.6rem/1 var(--f-display);letter-spacing:.04em;text-decoration:none;color:var(--ink);background:var(--yel);padding:2px 12px 0;border:var(--bw) solid var(--ink);box-shadow:4px 4px 0 var(--pnk);transform:rotate(-2deg)}
+nav{display:flex;align-items:center;gap:28px}
+nav a:not(.btn){font:700 1rem/1 var(--f-body);text-decoration:none;padding:10px 4px;border-bottom:4px solid transparent}
+nav a:not(.btn):hover{border-color:var(--pnk)}
+nav .btn{min-height:44px;padding:0 18px;font-size:1.25rem;box-shadow:4px 4px 0 var(--ink)}
+
+/* hero */
+.hero{padding:64px 0 96px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;right:-60px;top:0;width:52%;height:100%;--c:var(--yel);background-image:radial-gradient(circle,var(--yel) 4px,transparent 4.8px);background-size:20px 20px;z-index:0}
+.hero-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;row-gap:32px;align-items:center}
+.hero-copy{grid-column:1/6;grid-row:1}
+.hero-art{grid-column:6/13;grid-row:1}
+.hero h1{font-size:var(--t-7);line-height:.95;margin-bottom:24px}
+.hero h1 .hl{background:var(--yel);padding:0 .12em;border:var(--bw) solid var(--ink);display:inline-block;transform:rotate(-1.5deg);box-shadow:5px 5px 0 var(--ink);margin-top:8px}
+.hero .lede{font-size:var(--t-1);line-height:1.45;max-width:34ch;margin-bottom:32px;background:var(--wht);padding:4px 0}
+.cta{display:flex;gap:20px;flex-wrap:wrap}
+.hero .note{margin-top:24px;font-weight:600;font-size:.95rem;background:var(--wht);display:inline-block}
+.art{position:relative;border:var(--bw) solid var(--ink);box-shadow:10px 10px 0 var(--ink);background:var(--wht);line-height:0}
+.art>img{width:100%;height:auto}
+.art svg.over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.bubble-t{position:absolute;display:grid;place-items:center;font:400 clamp(1.6rem,3.2vw,2.8rem)/1 var(--f-display);letter-spacing:.04em;color:var(--red);text-shadow:none;line-height:1}
+.chip{position:absolute;font:700 12px/1 var(--f-body);padding:5px 8px;border:2px solid var(--ink);border-radius:6px;white-space:nowrap;transform:translate(0,0)}
+.chip.r{background:var(--red);color:var(--wht)}.chip.b{background:var(--blu);color:var(--wht)}.chip.p{background:var(--pnk);color:var(--ink)}
+.burst{position:absolute;width:clamp(110px,15vw,190px);aspect-ratio:1;display:grid;place-items:center;z-index:2;filter:drop-shadow(4px 4px 0 var(--ink))}
+.burst svg{position:absolute;inset:0;width:100%;height:100%}
+.burst span{position:relative;font:400 clamp(1.7rem,3.6vw,3.1rem)/1 var(--f-display);letter-spacing:.04em;color:var(--ink);transform:rotate(-8deg)}
+.hero .burst{right:-18px;bottom:-34px}
+
+/* sections */
+section{padding:112px 0;position:relative}
+.sec-title{text-align:center;margin-bottom:56px}
+.sec-title h2{display:inline-block;font-size:var(--t-6);background:var(--wht);border:var(--bw) solid var(--ink);padding:10px 28px 4px;box-shadow:8px 8px 0 var(--ink);transform:rotate(-1deg);color:var(--ink)}
+.sec-title p{margin:28px auto 0;max-width:56ch;font-size:var(--t-1);line-height:1.5;background:var(--wht);padding:4px 8px;display:block;width:fit-content}
+
+/* features */
+.feat{background:var(--blu);border-block:var(--bw) solid var(--ink);position:relative}
+.feat::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.22) 3px,transparent 3.6px);background-size:18px 18px}
+.feat .wrap{position:relative}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:40px 28px}
+.card{display:flex;flex-direction:column;position:relative}
+.card .pic{position:relative;border:var(--bw) solid var(--ink);box-shadow:6px 6px 0 var(--ink);background:var(--wht);line-height:0}
+.card .pic img{width:100%;aspect-ratio:1;object-fit:cover}
+.sfx{position:absolute;left:-12px;top:-22px;font:400 2rem/1 var(--f-display);letter-spacing:.05em;padding:6px 14px 2px;border:var(--bw) solid var(--ink);box-shadow:4px 4px 0 var(--ink);transform:rotate(-6deg);z-index:2}
+.sfx.y{background:var(--yel);color:var(--ink)}.sfx.p{background:var(--pnk);color:var(--ink)}.sfx.r{background:var(--red);color:var(--wht)}.sfx.w{background:var(--wht);color:var(--ink)}
+.bub{position:relative;margin-top:28px;background:var(--wht);border:var(--bw) solid var(--ink);border-radius:20px;padding:20px 20px 22px;flex:1}
+.bub::before,.bub::after{content:"";position:absolute;left:32px;border:solid transparent}
+.bub::before{top:-26px;border-width:0 12px 24px 12px;border-bottom-color:var(--ink);margin-left:-4px}
+.bub::after{top:-17px;border-width:0 9px 18px 9px;border-bottom-color:var(--wht);margin-left:-1px}
+.bub h3{font-size:var(--t-3);margin-bottom:8px}
+.bub p{font-size:1rem;line-height:1.55}
+
+/* session */
+.session{background:var(--wht)}
+.sess-grid{display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;align-items:center;row-gap:40px}
+.sess-grid .art{grid-column:1/7;grid-row:1}
+.sess-copy{grid-column:8/13;grid-row:1}
+.sess-copy h2{font-size:var(--t-5);margin-bottom:20px}
+.sess-copy h2 span{background:var(--pnk);padding:0 .14em;border:var(--bw) solid var(--ink);display:inline-block;transform:rotate(1deg)}
+.sess-copy p{margin-bottom:20px;max-width:46ch}
+.sess-copy ul{list-style:none;padding:0;display:grid;gap:12px}
+.sess-copy li{display:flex;gap:12px;align-items:flex-start;font-weight:600;line-height:1.4}
+.sess-copy li::before{content:"";flex:none;width:24px;height:24px;margin-top:1px;background:var(--yel);border:3px solid var(--ink);border-radius:50%}
+.burst.s{left:-22px;bottom:-30px;--w:1}
+
+/* templates */
+.tpl{background:var(--yel);border-block:var(--bw) solid var(--ink)}
+.tpl::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(232,32,42,.5) 3px,transparent 3.6px);background-size:18px 18px}
+.tpl .wrap{position:relative}
+.tgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:24px;list-style:none;padding:0}
+.tile{border:var(--bw) solid var(--ink);background:var(--wht);box-shadow:6px 6px 0 var(--ink);display:flex;flex-direction:column}
+.tile .sw{aspect-ratio:5/6;position:relative;overflow:hidden;border-bottom:var(--bw) solid var(--ink)}
+.tile .sw img{position:absolute;width:300%;height:200%;max-width:none;left:0;top:0}
+.tile .nm{padding:12px 12px 10px;font:700 1rem/1.25 var(--f-body);min-height:3.4em;display:flex;align-items:center;background:var(--wht)}
+.tile:nth-child(6n+1) .sw img{left:-0%;top:-0%}
+.tile:nth-child(6n+2) .sw img{left:-100%;top:-0%}
+.tile:nth-child(6n+3) .sw img{left:-200%;top:-0%}
+.tile:nth-child(6n+4) .sw img{left:-0%;top:-100%}
+.tile:nth-child(6n+5) .sw img{left:-100%;top:-100%}
+.tile:nth-child(6n) .sw img{left:-200%;top:-100%}
+.tpl .more{text-align:center;margin-top:48px}
+.tpl .more p{display:inline-block;background:var(--wht);border:var(--bw) solid var(--ink);padding:10px 20px;font-weight:600;box-shadow:5px 5px 0 var(--ink)}
+
+/* pricing */
+.price{background:var(--wht)}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;align-items:stretch;max-width:1040px;margin:0 auto}
+.plan{border:var(--bw) solid var(--ink);box-shadow:8px 8px 0 var(--ink);display:flex;flex-direction:column;position:relative;background:var(--wht)}
+.plan .hd{padding:20px 24px 12px;border-bottom:var(--bw) solid var(--ink)}
+.plan h3{font-size:var(--t-3)}
+.plan .bd{padding:20px 24px 28px;display:flex;flex-direction:column;flex:1;gap:16px}
+.plan .amt{font:400 var(--t-6)/1 var(--f-display);letter-spacing:.02em}
+.plan .amt small{font:600 1rem/1 var(--f-body)}
+.plan ul{list-style:none;padding:0;display:grid;gap:8px;font-size:1rem;line-height:1.45;flex:1}
+.plan li::before{content:"\2713";font-weight:800;margin-right:8px}
+.plan.a .hd{background:var(--blu);color:var(--wht)}
+.plan.b .hd{background:var(--yel)}
+.plan.c .hd{background:var(--pnk)}
+.plan .btn{width:100%;min-height:52px;font-size:1.35rem}
+.plan .btn.secondary{background:var(--wht)}
+
+/* final CTA */
+.final{background:var(--red);border-top:var(--bw) solid var(--ink);padding:112px 0;overflow:hidden}
+.final::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(17,17,17,.28) 3px,transparent 3.6px);background-size:18px 18px}
+.final-grid{position:relative;display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;align-items:center;row-gap:40px}
+.final .art{grid-column:7/13;grid-row:1}
+.fc{grid-column:1/7;grid-row:1;background:var(--wht);border:var(--bw) solid var(--ink);box-shadow:10px 10px 0 var(--ink);padding:40px;position:relative}
+.fc h2{font-size:var(--t-6);margin-bottom:16px}
+.fc h2 em{font-style:normal;color:var(--red)}
+.fc p{font-size:var(--t-1);line-height:1.45;margin-bottom:28px;max-width:36ch}
+
+/* footer */
+footer{background:var(--ink);color:var(--wht);padding:48px 0;border-top:var(--bw) solid var(--ink)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
+.foot .logo{font-size:2rem;color:var(--ink);box-shadow:4px 4px 0 var(--pnk)}
+.foot nav{gap:24px;flex-wrap:wrap}
+.foot a:not(.logo){color:var(--wht);font-weight:600;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px;padding:8px 0}
+.foot a:not(.logo):hover{color:var(--yel)}
+.foot small{font-size:.9rem;color:#E4E4E4}
+footer :focus-visible{outline-color:var(--yel);box-shadow:none}
+
+/* motion: only when JS marks the page, once, restrained */
+@keyframes pop{0%{transform:scale(.2) rotate(-14deg);opacity:0}60%{transform:scale(1.14) rotate(3deg);opacity:1}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+html.js-anim .pop{opacity:0}
+html.js-anim .pop.in{animation:pop .5s cubic-bezier(.2,.8,.3,1.2) both}
+html.js-anim .fade{opacity:0}
+html.js-anim .fade.in{animation:up .4s cubic-bezier(.2,.7,.2,1) both}
+@media (prefers-reduced-motion:reduce){
+  html.js-anim .pop,html.js-anim .fade{opacity:1}
+  html.js-anim .pop.in,html.js-anim .fade.in{animation:none}
+  html{scroll-behavior:auto}.btn{transition:none}
+}
+
+/* responsive */
+@media (max-width:1100px){
+  .cards{grid-template-columns:repeat(2,1fr)}
+  .tgrid{grid-template-columns:repeat(3,1fr)}
+  .hero h1{font-size:var(--t-6)}
+}
+@media (max-width:900px){
+  nav a:not(.btn){display:none}
+  .hero-copy,.hero-art{grid-column:1/-1;grid-row:auto}
+  .hero{padding:40px 0 72px}
+  .hero::before{width:100%;right:0;top:auto;height:42%;bottom:0}
+  .sess-grid .art,.sess-copy,.final .art,.fc{grid-column:1/-1;grid-row:auto}
+  .pgrid{grid-template-columns:1fr;max-width:480px}
+  section{padding:80px 0}.final{padding:80px 0}
+}
+@media (max-width:560px){
+  :root{--gut:20px;--t-7:3.6rem;--t-6:3rem;--t-5:2.5rem}
+  .bar{height:64px}.logo{font-size:2rem}
+  .cards{grid-template-columns:1fr;gap:48px}
+  .tgrid{grid-template-columns:repeat(2,1fr);gap:16px}
+  .tile{box-shadow:4px 4px 0 var(--ink)}
+  .tile .nm{font-size:.9rem;padding:10px 8px}
+  .sec-title h2{padding:8px 16px 2px;font-size:var(--t-5)}
+  .sec-title{margin-bottom:40px}
+  .fc{padding:28px 22px}
+  .art{box-shadow:6px 6px 0 var(--ink)}
+  .hero .burst{right:-8px;bottom:-26px}
+  .cta .btn{flex:1 1 100%}
+  .chip{font-size:11px;padding:3px 6px;border-width:1.5px}
+  nav .btn{padding:0 14px}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="#top" aria-label="Tabula home">Tabula</a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#templates">Templates</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/gettabula-app/tabula">GitHub</a>
+      <a class="btn" href="#start">Start a board</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<div id="top"></div>
+<section class="hero" aria-labelledby="h1">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1 id="h1">Big ideas. <span class="hl">Bold boards.</span></h1>
+      <p class="lede">Tabula is the local-first infinite whiteboard for teams. Sticky notes, connectors that stay put, timed sessions and dot voting, all in your browser first.</p>
+      <div class="cta">
+        <a class="btn" href="#start">Start a board</a>
+        <a class="btn secondary" href="#pricing">See pricing</a>
+      </div>
+      <p class="note">Open source. Works offline. Self-host for free.</p>
+    </div>
+    <div class="hero-art">
+      <div class="art">
+        <img src="img/hero.webp" width="1400" height="1050" alt="Comic-style scene of four teammates around a big screen showing a Tabula board: a dark toolbar on the left, sticky notes grouped in frames, dot votes and named cursors.">
+        <svg class="over" viewBox="0 0 1600 1200" aria-hidden="true" focusable="false">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#111111"/></marker></defs>
+          <path d="M863 518H911V537H958" fill="none" stroke="#111111" stroke-width="6" stroke-linejoin="round" marker-end="url(#ah)"/>
+        </svg>
+        <span class="chip r" style="left:47.4%;top:36%" aria-hidden="true">Ana</span>
+        <span class="chip b" style="left:73.8%;top:34.2%" aria-hidden="true">Kofi</span>
+        <span class="chip p" style="left:74%;top:52.6%" aria-hidden="true">Mei</span>
+        <div class="bubble-t pop" style="left:3.4%;top:1.6%;width:22.4%;height:14%" aria-hidden="true">VOTE!</div>
+        <div class="burst pop" aria-hidden="true">
+          <svg viewBox="0 0 100 100"><polygon points="100.0,50.0 86.1,58.2 95.0,71.7 78.9,73.1 81.2,89.1 66.1,83.3 61.1,98.7 50.0,87.0 38.9,98.7 33.9,83.3 18.8,89.1 21.1,73.1 5.0,71.7 13.9,58.2 0.0,50.0 13.9,41.8 5.0,28.3 21.1,26.9 18.8,10.9 33.9,16.7 38.9,1.3 50.0,13.0 61.1,1.3 66.1,16.7 81.2,10.9 78.9,26.9 95.0,28.3 86.1,41.8" fill="#FFD500" stroke="#111111" stroke-width="2.6" stroke-linejoin="round"/></svg>
+          <span>POP!</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="feat" id="features" aria-labelledby="h-feat">
+  <div class="wrap">
+    <div class="sec-title fade"><h2 id="h-feat">Say it. Pin it. Vote it.</h2><p>Everything a team needs to think out loud on one infinite board.</p></div>
+    <div class="cards">
+      <article class="card">
+        <div class="pic"><span class="sfx y" aria-hidden="true">VOTE!</span><img src="img/f1.webp" width="480" height="480" loading="lazy" decoding="async" alt="A hand dropping a red vote dot onto a yellow sticky note."></div>
+        <div class="bub"><h3>Dot voting</h3><p>Everyone gets their dots. Spend them on the notes that matter, then see what rises to the top.</p></div>
+      </article>
+      <article class="card">
+        <div class="pic"><span class="sfx p" aria-hidden="true">SHH!</span><img src="img/f2.webp" width="480" height="480" loading="lazy" decoding="async" alt="A hand lifting a paper flap to reveal a yellow sticky note."></div>
+        <div class="bub"><h3>Private writing</h3><p>Write on your own first. Notes stay hidden until the facilitator calls the reveal, so nobody anchors on the loudest voice.</p></div>
+      </article>
+      <article class="card">
+        <div class="pic"><span class="sfx w" aria-hidden="true">NO WIFI?</span><img src="img/f3.webp" width="480" height="480" loading="lazy" decoding="async" alt="A laptop showing a sticky note, with a small cloud beside it."></div>
+        <div class="bub"><h3>Offline first</h3><p>Every board lives in your browser and works without a connection. A small relay syncs and merges when you are back.</p></div>
+      </article>
+      <article class="card">
+        <div class="pic"><span class="sfx r" aria-hidden="true">HI!</span><img src="img/f4.webp" width="480" height="480" loading="lazy" decoding="async" alt="Two bold cursors, one red and one blue, each with a name tag."></div>
+        <div class="bub"><h3>Live cursors</h3><p>See who is where, in real time: cursors, selections and presence for the whole team.</p></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="session" aria-labelledby="h-sess">
+  <div class="wrap sess-grid">
+    <div class="art">
+      <img src="img/panel-vote.webp" width="1100" height="825" loading="lazy" decoding="async" alt="Comic-style scene of a team voting on sticky notes at a board, with one cursor in each person's colour.">
+      <div class="burst s pop" aria-hidden="true">
+        <svg viewBox="0 0 100 100"><polygon points="100.0,50.0 86.1,58.2 95.0,71.7 78.9,73.1 81.2,89.1 66.1,83.3 61.1,98.7 50.0,87.0 38.9,98.7 33.9,83.3 18.8,89.1 21.1,73.1 5.0,71.7 13.9,58.2 0.0,50.0 13.9,41.8 5.0,28.3 21.1,26.9 18.8,10.9 33.9,16.7 38.9,1.3 50.0,13.0 61.1,1.3 66.1,16.7 81.2,10.9 78.9,26.9 95.0,28.3 86.1,41.8" fill="#FF2E93" stroke="#111111" stroke-width="2.6" stroke-linejoin="round"/></svg>
+        <span>WOW!</span>
+      </div>
+    </div>
+    <div class="sess-copy fade">
+      <h2 id="h-sess">Run the room, <span>don't lose it.</span></h2>
+      <p>Facilitated sessions turn a messy meeting into steps with a clock. Move the team through them together.</p>
+      <ul>
+        <li>Session steps with timers</li>
+        <li>Polls and dot voting built in</li>
+        <li>Comment threads on any note</li>
+        <li>Teams and roles: owner, admin, member, guest</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="tpl" id="templates" aria-labelledby="h-tpl">
+  <div class="wrap">
+    <div class="sec-title fade"><h2 id="h-tpl">Pick a template. Any template.</h2><p>Ready-made boards for retros, workshops and planning, or start blank.</p></div>
+    <ul class="tgrid">
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Start / Stop / Continue</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">4Ls</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Mad / Sad / Glad</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Sailboat</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Crazy 8s</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Brainstorm + affinity map</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Lean Coffee</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Impact / Effort matrix</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">MoSCoW</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">User story map</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Customer journey map</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Empathy map</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">SWOT</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Pre-mortem</div></li>
+      <li class="tile"><div class="sw" aria-hidden="true"><img src="img/tiles.webp" width="1200" height="960" alt="" loading="lazy" decoding="async"></div><div class="nm">Blank board</div></li>
+    </ul>
+    <div class="more"><p>Import Mermaid diagrams onto any board.</p></div>
+  </div>
+</section>
+
+<section class="price" id="pricing" aria-labelledby="h-price">
+  <div class="wrap">
+    <div class="sec-title fade"><h2 id="h-price">Simple prices. Big bang.</h2><p>Host it yourself for free, or let us run your workspace.</p></div>
+    <div class="pgrid">
+      <article class="plan a">
+        <div class="hd"><h3>Self-host</h3></div>
+        <div class="bd"><div class="amt">Free</div>
+          <ul><li>Open source</li><li>Run it with Docker</li><li>Your data, your server</li></ul>
+          <a class="btn secondary" href="https://github.com/gettabula-app/tabula">Get it on GitHub</a></div>
+      </article>
+      <article class="plan b">
+        <div class="hd"><h3>Hosted, monthly</h3></div>
+        <div class="bd"><div class="amt">&euro;8 <small>per seat / month</small></div>
+          <ul><li>Workspace at your-slug.gettabula.app</li><li>Teams, roles and email sign-in links</li><li>Live sync through our relay</li></ul>
+          <a class="btn" href="#start">Start a board</a></div>
+      </article>
+      <article class="plan c">
+        <div class="hd"><h3>Hosted, yearly</h3></div>
+        <div class="bd"><div class="amt">&euro;80 <small>per seat / year</small></div>
+          <ul><li>Everything in monthly</li><li>Two months free</li></ul>
+          <a class="btn" href="#start">Start a board</a></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="start" aria-labelledby="h-final">
+  <div class="wrap final-grid">
+    <div class="fc fade">
+      <h2 id="h-final">Your team. One board. <em>Go!</em></h2>
+      <p>Open a board in your browser and start putting notes on it. No setup, no waiting.</p>
+      <div class="cta"><a class="btn" href="#start">Start a board</a><a class="btn secondary" href="#pricing">See pricing</a></div>
+    </div>
+    <div class="art">
+      <img src="img/panel-team.webp" width="1100" height="825" loading="lazy" decoding="async" alt="Comic-style scene of teammates cheering around a screen showing a Tabula board with sticky notes.">
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="logo" href="#top">Tabula</a>
+    <nav aria-label="Footer">
+      <a href="https://gettabula.app">gettabula.app</a>
+      <a href="https://github.com/gettabula-app/tabula">GitHub: gettabula-app/tabula</a>
+    </nav>
+    <small>&copy; 2026 Tabula</small>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var rm=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(rm||!('IntersectionObserver' in window))return;
+  var h=document.documentElement;h.classList.add('js-anim');
+  var els=[].slice.call(document.querySelectorAll('.pop,.fade'));
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.2});
+  els.forEach(function(el,i){
+    if(el.classList.contains('pop')&&el.closest('.hero')){setTimeout(function(){el.classList.add('in')},350+i*250);}
+    else io.observe(el);
+  });
+})();
+</script>
+</body>
+</html>
