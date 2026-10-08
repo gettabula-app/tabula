@@ -404,6 +404,9 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
       setSignedOut();
       location.hash = '#/signin';
     }),
+    auth.me.user.role === 'owner' || auth.me.user.role === 'admin'
+      ? item('user', 'Admin', () => { location.hash = '#/admin'; })
+      : null,
   ] : [];
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));

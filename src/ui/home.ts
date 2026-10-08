@@ -155,6 +155,7 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
         h('span', { class: 'muted' }, me.user.name || me.user.email),
         me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
         admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null,
+        admin ? h('button', { class: 'btn', onclick: () => { location.hash = '#/admin'; } }, 'Admin') : null,
         h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out'),
       ),
       h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),

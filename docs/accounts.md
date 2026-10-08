@@ -210,7 +210,7 @@ export function createAuth({directory, config, mailer, now = Date.now}): {
 }
 
 // server/api.mjs
-export function createApi({directory, auth, config, roomExists, events}): { handle(req, res): Promise<boolean> }
+export function createApi({directory, auth, config, roomExists, events, liveStats?}): { handle(req, res): Promise<boolean> }
 //   roomExists(boardId): boolean   (is there a room file on disk, for the board or its comments room)
 //   events: { emit(name, payload) } with names 'session-revoked' {userId, sessionId?}, 'access-changed' {userId?, boardId?}, 'user-removed' {userId}
 ```
