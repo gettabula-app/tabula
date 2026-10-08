@@ -887,6 +887,35 @@ describe('accounts mode server', () => {
       expect(admin.ws.readyState).toBe(WebSocket.OPEN);
     });
 
+    it('keeps a deleted board read-only for workspace admins until it is restored', async () => {
+      const team = await newTeam(owner.cookie);
+      const member = await joinTeam(owner.cookie, team.id);
+      const board = await newBoard(member.cookie, { teamId: team.id });
+      const before = connect(board, owner.cookie);
+      await synced(before);
+      expect((await api(member.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
+
+      // an admin who opens it now, and one who had it open, can read it but not change it
+      const admin = connect(board, owner.cookie);
+      await synced(admin);
+      admin.doc.getMap('objects').set('whileDeleted', 1);
+      before.doc.getMap('objects').set('alsoWhileDeleted', 1);
+      await flush(admin, before);
+      await flush(before, admin);
+      const look = connect(board, owner.cookie);
+      await synced(look);
+      expect(look.doc.getMap('objects').has('whileDeleted')).toBe(false);
+      expect(look.doc.getMap('objects').has('alsoWhileDeleted')).toBe(false);
+
+      // restoring gives an open connection its write access back (one that wrote while it was deleted cannot
+      // catch up: its later updates build on the dropped ones, which is why the app opens a deleted board read-only)
+      expect((await api(owner.cookie, 'POST', `/api/admin/boards/${board}/restore`)).status).toBe(200);
+      look.doc.getMap('objects').set('afterRestore', 1);
+      const after = connect(board, member.cookie);
+      await synced(after);
+      await until(() => after.doc.getMap('objects').get('afterRestore') === 1);
+    });
+
     it('never loads or creates a room for a connection it rejects', async () => {
       const team = await newTeam(owner.cookie);
       const other = await newTeam(owner.cookie);

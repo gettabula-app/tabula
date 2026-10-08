@@ -240,7 +240,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     commentBtn.disabled = app.comments.readOnly();
     commentBtn.title = commentBtn.disabled ? 'You can\'t comment on this board' : 'Comment (C)';
     name.readOnly = ro;
-    badge.textContent = boardAccess(app.role, workspaceOf(authState())).badge ?? 'View only';
+    badge.textContent = boardAccess(app.role, workspaceOf(authState()), app.deleted).badge ?? 'View only';
     badge.classList.toggle('show', ro);
     if (ro && library.tab) library.open(null);
   };

@@ -601,6 +601,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const deleted = query.get('deleted');
       return [200, directory.listBoardsAdmin({ includeDeleted: deleted === '1' || deleted === 'true' })];
     }),
+    compile('GET', 'admin/boards/:id', {}, ({ user, params }) => {
+      requireAdmin(user);
+      const board = directory.getBoardAdmin(params.id);
+      if (!board) throw notFound('Board not found');
+      return [200, board];
+    }),
     compile('POST', 'admin/boards/:id/restore', {}, ({ user, params }) => {
       requireAdmin(user);
       const board = directory.getBoardAdmin(params.id);
@@ -611,6 +617,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.restore', { boardId: board.id });
         return directory.getBoardAdmin(board.id);
       });
+      // admins who had it open while it was deleted may write again
+      emit('access-changed', { boardId: board.id });
       return [200, { ...restored, role: directory.boardRole(board.id, user.id) }];
     }),
 

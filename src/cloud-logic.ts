@@ -4,6 +4,7 @@ import type { AuthState } from './auth';
 // Hosted workspaces (docs/cloud.md): the rules the screens share, kept free of the DOM so they can be tested.
 
 export const READ_ONLY_BADGE = 'Workspace is read-only';
+export const DELETED_BADGE = 'Deleted board';
 export const ME_REFRESH_MS = 5 * 60 * 1000;
 /** Hints that arrive this close together (the board and comments sockets get one each) become one refresh. */
 export const HINT_COALESCE_MS = 150;
@@ -33,8 +34,12 @@ export interface BoardAccess {
   badge: string | null;
 }
 
-/** What the person may do on a board: their role, and nothing at all while the workspace is read-only. */
-export function boardAccess(role: BoardRole | null | undefined, workspace: Workspace | null | undefined): BoardAccess {
+/**
+ * What the person may do on a board: their role, and nothing at all while the workspace is read-only or the board is
+ * deleted (only workspace admins can open a deleted board, and the relay refuses its writes until it is restored).
+ */
+export function boardAccess(role: BoardRole | null | undefined, workspace: Workspace | null | undefined, deleted = false): BoardAccess {
+  if (deleted) return { storeReadOnly: true, commentsReadOnly: true, badge: DELETED_BADGE };
   const locked = workspace?.readOnly === true;
   const viewer = role === 'viewer';
   const commenter = role === 'commenter';

@@ -229,6 +229,8 @@ export class BoardApp {
 
   /** The user's role on this board in accounts mode; null in open mode. Set by the router. */
   role: BoardRole | null = null;
+  /** A deleted board that a workspace admin opened: read-only until it is restored. Set by the router. */
+  deleted = false;
 
   get comments(): Comments {
     return this.conn.comments;

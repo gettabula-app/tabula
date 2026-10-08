@@ -35,6 +35,7 @@ DELETE /api/admin/sessions/:id   -> 204
 GET  /api/admin/boards?deleted=1
   -> [{id, title, ownerId, ownerName, teamId, teamName, createdAt, updatedAt, deletedAt: number|null, shareCount}]
   (`deleted=1` includes soft-deleted boards; default excludes them. Sorted by `updatedAt` desc.)
+GET  /api/admin/boards/:id   -> 200 board   (one board, deleted or not; 404 unknown. The app uses it to open a deleted board read-only)
 POST /api/admin/boards/:id/restore   -> 200 board   (clears `deleted_at`; 404 unknown, 409 when not deleted)
   Deleting uses the existing DELETE /api/boards/:id (soft delete).
 

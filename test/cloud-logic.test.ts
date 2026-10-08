@@ -7,6 +7,7 @@ import {
   READ_ONLY_BADGE,
   bannerText,
   boardAccess,
+  DELETED_BADGE,
   canManageBilling,
   cloudErrorMessage,
   createMeRefresher,
@@ -78,6 +79,8 @@ describe('boardAccess', () => {
 
   it('is the plain role rule without a workspace', () => {
     expect(boardAccess('owner', null)).toEqual({ storeReadOnly: false, commentsReadOnly: false, badge: null });
+    expect(boardAccess('owner', null, true)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: DELETED_BADGE });
+    expect(boardAccess(undefined, workspace({ readOnly: true }), true).badge).toBe(DELETED_BADGE);
     expect(boardAccess('viewer', undefined)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });
     expect(boardAccess('commenter', null)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: 'View only' });
   });
