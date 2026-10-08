@@ -27,6 +27,7 @@ import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
+import { createBackup, loadBackupConfig } from './backup.mjs';
 import { saveDelay } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 
@@ -35,6 +36,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(); } catch { /* no .env file */ }
 const env = withLegacyEnv();
 const config = loadConfig(env);
+// Off-site backups (docs/backups.md): null unless TABULA_BACKUP_* is set; half a configuration stops the start here.
+const backupConfig = loadBackupConfig(env);
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
@@ -116,10 +119,21 @@ if (config.authEnabled) {
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus });
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
+
+// Backups need the directory (accounts mode only) and, like liveStats, are asked for per request, so they are created below.
+function backupStatus() {
+  return backup ? backup.status() : { enabled: false };
+}
+// The state of a room that is open, including what is not saved yet; any other room the backup reads from its file.
+const openRoomState = (name) => {
+  const room = rooms.get(name);
+  return room ? Y.encodeStateAsUpdate(room.doc) : null;
+};
+const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
 
 // ---------------------------------------------------------------- rooms
 
@@ -767,6 +781,7 @@ const pinger = setInterval(() => {
 function shutdown() {
   clearInterval(pinger);
   cloud?.close();
+  backup?.stop();
   for (const r of rooms.values()) r.save();
   history.close();
   directory?.close();
@@ -776,5 +791,6 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 server.listen(PORT, HOST, () => {
-  log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}`);
+  backup?.start();
+  log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}${backup ? '  (backups on)' : ''}`);
 });
