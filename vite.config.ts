@@ -11,6 +11,14 @@ export default defineConfig({
     },
   },
   build: { target: 'es2022', sourcemap: true },
-  // agent worktrees live under .claude/worktrees; never collect their tests
-  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
+  test: {
+    // agent worktrees live under .claude/worktrees; never collect their tests
+    exclude: [...configDefaults.exclude, '.claude/**'],
+    // Many test files spawn a relay process each. On the small CI runners (Windows and macOS above all) running
+    // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
+    // test and hook gets room to wait for a relay.
+    maxWorkers: process.env.CI ? 2 : undefined,
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
+  },
 });

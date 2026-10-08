@@ -16,7 +16,7 @@ export type Account = { cookie: string; user: Body; email: string };
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export const until = async (fn: () => boolean | Promise<boolean>, ms = 5000) => {
+export const until = async (fn: () => boolean | Promise<boolean>, ms = 10_000) => {
   const t0 = Date.now();
   while (!(await fn())) {
     if (Date.now() - t0 > ms) throw new Error('timed out');
@@ -82,7 +82,7 @@ export function createHarness(options: HarnessOptions = {}) {
       });
       p.on('error', (e) => done(() => reject(e)));
       p.on('close', (code) => done(() => reject(new Error(`relay exited with ${code}: ${output.slice(0, 1500)}`))));
-      setTimeout(() => done(() => reject(new Error(`relay did not start: ${output.slice(-400)}`))), 8000);
+      setTimeout(() => done(() => reject(new Error(`relay did not start: ${output.slice(-400)}`))), 15_000);
     });
 
   const stop = () =>

@@ -16,7 +16,7 @@ const startRelay = () =>
     const p = spawn(process.execPath, ['server/relay.mjs'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 8000);
+    setTimeout(() => reject(new Error('relay did not start')), 15_000);
   });
 
 const stopRelay = (p: ChildProcess) => new Promise<void>((r) => { if (p.exitCode !== null || p.signalCode !== null) return r(); p.once('exit', () => r()); p.kill('SIGTERM'); });

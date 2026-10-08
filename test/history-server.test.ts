@@ -42,7 +42,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 8000);
+    setTimeout(() => reject(new Error('relay did not start')), 15_000);
   });
 
 const stopRelay = (p: ChildProcess) =>

@@ -725,7 +725,7 @@ describe('editing', () => {
 
     await h.tool(token, 'create_objects', { boardId: mine, objects: [sticky({ text: 'kept' })] });
     expect(await health()).toBe(base + 1);
-    await until(async () => (await health()) === base, 6000);
+    await until(async () => (await health()) === base, 12_000);
     expect(h.savedDoc(mine).getMap('objects').size).toBe(1);
     // and it loads again from disk for the next reader
     expect((await h.tool(token, 'get_board', { boardId: mine })).data.counts.total).toBe(1);

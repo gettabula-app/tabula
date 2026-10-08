@@ -50,7 +50,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 8000);
+    setTimeout(() => reject(new Error('relay did not start')), 15_000);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -224,7 +224,7 @@ describe('startup', () => {
       const out = spawnSync(process.execPath, ['server/relay.mjs'], {
         env: { ...baseEnv(BASE_PORT + 800 + launched++, dir), ...env },
         encoding: 'utf8',
-        timeout: 8000,
+        timeout: 15_000,
       });
       return { status: out.status, stderr: out.stderr };
     } finally {
