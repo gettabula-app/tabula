@@ -13,6 +13,8 @@ import { AiError, describeError } from './errors.mjs';
 import { FEATURE_SPECS, InputError, InvalidProposal, buildContent, parseInput, proposalCount, validateProposal } from './features.mjs';
 import { fenceRead, readForAi } from './board.mjs';
 import { createRunGate, createWindowCounter } from './limits.mjs';
+import { createLiveRuns } from './live.mjs';
+import { canResolve, canSeeRun } from './policy.mjs';
 import { createProvider as defaultCreateProvider } from './providers.mjs';
 import { DEFAULT_LIMITS, aiEnabledFor, personalKeysFor } from './settings.mjs';
 
@@ -60,6 +62,16 @@ export function parseRequest(body) {
   return { feature: body.feature, boardId: body.boardId, input: parseInput(body.feature, body.input) };
 }
 
+/** The body of POST /api/ai/runs/:id/resolve: `{ action: 'accept' | 'discard' }`. */
+export function parseResolve(body) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InputError('The request body must be a JSON object');
+  for (const name of Object.keys(body)) {
+    if (name !== 'action') throw new InputError(`Unknown field: ${name.slice(0, 40)}`);
+  }
+  if (body.action !== 'accept' && body.action !== 'discard') throw new InputError('action must be accept or discard');
+  return body.action;
+}
+
 /**
  * @param {object} deps
  * @param {new (status: number, code: string, message?: string) => Error} deps.HttpError the class the caller turns into a response
@@ -67,8 +79,9 @@ export function parseRequest(body) {
  * @param {(role: string, kind: 'board' | 'comments') => boolean} deps.canWriteRoom the relay's own rule
  * @param {(options: { kind: string, apiKey: string }) => any} [deps.createProvider] replaced by the tests
  * @param {number} [deps.timeoutMs] a run is stopped after this long
+ * @param {ReturnType<typeof createLiveRuns>} [deps.live] the board's live runs (live.mjs); the relay shares one with both modes
  */
-export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider = defaultCreateProvider, log = console.error, now = Date.now, timeoutMs = RUN_TIMEOUT_MS }) {
+export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider = defaultCreateProvider, log = console.error, now = Date.now, timeoutMs = RUN_TIMEOUT_MS, live = createLiveRuns({ now }) }) {
   const hourly = createWindowCounter({ now });
   const gate = createRunGate({ 'key:workspace': SHARED_KEY_RUNS, 'key:env': SHARED_KEY_RUNS });
 
@@ -129,7 +142,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
   }
 
   /** The stream. Never throws: every failure becomes the one `event: error`, and the audit row is written before the last event. */
-  async function stream(call, prep, creds, res) {
+  async function stream(call, prep, creds, res, runId) {
     const spec = FEATURE_SPECS[call.feature];
     const controller = new AbortController();
     const stop = (code) => {
@@ -146,7 +159,8 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     res.writeHead(200, SSE_HEADERS);
     res.flushHeaders();
     let progress = 0;
-    emit('progress', { n: progress });
+    // the first event names the run, so the runner's app can tell its own run among the board's live runs
+    emit('progress', { n: progress, runId });
 
     let outcome = 'ok';
     let failure = null;
@@ -197,8 +211,13 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     } catch (err) {
       log('ai: could not write an audit row:', describeError(err));
     }
-    if (failure) emit('error', failure);
-    else emit('result', { proposal, cut: prep.read.cut, usage });
+    if (failure) {
+      live.fail(runId, failure.error);
+      emit('error', failure);
+    } else {
+      live.ready(runId, { proposal, cut: prep.read.cut });
+      emit('result', { runId, proposal, cut: prep.read.cut, usage });
+    }
     if (!res.destroyed && !res.writableEnded) res.end();
   }
 
@@ -219,11 +238,13 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     hourly.record(workspace);
     const release = gate.take([person, keyId]);
     let started = false;
+    let runId = null;
     try {
       const prep = prepare(call);
       const creds = call.openKey();
       started = true;
-      await stream(call, prep, creds, res);
+      runId = live.start(call.boardId, { by: call.by, feature: call.feature, prompt: call.input.prompt });
+      await stream(call, prep, creds, res, runId);
     } catch (err) {
       // a run that never reached the provider does not use up the person's hour
       if (!started) {
@@ -232,22 +253,43 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       }
       throw toHttp(res, err);
     } finally {
+      // stream() ends every run it was given; this only catches one it never reached
+      if (runId) live.fail(runId, 'internal');
       release?.();
     }
   }
 
-  return { execute, toHttp };
+  /**
+   * POST /api/ai/runs/:id/resolve. `viewerOf(boardId)` says who asks, on the run's board: `{ role, userId, canEdit }`,
+   * with a null role when they cannot open it. `who` is how they are shown. Returns the answer's body; for an accept it
+   * carries the proposal, which the person who asked writes into the board.
+   */
+  function resolveRun(id, body, viewerOf, who) {
+    const action = parseResolve(body);
+    const run = typeof id === 'string' ? live.get(id) : null;
+    const viewer = run ? viewerOf(run.boardId) : null;
+    if (!run || !canSeeRun(viewer.role)) throw new HttpError(404, 'not_found', 'That AI run is gone');
+    if (run.status === 'running') throw new HttpError(409, 'ai_run_running', 'That AI run is still going');
+    if (run.status !== 'ready') throw new HttpError(409, 'ai_run_resolved', 'Someone has already added or discarded that AI run');
+    if (!canResolve(viewer, run, now())) throw new HttpError(403, 'forbidden', 'You cannot add or discard this AI run');
+    const done = live.resolve(id, action, who);
+    if (!done.ok) throw new HttpError(409, 'ai_run_resolved', 'Someone has already added or discarded that AI run');
+    return action === 'accept' ? { id, action, feature: run.feature, proposal: done.proposal, cut: done.cut } : { id, action, feature: run.feature };
+  }
+
+  return { execute, toHttp, resolveRun, live };
 }
 
 // ---------------------------------------------------------------- accounts mode
 
 /**
- * The route of POST /api/ai/run in accounts mode. `compile`, `errors` and `audit` come from api.mjs.
- * The workspace's read-only switch is checked here, in its place in the order, so the route is marked readOnlyOk.
+ * The routes of POST /api/ai/run and POST /api/ai/runs/:id/resolve in accounts mode. `compile`, `errors` and `audit` come
+ * from api.mjs. The workspace's read-only switch is checked by the run route, in its place in the order, so it is marked
+ * readOnlyOk; the resolve route leaves it to api.mjs.
  */
-export function createRunRoute({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider, log = console.error, now, timeoutMs }) {
+export function createRunRoutes({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider, live, log = console.error, now, timeoutMs }) {
   const { HttpError, forbidden } = errors;
-  const runner = createRunner({ HttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs });
+  const runner = createRunner({ HttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs, ...(live ? { live } : {}) });
   const readOnlyNow = () => cloud?.limits().readOnly === true;
   const readOnly = () => new HttpError(402, 'read_only', READ_ONLY_MESSAGE);
   const noKey = () => new HttpError(409, 'ai_no_key', NO_KEY_MESSAGE);
@@ -256,7 +298,7 @@ export function createRunRoute({ compile, errors, audit, directory, cloud, ring,
     return board && board.deletedAt == null ? { board, role: directory.boardRole(board.id, userId) } : { board: null, role: null };
   };
 
-  return compile('POST', 'ai/run', { body: true, readOnlyOk: true, stream: true }, async ({ res, user, body }) => {
+  const runRoute = compile('POST', 'ai/run', { body: true, readOnlyOk: true, stream: true }, async ({ res, user, body }) => {
     try {
       const { feature, boardId, input } = parseRequest(body);
       const settings = settingsNow();
@@ -291,6 +333,7 @@ export function createRunRoute({ compile, errors, audit, directory, cloud, ring,
           input,
           title: board.title,
           role,
+          by: { id: user.id, name: user.name ?? null },
           person: `user:${user.id}`,
           workspace: 'workspace',
           keyId: scope === 'user' ? `key:user:${user.id}` : 'key:workspace',
@@ -312,6 +355,24 @@ export function createRunRoute({ compile, errors, audit, directory, cloud, ring,
     }
     return undefined;
   });
+
+  // Anyone who can open the board learns the run is gone (404 for everyone else); the rules are policy.mjs's.
+  const resolveRoute = compile('POST', 'ai/runs/:id/resolve', { body: true }, ({ res, user, params, body }) => {
+    try {
+      const viewerOf = (boardId) => {
+        const { board, role } = boardRoleOf(boardId, user.id);
+        return board && role !== null ? { role, userId: user.id, canEdit: canWriteRoom(role, 'board') } : { role: null, userId: user.id, canEdit: false };
+      };
+      const answer = runner.resolveRun(params.id, body, viewerOf, { id: user.id, name: user.name ?? null });
+      const run = runner.live.get(params.id);
+      audit(user, `ai.run.${answer.action}`, { boardId: run?.boardId ?? null, feature: answer.feature });
+      return [200, answer];
+    } catch (err) {
+      throw runner.toHttp(res, err);
+    }
+  });
+
+  return [runRoute, resolveRoute];
 }
 
 // ---------------------------------------------------------------- open mode
@@ -361,8 +422,8 @@ function readJsonBody(req, limit = RUN_BODY_LIMIT) {
  * counted per client address, and the workspace cap is one global count. Returns `{ handle(req, res) }`.
  * @param {{ config: any, canWriteRoom: Function, readRoom: Function, roomExists: (room: string) => boolean, createProvider?: Function, log?: Function, now?: () => number, timeoutMs?: number }} deps
  */
-export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, createProvider, log = console.log, now, timeoutMs }) {
-  const runner = createRunner({ HttpError: OpenHttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs });
+export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, createProvider, live, log = console.log, now, timeoutMs }) {
+  const runner = createRunner({ HttpError: OpenHttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs, ...(live ? { live } : {}) });
 
   function clientIp(req) {
     if (config.trustProxy) {
@@ -404,6 +465,8 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
           input,
           title: null,
           role: null,
+          // nobody has a name in open mode, and the client address is never shown
+          by: { id: null, name: null },
           person: `ip:${clientIp(req)}`,
           workspace: 'workspace',
           keyId: 'key:env',
@@ -421,5 +484,26 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
     }
   }
 
-  return { handle };
+  /** POST /api/ai/runs/:id/resolve in open mode: everyone edits, nobody is the runner. */
+  async function resolve(req, res, id) {
+    try {
+      if (!csrfOk(req)) {
+        req.resume();
+        throw new OpenHttpError(403, 'csrf', 'Missing or invalid CSRF protection header');
+      }
+      if (!config.ai.open) {
+        req.resume();
+        throw new OpenHttpError(403, 'ai_disabled', 'AI is not turned on');
+      }
+      const body = await readJsonBody(req);
+      const answer = runner.resolveRun(id, body, () => ({ role: 'owner', userId: null, canEdit: canWriteRoom('owner', 'board') }), { id: null, name: null });
+      const text = JSON.stringify(answer);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      res.end(text);
+    } catch (err) {
+      sendError(res, runner.toHttp(res, err));
+    }
+  }
+
+  return { handle, resolve, live: runner.live };
 }

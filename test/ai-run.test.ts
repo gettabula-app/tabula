@@ -262,7 +262,10 @@ describe('the stream', () => {
     expect(names.at(-1)).toBe('result');
     expect(names.slice(0, -1).every((n) => n === 'progress')).toBe(true);
     expect(names.length).toBeGreaterThanOrEqual(3);
+    // the first event names the run, and the result names it again
+    expect(res.events[0].data).toEqual({ n: 0, runId: expect.stringMatching(/^[A-Za-z0-9_-]{12}$/) });
     expect(res.events.at(-1)!.data).toEqual({
+      runId: res.events[0].data.runId,
       proposal: { kind: 'create', objects: [{ text: 'Vendor lock-in', color: 'Orange' }, { text: 'Downtime during the move' }], frame: { title: 'Cloud risks' } },
       cut: false,
       usage: { model: 'claude-opus-5-5', inputTokens: 1200, outputTokens: 340, cacheReadTokens: 1000, cacheWriteTokens: 0 },

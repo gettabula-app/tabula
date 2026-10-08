@@ -260,8 +260,8 @@ Unknown fields are refused. `selection` (1 to 400 object ids, no repeats) and `f
 **The stream** is `text/event-stream`:
 
 ```
-event: progress          data: {"n":0}            (first at once, then one now and then)
-event: result            data: {"proposal":{...},"cut":false,"usage":{"model","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens"}}
+event: progress          data: {"n":0,"runId":"..."}   (first at once, naming the live run; then {"n":1}, ...)
+event: result            data: {"runId":"...","proposal":{...},"cut":false,"usage":{"model","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens"}}
 event: error             data: {"error":"ai_refused","message":"..."}
 ```
 
@@ -278,6 +278,24 @@ Exactly one `result` or one `error` ends it. After the stream has started every 
 **Open mode** has `POST /api/ai/run` too (and still no other AI endpoint besides `GET /api/ai/config`). It needs the CSRF header, answers `403 ai_disabled` unless `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` are both set, uses that key and `TABULA_AI_MODEL`, counts runs per client address (the last `X-Forwarded-For` entry with `TABULA_TRUST_PROXY=1`, else the socket address; a run per address at a time, 20 an hour) and keeps one count for the whole instance (200 an hour), with up to three runs at once on the operator's key. There is no directory, so the audit row is a log line `ai.<feature> {json}` with the same fields.
 
 **Code.** `server/ai/features.mjs` (prompts, schemas, input and proposal checks), `server/ai/board.mjs` (the read), `server/ai/limits.mjs` (the counters), `server/ai/run.mjs` (the run core, the accounts route and the open-mode handler). `board-ops.mjs` exports `readAll`, `summarise` and `stripInvisible` for them; `api.mjs` lets a route stream (`stream: true`), and the relay hands `canWriteRoom` and a room reader to the API and to the open-mode handler.
+
+## Live runs
+
+Everyone on a board sees its AI runs (TAB-141): while a run is going ("Ana is asking AI…"), and its proposal, as a faded preview with the runner's name, until someone adds or discards it. A run's proposal is never in the board document until then.
+
+**State.** `server/ai/live.mjs` keeps the runs in memory, per board: `{ id, feature, by: { id, name }, status, startedAt, readyAt, proposal, cut, error, resolvedBy }`. The run route starts one when the provider is about to be called (a request refused before that leaves no run), marks it `ready` with the validated proposal or `failed` with the error code, and the first `progress` event and the `result` carry its `runId`. A ready run nobody settles `expired`s after 10 minutes, one still `running` after 5 minutes is `failed`, a board holds at most 12 open runs (the oldest ready one expires to make room), and a settled run is remembered for 10 minutes so a late click is told so. When a board's room unloads its runs are dropped; a restart forgets them all. In open mode `by` is `{ id: null, name: null }`: nobody has a name there and a client address is never shown.
+
+**The relay** sends message type 6 (`MSG_AI_RUNS`, relay to client only, board rooms only) with JSON `{ kind: 'snapshot', runs }` to a socket that joins while runs are open, then `{ kind: 'patch', run }` for each change. Every socket gets its own copy, built for its person by `viewFor`, so a rule that hides something is applied on the server and never left to the app. `accepted`, `discarded`, `failed` and `expired` mean the run is gone; they carry only `id`, `feature`, `status`, `by`, the `error` code of a failed run and `resolvedBy`.
+
+**Settling.** `POST /api/ai/runs/:id/resolve` with `{ action: 'accept' | 'discard' }` (CSRF header, as every write). The first one wins: `200 { id, action, feature }`, and an accept adds `proposal` and `cut`, which the app of the person who clicked writes with `store.transact`, as one undo step on their own stack, laid out at `nextFree`. Then `409 ai_run_resolved` for everyone after, also for a failed or expired run, `409 ai_run_running` while it is still going, `404 not_found` for a run that is gone or on a board the person cannot open, `403 forbidden` when the policy says no, and `402 read_only` in a read-only hosted workspace. The server writes an audit row `ai.run.accept` or `ai.run.discard` with `{ boardId, feature }`. Open mode has the same route.
+
+**Policy**, in `server/ai/policy.mjs` and repeated in `src/ai-policy.ts` for the app's buttons (a test keeps the two equal). Johan has still to confirm these (TAB-141), so each is one constant:
+
+| Rule | Now | Other choices |
+| --- | --- | --- |
+| Who sees runs (`canSeeRun`) | everyone who can open the board, viewers and commenters too | |
+| Who may add or discard (`RESOLVE_POLICY`) | `'editors'`: anyone who can edit the board | `'runner-first'`: the runner, then any editor 30 s (`RUNNER_FIRST_MS`) after the run is ready |
+| Who sees the prompt (`PROMPT_VISIBILITY`) | `'runner'`: nobody is sent it, since the runner's app has it already | `'everyone'`, `'none'` |
 
 ## Not in this slice
 

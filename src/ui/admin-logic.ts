@@ -92,7 +92,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
   'ai.settings', 'ai.key.set', 'ai.key.delete',
-  'ai.generate', 'ai.summarise', 'ai.cluster',
+  'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -252,6 +252,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const notes: Record<string, string> = { ai_aborted: ' (cancelled)', ai_timeout: ' (timed out)', ai_refused: ' (declined by the AI)' };
       return `${who} ${what} ${boardLabel}${!outcome || outcome === 'ok' ? '' : (notes[outcome] ?? ' (failed)')}`;
     }
+    case 'ai.run.accept':
+      return `${who} added an AI proposal to ${boardLabel}`;
+    case 'ai.run.discard':
+      return `${who} discarded an AI proposal on ${boardLabel}`;
     default:
       return entry.action;
   }

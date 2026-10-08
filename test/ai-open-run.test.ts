@@ -108,6 +108,7 @@ describe('when AI is on', () => {
     expect(res.events.at(-1)).toEqual({
       event: 'result',
       data: {
+        runId: res.events[0].data.runId,
         proposal: { kind: 'create', objects: [{ text: 'idea one', color: 'Pink' }] },
         cut: false,
         usage: { model: 'claude-haiku-5-5', inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
