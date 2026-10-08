@@ -1,0 +1,583 @@
+// HTTP API of accounts mode (see docs/accounts.md). Every permission rule lives here, server side:
+// the client only mirrors it. Handlers are synchronous after the body is read, so each
+// check-then-act sequence runs without interleaving with another request.
+
+import { BOARD_ID_RE } from './directory.mjs';
+
+const MAX_BODY = 64 * 1024;
+const DRAIN_LIMIT = 1024 * 1024;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
+const TEAM_ROLES = ['admin', 'member'];
+const SHARE_ROLES = ['editor', 'viewer'];
+const PRINCIPAL_TYPES = ['user', 'team'];
+const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
+const CONTROL_RE = /\p{Cc}/u;
+
+class HttpError extends Error {
+  constructor(status, code, message) {
+    super(message ?? code);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const badRequest = (message) => new HttpError(400, 'bad_request', message);
+const forbidden = (message = 'You do not have permission to do that') => new HttpError(403, 'forbidden', message);
+const notFound = (message = 'Not found') => new HttpError(404, 'not_found', message);
+const conflict = (code, message) => new HttpError(409, code, message);
+
+const isAdmin = (user) => user.role === 'owner' || user.role === 'admin';
+const userView = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role });
+const boardView = (b, role) => ({
+  id: b.id,
+  title: b.title,
+  teamId: b.teamId,
+  ownerId: b.ownerId ?? null,
+  role,
+  createdAt: b.createdAt,
+  updatedAt: b.updatedAt,
+});
+
+function cleanText(value, field, min, max) {
+  if (typeof value !== 'string') throw badRequest(`${field} must be a string`);
+  const text = value.trim();
+  if (text.length < min || text.length > max || CONTROL_RE.test(text)) {
+    throw badRequest(`${field} must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters, without control characters`);
+  }
+  return text;
+}
+
+function oneOf(value, allowed, field) {
+  if (typeof value !== 'string' || !allowed.includes(value)) throw badRequest(`${field} must be one of ${allowed.join(', ')}`);
+  return value;
+}
+
+function idField(value, field) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 128) throw badRequest(`${field} must be an id`);
+  return value;
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let settled = false;
+    const chunks = [];
+    const done = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+    const tooLarge = () => new HttpError(413, 'payload_too_large', 'The request body is too large');
+
+    if (Number(req.headers['content-length']) > DRAIN_LIMIT) {
+      req.resume();
+      done(reject, tooLarge());
+      return;
+    }
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= MAX_BODY) chunks.push(chunk);
+      else if (size > DRAIN_LIMIT) done(reject, tooLarge());
+    });
+    req.on('end', () => {
+      if (size > MAX_BODY) return done(reject, tooLarge());
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (!text) return done(resolve, {});
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return done(reject, badRequest('The request body is not valid JSON'));
+      }
+      if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+        return done(reject, badRequest('The request body must be a JSON object'));
+      }
+      done(resolve, data);
+    });
+    req.on('error', (err) => done(reject, err));
+    req.on('close', () => done(reject, new HttpError(400, 'bad_request', 'The request was aborted')));
+  });
+}
+
+function compile(method, pattern, options, handler) {
+  return { method, parts: pattern.split('/'), handler, ...options };
+}
+
+export function createApi({ directory, auth, config, roomExists, events }) {
+  const emit = (name, payload) => {
+    try {
+      events.emit(name, payload);
+    } catch (err) {
+      console.error(`api: listener for ${name} failed:`, err?.message ?? err);
+    }
+  };
+  const audit = (user, action, detail) => directory.audit(user.id, action, detail);
+
+  function clientIp(req) {
+    if (config.trustProxy) {
+      const header = req.headers['x-forwarded-for'];
+      const entries = String(Array.isArray(header) ? header.join(',') : (header ?? ''))
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (entries.length) return entries[entries.length - 1];
+    }
+    return req.socket.remoteAddress ?? 'unknown';
+  }
+
+  // Teams a caller cannot see do not exist for them (404); visible but not manageable is 403.
+  function teamFor(user, id, { manage = false } = {}) {
+    const team = directory.getTeam(id);
+    const role = team ? directory.getTeamRole(team.id, user.id) : null;
+    if (!team || (role === null && !isAdmin(user))) throw notFound('Team not found');
+    if (manage && role !== 'admin' && !isAdmin(user)) throw forbidden('Only team admins can do that');
+    return { team, role };
+  }
+
+  function teamView(teamId, userId) {
+    const team = directory.getTeam(teamId);
+    return {
+      id: team.id,
+      name: team.name,
+      role: directory.getTeamRole(teamId, userId),
+      memberCount: directory.listTeamMembers(teamId).length,
+      archived: team.archived,
+    };
+  }
+
+  // Deleted boards are gone for every API call, workspace admins included.
+  function boardFor(user, id, { own = false } = {}) {
+    const board = directory.getBoard(id);
+    const role = board && board.deletedAt == null ? directory.boardRole(board.id, user.id) : null;
+    if (!board || role === null) throw notFound('Board not found');
+    if (own && role !== 'owner') throw forbidden('Only the board owner can do that');
+    return { board, role };
+  }
+
+  const requireAdmin = (user) => {
+    if (!isAdmin(user)) throw forbidden('Only workspace admins can do that');
+  };
+
+  // The users and teams a caller may learn about: themselves, their teams and the people in them.
+  function visiblePrincipals(user) {
+    if (isAdmin(user)) return null;
+    const teams = new Set();
+    const users = new Set([user.id]);
+    for (const team of directory.listTeamsFor(user.id)) {
+      teams.add(team.id);
+      for (const member of directory.listTeamMembers(team.id)) users.add(member.userId);
+    }
+    return { teams, users };
+  }
+
+  const canSee = (visible, type, id) => visible === null || (type === 'team' ? visible.teams : visible.users).has(id);
+
+  const hasOtherActiveOwner = (userId) => directory.listUsers().some((u) => u.id !== userId && u.role === 'owner' && !u.disabled);
+
+  const memberView = (u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    disabled: u.disabled,
+    teams: directory.listTeamsFor(u.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
+  });
+
+  // ------------------------------------------------------------ handlers
+
+  const routes = [
+    compile('GET', 'config', { public: true }, () => [200, { authEnabled: config.authEnabled }]),
+
+    compile('GET', 'me', {}, ({ user }) => [
+      200,
+      { user: userView(user), teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })) },
+    ]),
+    compile('PATCH', 'me', { body: true }, ({ user, body }) => {
+      const name = cleanText(body.name, 'name', 1, 80);
+      const updated = directory.transaction(() => {
+        const next = directory.updateUser(user.id, { name });
+        audit(user, 'me.update', {});
+        return next;
+      });
+      return [200, userView(updated)];
+    }),
+
+    compile('POST', 'auth/request', { public: true, body: true }, async ({ req, res, body }) => {
+      const { email, invite } = body;
+      if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
+      if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
+      const result = await auth.requestLogin({ email, invite: invite ?? undefined, ip: clientIp(req) });
+      if (result.limited) {
+        res.setHeader('retry-after', '3600');
+        throw new HttpError(429, 'rate_limited', 'Too many sign-in requests. Try again later.');
+      }
+      return [200, { ok: true }];
+    }),
+    compile('POST', 'auth/verify', { public: true, body: true }, ({ res, body }) => {
+      const result = typeof body.token === 'string' ? auth.verifyLogin(body.token) : null;
+      if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));
+      directory.audit(result.user.id, 'auth.login', {});
+      return [200, { user: userView(result.user) }];
+    }),
+    compile('POST', 'auth/logout', {}, ({ res, user, sessionId }) => {
+      auth.logout(sessionId);
+      audit(user, 'auth.logout', {});
+      res.setHeader('set-cookie', auth.clearCookie());
+      emit('session-revoked', { userId: user.id, sessionId });
+      return [204];
+    }),
+    compile('POST', 'auth/logout-all', {}, ({ res, user }) => {
+      auth.logoutAll(user.id);
+      audit(user, 'auth.logout_all', {});
+      res.setHeader('set-cookie', auth.clearCookie());
+      emit('session-revoked', { userId: user.id });
+      return [204];
+    }),
+
+    compile('GET', 'teams', {}, ({ user }) => {
+      const teams = isAdmin(user) ? directory.listAllTeams(user.id) : directory.listTeamsFor(user.id);
+      return [200, teams.map((t) => ({ id: t.id, name: t.name, role: t.role, memberCount: t.memberCount, archived: t.archived }))];
+    }),
+    compile('POST', 'teams', { body: true }, ({ user, body }) => {
+      if (user.role === 'guest') throw forbidden('Guests cannot create teams');
+      const name = cleanText(body.name, 'name', 1, 80);
+      const team = directory.transaction(() => {
+        const created = directory.createTeam({ name, creatorId: user.id });
+        audit(user, 'team.create', { teamId: created.id, name });
+        return created;
+      });
+      return [201, teamView(team.id, user.id)];
+    }),
+    compile('PATCH', 'teams/:id', { body: true }, ({ user, params, body }) => {
+      const { team } = teamFor(user, params.id, { manage: true });
+      const patch = {};
+      if (body.name !== undefined) patch.name = cleanText(body.name, 'name', 1, 80);
+      if (body.archived !== undefined) {
+        if (typeof body.archived !== 'boolean') throw badRequest('archived must be a boolean');
+        patch.archived = body.archived;
+      }
+      if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+      directory.transaction(() => {
+        directory.updateTeam(team.id, patch);
+        audit(user, 'team.update', { teamId: team.id, ...patch });
+      });
+      return [200, teamView(team.id, user.id)];
+    }),
+    compile('GET', 'teams/:id/members', {}, ({ user, params }) => {
+      const { team } = teamFor(user, params.id);
+      return [200, directory.listTeamMembers(team.id)];
+    }),
+    compile('PATCH', 'teams/:id/members/:userId', { body: true }, ({ user, params, body }) => {
+      const { team } = teamFor(user, params.id, { manage: true });
+      const role = oneOf(body.role, TEAM_ROLES, 'role');
+      const current = directory.getTeamRole(team.id, params.userId);
+      if (current === null) throw notFound('Member not found');
+      if (current === 'admin' && role === 'member' && directory.countTeamAdmins(team.id) <= 1) {
+        throw conflict('last_admin', 'A team needs at least one admin');
+      }
+      directory.transaction(() => {
+        directory.setTeamRole(team.id, params.userId, role);
+        audit(user, 'team.member.role', { teamId: team.id, userId: params.userId, role });
+      });
+      emit('access-changed', { userId: params.userId });
+      return [200, directory.listTeamMembers(team.id).find((m) => m.userId === params.userId)];
+    }),
+    compile('DELETE', 'teams/:id/members/:userId', {}, ({ user, params }) => {
+      const { team, role: mine } = teamFor(user, params.id);
+      const leaving = params.userId === user.id;
+      if (!leaving && mine !== 'admin' && !isAdmin(user)) throw forbidden('Only team admins can remove members');
+      const current = directory.getTeamRole(team.id, params.userId);
+      if (current === null) throw notFound('Member not found');
+      if (current === 'admin' && directory.countTeamAdmins(team.id) <= 1) {
+        throw conflict('last_admin', 'A team needs at least one admin');
+      }
+      directory.transaction(() => {
+        directory.removeTeamMember(team.id, params.userId);
+        audit(user, leaving ? 'team.leave' : 'team.member.remove', { teamId: team.id, userId: params.userId });
+      });
+      emit('access-changed', { userId: params.userId });
+      return [204];
+    }),
+
+    compile('POST', 'teams/:id/invites', { body: true }, ({ user, params, body }) => {
+      const { team } = teamFor(user, params.id, { manage: true });
+      const role = body.role === undefined ? 'member' : oneOf(body.role, TEAM_ROLES, 'role');
+      const days = body.days === undefined ? 7 : body.days;
+      if (!Number.isInteger(days) || days < 1 || days > 30) throw badRequest('days must be a whole number from 1 to 30');
+      const invite = directory.transaction(() => {
+        const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS });
+        audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days });
+        return created;
+      });
+      return [
+        201,
+        { id: invite.id, url: `${config.baseUrl}/#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
+      ];
+    }),
+    compile('GET', 'teams/:id/invites', {}, ({ user, params }) => {
+      const { team } = teamFor(user, params.id, { manage: true });
+      return [
+        200,
+        directory.listInvites(team.id).map((i) => ({ id: i.id, role: i.role, expiresAt: i.expiresAt, uses: i.uses, maxUses: i.maxUses })),
+      ];
+    }),
+    compile('DELETE', 'teams/:id/invites/:inviteId', {}, ({ user, params }) => {
+      const { team } = teamFor(user, params.id, { manage: true });
+      const invite = directory.listInvites(team.id).find((i) => i.id === params.inviteId);
+      if (!invite) throw notFound('Invite not found');
+      directory.transaction(() => {
+        directory.revokeInvite(invite.id);
+        audit(user, 'invite.revoke', { teamId: team.id, inviteId: invite.id });
+      });
+      return [204];
+    }),
+    compile('GET', 'invites/:token', { public: true }, ({ params }) => {
+      const invite = directory.findInvite(params.token);
+      const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite || !team) throw notFound('This invite is not valid');
+      return [200, { team: { id: team.id, name: team.name }, role: invite.role }];
+    }),
+    compile('POST', 'invites/:token/accept', {}, ({ user, params }) => {
+      const invite = directory.findInvite(params.token);
+      const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite || !team) throw notFound('This invite is not valid');
+      let role = directory.getTeamRole(team.id, user.id);
+      if (role === null || (role === 'member' && invite.role === 'admin')) {
+        role = invite.role;
+        directory.transaction(() => {
+          directory.addTeamMember(team.id, user.id, role);
+          directory.recordInviteUse(invite.id);
+          audit(user, 'invite.accept', { teamId: team.id, inviteId: invite.id, role });
+        });
+        emit('access-changed', { userId: user.id });
+      }
+      return [200, { team: { id: team.id, name: team.name }, role }];
+    }),
+
+    compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
+    compile('POST', 'boards', { body: true }, ({ user, body }) => {
+      if (typeof body.id !== 'string' || !BOARD_ID_RE.test(body.id)) throw badRequest('id must be 1 to 64 letters, digits, - or _');
+      const title = body.title == null ? undefined : cleanText(body.title, 'title', 0, 200);
+      const teamId = body.teamId == null ? null : idField(body.teamId, 'teamId');
+      if (user.role === 'guest') throw forbidden('Guests cannot create boards');
+      if (teamId !== null && directory.getTeamRole(teamId, user.id) === null) throw forbidden('You are not a member of that team');
+      if (directory.getBoard(body.id)) throw conflict('exists', 'A board with this id already exists');
+      const adopting = roomExists(body.id);
+      if (adopting && !isAdmin(user)) {
+        throw conflict('needs_admin', 'This board already exists on the server. Ask a workspace admin to add it.');
+      }
+      const board = directory.transaction(() => {
+        const created = directory.createBoard({ id: body.id, title, ownerId: user.id, teamId });
+        audit(user, 'board.create', { boardId: created.id, teamId, adopted: adopting });
+        return created;
+      });
+      return [201, boardView(board, directory.boardRole(board.id, user.id))];
+    }),
+    compile('PATCH', 'boards/:id', { body: true }, ({ user, params, body }) => {
+      const { board } = boardFor(user, params.id, { own: true });
+      const patch = {};
+      if (body.title !== undefined) patch.title = cleanText(body.title, 'title', 0, 200);
+      if (body.teamId !== undefined) {
+        patch.teamId = body.teamId === null ? null : idField(body.teamId, 'teamId');
+        if (patch.teamId !== null && directory.getTeamRole(patch.teamId, user.id) === null) {
+          throw forbidden('You are not a member of that team');
+        }
+      }
+      if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+      const updated = directory.transaction(() => {
+        const next = directory.updateBoard(board.id, patch);
+        audit(user, 'board.update', { boardId: board.id, ...patch });
+        return next;
+      });
+      if (patch.teamId !== undefined && patch.teamId !== board.teamId) emit('access-changed', { boardId: board.id });
+      return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+    }),
+    compile('DELETE', 'boards/:id', {}, ({ user, params }) => {
+      const { board } = boardFor(user, params.id, { own: true });
+      directory.transaction(() => {
+        directory.deleteBoard(board.id);
+        audit(user, 'board.delete', { boardId: board.id });
+      });
+      emit('access-changed', { boardId: board.id });
+      return [204];
+    }),
+
+    compile('GET', 'boards/:id/shares', {}, ({ user, params }) => {
+      const { board } = boardFor(user, params.id, { own: true });
+      const visible = visiblePrincipals(user);
+      return [200, directory.listShares(board.id).filter((s) => canSee(visible, s.principalType, s.principalId))];
+    }),
+    compile('POST', 'boards/:id/shares', { body: true }, ({ user, params, body }) => {
+      const { board } = boardFor(user, params.id, { own: true });
+      const principalType = oneOf(body.principalType, PRINCIPAL_TYPES, 'principalType');
+      const principalId = idField(body.principalId, 'principalId');
+      const role = oneOf(body.role, SHARE_ROLES, 'role');
+      const exists = principalType === 'team' ? directory.getTeam(principalId) : directory.getUser(principalId);
+      if (!exists || !canSee(visiblePrincipals(user), principalType, principalId)) throw notFound('Unknown user or team');
+      directory.transaction(() => {
+        directory.shareBoard(board.id, { principalType, principalId, role });
+        audit(user, 'board.share', { boardId: board.id, principalType, principalId, role });
+      });
+      emit('access-changed', { boardId: board.id });
+      const share = directory.listShares(board.id).find((s) => s.principalType === principalType && s.principalId === principalId);
+      return [201, share];
+    }),
+    compile('DELETE', 'boards/:id/shares/:principalType/:principalId', {}, ({ user, params }) => {
+      const { board } = boardFor(user, params.id, { own: true });
+      const principalType = oneOf(params.principalType, PRINCIPAL_TYPES, 'principalType');
+      directory.transaction(() => {
+        directory.unshareBoard(board.id, principalType, params.principalId);
+        audit(user, 'board.unshare', { boardId: board.id, principalType, principalId: params.principalId });
+      });
+      emit('access-changed', { boardId: board.id });
+      return [204];
+    }),
+
+    compile('GET', 'members', {}, ({ user }) => {
+      requireAdmin(user);
+      return [200, directory.listUsers().map(memberView)];
+    }),
+    compile('PATCH', 'members/:id', { body: true }, ({ user, params, body }) => {
+      requireAdmin(user);
+      const target = directory.getUser(params.id);
+      if (!target) throw notFound('Member not found');
+      const patch = {};
+      if (body.role !== undefined) patch.role = oneOf(body.role, USER_ROLES, 'role');
+      if (body.disabled !== undefined) {
+        if (typeof body.disabled !== 'boolean') throw badRequest('disabled must be a boolean');
+        patch.disabled = body.disabled;
+      }
+      if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+      if ((target.role === 'owner' || patch.role === 'owner') && user.role !== 'owner') {
+        throw forbidden('Only an owner can change an owner or grant the owner role');
+      }
+      const stopsBeingOwner = (patch.role !== undefined && patch.role !== 'owner') || patch.disabled === true;
+      if (target.role === 'owner' && !target.disabled && stopsBeingOwner && !hasOtherActiveOwner(target.id)) {
+        throw conflict('last_owner', 'The workspace needs at least one active owner');
+      }
+      const updated = directory.transaction(() => {
+        const next = directory.updateUser(target.id, patch);
+        audit(user, 'member.update', { userId: target.id, ...patch });
+        return next;
+      });
+      emit('access-changed', { userId: target.id });
+      if (patch.disabled === true) emit('session-revoked', { userId: target.id });
+      return [200, memberView(updated)];
+    }),
+    compile('DELETE', 'members/:id', {}, ({ user, params }) => {
+      requireAdmin(user);
+      const target = directory.getUser(params.id);
+      if (!target) throw notFound('Member not found');
+      if (target.role === 'owner') {
+        if (user.role !== 'owner') throw forbidden('Only an owner can remove an owner');
+        if (!hasOtherActiveOwner(target.id)) throw conflict('last_owner', 'The workspace needs at least one active owner');
+      }
+      directory.transaction(() => {
+        audit(user, 'member.remove', { userId: target.id, email: target.email });
+        directory.removeUser(target.id);
+      });
+      emit('user-removed', { userId: target.id });
+      return [204];
+    }),
+  ];
+
+  // ------------------------------------------------------------ dispatch
+
+  function send(res, status, body) {
+    if (body === undefined) {
+      res.writeHead(status);
+      res.end();
+      return;
+    }
+    const payload = JSON.stringify(body);
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(payload) });
+    res.end(payload);
+  }
+
+  function resolve(method, segments) {
+    const matching = routes.filter(
+      (r) => r.parts.length === segments.length && r.parts.every((p, i) => p.startsWith(':') || p === segments[i]),
+    );
+    if (matching.length === 0) throw notFound('No such endpoint');
+    const route = matching.find((r) => r.method === (method === 'HEAD' ? 'GET' : method));
+    if (!route) {
+      const error = new HttpError(405, 'method_not_allowed', 'Method not allowed');
+      error.allow = [...new Set(matching.map((r) => r.method))].join(', ');
+      throw error;
+    }
+    const params = {};
+    route.parts.forEach((p, i) => {
+      if (p.startsWith(':')) params[p.slice(1)] = segments[i];
+    });
+    return { route, params };
+  }
+
+  async function dispatch(req, res, pathname) {
+    let segments;
+    try {
+      segments = pathname.split('/').slice(2).map(decodeURIComponent);
+    } catch {
+      throw badRequest('Malformed URL');
+    }
+    const method = String(req.method).toUpperCase();
+    const { route, params } = resolve(method, segments);
+
+    if (!auth.csrfOk(req)) throw new HttpError(403, 'csrf', 'Missing or invalid CSRF protection header');
+
+    const signedIn = () => {
+      const current = auth.authenticate(req.headers.cookie);
+      if (!current) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+      if (current.setCookie) res.setHeader('set-cookie', current.setCookie);
+      return current;
+    };
+
+    let session = route.public ? null : signedIn();
+    const body = route.body && BODY_METHODS.has(method) ? await readJson(req) : {};
+    // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
+    if (session && route.body) session = signedIn();
+
+    const [status, payload] = await route.handler({
+      req,
+      res,
+      params,
+      body,
+      user: session?.user,
+      sessionId: session?.sessionId,
+    });
+    send(res, status, payload);
+  }
+
+  async function handle(req, res) {
+    let pathname;
+    try {
+      pathname = new URL(req.url, 'http://x').pathname;
+    } catch {
+      return false;
+    }
+    if (!pathname.startsWith('/api/') || pathname === '/api/health') return false;
+
+    res.setHeader('cache-control', 'no-store');
+    res.setHeader('x-content-type-options', 'nosniff');
+    try {
+      await dispatch(req, res, pathname);
+    } catch (err) {
+      if (res.headersSent) {
+        res.end();
+        return true;
+      }
+      if (err instanceof HttpError) {
+        if (err.allow) res.setHeader('allow', err.allow);
+        if (err.status === 413) res.setHeader('connection', 'close');
+        send(res, err.status, { error: err.code, message: err.message });
+      } else {
+        console.error('api: unexpected error:', err);
+        send(res, 500, { error: 'internal', message: 'Something went wrong' });
+      }
+    }
+    return true;
+  }
+
+  return { handle };
+}

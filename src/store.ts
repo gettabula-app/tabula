@@ -46,6 +46,8 @@ export class Store {
   readonly undo: Y.UndoManager;
 
   private listeners = new Set<ChangeListener>();
+  private readOnlyListeners = new Set<(v: boolean) => void>();
+  private _readOnly = false;
   private orderDirty = true;
   private orderCache: Obj[] = [];
   private boundIndex = new Map<Id, Set<Id>>(); // shape id -> connector ids
@@ -96,8 +98,31 @@ export class Store {
     return () => this.listeners.delete(l);
   }
 
+  get readOnly(): boolean {
+    return this._readOnly;
+  }
+
+  setReadOnly(v: boolean) {
+    if (v === this._readOnly) return;
+    this._readOnly = v;
+    this.readOnlyListeners.forEach((l) => l(v));
+  }
+
+  onReadOnly(fn: (v: boolean) => void): () => void {
+    this.readOnlyListeners.add(fn);
+    return () => {
+      this.readOnlyListeners.delete(fn);
+    };
+  }
+
+  /** Every local write goes through transact or transactAs, so a read-only store cannot write. */
   transact(fn: () => void) {
-    this.doc.transact(fn, LOCAL);
+    this.transactAs(fn, LOCAL);
+  }
+
+  transactAs(fn: () => void, origin: string) {
+    if (this._readOnly) return;
+    this.doc.transact(fn, origin);
   }
 
   get(id: Id | undefined): Obj | undefined {
@@ -203,7 +228,7 @@ export class Store {
 
   setFlow(patch: Partial<FlowState>) {
     // Flow changes are session control, not content: they are not undoable.
-    this.doc.transact(() => {
+    this.transactAs(() => {
       for (const [k, v] of Object.entries(patch)) {
         if (v === undefined) this.flow.delete(k);
         else this.flow.set(k, v);

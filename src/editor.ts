@@ -48,6 +48,7 @@ export class TextEditor {
   }
 
   start(id: Id) {
+    if (this.app.readOnly) return;
     if (this.id) this.commit();
     const o = this.app.store.get(id);
     if (!o || o.locked) return;

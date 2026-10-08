@@ -86,7 +86,20 @@ export async function deleteBoard(id: string) {
 
 // ---------------------------------------------------------------- connection
 
-export type SyncStatus = 'local' | 'connecting' | 'live';
+export type SyncStatus = 'local' | 'connecting' | 'live' | 'denied';
+
+/** Why the relay refused or dropped the connection (accounts mode close codes). */
+export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed';
+
+export function deniedReason(code: number): DeniedReason | null {
+  switch (code) {
+    case 4401: return 'unauthenticated';
+    case 4403: return 'no_access';
+    case 4404: return 'not_found';
+    case 4410: return 'access_removed';
+    default: return null;
+  }
+}
 
 export interface BoardConn {
   id: string;
@@ -95,7 +108,9 @@ export interface BoardConn {
   awareness: Awareness;
   provider: WebsocketProvider | null;
   status: SyncStatus;
+  denied: DeniedReason | null;
   onStatus: (fn: (s: SyncStatus) => void) => () => void;
+  onDenied: (fn: (r: DeniedReason) => void) => () => void;
   destroy: () => void;
 }
 
@@ -109,11 +124,17 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   let provider: WebsocketProvider | null = null;
   let awareness: Awareness;
   const statusListeners = new Set<(s: SyncStatus) => void>();
+  const deniedListeners = new Set<(r: DeniedReason) => void>();
   const conn: BoardConn = {
-    id, doc, store, provider: null, awareness: null as unknown as Awareness, status: 'local',
+    id, doc, store, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
       statusListeners.add(fn);
       return () => statusListeners.delete(fn);
+    },
+    onDenied: (fn) => {
+      deniedListeners.add(fn);
+      if (conn.denied) fn(conn.denied);
+      return () => deniedListeners.delete(fn);
     },
     destroy: () => {
       provider?.destroy();
@@ -132,7 +153,17 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     awareness = provider.awareness;
     setStatus('connecting');
     provider.on('status', ({ status }: { status: string }) => {
+      if (conn.denied) return;
       setStatus(status === 'connected' ? 'live' : 'connecting');
+    });
+    provider.on('connection-close', (event: CloseEvent | null) => {
+      const reason = event ? deniedReason(event.code) : null;
+      if (!reason || conn.denied || !provider) return;
+      conn.denied = reason;
+      provider.disconnect();
+      provider.shouldConnect = false;
+      setStatus('denied');
+      deniedListeners.forEach((l) => l(reason));
     });
   } else {
     awareness = new Awareness(doc);

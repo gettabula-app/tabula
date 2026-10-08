@@ -1,49 +1,151 @@
 import './styles.css';
 import * as Y from 'yjs';
 import { BoardApp } from './app';
-import { getUser, openBoard } from './sync';
+import { deleteBoard, getUser, openBoard } from './sync';
 import { mountBoardUi } from './ui/board';
+import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
+import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { loadCatalogue } from './fonts';
 import { TEMPLATES, insertTemplate } from './templates';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import type { Obj } from './types';
 import { applyTheme, getStoredTheme } from './themes';
+import { ApiError, api, type ServerBoard } from './api';
+import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, type AuthState } from './auth';
+import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
 
 applyTheme(getStoredTheme());
 
+const RETURN_KEY = 'driftboard:return';
+
 const root = document.getElementById('app')!;
 let current: BoardApp | null = null;
+let releaseBanner: (() => void) | null = null;
 let pending: { id: string; template?: string; imported?: ImportedBoard } | null = null;
+let registering = false;
 let routeSeq = 0;
 
+function saveReturn(hash: string) {
+  const target = returnHash(hash);
+  if (!target) return;
+  try {
+    sessionStorage.setItem(RETURN_KEY, target);
+  } catch {
+    /* storage is unavailable: sign-in then lands on the home screen */
+  }
+}
+
+function takeReturn(): string {
+  let saved: string | null = null;
+  try {
+    saved = sessionStorage.getItem(RETURN_KEY);
+    sessionStorage.removeItem(RETURN_KEY);
+  } catch {
+    /* storage is unavailable */
+  }
+  return (saved && returnHash(saved)) || '#/';
+}
+
+/** Leaves the sign-in screens: drops the emailed token from the address bar and goes where the user was headed. */
+function finishSignIn() {
+  history.replaceState(null, '', location.pathname + location.search);
+  location.hash = takeReturn();
+}
+
+async function refreshBoardCache() {
+  try {
+    cacheServerBoards(await api.boards());
+  } catch {
+    /* the cached list stays as it was */
+  }
+}
+
+const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBoard; teamId?: string }) =>
+  Boolean(opts.teamId || opts.template || opts.imported) || !cachedServerBoards().some((b) => b.id === id);
+
 const nav: HomeNav = {
-  open: (id, opts) => {
+  open: async (id, opts = {}) => {
+    if (registering) return;
+    if (authState().mode === 'signed-in' && isNewBoard(id, opts)) {
+      registering = true;
+      try {
+        await api.createBoard({
+          id,
+          title: TEMPLATES.find((t) => t.id === opts.template)?.name ?? 'Untitled board',
+          teamId: opts.teamId,
+        });
+      } catch (err) {
+        toast(err instanceof ApiError && err.status !== 0 ? err.message : 'Could not reach the server. Try again.');
+        return;
+      } finally {
+        registering = false;
+      }
+      refreshBoardCache();
+    }
     pending = { id, ...opts };
     location.hash = `#/b/${id}`;
   },
 };
 
+/** The user's role on a board in accounts mode; the last known list decides when the server cannot be reached. */
+async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role'] | undefined> {
+  if (auth.mode !== 'signed-in' && auth.mode !== 'offline') return undefined;
+  let list = cachedServerBoards();
+  if (auth.mode === 'signed-in') {
+    try {
+      list = await api.boards();
+      cacheServerBoards(list);
+    } catch {
+      /* offline or session ended: the cached list decides, the relay will say if access is gone */
+    }
+  }
+  return list.find((b) => b.id === id)?.role;
+}
+
 async function route() {
   const seq = ++routeSeq;
-  const m = location.hash.match(/^#\/b\/([A-Za-z0-9_-]{1,64})$/);
+  releaseBanner?.();
+  releaseBanner = null;
   current?.destroy();
   current = null;
-  if (!m) {
-    root.className = 'home-root';
-    renderHome(root, nav);
+
+  const auth = authState();
+  const r = resolveRoute(location.hash, auth.mode);
+  if (needsSignIn(r, auth.mode)) {
+    saveReturn(location.hash);
+    location.replace('#/signin');
     return;
   }
-  const id = m[1];
+
+  if (r.name !== 'board') {
+    root.className = 'home-root';
+    const view = document.createElement('div');
+    view.style.display = 'contents';
+    root.replaceChildren(view);
+    const finish = () => {
+      if (seq === routeSeq) finishSignIn();
+    };
+    if (r.name === 'signin') renderSignIn(view);
+    else if (r.name === 'verify') renderVerify(view, r.token, finish);
+    else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
+    else renderHome(view, nav, auth);
+    return;
+  }
+
+  const id = r.id;
   root.className = 'board-root';
   root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening board…' }));
-  const user = getUser();
-  const conn = await openBoard(id, user);
+  const accounts = auth.mode === 'signed-in' || auth.mode === 'offline';
+  const me = accounts ? auth.me : null;
+  const user = me ? { ...getUser(), name: me.user.name } : getUser();
+  const [conn, role] = await Promise.all([openBoard(id, user), boardRole(id, auth)]);
   if (seq !== routeSeq) {
     conn.destroy();
     return;
   }
+  if (role === 'viewer') conn.store.setReadOnly(true);
   const job = pending?.id === id ? pending : null;
   pending = null;
 
@@ -65,6 +167,21 @@ async function route() {
   // Inspection handle for automated tests and debugging (?debug in the URL).
   if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });
+  if (accounts) {
+    releaseBanner = mountAccessBanner(conn, root, {
+      onSignIn: () => {
+        saveReturn(`#/b/${id}`);
+        location.hash = '#/signin';
+      },
+      onRemoveLocal: async () => {
+        await deleteBoard(id);
+        location.hash = '#/';
+      },
+      onHome: () => {
+        location.hash = '#/';
+      },
+    });
+  }
 
   if (job?.template) {
     const t = TEMPLATES.find((x) => x.id === job.template);
@@ -79,9 +196,18 @@ async function route() {
   }
 }
 
-window.addEventListener('hashchange', route);
-route();
+async function boot() {
+  // Open mode (no accounts, or no server to ask) resolves at once and routes exactly as before.
+  await initAuth();
+  onAuth((s) => {
+    if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
+  });
+  window.addEventListener('hashchange', route);
+  route();
+}
+
 loadCatalogue();
+boot();
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);

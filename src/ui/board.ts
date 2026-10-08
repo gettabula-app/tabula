@@ -12,6 +12,8 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
+import { api } from '../api';
+import { authState, setSignedIn, setSignedOut, signOut } from '../auth';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
@@ -41,23 +43,29 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
     status.dataset.state = s;
-    status.replaceChildren(
-      icon(s === 'live' ? 'wifi' : 'cloudOff', 16),
-      h('span', null, s === 'live' ? (others ? `Live with ${others}` : 'Live') : s === 'connecting' ? 'Saved on this device' : 'Local only'),
-    );
-    status.title = s === 'live'
-      ? 'Connected to the relay. Changes sync in real time.'
-      : s === 'connecting'
-        ? 'Every change is saved on this device. Waiting for the relay to sync with others.'
-        : 'Sync is off. Every change is saved on this device.';
+    let label = 'Local only';
+    let tip = 'Sync is off. Every change is saved on this device.';
+    if (s === 'live') {
+      label = others ? `Live with ${others}` : 'Live';
+      tip = 'Connected to the relay. Changes sync in real time.';
+    } else if (s === 'connecting') {
+      label = 'Saved on this device';
+      tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
+    } else if (s === 'denied') {
+      label = app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = 'The server refused this connection. Your changes are still saved on this device.';
+    }
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
+    status.title = tip;
   };
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
   renderStatus();
 
+  const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
   const topLeft = h('div', { class: 'tray top-left' },
     h('button', { class: 'icon-btn', title: 'All boards', 'aria-label': 'All boards', onclick: nav.home }, icon('home', 18)),
-    name, status,
+    name, status, badge,
   );
 
   // ---------------------------------------------------------------- top right
@@ -154,7 +162,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // Sticky colour tray appears while the sticky tool is active.
   const stickyTray = h('div', { class: 'tray tool-tray sticky-tray', 'aria-label': 'Sticky note colour' });
   const renderStickyTray = () => {
-    const show = app.tool.kind === 'sticky';
+    const show = app.tool.kind === 'sticky' && !app.readOnly;
     stickyTray.classList.toggle('show', show);
     if (!show) return;
     stickyTray.style.top = `${stickyBtn.getBoundingClientRect().top - 6}px`;
@@ -173,7 +181,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const penTray = h('div', { class: 'tray tool-tray pen-tray' });
   const penBtn = () => rail.querySelector<HTMLElement>('[data-tool="pen"]');
   const renderPen = () => {
-    penTray.classList.toggle('show', app.tool.kind === 'pen');
+    penTray.classList.toggle('show', app.tool.kind === 'pen' && !app.readOnly);
     const pb = penBtn();
     if (pb && app.tool.kind === 'pen') penTray.style.top = `${pb.getBoundingClientRect().top - 6}px`;
     penTray.replaceChildren(
@@ -206,6 +214,19 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   mountFlowBar(app, chrome);
   firstRunHint(app, chrome);
 
+  // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
+  const syncReadOnly = () => {
+    const ro = app.readOnly;
+    rail.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      b.disabled = ro && b.dataset.tool !== 'select' && b.dataset.tool !== 'hand';
+    });
+    name.readOnly = ro;
+    badge.classList.toggle('show', ro);
+    if (ro && library.tab) library.open(null);
+  };
+  app.on('readonly', syncReadOnly);
+  syncReadOnly();
+
   // Drop .drift / .json files onto the board to import them.
   root.addEventListener('dragover', (e) => {
     if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
@@ -214,6 +235,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     e.preventDefault();
+    if (app.readOnly) return;
     await importInto(app, file);
   });
 }
@@ -231,7 +253,7 @@ async function importInto(app: BoardApp, file: File) {
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
 function firstRunHint(app: BoardApp, chrome: HTMLElement) {
-  if (app.store.cache.size) return;
+  if (app.store.cache.size || app.readOnly) return;
   const hint = h('div', { class: 'empty-hint' },
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
@@ -319,6 +341,12 @@ function minimap(app: BoardApp) {
 function openMenu(app: BoardApp, anchor: HTMLElement) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
+  // Items that change the board are disabled while it is view only.
+  const writeItem = (ic: IconName, label: string, fn: () => void) => {
+    const b = item(ic, label, fn);
+    b.disabled = app.readOnly;
+    return b;
+  };
   const name = () => safeName(app.store.getMeta().name);
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
   fileInput.addEventListener('change', () => {
@@ -343,12 +371,36 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
     }
   };
   paintThemes();
+  const auth = authState();
+  const account = auth.mode === 'signed-in' ? [
+    h('div', { class: 'list-label' }, 'Account'),
+    h('div', { style: 'display:flex;align-items:center;gap:10px;padding:8px 10px' },
+      icon('user', 18),
+      h('div', { style: 'min-width:0;overflow-wrap:anywhere' },
+        h('div', null, auth.me.user.name),
+        h('div', { class: 'muted small' }, auth.me.user.email))),
+    item('user', 'Sign out', async () => {
+      await signOut().catch(() => undefined);
+      location.hash = '#/signin';
+    }),
+    item('user', 'Sign out everywhere', async () => {
+      try {
+        await api.logoutAll();
+      } catch {
+        toast('Could not sign out everywhere. Check your connection and try again.');
+        return;
+      }
+      setSignedOut();
+      location.hash = '#/signin';
+    }),
+  ] : [];
   const pop = popover(anchor, h('div', { class: 'menu' },
+    account,
     h('div', { class: 'list-label' }, 'Board'),
-    item('grid', 'Board settings', () => openSettings(app)),
+    writeItem('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),
-    item('upload', 'Import a board file into this board', () => fileInput.click()),
-    item('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
+    writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
+    writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
     h('div', { class: 'list-label' }, 'Appearance'),
     themeRows.map((r) => r.row),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
@@ -379,12 +431,16 @@ function openShare(app: BoardApp) {
   const relay = relayUrl();
   const input = h('input', { class: 'input', value: url, readOnly: true, 'aria-label': 'Board link' });
   const live = app.conn.status === 'live';
+  const auth = authState();
+  const accounts = auth.mode === 'signed-in' || (auth.mode === 'offline' && auth.me !== null);
   dialog('Share this board', h('div', { class: 'stack' },
-    h('p', null, live
-      ? 'Anyone who opens this link while connected to the same relay can edit the board with you in real time. They do not need an account.'
-      : relay
-        ? 'The relay is not reachable right now, so this board is only on your device. Your changes are saved and will sync when the relay is back.'
-        : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
+    h('p', null, accounts
+      ? 'Only people with access to this board can open this link: members of the board\'s team, and anyone it has been shared with. Add people from a team on the home screen, or share the board from there.'
+      : live
+        ? 'Anyone who opens this link while connected to the same relay can edit the board with you in real time. They do not need an account.'
+        : relay
+          ? 'The relay is not reachable right now, so this board is only on your device. Your changes are saved and will sync when the relay is back.'
+          : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
     h('div', { class: 'copy-row' }, input, h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => { input.select(); }) }, icon('link', 16), 'Copy link')),
     h('p', { class: 'muted small' }, relay ? `Relay: ${relay.replace(/^ws/, 'http')}` : 'Relay: off'),
   ), [{ label: 'Done', primary: true }]);
@@ -401,12 +457,28 @@ function openProfile(app: BoardApp) {
     } });
     return b;
   }));
+  const accountName = authState().mode === 'signed-in';
   dialog('Your name and colour', h('div', { class: 'stack' },
-    h('p', { class: 'muted' }, 'Shown next to your cursor and on the notes you write.'),
+    h('p', { class: 'muted' }, accountName
+      ? 'Your name comes from your account and is shown next to your cursor and on the notes you write. The colour is stored on this device.'
+      : 'Shown next to your cursor and on the notes you write.'),
     field('Name', name), field('Colour', colors),
   ), [{ label: 'Cancel' }, {
-    label: 'Save', primary: true, onClick: () => {
-      u.name = name.value.trim() || u.name;
+    label: 'Save', primary: true, onClick: async () => {
+      const auth = authState();
+      const typed = name.value.trim();
+      if (auth.mode === 'signed-in' && typed && typed !== u.name) {
+        try {
+          const updated = await api.updateMe(typed);
+          setSignedIn({ ...auth.me, user: updated });
+          u.name = updated.name;
+        } catch (err) {
+          toast(err instanceof Error ? err.message : 'Could not save your name.');
+          return false;
+        }
+      } else {
+        u.name = typed || u.name;
+      }
       Object.assign(app.user, u);
       saveUser(app.user);
       app.conn.awareness.setLocalStateField('user', app.user);

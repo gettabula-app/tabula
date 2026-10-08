@@ -6,7 +6,7 @@ Every board lives in your browser first (IndexedDB). A small relay syncs boards 
 
 ## Run it
 
-Requires Node 22.12 or newer.
+Requires Node 22.13 or newer.
 
 ```bash
 npm install
@@ -41,6 +41,32 @@ docker run -p 8787:8787 -v mira-data:/data mira
 
 The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boardId>`. In the app, **Menu → Board settings → Relay** accepts `auto` (the server that served the app), `off` (this device only), or any `wss://…/sync` URL.
 
+### Accounts and teams
+
+By default Mira is open: anyone who can reach the relay and knows a board link can edit it. Set `MIRA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MIRA_AUTH` | `off` | `on` turns accounts mode on |
+| `MIRA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `MIRA_AUTH=on` |
+| `MIRA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
+| `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `webhook` POSTs `{to, subject, text}` as JSON to `MIRA_MAIL_WEBHOOK_URL` |
+| `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
+| `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Included in webhook payloads as `from` |
+| `MIRA_SESSION_DAYS` | `30` | Session lifetime |
+| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
+
+Try it locally:
+
+```bash
+npm run build
+MIRA_AUTH=on MIRA_OWNER_EMAIL=you@example.com npm start
+```
+
+Open http://localhost:8787, enter that address, and open the sign-in link that the relay prints to its console. When serving the built app from another origin (for example Vite on :5173 in development), set `MIRA_BASE_URL` to that origin, otherwise sockets are refused.
+
+The full design (roles, the HTTP API, the relay rules and the SQLite schema) is in [docs/accounts.md](docs/accounts.md).
+
 ## Screenshots
 
 | Shapes panel | Quick actions |
@@ -50,6 +76,10 @@ The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boar
 | ![Text popover with horizontal and vertical alignment](docs/images/text-options.png) | ![Lock badge shown when hovering a locked item](docs/images/locked-badge.png) |
 | **Themes (Matrix, with the picker)** | **Ayu** |
 | ![Board menu with the theme picker, Matrix theme active](docs/images/themes-menu-matrix.png) | ![Ayu theme on a board](docs/images/theme-ayu.png) |
+| **Accounts: sign in** | **Accounts: home screen with teams** |
+| ![Sign-in screen](docs/images/signin.png) | ![Home screen with Personal, Shared with you and On this device](docs/images/teams-home.png) |
+| **Accounts: access removed** | |
+| ![Banner shown when your access to a board is removed](docs/images/access-removed.png) | |
 
 ## What works today
 
@@ -72,7 +102,7 @@ The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boar
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, enforced roles, comments, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
+End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, a full admin dashboard, comments, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
 
 ## Fonts and icons
 

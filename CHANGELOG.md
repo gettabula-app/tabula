@@ -5,6 +5,8 @@ All notable changes to Mira are documented here, newest first. The format follow
 ## [Unreleased]
 
 ### Added
+- Accounts and teams mode (opt-in with `MIRA_AUTH=on`): email sign-in links, workspace and team roles, per-board sharing, a server-side HTTP API for all of it, and a relay that checks access on every connection and makes viewers read-only. Open mode is unchanged. See `docs/accounts.md`.
+- Sign-in screens, team-based home screen, read-only viewer boards, access banners and an Account section in the board menu for accounts mode.
 - CI tests and builds on Node 26 as well as 22 and 24, matching the Docker image's Node 26 base.
 - Toolbars and panels get a hairline outline on the non-default themes so they stay visible on dark canvases.
 - App themes: Default, Ayu, Kanagawa, Matrix and Evergreen. Pick one under Appearance in the board menu; the choice is remembered on this device and applied before the page paints. Every text and accent colour pair meets WCAG AA contrast (checked in tests).
@@ -21,6 +23,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- Minimum Node version is now 22.13 (built-in SQLite for the upcoming accounts mode).
 - Swiss design pass: the Select, Hand and Pen icons are re-centred in their 24 px box; every button now has the same 9 px inset on all sides (22 px icons in the 40 px toolbar buttons, 18 px in 36 px buttons, 16 px in labelled buttons); padding is symmetric on the top-right tray, step list, steps popover, quick-action chip, tiles and the sticky colour tray; the close buttons line up with the title inset; drawers and tool trays keep the same gutter when the toolbar narrows on short screens; the running flow-bar step is 36 px high so its end buttons have even spacing.
 - The app is now called Mira (it was called Driftboard in the interface and documentation). Saved boards, settings and old .drift files keep working: only user-visible text changed.
 - Text, drawings, icons, connectors and frame titles drawn on the canvas now follow the theme's ink colour, and exports (SVG and PNG) always use the light default colours on white.
@@ -29,10 +32,11 @@ All notable changes to Mira are documented here, newest first. The format follow
 - Locking an item clears the selection.
 - Connector anchors and hover dots now sit on a shape's outline instead of its bounding box, so connectors meet triangles, stars, arrows and the like at the visible edge.
 - The default size of a new triangle is now square, like the other symmetric shapes.
-- Minimum Node version is now 22.12, which vitest 5 requires.
 - Rewrote ternary/short-circuit expression statements in `src/app.ts` as `if` statements and simplified small lint findings in `src/mermaid.ts`, `src/markup.ts` and `test/core.test.ts`, with no change in behaviour.
+- In accounts mode the name in Your name and colour is the account name and is saved to the server; the Share dialog explains who can open a board.
 
 ### Fixed
+- On the home screen, boards that someone shared with you no longer appear under Personal, and the sign-in card is centred on the page.
 - The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
 - Labels in the board menu were right-aligned next to their icons; they are now left-aligned.
 - A locked item that overlaps an unlocked one can now be unlocked with a long press; double-clicking a locked item no longer creates a stray text box; arrow-key nudging a frame no longer moves its locked children; an item locked by a collaborator is dropped from your selection.
