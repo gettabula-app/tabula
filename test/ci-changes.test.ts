@@ -13,11 +13,12 @@ describe('ci change classification', () => {
     expect(run('docs/guide/.last-documented', 'CHANGELOG.md')).toEqual({ code: false, guide: true });
   });
 
-  it('skips everything for Markdown, other docs, licences and dependabot.yml', () => {
+  it('skips everything for Markdown, other docs, design mockups, licences and dependabot.yml', () => {
     const none = { code: false, guide: false };
     expect(run('README.md')).toEqual(none);
     expect(run('docs/desktop.md')).toEqual(none);
     expect(run('docs/images/signin.png')).toEqual(none);
+    expect(run('design/ai-toolbar/index.html', 'design/ai-toolbar/shot.png')).toEqual(none);
     expect(run('desktop/README.md', 'server/notes.md', '.claude/agents/implementer.md')).toEqual(none);
     expect(run('LICENSE', 'LICENSE.txt', 'LICENSE-MIT')).toEqual(none);
     expect(run('.github/dependabot.yml')).toEqual(none);
