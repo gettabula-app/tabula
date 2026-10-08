@@ -43,6 +43,18 @@ If you ran the old `mira` image, keep mounting your existing volume (`-v mira-da
 
 The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boardId>`. In the app, **Menu → Board settings → Relay** accepts `auto` (the server that served the app), `off` (this device only), or any `wss://…/sync` URL.
 
+### Stopping the relay
+
+Edits are written to disk a second after the last change, and never later than 30 seconds after the first unsaved one. When the relay gets SIGINT, SIGTERM or SIGHUP (and SIGBREAK on Windows) it writes every open board at once, closes its databases and exits with code 0. `docker stop`, systemd and Ctrl+C all work that way. A process that is killed instead (`kill -9`, `docker kill`, a supervisor that gives up waiting) loses the edits of the last 30 seconds at most.
+
+**On Windows** a program cannot catch being killed and there is no SIGTERM, so the relay saves only when it receives Ctrl+C (or Ctrl+Break, or its console window is closed, which Windows follows about 10 seconds later by ending it). Run it under a service wrapper that stops it with Ctrl+C and gives it a few seconds before it resorts to a hard kill:
+
+- nssm: the default stop method (`AppStopMethodConsole`) sends Ctrl+C, but waits only 1.5 seconds before it tries something harsher. Raise it with `nssm set tabula AppStopMethodConsole 10000`.
+- WinSW: sends Ctrl+C first and waits for `<stoptimeout>` (15 seconds by default) before it terminates the service.
+- Never stop it with `taskkill /F` or `Stop-Process`: both end it at once and skip the save.
+
+A Node program that starts the relay with an IPC channel (`stdio: [..., 'ipc']`) can also send it `{ type: 'shutdown' }`, which does the same on every system.
+
 ### Accounts and teams
 
 By default Tabula is open: anyone who can reach the relay and knows a board link can edit it. Set `TABULA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
