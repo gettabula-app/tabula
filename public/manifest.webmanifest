@@ -1,6 +1,6 @@
 {
-  "name": "Mira",
-  "short_name": "Mira",
+  "name": "Tabula",
+  "short_name": "Tabula",
   "description": "Local-first infinite whiteboard for diagrams, UML and team exercises.",
   "start_url": "/",
   "display": "standalone",

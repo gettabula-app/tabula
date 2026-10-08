@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Mira are documented here, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Tabula are documented here, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
@@ -34,6 +34,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 
 ### Changed
 - Admin dashboard redesigned in a Swiss style: numbered section index, large flush-left headings, overview figures in a ruled band, tables on hairlines instead of rounded cards, square buttons, chips and badges, and no shadows. Manage billing is now the primary action.
+- The app is now called Tabula (it was called Mira). Saved boards, settings and old .drift files keep working: only user-visible text changed. Server settings are now `TABULA_*` (`TABULA_AUTH`, `TABULA_BASE_URL`, `TABULA_OWNER_EMAIL`, `TABULA_CLOUD_TOKEN` and so on); the old `MIRA_*` names are still read, with a deprecation warning at startup, and the `TABULA_` name wins when both are set. The session cookie is now `tabula_session` (`__Host-tabula_session` over https), so everyone signs in once more after the upgrade. The browser app sends the CSRF header `x-tabula: 1`; the server still accepts the old `x-mira: 1` as well (deprecated). The service worker cache is renamed, and the old one is deleted on first load. Docker commands in the README use `tabula`.
 - Minimum Node version is now 22.13 (built-in SQLite for the upcoming accounts mode).
 - Swiss design pass: the Select, Hand and Pen icons are re-centred in their 24 px box; every button now has the same 9 px inset on all sides (22 px icons in the 40 px toolbar buttons, 18 px in 36 px buttons, 16 px in labelled buttons); padding is symmetric on the top-right tray, step list, steps popover, quick-action chip, tiles and the sticky colour tray; the close buttons line up with the title inset; drawers and tool trays keep the same gutter when the toolbar narrows on short screens; the running flow-bar step is 36 px high so its end buttons have even spacing.
 - The app is now called Mira (it was called Driftboard in the interface and documentation). Saved boards, settings and old .drift files keep working: only user-visible text changed.

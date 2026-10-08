@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 function setup(env: Record<string, string> = {}) {
-  const config = loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
+  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
   const sent: Mail[] = [];
@@ -69,7 +69,7 @@ describe('requestLogin', () => {
     expect(c.sent).toHaveLength(1);
     const [mail] = c.sent;
     expect(mail.to).toBe(OWNER);
-    expect(mail.subject).toBe('Your Mira sign-in link');
+    expect(mail.subject).toBe('Your Tabula sign-in link');
     expect(mail.text).toContain('http://localhost:8787/#/signin/verify?token=');
     expect(tokenIn(mail)).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(mail.text).toContain('expires in 15 minutes');
@@ -125,14 +125,14 @@ describe('requestLogin', () => {
   });
 
   it('uses the configured base URL and token lifetime in the mail', async () => {
-    const c = setup({ MIRA_BASE_URL: 'https://mira.example.com/' });
+    const c = setup({ TABULA_BASE_URL: 'https://tabula.example.com/' });
     await c.auth.requestLogin({ email: OWNER, ip: '1.1.1.1' });
-    expect(c.sent[0].text).toContain('https://mira.example.com/#/signin/verify?token=');
+    expect(c.sent[0].text).toContain('https://tabula.example.com/#/signin/verify?token=');
     expect(c.sent[0].text).not.toContain('com//');
   });
 
   it('does not let a mail failure, sync or async, show through', async () => {
-    const config = loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: OWNER });
+    const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER });
     const d = openDirectory(':memory:');
     opened.push(d);
     d.createUser({ email: 'known@example.com', role: 'member' });
@@ -487,7 +487,7 @@ describe('authenticate', () => {
       `other=${result.sessionToken}`,
       `${name}x=${result.sessionToken}`,
       `x${name}=${result.sessionToken}`,
-      `__Host-mira_session=${result.sessionToken}`,
+      `__Host-tabula_session=${result.sessionToken}`,
       result.sessionToken,
     ]) {
       expect(c.auth.authenticate(header)).toBeNull();
@@ -517,7 +517,7 @@ describe('authenticate', () => {
   });
 
   it('expires sessions and slides them with a fresh cookie', async () => {
-    const { c, header } = await signedIn({ MIRA_SESSION_DAYS: '10' });
+    const { c, header } = await signedIn({ TABULA_SESSION_DAYS: '10' });
     c.clock.t = T0 + 4 * DAY;
     expect(c.auth.authenticate(header)!.setCookie).toBeUndefined();
 
@@ -559,27 +559,41 @@ describe('cookies', () => {
 
   it('are host-only, HttpOnly and SameSite=Lax over http', () => {
     const c = setup();
-    expect(c.config.cookieName).toBe('mira_session');
-    expect(c.auth.sessionCookie(token, 30 * DAY)).toBe(`mira_session=${token}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax`);
+    expect(c.config.cookieName).toBe('tabula_session');
+    expect(c.auth.sessionCookie(token, 30 * DAY)).toBe(`tabula_session=${token}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax`);
     expect(c.auth.sessionCookie(token, 1999)).toContain('Max-Age=1;');
     expect(c.auth.sessionCookie(token, -5)).toContain('Max-Age=0;');
-    expect(c.auth.clearCookie()).toBe('mira_session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; SameSite=Lax');
+    expect(c.auth.clearCookie()).toBe('tabula_session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; SameSite=Lax');
     expect(c.auth.sessionCookie(token, DAY)).not.toMatch(/Domain|Secure/i);
   });
 
   it('are __Host- prefixed and Secure over https, still without a Domain', () => {
-    const c = setup({ MIRA_BASE_URL: 'https://mira.example.com' });
-    expect(c.config.cookieName).toBe('__Host-mira_session');
-    expect(c.auth.sessionCookie(token, 30 * DAY)).toBe(`__Host-mira_session=${token}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax; Secure`);
-    expect(c.auth.clearCookie()).toBe('__Host-mira_session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; SameSite=Lax; Secure');
+    const c = setup({ TABULA_BASE_URL: 'https://tabula.example.com' });
+    expect(c.config.cookieName).toBe('__Host-tabula_session');
+    expect(c.auth.sessionCookie(token, 30 * DAY)).toBe(`__Host-tabula_session=${token}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax; Secure`);
+    expect(c.auth.clearCookie()).toBe('__Host-tabula_session=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; SameSite=Lax; Secure');
     expect(c.auth.sessionCookie(token, DAY)).not.toMatch(/Domain/i);
   });
 
   it('are read under the right name for each scheme', async () => {
-    const https = setup({ MIRA_BASE_URL: 'https://mira.example.com' });
+    const https = setup({ TABULA_BASE_URL: 'https://tabula.example.com' });
     const result = await signIn(https, OWNER);
-    expect(https.auth.authenticate(`__Host-mira_session=${result.sessionToken}`)).not.toBeNull();
-    expect(https.auth.authenticate(`mira_session=${result.sessionToken}`)).toBeNull();
+    expect(https.auth.authenticate(`__Host-tabula_session=${result.sessionToken}`)).not.toBeNull();
+    expect(https.auth.authenticate(`tabula_session=${result.sessionToken}`)).toBeNull();
+
+    const plain = setup();
+    const issued = await signIn(plain, OWNER);
+    expect(plain.auth.authenticate(`tabula_session=${issued.sessionToken}`)).not.toBeNull();
+    expect(plain.auth.authenticate(`__Host-tabula_session=${issued.sessionToken}`)).toBeNull();
+  });
+
+  it('do not honour the cookie names from before the rename', async () => {
+    const plain = setup();
+    const issued = await signIn(plain, OWNER);
+    expect(plain.auth.authenticate(`mira_session=${issued.sessionToken}`)).toBeNull();
+    const https = setup({ TABULA_BASE_URL: 'https://tabula.example.com' });
+    const result = await signIn(https, OWNER);
+    expect(https.auth.authenticate(`__Host-mira_session=${result.sessionToken}`)).toBeNull();
   });
 
   it('refuse a token that could smuggle attributes or headers', () => {
@@ -596,46 +610,66 @@ describe('csrfOk', () => {
 
   it.each(['GET', 'HEAD', 'OPTIONS', 'get', 'head'])('always allows %s', (method) => {
     expect(auth.csrfOk(req(method))).toBe(true);
-    expect(auth.csrfOk(req(method, { origin: 'https://evil.example', host: 'mira.example.com' }))).toBe(true);
+    expect(auth.csrfOk(req(method, { origin: 'https://evil.example', host: 'tabula.example.com' }))).toBe(true);
   });
 
   it.each(['POST', 'PATCH', 'PUT', 'DELETE', 'post', 'TRACE', 'PROPFIND'])('needs the header on %s', (method) => {
     expect(auth.csrfOk(req(method))).toBe(false);
-    expect(auth.csrfOk(req(method, { host: 'mira.example.com' }))).toBe(false);
-    expect(auth.csrfOk(req(method, { 'x-mira': '0', host: 'mira.example.com' }))).toBe(false);
-    expect(auth.csrfOk(req(method, { 'x-mira': 'true' }))).toBe(false);
-    expect(auth.csrfOk(req(method, { 'x-mira': '' }))).toBe(false);
+    expect(auth.csrfOk(req(method, { host: 'tabula.example.com' }))).toBe(false);
+    expect(auth.csrfOk(req(method, { 'x-tabula': '0', host: 'tabula.example.com' }))).toBe(false);
+    expect(auth.csrfOk(req(method, { 'x-tabula': 'true' }))).toBe(false);
+    expect(auth.csrfOk(req(method, { 'x-tabula': '' }))).toBe(false);
   });
 
   it('accepts a request with the header and no Origin (not a browser)', () => {
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1' }))).toBe(true);
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1', host: 'tabula.example.com' }))).toBe(true);
+  });
+
+  it('still accepts the deprecated x-mira header, alone or next to x-tabula', () => {
     expect(auth.csrfOk(req('POST', { 'x-mira': '1' }))).toBe(true);
-    expect(auth.csrfOk(req('POST', { 'x-mira': '1', host: 'mira.example.com' }))).toBe(true);
+    expect(auth.csrfOk(req('POST', { 'x-mira': '1', host: 'tabula.example.com' }))).toBe(true);
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1', 'x-mira': '1' }))).toBe(true);
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1', 'x-mira': '0' }))).toBe(true);
+  });
+
+  it('rejects a request that carries neither header with the value 1', () => {
+    expect(auth.csrfOk(req('POST', { 'x-mira': '0', 'x-tabula': '' }))).toBe(false);
+    expect(auth.csrfOk(req('POST', { 'x-mira': 'true' }))).toBe(false);
+    expect(auth.csrfOk(req('POST', { 'x-mira': '' }))).toBe(false);
+    expect(auth.csrfOk(req('POST', { 'content-type': 'application/json' }))).toBe(false);
+  });
+
+  it('checks Origin against Host whichever header was sent', () => {
+    expect(auth.csrfOk(req('POST', { 'x-mira': '1', origin: 'https://tabula.example.com', host: 'tabula.example.com' }))).toBe(true);
+    expect(auth.csrfOk(req('POST', { 'x-mira': '1', origin: 'https://evil.example', host: 'tabula.example.com' }))).toBe(false);
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1', origin: 'https://evil.example', host: 'tabula.example.com' }))).toBe(false);
   });
 
   const originCases: [string, string, boolean][] = [
-    ['https://mira.example.com', 'mira.example.com', true],
-    ['http://mira.example.com', 'mira.example.com', true],
-    ['https://MIRA.example.com', 'mira.example.com', true],
+    ['https://tabula.example.com', 'tabula.example.com', true],
+    ['http://tabula.example.com', 'tabula.example.com', true],
+    ['https://TABULA.example.com', 'tabula.example.com', true],
     ['http://localhost:8787', 'localhost:8787', true],
-    ['https://evil.example', 'mira.example.com', false],
-    ['https://mira.example.com.evil.example', 'mira.example.com', false],
-    ['https://evil.example/mira.example.com', 'mira.example.com', false],
-    ['https://sub.mira.example.com', 'mira.example.com', false],
+    ['https://evil.example', 'tabula.example.com', false],
+    ['https://tabula.example.com.evil.example', 'tabula.example.com', false],
+    ['https://evil.example/tabula.example.com', 'tabula.example.com', false],
+    ['https://sub.tabula.example.com', 'tabula.example.com', false],
     ['http://localhost:9999', 'localhost:8787', false],
     ['http://localhost', 'localhost:8787', false],
-    ['null', 'mira.example.com', false],
-    ['not a url', 'mira.example.com', false],
-    ['', 'mira.example.com', false],
-    ['file:///etc/passwd', 'mira.example.com', false],
-    ['https://mira.example.com', '', false],
+    ['null', 'tabula.example.com', false],
+    ['not a url', 'tabula.example.com', false],
+    ['', 'tabula.example.com', false],
+    ['file:///etc/passwd', 'tabula.example.com', false],
+    ['https://tabula.example.com', '', false],
   ];
 
   it.each(originCases)('compares Origin %s with Host %s -> %s', (origin, host, expected) => {
-    expect(auth.csrfOk(req('POST', { 'x-mira': '1', origin, host }))).toBe(expected);
+    expect(auth.csrfOk(req('POST', { 'x-tabula': '1', origin, host }))).toBe(expected);
   });
 
   it('rejects an Origin when the Host header is missing', () => {
-    expect(auth.csrfOk(req('DELETE', { 'x-mira': '1', origin: 'https://mira.example.com' }))).toBe(false);
+    expect(auth.csrfOk(req('DELETE', { 'x-tabula': '1', origin: 'https://tabula.example.com' }))).toBe(false);
   });
 
   it('treats a missing method as unsafe', () => {
@@ -652,80 +686,117 @@ describe('loadConfig', () => {
       baseUrl: 'http://localhost:8787',
       origin: 'http://localhost:8787',
       secureCookies: false,
-      cookieName: 'mira_session',
+      cookieName: 'tabula_session',
       sessionMs: 30 * DAY,
       loginTokenMs: 15 * MIN,
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
-      mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Mira <no-reply@localhost>' },
+      mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },
     });
+  });
+
+  it('reads the deprecated MIRA_ names, warning once with the names to use instead', () => {
+    const warn = vi.fn<(message: string) => void>();
+    const cfg = loadConfig(
+      { MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: 'Boss@Example.COM', MIRA_BASE_URL: 'https://tabula.example.com', MIRA_MAIL: 'file', MIRA_TRUST_PROXY: '1', MIRA_SESSION_DAYS: '7' },
+      warn,
+    );
+    expect(cfg).toMatchObject({
+      authEnabled: true,
+      ownerEmail: 'boss@example.com',
+      origin: 'https://tabula.example.com',
+      cookieName: '__Host-tabula_session',
+      trustProxy: true,
+      sessionMs: 7 * DAY,
+    });
+    expect(cfg.mail.mode).toBe('file');
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = warn.mock.calls[0][0];
+    for (const name of ['AUTH', 'OWNER_EMAIL', 'BASE_URL', 'MAIL', 'TRUST_PROXY', 'SESSION_DAYS']) {
+      expect(message).toContain(`MIRA_${name} (use TABULA_${name})`);
+    }
+  });
+
+  it('prefers a TABULA_ name over the deprecated one and stays quiet when nothing is deprecated', () => {
+    const warn = vi.fn<(message: string) => void>();
+    expect(loadConfig({ MIRA_AUTH: 'on', TABULA_AUTH: 'off' }, warn).authEnabled).toBe(false);
+    expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER }, warn).authEnabled).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('names the TABULA_ variables in the half-set cloud error, also when they were set as MIRA_', () => {
+    const warn = vi.fn<(message: string) => void>();
+    expect(() => loadConfig({ MIRA_CLOUD_TOKEN: 'k'.repeat(40) }, warn)).toThrow(
+      'TABULA_CLOUD_TOKEN, TABULA_CLOUD_URL, TABULA_CLOUD_WORKSPACE_ID must be set together (missing TABULA_CLOUD_URL, TABULA_CLOUD_WORKSPACE_ID)',
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('turns accounts on only for the exact value "on"', () => {
     for (const value of ['off', 'true', '1', 'ON', '']) {
-      expect(loadConfig({ MIRA_AUTH: value }).authEnabled).toBe(false);
+      expect(loadConfig({ TABULA_AUTH: value }).authEnabled).toBe(false);
     }
-    expect(loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: OWNER }).authEnabled).toBe(true);
+    expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER }).authEnabled).toBe(true);
   });
 
   it('requires a valid owner email when accounts are on, and lower-cases it', () => {
-    expect(() => loadConfig({ MIRA_AUTH: 'on' })).toThrow('MIRA_OWNER_EMAIL is required');
-    expect(() => loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: '  ' })).toThrow('MIRA_OWNER_EMAIL is required');
-    expect(() => loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: 'not-an-email' })).toThrow('not a valid email');
-    expect(() => loadConfig({ MIRA_OWNER_EMAIL: 'a b@c.d' })).toThrow('not a valid email');
-    expect(loadConfig({ MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: '  Boss@Example.COM ' }).ownerEmail).toBe('boss@example.com');
-    expect(loadConfig({ MIRA_OWNER_EMAIL: 'Boss@Example.COM' }).ownerEmail).toBe('boss@example.com');
+    expect(() => loadConfig({ TABULA_AUTH: 'on' })).toThrow('TABULA_OWNER_EMAIL is required');
+    expect(() => loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: '  ' })).toThrow('TABULA_OWNER_EMAIL is required');
+    expect(() => loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'not-an-email' })).toThrow('not a valid email');
+    expect(() => loadConfig({ TABULA_OWNER_EMAIL: 'a b@c.d' })).toThrow('not a valid email');
+    expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: '  Boss@Example.COM ' }).ownerEmail).toBe('boss@example.com');
+    expect(loadConfig({ TABULA_OWNER_EMAIL: 'Boss@Example.COM' }).ownerEmail).toBe('boss@example.com');
   });
 
   it('derives the base URL, origin and cookie settings', () => {
     expect(loadConfig({ PORT: '9000' })).toMatchObject({ port: 9000, baseUrl: 'http://localhost:9000', origin: 'http://localhost:9000' });
     expect(loadConfig({ PORT: 'junk' }).port).toBe(8787);
 
-    const http1 = loadConfig({ MIRA_BASE_URL: 'http://mira.lan:8080//' });
-    expect(http1).toMatchObject({ baseUrl: 'http://mira.lan:8080', origin: 'http://mira.lan:8080', secureCookies: false, cookieName: 'mira_session' });
+    const http1 = loadConfig({ TABULA_BASE_URL: 'http://tabula.lan:8080//' });
+    expect(http1).toMatchObject({ baseUrl: 'http://tabula.lan:8080', origin: 'http://tabula.lan:8080', secureCookies: false, cookieName: 'tabula_session' });
 
-    const https1 = loadConfig({ MIRA_BASE_URL: ' https://Mira.Example.com:8443/app/ ' });
+    const https1 = loadConfig({ TABULA_BASE_URL: ' https://Tabula.Example.com:8443/app/ ' });
     expect(https1).toMatchObject({
-      baseUrl: 'https://Mira.Example.com:8443/app',
-      origin: 'https://mira.example.com:8443',
+      baseUrl: 'https://Tabula.Example.com:8443/app',
+      origin: 'https://tabula.example.com:8443',
       secureCookies: true,
-      cookieName: '__Host-mira_session',
+      cookieName: '__Host-tabula_session',
     });
 
-    expect(() => loadConfig({ MIRA_BASE_URL: 'not a url' })).toThrow('not a valid URL');
-    expect(() => loadConfig({ MIRA_BASE_URL: 'ftp://mira.example.com' })).toThrow('http:// or https://');
-    expect(() => loadConfig({ MIRA_BASE_URL: 'javascript:alert(1)' })).toThrow('http:// or https://');
+    expect(() => loadConfig({ TABULA_BASE_URL: 'not a url' })).toThrow('not a valid URL');
+    expect(() => loadConfig({ TABULA_BASE_URL: 'ftp://tabula.example.com' })).toThrow('http:// or https://');
+    expect(() => loadConfig({ TABULA_BASE_URL: 'javascript:alert(1)' })).toThrow('http:// or https://');
   });
 
   it('reads the session lifetime, data dir and mail settings', () => {
-    expect(loadConfig({ MIRA_SESSION_DAYS: '7' }).sessionMs).toBe(7 * DAY);
+    expect(loadConfig({ TABULA_SESSION_DAYS: '7' }).sessionMs).toBe(7 * DAY);
     for (const value of ['0', '-3', 'abc', '', 'Infinity']) {
-      expect(loadConfig({ MIRA_SESSION_DAYS: value }).sessionMs).toBe(30 * DAY);
+      expect(loadConfig({ TABULA_SESSION_DAYS: value }).sessionMs).toBe(30 * DAY);
     }
-    expect(loadConfig({ DATA_DIR: '/var/lib/mira' }).dataDir).toBe(path.resolve('/var/lib/mira'));
+    expect(loadConfig({ DATA_DIR: '/var/lib/tabula' }).dataDir).toBe(path.resolve('/var/lib/tabula'));
 
-    expect(loadConfig({ MIRA_MAIL: 'file', MIRA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Me <me@x.io>' });
-    expect(loadConfig({ MIRA_MAIL: 'webhook', MIRA_MAIL_WEBHOOK_URL: 'https://hooks.example.com/mail' }).mail).toMatchObject({
+    expect(loadConfig({ TABULA_MAIL: 'file', TABULA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Me <me@x.io>' });
+    expect(loadConfig({ TABULA_MAIL: 'webhook', TABULA_MAIL_WEBHOOK_URL: 'https://hooks.example.com/mail' }).mail).toMatchObject({
       mode: 'webhook',
       webhookUrl: 'https://hooks.example.com/mail',
     });
-    expect(loadConfig({ MIRA_MAIL: 'webhook', MIRA_MAIL_WEBHOOK_URL: 'https://h.example.com', MIRA_MAIL_WEBHOOK_TOKEN: ' tok ' }).mail.webhookToken).toBe('tok');
-    expect(() => loadConfig({ MIRA_MAIL: 'carrier-pigeon' })).toThrow('MIRA_MAIL must be one of');
-    expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_MAIL_FROM: 'Mira <m@x.io>' })).toThrow('MIRA_SMTP_URL is required');
-    expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_SMTP_URL: 'smtps://u:p@smtp.x.io:465' })).toThrow('MIRA_MAIL_FROM is required');
-    expect(loadConfig({ MIRA_MAIL: 'smtp', MIRA_SMTP_URL: 'smtps://u:p@smtp.x.io:465', MIRA_MAIL_FROM: 'Mira <m@x.io>' }).mail).toMatchObject({
+    expect(loadConfig({ TABULA_MAIL: 'webhook', TABULA_MAIL_WEBHOOK_URL: 'https://h.example.com', TABULA_MAIL_WEBHOOK_TOKEN: ' tok ' }).mail.webhookToken).toBe('tok');
+    expect(() => loadConfig({ TABULA_MAIL: 'carrier-pigeon' })).toThrow('TABULA_MAIL must be one of');
+    expect(() => loadConfig({ TABULA_MAIL: 'smtp', TABULA_MAIL_FROM: 'Tabula <m@x.io>' })).toThrow('TABULA_SMTP_URL is required');
+    expect(() => loadConfig({ TABULA_MAIL: 'smtp', TABULA_SMTP_URL: 'smtps://u:p@smtp.x.io:465' })).toThrow('TABULA_MAIL_FROM is required');
+    expect(loadConfig({ TABULA_MAIL: 'smtp', TABULA_SMTP_URL: 'smtps://u:p@smtp.x.io:465', TABULA_MAIL_FROM: 'Tabula <m@x.io>' }).mail).toMatchObject({
       mode: 'smtp',
       smtpUrl: 'smtps://u:p@smtp.x.io:465',
-      from: 'Mira <m@x.io>',
+      from: 'Tabula <m@x.io>',
     });
-    expect(() => loadConfig({ MIRA_MAIL: 'webhook' })).toThrow('MIRA_MAIL_WEBHOOK_URL is required');
+    expect(() => loadConfig({ TABULA_MAIL: 'webhook' })).toThrow('TABULA_MAIL_WEBHOOK_URL is required');
   });
 });
 
 describe('mailer', () => {
   const msg = { to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' };
-  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Mira <no-reply@localhost>', ...mail } });
+  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>', ...mail } });
 
   it('logs a block to stdout in log mode', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -738,28 +809,28 @@ describe('mailer', () => {
   });
 
   it('appends JSON lines to outbox.jsonl in file mode, creating the directory', async () => {
-    const dataDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mira-mail-')), 'nested', 'data');
+    const dataDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-mail-')), 'nested', 'data');
     tmpDirs.push(path.dirname(path.dirname(dataDir)));
-    const mailer = createMailer(configFor({ mode: 'file', from: 'Mira <m@x.io>' }, dataDir));
+    const mailer = createMailer(configFor({ mode: 'file', from: 'Tabula <m@x.io>' }, dataDir));
     await mailer.send(msg);
     await mailer.send({ ...msg, to: 'b@example.com' });
 
     const lines = fs.readFileSync(path.join(dataDir, 'outbox.jsonl'), 'utf8').trim().split('\n');
     expect(lines).toHaveLength(2);
     const first = JSON.parse(lines[0]);
-    expect(first).toEqual({ ...msg, from: 'Mira <m@x.io>', ts: expect.any(Number) });
+    expect(first).toEqual({ ...msg, from: 'Tabula <m@x.io>', ts: expect.any(Number) });
     expect(JSON.parse(lines[1]).to).toBe('b@example.com');
   });
 
   it('hands the message to the SMTP transport', async () => {
     const sendMail = vi.fn<() => Promise<object>>(async () => ({}));
     const createTransport = vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail } as unknown as ReturnType<typeof nodemailer.createTransport>);
-    const mailer = createMailer(configFor({ mode: 'smtp', smtpUrl: 'smtps://u:p@smtp.x.io:465', from: 'Mira <m@x.io>' }));
+    const mailer = createMailer(configFor({ mode: 'smtp', smtpUrl: 'smtps://u:p@smtp.x.io:465', from: 'Tabula <m@x.io>' }));
     await mailer.send({ ...msg, template: 'sign-in', params: { link: 'x' } });
     await mailer.send(msg);
     expect(createTransport).toHaveBeenCalledTimes(1);
     expect(createTransport).toHaveBeenCalledWith('smtps://u:p@smtp.x.io:465');
-    expect(sendMail).toHaveBeenCalledWith({ from: 'Mira <m@x.io>', to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' });
+    expect(sendMail).toHaveBeenCalledWith({ from: 'Tabula <m@x.io>', to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' });
     createTransport.mockRestore();
   });
 
@@ -788,8 +859,8 @@ describe('mailer', () => {
 
   it('POSTs the message as JSON in webhook mode', async () => {
     const { received, url } = await hook(200);
-    await createMailer(configFor({ mode: 'webhook', webhookUrl: url, from: 'Mira <m@x.io>' })).send(msg);
-    expect(received).toEqual([{ method: 'POST', type: 'application/json', body: { ...msg, from: 'Mira <m@x.io>' } }]);
+    await createMailer(configFor({ mode: 'webhook', webhookUrl: url, from: 'Tabula <m@x.io>' })).send(msg);
+    expect(received).toEqual([{ method: 'POST', type: 'application/json', body: { ...msg, from: 'Tabula <m@x.io>' } }]);
   });
 
   it('throws when the webhook answers with an error status', async () => {

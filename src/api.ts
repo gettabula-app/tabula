@@ -189,7 +189,7 @@ async function readBody(res: Response): Promise<Body> {
 export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
   async function call<T>(method: Method, path: string, payload?: unknown): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
-    if (method !== 'GET') headers['x-mira'] = '1';
+    if (method !== 'GET') headers['x-tabula'] = '1';
     const init: RequestInit = { method, credentials: 'same-origin', headers };
     if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     if (payload !== undefined) {

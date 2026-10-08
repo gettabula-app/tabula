@@ -1,27 +1,29 @@
 # Accounts and teams
 
-Mira can run in two modes.
+Tabula can run in two modes.
 
-- **Open mode** (default, `MIRA_AUTH=off`): today's behaviour. The relay accepts anyone who knows a board link, and each browser keeps its own board list.
-- **Accounts mode** (`MIRA_AUTH=on`): people sign in with an email link. The server keeps a directory of members, teams, boards and permissions in SQLite, and the relay enforces them on every connection and every update.
+- **Open mode** (default, `TABULA_AUTH=off`): today's behaviour. The relay accepts anyone who knows a board link, and each browser keeps its own board list.
+- **Accounts mode** (`TABULA_AUTH=on`): people sign in with an email link. The server keeps a directory of members, teams, boards and permissions in SQLite, and the relay enforces them on every connection and every update.
 
 Open mode must keep working unchanged, including every existing test.
 
 ## Configuration
 
+Tabula was called Mira before. The old `MIRA_<X>` variable names are deprecated but still honoured: each one is read as `TABULA_<X>` when that is not set (the `TABULA_` name wins), and the relay prints one warning at startup naming the old variables it used. The same applies to the `TABULA_CLOUD_*` variables in `docs/cloud.md`.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MIRA_AUTH` | `off` | `on` turns accounts mode on |
-| `MIRA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `MIRA_AUTH=on` |
-| `MIRA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
-| `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`MIRA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `MIRA_MAIL_WEBHOOK_URL` |
-| `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
-| `MIRA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
-| `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
-| `MIRA_SMTP_URL` | none | SMTP connection for `MIRA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
+| `TABULA_AUTH` | `off` | `on` turns accounts mode on |
+| `TABULA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `TABULA_AUTH=on` |
+| `TABULA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
+| `TABULA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL` |
+| `TABULA_MAIL_WEBHOOK_URL` | none | Target for `TABULA_MAIL=webhook` |
+| `TABULA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
+| `TABULA_MAIL_FROM` | `Tabula <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
+| `TABULA_SMTP_URL` | none | SMTP connection for `TABULA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
 | `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
-| `MIRA_SESSION_DAYS` | `30` | Session lifetime |
-| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `MIRA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
+| `TABULA_SESSION_DAYS` | `30` | Session lifetime |
+| `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `TABULA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
 
 The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer).
 
@@ -67,11 +69,11 @@ Tokens (login, session, invite) are 32 random bytes, base64url, shown once and s
 
 ## Sign-in
 
-- `POST /api/auth/request {email, invite?}` always answers `200 {ok: true}` (no user enumeration). It sends a login link only if the address may sign in: an existing, non-disabled user; or `MIRA_OWNER_EMAIL` when no owner exists yet; or any address presenting a valid invite token. Rate limits (in memory): 5 requests per email and 20 per IP per hour, then `429`.
-- The emailed link is `<MIRA_BASE_URL>/#/signin/verify?token=<token>`. It is a fragment link on purpose: mail scanners (Safe Links, Mimecast, chat unfurlers) prefetch links, and a GET that consumed the token would burn it; the fragment also keeps the token out of server and proxy logs. Tokens expire after 15 minutes and are single use.
-- The app opens that route and sends `POST /api/auth/verify {token}` (with `x-mira: 1`). The server consumes the token, re-checks that the invite it came from is still valid (not revoked, not expired, under `max_uses`), creates the user if needed (owner for the owner email, otherwise `member`; joins the invite's team), creates a session, sets the cookie and answers `200 {user}`. An invalid or expired token answers `400 {error: 'invalid_token'}` and the app shows "This link has expired. Request a new one."
-- Cookie: host-only (never a `Domain` attribute, because Cloud workspaces are sibling subdomains), `HttpOnly; SameSite=Lax; Path=/; Max-Age=<seconds>`. Over https it is named `__Host-mira_session` and also `Secure`; over plain http (local dev) it is `mira_session`. Sessions slide: when less than half the lifetime remains, a request extends it.
-- CSRF: every state-changing API request (`POST`, `PATCH`, `PUT`, `DELETE`) must carry the header `x-mira: 1` and, when an `Origin` header is present, it must match the request host; otherwise `403 {error: 'csrf'}`.
+- `POST /api/auth/request {email, invite?}` always answers `200 {ok: true}` (no user enumeration). It sends a login link only if the address may sign in: an existing, non-disabled user; or `TABULA_OWNER_EMAIL` when no owner exists yet; or any address presenting a valid invite token. Rate limits (in memory): 5 requests per email and 20 per IP per hour, then `429`.
+- The emailed link is `<TABULA_BASE_URL>/#/signin/verify?token=<token>`. It is a fragment link on purpose: mail scanners (Safe Links, Mimecast, chat unfurlers) prefetch links, and a GET that consumed the token would burn it; the fragment also keeps the token out of server and proxy logs. Tokens expire after 15 minutes and are single use.
+- The app opens that route and sends `POST /api/auth/verify {token}` (with `x-tabula: 1`). The server consumes the token, re-checks that the invite it came from is still valid (not revoked, not expired, under `max_uses`), creates the user if needed (owner for the owner email, otherwise `member`; joins the invite's team), creates a session, sets the cookie and answers `200 {user}`. An invalid or expired token answers `400 {error: 'invalid_token'}` and the app shows "This link has expired. Request a new one."
+- Cookie: host-only (never a `Domain` attribute, because Cloud workspaces are sibling subdomains), `HttpOnly; SameSite=Lax; Path=/; Max-Age=<seconds>`. Over https it is named `__Host-tabula_session` and also `Secure`; over plain http (local dev) it is `tabula_session`. Sessions slide: when less than half the lifetime remains, a request extends it.
+- CSRF: every state-changing API request (`POST`, `PATCH`, `PUT`, `DELETE`) must carry the header `x-tabula: 1` and, when an `Origin` header is present, it must match the request host; otherwise `403 {error: 'csrf'}`. The header `x-mira: 1` from the time the product was called Mira is still accepted in its place, but it is deprecated: send `x-tabula: 1`.
 - Disabling or removing a user revokes all their sessions and closes their open sync connections at once.
 
 ## HTTP API
@@ -121,7 +123,7 @@ Every board has a sibling comments room, `<boardId>~comments` (room names match 
 
 In accounts mode the relay decides **before it touches the room** (`getRoom()` must not run for an unauthorised connection: it would load or create the room file on disk). The HTTP upgrade still completes first so the browser can read a close code:
 
-0. The `Origin` header must equal the origin of `MIRA_BASE_URL`; otherwise answer `403` and destroy the socket before upgrading (stops a page on another workspace's sibling subdomain from riding the cookie).
+0. The `Origin` header must equal the origin of `TABULA_BASE_URL`; otherwise answer `403` and destroy the socket before upgrading (stops a page on another workspace's sibling subdomain from riding the cookie).
 1. Read the session cookie. No or invalid session: close with code `4401` (`unauthenticated`).
 2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`).
 3. No access: `4403` (never deletes anything on the client).
@@ -134,7 +136,7 @@ While connected:
 - Revoking a session closes its sockets with `4401`. Disabling or removing a user, removing them from a team, unsharing a board or deleting a board closes the affected sockets with `4410`. A user's sockets for the board room and the comments room are treated alike.
 - When a board room is saved, the relay copies the board title from the document (`doc.getMap('meta').get('name')`) into `boards.title` and bumps `updated_at`.
 
-Open mode (`MIRA_AUTH=off`) skips all of this.
+Open mode (`TABULA_AUTH=off`) skips all of this.
 
 ## Client
 
@@ -206,7 +208,7 @@ export function createAuth({directory, config, mailer, now = Date.now}): {
   authenticate(cookieHeader: string | undefined): {user, sessionId} | null
   sessionCookie(token, maxAgeMs): string;  clearCookie(): string
   logout(sessionId): void;  logoutAll(userId): number
-  csrfOk(req): boolean                                                        // method, x-mira header, Origin vs host
+  csrfOk(req): boolean                                                        // method, x-tabula (or deprecated x-mira) header, Origin vs host
 }
 
 // server/api.mjs

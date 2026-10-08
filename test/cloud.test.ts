@@ -18,11 +18,11 @@ type Mail = { to: string; text: string };
 const OWNER = 'owner@example.com';
 const TOKEN = 'k'.repeat(40);
 const CLOUD_ENV = {
-  MIRA_CLOUD_TOKEN: TOKEN,
-  MIRA_CLOUD_URL: 'https://cloud.example.com/',
-  MIRA_CLOUD_WORKSPACE_ID: 'ws_123',
+  TABULA_CLOUD_TOKEN: TOKEN,
+  TABULA_CLOUD_URL: 'https://cloud.example.com/',
+  TABULA_CLOUD_WORKSPACE_ID: 'ws_123',
 };
-const AUTH_ENV = { MIRA_AUTH: 'on', MIRA_OWNER_EMAIL: OWNER };
+const AUTH_ENV = { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER };
 const PORTAL = 'https://billing.example.com/session/abc';
 
 const opened: Dir[] = [];
@@ -93,7 +93,7 @@ const seed = (d: Dir, email: string, role: Role, disabled = false) => {
 describe('configuration', () => {
   it('has no cloud settings when none of the variables is set', () => {
     expect(loadConfig({ ...AUTH_ENV }).cloud).toBeUndefined();
-    expect(loadConfig({ ...AUTH_ENV, MIRA_CLOUD_TOKEN: '  ', MIRA_CLOUD_URL: '' }).cloud).toBeUndefined();
+    expect(loadConfig({ ...AUTH_ENV, TABULA_CLOUD_TOKEN: '  ', TABULA_CLOUD_URL: '' }).cloud).toBeUndefined();
     expect(loadConfig({}).cloud).toBeUndefined();
   });
 
@@ -105,17 +105,17 @@ describe('configuration', () => {
     });
     const padded = loadConfig({
       ...AUTH_ENV,
-      MIRA_CLOUD_TOKEN: ` ${TOKEN} `,
-      MIRA_CLOUD_URL: ' https://cloud.example.com/api/// ',
-      MIRA_CLOUD_WORKSPACE_ID: ' ws-1 ',
+      TABULA_CLOUD_TOKEN: ` ${TOKEN} `,
+      TABULA_CLOUD_URL: ' https://cloud.example.com/api/// ',
+      TABULA_CLOUD_WORKSPACE_ID: ' ws-1 ',
     });
     expect(padded.cloud).toEqual({ token: TOKEN, url: 'https://cloud.example.com/api', workspaceId: 'ws-1' });
   });
 
   it.each([
-    ['MIRA_CLOUD_TOKEN'],
-    ['MIRA_CLOUD_URL'],
-    ['MIRA_CLOUD_WORKSPACE_ID'],
+    ['TABULA_CLOUD_TOKEN'],
+    ['TABULA_CLOUD_URL'],
+    ['TABULA_CLOUD_WORKSPACE_ID'],
   ])('refuses to start without %s when the others are set', (missing) => {
     const env: Record<string, string> = { ...AUTH_ENV, ...CLOUD_ENV };
     delete env[missing];
@@ -123,15 +123,15 @@ describe('configuration', () => {
   });
 
   it('names every missing variable', () => {
-    expect(() => loadConfig({ ...AUTH_ENV, MIRA_CLOUD_URL: 'https://cloud.example.com' })).toThrow(
-      'missing MIRA_CLOUD_TOKEN, MIRA_CLOUD_WORKSPACE_ID',
+    expect(() => loadConfig({ ...AUTH_ENV, TABULA_CLOUD_URL: 'https://cloud.example.com' })).toThrow(
+      'missing TABULA_CLOUD_TOKEN, TABULA_CLOUD_WORKSPACE_ID',
     );
   });
 
   it('requires a token of at least 32 characters without spaces', () => {
-    const withToken = (MIRA_CLOUD_TOKEN: string) => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, MIRA_CLOUD_TOKEN });
-    expect(() => withToken('k'.repeat(31))).toThrow('MIRA_CLOUD_TOKEN must be at least 32 characters');
-    expect(() => withToken(`${'k'.repeat(20)} ${'k'.repeat(20)}`)).toThrow('MIRA_CLOUD_TOKEN');
+    const withToken = (TABULA_CLOUD_TOKEN: string) => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, TABULA_CLOUD_TOKEN });
+    expect(() => withToken('k'.repeat(31))).toThrow('TABULA_CLOUD_TOKEN must be at least 32 characters');
+    expect(() => withToken(`${'k'.repeat(20)} ${'k'.repeat(20)}`)).toThrow('TABULA_CLOUD_TOKEN');
     expect(withToken('k'.repeat(32)).cloud?.token).toBe('k'.repeat(32));
   });
 
@@ -140,8 +140,8 @@ describe('configuration', () => {
     ['http://localhost:8080'],
     ['http://127.0.0.1:9000/'],
     ['http://[::1]:9000'],
-  ])('accepts %s as the control plane URL', (MIRA_CLOUD_URL) => {
-    expect(loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, MIRA_CLOUD_URL }).cloud?.url).toBe(MIRA_CLOUD_URL.replace(/\/$/, ''));
+  ])('accepts %s as the control plane URL', (TABULA_CLOUD_URL) => {
+    expect(loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, TABULA_CLOUD_URL }).cloud?.url).toBe(TABULA_CLOUD_URL.replace(/\/$/, ''));
   });
 
   it.each([
@@ -152,18 +152,18 @@ describe('configuration', () => {
     ['https://user:pass@cloud.example.com'],
     ['https://cloud.example.com/?a=1'],
     ['https://cloud.example.com/#x'],
-  ])('refuses %s as the control plane URL', (MIRA_CLOUD_URL) => {
-    expect(() => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, MIRA_CLOUD_URL })).toThrow('MIRA_CLOUD_URL');
+  ])('refuses %s as the control plane URL', (TABULA_CLOUD_URL) => {
+    expect(() => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, TABULA_CLOUD_URL })).toThrow('TABULA_CLOUD_URL');
   });
 
-  it.each([['has space'], ['a/b'], ['x'.repeat(129)], ['é']])('refuses %j as the workspace id', (MIRA_CLOUD_WORKSPACE_ID) => {
-    expect(() => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, MIRA_CLOUD_WORKSPACE_ID })).toThrow('MIRA_CLOUD_WORKSPACE_ID');
+  it.each([['has space'], ['a/b'], ['x'.repeat(129)], ['é']])('refuses %j as the workspace id', (TABULA_CLOUD_WORKSPACE_ID) => {
+    expect(() => loadConfig({ ...AUTH_ENV, ...CLOUD_ENV, TABULA_CLOUD_WORKSPACE_ID })).toThrow('TABULA_CLOUD_WORKSPACE_ID');
   });
 
   it('stays off without accounts mode, but still refuses a half-set or malformed configuration', () => {
     expect(loadConfig({ ...CLOUD_ENV }).cloud).toBeUndefined();
-    expect(() => loadConfig({ MIRA_CLOUD_TOKEN: TOKEN })).toThrow('must be set together');
-    expect(() => loadConfig({ ...CLOUD_ENV, MIRA_CLOUD_TOKEN: 'short' })).toThrow('MIRA_CLOUD_TOKEN');
+    expect(() => loadConfig({ TABULA_CLOUD_TOKEN: TOKEN })).toThrow('must be set together');
+    expect(() => loadConfig({ ...CLOUD_ENV, TABULA_CLOUD_TOKEN: 'short' })).toThrow('TABULA_CLOUD_TOKEN');
   });
 });
 
@@ -257,7 +257,7 @@ describe('directory support', () => {
 
 describe('createCloud', () => {
   it('is null without cloud settings', () => {
-    const c = setup({ MIRA_CLOUD_TOKEN: '', MIRA_CLOUD_URL: '', MIRA_CLOUD_WORKSPACE_ID: '' });
+    const c = setup({ TABULA_CLOUD_TOKEN: '', TABULA_CLOUD_URL: '', TABULA_CLOUD_WORKSPACE_ID: '' });
     expect(c.cloud).toBeNull();
   });
 
@@ -595,7 +595,7 @@ describe('API in cloud mode', () => {
       const res = await fetch(base + path, {
         method,
         headers: {
-          ...(method === 'GET' ? {} : { 'x-mira': '1' }),
+          ...(method === 'GET' ? {} : { 'x-tabula': '1' }),
           ...(cookie ? { cookie } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -636,7 +636,7 @@ describe('API in cloud mode', () => {
 
   describe('internal endpoints', () => {
     it('answer 404 together with the billing portal when cloud mode is off', async () => {
-      const s = await serve({ MIRA_CLOUD_TOKEN: '', MIRA_CLOUD_URL: '', MIRA_CLOUD_WORKSPACE_ID: '' });
+      const s = await serve({ TABULA_CLOUD_TOKEN: '', TABULA_CLOUD_URL: '', TABULA_CLOUD_WORKSPACE_ID: '' });
       const owner = s.person(OWNER, 'owner');
       expect((await s.call('/api/internal/usage', { token: TOKEN })).status).toBe(404);
       expect((await s.call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { readOnly: true } })).status).toBe(404);
@@ -654,7 +654,7 @@ describe('API in cloud mode', () => {
         { authorization: `Basic ${TOKEN}` },
         { authorization: TOKEN },
         { cookie: owner.cookie },
-        { cookie: owner.cookie, 'x-mira': '1' },
+        { cookie: owner.cookie, 'x-tabula': '1' },
       ];
       for (const headers of bad) {
         const usage = await s.call('/api/internal/usage', { headers });
@@ -670,7 +670,7 @@ describe('API in cloud mode', () => {
     it('take the right token with no cookie and no CSRF header, and ignore a cookie that comes along', async () => {
       const s = await serve();
       const usage = await fetch(`${s.base}/api/internal/usage`, {
-        headers: { authorization: `Bearer ${TOKEN}`, cookie: 'mira_session=junk' },
+        headers: { authorization: `Bearer ${TOKEN}`, cookie: 'tabula_session=junk' },
       });
       expect(usage.status).toBe(200);
       const limits = await fetch(`${s.base}/api/internal/limits`, {
@@ -824,7 +824,7 @@ describe('API in cloud mode', () => {
       const s = await serve();
       const owner = s.person(OWNER, 'owner');
       await s.put({ readOnly: false });
-      const res = await s.call('/api/teams', { method: 'POST', cookie: owner.cookie, body: { name: 'x' }, headers: { 'x-mira': '0' } });
+      const res = await s.call('/api/teams', { method: 'POST', cookie: owner.cookie, body: { name: 'x' }, headers: { 'x-tabula': '0' } });
       expect(res.status).toBe(403);
     });
   });
@@ -993,7 +993,7 @@ describe('API in cloud mode', () => {
     it('needs the CSRF header like any write', async () => {
       const s = await serve({}, async () => json({ url: PORTAL }));
       const owner = s.person(OWNER, 'owner');
-      const res = await s.call('/api/billing/portal', { method: 'POST', cookie: owner.cookie, headers: { 'x-mira': '0' } });
+      const res = await s.call('/api/billing/portal', { method: 'POST', cookie: owner.cookie, headers: { 'x-tabula': '0' } });
       expect(res.status).toBe(403);
       expect(s.fetchFn).not.toHaveBeenCalled();
     });

@@ -27,7 +27,7 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
     renderAccountHome(root, nav, me, auth.mode === 'offline');
     return;
   }
-  document.title = 'Mira';
+  document.title = 'Tabula';
   const boards = listBoards();
   const fileInput = boardFileInput(nav);
 
@@ -46,7 +46,7 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
   const relay = relayUrl();
   root.replaceChildren(h('main', { class: 'home' },
     h('header', { class: 'home-head' },
-      h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),
+      h('div', { class: 'wordmark', 'aria-label': 'Tabula' }, 'Tabula'),
       h('p', { class: 'home-lede' }, LEDE),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary big', onclick: () => nav.open(newId()) }, icon('plus', 18), 'New board'),
@@ -86,7 +86,7 @@ function accountMe(auth: AuthState): Me | null {
 }
 
 function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boolean) {
-  document.title = 'Mira';
+  document.title = 'Tabula';
   let seq = 0;
   let data: AccountData | null = null;
   let page: HTMLElement | null = null;
@@ -160,7 +160,7 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
         admin ? h('button', { class: 'btn', onclick: () => { location.hash = '#/admin'; } }, 'Admin') : null,
         h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out'),
       ),
-      h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),
+      h('div', { class: 'wordmark', 'aria-label': 'Tabula' }, 'Tabula'),
       h('p', { class: 'home-lede' }, LEDE),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary big', disabled: down, onclick: () => nav.open(newId()) }, icon('plus', 18), 'New board'),

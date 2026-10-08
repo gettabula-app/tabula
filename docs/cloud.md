@@ -1,6 +1,6 @@
 # Hosted workspaces
 
-Mira can run as one workspace of a hosted service: a separate control plane (billing, provisioning) starts the instance, tells it how many seats the customer paid for, and can lock it when the subscription lapses. This page is the instance side of that contract. It is generic: any control plane that speaks it will do, and **an instance without the variables below behaves exactly as described in `docs/accounts.md`**: none of the routes, tables, banners or checks here exist for it.
+Tabula can run as one workspace of a hosted service: a separate control plane (billing, provisioning) starts the instance, tells it how many seats the customer paid for, and can lock it when the subscription lapses. This page is the instance side of that contract. It is generic: any control plane that speaks it will do, and **an instance without the variables below behaves exactly as described in `docs/accounts.md`**: none of the routes, tables, banners or checks here exist for it.
 
 Not in it: creating or deleting the instance, Stripe, routing. Those belong to the control plane.
 
@@ -8,19 +8,19 @@ Not in it: creating or deleting the instance, Stripe, routing. Those belong to t
 
 | Variable | Meaning |
 | --- | --- |
-| `MIRA_CLOUD_TOKEN` | Shared secret, at least 32 characters, no spaces. The control plane sends it as `Authorization: Bearer <token>`, and the instance sends it back on its own calls |
-| `MIRA_CLOUD_URL` | Base URL of the control plane. `https://`, or `http://` for `localhost`, `127.0.0.1` and `[::1]` only (local development). No credentials, query or fragment; a path prefix is kept, trailing slashes are dropped |
-| `MIRA_CLOUD_WORKSPACE_ID` | This workspace's id at the control plane (letters, digits, `.`, `-`, `_`, up to 128). Used in the path of the instance's calls |
+| `TABULA_CLOUD_TOKEN` | Shared secret, at least 32 characters, no spaces. The control plane sends it as `Authorization: Bearer <token>`, and the instance sends it back on its own calls |
+| `TABULA_CLOUD_URL` | Base URL of the control plane. `https://`, or `http://` for `localhost`, `127.0.0.1` and `[::1]` only (local development). No credentials, query or fragment; a path prefix is kept, trailing slashes are dropped |
+| `TABULA_CLOUD_WORKSPACE_ID` | This workspace's id at the control plane (letters, digits, `.`, `-`, `_`, up to 128). Used in the path of the instance's calls |
 
-Cloud mode is on only when `MIRA_AUTH=on` **and** all three are set.
+Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 
 - None set: nothing changes, the routes below answer `404`.
 - Some but not all set: the relay refuses to start and names the missing variables. A token that is too short, a URL that is not allowed or an id that does not fit refuse startup too.
-- All set with `MIRA_AUTH` off: cloud mode stays off and the relay logs that the variables are ignored. (The values are still validated.)
+- All set with `TABULA_AUTH` off: cloud mode stays off and the relay logs that the variables are ignored. (The values are still validated.)
 
 ## Calls from the control plane
 
-Both endpoints sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-mira` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
+Both endpoints sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-tabula` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
 
 ```
 GET /api/internal/usage
@@ -73,17 +73,17 @@ Everything else keeps working: people who already have an account sign in, roles
 
 ## Calls to the control plane
 
-All with `Authorization: Bearer <MIRA_CLOUD_TOKEN>` and a 10 second timeout; redirects are not followed.
+All with `Authorization: Bearer <TABULA_CLOUD_TOKEN>` and a 10 second timeout; redirects are not followed.
 
 ```
 POST /api/billing/portal            (workspace owner only; 404 without cloud mode)
   -> { url }
 ```
 
-The instance calls `POST <MIRA_CLOUD_URL>/v1/workspaces/<id>/portal` and returns its `url`. Anything but an `https://` URL, an error status, an unreadable answer or a timeout is `502 bad_gateway`. Other roles get `403`.
+The instance calls `POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/portal` and returns its `url`. Anything but an `https://` URL, an error status, an unreadable answer or a timeout is `502 bad_gateway`. Other roles get `403`.
 
 ```
-POST <MIRA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests }
 ```
 
 Sent 30 seconds after the last change to the people in the workspace (an account created through an invite, a role change, disable or enable, a removal). A burst of changes is one report, with the counts read when it is sent, and a report that would repeat the last successful one is skipped. A failure is logged (without the token or the answer) and never reaches the request that caused the change; the control plane also pulls `GET /api/internal/usage` now and then. Reports that are still waiting when the process stops are not sent.
