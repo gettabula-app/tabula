@@ -578,9 +578,11 @@ describe('editing', () => {
   it('shows an edit on a connected browser at once, keeps it across a restart, and attributes it', async () => {
     const me = await newMember();
     const mine = await h.newBoard(me.cookie);
+    // Share before Bob connects: a socket that reaches the relay first is closed with 4403, which the provider
+    // treats as final and never retries.
+    await h.share(me.cookie, mine, bob.user.id, 'editor');
     const browser = h.connect(mine, bob.cookie);
     const viewer = h.connect(mine, me.cookie);
-    await h.share(me.cookie, mine, bob.user.id, 'editor');
     await Promise.all([browser.synced(), viewer.synced()]);
     const token = await tokenOf(me, 'write');
     const objects = (d: Y.Doc) => d.getMap('objects') as Y.Map<Y.Map<unknown>>;
