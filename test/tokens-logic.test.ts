@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MCP_SERVER_NAME } from '../server/mcp.mjs';
 import { ADMIN_TABS } from '../src/route';
 import {
-  DEFAULT_DAYS, EXPIRY_DAYS, MAX_BOARDS, NAME_MAX, SCOPE_OPTIONS, SERVER_NAME, boardsLabel, boardsSummary, clientSnippets, draftProblem,
+  DEFAULT_DAYS, EXPIRY_DAYS, aiToolsAvailable, MAX_BOARDS, NAME_MAX, SCOPE_OPTIONS, SERVER_NAME, boardsLabel, boardsSummary, clientSnippets, draftProblem,
   emptyDraft, expiryLabel, lastUsedLabel, needsBoardPick, scopeLabel, toRequest, type Draft,
 } from '../src/ui/tokens-logic';
 
@@ -116,5 +116,15 @@ describe('what to paste into a tool', () => {
   it('gives settings other tools can read', () => {
     const { config } = clientSnippets(url, token);
     expect(JSON.parse(config)).toEqual({ mcpServers: { [SERVER_NAME]: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } });
+  });
+});
+
+describe('aiToolsAvailable', () => {
+  it('is true only when the server reports AI tool access for this person', () => {
+    expect(aiToolsAvailable({ mcp: true })).toBe(true);
+    expect(aiToolsAvailable({ mcp: false })).toBe(false);
+    expect(aiToolsAvailable({})).toBe(false);
+    expect(aiToolsAvailable(null)).toBe(false);
+    expect(aiToolsAvailable(undefined)).toBe(false);
   });
 });

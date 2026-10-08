@@ -1,6 +1,8 @@
 import { h, icon } from './dom';
 import { signOut, type AuthState } from '../auth';
 import type { Me } from '../api';
+import { aiToolsAvailable } from './tokens-logic';
+import { openTokensDialog } from './tokens';
 
 export type TopbarPage = 'boards' | 'templates';
 
@@ -27,6 +29,7 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
       link('boards', 'Boards', '#/'),
       link('templates', 'Templates', '#/templates'),
       admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
+      me && aiToolsAvailable(me) ? h('button', { class: 'topbar-link', type: 'button', onclick: () => openTokensDialog(me) }, 'AI tool access') : null,
       h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
       h('span', { class: 'topbar-me' }, me.user.name || me.user.email),
