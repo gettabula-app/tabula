@@ -33,9 +33,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   });
   app.on('meta', () => {
     if (document.activeElement !== name) name.value = app.store.getMeta().name;
-    document.title = `${app.store.getMeta().name} - Driftboard`;
+    document.title = `${app.store.getMeta().name} - Mira`;
   });
-  document.title = `${app.store.getMeta().name} - Driftboard`;
+  document.title = `${app.store.getMeta().name} - Mira`;
   const status = h('button', { class: 'sync-status', onclick: () => openShare(app) });
   const renderStatus = () => {
     const s = app.conn.status;
@@ -72,7 +72,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   app.on('presence', renderPeople);
   renderPeople();
-  const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 20));
+  const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 18));
   menuBtn.addEventListener('click', () => openMenu(app, menuBtn));
   const topRight = h('div', { class: 'tray top-right' },
     people,
@@ -125,8 +125,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     drawerBtn('Templates and team exercises', 'templates', 'templates'),
     voteBtn,
     h('hr'),
-    h('button', { class: 'rail-btn', title: 'Undo (Ctrl/Cmd+Z)', 'aria-label': 'Undo', onclick: () => app.store.undo.undo() }, icon('undo', 20)),
-    h('button', { class: 'rail-btn', title: 'Redo (Shift+Ctrl/Cmd+Z)', 'aria-label': 'Redo', onclick: () => app.store.undo.redo() }, icon('redo', 20)),
+    h('button', { class: 'rail-btn', title: 'Undo (Ctrl/Cmd+Z)', 'aria-label': 'Undo', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
+    h('button', { class: 'rail-btn', title: 'Redo (Shift+Ctrl/Cmd+Z)', 'aria-label': 'Redo', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
   );
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {

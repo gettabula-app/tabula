@@ -152,7 +152,7 @@ function umlTab(app: BoardApp) {
     h('p', { class: 'muted small' }, 'Pick one, then drag from one element to another.'),
     h('div', { class: 'rels' }, ...rels),
     h('div', { class: 'list-label' }, 'Text to diagram'),
-    h('button', { class: 'btn wide', onclick: () => openMermaidImport(app) }, icon('mermaid', 18), 'Import Mermaid'),
+    h('button', { class: 'btn wide', onclick: () => openMermaidImport(app) }, icon('mermaid', 16), 'Import Mermaid'),
   );
 }
 

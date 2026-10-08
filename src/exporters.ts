@@ -43,7 +43,7 @@ export async function readBoardFile(file: File): Promise<ImportedBoard> {
   // zip magic: PK\x03\x04
   if (buf[0] === 0x50 && buf[1] === 0x4b) {
     const files = unzipSync(buf);
-    if (!files['board.json']) throw new Error('This file is not a Driftboard board (board.json is missing).');
+    if (!files['board.json']) throw new Error('This file is not a Mira board (board.json is missing).');
     return { json: validate(JSON.parse(strFromU8(files['board.json']))), update: files['doc.yjs'] };
   }
   return { json: validate(JSON.parse(strFromU8(buf))) };
@@ -51,8 +51,8 @@ export async function readBoardFile(file: File): Promise<ImportedBoard> {
 
 function validate(j: unknown): BoardJson {
   const b = j as BoardJson;
-  if (!b || b.format !== 'driftboard' || !Array.isArray(b.objects)) throw new Error('This file is not a Driftboard board.');
-  if (b.schemaVersion > SCHEMA_VERSION) throw new Error('This board was made with a newer version of Driftboard. Update the app to open it.');
+  if (!b || b.format !== 'driftboard' || !Array.isArray(b.objects)) throw new Error('This file is not a Mira board.');
+  if (b.schemaVersion > SCHEMA_VERSION) throw new Error('This board was made with a newer version of Mira. Update the app to open it.');
   return b;
 }
 

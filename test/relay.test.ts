@@ -8,13 +8,13 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 
 const PORT = 18000 + Math.floor(Math.random() * 1000);
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'driftboard-relay-'));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-relay-'));
 let relay: ChildProcess;
 
 const startRelay = () =>
   new Promise<ChildProcess>((resolve, reject) => {
     const p = spawn(process.execPath, ['server/relay.mjs'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout!.on('data', (d) => String(d).includes('Driftboard relay') && resolve(p));
+    p.stdout!.on('data', (d) => String(d).includes('Mira relay') && resolve(p));
     p.on('error', reject);
     setTimeout(() => reject(new Error('relay did not start')), 8000);
   });

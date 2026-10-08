@@ -1,9 +1,9 @@
-// Driftboard service worker: makes the app and everything a board needs
+// Mira service worker: makes the app and everything a board needs
 // available offline after the first visit.
 //  - App shell (same origin): network first for pages, cache first for hashed assets.
 //  - Fontshare CSS and font files, Iconify data and previews: stale-while-revalidate.
 //    Font files are cached on this device only; they are never re-served elsewhere.
-const VERSION = 'driftboard-v2';
+const VERSION = 'mira-v1';
 const SHELL = `${VERSION}-shell`;
 const RUNTIME = `${VERSION}-runtime`;
 const THIRD_PARTY = /^(https:\/\/(api|cdn)\.fontshare\.com|https:\/\/api\.(iconify\.design|simplesvg\.com|unisvg\.com))\//;
