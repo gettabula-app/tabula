@@ -74,6 +74,18 @@ Open http://localhost:8787, enter that address, and open the sign-in link that t
 
 The full design (roles, the HTTP API, the relay rules and the SQLite schema) is in [docs/accounts.md](docs/accounts.md).
 
+### AI tools (MCP)
+
+Tabula can let an AI tool such as Claude Code read and edit boards while people are working on them. It is off by default; set `TABULA_MCP=on` to serve `POST /mcp`. Tokens are bearer secrets that can change boards, so the relay refuses to start with MCP on unless `TABULA_BASE_URL` is an `https://` address (`http://localhost` is fine for trying it).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_MCP` | `off` | `on` serves `/mcp` |
+| `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters. Required when `TABULA_MCP=on` without accounts |
+| `TABULA_MCP_SCOPE` | `read` | Open mode only: what the shared token may do, `read`, `comment` or `write` |
+
+In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
+
 ## Screenshots
 
 | Shapes panel | Quick actions |

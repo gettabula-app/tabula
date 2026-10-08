@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { BOARD_ID_RE } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits } from './cloud.mjs';
+import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from './tokens.mjs';
 
 const MAX_BODY = 64 * 1024;
 const DRAIN_LIMIT = 1024 * 1024;
@@ -13,6 +14,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
+const TOKEN_FIELDS = ['name', 'scope', 'boardIds', 'days'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -204,6 +206,17 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     teams: directory.listTeamsFor(u.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
   });
 
+  const tokenView = (t) => ({
+    id: t.id,
+    name: t.name,
+    scope: t.scope,
+    boardIds: t.boardIds,
+    hint: t.hint,
+    createdAt: t.createdAt,
+    expiresAt: t.expiresAt,
+    lastUsedAt: t.lastUsedAt,
+  });
+
   // Hosted workspaces (docs/cloud.md): the message names the limit so an admin knows what to do about it.
   const seatLimited = (problem) =>
     conflict('seat_limit', `All ${cloud.limits().seatLimit} seats are in use, so ${problem}. Remove or disable someone, or ask the workspace owner to add seats under billing.`);
@@ -219,6 +232,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         user: userView(user),
         teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
         ...(cloud ? { workspace: cloud.workspaceView() } : {}),
+        ...(config.mcp ? { mcp: true } : {}),
       },
     ]),
     compile('PATCH', 'me', { body: true }, ({ user, body }) => {
@@ -621,6 +635,80 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // ---------------------------------------------------------- version history (docs/history.md)
 
     ...(history ? history.routes({ compile, boardFor, audit, errors: { HttpError, forbidden } }) : []),
+
+    // ---------------------------------------------------------- MCP access tokens (docs/mcp.md)
+
+    ...(config.mcp?.mode === 'accounts'
+      ? [
+          compile('GET', 'me/tokens', {}, ({ user }) => [200, directory.listAccessTokens(user.id).map(tokenView)]),
+          compile('POST', 'me/tokens', { body: true }, ({ user, body }) => {
+            for (const key of Object.keys(body)) {
+              if (!TOKEN_FIELDS.includes(key)) throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+            }
+            const name = cleanText(body.name, 'name', 1, 80);
+            const scope = oneOf(body.scope, SCOPES, 'scope');
+            const days = body.days === undefined ? 30 : body.days;
+            if (!Number.isInteger(days) || days < 1 || days > 365) throw badRequest('days must be a whole number from 1 to 365');
+            let boardIds = null;
+            if (body.boardIds !== undefined && body.boardIds !== null) {
+              const ids = body.boardIds;
+              if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_TOKEN_BOARDS) {
+                throw badRequest(`boardIds must list 1 to ${MAX_TOKEN_BOARDS} boards`);
+              }
+              if (ids.some((id) => typeof id !== 'string' || !TOKEN_BOARD_ID_RE.test(id))) throw badRequest('boardIds must be board ids');
+              boardIds = [...new Set(ids)];
+              for (const id of boardIds) boardFor(user, id);
+            }
+            // owners and admins are `owner` of every board, so a token that can write must name its boards
+            if (isAdmin(user) && scope !== 'read' && boardIds === null) {
+              throw new HttpError(400, 'boards_required', 'Tokens that can comment or edit must list the boards they may use');
+            }
+            if (directory.countActiveAccessTokens(user.id) >= MAX_ACTIVE_TOKENS) {
+              throw conflict('token_limit', `You can have at most ${MAX_ACTIVE_TOKENS} active tokens. Revoke one first.`);
+            }
+            const created = directory.transaction(() => {
+              const made = directory.createAccessToken({ userId: user.id, name, scope, boardIds, ttlMs: days * DAY_MS });
+              audit(user, 'mcp.token.create', { tokenId: made.id, name, scope, boardIds, days });
+              return made;
+            });
+            const stored = directory.getAccessToken(created.id);
+            return [201, { ...tokenView(stored), token: created.token, url: `${config.baseUrl}/mcp` }];
+          }),
+          compile('POST', 'me/tokens/revoke-all', { readOnlyOk: true }, ({ user }) => {
+            const revoked = directory.transaction(() => {
+              const count = directory.revokeUserAccessTokens(user.id);
+              audit(user, 'mcp.token.revoke_all', { count });
+              return count;
+            });
+            return [200, { revoked }];
+          }),
+          compile('DELETE', 'me/tokens/:id', { readOnlyOk: true }, ({ user, params }) => {
+            const token = directory.getAccessToken(params.id);
+            if (!token || token.userId !== user.id) throw notFound('Token not found');
+            directory.transaction(() => {
+              directory.revokeAccessToken(token.id);
+              audit(user, 'mcp.token.revoke', { tokenId: token.id, name: token.name, by: 'self' });
+            });
+            return [204];
+          }),
+          compile('GET', 'admin/tokens', {}, ({ user }) => {
+            requireAdmin(user);
+            return [200, directory.listAccessTokensAdmin().map((t) => ({ ...tokenView(t), userId: t.userId, userName: t.userName, email: t.email, userRole: t.userRole }))];
+          }),
+          compile('DELETE', 'admin/tokens/:id', { readOnlyOk: true }, ({ user, params }) => {
+            requireAdmin(user);
+            const token = directory.getAccessToken(params.id);
+            const owner = token ? directory.getUser(token.userId) : null;
+            if (!token || !owner) throw notFound('Token not found');
+            guardOwner(user, owner, 'revoke the token of');
+            directory.transaction(() => {
+              directory.revokeAccessToken(token.id);
+              audit(user, 'mcp.token.revoke', { tokenId: token.id, name: token.name, userId: owner.id, by: token.userId === user.id ? 'self' : 'admin' });
+            });
+            return [204];
+          }),
+        ]
+      : []),
 
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 

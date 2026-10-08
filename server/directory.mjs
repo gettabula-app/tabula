@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
+import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 
 export { normaliseEmail };
 
@@ -121,6 +122,8 @@ export const MIGRATIONS = [
     value TEXT NOT NULL
   );
   `,
+  // Personal access tokens for the MCP endpoint (docs/mcp.md).
+  TOKENS_MIGRATION,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -882,6 +885,7 @@ export function openDirectory(file) {
     listShares,
     getSetting,
     setSetting,
+    ...createTokenStore({ get, all, run, transaction }),
     audit,
     listAudit,
     listAuditPage,

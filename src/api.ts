@@ -23,6 +23,37 @@ export interface Me {
   user: ApiUser;
   teams: { id: string; name: string; role: TeamRole }[];
   workspace?: Workspace;
+  /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
+  mcp?: boolean;
+}
+
+export type AccessScope = 'read' | 'comment' | 'write';
+
+/** A personal access token for the MCP endpoint, without the secret. */
+export interface AccessToken {
+  id: string;
+  name: string;
+  scope: AccessScope;
+  /** null = every board the person can access. */
+  boardIds: string[] | null;
+  /** The last four characters of the token, to tell tokens apart. */
+  hint: string;
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+}
+
+/** The answer to creating a token: the only time the secret and the endpoint address are sent. */
+export interface CreatedAccessToken extends AccessToken {
+  token: string;
+  url: string;
+}
+
+export interface AdminAccessToken extends AccessToken {
+  userId: string;
+  userName: string;
+  email: string;
+  userRole: UserRole;
 }
 
 export interface Team {
@@ -315,6 +346,13 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     deleteVersion: (boardId: string, id: string) => call<void>('DELETE', `/api/boards/${seg(boardId)}/versions/${seg(id)}`),
     beginRestore: (boardId: string, id: string, by?: string) =>
       call<{ preRestore: Version | null }>('POST', `/api/boards/${seg(boardId)}/versions/${seg(id)}/begin-restore`, { by }),
+    accessTokens: () => call<AccessToken[]>('GET', '/api/me/tokens'),
+    createAccessToken: (input: { name: string; scope: AccessScope; boardIds?: string[]; days?: number }) =>
+      call<CreatedAccessToken>('POST', '/api/me/tokens', input),
+    revokeAccessToken: (id: string) => call<void>('DELETE', `/api/me/tokens/${seg(id)}`),
+    revokeAllAccessTokens: () => call<{ revoked: number }>('POST', '/api/me/tokens/revoke-all'),
+    adminAccessTokens: () => call<AdminAccessToken[]>('GET', '/api/admin/tokens'),
+    adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
 
     adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),
     adminMembers: () => call<AdminMember[]>('GET', '/api/admin/members'),

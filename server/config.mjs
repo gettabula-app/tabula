@@ -19,6 +19,31 @@ export function normaliseEmail(value) {
   return email;
 }
 
+// MCP endpoint (docs/mcp.md). The old MIRA_ spelling is mapped to TABULA_ by withLegacyEnv, not here.
+const MCP_SCOPES = ['read', 'comment', 'write'];
+const MCP_TOKEN_MIN = 32;
+const mcpVar = (env, name) => (env[`TABULA_${name}`] ?? '').trim();
+
+// null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
+function loadMcp(env, authEnabled, url) {
+  const mode = mcpVar(env, 'MCP') || 'off';
+  if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_MCP must be on or off (got "${mode.slice(0, 20)}")`);
+  if (mode === 'off') return null;
+  if (url.protocol !== 'https:' && !LOCAL_HOSTS.has(url.hostname)) {
+    throw new Error('TABULA_MCP=on needs an https:// base URL (http:// is only allowed for localhost), because access tokens must not cross the network in clear text');
+  }
+  const token = mcpVar(env, 'MCP_TOKEN');
+  const scope = mcpVar(env, 'MCP_SCOPE');
+  if (authEnabled) {
+    return { mode: 'accounts', ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean) };
+  }
+  if (token.length < MCP_TOKEN_MIN || /\s/.test(token)) {
+    throw new Error(`TABULA_MCP_TOKEN must be set, at least ${MCP_TOKEN_MIN} characters without spaces, when TABULA_MCP=on in open mode`);
+  }
+  if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
+  return { mode: 'open', token, scope: scope || 'read', ignored: [] };
+}
+
 // Hosted workspaces (docs/cloud.md). All three variables or none; the result is null unless accounts mode is on too.
 function loadCloud(env, authEnabled) {
   const values = CLOUD_VARS.map((name) => (env[name] || '').trim());
@@ -93,6 +118,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   }
 
   const cloud = loadCloud(env, authEnabled);
+  const mcp = loadMcp(env, authEnabled, url);
 
   return {
     authEnabled,
@@ -108,5 +134,6 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     port,
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
     ...(cloud ? { cloud } : {}),
+    ...(mcp ? { mcp } : {}),
   };
 }

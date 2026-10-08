@@ -24,6 +24,7 @@ import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
+import { openTokensDialog } from './tokens';
 
 type IconName = keyof typeof ICONS;
 
@@ -419,6 +420,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: () => void) {
     auth.me.user.role === 'owner' || auth.me.user.role === 'admin'
       ? item('user', 'Admin', () => { location.hash = '#/admin'; })
       : null,
+    auth.me.mcp ? item('link', 'AI tool access', () => openTokensDialog(auth.me)) : null,
   ] : [];
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));

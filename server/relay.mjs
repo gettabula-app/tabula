@@ -40,7 +40,7 @@ const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'))
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = 1000;
 const SAVE_MAX_WAIT_MS = 30_000;
-const UNLOAD_AFTER_MS = 60_000;
+const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
 const ROLE_RECHECK_MS = 5_000;
 
@@ -225,15 +225,22 @@ class Room {
     if (ids?.size) awarenessProtocol.removeAwarenessStates(this.awareness, [...ids], null);
     if (this.conns.size === 0) {
       if (this.saveTimer) this.save();
-      this.unloadTimer = setTimeout(() => {
-        if (this.conns.size === 0) {
-          this.save();
-          this.doc.destroy();
-          rooms.delete(this.name);
-          log(`room ${this.name}: unloaded`);
-        }
-      }, UNLOAD_AFTER_MS);
+      this.releaseIfIdle();
     }
+  }
+
+  // Starts the unload timer when nobody is connected. A room opened for an MCP edit would otherwise stay in memory.
+  releaseIfIdle() {
+    if (this.conns.size !== 0) return;
+    clearTimeout(this.unloadTimer);
+    this.unloadTimer = setTimeout(() => {
+      if (this.conns.size === 0) {
+        this.save();
+        this.doc.destroy();
+        rooms.delete(this.name);
+        log(`room ${this.name}: unloaded`);
+      }
+    }, UNLOAD_AFTER_MS);
   }
 
   onMessage(ws, data) {
@@ -264,6 +271,44 @@ function getRoom(name) {
     log(`room ${name}: loaded`);
   }
   return r;
+}
+
+// MCP (docs/mcp.md) edits the live room documents through this, never the files. `read` loads nothing into memory
+// (a room that is open is read in place, otherwise the file is decoded into a throwaway document); `write` applies
+// fn inside one transaction on the room's own doc, so the update listener broadcasts it to every socket and saves it.
+// Callers have authorised the board before they get here: getRoom() creates the room file for an unknown name.
+const roomAccess = {
+  exists: (name) => rooms.has(name) || fs.existsSync(path.join(DATA_DIR, `${name}.yjs`)),
+  read(name, fn) {
+    const open = rooms.get(name);
+    if (open) return fn(open.doc);
+    const doc = new Y.Doc({ gc: true });
+    try {
+      const file = path.join(DATA_DIR, `${name}.yjs`);
+      if (fs.existsSync(file)) Y.applyUpdate(doc, fs.readFileSync(file));
+      return fn(doc);
+    } finally {
+      doc.destroy();
+    }
+  },
+  write(name, origin, fn) {
+    const room = getRoom(name);
+    try {
+      let result;
+      room.doc.transact(() => {
+        result = fn(room.doc);
+      }, origin);
+      return result;
+    } finally {
+      room.releaseIfIdle();
+    }
+  },
+};
+
+let mcp = null;
+if (config.mcp) {
+  const { createMcp } = await import('./mcp.mjs');
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
 }
 
 function send(ws, msg) {
@@ -329,7 +374,11 @@ function sendJson(res, status, body) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/api/health') {
+    if (url.pathname === '/mcp') {
+      // Never the single-page app: /mcp is either the endpoint or a 404.
+      if (mcp) await mcp.handle(req, res);
+      else sendJson(res, 404, { error: 'not_found' });
+    } else if (url.pathname === '/api/health') {
       sendJson(res, 200, { ok: true, ...liveStats() });
     } else if (url.pathname.startsWith('/api/')) {
       // Anything under /api/ is answered here and never falls through to the single-page app.
