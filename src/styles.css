@@ -99,7 +99,7 @@ hr { border: 0; }
 .icon-btn.text { font-weight: 600; font-size: 13px; }
 .icon-btn:hover, .rail-btn:hover { background: var(--tray-hover); }
 .icon-btn.on, .rail-btn.on { background: var(--signal); color: var(--on-signal); }
-.icon-btn.danger:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); }
+.icon-btn.danger:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px;
@@ -140,7 +140,7 @@ select.input {
   background: color-mix(in srgb, var(--tray-text) 8%, transparent); color: var(--tray-muted); font-size: 12.5px; font-weight: 500; white-space: nowrap;
 }
 .sync-status[data-state='live'] { color: color-mix(in srgb, var(--wire) 30%, var(--tray-text)); }
-.sync-status[data-state='denied'] { color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); }
+.sync-status[data-state='denied'] { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 
 .top-right { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px; }
 .people { display: flex; padding-right: 4px; }
@@ -385,7 +385,7 @@ select.input {
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 18px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .copy-row { display: flex; gap: 8px; }
-.error { color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); min-height: 1em; }
+.error { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); min-height: 1em; }
 .check { display: flex; align-items: center; gap: 8px; height: 34px; color: var(--tray-text); }
 .check input { width: 18px; height: 18px; accent-color: var(--signal); }
 .shortcuts { width: 100%; border-collapse: collapse; }

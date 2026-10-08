@@ -1,97 +1,61 @@
-.signin {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
+/* Sign-in, verify and invite: the admin's Swiss type, rules and buttons on a flush-left page grid. Theme variables only. */
+
+.signin { min-height: 100vh; background: var(--canvas); color: var(--ink); }
+.signin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Top bar: wordmark flush left on the 1120px column, a 2px ink rule beneath, as in the admin. */
+.signin-top {
+  display: flex; align-items: center; height: 56px;
+  padding: 0 max(24px, calc((100% - 1120px) / 2 + 24px));
+  border-bottom: 2px solid var(--ink);
+}
+.signin .wordmark { font: 800 20px/1 var(--display); letter-spacing: -0.03em; }
+
+/* The form column starts at the 24px gutter of the 1120px grid and is never centred. */
+.signin-body { max-width: 1120px; margin: 0 auto; padding: 48px 24px; }
+.signin-col { max-width: 440px; display: flex; flex-direction: column; gap: 24px; }
+
+.signin h1 { margin: 0; font: 800 40px/1 var(--display); letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.signin-lede { margin: 0; font-size: 14px; color: var(--graphite); overflow-wrap: anywhere; }
+
+/* Label style as in the admin: 11px uppercase meta in graphite. */
+.signin-field {
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--graphite);
 }
 
-.signin-card {
-  width: min(420px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 32px;
-  background: var(--paper);
-  color: var(--ink);
-  border-radius: 16px;
-  box-shadow: inset 0 0 0 1px var(--rule);
-}
-
-.signin h1 {
-  margin: 0;
-  font: 800 28px/1.1 var(--display);
-  letter-spacing: -0.02em;
-}
-
-.signin .wordmark {
-  font-size: 20px;
-  letter-spacing: -0.02em;
-}
-
-.signin-lede {
-  margin: 0;
-  font-size: 15px;
-  color: var(--graphite);
-}
+.signin-form { display: flex; flex-direction: column; gap: 24px; margin: 0; }
 
 .signin-notice {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--signal) 25%, transparent);
+  margin: 0; padding: 16px 16px 16px 20px; border-left: 4px solid var(--signal); background: var(--paper); color: var(--ink);
 }
-
 .signin-error {
-  margin: 0;
-  color: var(--danger);
+  margin: 0; padding: 16px 16px 16px 20px; border-left: 4px solid var(--danger); background: var(--paper); color: var(--danger);
   font-size: 13px;
 }
 
-.signin-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-}
-
-.signin-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--graphite);
-}
-
+/* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 44px;
-  font-size: 15px;
-  font-weight: 400;
-  background: var(--canvas);
-  color: var(--ink);
-  border: 1px solid var(--rule);
+  height: 44px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink);
+  font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
+.signin .input:focus { border-color: var(--ink); }
 
-.signin .input:focus {
-  border-color: var(--ink);
-}
-
+/* Buttons: square, 44px. Default is an ink outline that inverts on hover; primary is the one signal fill. */
 .signin .btn {
-  width: 100%;
-  text-decoration: none;
-  background: var(--canvas);
-  color: var(--ink);
+  width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: none; color: var(--ink);
+  font-size: 13px; font-weight: 600; text-decoration: none;
 }
+.signin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
+.signin .btn:disabled { opacity: 0.5; }
+.signin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+.signin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
 
-.signin .btn:not(.primary):hover {
-  background: var(--rule);
-}
+/* Ghost: a text action, underlined on hover. */
+.signin .btn.ghost { width: auto; align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--ink); }
+.signin .btn.ghost:not(:disabled):hover { background: transparent; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 
-.signin .btn.primary {
-  background: var(--signal);
-  color: var(--on-signal);
-}
-
-.signin .btn.ghost {
-  background: transparent;
+@media (max-width: 720px) {
+  .signin-top { padding: 0 16px; }
+  .signin-body { padding: 24px 16px 40px; }
 }

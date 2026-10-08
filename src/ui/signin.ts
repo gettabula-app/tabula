@@ -13,8 +13,10 @@ const NETWORK = 'Could not reach the server. Check your connection and try again
 const FAILED = 'Could not sign you in. Try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
-function card(...body: (Node | null)[]): HTMLElement {
-  return h('main', { class: 'signin' }, h('div', { class: 'signin-card' }, h('div', { class: 'wordmark' }, 'Tabula'), ...body));
+function page(...body: (Node | null)[]): HTMLElement {
+  return h('main', { class: 'signin' },
+    h('header', { class: 'signin-top' }, h('div', { class: 'wordmark' }, 'Tabula')),
+    h('div', { class: 'signin-body' }, h('div', { class: 'signin-col' }, ...body)));
 }
 
 function describe(err: unknown): string {
@@ -31,7 +33,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
 
   function showForm(notice?: string): void {
     const input = h('input', { class: 'input', type: 'email', name: 'email', autocomplete: 'email', required: true });
-    const submit = h('button', { type: 'submit', class: 'btn primary big' }, 'Email me a link');
+    const submit = h('button', { type: 'submit', class: 'btn primary' }, 'Email me a link');
     let error: HTMLElement | null = null;
     const setError = (msg: string | null) => {
       error?.remove();
@@ -59,7 +61,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
       showSent(email);
     };
 
-    root.replaceChildren(card(
+    root.replaceChildren(page(
       h('h1', null, heading),
       h('p', { class: 'signin-lede' }, 'Enter your work email and we\'ll send you a link to sign in.'),
       notice ? h('p', { class: 'signin-notice', role: 'status' }, notice) : null,
@@ -71,11 +73,11 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
   }
 
   function showSent(email: string): void {
-    root.replaceChildren(card(
+    root.replaceChildren(page(
       h('h1', null, 'Check your email'),
       h('p', { class: 'signin-lede', role: 'status' },
         'We sent a sign-in link to ', h('b', null, email), '. It works once and expires in 15 minutes.'),
-      h('button', { type: 'button', class: 'btn ghost big', onclick: () => showForm() }, 'Use a different email'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => showForm() }, 'Use a different email'),
     ));
   }
 
@@ -84,7 +86,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
 
 export async function renderVerify(root: HTMLElement, token: string, done: (me: Me) => void): Promise<void> {
   document.title = 'Signing in - Tabula';
-  root.replaceChildren(card(h('p', { class: 'signin-lede', role: 'status' }, 'Signing you in…')));
+  root.replaceChildren(page(h('p', { class: 'signin-lede', role: 'status' }, 'Signing you in…')));
   try {
     await api.verifyLogin(token);
   } catch (err) {
@@ -107,20 +109,20 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
 
 export async function renderInvite(root: HTMLElement, token: string, auth: AuthState, done: (me: Me) => void): Promise<void> {
   document.title = 'Join team - Tabula';
-  root.replaceChildren(card(h('p', { class: 'signin-lede', role: 'status' }, 'Checking your invite…')));
+  root.replaceChildren(page(h('p', { class: 'signin-lede', role: 'status' }, 'Checking your invite…')));
 
   let preview: InvitePreview;
   try {
     preview = await api.invitePreview(token);
   } catch (err) {
     if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-      root.replaceChildren(card(
+      root.replaceChildren(page(
         h('h1', null, 'This invite is no longer valid'),
         h('p', { class: 'signin-lede' }, 'Ask the person who invited you for a new link.'),
         h('a', { class: 'btn', href: '#/signin' }, 'Sign in'),
       ));
     } else {
-      root.replaceChildren(card(
+      root.replaceChildren(page(
         h('h1', null, 'Could not load this invite'),
         h('p', { class: 'signin-lede' }, 'Check your connection and try again.'),
         h('button', { type: 'button', class: 'btn primary', onclick: () => renderInvite(root, token, auth, done) }, 'Try again'),
@@ -135,7 +137,7 @@ export async function renderInvite(root: HTMLElement, token: string, auth: AuthS
     return;
   }
 
-  const joinBtn = h('button', { type: 'button', class: 'btn primary big' }, 'Join team');
+  const joinBtn = h('button', { type: 'button', class: 'btn primary' }, 'Join team');
   let error: HTMLElement | null = null;
   const join = async () => {
     error?.remove();
@@ -158,7 +160,7 @@ export async function renderInvite(root: HTMLElement, token: string, auth: AuthS
   };
   joinBtn.addEventListener('click', join);
 
-  root.replaceChildren(card(
+  root.replaceChildren(page(
     h('h1', null, `Join ${team.name}`),
     h('p', { class: 'signin-lede' }, `You've been invited to join as ${role === 'admin' ? 'an admin' : 'a member'}.`),
     joinBtn,
