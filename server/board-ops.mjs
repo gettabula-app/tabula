@@ -74,7 +74,7 @@ const isBadInput = (cp) => isControl(cp) || isTag(cp);
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
 
 /** Removes what a person cannot see but a model can read. */
-function stripInvisible(value) {
+export function stripInvisible(value) {
   let out = '';
   for (const ch of value) if (!isInvisible(ch.codePointAt(0))) out += ch;
   return out;
@@ -151,7 +151,8 @@ export const isRevealed = (doc) => doc.getMap('flow').get('reveal') === true;
 /** Private notes (facilitated "private writing") stay hidden until the facilitator reveals them. */
 const isWithheld = (o, revealed) => !revealed && o.type === 'sticky' && Boolean(o.privateStep);
 
-function readAll(doc) {
+/** Every readable box and connector, and the ids of the private notes that are withheld. */
+export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];
   const connectors = [];
@@ -187,7 +188,7 @@ function endOut(end) {
 }
 
 /** @param {boolean} [detail] the extra fields get_objects adds */
-function summarise(o, textMax, detail = false) {
+export function summarise(o, textMax, detail = false) {
   if (o.type === 'connector') {
     const out = {
       id: id64(o.id), type: 'connector', from: endOut(o.from), to: endOut(o.to),

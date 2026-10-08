@@ -92,6 +92,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
   'ai.settings', 'ai.key.set', 'ai.key.delete',
+  'ai.generate', 'ai.summarise', 'ai.cluster',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -243,6 +244,14 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return d.scope === 'user' ? `${who} added their own AI key` : `${who} set the workspace AI key`;
     case 'ai.key.delete':
       return d.scope === 'user' ? `${who} removed their own AI key` : `${who} removed the workspace AI key`;
+    case 'ai.generate':
+    case 'ai.summarise':
+    case 'ai.cluster': {
+      const what = { 'ai.generate': 'generated stickies on', 'ai.summarise': 'summarised', 'ai.cluster': 'grouped stickies on' }[entry.action];
+      const outcome = text(d.outcome);
+      const notes: Record<string, string> = { ai_aborted: ' (cancelled)', ai_timeout: ' (timed out)', ai_refused: ' (declined by the AI)' };
+      return `${who} ${what} ${boardLabel}${!outcome || outcome === 'ok' ? '' : (notes[outcome] ?? ' (failed)')}`;
+    }
     default:
       return entry.action;
   }

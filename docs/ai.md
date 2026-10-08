@@ -2,7 +2,7 @@
 
 AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: each plan includes credits, and more can be bought.
 
-Status: **slice A of phase 1 is built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints, and their admin and account screens.** `POST /api/ai/run`, the features, the board entry points and everything in phase 2 are not built yet. "Slice A: what is built" below lists where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
+Status: **slices A and B of phase 1 are built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints and their admin and account screens (A), and `POST /api/ai/run` with the three features, the limits and the audit rows (B).** The board entry points, the proposal preview and everything in phase 2 are not built yet (slice C). "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
 
 ## Summary
 
@@ -38,8 +38,10 @@ Cost of the proxy: one extra hop (a few milliseconds next to a model call of sec
 ```
 providers.mjs   createProvider({ kind, apiKey, baseUrl? }) -> Provider
 anthropic.mjs   kind 'anthropic', using @anthropic-ai/sdk
-features.mjs    the v1 features: prompt, output schema, model and effort per feature, proposal validation
-run.mjs         POST /api/ai/run: auth, key resolution, limits, board read, streaming, audit, usage
+features.mjs    the v1 features: prompt, output schema, effort and token cap per feature, input checks, proposal validation
+board.mjs       the board read of a run: scope, caps, nearest first, fenced
+limits.mjs      in-memory counters: runs per hour, runs in flight, key saves
+run.mjs         POST /api/ai/run: checks, key resolution, limits, board read, streaming, audit (accounts route and open-mode handler)
 keys.mjs        key encryption, storage, verification
 ```
 
@@ -163,8 +165,9 @@ Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of 
 
 - Board content sent per run: at most 400 objects and 60,000 characters of text, nearest the selection or frame first; the result says when content was cut.
 - Output: `max_tokens` 8,000 (cluster and summarise), 4,000 (generate).
-- One run per person at a time; 20 runs per person per hour and 200 per workspace per hour by default, adjustable by the admin. 429 `rate_limited` with `retry-after`.
-- A run is aborted after 120 seconds.
+- One run per person at a time, and one at a time per key (the workspace key, each personal key, the operator's key in open mode); 20 runs per person per hour and 200 per workspace per hour by default, adjustable by the admin. 429 `rate_limited` with `retry-after`. The counts live in memory and start again from zero when the relay restarts.
+- Saving a key makes an outbound call, so a person gets 10 saves an hour (personal and workspace key together) and one check at a time.
+- A run is aborted after 120 seconds, and when the person closes the request.
 
 ## Privacy and admin controls
 
@@ -203,7 +206,7 @@ The control plane already owns Stripe for seats. It adds an AI allowance to each
 
 - Provider: request shape per feature (model, effort, structured output schema, cache control, fallbacks on Claude Opus 5.5 and Claude Sonnet 5.5), refusal handling, error mapping, abort; a fake Anthropic client, no network.
 - Keys: encrypt and decrypt, wrong scope or user in the associated data fails, rotation with the previous secret, refused without `TABULA_AI_SECRET`, verification on save, and no key in any response, log line or audit row (a canary key searched for everywhere).
-- Run: the check order (signed out, AI off, viewer, commenter, read-only workspace, no key, rate limit), private notes never sent, fencing applied, content caps, invalid proposals refused, one audit row without text.
+- Run: the check order (signed out, AI off, feature off, guests when restricted, viewer, commenter, read-only workspace, no key, unreadable key, rate limits per person, per workspace and per key, key-save throttle), private notes never sent, fencing applied, content caps, invalid proposals refused, abort on close and on timeout, open mode on and off, one audit row without text (`test/ai-run.test.ts`, `test/ai-features.test.ts`, `test/ai-open-run.test.ts`, and the relay as a process in `test/ai-relay.test.ts`).
 - App: proposal preview, Add as one undo entry, Discard writes nothing, read-only roles see no entry points.
 - Phase 2: credit arithmetic from usage, allowance and packs, refusal at zero, BYOK unaffected by the balance; the control plane call with a fake gateway.
 
@@ -217,7 +220,7 @@ This is the first slice of phase 1 (TAB-97). The text above is the design; these
 
 **Keys.** The key version is one byte, the first byte of an HMAC of the secret, so nobody numbers secrets. It is stored in `key_version` and is also the first byte of the `ciphertext` blob. The AES-256-GCM key is derived from the secret with HKDF, the nonce is 96 random bits per row, and the associated data is the version, the scope and the user. A unique index per scope (and per user) allows one workspace row and one row per person, and a check ties `scope` to `user_id`. A custom `baseUrl` is refused in v1 (`400`); the provider layer only accepts an `https://` one, for the later OpenAI-compatible adapter.
 
-**Settings** are rows of the `settings` table: `ai.enabled`, `ai.features`, `ai.model`, `ai.personalKeys`, `ai.membersOnly` (default off: guests may use AI), `ai.limits.perPersonHour` (20, at most 1000) and `ai.limits.perWorkspaceHour` (200, at most 10000). The limits are stored and edited here; `run.mjs` will enforce them.
+**Settings** are rows of the `settings` table: `ai.enabled`, `ai.features`, `ai.model`, `ai.personalKeys`, `ai.membersOnly` (default off: guests may use AI), `ai.limits.perPersonHour` (20, at most 1000) and `ai.limits.perWorkspaceHour` (200, at most 10000). The limits are stored and edited here; `run.mjs` enforces them (slice B).
 
 **Endpoints** beyond the list above:
 
@@ -233,9 +236,52 @@ This is the first slice of phase 1 (TAB-97). The text above is the design; these
 
 **Provider.** `messages.stream(...)` and `finalMessage()`; the system prompt first with `cache_control`; `output_config` with the JSON schema and the effort; `stop_reason: "refusal"` checked first. Server-side fallbacks (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) are set for Claude Opus 5.5 and Claude Sonnet 5.5 only, in one function (`openStream` in `server/ai/anthropic.mjs`), because the field exists only on the SDK's beta client. Claude Haiku 5.5 has no fallback and uses the plain client. The SDK is pinned at exactly 0.128.0 and loaded on first use.
 
+## Slice B: what is built
+
+The second slice of phase 1 (TAB-97): `POST /api/ai/run` and the three features, on the server only. Nothing in the board UI calls it yet (slice C). The text above is the design; these are the points where the code adds to it or chose between options.
+
+**Request.**
+
+```
+POST /api/ai/run    JSON, with the CSRF header like every write
+{ "feature": "generate" | "summarise" | "cluster", "boardId": "<board id>", "input": { ... } }
+```
+
+| Feature | `input` |
+| --- | --- |
+| `generate` | `prompt` (required, up to 2,000 characters), `count` (1 to 30), and `selection` or `frameId` |
+| `summarise` | `type` (`summary`, the default, or `retro`), `prompt` (optional: what to focus on), and `selection` or `frameId` |
+| `cluster` | `selection` (required, 2 to 200 ids) |
+
+Unknown fields are refused. `selection` (1 to 400 object ids, no repeats) and `frameId` (the direct children of that frame) are exclusive; with neither, the run works on the whole board. A prompt with a control or tag character is refused; zero-width and bidirectional characters are removed.
+
+**Answers before the stream** are plain HTTP errors with a JSON body `{ error, message }`, in the order of the checks: `403 csrf`, `401 unauthenticated`, `400 bad_request` (the body), `403 ai_disabled` (AI is off, or restricted to members and the caller is a guest), `403 ai_feature_disabled`, `404 not_found` (no such board, a deleted one, or none the person can open), `403 forbidden` (cannot edit the board: viewers and commenters), `402 read_only` (a hosted workspace that is read-only; a viewer is told `forbidden` first), `409 ai_no_key`, `409 ai_key_unreadable`, `429 rate_limited` with `retry-after` (an hourly limit, a run already going for this person, or the key busy with another run). Then, with the board read, `400 bad_request` for a frame that is not on the board, a summary of nothing, or a cluster with fewer than two stickies the AI may read. A request that fails there does not use up the person's hour. `ai_no_key` is also what a person gets where phase 2 would offer credits. Where the stored key is the one of the person (personal keys allowed), it wins and there is no fallback to the workspace key if it cannot be read.
+
+**The stream** is `text/event-stream`:
+
+```
+event: progress          data: {"n":0}            (first at once, then one now and then)
+event: result            data: {"proposal":{...},"cut":false,"usage":{"model","inputTokens","outputTokens","cacheReadTokens","cacheWriteTokens"}}
+event: error             data: {"error":"ai_refused","message":"..."}
+```
+
+Exactly one `result` or one `error` ends it. After the stream has started every failure is an `error` event: `ai_refused` (the provider declined; nothing changed), `ai_invalid_proposal`, `ai_timeout`, `ai_key_invalid`, `ai_rate_limited`, `ai_unavailable`, `forbidden` (the person lost the right to edit while the model worked), `internal`. The messages are fixed text. `ai_aborted` is what an audit row says when the person closed the request.
+
+**Proposals** (`proposal.kind` is set by the server). `create`: `objects` is 1 to 30 stickies (at most `count` for generate) of `{ text, color? }`, `text` 1 to 2,000 characters and `color` the **name** of a sticky colour (Yellow, Orange, Pink, Violet, Blue, Teal, Green, Grey; any case is accepted and written back in the palette's spelling); `frame` is `{ title }` of 1 to 100 characters, required for summarise. `group`: 2 to 12 groups of `{ title, ids }`, no group empty, every id a sticky that is in the selection and exists and is readable now, each exactly once, together all of the stickies that were sent. Everything the model returns is plain text: control, tag, zero-width and bidirectional characters are removed, titles lose line breaks, a tag or an `&amp;` stays exactly the characters it is (the app has to draw it as text, never as markup), unknown keys are refused, and anything over a limit is an error, not a cut. An answer that fails any check is an `ai_invalid_proposal` error and carries no part of the proposal. The server log gets a fixed word for why (`unknown_id`, `duplicate_id`, ...), never anything the model wrote. The validator also checks the role: a role that cannot create stickies and frames (or move stickies, for a group) gets no proposal.
+
+**Reading the board** uses the MCP reader (`readAll` and the same summaries as `get_board`), so private notes are withheld while unrevealed and a connector attached to one is left out; no author, no comment and no name is read. The scope is the selection (ids that are missing or withheld are left out), the direct children of a frame, or the whole board, nearest the centre of the selection, the frame or the board first (ties by id). Boxes come first, then the connectors whose ends were all sent. At most 400 objects and 60,000 characters of text go, and one object's text is cut at 1,000 characters; the answer says `cut: true` when anything was left out or shortened. A cluster sends only the selected stickies, and when the selection was cut the grouping must cover the stickies that were sent. The result is fenced with `fence()` from `server/board-ops.mjs`, exactly as the MCP tools fence board text; the board title is inside the fence, and the person's prompt, with a label saying it is the request and not the board, comes after it. The system prompt is a constant per feature and never changes with the run, so it caches.
+
+**Limits** live in the process, not in the directory: a restart forgets every count and every run in flight. A run is admitted when the person has no run going, the key has none, and the person and the workspace are under their hourly limits (the admin's `ai.limits.*`, 20 and 200 by default); a refused request counts for nothing. A run that never reached the provider (bad frame, nothing to summarise) takes its count back. Everything else counts, a provider error included. The hour is a sliding window. One run per key is a cap on the key's provider rate limit and cost: while a workspace key is busy, the next person is told to try again in a moment. The provider call gets an `AbortSignal` that fires after 120 seconds (`ai_timeout`) or when the person closes the request (`ai_aborted`), and the run is released either way. Key saves (`PUT /api/ai/keys/me`, and `PUT /api/admin/ai` with an `apiKey`) are limited to 10 an hour per person and one check in flight, `429 rate_limited`; saving settings without a key is not limited.
+
+**Audit.** One row `ai.generate`, `ai.summarise` or `ai.cluster` for each run that reached the provider, written before the last event: `{ boardId, model, keySource: 'user' | 'workspace', outcome: 'ok' | <error code>, counts: { scope, inScope, sent, chars, cut, proposed }, tokens: { input, output, cacheRead, cacheWrite } }`. No board text, no prompt, no output, no key. The audit log shows them as sentences ("Ana summarised “Roadmap”") under the AI filter.
+
+**Open mode** has `POST /api/ai/run` too (and still no other AI endpoint besides `GET /api/ai/config`). It needs the CSRF header, answers `403 ai_disabled` unless `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` are both set, uses that key and `TABULA_AI_MODEL`, counts runs per client address (the last `X-Forwarded-For` entry with `TABULA_TRUST_PROXY=1`, else the socket address; a run per address at a time, 20 an hour) and keeps one count for the whole instance (200 an hour), with one run at a time on the operator's key. There is no directory, so the audit row is a log line `ai.<feature> {json}` with the same fields.
+
+**Code.** `server/ai/features.mjs` (prompts, schemas, input and proposal checks), `server/ai/board.mjs` (the read), `server/ai/limits.mjs` (the counters), `server/ai/run.mjs` (the run core, the accounts route and the open-mode handler). `board-ops.mjs` exports `readAll`, `summarise` and `stripInvisible` for them; `api.mjs` lets a route stream (`stream: true`), and the relay hands `canWriteRoom` and a room reader to the API and to the open-mode handler.
+
 ## Not in this slice
 
-Text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.
+The board entry points and the proposal preview (slice C), text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.
 
 ## Recommended answers to TAB-99
 

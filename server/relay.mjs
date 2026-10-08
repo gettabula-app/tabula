@@ -32,6 +32,7 @@ import { saveDelay } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
+import { createOpenRun } from './ai/run.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -121,7 +122,8 @@ if (config.authEnabled) {
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus });
+  // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn) } });
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
@@ -384,6 +386,9 @@ const roomAccess = {
   },
 };
 
+// AI features in open mode (docs/ai.md): the operator's key, counted per client address. Accounts mode has the route in api.mjs.
+const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), log });
+
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
@@ -566,6 +571,8 @@ async function onRequest(req, res) {
         sendJson(res, 200, { authEnabled: false });
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
+      } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
+        await openAiRun.handle(req, res);
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }

@@ -130,7 +130,7 @@ Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted o
 
 ### AI features (bring your own key)
 
-AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic is the only provider for now. This release has the settings and the keys; the features themselves follow (see [docs/ai.md](docs/ai.md)).
+AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic is the only provider for now. This release has the settings, the keys and the endpoint that runs the three features (`POST /api/ai/run`: generate stickies from a prompt, summarise a board, a frame or a selection with action items, group selected stickies into themes), each answered as a proposal that the board will preview and a person applies; the buttons on the board follow (see [docs/ai.md](docs/ai.md)).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -142,6 +142,8 @@ AI features run on the relay with an API key that the workspace or the person br
 | `TABULA_AI_MODEL` | `claude-opus-5-5` | The default model: `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5` |
 
 In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
+
+A run needs the right to edit the board, reads it without private notes, comments or author names, caps what it sends (400 objects, 60,000 characters), stops after 120 seconds or when the request is closed, and writes one audit row (`ai.generate`, `ai.summarise`, `ai.cluster`) with counts and tokens but no text. Each person can have one run at a time and 20 an hour, the workspace 200 an hour (the admin changes both), and one run at a time uses a given key; these counts are kept in memory and start again when the relay restarts. Saving a key is limited to 10 times an hour per person.
 
 **Open mode warning:** with `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` set, anyone who has a board link spends your key, because open mode has no accounts. Only do this on a private instance, and set a spending limit with the provider.
 
