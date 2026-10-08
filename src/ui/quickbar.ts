@@ -223,7 +223,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     sync();
   });
   app.on('objects', refresh);
-  app.r.onCamera(refresh);
+  app.r.onCamera(() => { closePopover(); refresh(); });
   app.on('drag', sync);
   app.on('editing', sync);
   app.on('tool', sync);

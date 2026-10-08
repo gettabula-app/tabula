@@ -155,7 +155,7 @@ export const curlSize = (w: number, h: number) => Math.max(10, Math.min(w, h) * 
 
 /** The box a shape's or sticky's label is laid out in, in object-local coordinates. */
 export function labelBox(o: BaseObj) {
-  if (o.type === 'sticky') return { x: 14, y: 14, w: o.w - 28, h: o.h - 28 - curlSize(o.w, o.h) * 0.35 };
+  if (o.type === 'sticky') return { x: 14, y: 14, w: Math.max(1, o.w - 28), h: Math.max(1, o.h - 28 - curlSize(o.w, o.h) * 0.35) };
   return textBox(o.kind || 'rect', o.w, o.h);
 }
 

@@ -236,15 +236,15 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
     case 'parallelogram':
     case 'trapezoid':
     case 'octagon':
-      return { x: w * 0.18, y: pad, w: w * 0.64, h: h - pad * 2 };
+      return { x: w * 0.18, y: pad, w: w * 0.64, h: Math.max(1, h - pad * 2) };
     case 'cylinder': {
       const k = Math.min(h * 0.15, 18);
-      return { x: pad, y: k * 2, w: w - pad * 2, h: h - k * 3 };
+      return { x: pad, y: k * 2, w: Math.max(1, w - pad * 2), h: Math.max(1, h - k * 3) };
     }
     case 'document':
-      return { x: pad, y: pad, w: w - pad * 2, h: h * 0.8 - pad };
+      return { x: pad, y: pad, w: Math.max(1, w - pad * 2), h: Math.max(1, h * 0.8 - pad) };
     case 'predefined':
-      return { x: 16, y: pad, w: w - 32, h: h - pad * 2 };
+      return { x: 16, y: pad, w: Math.max(1, w - 32), h: Math.max(1, h - pad * 2) };
     case 'pentagon':
       return { x: w * 0.15, y: h * 0.3, w: Math.max(1, w * 0.7), h: Math.max(1, h * 0.6) };
     case 'cross':
@@ -289,7 +289,7 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
       return { x: kd + 4, y: 10, w: Math.max(1, w - 2 * kd - 8), h: Math.max(1, h - 20) };
     }
     default:
-      return { x: pad, y: pad, w: w - pad * 2, h: h - pad * 2 };
+      return { x: pad, y: pad, w: Math.max(1, w - pad * 2), h: Math.max(1, h - pad * 2) };
   }
 }
 
