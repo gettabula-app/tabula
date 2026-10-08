@@ -573,6 +573,18 @@ describe('accounts mode server', () => {
       expect(await roleOn(owner.cookie, id)).toBe('owner');
     });
 
+    it('tells each listed user who owns a board, including viewers it was shared with', async () => {
+      const team = await newTeam(owner.cookie);
+      const ada = await joinTeam(owner.cookie, team.id);
+      const bob = await joinTeam(owner.cookie, team.id);
+      const board = await newBoard(ada.cookie);
+      expect((await api(ada.cookie, 'POST', `/api/boards/${board}/shares`, { principalType: 'user', principalId: bob.user.id, role: 'viewer' })).status).toBe(201);
+
+      const entry = async (who: Account) => ((await api(who.cookie, 'GET', '/api/boards')).body as Body[]).find((b) => b.id === board);
+      expect(await entry(bob)).toMatchObject({ ownerId: ada.user.id, role: 'viewer' });
+      expect(await entry(ada)).toMatchObject({ ownerId: ada.user.id, role: 'owner' });
+    });
+
     it('keeps team boards to team members and refuses boards in teams the caller is not in', async () => {
       const team = await newTeam(owner.cookie);
       const other = await newTeam(owner.cookie);

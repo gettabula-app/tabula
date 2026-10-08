@@ -49,7 +49,7 @@ const me: Me = {
 };
 
 function board(id: string, updatedAt: number): ServerBoard {
-  return { id, title: id, teamId: null, role: 'owner', createdAt: 0, updatedAt };
+  return { id, title: id, teamId: null, ownerId: 'u1', role: 'owner', createdAt: 0, updatedAt };
 }
 
 const store = new Map<string, string>();

@@ -36,6 +36,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - In accounts mode the name in Your name and colour is the account name and is saved to the server; the Share dialog explains who can open a board.
 
 ### Fixed
+- On the home screen, boards that someone shared with you no longer appear under Personal, and the sign-in card is centred on the page.
 - The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
 - Labels in the board menu were right-aligned next to their icons; they are now left-aligned.
 - A locked item that overlaps an unlocked one can now be unlocked with a long press; double-clicking a locked item no longer creates a stray text box; arrow-key nudging a frame no longer moves its locked children; an item locked by a collaborator is dropped from your selection.

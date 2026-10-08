@@ -55,6 +55,7 @@ export interface ServerBoard {
   id: string;
   title: string;
   teamId: string | null;
+  ownerId: string | null;
   role: BoardRole;
   createdAt: number;
   updatedAt: number;

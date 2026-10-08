@@ -9,6 +9,10 @@ import { ApiError, api, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, setSignedOut, signOut, type AuthState } from '../auth';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 
+// Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
+const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
+  b.ownerId === undefined ? b.role === 'owner' : b.ownerId === userId;
+
 export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
 }
@@ -134,10 +138,10 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
     const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
     for (const team of teams) sections.push(teamSection(v, team, boards));
     sections.push(personalSection(v, boards));
-    // Boards of teams not listed here (archived, or not a member) would otherwise be invisible.
+    // Boards of teams not listed here (archived, or not a member) and personal boards of others would otherwise be invisible.
     const listed = new Set(teams.map((t) => t.id));
-    const shared = boards.filter((b) => b.teamId !== null && !listed.has(b.teamId));
-    if (shared.length) sections.push(sharedSection(v, shared));
+    const others = boards.filter((b) => (b.teamId === null ? !isMine(b, me.user.id) : !listed.has(b.teamId)));
+    if (others.length) sections.push(sharedSection(v, others, admin ? 'Other boards' : 'Shared with you'));
     const serverIds = new Set(boards.map((b) => b.id));
     const local = listBoards().filter((b) => !serverIds.has(b.id));
     if (local.length) sections.push(deviceSection(v, local, data.teams.filter((t) => t.role !== null && !t.archived)));
@@ -188,13 +192,13 @@ function personalSection(v: AccountView, boards: ServerBoard[]) {
       h('h2', null, 'Personal'),
       h('button', { class: 'btn', disabled: v.down, onclick: () => v.nav.open(newId()) }, 'New board'),
     ),
-    serverBoardList(v, boards.filter((b) => b.teamId === null)),
+    serverBoardList(v, boards.filter((b) => b.teamId === null && isMine(b, v.me.user.id))),
   );
 }
 
-function sharedSection(v: AccountView, boards: ServerBoard[]) {
+function sharedSection(v: AccountView, boards: ServerBoard[], heading: string) {
   return h('section', { class: 'home-col' },
-    h('h2', null, 'Shared with you'),
+    h('h2', null, heading),
     serverBoardList(v, boards),
   );
 }

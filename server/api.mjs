@@ -33,6 +33,7 @@ const boardView = (b, role) => ({
   id: b.id,
   title: b.title,
   teamId: b.teamId,
+  ownerId: b.ownerId ?? null,
   role,
   createdAt: b.createdAt,
   updatedAt: b.updatedAt,
