@@ -655,8 +655,14 @@ export class BoardApp {
       if (h.includes('s')) b = snapTo(o0.y + b, g) - o0.y;
     }
     const min = 8;
-    if (r - l < min) h.includes('w') ? (l = r - min) : (r = l + min);
-    if (b - t < min) h.includes('n') ? (t = b - min) : (b = t + min);
+    if (r - l < min) {
+      if (h.includes('w')) l = r - min;
+      else r = l + min;
+    }
+    if (b - t < min) {
+      if (h.includes('n')) t = b - min;
+      else b = t + min;
+    }
     const w = r - l, hh = b - t;
     const c0 = center(o0);
     const cLocal = { x: o0.x + (l + r) / 2, y: o0.y + (t + b) / 2 };
@@ -895,7 +901,8 @@ export class BoardApp {
       const k = e.key.toLowerCase();
       if (mod && k === 'z') {
         e.preventDefault();
-        e.shiftKey ? this.store.undo.redo() : this.store.undo.undo();
+        if (e.shiftKey) this.store.undo.redo();
+        else this.store.undo.undo();
         return;
       }
       if (mod && k === 'y') { e.preventDefault(); this.store.undo.redo(); return; }

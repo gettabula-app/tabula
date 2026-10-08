@@ -9,10 +9,11 @@
     "build": "tsc --noEmit && vite build",
     "start": "node server/relay.mjs",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings",
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -28,6 +29,7 @@
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
     "@xmldom/xmldom": "^0.9.12",
+    "oxlint": "^1.87.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^5.0.3"

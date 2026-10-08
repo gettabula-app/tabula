@@ -35,9 +35,9 @@ export function parseMermaid(src: string): Parsed {
   const lines = src.split(/\r?\n/).map((l) => l.replace(/%%.*$/, '').trim()).filter(Boolean);
   if (!lines.length) throw new Error('Paste a Mermaid diagram to import.');
   const head = lines[0];
-  if (/^classDiagram/.test(head)) return parseClassDiagram(lines.slice(1));
-  if (/^stateDiagram/.test(head)) return parseState(lines.slice(1));
-  if (/^sequenceDiagram/.test(head)) return parseSequence(lines.slice(1));
+  if (head.startsWith('classDiagram')) return parseClassDiagram(lines.slice(1));
+  if (head.startsWith('stateDiagram')) return parseState(lines.slice(1));
+  if (head.startsWith('sequenceDiagram')) return parseSequence(lines.slice(1));
   const m = head.match(/^(flowchart|graph)\s*(TD|TB|LR|RL|BT)?/);
   if (!m) throw new Error('Supported diagrams: flowchart, classDiagram, stateDiagram-v2 and sequenceDiagram.');
   return parseFlowchart(lines.slice(1), m[2] === 'LR' || m[2] === 'RL' ? 'LR' : 'TB');

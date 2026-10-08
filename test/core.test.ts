@@ -229,7 +229,7 @@ describe('export markup is well-formed XML', async () => {
   it('parses every object type as XML without errors', () => {
     const objs: (BaseObj | ConnectorObj)[] = [
       ...SHAPE_KINDS.map((k, i) => box(`s${i}`, i * 200, 0, 160, 90, { kind: k.kind, text: `${k.label} & <more>` })),
-      ...UML_ELEMENTS.map((d, i) => box(`u${i}`, i * 240, 400, d.w, d.h, { type: d.type, ...(structuredClone(d.defaults) || {}) })),
+      ...UML_ELEMENTS.map((d, i) => box(`u${i}`, i * 240, 400, d.w, d.h, { type: d.type, ...structuredClone(d.defaults) })),
       box('st', 0, 900, 192, 192, { type: 'sticky', text: 'Sticky "quoted"' }),
       box('tx', 300, 900, 240, 30, { type: 'text', text: 'Plain text' }),
       box('fr', 0, 1200, 600, 400, { type: 'frame', name: 'Frame & co' }),

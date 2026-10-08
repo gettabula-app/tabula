@@ -118,7 +118,7 @@ export function sanitizeSvgBody(body: string): string {
     else {
       doc.querySelectorAll('script,foreignObject,iframe,object,embed').forEach((el) => el.remove());
       doc.querySelectorAll('*').forEach((el) => {
-        for (const a of [...el.attributes]) {
+        for (const a of Array.from(el.attributes)) {
           if (/^on/i.test(a.name) || (/href$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) el.removeAttribute(a.name);
         }
       });

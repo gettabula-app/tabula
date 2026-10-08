@@ -6,7 +6,7 @@ Every board lives in your browser first (IndexedDB). A small relay syncs boards 
 
 ## Run it
 
-Requires Node 20 or newer.
+Requires Node 22.12 or newer.
 
 ```bash
 npm install
@@ -69,13 +69,24 @@ Fontshare fonts are free for personal and commercial use under ITF's Free Font L
 
 Iconify icon sets carry their own licences (MIT, Apache 2.0, CC BY 4.0, …). The icon picker shows each set's licence and flags sets that require attribution.
 
-## Tests
+## Tests and checks
 
 ```bash
-npm test
+npm test             # vitest
+npm run lint         # oxlint
+npm run typecheck    # tsc --noEmit
 ```
 
 Covers CRDT merging of concurrent and offline edits, undo scope, ordering, connector routing, rotated hit-testing, UML text round-trips, Mermaid import/export, markup escaping and XML validity, icon sanitising, the Fontshare catalogue format, and the relay end to end (two clients syncing, offline merge on reconnect, persistence across restarts, invalid room names).
+
+## CI/CD
+
+GitHub Actions (`.github/workflows/`):
+
+- **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the production build run on Linux, macOS and Windows with Node 22 and 24. The Docker image then builds with layer caching and is pushed to `ghcr.io/saldestechnology/mira` on pushes to `main` and on tags. Use the `CI passed` job as the single required check for branch protection.
+- **CodeQL** scans the code on pushes, PRs and weekly. **Dependency review** blocks PRs that add dependencies with high-severity advisories.
+- A newer push to the same branch or PR cancels the run in progress, so a burst of commits only builds the last one. Docs-only pushes to `main` skip CI.
+- Dependabot opens grouped weekly updates for npm, Actions and the Docker base image.
 
 ## Project layout
 
