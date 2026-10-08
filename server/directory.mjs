@@ -114,6 +114,13 @@ export const MIGRATIONS = [
   ALTER TABLE board_shares_new RENAME TO board_shares;
   CREATE INDEX board_shares_principal ON board_shares(principal_type, principal_id);
   `,
+  // Instance settings that outlive a restart (hosted workspaces keep their limits here, docs/cloud.md).
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -285,6 +292,19 @@ export function openDirectory(file) {
       sessions: { active: Number(get('SELECT COUNT(*) AS n FROM sessions WHERE revoked = 0 AND expires_at > ?', now).n) },
       signIns7d: Number(get("SELECT COUNT(*) AS n FROM audit WHERE action = 'auth.login' AND ts >= ?", now - 7 * DAY_MS).n),
     };
+  }
+
+  // Seats are the people who can do things (owner, admin, member); guests are free. Disabled people count for neither.
+  function seatUsage() {
+    const usage = { seats: 0, guests: 0, members: 0 };
+    for (const r of all('SELECT role, disabled, COUNT(*) AS n FROM users GROUP BY role, disabled')) {
+      const n = Number(r.n);
+      usage.members += n;
+      if (r.disabled) continue;
+      if (r.role === 'guest') usage.guests += n;
+      else usage.seats += n;
+    }
+    return usage;
   }
 
   const countOwners = () => Number(get("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'").n);
@@ -747,6 +767,14 @@ export function openDirectory(file) {
     ).map((r) => ({ principalType: r.principal_type, principalId: r.principal_id, name: r.name, role: r.role }));
   }
 
+  // settings
+
+  const getSetting = (key) => get('SELECT value FROM settings WHERE key = ?', key)?.value ?? null;
+
+  function setSetting(key, value) {
+    run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, String(value));
+  }
+
   // audit
 
   function audit(actorId, action, detail = {}) {
@@ -805,6 +833,7 @@ export function openDirectory(file) {
     listUsers,
     listMembersAdmin,
     adminStats,
+    seatUsage,
     countOwners,
     updateUser,
     removeUser,
@@ -846,6 +875,8 @@ export function openDirectory(file) {
     shareBoard,
     unshareBoard,
     listShares,
+    getSetting,
+    setSetting,
     audit,
     listAudit,
     listAuditPage,

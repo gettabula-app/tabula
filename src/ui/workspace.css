@@ -1,0 +1,13 @@
+/* Hosted workspace banner: a thin line above the page. Theme variables only. */
+.workspace-banner {
+  box-sizing: border-box; padding: 6px 16px; text-align: center; overflow-wrap: anywhere;
+  background: var(--signal); color: var(--on-signal); font-size: 13px; font-weight: 600; line-height: 1.35;
+}
+.workspace-banner[hidden] { display: none; }
+
+/* On a board it is a fixed single line, and the editing chrome moves down to make room. */
+.board-root > .workspace-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 12; height: 28px; padding: 0 16px; line-height: 28px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.board-root.has-banner > .chrome { top: 28px; }

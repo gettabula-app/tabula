@@ -14,7 +14,8 @@ import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { api } from '../api';
-import { authState, setSignedIn, setSignedOut, signOut } from '../auth';
+import { authState, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
+import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
@@ -230,12 +231,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     commentBtn.disabled = app.comments.readOnly();
     commentBtn.title = commentBtn.disabled ? 'You can\'t comment on this board' : 'Comment (C)';
     name.readOnly = ro;
+    badge.textContent = boardAccess(app.role, workspaceOf(authState())).badge ?? 'View only';
     badge.classList.toggle('show', ro);
     if (ro && library.tab) library.open(null);
   };
   app.on('readonly', syncReadOnly);
   app.on('comments', syncReadOnly);
   app.comments.onReadOnly(syncReadOnly);
+  // A hosted workspace can turn read-only (or back) while the board is open: the badge names the reason.
+  app.lifetime.signal.addEventListener('abort', onAuth(syncReadOnly), { once: true });
   syncReadOnly();
 
   // Drop .drift / .json files onto the board to import them.

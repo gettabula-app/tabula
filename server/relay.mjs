@@ -59,8 +59,10 @@ function parseRoom(name) {
   return m ? { boardId: m[1], kind: m[2] ? 'comments' : 'board' } : null;
 }
 
-// Who may write which room. Anything not listed here (an unknown role or kind) may not write.
+// Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
+// while a hosted workspace is read-only.
 function canWriteRoom(role, kind) {
+  if (cloud?.limits().readOnly) return false;
   if (kind === 'board') return role === 'owner' || role === 'editor';
   if (kind === 'comments') return role === 'owner' || role === 'editor' || role === 'commenter';
   return false;
@@ -74,16 +76,22 @@ const events = new EventEmitter();
 let directory = null;
 let auth = null;
 let api = null;
+let cloud = null;
 if (config.authEnabled) {
-  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }] = await Promise.all([
+  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
     import('./mailer.mjs'),
     import('./auth.mjs'),
     import('./api.mjs'),
+    import('./cloud.mjs'),
   ]);
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
-  auth = createAuth({ directory, config, mailer: createMailer(config) });
-  api = createApi({ directory, auth, config, roomExists, events, liveStats });
+  // Hosted workspaces (docs/cloud.md): null unless MIRA_CLOUD_* is set, and then every hook below is inert.
+  cloud = createCloud({ config: config.cloud, directory, events });
+  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud });
+} else if (process.env.MIRA_CLOUD_TOKEN || process.env.MIRA_CLOUD_URL || process.env.MIRA_CLOUD_WORKSPACE_ID) {
+  console.error('MIRA_CLOUD_* is ignored: hosted workspace mode needs MIRA_AUTH=on');
 }
 
 // ---------------------------------------------------------------- rooms
@@ -401,6 +409,10 @@ if (config.authEnabled) {
   events.on('user-removed', ({ userId } = {}) => {
     for (const ws of socketsOf(userId)) refresh(ws, true);
   });
+  // A workspace that turns read-only (or back) applies to sockets that are already open.
+  events.on('limits-changed', () => {
+    for (const ws of allSockets()) refresh(ws, true);
+  });
   setInterval(() => {
     for (const ws of allSockets()) refresh(ws, false);
   }, 1000);
@@ -494,6 +506,7 @@ const pinger = setInterval(() => {
 
 function shutdown() {
   clearInterval(pinger);
+  cloud?.close();
   for (const r of rooms.values()) r.save();
   directory?.close();
   process.exit(0);
@@ -502,5 +515,5 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 server.listen(PORT, HOST, () => {
-  log(`Mira relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}`);
+  log(`Mira relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}`);
 });

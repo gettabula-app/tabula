@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAIL_MODES = ['log', 'file', 'webhook', 'smtp'];
+const CLOUD_VARS = ['MIRA_CLOUD_TOKEN', 'MIRA_CLOUD_URL', 'MIRA_CLOUD_WORKSPACE_ID'];
+const CLOUD_TOKEN_MIN = 32;
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const WORKSPACE_ID_RE = /^[A-Za-z0-9_.-]{1,128}$/;
 
 export function normaliseEmail(value) {
   if (typeof value !== 'string') return null;
@@ -12,6 +16,36 @@ export function normaliseEmail(value) {
   const at = email.indexOf('@');
   if (at < 1 || at !== email.lastIndexOf('@') || at === email.length - 1) return null;
   return email;
+}
+
+// Hosted workspaces (docs/cloud.md). All three variables or none; the result is null unless accounts mode is on too.
+function loadCloud(env, authEnabled) {
+  const values = CLOUD_VARS.map((name) => (env[name] || '').trim());
+  if (values.every((v) => !v)) return null;
+  const missing = CLOUD_VARS.filter((_, i) => !values[i]);
+  if (missing.length) throw new Error(`${CLOUD_VARS.join(', ')} must be set together (missing ${missing.join(', ')})`);
+  const [token, rawUrl, workspaceId] = values;
+
+  if (token.length < CLOUD_TOKEN_MIN || /\s/.test(token)) {
+    throw new Error(`MIRA_CLOUD_TOKEN must be at least ${CLOUD_TOKEN_MIN} characters without spaces`);
+  }
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error('MIRA_CLOUD_URL is not a valid URL');
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname))) {
+    throw new Error('MIRA_CLOUD_URL must be an https:// URL (http:// is only allowed for localhost)');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('MIRA_CLOUD_URL must not contain credentials, a query or a fragment');
+  }
+  if (!WORKSPACE_ID_RE.test(workspaceId)) {
+    throw new Error('MIRA_CLOUD_WORKSPACE_ID must be 1 to 128 letters, digits, . - or _');
+  }
+  if (!authEnabled) return null;
+  return { token, url: `${url.origin}${url.pathname}`.replace(/\/+$/, ''), workspaceId };
 }
 
 export function loadConfig(env = process.env) {
@@ -56,6 +90,8 @@ export function loadConfig(env = process.env) {
     if (!(env.MIRA_MAIL_FROM || '').trim()) throw new Error('MIRA_MAIL_FROM is required when MIRA_MAIL=smtp');
   }
 
+  const cloud = loadCloud(env, authEnabled);
+
   return {
     authEnabled,
     ownerEmail,
@@ -69,5 +105,6 @@ export function loadConfig(env = process.env) {
     dataDir,
     port,
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.MIRA_MAIL_FROM || 'Mira <no-reply@localhost>' },
+    ...(cloud ? { cloud } : {}),
   };
 }

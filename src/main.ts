@@ -14,7 +14,9 @@ import { toast } from './ui/common';
 import type { Obj } from './types';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, type ServerBoard } from './api';
-import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, type AuthState } from './auth';
+import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, startMeRefresh, type AuthState } from './auth';
+import { boardAccess, workspaceOf } from './cloud-logic';
+import { createWorkspaceBanner } from './ui/workspace';
 import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
 
 applyTheme(getStoredTheme());
@@ -24,6 +26,7 @@ const RETURN_KEY = 'driftboard:return';
 const root = document.getElementById('app')!;
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
+let releaseWorkspace: (() => void) | null = null;
 let pending: { id: string; template?: string; imported?: ImportedBoard } | null = null;
 let registering = false;
 let routeSeq = 0;
@@ -109,6 +112,8 @@ async function route() {
   const seq = ++routeSeq;
   releaseBanner?.();
   releaseBanner = null;
+  releaseWorkspace?.();
+  releaseWorkspace = null;
   current?.destroy();
   current = null;
 
@@ -157,12 +162,13 @@ async function route() {
     conn.destroy();
     return;
   }
-  if (role === 'viewer') {
-    conn.store.setReadOnly(true);
-    conn.comments.setReadOnly(true);
-  } else if (role === 'commenter') {
-    conn.store.setReadOnly(true);
-  }
+  // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
+  const applyAccess = () => {
+    const access = boardAccess(role, workspaceOf(authState()));
+    conn.store.setReadOnly(access.storeReadOnly);
+    conn.comments.setReadOnly(access.commentsReadOnly);
+  };
+  applyAccess();
   const job = pending?.id === id ? pending : null;
   pending = null;
 
@@ -187,6 +193,13 @@ async function route() {
   // Inspection handle for automated tests and debugging (?debug in the URL).
   if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });
+  const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
+  root.appendChild(banner.el);
+  const unsubscribe = onAuth(applyAccess);
+  releaseWorkspace = () => {
+    unsubscribe();
+    banner.dispose();
+  };
   if (accounts) {
     releaseBanner = mountAccessBanner(conn, root, {
       onSignIn: () => {
@@ -219,6 +232,7 @@ async function route() {
 async function boot() {
   // Open mode (no accounts, or no server to ask) resolves at once and routes exactly as before.
   await initAuth();
+  startMeRefresh();
   onAuth((s) => {
     if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
   });

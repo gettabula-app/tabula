@@ -8,6 +8,7 @@ import { TEMPLATES } from '../templates';
 import { ApiError, api, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, setSignedOut, signOut, type AuthState } from '../auth';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
+import { createWorkspaceBanner } from './workspace';
 
 // Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
 const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
@@ -89,10 +90,11 @@ function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boo
   let seq = 0;
   let data: AccountData | null = null;
   let page: HTMLElement | null = null;
+  const banner = createWorkspaceBanner();
 
   const paint = () => {
     page = accountPage({ nav, me, down: offline || data?.unreachable === true, refresh }, data);
-    root.replaceChildren(page);
+    root.replaceChildren(banner.el, page);
   };
   const refresh = () => {
     const mine = ++seq;

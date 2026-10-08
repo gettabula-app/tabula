@@ -11,9 +11,18 @@ export interface ApiUser {
   role: UserRole;
 }
 
+/** Present in /api/me only when a control plane runs this instance (docs/cloud.md). */
+export interface Workspace {
+  readOnly: boolean;
+  banner: string | null;
+  seatLimit: number | null;
+  seatsUsed: number;
+}
+
 export interface Me {
   user: ApiUser;
   teams: { id: string; name: string; role: TeamRole }[];
+  workspace?: Workspace;
 }
 
 export interface Team {
@@ -256,6 +265,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     updateMember: (id: string, patch: { role?: UserRole; disabled?: boolean }) =>
       call<Member>('PATCH', `/api/members/${seg(id)}`, patch),
     removeMember: (id: string) => call<void>('DELETE', `/api/members/${seg(id)}`),
+
+    billingPortal: () => call<{ url: string }>('POST', '/api/billing/portal'),
 
     adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),
     adminMembers: () => call<AdminMember[]>('GET', '/api/admin/members'),

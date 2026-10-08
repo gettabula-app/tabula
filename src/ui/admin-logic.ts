@@ -88,6 +88,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
+  'cloud.limits',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -194,6 +195,12 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} revoked all sessions of ${member}`;
     case 'admin.session.revoke':
       return `${who} revoked a session of ${member}`;
+    case 'cloud.limits': {
+      const limits: string[] = [];
+      if (typeof d.seatLimit === 'number') limits.push(countLabel(d.seatLimit, 'seat', 'seats'));
+      if (flag(d.readOnly) === true) limits.push('read-only');
+      return `${who} updated the workspace limits${limits.length ? ` (${limits.join(', ')})` : ''}`;
+    }
     default:
       return entry.action;
   }
