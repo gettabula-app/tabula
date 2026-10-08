@@ -20,7 +20,7 @@
     "fflate": "^0.8.3",
     "fractional-indexing": "^4.0.0",
     "lib0": "^0.2.119",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^10.0.15",
     "ws": "^8.22.0",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
