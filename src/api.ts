@@ -147,6 +147,8 @@ export interface AdminSession {
   email: string;
   createdAt: number;
   lastSeen: number;
+  /** The browser the session signed in from; null for sessions older than this field. */
+  userAgent: string | null;
   expiresAt: number;
   current: boolean;
 }

@@ -5,7 +5,9 @@ import {
   auditActor,
   auditSentence,
   countLabel,
+  deviceLabel,
   disableVerdict,
+  focusTarget,
   isKnownAuditAction,
   KNOWN_AUDIT_ACTIONS,
   matchesQuery,
@@ -315,5 +317,62 @@ describe('admin API client', () => {
   it('keeps the status and code of a forbidden answer', async () => {
     const { fetchFn } = recorder({ error: 'forbidden' }, 403);
     await expect(createApi(fetchFn).adminOverview()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+});
+
+describe('focusTarget', () => {
+  const rows = (...ids: string[]) => ids.flatMap((id) => [`${id}:role`, `${id}:signout`, `${id}:toggle`, `${id}:remove`]);
+
+  it('keeps focus on the same control when it is still there', () => {
+    expect(focusTarget(rows('a', 'b'), 'b:toggle', rows('a', 'b'))).toBe('b:toggle');
+  });
+
+  it('moves to the same control of the next row when the row is gone', () => {
+    expect(focusTarget(rows('a', 'b', 'c'), 'b:remove', rows('a', 'c'))).toBe('c:remove');
+  });
+
+  it('moves to the new last row when the last row is gone', () => {
+    expect(focusTarget(rows('a', 'b'), 'b:remove', rows('a'))).toBe('a:remove');
+  });
+
+  it('finds nothing when no row has that control any more', () => {
+    expect(focusTarget(rows('a'), 'a:remove', [])).toBeUndefined();
+    expect(focusTarget(['a:remove'], 'a:remove', ['b:role'])).toBeUndefined();
+  });
+
+  it('skips a row whose control is not focusable', () => {
+    // b's Remove is disabled, so it is not in the list: focus moves past it to c
+    expect(focusTarget(['a:remove', 'c:remove'], 'a:remove', ['c:remove'])).toBe('c:remove');
+  });
+});
+
+describe('deviceLabel', () => {
+  const ua = {
+    chromeMac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+    safariMac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Safari/605.1.15',
+    safariIphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1',
+    chromeIphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0 Mobile/15E148 Safari/604.1',
+    edgeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+    firefoxLinux: 'Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0',
+    chromeAndroid: 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+    operaWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 OPR/125.0.0.0',
+  };
+
+  it('names the browser and the system', () => {
+    expect(deviceLabel(ua.chromeMac)).toBe('Chrome on macOS');
+    expect(deviceLabel(ua.safariMac)).toBe('Safari on macOS');
+    expect(deviceLabel(ua.safariIphone)).toBe('Safari on iOS');
+    expect(deviceLabel(ua.chromeIphone)).toBe('Chrome on iOS');
+    expect(deviceLabel(ua.edgeWindows)).toBe('Edge on Windows');
+    expect(deviceLabel(ua.operaWindows)).toBe('Opera on Windows');
+    expect(deviceLabel(ua.firefoxLinux)).toBe('Firefox on Linux');
+    expect(deviceLabel(ua.chromeAndroid)).toBe('Chrome on Android');
+  });
+
+  it('falls back for sessions without one, and for clients that are not browsers', () => {
+    expect(deviceLabel(null)).toBe('Unknown device');
+    expect(deviceLabel('   ')).toBe('Unknown device');
+    expect(deviceLabel('node')).toBe('node');
+    expect(deviceLabel('curl/8.9.1')).toBe('curl');
   });
 });

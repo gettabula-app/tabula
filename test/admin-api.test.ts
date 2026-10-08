@@ -403,7 +403,9 @@ describe('admin overview, members and sessions', () => {
 
     const res = await c.api(admin.cookie, 'GET', '/api/admin/sessions');
     const list = res.body as Body[];
-    for (const s of list) expect(keys(s)).toEqual(['createdAt', 'current', 'email', 'expiresAt', 'id', 'lastSeen', 'userId', 'userName']);
+    for (const s of list) expect(keys(s)).toEqual(['createdAt', 'current', 'email', 'expiresAt', 'id', 'lastSeen', 'userAgent', 'userId', 'userName']);
+    // sign-in records the browser it came from (fetch sends its own user agent here)
+    expect(list.every((s) => typeof s.userAgent === 'string' && s.userAgent.length > 0)).toBe(true);
     expect(list.filter((s) => s.current)).toHaveLength(1);
     expect(list.find((s) => s.current)).toMatchObject({ userId: admin.user.id, email: admin.email });
     expect(list.map((s) => s.lastSeen)).toEqual(list.map((s) => s.lastSeen).sort((a, b) => b - a));
@@ -511,6 +513,10 @@ describe('admin overview, members and sessions', () => {
 
     const [entry] = await c.auditOf(owner.cookie, 'admin.session.revoke');
     expect(entry).toMatchObject({ actorId: admin.user.id, action: 'admin.session.revoke', detail: { sessionId: first.id, userId: person.user.id } });
+    // the Sessions filter in the audit log asks for this prefix: it covers single revokes and "sign out everywhere"
+    const sessionEntries = await c.auditOf(owner.cookie, 'admin.session');
+    expect(sessionEntries.some((e) => e.action === 'admin.session.revoke')).toBe(true);
+    expect(sessionEntries.every((e) => e.action === 'admin.session.revoke' || e.action === 'admin.sessions.revoke')).toBe(true);
   });
 
   it('lets an admin end their own current session from the list', async () => {
@@ -829,7 +835,11 @@ describe('directory queries for the admin console', () => {
 
     expect(d.listActiveSessions(t + 20).map((s) => s.id)).toEqual([short.id, kept.id]);
     expect(d.listActiveSessions(t + 2000).map((s) => s.id)).toEqual([kept.id]);
-    expect(keys(d.listActiveSessions(t + 20)[0])).toEqual(['createdAt', 'email', 'expiresAt', 'id', 'lastSeen', 'userId', 'userName']);
+    expect(keys(d.listActiveSessions(t + 20)[0])).toEqual(['createdAt', 'email', 'expiresAt', 'id', 'lastSeen', 'userAgent', 'userId', 'userName']);
+    expect(d.getActiveSession(kept.id, t + 20)!.userAgent).toBeNull();
+    const browser = d.createSession(busy.id, { ttlMs: DAY, now: t + 30, userAgent: `  Mozilla/5.0 ${'x'.repeat(500)}` });
+    expect(d.getActiveSession(browser.id, t + 40)!.userAgent).toBe(`Mozilla/5.0 ${'x'.repeat(500)}`.slice(0, 400));
+    d.revokeSession(browser.id);
     expect(d.getActiveSession(kept.id, t + 20)).toMatchObject({ id: kept.id, userId: busy.id, email: 'busy@example.com' });
     expect(d.getActiveSession(revoked.id, t + 20)).toBeNull();
     expect(d.getActiveSession(short.id, t + 2000)).toBeNull();
