@@ -1,6 +1,6 @@
 # Custom templates (spec, TAB-82)
 
-Status: draft for review. Nothing here is built yet.
+Status: steps 1 to 4 (open mode: saving, using, thumbnails, editing, renaming, duplicating, export and import) are built and on main. Step 5 (the server, accounts mode: sharing with teams and the workspace, the HTTP API, validation, audit, offline cache, the upload offer and MCP access) is built on this branch, `feat/custom-templates-server`. The open questions at the end are decided; the text below describes what was built.
 
 People can save part of a board, or the whole board, as a template; find it on the Templates page and the Boards page under **My templates**; start a new board from it or insert it into the current board; and edit, rename, duplicate or delete it. Templates work offline in open mode (stored in the browser) and are shared through the server in accounts mode.
 
@@ -13,7 +13,7 @@ interface CustomTemplate {
   id: string;                 // newId()
   version: 1;                 // format version of `content`
   name: string;               // 1..80 chars
-  category: string;           // one of the built-in categories, or free text 1..40 chars
+  category: string;           // one of the built-in categories or "Custom" (a fixed list, see Q4)
   description: string;        // 0..280 chars
   content: TemplateContent;
   createdBy: string;          // user id (open mode: the local user id)
@@ -66,57 +66,85 @@ A new database `driftboard:templates` (keeps the `driftboard` storage prefix on 
 
 ### Accounts mode: the server
 
-Directory migration N+1:
+Directory migration 6 (`TEMPLATES_MIGRATION` in `server/templates.mjs`, registered in `directory.mjs` like the token table):
 
 ```sql
 CREATE TABLE templates (
   id TEXT PRIMARY KEY,
-  owner_id TEXT NOT NULL REFERENCES users(id),
+  owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   scope TEXT NOT NULL CHECK (scope IN ('personal','team','workspace')),
-  team_id TEXT REFERENCES teams(id),
+  team_id TEXT REFERENCES teams(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   category TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  content TEXT NOT NULL,          -- JSON TemplateContent, ≤ 1 MB
+  content TEXT NOT NULL,          -- the validated JSON TemplateContent, at most 1 MB
+  object_count INTEGER NOT NULL,  -- so a list never has to parse the content
+  step_count INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  deleted_at INTEGER
+  deleted_at INTEGER,
+  CHECK ((scope = 'team') = (team_id IS NOT NULL))
 );
 CREATE INDEX templates_owner ON templates(owner_id);
 CREATE INDEX templates_team ON templates(team_id);
 ```
 
-API, same `compile()` style and CSRF/session rules as the boards routes:
+`server/templates.mjs` holds the migration, every template query (`createTemplateStore`, spread into the directory the way `createTokenStore` is) and the content validator. `api.mjs` has the routes, `mcp.mjs` the two tools.
+
+**Who sees and changes what** (`templateAccess`, used by every route and by MCP; a template the caller cannot see is `404`, one they can see but not change is `403`):
+
+| Scope | Sees it | Changes or deletes it |
+|---|---|---|
+| `personal` | the owner. Workspace owners and admins also see one whose owner was removed | the owner (admins too, when the owner is gone) |
+| `team` | members of the team (guests who are members too), and workspace owners and admins | the owner while still in the team, the team's admins, workspace owners and admins |
+| `workspace` | every member (not guests) | workspace owners and admins only |
+
+- **Creating:** members and up; guests get `403`. `personal` is the default. `team` needs `teamId` and membership of that team (`403 You are not a member of that team`), except that workspace owners and admins may use any team (`404` for one that does not exist). `workspace` is for workspace owners and admins only (`403`). Q2 of the open questions: members share with their teams, only owners and admins publish to everyone.
+- **Moving a template** (`PATCH` with `scope`/`teamId`) follows the same rules for the place it goes to, and the caller must be allowed to change it where it is. Making a template personal is for its owner alone (a team admin cannot pull somebody else's template out of the team). `teamId` is required with `team` and refused with the other two scopes.
+- **Leaving a team:** a person removed from a team keeps nothing of their team templates: they no longer see them, and the templates stay with the team (its admins and workspace owners and admins can change them).
+- **Deleting a person:** `owner_id` becomes `NULL` (`ON DELETE SET NULL`, as `boards.owner_id` does). Team and workspace templates stay where they are and show no owner. A personal template of a removed person is unreachable for everybody but workspace owners and admins, who can see it (as they see every board), duplicate it or delete it.
+- **Soft delete:** `deleted_at`. A deleted template is `404` everywhere, and the row is kept.
+- **Per person limit:** at most 200 templates each (`409 template_limit`); deleted ones do not count.
+
+API, with `compile()` and the same session, CSRF and read-only rules as the boards routes:
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/api/templates` | signed in | Metadata only (no `content`): personal ones they own, team ones of teams they're in, workspace ones. |
-| GET | `/api/templates/:id` | anyone who can list it | Full template with `content`. |
-| POST | `/api/templates` | members and up (not guests) | Body `{ name, category, description, scope, teamId?, content }`. `team` needs team membership; `workspace` see Q2. |
-| PATCH | `/api/templates/:id` | owner; team admin for team scope; workspace owner/admin for workspace scope | Any of `name, category, description, content, scope`. |
-| POST | `/api/templates/:id/duplicate` | anyone who can read it | Creates a personal copy owned by the caller. |
-| DELETE | `/api/templates/:id` | same as PATCH | Soft delete (`deleted_at`), visible in the admin audit log. |
+| GET | `/api/templates` | signed in | Metadata of every template the caller can see, newest first, never the content: `id, version, name, category, description, scope, teamId, teamName, createdBy` (the owner's id, empty when removed), `ownerName, createdAt, updatedAt, objectCount, stepCount, canChange`. |
+| GET | `/api/templates/:id` | anyone who can see it | The same plus `content`. |
+| POST | `/api/templates` | members and up | Body `{ name, category, description?, scope?, teamId?, content }`; unknown fields are `400`. `201` with the full template. |
+| PATCH | `/api/templates/:id` | see the table | Any of `name, category, description, content, scope, teamId`; nothing to change is `400`. `200` with the full template. |
+| POST | `/api/templates/:id/duplicate` | anyone who can see it, except guests | A personal copy named "<name> (copy)" owned by the caller; needs only read access to the original. `201`. |
+| DELETE | `/api/templates/:id` | see the table | Soft delete, `204`. |
 
-- **Body size:** `MAX_BODY` is 64 KB today; template routes get their own 1 MB limit (a per-route `maxBody` option on `compile`). Content is validated server-side: an array of objects with known `type`s, ids unique, references resolve, and `sanitizeSvgBody` applied again to icon bodies. A template is data the server stores and hands to other people's browsers, so it's treated as untrusted.
-- **Audit:** `template.create`, `template.update`, `template.delete`, with name and scope.
-- **Offline in accounts mode:** the list and the contents of templates used before are cached in IndexedDB (same store, tagged with the server origin). Saving while offline is disabled with a clear message, the same as creating boards.
-- **Read-only workspaces** (hosted, `402 read_only`): saving and editing templates is refused like board writes.
+- **Body size:** `compile()` takes a per-route `maxBody` (default `MAX_BODY`, 64 KB). The template routes that take a body (`POST`, `PATCH`) allow 1 MiB (`TEMPLATE_BODY_LIMIT`); over that is `413`. `DRAIN_LIMIT` (the size up to which an oversized body is still read and thrown away, so the client receives the `413` instead of a reset connection) is now 2 MiB and `compile()` refuses a route whose `maxBody` is above it. The content itself is limited to 1,000,000 bytes of JSON and 2,000 objects (`400` over that), so a request of 900 KB is accepted and one of 1.2 MB is `413`.
+- **Validation (security critical):** a template is data the server stores and hands to other people's browsers, so the content is rebuilt, not stored as sent. `validateTemplateContent` accepts only `objects`, `steps`, `bounds` and `fonts`, and builds each object from the fields allowed for its type: a known `type` (`TEMPLATE_OBJ_TYPES`, a test keeps it equal to `ObjType`), a unique id of up to 64 letters, digits, `-` or `_`, finite numbers within limits, `parent` pointing at a frame in the template (no loops), connector ends pointing at boxes in the template, step `frameId`s that resolve, colours without `url()` or markup, fonts as names, text with length caps and no control characters. Session and collaboration state (`privateStep`, `locked`, `createdBy`, `updatedAt`), poll and quick steps and every unknown key are dropped or refused. Nothing in the content is trusted again later: MCP and the app both read what was stored.
+- **SVG bodies** (icons and stickers, `body` on `type: 'icon'` only) are checked by `svgProblem` and refused with `400` and a message that names the object and the reason ("Object 4 has an SVG body that is not allowed: it uses <script>, which an icon cannot contain"). It is an allow-list, not a clean-up: only drawing elements (no `script`, `foreignObject`, `style`, `iframe`, `embed`, `object`, `a` or animation elements), no `on*` attributes, `href`/`xlink:href` only to `#` references inside the icon or to inline `data:image/png|jpeg|gif|webp`, `url()` only to `#` references, no comments, CDATA, DOCTYPE or processing instructions, no CSS image functions (`image-set()`, `image()`, `cross-fade()`) that could name an address without `url()`, no character references other than `&amp; &lt; &gt; &quot; &apos;`, no namespace other than SVG, well-formed tags with quoted attributes, at most 100,000 characters. Anything it cannot read as a plain tag is refused. The app still runs `validateContent` and `sanitizeSvgBody` on whatever it fetches from the server (`validateTemplate` in the store), as it does for a file or the browser's own storage.
+- **Fixed categories (Q4):** `TEMPLATE_CATEGORIES` in `server/templates.mjs` is the eight built-in categories and `Custom`, and a test keeps it equal to `CATEGORIES` and `CUSTOM_CATEGORY` in `src/templates.ts`. Anything else is `400`. A local template with some other category is uploaded as `Custom`.
+- **Audit:** `template.create` (also for a duplicate, with `copiedFrom`), `template.update` and `template.delete`, with the template id, name and scope (and `teamId` for a team template), never the content. The admin dashboard has a Templates filter and a sentence for each ("ana@example.com changed the template “Retro” shared with the workspace").
+- **Read-only workspaces** (hosted, `402 read_only`): `GET`s work; `POST`, `PATCH`, `DELETE` and duplicate are refused, like board writes.
+- **Offline in accounts mode:** the list and the contents of the templates fetched are cached in IndexedDB (`driftboard:template-cache`), every record tagged with the server origin; a record of another origin is never used. Offline, the cache is read and saving, changing, duplicating and deleting are refused with a clear message ("You are offline. Templates can be saved when the server can be reached."). The cache is cleared on sign-out.
+- **MCP (Q6):** `list_templates` (token scope `read`) and `use_template` (scope `write`, board role owner or editor) in accounts mode. MCP cannot create, change or delete a template. See `docs/mcp.md`.
 
 ## 6. UI (Swiss style, as approved)
 
 All of this follows `src/ui/admin.css` and the TAB-8 home styles: hairline rows, 11 px uppercase labels, square controls, `--signal` only for the primary action.
 
-- **Save as template.** Shown in three places: the quick-action bar's **More** menu for a selection, the right-click/selection menu, and **Board menu → Save board as template**. It opens a dialog (the shared `dialog()`) with fields Name (prefilled from the frame name or board name), Category (select of the built-in categories plus "Other…" for free text), Description, Include session steps (checkbox, only when relevant), and in accounts mode **Share with**: Only me / a team / Everyone in the workspace (see Q1/Q2). A live thumbnail sits on the right. Buttons: Cancel, **Save template** (primary). A toast confirms with a "View" link to the Templates page.
+- **Save as template.** Shown in three places: the quick-action bar's **More** menu for a selection, the right-click/selection menu, and **Board menu → Save board as template**. It opens a dialog (the shared `dialog()`) with fields Name (prefilled from the frame name or board name), Category (select of the built-in categories plus "Custom"; no free text), Description, Include session steps (checkbox, only when relevant), and in accounts mode **Share with**: Only me / a team / Everyone in the workspace (see Q1/Q2). A live thumbnail sits on the right. Buttons: Cancel, **Save template** (primary). A toast confirms with a "View" link to the Templates page.
 - **Templates page (`#/templates`).** New first section **My templates** above the built-ins, same card grid (thumbnail on top now), plus a "Shared with me" group in accounts mode. Each custom card has **Use template** (primary) and a `⋯` menu: Insert into a board…, Edit, Rename, Duplicate, Export file, Delete (Delete opens a confirm). Category filter and search cover both groups. An empty state explains how to save one, with a small graphic from TAB-64.
 - **Boards page strip.** "Start from a template" shows recently used or created custom templates first (up to 4), then built-ins.
 - **Editing a template.** **Edit** opens the template in a scratch board at `#/t/:id/edit`. It's a real board UI with a fixed banner above the chrome: "Editing template **Name**". It has **Cancel** (ghost) and **Save template** (primary), plus a details button for name, category and description. The scratch board is a local, non-synced Y.Doc (no relay room, not listed on Boards); Save runs the same normalise step over the whole scratch board and writes the template; Cancel discards. Leaving with unsaved changes asks first.
-- **Built-in templates** stay read-only; see Q3.
+- **Accounts mode.** The same pages and dialogs; the sign-in state picks where templates live (one store interface, two backends: `src/template-store.ts` for the browser, `src/template-server.ts` for the server). The Save dialog (and the details dialog of the editor) gets **Share with**: Only me, each team the person belongs to, and Everyone in the workspace for workspace owners and admins, with a line saying who can use and change it. Guests and offline sessions see why Save is off. The Templates page shows **My templates** and **Shared with me** (team and workspace templates somebody else owns), and each card has a small scope label (Only me, the team's name, Workspace) and, when shared, the owner's name. Edit, Rename and Delete appear only when the server says the person may change the template (`canChange`); Duplicate is always there (a personal copy made on the server). Editing a template one may not change is refused with a pointer to Duplicate. The library drawer groups the same way.
+- **Upload offer (Q5).** The first time somebody signs in in a browser that has open-mode templates, a dialog offers to upload them as personal templates ("Not now" or "Upload N templates"). It is shown once per browser, remembered in `localStorage` under `driftboard:templates-upload-offered` whatever the answer, and nothing is uploaded without the click. A template the server refuses is reported and the rest still go up; the browser's own copies stay.
+- **Built-in templates** stay read-only; "Duplicate to edit" (Q3) makes a personal copy, on the server in accounts mode.
 
 ## 7. Tests
 
 - `custom-templates.test.ts` (pure): normalise/instantiate round-trip keeps geometry, parents, connector bindings and step frames; external connector ends become free; private and session fields are dropped; ids are fresh on every instantiate; size limits.
-- Server: CRUD permissions per scope and role, guests refused, `413` over 1 MB, validation rejects bad references and unsafe SVG, soft delete, audit rows, read-only workspace refusal.
-- Template store: list/put/remove and the cross-tab change event (fake IndexedDB as in the existing sync tests).
+- `templates-server.test.ts` (in process): the server constants equal the client's (categories, `ObjType`, `UmlRelation`, step modes, size limits); every built-in template passes the validator unchanged; unknown keys are dropped; bad references, unknown types, non-finite numbers, loops, unsafe colours and about sixty hostile or malformed SVG bodies are refused (and plain drawing is accepted); the visibility and change rules for every role; migration 6 on a version 5 directory; removing a person with templates.
+- `templates-api.test.ts` (black box, a relay child process in accounts mode): CRUD permissions per scope for owner, admin, team admin, member, guest and a non-member (`404`); guests refused on create and duplicate; moving between scopes; leaving a team and being removed; duplicate; soft delete; `413` over 1 MB and a 900 KB template accepted; validation rejecting bad references, unsafe SVG and categories; audit rows; the 200 template limit; read-only workspace refusal.
+- `mcp-templates.test.ts` (black box): `list_templates` visibility, filters and fencing; `use_template` placing, id and reference remapping, z order, authorisation by token scope, board role and visibility, audit, rate limit and read-only; no tool creates, changes or deletes a template.
+- `templates-api-client.test.ts`, `template-server.test.ts`, `template-share.test.ts`, `template-store.test.ts`: the client calls, the server backend (fetching, caching tagged with the origin, offline, saving only what changed, error messages), the seam choosing the backend by sign-in state, the sharing choices and labels, the upload offer and template files without sharing fields.
 - CSS: covered by `css-colors.test.ts`; contrast pairs unchanged.
 
 ## 8. Build plan (after the spec is approved)
@@ -127,13 +155,22 @@ All of this follows `src/ui/admin.css` and the TAB-8 home styles: hairline rows,
 4. Edit mode (`#/t/:id/edit`), rename, duplicate, delete, export/import.
 5. Server table, API, validation, audit + client `api.ts` + accounts-mode UI (Share with).
 
-Steps 1–4 are independent of the server and can ship first. Steps 2–4 build on `feat/home-redesign` (TAB-8), which owns `#/templates`, so this branch merges TAB-8 first.
+Steps 1–4 are independent of the server and shipped first; step 5 is built on `feat/custom-templates-server`.
 
-## Open questions for Johan
+## Decisions (the open questions, answered by the product owner)
 
-- **Q1. Sharing scope.** Personal only at first, or personal + team + workspace from day one? Proposal: all three, with personal as the default.
-- **Q2. Workspace templates.** Can any member publish to the whole workspace, or only owners and admins ("admin-published templates")? Proposal: owners and admins only; members share with their teams.
-- **Q3. Built-in templates.** Allow "Duplicate to edit" on built-ins, producing a personal custom copy? Proposal: yes; the built-ins themselves stay read-only.
-- **Q4. Categories.** Free-text categories, or only the eight built-in ones? Proposal: built-ins plus free text, shown as "Other" in the filter.
-- **Q5. Open mode → accounts mode.** When an open-mode user later signs in, offer to upload their browser templates as personal templates? Proposal: yes, one prompt, like "Add to workspace" for boards.
-- **Q6. MCP.** Should the MCP endpoint (docs/mcp.md) be able to list and apply templates? Proposal: list and apply, read-only, in a later issue.
+- **Q1. Sharing scope.** Personal, team and workspace from day one. Personal is the default.
+- **Q2. Workspace templates.** Only workspace owners and admins publish to the workspace (create one there, or move one into it). Members share with the teams they belong to.
+- **Q3. Built-in templates.** "Duplicate to edit" on built-ins is done on the client (a personal copy in the same category); the built-ins themselves stay read-only. Nothing was added on the server.
+- **Q4. Categories.** A fixed list only: the built-in categories plus Custom. No free text; the server validates against the same list (`TEMPLATE_CATEGORIES`, kept equal to the client's by a test).
+- **Q5. Open mode to accounts mode.** After signing in, a one-time offer uploads the browser's open-mode templates as personal templates. Once per browser, remembered in `localStorage` under a `driftboard:` key, nothing uploaded without the click.
+- **Q6. MCP.** MCP may list templates and use them (add one to a board the token can write to), but not create, change or delete them. Listing needs a `read` token, using one a `write` token and the editor role on the board.
+
+Decisions made while building, which the questions did not settle:
+
+- Guests see the team templates of teams they belong to, but not workspace templates, and cannot create or duplicate.
+- Workspace owners and admins see every team and workspace template, but another person's personal templates only when the owner has been removed.
+- Only workspace owners and admins change a workspace template, even the one who published it, so a demoted publisher loses that right. The owner of a team template keeps the right while still in the team.
+- `use_template` over MCP adds the template's objects only: not its session steps (facilitation is not an MCP tool) and not its fonts. It places them to the right of the board's content (`nextFree`) unless `x` and `y` are given, and counts as a write for the rate limit.
+- A list never carries the content (`GET /api/templates`), so the app fetches the content of each template it lists, once, and keeps it in the cache until the template changes.
+- At most 200 templates per person, so one member cannot fill the disk with megabyte templates.
