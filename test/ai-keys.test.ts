@@ -13,6 +13,17 @@ import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 // docs/ai.md, "Keys (BYOK)". Secrets are generated here and never read from the environment or a .env file.
 
 const secret = () => crypto.randomBytes(32);
+// The key version is one byte of an HMAC of the secret, so two random secrets share one 1 time in 256. A test that
+// needs the versions to differ (or to be equal) draws until they do.
+const versionOf = (s: Buffer) => createKeyRing({ secret: s }).currentVersion;
+const secretWhere = (old: Buffer, sameVersion: boolean) => {
+  for (;;) {
+    const next = secret();
+    if ((versionOf(next) === versionOf(old)) === sameVersion) return next;
+  }
+};
+const secretOtherThan = (old: Buffer) => secretWhere(old, false);
+const secretLike = (old: Buffer) => secretWhere(old, true);
 const b64 = (buf: Buffer) => buf.toString('base64');
 const KEY = `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
 
@@ -226,12 +237,26 @@ describe('the key ring', () => {
 
   it('opens what the previous secret wrote and says so, so it can be sealed again', () => {
     const oldSecret = secret();
-    const newSecret = secret();
+    const newSecret = secretOtherThan(oldSecret);
     const written = seal(createKeyRing({ secret: oldSecret }));
     const rotated = createKeyRing({ secret: newSecret, previous: oldSecret });
     expect(rotated.currentVersion).not.toBe(written.keyVersion);
     expect(rotated.open(written)).toEqual({ plaintext: KEY, stale: true });
     const again = seal(rotated);
+    expect(rotated.open(again).stale).toBe(false);
+    expect(createKeyRing({ secret: newSecret }).open(again).plaintext).toBe(KEY);
+    expect(failureCode(() => createKeyRing({ secret: newSecret }).open(written))).toBe('ai_key_unreadable');
+  });
+
+  it('opens what the previous secret wrote, and seals it again, when both secrets have the same version byte', () => {
+    const oldSecret = secret();
+    const newSecret = secretLike(oldSecret);
+    const written = seal(createKeyRing({ secret: oldSecret }));
+    const rotated = createKeyRing({ secret: newSecret, previous: oldSecret });
+    expect(rotated.currentVersion).toBe(written.keyVersion);
+    expect(rotated.open(written)).toEqual({ plaintext: KEY, stale: true });
+    const again = seal(rotated);
+    expect(again.keyVersion).toBe(written.keyVersion);
     expect(rotated.open(again).stale).toBe(false);
     expect(createKeyRing({ secret: newSecret }).open(again).plaintext).toBe(KEY);
     expect(failureCode(() => createKeyRing({ secret: newSecret }).open(written))).toBe('ai_key_unreadable');
@@ -377,7 +402,7 @@ describe('storing keys', () => {
   it('seals a key written under the previous secret again, under the current one, on its next use', () => {
     const file = path.join(tmp(), 'directory.sqlite');
     const oldSecret = secret();
-    const newSecret = secret();
+    const newSecret = secretOtherThan(oldSecret);
     const d = open(file);
     const u = person(d);
     d.saveAiKey({ ring: createKeyRing({ secret: oldSecret }), scope: 'user', userId: u.id, provider: 'anthropic', apiKey: KEY });

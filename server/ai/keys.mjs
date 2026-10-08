@@ -5,6 +5,8 @@
 // associated data binds the key version, the scope and the user, so a ciphertext copied to another row (or another
 // user) fails to open. The key version is one byte, the first byte of an HMAC of the secret, so an operator never
 // numbers secrets: it is stored in `key_version` and is also the first byte of the `ciphertext` blob.
+// The version is a hint, not an identity: two secrets share a version byte 1 time in 256, so open() tries every
+// secret with that version and lets the GCM tag decide. A collision after a rotation is expected and handled.
 
 import crypto from 'node:crypto';
 import { AiError } from './errors.mjs';
