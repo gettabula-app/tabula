@@ -49,6 +49,9 @@ export function closePopover() {
 }
 
 let toastTimer = 0;
+/** The toast's distance from the bottom of the window, as in styles.css; it moves up past a session bar. */
+const TOAST_BOTTOM = 76;
+
 export function toast(msg: string, ms = 2600) {
   let el = document.querySelector<HTMLDivElement>('.toast');
   if (!el) {
@@ -56,6 +59,9 @@ export function toast(msg: string, ms = 2600) {
     document.body.appendChild(el);
   }
   el.textContent = msg;
+  // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
+  const bar = document.querySelector('.flowbar.show');
+  el.style.bottom = bar ? `${Math.max(TOAST_BOTTOM, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : '';
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => el!.classList.remove('show'), ms);

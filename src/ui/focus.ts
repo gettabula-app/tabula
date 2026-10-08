@@ -25,6 +25,8 @@ const MAX_CARDS = 3;
 const VIEW_EVERY_MS = 120;
 /** The stack sits above the toast, which is 124 px up, and above the session bar when it is taller than that. */
 const STACK_MIN_BOTTOM = 124;
+/** Room for a toast between the session bar and the stack: the toast moves above the bar while one shows. */
+const TOAST_ROOM = 52;
 
 interface Card {
   el: HTMLElement;
@@ -46,7 +48,7 @@ export function mountFocus(app: BoardApp, parent: HTMLElement) {
   parent.appendChild(stack);
   const place = () => {
     const bar = parent.querySelector('.flowbar.show');
-    const above = bar ? parent.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8 : 0;
+    const above = bar ? parent.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8 + TOAST_ROOM : 0;
     stack.style.setProperty('--focus-bottom', `${Math.max(STACK_MIN_BOTTOM, Math.round(above))}px`);
   };
   const placeLater = () => requestAnimationFrame(place);
