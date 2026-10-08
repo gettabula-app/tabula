@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createKeyRing } from '../server/ai/keys.mjs';
+import { openDirectory } from '../server/directory.mjs';
 
 // docs/ai.md. The relay as `npm start` runs it: how the environment turns AI on in open mode, and what it refuses to start with.
 // The environment of the children is built here and never read from a .env file: the working directory is an empty one.
@@ -21,9 +23,9 @@ let count = 0;
 const cleanEnv = () =>
   Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(TABULA|MIRA)_|^ANTHROPIC_|^DATA_DIR$|^PORT$/.test(name)));
 
-function spawnRelay(env: Record<string, string>) {
+function spawnRelay(env: Record<string, string>, existingDir?: string) {
   const port = BASE_PORT + count++;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-relay-'));
+  const dir = existingDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'ai-relay-'));
   let out = '';
   const proc = spawn(process.execPath, [RELAY], {
     cwd: dir,
@@ -36,9 +38,9 @@ function spawnRelay(env: Record<string, string>) {
   return { port, proc, dir, output: () => out };
 }
 
-const launch = (env: Record<string, string> = {}) =>
+const launch = (env: Record<string, string> = {}, existingDir?: string) =>
   new Promise<Relay>((resolve, reject) => {
-    const relay = spawnRelay(env);
+    const relay = spawnRelay(env, existingDir);
     const timer = setTimeout(() => reject(new Error(`relay did not start: ${relay.output()}`)), 15_000);
     relay.proc.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
@@ -136,10 +138,42 @@ describe('open mode', () => {
   it('has no other AI endpoint', async () => {
     const relay = await launch({ TABULA_AI_API_KEY: KEY, TABULA_AI_OPEN: '1', TABULA_AI_SECRET: SECRET });
     const csrf = { 'x-tabula': '1', 'content-type': 'application/json' };
-    for (const [method, urlPath] of [['PUT', '/api/ai/keys/me'], ['DELETE', '/api/ai/keys/me'], ['GET', '/api/admin/ai'], ['PUT', '/api/admin/ai'], ['DELETE', '/api/admin/ai/key'], ['POST', '/api/ai/config'], ['POST', '/api/ai/run']]) {
+    for (const [method, urlPath] of [['PUT', '/api/ai/keys/me'], ['DELETE', '/api/ai/keys/me'], ['GET', '/api/admin/ai'], ['PUT', '/api/admin/ai'], ['DELETE', '/api/admin/ai/key'], ['POST', '/api/ai/config']]) {
       const res = await get(relay, urlPath, { method, headers: csrf, body: method === 'PUT' || method === 'POST' ? JSON.stringify({ apiKey: KEY }) : undefined });
       expect([method, urlPath, res.status, res.body]).toEqual([method, urlPath, 404, { error: 'not_found' }]);
     }
+  });
+});
+
+describe('open mode: POST /api/ai/run', () => {
+  const csrf = { 'x-tabula': '1', 'content-type': 'application/json' };
+  const run = (relay: Relay, body: unknown, headers: Record<string, string> = csrf) =>
+    get(relay, '/api/ai/run', { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const generate = (boardId = 'board1') => ({ feature: 'generate', boardId, input: { prompt: 'ten risks' } });
+
+  it('is refused while AI is off, with a reason', async () => {
+    const relay = await launch();
+    const res = await run(relay, generate());
+    expect([res.status, res.body.error]).toEqual([403, 'ai_disabled']);
+    const keyOnly = await launch({ TABULA_AI_API_KEY: KEY });
+    expect((await run(keyOnly, generate())).body.error).toBe('ai_disabled');
+  });
+
+  it('is refused before anything else without the CSRF header, and a GET is not a run', async () => {
+    const relay = await launch({ TABULA_AI_API_KEY: KEY, TABULA_AI_OPEN: '1' });
+    expect((await run(relay, generate(), { 'content-type': 'application/json' })).body.error).toBe('csrf');
+    const res = await get(relay, '/api/ai/run');
+    expect([res.status, res.body]).toEqual([404, { error: 'not_found' }]);
+  });
+
+  it('stops at a board that does not exist or a body that is wrong, before any provider is called, and never prints the key', async () => {
+    const relay = await launch({ TABULA_AI_API_KEY: KEY, TABULA_AI_OPEN: '1' });
+    const missing = await run(relay, generate('no-such-board'));
+    expect([missing.status, missing.body.error]).toEqual([404, 'not_found']);
+    expect((await run(relay, { feature: 'generate', boardId: 'board1', input: {} })).body.error).toBe('bad_request');
+    expect((await run(relay, '{nope')).body.error).toBe('bad_request');
+    expect((await run(relay, { feature: 'translate', boardId: 'board1', input: {} })).status).toBe(400);
+    expect(relay.output()).not.toContain(KEY);
   });
 });
 
@@ -152,6 +186,38 @@ describe('accounts mode', () => {
     expect((await get(relay, '/api/ai/config')).status).toBe(401);
     expect((await get(relay, '/api/admin/ai')).status).toBe(401);
     expect((await get(relay, '/api/ai/keys/me', { method: 'PUT', headers: csrf, body: JSON.stringify({ apiKey: KEY }) })).status).toBe(401);
+    const run = await get(relay, '/api/ai/run', { method: 'POST', headers: csrf, body: JSON.stringify({ feature: 'generate', boardId: 'board1', input: { prompt: 'x' } }) });
+    expect([run.status, run.body.error]).toEqual([401, 'unauthenticated']);
+    expect(relay.output()).not.toContain(KEY);
+  });
+
+  it('judges POST /api/ai/run with the relay\'s own room rules and reads the room, up to the provider', async () => {
+    // a directory prepared before the relay starts; the key is a fake one and no request is ever sent to a provider
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-relay-accounts-'));
+    const directory = openDirectory(path.join(dir, 'directory.sqlite'));
+    const owner = directory.createUser({ email: 'owner@example.com', role: 'owner' })!;
+    const viewer = directory.createUser({ email: 'viewer@example.com', role: 'member' })!;
+    directory.createBoard({ id: 'board1', title: 'Plan', ownerId: owner.id });
+    directory.shareBoard('board1', { principalType: 'user', principalId: viewer.id, role: 'viewer' });
+    directory.setSetting('ai.enabled', '1');
+    directory.saveAiKey({ ring: createKeyRing({ secret: Buffer.from(SECRET, 'base64') }), scope: 'workspace', provider: 'anthropic', apiKey: KEY });
+    const cookieOf = (id: string) => `tabula_session=${directory.createSession(id, { ttlMs: 3_600_000 }).token}`;
+    const [ownerCookie, viewerCookie] = [cookieOf(owner.id), cookieOf(viewer.id)];
+    directory.close();
+
+    const relay = await launch({ ...accounts, TABULA_AI_SECRET: SECRET, TABULA_BASE_URL: 'http://127.0.0.1:1' }, dir);
+    const run = (cookie: string, body: unknown) =>
+      get(relay, '/api/ai/run', { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
+    const cluster = { feature: 'cluster', boardId: 'board1', input: { selection: ['x', 'y'] } };
+    const denied = await run(viewerCookie, cluster);
+    expect([denied.status, denied.body.error]).toEqual([403, 'forbidden']);
+    // an editor gets as far as reading the board, which has nothing to group, so no provider is called
+    const empty = await run(ownerCookie, cluster);
+    expect([empty.status, empty.body.error]).toEqual([400, 'bad_request']);
+    expect(empty.body.message).toContain('at least two stickies');
+    const nothing = await run(ownerCookie, { feature: 'summarise', boardId: 'board1', input: {} });
+    expect([nothing.status, nothing.body.message]).toEqual([400, 'There is nothing to summarise here']);
+    expect((await run(ownerCookie, { ...cluster, boardId: 'missing' })).status).toBe(404);
     expect(relay.output()).not.toContain(KEY);
   });
 

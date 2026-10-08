@@ -10,6 +10,10 @@ export const AI_STATUS = {
   ai_rate_limited: 429,
   ai_unavailable: 502,
   ai_aborted: 499,
+  ai_timeout: 504,
+  ai_refused: 422,
+  ai_invalid_proposal: 502,
+  forbidden: 403,
   internal: 500,
 };
 
@@ -20,6 +24,10 @@ const MESSAGES = {
   ai_rate_limited: 'The provider is rate limiting this key. Try again later.',
   ai_unavailable: 'The provider is not available right now. Try again later.',
   ai_aborted: 'The request was cancelled',
+  ai_timeout: 'The AI took too long and was stopped. Nothing was changed.',
+  ai_refused: 'The AI declined this request. Nothing was changed.',
+  ai_invalid_proposal: 'The AI answer could not be used. Nothing was changed.',
+  forbidden: 'You no longer have permission to do that',
   internal: 'Something went wrong',
 };
 

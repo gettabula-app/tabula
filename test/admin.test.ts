@@ -103,6 +103,15 @@ describe('auditSentence', () => {
     ['ai.key.set for a person', entry('ai.key.set', { scope: 'user', provider: 'anthropic' }), 'ana@example.com added their own AI key'],
     ['ai.key.delete for the workspace', entry('ai.key.delete', { scope: 'workspace' }), 'ana@example.com removed the workspace AI key'],
     ['ai.key.delete for a person', entry('ai.key.delete', { scope: 'user' }), 'ana@example.com removed their own AI key'],
+    ['ai.generate', entry('ai.generate', { boardId: 'b1', outcome: 'ok' }), 'ana@example.com generated stickies on “Roadmap”'],
+    ['ai.generate on a board that is gone', entry('ai.generate', { boardId: 'gone', outcome: 'ok' }), 'ana@example.com generated stickies on a board'],
+    ['ai.summarise', entry('ai.summarise', { boardId: 'b1', outcome: 'ok' }), 'ana@example.com summarised “Roadmap”'],
+    ['ai.cluster', entry('ai.cluster', { boardId: 'b1', outcome: 'ok' }), 'ana@example.com grouped stickies on “Roadmap”'],
+    ['ai.cluster cancelled', entry('ai.cluster', { boardId: 'b1', outcome: 'ai_aborted' }), 'ana@example.com grouped stickies on “Roadmap” (cancelled)'],
+    ['ai.summarise timed out', entry('ai.summarise', { boardId: 'b1', outcome: 'ai_timeout' }), 'ana@example.com summarised “Roadmap” (timed out)'],
+    ['ai.generate declined', entry('ai.generate', { boardId: 'b1', outcome: 'ai_refused' }), 'ana@example.com generated stickies on “Roadmap” (declined by the AI)'],
+    ['ai.generate failed', entry('ai.generate', { boardId: 'b1', outcome: 'ai_invalid_proposal' }), 'ana@example.com generated stickies on “Roadmap” (failed)'],
+    ['ai.generate with no outcome', entry('ai.generate', { boardId: 'b1' }), 'ana@example.com generated stickies on “Roadmap”'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -151,7 +160,7 @@ describe('auditSentence', () => {
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
-      'ai.settings', 'ai.key.set', 'ai.key.delete',
+      'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });

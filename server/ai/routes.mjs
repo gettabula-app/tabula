@@ -5,7 +5,9 @@
 import { FEATURES, aiEnabledFor, personalKeysFor, readAiSettings, validateAdminAi, validateKeyBody, writeAiSettings } from './settings.mjs';
 import { AiError, describeError } from './errors.mjs';
 import { createKeyRing } from './keys.mjs';
+import { createSaveThrottle } from './limits.mjs';
 import { createProvider } from './providers.mjs';
+import { createRunRoute } from './run.mjs';
 
 const UNCONFIGURED = 'AI keys cannot be saved because the server has no TABULA_AI_SECRET. Set it (32 random bytes as base64) and restart.';
 
@@ -17,12 +19,18 @@ export function openAiConfig(config) {
 
 /**
  * @param {object} deps
- * `compile`, `audit`, `requireAdmin`, `isAdmin` and `errors` come from api.mjs. `createProvider` is injectable for tests.
+ * `compile`, `audit`, `requireAdmin`, `isAdmin`, `errors` and `cloud` come from api.mjs; `canWriteRoom` and `readRoom` from the
+ * relay (the rule and the room reader it shares with MCP). `createProvider`, `now` and `timeoutMs` are injectable for tests.
  */
-export function createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors, createProvider: makeProvider = createProvider, log = console.error }) {
+export function createAiRoutes({
+  directory, config, compile, audit, requireAdmin, isAdmin, errors, cloud = null,
+  canWriteRoom = () => false, readRoom = () => { throw new Error('This server has no room access'); },
+  createProvider: makeProvider = createProvider, log = console.error, now = Date.now, timeoutMs,
+}) {
   const { HttpError, badRequest, forbidden, conflict } = errors;
   const ring = createKeyRing({ secret: config.ai.secret, previous: config.ai.previous });
   const settingsNow = () => readAiSettings(directory, config);
+  const saves = createSaveThrottle({ now });
 
   /** The HttpError to throw for anything that went wrong while talking to the provider. */
   function failure(res, err) {
@@ -34,11 +42,19 @@ export function createAiRoutes({ directory, config, compile, audit, requireAdmin
     return new HttpError(500, 'internal', 'Something went wrong');
   }
 
-  async function verifyKey(res, { provider, apiKey }) {
+  // Each save makes an outbound call, so a person gets a few an hour and one at a time.
+  async function verifyKey(res, user, { provider, apiKey }) {
+    const turn = saves.begin(user.id);
+    if (turn.wait) {
+      res.setHeader('retry-after', String(turn.wait));
+      throw new HttpError(429, 'rate_limited', 'Too many key checks. Try again later.');
+    }
     try {
       await makeProvider({ kind: provider, apiKey }).verify();
     } catch (err) {
       throw failure(res, err);
+    } finally {
+      turn.done();
     }
   }
 
@@ -86,7 +102,7 @@ export function createAiRoutes({ directory, config, compile, audit, requireAdmin
       if (checked.error) throw badRequest(checked.error);
       if (!ring.configured) throw conflict('ai_unconfigured', UNCONFIGURED);
       const { apiKey, provider } = checked.key;
-      await verifyKey(res, checked.key);
+      await verifyKey(res, user, checked.key);
       const fresh = stillThere(user);
       if (!personalKeysFor(settingsNow(), fresh)) throw forbidden('Personal AI keys are not allowed in this workspace');
       const saved = directory.transaction(() => {
@@ -117,7 +133,7 @@ export function createAiRoutes({ directory, config, compile, audit, requireAdmin
       const { patch, key } = checked;
       if (key && !ring.configured) throw conflict('ai_unconfigured', UNCONFIGURED);
       // Nothing is written unless the key checks out, so a bad key leaves the settings as they were.
-      if (key) await verifyKey(res, key);
+      if (key) await verifyKey(res, user, key);
       if (!isAdmin(stillThere(user))) throw forbidden('Only workspace admins can do that');
       directory.transaction(() => {
         if (Object.keys(patch).length) {
@@ -131,6 +147,8 @@ export function createAiRoutes({ directory, config, compile, audit, requireAdmin
       });
       return [200, adminView()];
     }),
+
+    createRunRoute({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, log, now, timeoutMs }),
 
     compile('DELETE', 'admin/ai/key', { readOnlyOk: true }, ({ user }) => {
       requireAdmin(user);

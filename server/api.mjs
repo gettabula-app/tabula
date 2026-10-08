@@ -130,7 +130,8 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-// `ai` can replace the provider factory (docs/ai.md); the tests do, so no request leaves the machine.
+// `ai` carries what the relay shares with the AI routes (canWriteRoom, readRoom) and can replace the provider factory
+// (docs/ai.md); the tests do, so no request leaves the machine.
 export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), mailer = createMailer(config), ai = {} }) {
   const emit = (name, payload) => {
     try {
@@ -290,7 +291,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
-  const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, conflict }, ...ai });
+  const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, conflict }, cloud, ...ai });
 
   // ------------------------------------------------------------ handlers
 
@@ -977,7 +978,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) session = signedIn();
 
-    const [status, payload, headers] = await route.handler({
+    const answer = await route.handler({
       req,
       res,
       params,
@@ -986,6 +987,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       user: session?.user,
       sessionId: session?.sessionId,
     });
+    // a streaming route (POST /api/ai/run) has written and ended the response itself
+    if (route.stream) return;
+    const [status, payload, headers] = answer;
     send(res, status, payload, headers);
   }
 
