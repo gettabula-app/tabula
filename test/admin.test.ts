@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, createApi, type AuditEntry } from '../src/api';
+import { ApiError, createApi, type AdminOverview, type AuditEntry } from '../src/api';
 import {
   activeOwnerCount,
   auditActor,
@@ -9,6 +9,7 @@ import {
   isKnownAuditAction,
   KNOWN_AUDIT_ACTIONS,
   matchesQuery,
+  overviewTiles,
   removeVerdict,
   revokeVerdict,
   roleLock,
@@ -308,5 +309,34 @@ describe('admin API client', () => {
   it('keeps the status and code of a forbidden answer', async () => {
     const { fetchFn } = recorder({ error: 'forbidden' }, 403);
     await expect(createApi(fetchFn).adminOverview()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+});
+
+describe('overviewTiles', () => {
+  const overview: AdminOverview = {
+    members: { total: 10, active: 8, disabled: 2, byRole: { owner: 1, admin: 1, member: 8, guest: 0 } },
+    teams: { total: 2, archived: 1 },
+    boards: { total: 61, deleted: 3 },
+    sessions: { active: 9 },
+    signIns7d: 14,
+    live: { rooms: 1, connections: 3 },
+    instance: { authEnabled: true, baseUrl: 'http://localhost', mail: 'log', version: '0.1.0' },
+  };
+  const tile = (label: string) => overviewTiles(overview).find((t) => t.label === label)!;
+
+  it('counts every member, so the role breakdown adds up to the number', () => {
+    expect(tile('Members')).toEqual({ label: 'Members', value: 10, sub: '1 owner · 1 admin · 8 members · 0 guests' });
+    expect(tile('Disabled members')).toEqual({ label: 'Disabled members', value: 2, sub: '8 active' });
+  });
+
+  it('counts teams and boards the same way, with the archived and deleted ones under the number', () => {
+    expect(tile('Teams')).toMatchObject({ value: 2, sub: '1 archived' });
+    expect(tile('Boards')).toMatchObject({ value: 61, sub: '3 deleted' });
+  });
+
+  it('keeps the activity tiles', () => {
+    expect(overviewTiles(overview).map((t) => t.label)).toEqual(
+      ['Members', 'Disabled members', 'Teams', 'Boards', 'Active sessions', 'Sign-ins, last 7 days', 'Live connections']);
+    expect(tile('Live connections')).toMatchObject({ value: 3, sub: '1 room open' });
   });
 });

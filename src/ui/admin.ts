@@ -6,7 +6,7 @@ import { ADMIN_TABS, type AdminTab } from '../route';
 import { fmtAgo, toast } from './common';
 import { h, icon } from './dom';
 import {
-  activeOwnerCount, auditActor, auditSentence, countLabel, disableVerdict, isKnownAuditAction, matchesQuery, removeVerdict,
+  activeOwnerCount, auditActor, auditSentence, countLabel, disableVerdict, isKnownAuditAction, matchesQuery, overviewTiles, removeVerdict,
   revokeVerdict, roleLock, roleOptions, roleVerdict, type Actor, type Lookup,
 } from './admin-logic';
 
@@ -164,7 +164,6 @@ function tile(label: string, value: number, sub?: string): HTMLElement {
 }
 
 function overviewView(o: AdminOverview): HTMLElement {
-  const r = o.members.byRole;
   const facts: [string, string][] = [
     ['Base URL', o.instance.baseUrl],
     ['Mail', o.instance.mail],
@@ -172,19 +171,7 @@ function overviewView(o: AdminOverview): HTMLElement {
     ['Accounts', o.instance.authEnabled ? 'On' : 'Off'],
   ];
   return h('div', null,
-    h('div', { class: 'admin-tiles' },
-      tile('Active members', o.members.active, [
-        countLabel(r.owner, 'owner', 'owners'),
-        countLabel(r.admin, 'admin', 'admins'),
-        countLabel(r.member, 'member', 'members'),
-        countLabel(r.guest, 'guest', 'guests'),
-      ].join(' · ')),
-      tile('Disabled members', o.members.disabled, `${o.members.total} in total`),
-      tile('Teams', o.teams.total, `${o.teams.archived} archived`),
-      tile('Boards', o.boards.total, `${o.boards.deleted} deleted`),
-      tile('Active sessions', o.sessions.active),
-      tile('Sign-ins, last 7 days', o.signIns7d),
-      tile('Live connections', o.live.connections, `${countLabel(o.live.rooms, 'room', 'rooms')} open`)),
+    h('div', { class: 'admin-tiles' }, overviewTiles(o).map((t) => tile(t.label, t.value, t.sub))),
     h('h3', { class: 'admin-sub' }, 'Instance'),
     h('dl', { class: 'admin-facts' }, facts.map(([k, v]) => h('div', { class: 'admin-fact' }, h('dt', null, k), h('dd', null, v)))));
 }
