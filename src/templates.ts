@@ -111,6 +111,23 @@ function grid2x2(b: Builder, title: string, subtitle: string, cells: { name: str
   return outer;
 }
 
+
+/** One block of a canvas: a frame at a grid position (in units of `u` wide and `v` high) with a hint at the top. */
+interface CanvasBlock { name: string; hint: string; fill: string; c: number; r: number; cs?: number; rs?: number }
+
+/** Lay blocks out on a grid inside an outer frame; returns the block frame ids by name. */
+function canvasBlocks(b: Builder, outer: Id, blocks: CanvasBlock[], u: number, v: number, gap = 16, pad = 24): Record<string, Id> {
+  const ids: Record<string, Id> = {};
+  for (const k of blocks) {
+    const x = pad + k.c * (u + gap), y = pad + k.r * (v + gap);
+    const w = (k.cs ?? 1) * u + ((k.cs ?? 1) - 1) * gap, h = (k.rs ?? 1) * v + ((k.rs ?? 1) - 1) * gap;
+    const id = b.frame(k.name, x, y, w, h, k.fill, outer);
+    b.text(k.hint, x + 20, y + 20, w - 40, 15, 400, id, '#5B6672');
+    ids[k.name] = id;
+  }
+  return ids;
+}
+
 export const TEMPLATES: TemplateDef[] = [
   {
     id: 'start-stop-continue', name: 'Start / Stop / Continue', category: 'Retrospective',
@@ -347,6 +364,138 @@ export const TEMPLATES: TemplateDef[] = [
       b.step('Group into themes', 'Move causes into themes and name them.', 'cluster', 8, groups);
       b.step('Vote on top risks', 'Which risks are most likely and most damaging? 3 votes each.', 'vote', 3, groups, 3);
       b.step('Mitigations', 'Write one mitigation per top risk, with an owner.', 'write', 10, mitig);
+    },
+  },
+  {
+    id: 'business-model-canvas', name: 'Business Model Canvas', category: 'Strategy',
+    description: 'Nine blocks that describe how a business creates, delivers and earns value.',
+    build: (b) => {
+      const u = 340, v = 300, gap = 16, pad = 24;
+      const w = pad * 2 + 5 * u + 4 * gap, h = pad * 2 + 3 * v + 2 * gap;
+      b.header('Business Model Canvas', 'Describe one business model on one page, fill customers first, about 90 minutes', w);
+      const outer = b.frame('Business Model Canvas', 0, 0, w, h, TINT.mist);
+      const blk = canvasBlocks(b, outer, [
+        { name: 'Key partners', hint: 'Who are our key partners and suppliers? Which activities do they perform for us?', fill: TINT.lilac, c: 0, r: 0, rs: 2 },
+        { name: 'Key activities', hint: 'What must we do to deliver the value proposition?', fill: TINT.sky, c: 1, r: 0 },
+        { name: 'Key resources', hint: 'What assets do we need: people, money, IP, equipment?', fill: TINT.sky, c: 1, r: 1 },
+        { name: 'Value propositions', hint: 'What value do we deliver? Which problem do we solve, for whom?', fill: TINT.butter, c: 2, r: 0, rs: 2 },
+        { name: 'Customer relationships', hint: 'How do we get, keep and grow customers?', fill: TINT.rose, c: 3, r: 0 },
+        { name: 'Channels', hint: 'How do customers find us, buy and get the product?', fill: TINT.rose, c: 3, r: 1 },
+        { name: 'Customer segments', hint: 'Who are we creating value for? Who is the most important customer?', fill: TINT.mint, c: 4, r: 0, rs: 2 },
+        { name: 'Cost structure', hint: 'What are the most important costs? Which resources and activities cost most?', fill: TINT.peach, c: 0, r: 2, cs: 2, rs: 1 },
+        { name: 'Revenue streams', hint: 'What do customers pay for, how, and how much?', fill: TINT.mint, c: 2, r: 2, cs: 3, rs: 1 },
+      ], u, v, gap, pad);
+      b.step('Customers', 'Who are the customer segments? Write one note per segment in Customer segments, then say which matters most.', 'write', 10, blk['Customer segments']);
+      b.step('Value', 'For the main segment, what do we offer and which problem does it solve?', 'write', 10, blk['Value propositions']);
+      b.step('Reaching customers', 'How do we reach them (Channels) and what relationship do they expect?', 'write', 10, blk['Channels']);
+      b.step('Money in', 'What do customers pay for, and how much?', 'write', 8, blk['Revenue streams']);
+      b.step('Making it work', 'Key activities, resources and partners we need to deliver the value.', 'write', 15, blk['Key activities']);
+      b.step('Costs', 'The largest costs of the activities and resources above.', 'write', 8, blk['Cost structure']);
+      b.step('Riskiest assumptions', 'Click the notes that we are least sure about. 3 votes each.', 'vote', 3, outer, 3);
+      b.step('Next experiments', 'For the top assumptions, discuss one cheap test each.', 'discuss', 10, outer);
+    },
+  },
+  {
+    id: 'lean-canvas', name: 'Lean Canvas', category: 'Strategy',
+    description: 'A one-page plan for a startup idea: problem, solution, key metrics and unfair advantage.',
+    build: (b) => {
+      const u = 340, v = 300, gap = 16, pad = 24;
+      const w = pad * 2 + 5 * u + 4 * gap, h = pad * 2 + 3 * v + 2 * gap;
+      b.header('Lean Canvas', 'Test an idea on one page, start with the problem, about 60 minutes', w);
+      const outer = b.frame('Lean Canvas', 0, 0, w, h, TINT.mist);
+      const blk = canvasBlocks(b, outer, [
+        { name: 'Problem', hint: 'Top three problems. Existing alternatives: how are they solved today?', fill: TINT.peach, c: 0, r: 0, rs: 2 },
+        { name: 'Solution', hint: 'The top three features that answer those problems.', fill: TINT.sky, c: 1, r: 0 },
+        { name: 'Key metrics', hint: 'The few numbers that tell us it works.', fill: TINT.sky, c: 1, r: 1 },
+        { name: 'Unique value proposition', hint: 'One clear, compelling message that says why you are different and worth buying. High-level concept: X for Y.', fill: TINT.butter, c: 2, r: 0, rs: 2 },
+        { name: 'Unfair advantage', hint: 'Something that cannot easily be copied or bought.', fill: TINT.lilac, c: 3, r: 0 },
+        { name: 'Channels', hint: 'The path to your customers.', fill: TINT.rose, c: 3, r: 1 },
+        { name: 'Customer segments', hint: 'Target customers and users. Early adopters: who are the first ten?', fill: TINT.mint, c: 4, r: 0, rs: 2 },
+        { name: 'Cost structure', hint: 'Fixed and variable costs, customer acquisition, hosting, people.', fill: TINT.peach, c: 0, r: 2, cs: 2, rs: 1 },
+        { name: 'Revenue streams', hint: 'Revenue model, lifetime value, revenue, gross margin.', fill: TINT.mint, c: 2, r: 2, cs: 3, rs: 1 },
+      ], u, v, gap, pad);
+      b.step('Customer and problem', 'Start with the early adopters and the top three problems they have. One note each.', 'write', 12, blk['Problem']);
+      b.step('Existing alternatives', 'How do they solve each problem today? Add it to the Problem block.', 'write', 6, blk['Problem']);
+      b.step('Value proposition', 'Write the single message. Draft three versions, then pick one.', 'write', 10, blk['Unique value proposition']);
+      b.step('Solution and metrics', 'Features for the top problems, and the metrics that show it works.', 'write', 12, blk['Solution']);
+      b.step('Channels and advantage', 'How will you reach early adopters? What is hard to copy?', 'write', 8, blk['Channels']);
+      b.step('Costs and revenue', 'Rough costs and revenue streams. Numbers can be guesses.', 'write', 8, blk['Revenue streams']);
+      b.step('Riskiest assumption', 'Click the notes you are least sure about. 3 votes each.', 'vote', 3, outer, 3);
+    },
+  },
+  {
+    id: 'service-blueprint', name: 'Service Blueprint', category: 'Discovery',
+    description: 'Customer actions on top, the visible and hidden work that supports each stage below.',
+    build: (b) => {
+      const stages = ['Awareness', 'Sign up', 'Service delivery', 'Follow-up'];
+      const colW = 320, gap = 16, x0 = 200, w = x0 + stages.length * (colW + gap) + 16;
+      const rowH = 176;
+      b.header('Service Blueprint', 'Map one service end to end, front and back, about 90 minutes', w);
+      const rows: { name: string; fill: string }[] = [
+        { name: 'Physical evidence', fill: TINT.butter },
+        { name: 'Customer actions', fill: TINT.sky },
+        { name: 'Frontstage actions', fill: TINT.mint },
+        { name: 'Backstage actions', fill: TINT.lilac },
+        { name: 'Support processes', fill: TINT.mist },
+      ];
+      // the line of visibility sits between frontstage and backstage and takes extra room
+      const lineAfter = 2, lineH = 72;
+      const h = 112 + rows.length * (rowH + 16) + lineH + 16;
+      const outer = b.frame('Service blueprint', 0, 0, w, h, '#FFFFFF');
+      stages.forEach((s, i) => b.shape('terminator', s, x0 + i * (colW + gap), 24, colW, 64, '#18212B', outer, { textColor: '#FFFFFF', stroke: 'none', fontWeight: 600 }));
+      const ids: Record<string, Id> = {};
+      let y = 112;
+      rows.forEach((r, i) => {
+        b.text(r.name, 24, y + 20, 160, 18, 700, outer);
+        ids[r.name] = b.frame(r.name, x0, y, w - x0 - 16, rowH, r.fill, outer);
+        y += rowH + 16;
+        if (i === lineAfter) {
+          b.shape('rect', '', 24, y + 8, w - 48, 4, '#18212B', outer, { stroke: 'none' });
+          b.text('Line of visibility: above it the customer sees the work, below it they do not', x0, y + 20, w - x0 - 16, 14, 600, outer, '#5B6672');
+          y += lineH;
+        }
+      });
+      b.step('Customer and service', 'Agree who the customer is and which service you are mapping. Name the stages.', 'discuss', 8, outer);
+      b.step('Customer actions', 'For each stage, what does the customer do? One note per action.', 'write', 12, ids['Customer actions']);
+      b.step('Frontstage', 'What do staff and the interface do that the customer sees?', 'write', 12, ids['Frontstage actions']);
+      b.step('Backstage', 'What happens out of sight to make each frontstage action possible?', 'write', 12, ids['Backstage actions']);
+      b.step('Support and evidence', 'Which systems, teams and partners support it? What does the customer see or touch?', 'write', 10, ids['Support processes']);
+      b.step('Fail points', 'Mark the places where it goes wrong or waits. 3 votes each.', 'vote', 3, outer, 3);
+      b.step('Improvements', 'For the top fail points, agree one change each, with an owner.', 'discuss', 10, outer);
+    },
+  },
+  {
+    id: 'design-sprint', name: 'Design Sprint agenda', category: 'Planning',
+    description: 'Five days from map to test, with the first day set up as a timed session.',
+    build: (b) => {
+      const days: { name: string; fill: string; items: string }[] = [
+        { name: 'Monday: Map', fill: TINT.sky, items: 'Long-term goal\nSprint questions\nMap the journey\nAsk the experts\nHow might we… notes\nPick a target' },
+        { name: 'Tuesday: Sketch', fill: TINT.butter, items: 'Lightning demos\nNotes\nCrazy 8s\nSolution sketch' },
+        { name: 'Wednesday: Decide', fill: TINT.lilac, items: 'Art museum\nHeat map vote\nSpeed critiques\nStraw poll\nDecider vote\nStoryboard' },
+        { name: 'Thursday: Prototype', fill: TINT.mint, items: 'Pick tools and roles\nBuild the prototype\nTrial run\nWrite the interview script' },
+        { name: 'Friday: Test', fill: TINT.peach, items: 'Five customer interviews\nWatch together\nTake notes\nFind patterns\nDecide next steps' },
+      ];
+      const colW = 340, gap = 24, pad = 32;
+      const w = pad * 2 + days.length * colW + (days.length - 1) * gap;
+      b.header('Design Sprint agenda', 'One week, one big question. Run Monday as a session, about 5 hours', w);
+      const outer = b.frame('Design Sprint', 0, 0, w, 840, TINT.mist);
+      const goal = b.frame('Long-term goal and sprint questions', pad, pad, w - pad * 2, 160, '#FFFFFF', outer);
+      b.text('Where do we want to be in six months or a year? What could stop us? Turn each risk into a question.', pad + 24, pad + 24, w - pad * 2 - 48, 15, 400, goal, '#5B6672');
+      const cols: Id[] = [];
+      days.forEach((d, i) => {
+        const x = pad + i * (colW + gap), y = pad + 160 + gap;
+        const f = b.frame(d.name, x, y, colW, 840 - y - pad, d.fill, outer);
+        cols.push(f);
+        b.text(d.items, x + 24, y + 24, colW - 48, 17, 500, f);
+        b.text('Notes and outputs', x + 24, y + 260, colW - 48, 15, 400, f, '#5B6672');
+      });
+      const map = cols[0];
+      b.step('Long-term goal', 'Agree where we want to be in six months to a year. Write it in the top frame.', 'discuss', 10, goal);
+      b.step('Sprint questions', 'What must be true for the goal to happen? What could go wrong? Write each as a question.', 'private-write', 10, goal);
+      b.step('Map', 'Draw the customer journey from first contact to goal. Keep it to 5 to 15 steps.', 'write', 30, map);
+      b.step('How might we', 'Add a note for every idea or problem you hear while experts talk. One per note.', 'private-write', 20, map);
+      b.step('Vote on notes', 'Click the notes that matter most. 2 votes each.', 'vote', 3, map, 2);
+      b.step('Pick a target', 'The decider chooses one customer and one moment on the map to focus the sprint on.', 'discuss', 10, map);
     },
   },
 ];
