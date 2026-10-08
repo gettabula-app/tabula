@@ -140,14 +140,19 @@ export function parseTyped(text: string): number | null {
 }
 
 /**
- * Turns wheel deltas into whole steps. Trackpads send many small deltas and mice a few large ones; both add up
- * until they reach one notch. Returns the number of steps to take (positive is up, so scrolling up raises).
+ * Turns wheel deltas into whole steps. A mouse wheel click is one step (browsers report it as one large delta, or
+ * one line); a trackpad sends many small deltas, which add up until they reach one notch. Returns the number of
+ * steps to take (positive is up, so scrolling up raises).
  */
 export class WheelSteps {
   private acc = 0;
   constructor(private notch = 40) {}
   add(deltaY: number, deltaMode = 0): number {
-    const px = deltaMode === 1 ? deltaY * this.notch : deltaMode === 2 ? deltaY * this.notch * 10 : deltaY;
+    if (deltaMode !== 0 || Math.abs(deltaY) >= 50) {
+      this.acc = 0;
+      return deltaY < 0 ? 1 : deltaY > 0 ? -1 : 0;
+    }
+    const px = deltaY;
     this.acc -= px;
     const steps = Math.trunc(this.acc / this.notch);
     this.acc -= steps * this.notch;

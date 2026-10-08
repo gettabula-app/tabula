@@ -52,9 +52,10 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
   let generation = 0;
 
   function render() {
-    // the controls are about to be replaced: put back a list's preview, keep a number field's pending steps
+    // never rebuild under a live preview (a list, the font picker, a wheel burst): the control would vanish and its
+    // preview with it. The preview's end (commit or revert) schedules the rebuild that was skipped.
+    if (app.styleEdit.active) return;
     closeOpenCombo();
-    app.styleEdit.settle();
     const gen = ++generation;
     const focused = panel.contains(document.activeElement) ? (document.activeElement as HTMLElement).getAttribute('aria-label') : null;
     const sel = app.selected();

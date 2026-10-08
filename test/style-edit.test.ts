@@ -161,7 +161,10 @@ describe('stepping a number field', () => {
     const w = new WheelSteps(40);
     expect(w.add(-10)).toBe(0); // a trackpad nudge: not a step yet
     expect(w.add(-30)).toBe(1); // scrolling up raises the value
-    expect(w.add(120)).toBe(-3); // a mouse notch down, three steps
-    expect(w.add(1, 1)).toBe(-1); // line mode: one line, one step
+    expect(w.add(-25)).toBe(0);
+    expect(w.add(-25)).toBe(1); // small deltas keep adding up
+    expect(w.add(100)).toBe(-1); // a mouse wheel click down: one step, however large the delta
+    expect(w.add(-120)).toBe(1);
+    expect(w.add(3, 1)).toBe(-1); // line mode: one step per event
   });
 });
