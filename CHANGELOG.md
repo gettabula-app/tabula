@@ -91,6 +91,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - Text in shapes and sticky notes no longer sits at the top while you type and jumps to the centre when you finish. The editor now uses the same box, auto-shrink and layout as the renderer. Use-case, state, lifeline and component elements still use the old editor centring.
 - Polls on a phone: after Finish, the Poll results block wraps so Add results to board and Clear poll stay reachable; the session bar clears the left rail; the answering card sits below the top bar and its header stays in view while the options scroll, with no shift when the first answer arrives; the composer's option list scrolls so Start poll and Cancel stay on screen; and the Stickers and Icons drawers open below the Share and menu bar.
 - The session bar fits its content: the idle Poll results and Session ready groups wrap onto two rows when they do not fit, and stack at phone width, so Start session no longer sticks out past the bar. The bar has no drop shadow.
+- The poll composer keeps focus where you are working: Add option focuses the new option's field, and the question field is focused when the composer opens from the rail or the step editor, so typing does not trigger board tool shortcuts.
 
 ### Removed
 - `pnpm-lock.yaml`; npm (`package-lock.json`) is the single package manager, matching the Dockerfile.

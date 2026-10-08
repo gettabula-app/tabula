@@ -148,8 +148,9 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
   const anonymous = h('input', { type: 'checkbox', checked: initial?.anonymous ?? true });
   const options = initial ? [...initial.options] : ['', ''];
   const list = h('ol', { class: 'poll-compose-options' });
-  const add = h('button', { class: 'btn ghost', type: 'button', onclick: () => { options.push(''); draw(); } }, icon('plus', 16), 'Add option');
-  const draw = () => {
+  const add = h('button', { class: 'btn ghost', type: 'button', onclick: () => { options.push(''); draw(options.length - 1); } }, icon('plus', 16), 'Add option');
+  // Focus moves to the new option's field, so typing never reaches the board's tool shortcuts.
+  const draw = (focus = -1) => {
     list.replaceChildren(...options.map((text, i) => {
       const input = h('input', { class: 'input', maxlength: String(POLL_LIMITS.option), value: text, placeholder: `Option ${i + 1}`, 'aria-label': `Option ${i + 1}` });
       input.addEventListener('input', () => { options[i] = input.value; });
@@ -160,6 +161,7 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
       return h('li', null, input, remove);
     }));
     add.disabled = options.length >= POLL_LIMITS.maxOptions;
+    if (focus >= 0) list.querySelectorAll<HTMLInputElement>('input')[focus]?.focus();
   };
   draw();
   const submit = () => attempt(() => onSubmit({ question: question.value, options: [...options], multiple: multiple.checked, anonymous: anonymous.checked }));
@@ -180,6 +182,8 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
       submit();
     }
   });
+  // The popover or dialog that holds this composer is attached after it is built.
+  requestAnimationFrame(() => question.focus());
   return root;
 }
 
