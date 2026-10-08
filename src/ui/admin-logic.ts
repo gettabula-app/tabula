@@ -217,3 +217,17 @@ export function matchesQuery(query: string, fields: (string | null | undefined)[
   if (!q) return true;
   return fields.some((f) => (f ?? '').toLowerCase().includes(q));
 }
+
+/**
+ * Where focus goes after a list re-renders. Keys name focusable controls as `<row id>:<control>`, in
+ * document order. Focus goes back to the same control, or, when its row is gone, to the same control
+ * of the row that took its place (the next row, or the new last one). Undefined when there is none.
+ */
+export function focusTarget(before: string[], key: string, after: string[]): string | undefined {
+  if (after.includes(key)) return key;
+  const control = key.slice(key.lastIndexOf(':'));
+  const was = before.filter((k) => k.endsWith(control)).indexOf(key);
+  const now = after.filter((k) => k.endsWith(control));
+  if (was < 0 || !now.length) return undefined;
+  return now[Math.min(was, now.length - 1)];
+}

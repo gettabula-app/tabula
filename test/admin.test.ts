@@ -6,6 +6,7 @@ import {
   auditSentence,
   countLabel,
   disableVerdict,
+  focusTarget,
   isKnownAuditAction,
   KNOWN_AUDIT_ACTIONS,
   matchesQuery,
@@ -308,5 +309,31 @@ describe('admin API client', () => {
   it('keeps the status and code of a forbidden answer', async () => {
     const { fetchFn } = recorder({ error: 'forbidden' }, 403);
     await expect(createApi(fetchFn).adminOverview()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+});
+
+describe('focusTarget', () => {
+  const rows = (...ids: string[]) => ids.flatMap((id) => [`${id}:role`, `${id}:signout`, `${id}:toggle`, `${id}:remove`]);
+
+  it('keeps focus on the same control when it is still there', () => {
+    expect(focusTarget(rows('a', 'b'), 'b:toggle', rows('a', 'b'))).toBe('b:toggle');
+  });
+
+  it('moves to the same control of the next row when the row is gone', () => {
+    expect(focusTarget(rows('a', 'b', 'c'), 'b:remove', rows('a', 'c'))).toBe('c:remove');
+  });
+
+  it('moves to the new last row when the last row is gone', () => {
+    expect(focusTarget(rows('a', 'b'), 'b:remove', rows('a'))).toBe('a:remove');
+  });
+
+  it('finds nothing when no row has that control any more', () => {
+    expect(focusTarget(rows('a'), 'a:remove', [])).toBeUndefined();
+    expect(focusTarget(['a:remove'], 'a:remove', ['b:role'])).toBeUndefined();
+  });
+
+  it('skips a row whose control is not focusable', () => {
+    // b's Remove is disabled, so it is not in the list: focus moves past it to c
+    expect(focusTarget(['a:remove', 'c:remove'], 'a:remove', ['c:remove'])).toBe('c:remove');
   });
 });
