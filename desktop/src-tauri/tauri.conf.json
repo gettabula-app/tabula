@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tabula",
+  "version": "../../package.json",
+  "identifier": "app.tabula.desktop",
+  "build": {
+    "frontendDist": "../../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../..", "wait": false },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../.." }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tabula",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 560,
+        "useHttpsScheme": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com; font-src 'self' data: https://cdn.fontshare.com; img-src 'self' data: blob: https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com; connect-src 'self' ipc: http://ipc.localhost ws: wss: https://api.fontshare.com https://cdn.fontshare.com https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com; worker-src 'self'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "category": "Productivity",
+    "shortDescription": "Local-first infinite whiteboard",
+    "macOS": { "minimumSystemVersion": "12.3" },
+    "fileAssociations": [
+      {
+        "ext": ["drift"],
+        "name": "Tabula board",
+        "description": "Tabula board",
+        "mimeType": "application/x-tabula-board",
+        "role": "Viewer",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "app.tabula.board",
+          "conformsTo": ["public.data"]
+        }
+      }
+    ]
+  }
+}
