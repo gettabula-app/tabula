@@ -123,7 +123,7 @@ export class BoardApp {
     this.store.onChange((changed) => {
       // drop deleted objects from the selection
       const before = this.selection.length;
-      this.selection = this.selection.filter((id) => this.store.get(id));
+      this.selection = this.selection.filter((id) => { const o = this.store.get(id); return !!o && !o.locked; });
       if (this.selection.length !== before) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
@@ -461,6 +461,7 @@ export class BoardApp {
           if (top?.locked) this.armLongPress(top.id, e);
           return;
         }
+        if (top?.locked) this.armLongPress(top.id, e);
         if (e.shiftKey) {
           const s = new Set(this.selection);
           if (s.has(hit.id)) s.delete(hit.id);
@@ -880,7 +881,7 @@ export class BoardApp {
     const fb = boxBounds(frame);
     this.store.transact(() => {
       for (const o of this.store.cache.values()) {
-        if (o.id === frame.id || o.type === 'frame' || isConnector(o)) continue;
+        if (o.id === frame.id || o.type === 'frame' || o.locked || isConnector(o)) continue;
         if (rectContains(fb, boxBounds(o))) this.store.update(o.id, { parent: frame.id });
       }
     });
@@ -901,6 +902,8 @@ export class BoardApp {
 
   private onDblClick(e: MouseEvent) {
     const p = this.worldOf(e);
+    const top = this.hit(p, { locked: true });
+    if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
     if (hit) {
       if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
@@ -1044,7 +1047,7 @@ export class BoardApp {
           if (o.type === 'frame') {
             for (const id of this.gather([o.id]).map((x) => x.id)) {
               const c = this.store.get(id);
-              if (c && c.id !== o.id && isBox(c) && !this.selection.includes(c.id)) this.store.update(c.id, { x: c.x + dx, y: c.y + dy });
+              if (c && c.id !== o.id && isBox(c) && !c.locked && !this.selection.includes(c.id)) this.store.update(c.id, { x: c.x + dx, y: c.y + dy });
             }
           }
         }
