@@ -173,6 +173,16 @@ const stop = (r: Launched) => {
   r.proc.kill('SIGTERM');
   return r.exited;
 };
+// Windows has no signals: kill() is TerminateProcess, so the SIGTERM handler never runs and the child reports a signal instead of exit code 0.
+const expectCleanStop = async (r: Launched) => {
+  const code = await stop(r);
+  if (process.platform === 'win32') {
+    expect(code).toBeNull();
+    expect(r.proc.signalCode).not.toBeNull();
+  } else {
+    expect(code).toBe(0);
+  }
+};
 const status = async (r: Launched, token: string | null = TOKEN) => {
   const res = await fetch(`${r.base}/api/internal/backup-status`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
   return { status: res.status, body: await res.json().catch(() => undefined) };
@@ -213,7 +223,7 @@ describe('the relay with backups', () => {
     expect(r.out()).not.toContain('backups on');
     expect(await status(r)).toEqual({ status: 200, body: { enabled: false } });
     expect((await status(r, null)).status).toBe(401);
-    expect(await stop(r)).toBe(0);
+    await expectCleanStop(r);
   });
 
   it('is 404 without cloud mode, in accounts mode and in open mode', async () => {
@@ -240,7 +250,7 @@ describe('the relay with backups', () => {
     expect(JSON.stringify(body)).not.toContain(CREDS.secretKey);
     expect(h.fake.log).toEqual([]);
     expect((await fetch(`${r.base}/api/health`)).status).toBe(200);
-    expect(await stop(r)).toBe(0);
+    await expectCleanStop(r);
     expect(r.err()).not.toContain('Error');
   });
 
@@ -249,7 +259,7 @@ describe('the relay with backups', () => {
     expect(r.out()).toContain('(backups on)');
     expect((await status(r)).body).toMatchObject({ enabled: true, consecutiveFailures: 0 });
     expect((await fetch(`${r.base}/api/health`)).status).toBe(200);
-    expect(await stop(r)).toBe(0);
+    await expectCleanStop(r);
   });
 
   it('also runs in open mode, where backups have no directory and no status endpoint', async () => {
@@ -257,7 +267,7 @@ describe('the relay with backups', () => {
     expect(r.out()).toContain('(backups on)');
     expect((await status(r)).status).toBe(404);
     expect((await fetch(`${r.base}/api/health`)).status).toBe(200);
-    expect(await stop(r)).toBe(0);
+    await expectCleanStop(r);
   });
 
   it('accepts the old MIRA_ spelling, with the usual warning', async () => {
