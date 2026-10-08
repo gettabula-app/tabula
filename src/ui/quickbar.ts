@@ -9,7 +9,7 @@ import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
-import { placeBar, type Box } from './quickbar-layout';
+import { clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
 import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 import { openSaveTemplate } from './save-template';
@@ -52,8 +52,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const z = app.r.toScreen({ x: b.x + b.w, y: b.y + b.h });
     const sel = app.selected();
     const lift = sel.length === 1 && isBox(sel[0]) && !sel[0].locked && !NO_ROTATE.includes(sel[0].type) ? 28 : 0;
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }, lift, undefined, undefined, undefined, connectorBoxes());
-    bar.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    // Below the top bars, and above the properties panel when a phone docks it to the bottom edge.
+    const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
+    const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
+    const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, connectorBoxes());
+    bar.style.transform = `translate(${p.x}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
   }
 
@@ -253,6 +257,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   app.on('tool', sync);
   app.on('readonly', sync);
   props.onToggle(build);
+  // the panel's top moves when it opens, closes or is rebuilt at another height, and the bar keeps clear of it
+  new ResizeObserver(() => { if (shown) position(); }).observe(props.el);
 
   build();
   sync();

@@ -7,6 +7,7 @@ import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { WIRE } from './palette';
 import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
+import type { GapMark, Guide } from './guides';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -25,7 +26,7 @@ export interface Overlay {
   anchorsFor: Id | null;
   anchorHot: string | null;     // `${id}:${side}` under the pointer
   marquee: Rect | null;
-  guides: { x1: number; y1: number; x2: number; y2: number }[];
+  guides: Guide[];
   preview: string;              // world-space markup of an object being drawn
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
@@ -36,6 +37,25 @@ export const emptyOverlay = (): Overlay => ({
   selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null,
 });
+
+const GUIDE = 'var(--guide, #D6247F)';
+
+/** Bracket over a gap: a line with an end tick on each side and the distance on a canvas-coloured pill. */
+function gapMarkup(g: GapMark, px: (v: number) => number): string {
+  const horizontal = g.axis === 'x';
+  const mid = (g.from + g.to) / 2;
+  const tick = px(4);
+  const a = horizontal ? { x: g.from, y: g.at } : { x: g.at, y: g.from };
+  const b = horizontal ? { x: g.to, y: g.at } : { x: g.at, y: g.to };
+  const ticks = horizontal
+    ? `M${a.x} ${a.y - tick}V${a.y + tick}M${b.x} ${b.y - tick}V${b.y + tick}`
+    : `M${a.x - tick} ${a.y}H${a.x + tick}M${b.x - tick} ${b.y}H${b.x + tick}`;
+  const c = horizontal ? { x: mid, y: g.at } : { x: g.at, y: mid };
+  const w = px(12 + g.label.length * 7), h = px(16);
+  return `<g><path d="M${a.x} ${a.y}L${b.x} ${b.y}${ticks}" stroke="${GUIDE}" stroke-width="${px(1)}" fill="none"/>` +
+    `<rect x="${c.x - w / 2}" y="${c.y - h / 2}" width="${w}" height="${h}" rx="${px(8)}" fill="var(--canvas, #EEF1F4)" stroke="${GUIDE}" stroke-width="${px(1)}"/>` +
+    `<text x="${c.x}" y="${c.y + px(4)}" font-size="${px(11)}" font-weight="600" fill="var(--canvas-ink, #18212B)" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${g.label}</text></g>`;
+}
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
@@ -452,8 +472,8 @@ export class Renderer {
       }
     }
 
-    // snap guides
-    for (const g of ov.guides) out += `<path d="M${g.x1} ${g.y1}L${g.x2} ${g.y2}" stroke="#E0559B" stroke-width="${px(1)}"/>`;
+    // snap guides and equal-gap brackets
+    for (const g of ov.guides) out += g.kind === 'line' ? `<path d="M${g.x1} ${g.y1}L${g.x2} ${g.y2}" stroke="${GUIDE}" stroke-width="${px(1)}"/>` : gapMarkup(g, px);
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;

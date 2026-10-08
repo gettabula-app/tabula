@@ -6,10 +6,11 @@ import { closePopover, segmented, toast } from './common';
 import { h } from './dom';
 import { openIconCredits } from './icon-credits';
 import { offlineRow } from './icon-offline';
+import { placeClicked } from './place-click';
 
 export interface StickerDrag { kind: 'sticker'; name: string }
 
-/** Places a sticker centred on `at`, or on the viewport centre when there is no point. */
+/** Places a sticker centred on `at`; with no point it goes on the viewport centre, stepped aside for each earlier click placement. */
 export async function placeSticker(app: BoardApp, name: string, at?: Point, longest = STICKER_SIZE) {
   if (app.readOnly) return;
   try {
@@ -19,7 +20,7 @@ export async function placeSticker(app: BoardApp, name: string, at?: Point, long
       ref: name, body: d.body, viewBox: [d.left, d.top, d.width, d.height] as [number, number, number, number], sticker: true,
     };
     if (at) app.placeAt('icon', at, size.w, size.h, extra);
-    else app.placeAtCenter('icon', size.w, size.h, extra);
+    else placeClicked(app, 'icon', size.w, size.h, extra);
   } catch {
     toast('That icon could not be loaded. Check your connection and try again.');
   }

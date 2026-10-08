@@ -118,7 +118,7 @@ In accounts mode, open **AI tool access** in the board menu, name a token, pick 
 | Local-first storage | Yjs document per board, persisted to IndexedDB; offline editing, reload while offline, merge on reconnect; per-user undo/redo that never reverts collaborators' work |
 | Sync | Relay with rooms, on-disk persistence, catch-up for late joiners, presence (named cursors, remote selections, participant list with go to a person, requests to look at someone's view that you can follow, go to, dismiss or mute), cross-tab sync |
 | Infinite canvas | Pan (space/middle-drag/trackpad/hand), zoom 2%–3200% around the pointer, pinch zoom, fit (Shift+1/2/0), minimap, viewport culling |
-| Grid | Dots, lines (with major lines), isometric, none; adaptive density; snap to grid, alignment guides to nearby objects, Alt to bypass |
+| Grid | Dots, lines (with major lines), isometric, none; adaptive density; snap to grid; smart guides while moving and resizing: alignment lines to nearby objects and equal-spacing brackets with the distance, Alt to bypass (see [docs/guides.md](docs/guides.md)) |
 | Geometry | 31 shapes in four groups (Basic, Arrows, Callouts, Flowchart), picked from one **Shapes** button on the left toolbar that opens a searchable shapes-only panel (click a shape to draw it, or drag it onto the board); sticky notes (own toolbar button) with a folded corner (8 colours plus any custom colour, auto-shrinking text, ink switches to white on dark notes); text (in shapes and sticky notes: aligned left/centre/right and top/middle/bottom, and it stays where it will render while you type), frames (nested, carry their contents), freehand pen; resize, rotate (Shift snaps 15°), align, distribute, z-order, lock (locked items are click-through background; press and hold 0.6 s to unlock; hovering shows a lock badge), duplicate, copy/paste (also plain text → stickies); click an item for a quick-action bar above it (colour, shape, text, align, lock, duplicate, delete); More opens the full properties panel |
 | Themes | Default, Ayu, Kanagawa, Matrix and Evergreen, chosen under Appearance in the board menu; the whole app (canvas, grid, toolbars, and the default colour of text, drawings, icons and connectors) follows the theme; the choice is remembered on this device; exports always use the light colours on white |
 | Sticky colours | Pick a colour before placing (tray beside the toolbar while the sticky tool is on), recolour selected notes, or choose any colour with “+”; custom colours are saved to the board (up to 12) and shared with everyone; your last colour is remembered on your device |
@@ -182,6 +182,7 @@ src/sync.ts          IndexedDB persistence, relay connection, identity, board li
 src/geometry.ts      bounds, hit-testing, anchors, connector routing
 src/markup.ts        SVG for every object type (live render and export)
 src/render.ts        camera, grid, culling, overlay (selection, handles, guides, votes)
+src/guides.ts        smart guides: alignment and equal-spacing snapping (pure)
 src/app.ts           tools, selection, drag/resize/rotate, snapping, clipboard, presence
 src/editor.ts        in-place text editing
 src/flow.ts          facilitation: steps, timer, private writing, voting

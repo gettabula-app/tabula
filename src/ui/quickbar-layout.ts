@@ -23,3 +23,16 @@ export function placeBar(
   if (belowFits) return { x, y: yBelow, below: true };
   return { x, y: Math.max(topInset, Math.min(view.h - bar.h - margin, yBelow)), below: true };
 }
+
+/**
+ * The top of a panel docked to the bottom edge, or null. A panel whose top is at `top`, the bottom of the top bars,
+ * is a side panel and leaves the room under the bar alone.
+ */
+export function dockTopOf(panel: { top: number } | null, top: number): number | null {
+  return panel && panel.top > top + 1 ? panel.top : null;
+}
+
+/** Lifts a bar of height `h` at `y` to sit `gap` above a bottom-docked panel (`dock`), no higher than `top`. */
+export function clearOfDock(y: number, h: number, dock: number | null, top: number, gap = 12): number {
+  return dock === null || y + h + gap <= dock ? y : Math.max(top, dock - gap - h);
+}

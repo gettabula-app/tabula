@@ -1,4 +1,4 @@
-export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule'] as const;
+export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide'] as const;
 export type ThemeVar = (typeof THEME_VARS)[number];
 
 export interface Theme {
@@ -39,6 +39,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#C6CFD8',
       '--canvas-ink': '#18212B',
       '--canvas-rule': '#C9D1DA',
+      '--guide': '#D6247F',
     },
   },
   {
@@ -66,6 +67,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#3A4150',
       '--canvas-ink': '#CCCAC2',
       '--canvas-rule': '#3D4455',
+      '--guide': '#FF7EB6',
     },
   },
   {
@@ -93,6 +95,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#3A3A4A',
       '--canvas-ink': '#DCD7BA',
       '--canvas-rule': '#54546D',
+      '--guide': '#D27E99',
     },
   },
   {
@@ -120,6 +123,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#124B22',
       '--canvas-ink': '#3DFF70',
       '--canvas-rule': '#14501F',
+      '--guide': '#FF4FA3',
     },
   },
   {
@@ -147,6 +151,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#BCCDC1',
       '--canvas-ink': '#14301F',
       '--canvas-rule': '#CBD9CE',
+      '--guide': '#D6247F',
     },
   },
 ];

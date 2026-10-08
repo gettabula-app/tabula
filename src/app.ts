@@ -10,10 +10,11 @@ import { newId } from './store';
 import { Renderer, handlesFor, type HandleId } from './render';
 import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, pointInRect, rectContains, rectOfPoints,
-  freeSpotInDirection, neighborInDirection, rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
+  freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
 import { remapObjects } from './custom-templates';
+import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex } from './palette';
@@ -46,8 +47,8 @@ export type Tool =
 
 type Drag =
   | { mode: 'pan'; sx: number; sy: number; cx: number; cy: number }
-  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean }
-  | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj }
+  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession }
+  | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj; guides?: GuideSession }
   | { mode: 'rotate'; id: Id; c: Point; a0: number; r0: number }
   | { mode: 'marquee'; start: Point; base: Id[] }
   | { mode: 'create'; start: Point; tool: Tool }
@@ -797,38 +798,20 @@ export class BoardApp {
     const first = !d.moved;
     d.moved = true;
     if (first) this.emit('drag');
-    const guides: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    const guides: Guide[] = [];
     if (!e.altKey) {
       const b = d.bounds;
-      const thr = 6 / this.zoom;
       const vp = this.r.viewport();
-      const moving = new Set(d.ids);
-      const xs: number[] = [], ys: number[] = [];
-      for (const o of this.store.ordered()) {
-        if (moving.has(o.id) || isConnector(o)) continue;
-        const ob = this.r.bounds(o);
-        if (!ob || !rectsIntersect(ob, vp)) continue;
-        xs.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w);
-        ys.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h);
+      if (!d.guides || !guidesCover(d.guides, vp)) {
+        const movers = [...d.orig.values()].filter(isBox).map(boxBounds);
+        d.guides = startGuides(referenceRects(this.store.ordered(), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
       }
-      const best = (cands: number[], vals: number[]) => {
-        let bd = thr, off: number | null = null, line: number | null = null;
-        for (const v of vals) for (const c of cands) {
-          const dd = Math.abs(c - v);
-          if (dd < bd) { bd = dd; off = c - v; line = c; }
-        }
-        return { off, line };
-      };
-      const sx = best(xs, [b.x + dx, b.x + b.w / 2 + dx, b.x + b.w + dx]);
-      const sy = best(ys, [b.y + dy, b.y + b.h / 2 + dy, b.y + b.h + dy]);
-      if (sx.off !== null) {
-        dx += sx.off;
-        guides.push({ x1: sx.line!, y1: Math.min(vp.y, b.y + dy), x2: sx.line!, y2: vp.y + vp.h });
-      } else if (this.snapOn(e)) dx = snapTo(b.x + dx, this.grid()) - b.x;
-      if (sy.off !== null) {
-        dy += sy.off;
-        guides.push({ x1: vp.x, y1: sy.line!, x2: vp.x + vp.w, y2: sy.line! });
-      } else if (this.snapOn(e)) dy = snapTo(b.y + dy, this.grid()) - b.y;
+      const sn = snapMove(d.guides, dx, dy, this.zoom);
+      if (sn.dx !== null) dx += sn.dx;
+      else if (this.snapOn(e)) dx = snapTo(b.x + dx, this.grid()) - b.x;
+      if (sn.dy !== null) dy += sn.dy;
+      else if (this.snapOn(e)) dy = snapTo(b.y + dy, this.grid()) - b.y;
+      guides.push(...sn.guides, ...sn.gaps);
     }
     const frame = d.ids.length && this.store.get(d.ids[0])?.type !== 'frame'
       ? this.frameAt({ x: d.bounds.x + d.bounds.w / 2 + dx, y: d.bounds.y + d.bounds.h / 2 + dy }, new Set(d.ids))
@@ -871,12 +854,27 @@ export class BoardApp {
         if (h.includes('w')) l = r - nw; else r = l + nw;
       }
     }
+    let sx: number | null = null, sy: number | null = null;
+    const guides: Guide[] = [];
+    if (!e.altKey && !o0.rotation && !keepAspect) {
+      const vp = this.r.viewport();
+      if (!d.guides || !guidesCover(d.guides, vp)) {
+        d.guides = startGuides(referenceRects(this.store.ordered(), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
+      }
+      const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
+      sx = sn.dx;
+      sy = sn.dy;
+      if (sx !== null) { if (h.includes('w')) l += sx; else r += sx; }
+      if (sy !== null) { if (h.includes('n')) t += sy; else b += sy; }
+      guides.push(...sn.guides, ...sn.gaps);
+    }
+    this.r.setOverlay({ guides });
     if (this.snapOn(e) && !o0.rotation && !keepAspect) {
       const g = this.grid();
-      if (h.includes('w')) l = snapTo(o0.x + l, g) - o0.x;
-      if (h.includes('e')) r = snapTo(o0.x + r, g) - o0.x;
-      if (h.includes('n')) t = snapTo(o0.y + t, g) - o0.y;
-      if (h.includes('s')) b = snapTo(o0.y + b, g) - o0.y;
+      if (h.includes('w') && sx === null) l = snapTo(o0.x + l, g) - o0.x;
+      if (h.includes('e') && sx === null) r = snapTo(o0.x + r, g) - o0.x;
+      if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
+      if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
     const min = 8;
     if (r - l < min) {

@@ -13,6 +13,7 @@
   --on-signal: #18212B;
   --canvas-ink: #18212B;
   --canvas-rule: #C9D1DA;
+  --guide: #D6247F;
 
   --tray: #18212B;
   --tray-2: #222D39;
@@ -494,6 +495,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }
+  /* an open drawer takes the board: the selection's quick bar and properties panel wait, kept in place, until it closes */
+  .chrome:has(> .drawer.show) > :is(.quickbar, .props) { visibility: hidden; }
 }
 
 /* quick actions */
