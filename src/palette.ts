@@ -6,6 +6,8 @@ export const RULE = '#C9D1DA';
 export const PAPER = '#FFFFFF';
 export const WIRE = '#2F6FED';
 export const SIGNAL = '#FFD23F';
+/** Ink for anything drawn on the canvas: follows runtime themes, falls back to INK. */
+export const CANVAS_INK = 'var(--canvas-ink, #18212B)';
 
 export const STICKY_COLORS = [
   { name: 'Yellow', fill: '#FFE16B' },

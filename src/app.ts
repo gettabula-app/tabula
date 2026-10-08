@@ -11,7 +11,7 @@ import {
 import { objectMarkup, textHeight } from './markup';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
-import { STICKY_COLORS, normalizeHex, parseHex } from './palette';
+import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex } from './palette';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 function loadStickyColor(): string {
@@ -834,7 +834,7 @@ export class BoardApp {
     for (const q of pts) flat.push(Math.round((q.x - b.x) * 10) / 10, Math.round((q.y - b.y) * 10) / 10);
     return this.makeObj('path', { x: b.x, y: b.y, w: Math.max(b.w, 1), h: Math.max(b.h, 1) }, { points: flat, stroke: this.penColor, strokeWidth: this.penWidth });
   }
-  penColor = '#18212B';
+  penColor = CANVAS_INK;
   penWidth = 3;
 
   private defaultSize(t: Tool): { w: number; h: number } {

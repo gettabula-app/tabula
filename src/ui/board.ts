@@ -12,7 +12,7 @@ import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
-import { USER_COLORS, STICKY_COLORS } from '../palette';
+import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
 import { stickyColorField } from './colors';
@@ -176,7 +176,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const pb = penBtn();
     if (pb && app.tool.kind === 'pen') penTray.style.top = `${pb.getBoundingClientRect().top - 6}px`;
     penTray.replaceChildren(
-      ...['#18212B', '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': `Pen colour ${c}`, onclick: () => { app.penColor = c; renderPen(); } })),
+      ...[CANVAS_INK, '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': c === CANVAS_INK ? 'Pen colour ink' : `Pen colour ${c}`, onclick: () => { app.penColor = c; renderPen(); } })),
       h('hr'),
       ...[2, 4, 8].map((w) => h('button', { class: `icon-btn${app.penWidth === w ? ' on' : ''}`, 'aria-label': `Pen width ${w}`, onclick: () => { app.penWidth = w; renderPen(); } }, h('span', { class: 'pen-dot', style: `--s:${w + 2}px` }))),
     );
