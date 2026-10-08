@@ -33,6 +33,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - Rewrote ternary/short-circuit expression statements in `src/app.ts` as `if` statements and simplified small lint findings in `src/mermaid.ts`, `src/markup.ts` and `test/core.test.ts`, with no change in behaviour.
 
 ### Fixed
+- The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
 - Labels in the board menu were right-aligned next to their icons; they are now left-aligned.
 - A locked item that overlaps an unlocked one can now be unlocked with a long press; double-clicking a locked item no longer creates a stray text box; arrow-key nudging a frame no longer moves its locked children; an item locked by a collaborator is dropped from your selection.
 - Text boxes in shapes and sticky notes no longer collapse to a negative size when resized very small, and quick-action popovers close when you zoom or pan instead of floating in place.

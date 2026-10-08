@@ -96,13 +96,21 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
 
 export function swatches(colors: { name: string; value: string }[], current: string | undefined, onPick: (v: string) => void, opts: { label: string }) {
   const row = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': opts.label });
+  const buttons: HTMLButtonElement[] = [];
   for (const c of colors) {
     const b = h('button', {
       class: `swatch${c.value === 'none' ? ' none' : ''}${current?.toLowerCase() === c.value.toLowerCase() ? ' on' : ''}`,
       title: c.name, 'aria-label': c.name, role: 'radio', 'aria-checked': String(current?.toLowerCase() === c.value.toLowerCase()),
       style: c.value === 'none' ? undefined : `--c:${c.value}`,
-      onclick: () => onPick(c.value),
+      onclick: () => {
+        for (const x of buttons) {
+          x.classList.toggle('on', x === b);
+          x.setAttribute('aria-checked', String(x === b));
+        }
+        onPick(c.value);
+      },
     });
+    buttons.push(b);
     row.appendChild(b);
   }
   return row;
@@ -110,11 +118,21 @@ export function swatches(colors: { name: string; value: string }[], current: str
 
 export function segmented<T extends string | number>(options: { value: T; label: string; icon?: HTMLElement }[], current: T | undefined, onPick: (v: T) => void, label: string) {
   const row = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': label });
+  const buttons: HTMLButtonElement[] = [];
   for (const o of options) {
-    row.appendChild(h('button', {
+    const b = h('button', {
       class: o.value === current ? 'on' : '', role: 'radio', 'aria-checked': String(o.value === current),
-      title: o.label, 'aria-label': o.label, onclick: () => onPick(o.value),
-    }, o.icon ?? o.label));
+      title: o.label, 'aria-label': o.label,
+      onclick: () => {
+        for (const x of buttons) {
+          x.classList.toggle('on', x === b);
+          x.setAttribute('aria-checked', String(x === b));
+        }
+        onPick(o.value);
+      },
+    }, o.icon ?? o.label);
+    buttons.push(b);
+    row.appendChild(b);
   }
   return row;
 }
