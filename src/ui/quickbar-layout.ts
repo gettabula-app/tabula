@@ -1,13 +1,25 @@
 export interface Box { x: number; y: number; w: number; h: number }
 
-/** Places a floating bar centred above a target box, below it when there is no room above. */
-export function placeBar(target: Box, bar: { w: number; h: number }, view: { w: number; h: number }, lift = 0, margin = 12, topInset = 64, gap = 12): { x: number; y: number; below: boolean } {
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Places a floating bar centred above a target box, below it when there is no room above. `avoid` lists boxes the
+ * bar should not cover (the selection's connectors and arrowheads): the bar goes below when above would cover one
+ * and below would not.
+ */
+export function placeBar(
+  target: Box, bar: { w: number; h: number }, view: { w: number; h: number }, lift = 0, margin = 12, topInset = 64, gap = 12,
+  avoid: Box[] = [],
+): { x: number; y: number; below: boolean } {
   const maxX = view.w - bar.w - margin;
   const cx = target.x + target.w / 2 - bar.w / 2;
   const x = maxX >= margin ? Math.max(margin, Math.min(maxX, cx)) : margin;
   const yAbove = target.y - gap - lift - bar.h;
-  if (yAbove >= topInset) return { x, y: yAbove, below: false };
   const yBelow = target.y + target.h + gap;
-  if (yBelow + bar.h <= view.h - margin) return { x, y: yBelow, below: true };
+  const aboveFits = yAbove >= topInset;
+  const belowFits = yBelow + bar.h <= view.h - margin;
+  const covers = (y: number) => avoid.some((b) => overlaps({ x, y, w: bar.w, h: bar.h }, b));
+  if (aboveFits && !(belowFits && covers(yAbove) && !covers(yBelow))) return { x, y: yAbove, below: false };
+  if (belowFits) return { x, y: yBelow, below: true };
   return { x, y: Math.max(topInset, Math.min(view.h - bar.h - margin, yBelow)), below: true };
 }

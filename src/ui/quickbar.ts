@@ -9,7 +9,8 @@ import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
-import { placeBar } from './quickbar-layout';
+import { placeBar, type Box } from './quickbar-layout';
+import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 
 type IconName = Parameters<typeof icon>[0];
@@ -50,9 +51,29 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const z = app.r.toScreen({ x: b.x + b.w, y: b.y + b.h });
     const sel = app.selected();
     const lift = sel.length === 1 && isBox(sel[0]) && !sel[0].locked && !NO_ROTATE.includes(sel[0].type) ? 28 : 0;
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }, lift);
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }, lift, undefined, undefined, undefined, connectorBoxes());
     bar.style.transform = `translate(${p.x}px, ${p.y}px)`;
     below = p.below;
+  }
+
+  /** Screen boxes around each segment of the connectors attached to the selection, with room for arrowheads. */
+  function connectorBoxes(): Box[] {
+    const get = (id: string) => app.store.get(id);
+    const ids = new Set<string>();
+    for (const o of app.selected()) for (const c of app.store.connectorsOf(o.id)) ids.add(c.id);
+    const out: Box[] = [];
+    const pad = 8;
+    for (const id of ids) {
+      const c = app.store.get(id);
+      const g = isConnector(c) ? connectorGeom(get, c) : null;
+      if (!g) continue;
+      const pts = g.pts.map((p) => app.r.toScreen(p));
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        out.push({ x: Math.min(a.x, b.x) - pad, y: Math.min(a.y, b.y) - pad, w: Math.abs(a.x - b.x) + 2 * pad, h: Math.abs(a.y - b.y) + 2 * pad });
+      }
+    }
+    return out;
   }
 
   function refreshStates() {

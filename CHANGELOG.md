@@ -56,6 +56,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Connection dots stay visible while the pointer crosses a connector that already leaves that side, so a shape side can take a second connector. Clicking a connection dot connects to the shape already next to it on that side, if there is one, instead of always making a new shape. The quick-action bar moves below the selection when above it would cover one of its connectors.
 - Secondary grey text on panels in Ayu, and red error and delete text in Default, Kanagawa and Evergreen, were below WCAG AA contrast; the theme colours are adjusted slightly (same hue) so every text colour now reaches 4.5:1 on both the page and panel backgrounds, checked in tests.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - Icons whose SVG bodies use element ids, such as emoji gradients, no longer draw each other's gradients: ids are scoped per object at render and export time.
