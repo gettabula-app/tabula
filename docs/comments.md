@@ -46,7 +46,7 @@ Each reply is its own map entry and `resolved` is its own field, so two people r
 
 ### Authorship
 
-`authorId` is the account id in accounts mode (`me.user.id`), otherwise the device's local user id; `authorName`/`authorColor` come from the presence identity at the time. Authorship is asserted by the client (the relay does not check it): good enough for "delete your own comment", not a security boundary. The UI lets a person delete or edit their own threads and replies, and board owners (and workspace admins) delete anyone's.
+`authorId` is the account id in accounts mode (`me.user.id`), otherwise the device's local user id; `authorName`/`authorColor` come from the presence identity at the time. Authorship is asserted by the client (the relay does not check it): good enough for "delete your own comment", not a security boundary. The UI lets a person delete or edit their own threads and replies, and only the board owner deletes anyone else's. An author cannot delete their own thread while other people have replied to it (that would delete their comments too). The data layer enforces this on the local client; like authorship it is not a server-side guarantee.
 
 ## Behaviour
 
