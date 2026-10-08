@@ -1,8 +1,9 @@
 import './styles.css';
 import * as Y from 'yjs';
 import { BoardApp } from './app';
-import { deleteBoard, getUser, openBoard } from './sync';
+import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
+import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
@@ -120,7 +121,43 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
   return list.find((b) => b.id === id)?.role;
 }
 
+/** The user as the board shows them: in accounts mode the account's name on this device's identity. */
+function boardUser(auth: AuthState) {
+  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+  return me ? { ...getUser(), name: me.user.name } : getUser();
+}
+
+/** Edit a saved template on a scratch board: in memory only, no relay room, not stored with the boards. */
+async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
+  root.className = 'board-root';
+  root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening template…' }));
+  const tpl = await getTemplate(id);
+  if (seq !== routeSeq) return;
+  if (!tpl) {
+    toast('That template is no longer available.');
+    location.replace('#/templates');
+    return;
+  }
+  const user = boardUser(auth);
+  const conn = scratchBoard(`template-${tpl.id}`, user);
+  loadTemplate(conn.store, tpl, user.id);
+  root.replaceChildren();
+  const app = new BoardApp(conn, user, root);
+  current = app;
+  if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
+  mountTemplateEditor(app, root, tpl);
+}
+
+let shownHash = location.hash;
+
 async function route() {
+  // Leaving the template editor with unsaved changes: put the editor's address back and let it ask first.
+  const leaving = templateLeaveGuard();
+  if (leaving && location.hash !== shownHash && !leaving(location.hash)) {
+    history.replaceState(null, '', shownHash || '#/');
+    return;
+  }
+  shownHash = location.hash;
   const seq = ++routeSeq;
   releaseBanner?.();
   releaseBanner = null;
@@ -148,6 +185,11 @@ async function route() {
     return;
   }
 
+  if (r.name === 'template-edit') {
+    await routeTemplateEdit(r.id, auth, seq);
+    return;
+  }
+
   if (r.name !== 'board') {
     root.className = 'home-root';
     const view = document.createElement('div');
@@ -168,8 +210,7 @@ async function route() {
   root.className = 'board-root';
   root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening board…' }));
   const accounts = auth.mode === 'signed-in' || auth.mode === 'offline';
-  const me = accounts ? auth.me : null;
-  const user = me ? { ...getUser(), name: me.user.name } : getUser();
+  const user = boardUser(auth);
   const [conn, role] = await Promise.all([openBoard(id, user), boardRole(id, auth)]);
   if (seq !== routeSeq) {
     conn.destroy();

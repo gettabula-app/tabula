@@ -6,6 +6,7 @@ export type AdminTab = (typeof ADMIN_TABS)[number];
 export type Route =
   | { name: 'home' }
   | { name: 'templates' }
+  | { name: 'template-edit'; id: string }
   | { name: 'board'; id: string }
   | { name: 'signin' }
   | { name: 'verify'; token: string }
@@ -28,6 +29,8 @@ function isAuthRoute(route: Route): boolean {
 export function parseRoute(hash: string): Route {
   const board = hash.match(/^#\/b\/([A-Za-z0-9_-]{1,64})$/);
   if (board) return { name: 'board', id: board[1] };
+  const edit = hash.match(/^#\/t\/([A-Za-z0-9_-]{1,64})\/edit$/);
+  if (edit) return { name: 'template-edit', id: edit[1] };
   const invite = hash.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
   if (invite) return { name: 'invite', token: invite[1] };
   if (hash === '#/signin') return { name: 'signin' };

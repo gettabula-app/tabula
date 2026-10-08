@@ -1,10 +1,13 @@
 import './home.css';
-import { h, icon } from './dom';
-import { dialog, popover, toast } from './common';
+import { h, icon, type ICONS } from './dom';
+import { dialog, field, popover, toast } from './common';
 import { newId } from '../store';
+import { getUser } from '../sync';
+import { download, safeName } from '../exporters';
 import { CATEGORIES, CUSTOM_CATEGORY, CUSTOM_PREFIX, TEMPLATES, type TemplateDef } from '../templates';
 import { builtinThumbnail, thumbnailSvg } from '../template-thumb';
-import { listTemplates, onTemplatesChange, removeTemplate } from '../template-store';
+import { getTemplate, listTemplates, onTemplatesChange, putTemplate, removeTemplate } from '../template-store';
+import { NAME_MAX, builtinToCustom, duplicateTemplate, exportTemplateFile, parseTemplateFile } from '../template-file';
 import type { CustomTemplate } from '../custom-templates';
 import type { AuthState } from '../auth';
 import type { HomeNav } from './home';
@@ -59,6 +62,107 @@ function confirmDelete(t: CustomTemplate) {
   ]);
 }
 
+function openRename(t: CustomTemplate) {
+  const name = h('input', { class: 'input', maxlength: NAME_MAX, value: t.name, 'aria-label': 'Name', spellcheck: 'false', autocomplete: 'off' });
+  const error = h('div', { class: 'error', role: 'alert' });
+  const dlg = dialog('Rename template', h('div', { class: 'stack' }, field('Name', name), error), [
+    { label: 'Cancel' },
+    {
+      label: 'Rename', primary: true,
+      onClick: async () => {
+        const title = name.value.trim();
+        if (!title) {
+          error.textContent = 'Give the template a name.';
+          name.focus();
+          return false;
+        }
+        try {
+          // Read it again, so a template edited in another tab keeps its new content.
+          const latest = await getTemplate(t.id);
+          if (!latest) throw new Error('That template is no longer available.');
+          if (title === latest.name) return;
+          await putTemplate({ ...latest, name: title, updatedAt: Date.now() });
+        } catch (e) {
+          error.textContent = (e as Error).message;
+          return false;
+        }
+        toast(`Renamed to “${title}”.`);
+      },
+    },
+  ]);
+  name.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary')?.click();
+  });
+  requestAnimationFrame(() => name.select());
+}
+
+async function duplicate(t: CustomTemplate) {
+  try {
+    const copy = duplicateTemplate(t, getUser().id);
+    await putTemplate(copy);
+    toast(`Duplicated as “${copy.name}”.`);
+  } catch (e) {
+    toast((e as Error).message);
+  }
+}
+
+function exportFile(t: CustomTemplate) {
+  download(exportTemplateFile(t), `${safeName(t.name)}.tabula-template.json`, 'application/json');
+}
+
+/** A personal copy of a built-in template, opened for editing. */
+async function duplicateToEdit(def: TemplateDef) {
+  try {
+    const copy = builtinToCustom(def, getUser().id);
+    await putTemplate(copy);
+    location.hash = `#/t/${copy.id}/edit`;
+  } catch (e) {
+    toast((e as Error).message);
+  }
+}
+
+interface MenuItem {
+  icon: keyof typeof ICONS;
+  label: string;
+  run: () => void;
+}
+
+/** The ⋯ button of a card, with a square popover of actions. */
+function moreButton(name: string, items: MenuItem[]): HTMLButtonElement {
+  const more: HTMLButtonElement = h('button', {
+    class: 'icon-btn', title: 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',
+    onclick: () => {
+      const menu = h('div', { class: 'menu' }, ...items.map((item) => h('button', {
+        class: 'menu-item', onclick: () => {
+          pop.close();
+          item.run();
+        },
+      }, icon(item.icon, 18), h('span', null, item.label))));
+      const pop = popover(more, menu, { className: 'tpl-pop' });
+    },
+  }, icon('dots', 18));
+  return more;
+}
+
+/** Reads a template file picked on the page and adds it to My templates. */
+function templateFileInput(): HTMLInputElement {
+  const input = h('input', { type: 'file', accept: '.json,application/json', hidden: true, 'aria-label': 'Template file' });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const t = parseTemplateFile(await file.text(), getUser().id);
+      await putTemplate(t);
+      toast(`Imported “${t.name}” into My templates.`);
+    } catch (e) {
+      toast(`Could not import ${file.name}: ${(e as Error).message}`, 6000);
+    } finally {
+      input.value = '';
+    }
+  });
+  return input;
+}
+
 /** Every template with a category filter and a search box. */
 export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState = { mode: 'open' }): void {
   document.title = 'Templates - Tabula';
@@ -86,19 +190,13 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
   ];
 
   const customCard = (t: CustomTemplate) => {
-    const more: HTMLButtonElement = h('button', {
-      class: 'icon-btn', title: 'More actions', 'aria-label': `More actions for ${t.name}`, 'aria-haspopup': 'menu',
-      onclick: () => {
-        const menu = h('div', { class: 'menu' },
-          h('button', {
-            class: 'menu-item', onclick: () => {
-              pop.close();
-              confirmDelete(t);
-            },
-          }, icon('trash', 18), h('span', null, 'Delete')));
-        const pop = popover(more, menu, { className: 'tpl-pop' });
-      },
-    }, icon('dots', 18));
+    const more = moreButton(t.name, [
+      { icon: 'pen', label: 'Edit', run: () => (location.hash = `#/t/${t.id}/edit`) },
+      { icon: 'text', label: 'Rename', run: () => openRename(t) },
+      { icon: 'dup', label: 'Duplicate', run: () => void duplicate(t) },
+      { icon: 'download', label: 'Export file', run: () => exportFile(t) },
+      { icon: 'trash', label: 'Delete', run: () => confirmDelete(t) },
+    ]);
     return h('li', null,
       h('article', { class: 'tpl-card' },
         h('div', { class: 'tpl-thumb', html: customThumbnail(t) }),
@@ -137,9 +235,11 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
         h('p', { class: 'tpl-label' }, t.category),
         h('h2', { class: 'tpl-title' }, t.name),
         h('p', { class: 'tpl-text' }, t.description),
-        h('button', {
-          class: 'btn', disabled: down, 'aria-label': `Use template ${t.name}`, onclick: () => useTemplate(nav, t.id),
-        }, 'Use template')))));
+        h('div', { class: 'tpl-actions' },
+          h('button', {
+            class: 'btn', disabled: down, 'aria-label': `Use template ${t.name}`, onclick: () => useTemplate(nav, t.id),
+          }, 'Use template'),
+          moreButton(t.name, [{ icon: 'dup', label: 'Duplicate to edit', run: () => void duplicateToEdit(t) }]))))));
     mineGrid.replaceChildren(...shownMine.map(customCard));
     // Nothing saved yet is worth saying; saved templates that the filter hides are not.
     mineEmpty.hidden = mine === null || mine.length > 0;
@@ -156,12 +256,17 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     });
   };
 
+  const fileInput = templateFileInput();
   const banner = me ? createWorkspaceBanner() : null;
   root.replaceChildren(...(banner ? [banner.el] : []), h('div', { class: 'home-page' },
     createTopbar('templates', me),
     h('main', { class: 'home' },
       h('header', { class: 'home-head' },
-        h('h1', { class: 'home-title' }, 'Templates'),
+        h('div', { class: 'home-titlerow' },
+          h('h1', { class: 'home-title' }, 'Templates'),
+          h('div', { class: 'home-actions' },
+            h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Import template'),
+            fileInput)),
         h('p', { class: 'home-lede' }, 'Ready-made boards for team exercises, and the ones you save. Pick one to open it as a new board.'),
         down ? h('p', { class: 'home-note', role: 'status' }, 'You are offline. Starting a board from a template needs the server.') : null,
         h('div', { class: 'tpl-toolbar' },
