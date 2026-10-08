@@ -76,6 +76,7 @@ export class TextEditor {
       this.ta.focus();
       this.ta.select();
     });
+    this.app.emit('editing');
   }
 
   reposition() {
@@ -196,5 +197,6 @@ export class TextEditor {
     if (o && o.type === 'text' && !v.trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
     this.app.r.setEditing(null);
     this.app.store.undo.stopCapturing();
+    this.app.emit('editing');
   }
 }
