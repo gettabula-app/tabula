@@ -47,7 +47,7 @@ const stampName = (actor) => (typeof actor.name === 'string' && actor.name.trim(
  * returns the kinds of change that were undone ('edit', 'delete', 'resolve', 'author', 'other'), for the notice the
  * sender gets. `isAccount(id)` says whether an author id is a current account, for the legacy marks.
  */
-export function createCommentGuard(doc, { isAccount = () => true } = {}) {
+export function createCommentGuard(doc, { isAccount }) {
   const threads = doc.getMap('threads');
   /** threadId -> JSON of the thread as last allowed. */
   const mirror = new Map();
@@ -265,7 +265,7 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
    * only arrived in an update is still untyped here, so it is read as a map (keyed content) or an array (a sequence).
    */
   function clearOthers(undone) {
-    for (const [name, type] of [...doc.share]) {
+    for (const [name, type] of doc.share) {
       if (name === 'threads') continue;
       let typed = type;
       if (!(type instanceof Y.Map || type instanceof Y.Array || type instanceof Y.Text || type instanceof Y.XmlFragment)) {

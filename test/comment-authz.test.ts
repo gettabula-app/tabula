@@ -11,7 +11,7 @@ const OWNER: Actor = { id: 'ownerAccountId00000000', role: 'owner', name: 'Olga'
 /** A relay document with a guard, and clients that write to their own copy and send the difference. */
 function setup(seed?: (threads: Y.Map<Y.Map<unknown>>) => void, accounts: string[] = [ANA.id, BEN.id, EDITOR.id, OWNER.id]) {
   const server = new Y.Doc();
-  if (seed) server.transact(() => seed(server.getMap('threads')));
+  if (seed) server.transact(() => seed(server.getMap<any>('threads')));
   const guard = createCommentGuard(server, { isAccount: (id: string) => accounts.includes(id) });
   const client = () => {
     const doc = new Y.Doc();
@@ -28,17 +28,17 @@ function setup(seed?: (threads: Y.Map<Y.Map<unknown>>) => void, accounts: string
   /** A change made on `doc` without sending it yet (the update to send later). */
   const edit = (doc: Y.Doc, change: (threads: Y.Map<Y.Map<unknown>>) => void) => {
     const before = Y.encodeStateVector(doc);
-    doc.transact(() => change(doc.getMap('threads')));
+    doc.transact(() => change(doc.getMap<any>('threads')));
     return Y.encodeStateAsUpdate(doc, before);
   };
   const deliver = (actor: Actor, update: Uint8Array) => guard.run(actor, () => Y.applyUpdate(server, update, 'socket'));
   const catchUp = (doc: Y.Doc) => Y.applyUpdate(doc, Y.encodeStateAsUpdate(server, Y.encodeStateVector(doc)));
-  const thread = (id: string) => server.getMap('threads').get(id)?.toJSON();
+  const thread = (id: string) => server.getMap<any>('threads').get(id)?.toJSON();
   /** Every given client holds what the relay holds, once each has caught up. */
   const converged = (...docs: Y.Doc[]) => {
     for (const doc of docs) {
       catchUp(doc);
-      expect(doc.getMap('threads').toJSON()).toEqual(server.getMap('threads').toJSON());
+      expect(doc.getMap<any>('threads').toJSON()).toEqual(server.getMap<any>('threads').toJSON());
     }
   };
   return { server, guard, client, send, edit, deliver, catchUp, thread, converged };
@@ -80,13 +80,13 @@ describe('comment authorship on the relay', () => {
     const bens = client();
     expect(send(bens, BEN, (t) => t.get('t1')!.set('text', 'Ben was here'))).toEqual(['edit']);
     expect(thread('t1')!.text).toBe('Hello');
-    expect(bens.getMap('threads').get('t1')!.get('text')).toBe('Hello');
+    expect(bens.getMap<any>('threads').get('t1')!.get('text')).toBe('Hello');
     expect(send(bens, BEN, (t) => t.delete('t1'))).toEqual(['delete']);
     expect(thread('t1')).toMatchObject({ authorId: ANA.id, text: 'Hello' });
     // a third client that joins later sees the original
     const later = new Y.Doc();
     Y.applyUpdate(later, Y.encodeStateAsUpdate(server));
-    expect(later.getMap('threads').get('t1')!.get('text')).toBe('Hello');
+    expect(later.getMap<any>('threads').get('t1')!.get('text')).toBe('Hello');
   });
 
   it('protects the fields set once: author, creation time and anchor', () => {
@@ -218,12 +218,12 @@ describe('comment authorship on the relay', () => {
     const doc = client();
     expect(send(doc, BEN, () => {
       doc.getMap('other').set('x', 1);
-      (doc.getMap('threads') as Y.Map<unknown>).set('t1', 'not a thread');
-      (doc.getMap('threads') as Y.Map<unknown>).set('t2', 42);
+      (doc.getMap<any>('threads') as Y.Map<unknown>).set('t1', 'not a thread');
+      (doc.getMap<any>('threads') as Y.Map<unknown>).set('t2', 42);
     })).toEqual(['other']);
     expect(server.getMap('other').size).toBe(0);
     expect(thread('t1')).toMatchObject({ authorId: ANA.id, text: 'Hello' });
-    expect(server.getMap('threads').has('t2')).toBe(false);
+    expect(server.getMap<any>('threads').has('t2')).toBe(false);
   });
 
   it('merges allowed concurrent changes from two people', () => {
@@ -254,7 +254,7 @@ describe('offline batches and concurrent edits', () => {
   });
 
   it('keeps an author who deleted her thread offline with the reply that arrived online meanwhile', () => {
-    const { server, client, send, thread, converged } = setup((t) => newThread(t, 't1', ANA));
+    const { client, send, thread, converged } = setup((t) => newThread(t, 't1', ANA));
     const anaOffline = client();
     const bens = client();
     expect(send(bens, BEN, (t) => (t.get('t1')!.get('replies') as Y.Map<unknown>).set('r1', reply('r1', BEN)))).toEqual([]);
@@ -276,7 +276,7 @@ describe('offline batches and concurrent edits', () => {
     expect(thread('t1')!.text).toBe('Hello');
     expect(thread('t1')!.editedAt).toBe(5);
     converged(anaOffline, bensOnline);
-    expect(server.getMap('threads').get('t1')).toBeDefined();
+    expect(server.getMap<any>('threads').get('t1')).toBeDefined();
   });
 
   it('lets a reply and a forbidden delete of the same thread race: a reply that lands first survives the undo', () => {
@@ -357,7 +357,7 @@ describe('cost', () => {
     const times: number[] = [];
     for (let i = 0; i < 300; i++) {
       const before = Y.encodeStateVector(doc);
-      doc.transact(() => doc.getMap('threads').get(`t${i % 500}`)!.set('text', `edit ${i}`));
+      doc.transact(() => doc.getMap<any>('threads').get(`t${i % 500}`)!.set('text', `edit ${i}`));
       const update = Y.encodeStateAsUpdate(doc, before);
       const actor = i % 2 === 0 ? BEN : ANA; // half the updates are forbidden and get undone
       const t0 = performance.now();

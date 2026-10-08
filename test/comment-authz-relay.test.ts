@@ -169,7 +169,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     m.set('replies', new Y.Map());
     return m;
   };
-  const threadsOf = (c: Conn) => c.doc.getMap('threads');
+  const threadsOf = (c: Conn) => c.doc.getMap<any>('threads');
   const commentsRoom = (board: string) => `${board}${COMMENTS}`;
 
   // ------------------------------------------------------------ setup
@@ -215,7 +215,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     await synced(owners);
     const anas = open(room, ana.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('forged', thread('forged', ben, 'Posted as Ben'));
+      doc.getMap<any>('threads').set('forged', thread('forged', ben, 'Posted as Ben'));
       return doc;
     })());
     await synced(anas);
@@ -243,7 +243,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     const room = commentsRoom(board);
     const members = open(room, member.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('t1', thread('t1', member, 'Mine'));
+      doc.getMap<any>('threads').set('t1', thread('t1', member, 'Mine'));
       return doc;
     })());
     await synced(members);
@@ -269,7 +269,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     const room = commentsRoom(board);
     const asked = open(room, ana.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('t1', thread('t1', ana, 'Ana asks a question'));
+      doc.getMap<any>('threads').set('t1', thread('t1', ana, 'Ana asks a question'));
       return doc;
     })());
     await synced(asked);
@@ -306,7 +306,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     const room = commentsRoom(board);
     const owners = open(room, creator.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('t1', thread('t1', ana, 'Original'));
+      doc.getMap<any>('threads').set('t1', thread('t1', ana, 'Original'));
       return doc;
     })());
     await synced(owners);
@@ -335,15 +335,15 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     const room = commentsRoom(board);
     const importer = open(room, creator.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('imp', thread('imp', { id: 'someone-from-another-board', name: 'Zed' }, 'From the file', { imported: true, importedBy: creator.user.id }));
-      const m = doc.getMap('threads').get('imp') as Y.Map<unknown>;
+      doc.getMap<any>('threads').set('imp', thread('imp', { id: 'someone-from-another-board', name: 'Zed' }, 'From the file', { imported: true, importedBy: creator.user.id }));
+      const m = doc.getMap<any>('threads').get('imp') as Y.Map<unknown>;
       (m.get('replies') as Y.Map<unknown>).set('r1', { id: 'r1', authorId: 'someone-else', authorName: 'Yan', authorColor: '#123', text: 'Reply', createdAt: 2, imported: true, importedBy: creator.user.id });
       return doc;
     })());
     await synced(importer);
     const bens = open(room, ben.cookie, (() => {
       const doc = new Y.Doc();
-      doc.getMap('threads').set('forged', thread('forged', { id: 'someone-from-another-board', name: 'Zed' }, 'Forged', { imported: true, importedBy: ben.user.id }));
+      doc.getMap<any>('threads').set('forged', thread('forged', { id: 'someone-from-another-board', name: 'Zed' }, 'Forged', { imported: true, importedBy: ben.user.id }));
       return doc;
     })());
     await synced(bens);
@@ -364,7 +364,7 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     const room = commentsRoom(board);
     // what the room held before accounts were turned on: a comment whose author is a device id
     const seed = new Y.Doc();
-    seed.getMap('threads').set('old', thread('old', { id: '3b241101-e2bb-4255-8caf-4136c566a962', name: 'Clever Otter' }, 'From before accounts'));
+    seed.getMap<any>('threads').set('old', thread('old', { id: '3b241101-e2bb-4255-8caf-4136c566a962', name: 'Clever Otter' }, 'From before accounts'));
     fs.writeFileSync(path.join(dataDir, `${room}.yjs`), Y.encodeStateAsUpdate(seed));
 
     const anas = open(room, ana.cookie);
