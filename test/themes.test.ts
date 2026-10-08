@@ -12,6 +12,8 @@ const TEXT_PAIRS: [ThemeVar, ThemeVar][] = [
   ['--graphite', '--paper'],
   ['--danger', '--paper'],
   ['--danger', '--canvas'],
+  // Armed (confirm) buttons: danger text at rest, paper text on a danger fill when hovered.
+  ['--paper', '--danger'],
 ];
 
 function srgbMix(a: string, pct: number, b: string): string {
