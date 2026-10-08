@@ -36,10 +36,11 @@
 .admin .admin-me { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Outcomes of changes show in the top bar, in place of the signed-in name, so they never cover a row. */
 .admin-status {
-  margin: 0 0 0 auto; min-width: 0; padding-left: 10px; border-left: 4px solid var(--signal);
+  margin: 0 0 0 auto; min-width: 0; padding-left: 10px; border-left: 4px solid var(--graphite);
   font-size: 13px; font-weight: 600; line-height: 16px;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
+.admin-status[data-kind='error'] { border-left-color: var(--danger); }
 .admin-status:empty { display: none; }
 .admin-status:not(:empty) + .admin-me { display: none; }
 

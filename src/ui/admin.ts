@@ -106,13 +106,17 @@ function loadList<T>(box: HTMLElement, fetchData: () => Promise<T>, show: (data:
 let statusLine: HTMLElement | null = null;
 let statusTimer = 0;
 
-/** Shows a short outcome in the top bar, where it never covers a row. */
-function notify(msg: string, ms = 2600): void {
+/**
+ * Shows a short outcome in the top bar, where it never covers a row. It replaces the signed-in name until
+ * it clears; errors stay a little longer so they can be read.
+ */
+function notify(msg: string, kind: 'done' | 'error' = 'done'): void {
   if (!statusLine) return;
   const line = statusLine;
   line.textContent = msg;
+  line.dataset.kind = kind;
   clearTimeout(statusTimer);
-  statusTimer = window.setTimeout(() => (line.textContent = ''), ms);
+  statusTimer = window.setTimeout(() => (line.textContent = ''), kind === 'error' ? 5000 : 2600);
 }
 
 /** Runs a change and reports the outcome. Resolves true when it went through. */
@@ -122,7 +126,7 @@ async function change(run: () => Promise<unknown>, done: string): Promise<boolea
     notify(done);
     return true;
   } catch (e) {
-    if (!leaveOnAuthError(e, false)) notify(describe(e));
+    if (!leaveOnAuthError(e, false)) notify(describe(e), 'error');
     return false;
   }
 }
@@ -348,7 +352,7 @@ function membersPanel(me: Me): HTMLElement {
           paint();
           return;
         }
-        if (!verdict.allowed) notify(verdict.reason ?? GENERIC);
+        if (!verdict.allowed) notify(verdict.reason ?? GENERIC, 'error');
         el.value = m.role;
       },
     }, ...roleOptions(actor, m).map((r) => h('option', { value: r, selected: r === m.role }, ROLE_NAMES[r])));
