@@ -56,12 +56,15 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
   const openRuns = (boardId) => [...runs.values()].filter((r) => r.boardId === boardId && OPEN.has(r.status));
 
   /**
-   * A run has started. `by` is who is shown as the runner: `{ id, name }` in accounts mode, `{ id: null, name: null }` in
-   * open mode (a client address is never shown to anyone). Returns the run's id.
+   * A run has started. `by` is who is shown as the runner: `{ id, name, color }`; in open mode the id is null and the name
+   * is what the person calls themselves (a client address is never shown to anyone). `target` is what the run reads, as
+   * ids or a frame (each app outlines it from its own board), `private` hides the run from everyone but its runner. The caller has checked all of them.
+   * Returns the run's id.
    * @param {string} boardId
-   * @param {{ by?: { id: string | null, name: string | null } | null, feature: string, prompt?: string | null }} details
+   * @param {{ by?: { id: string | null, name: string | null, color?: string | null } | null, feature: string, prompt?: string | null,
+   *   target?: { ids: string[] } | { frameId: string } | null, private?: boolean }} details
    */
-  function start(boardId, { by, feature, prompt = null }) {
+  function start(boardId, { by, feature, prompt = null, target = null, private: hidden = false }) {
     sweep();
     const open = openRuns(boardId);
     if (open.length >= MAX_RUNS_PER_BOARD) {
@@ -72,7 +75,9 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
       id: newId(),
       boardId,
       feature,
-      by: { id: by?.id ?? null, name: by?.name ?? null },
+      by: { id: by?.id ?? null, name: by?.name ?? null, color: by?.color ?? null },
+      target: target ? structuredClone(target) : null,
+      private: hidden === true,
       prompt: typeof prompt === 'string' && prompt ? prompt : null,
       status: 'running',
       startedAt: now(),
@@ -136,9 +141,10 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
    * @param {{ role: string | null, userId: string | null }} viewer
    */
   function viewFor(run, viewer) {
-    if (!canSeeRun(viewer.role)) return null;
+    if (!canSeeRun(viewer, run)) return null;
     const view = { id: run.id, feature: run.feature, status: run.status, by: { ...run.by } };
-    if (run.status === 'running' || run.status === 'ready') view.startedAt = run.startedAt;
+    if (run.private) view.private = true;
+    if (run.status === 'running' || run.status === 'ready') Object.assign(view, { startedAt: run.startedAt, target: run.target ? structuredClone(run.target) : null });
     if (run.status === 'ready') Object.assign(view, { readyAt: run.readyAt, proposal: run.proposal, cut: run.cut });
     if (run.status === 'failed') view.error = run.error;
     if (run.resolvedBy) view.resolvedBy = { ...run.resolvedBy };
@@ -149,8 +155,8 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
   /** The `{ kind: 'snapshot' }` message a person gets on joining a board, or null when they may not see its runs. */
   function snapshotFor(boardId, viewer) {
     sweep();
-    if (!canSeeRun(viewer.role)) return null;
-    return { kind: 'snapshot', runs: openRuns(boardId).map((run) => viewFor(run, viewer)) };
+    if (!canSeeRun(viewer)) return null;
+    return { kind: 'snapshot', runs: openRuns(boardId).map((run) => viewFor(run, viewer)).filter(Boolean) };
   }
 
   /** The `{ kind: 'patch' }` message about one change, or null. A settled status means the run is gone. */

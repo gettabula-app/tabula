@@ -12,8 +12,12 @@ export const RUNNER_FIRST_MS = 30_000;
 const ROLES = new Set(['owner', 'editor', 'commenter', 'viewer']);
 const EDIT_ROLES = new Set(['owner', 'editor']);
 
-/** Anyone who can open the board sees its runs, viewers and commenters too. Open mode has no roles and passes 'owner'. */
-export const canSeeRun = (role) => ROLES.has(role);
+/**
+ * Anyone who can open the board sees its runs, viewers and commenters too, except a private run (a personal key's), which
+ * only its runner sees. Open mode has no roles and passes 'owner'. Without a run, whether the person sees runs at all.
+ * @param {{ role: string | null, userId: string | null }} viewer @param {{ private?: boolean, by: { id: string | null } }} [run]
+ */
+export const canSeeRun = (viewer, run) => ROLES.has(viewer.role) && (!run?.private || (viewer.userId !== null && viewer.userId === run.by.id));
 
 /**
  * Whether `viewer` may add or discard `run`. `canEdit` is the relay's own answer for the viewer (it is also false while

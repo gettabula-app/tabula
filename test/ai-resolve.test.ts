@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../server/config.mjs';
 import { READY_TTL_MS } from '../server/ai/live.mjs';
 import { createOpenRun } from '../server/ai/run.mjs';
-import { KEY, closeWorlds, deferred, setup } from './ai-run-harness';
+import { KEY, closeWorlds, deferred, newKey, setup, sticky } from './ai-run-harness';
 
 // docs/ai.md, "Live runs": POST /api/ai/runs/:id/resolve. The first add or discard of a ready run wins; an add hands the
 // proposal to the person who asked, whose app writes it. Who may do it is policy.mjs's rule.
@@ -141,6 +141,67 @@ describe('resolving a run', () => {
   });
 });
 
+describe('who ran it, and private runs', () => {
+  it('a late click is told how the run ended and who ended it', async () => {
+    const { w, editor, owner, resolve, runReady } = await world();
+    const id = await runReady();
+    expect((await resolve(editor, id, { action: 'discard' })).status).toBe(200);
+    const late = await resolve(owner, id);
+    expect(late.status).toBe(409);
+    expect(late.body).toMatchObject({ error: 'ai_run_resolved', action: 'discard', by: { id: editor.user.id } });
+    w.state.t += 1;
+    const expired = await runReady();
+    w.state.t += 10 * 60_000;
+    expect((await resolve(owner, expired)).body).toMatchObject({ error: 'ai_run_resolved', action: 'expired', by: null });
+  });
+
+  it('takes the colour and the target from the request, and the name only from the account', async () => {
+    const { w, owner, boardId } = await world();
+    sticky(w.docOf(boardId), 's1', 'one');
+    sticky(w.docOf(boardId), 's2', 'two');
+    const res = await w.run(owner, { ...generate(boardId), input: { prompt: 'more', selection: ['s1', 's2'] }, presence: { color: '#d64545', name: 'Not Ana' } });
+    expect(res.events.at(-1)!.event).toBe('result');
+    const run = w.live.get(res.events[0].data.runId);
+    expect(run.by).toEqual({ id: owner.user.id, name: owner.user.name ?? null, color: '#D64545' });
+    expect(run.target).toEqual({ ids: ['s1', 's2'] });
+    // the visible area is a selection the person did not make: nothing to outline
+    w.state.t += 1;
+    const visible = await w.run(owner, { ...generate(boardId), input: { prompt: 'more', selection: ['s1'] }, presence: { outline: false } });
+    expect(w.live.get(visible.events[0].data.runId).target).toBeNull();
+    w.state.t += 1;
+    const whole = await w.run(owner, generate(boardId));
+    expect(w.live.get(whole.events[0].data.runId).target).toBeNull();
+  });
+
+  it('refuses a malformed presence', async () => {
+    const { w, owner, boardId } = await world();
+    for (const presence of [{ color: 'red' }, { color: '#12345' }, { target: { x: 0, y: 0, w: 1, h: 1 } }, { outline: 'no' }, { extra: 1 }, 'x', { name: 4 }]) {
+      const res = await w.run(owner, { ...generate(boardId), presence });
+      expect([res.status, res.json.error]).toEqual([400, 'bad_request']);
+    }
+    expect((await w.run(owner, { ...generate(boardId), private: 'yes' })).status).toBe(400);
+    expect(w.calls).toHaveLength(0);
+  });
+
+  it("can't make a run on the workspace key private", async () => {
+    const { w, owner, boardId } = await world();
+    const res = await w.run(owner, { ...generate(boardId), private: true });
+    expect([res.status, res.json.message]).toEqual([400, "Runs on the workspace key can't be private"]);
+    expect(w.calls).toHaveLength(0);
+  });
+
+  it('a private run on a personal key is the runner\'s alone to settle; others are told it does not exist', async () => {
+    const { w, editor, owner, boardId, resolve } = await world();
+    w.directory.setSetting('ai.personalKeys', '1');
+    w.directory.saveAiKey({ ring: w.ring, scope: 'user', userId: editor.user.id, provider: 'anthropic', apiKey: newKey() });
+    const res = await w.run(editor, { ...generate(boardId), private: true });
+    expect(res.events.at(-1)!.event).toBe('result');
+    const id = res.events[0].data.runId;
+    expect((await resolve(owner, id)).status).toBe(404);
+    expect((await resolve(editor, id)).status).toBe(200);
+  });
+});
+
 describe('open mode', () => {
   const servers: http.Server[] = [];
   afterEach(async () => {
@@ -180,12 +241,25 @@ describe('open mode', () => {
     const { post, open } = await openWorld();
     const ran = await post('/api/ai/run', generate('board1'));
     const id = JSON.parse(/^data: (.+)$/m.exec(ran.text)![1]).runId;
-    expect(open.live.get(id).by).toEqual({ id: null, name: null });
+    expect(open.live.get(id).by).toEqual({ id: null, name: null, color: null });
     const first = await post(`/api/ai/runs/${id}/resolve`, { action: 'accept' });
     expect(first.status).toBe(200);
     expect(JSON.parse(first.text).proposal).toEqual({ kind: 'create', objects: [{ text: 'idea' }] });
     const second = await post(`/api/ai/runs/${id}/resolve`, { action: 'discard' });
     expect([second.status, JSON.parse(second.text).error]).toEqual([409, 'ai_run_resolved']);
+  });
+
+  it('takes a self-declared name, as plain text of at most 40 characters, and refuses a private run', async () => {
+    const { post, open } = await openWorld();
+    const name = `  Sam\u200b  the\n tester ${'x'.repeat(60)}`;
+    const ran = await post('/api/ai/run', { ...generate('board1'), presence: { name, color: '#1e9a6a' } });
+    const id = JSON.parse(/^data: (.+)$/m.exec(ran.text)![1]).runId;
+    const by = open.live.get(id).by;
+    expect(by.color).toBe('#1E9A6A');
+    expect(by.name.startsWith('Sam the tester x')).toBe(true);
+    expect([...by.name].length).toBeLessThanOrEqual(40);
+    const hidden = await post('/api/ai/run', { ...generate('board1'), private: true });
+    expect(hidden.status).toBe(400);
   });
 
   it('needs the CSRF header and AI turned on', async () => {

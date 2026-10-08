@@ -6,7 +6,7 @@
 // failure is one `event: error`. A run sends `event: progress` lines, then exactly one `event: result` or `event: error`.
 // Nothing here puts the key, a header, board text or model output in an error, a log line or an audit row.
 
-import { readAll } from '../board-ops.mjs';
+import { readAll, stripInvisible } from '../board-ops.mjs';
 import { csrfOk } from '../auth.mjs';
 import { TOKEN_BOARD_ID_RE } from '../tokens.mjs';
 import { AiError, describeError } from './errors.mjs';
@@ -49,17 +49,64 @@ function usageSummary(usage, fallbackModel) {
   };
 }
 
-/** The body of POST /api/ai/run: `{ feature, boardId, input }` or an InputError. */
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const NAME_MAX = 40;
+
+/**
+ * `presence` of a run request: how the run is drawn for others (docs/ai.md, "Live runs"). `color` is the runner's cursor
+ * colour, `name` what the person calls themselves (open mode only), and `outline: false` says the run has nothing worth
+ * circling (the visible area: a selection the person did not make). Shapes are checked; a name is plain text of at most
+ * 40 characters. No geometry is taken: others draw the outline from the run's target ids on their own board.
+ */
+function parsePresence(value) {
+  if (value === undefined) return { color: null, name: null, outline: true };
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new InputError('presence must be an object');
+  for (const name of Object.keys(value)) {
+    if (!['color', 'name', 'outline'].includes(name)) throw new InputError(`presence: Unknown field: ${name.slice(0, 40)}`);
+  }
+  const out = { color: null, name: null, outline: true };
+  if (value.color !== undefined && value.color !== null) {
+    if (typeof value.color !== 'string' || !COLOR_RE.test(value.color)) throw new InputError('presence.color must be a colour like #2F6FED');
+    out.color = value.color.toUpperCase();
+  }
+  if (value.name !== undefined && value.name !== null) {
+    if (typeof value.name !== 'string') throw new InputError('presence.name must be text');
+    const clean = [...stripInvisible(value.name).replace(/\s+/g, ' ').trim()].slice(0, NAME_MAX).join('').trim();
+    out.name = clean || null;
+  }
+  if (value.outline !== undefined) {
+    if (typeof value.outline !== 'boolean') throw new InputError('presence.outline must be true or false');
+    out.outline = value.outline;
+  }
+  return out;
+}
+
+/** What others outline while a run is going: the ids it reads, or its frame, or nothing for the whole board or a bare prompt. */
+export function targetOf(input, presence) {
+  if (!presence.outline) return null;
+  if (input.selection) return { ids: [...input.selection] };
+  if (input.frameId) return { frameId: input.frameId };
+  return null;
+}
+
+/** The body of POST /api/ai/run: `{ feature, boardId, input, private?, presence? }` or an InputError. */
 export function parseRequest(body) {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InputError('The request body must be a JSON object');
   for (const name of Object.keys(body)) {
-    if (!['feature', 'boardId', 'input'].includes(name)) throw new InputError(`Unknown field: ${name.slice(0, 40)}`);
+    if (!['feature', 'boardId', 'input', 'private', 'presence'].includes(name)) throw new InputError(`Unknown field: ${name.slice(0, 40)}`);
   }
   if (typeof body.feature !== 'string' || !Object.hasOwn(FEATURE_SPECS, body.feature)) {
     throw new InputError(`feature must be one of ${Object.keys(FEATURE_SPECS).join(', ')}`);
   }
   if (typeof body.boardId !== 'string' || !TOKEN_BOARD_ID_RE.test(body.boardId)) throw new InputError('boardId must be a board id');
-  return { feature: body.feature, boardId: body.boardId, input: parseInput(body.feature, body.input) };
+  if (body.private !== undefined && typeof body.private !== 'boolean') throw new InputError('private must be true or false');
+  return {
+    feature: body.feature,
+    boardId: body.boardId,
+    input: parseInput(body.feature, body.input),
+    private: body.private === true,
+    presence: parsePresence(body.presence),
+  };
 }
 
 /** The body of POST /api/ai/runs/:id/resolve: `{ action: 'accept' | 'discard' }`. */
@@ -243,7 +290,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       const prep = prepare(call);
       const creds = call.openKey();
       started = true;
-      runId = live.start(call.boardId, { by: call.by, feature: call.feature, prompt: call.input.prompt });
+      runId = live.start(call.boardId, { by: call.by, feature: call.feature, prompt: call.input.prompt, target: call.target, private: call.private });
       await stream(call, prep, creds, res, runId);
     } catch (err) {
       // a run that never reached the provider does not use up the person's hour
@@ -259,6 +306,14 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     }
   }
 
+  /** The 409 for a run that is no longer ready. It says how it ended and who ended it, so the app can say "Ana added it first". */
+  function settled(run) {
+    const err = new HttpError(409, 'ai_run_resolved', 'Someone has already added or discarded that AI run');
+    const action = { accepted: 'accept', discarded: 'discard' }[run.status] ?? run.status;
+    err.extra = { action, by: run.resolvedBy ? { ...run.resolvedBy } : null };
+    return err;
+  }
+
   /**
    * POST /api/ai/runs/:id/resolve. `viewerOf(boardId)` says who asks, on the run's board: `{ role, userId, canEdit }`,
    * with a null role when they cannot open it. `who` is how they are shown. Returns the answer's body; for an accept it
@@ -268,12 +323,12 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     const action = parseResolve(body);
     const run = typeof id === 'string' ? live.get(id) : null;
     const viewer = run ? viewerOf(run.boardId) : null;
-    if (!run || !canSeeRun(viewer.role)) throw new HttpError(404, 'not_found', 'That AI run is gone');
+    if (!run || !canSeeRun(viewer, run)) throw new HttpError(404, 'not_found', 'That AI run is gone');
     if (run.status === 'running') throw new HttpError(409, 'ai_run_running', 'That AI run is still going');
-    if (run.status !== 'ready') throw new HttpError(409, 'ai_run_resolved', 'Someone has already added or discarded that AI run');
+    if (run.status !== 'ready') throw settled(run);
     if (!canResolve(viewer, run, now())) throw new HttpError(403, 'forbidden', 'You cannot add or discard this AI run');
     const done = live.resolve(id, action, who);
-    if (!done.ok) throw new HttpError(409, 'ai_run_resolved', 'Someone has already added or discarded that AI run');
+    if (!done.ok) throw settled(live.get(id) ?? run);
     return action === 'accept' ? { id, action, feature: run.feature, proposal: done.proposal, cut: done.cut } : { id, action, feature: run.feature };
   }
 
@@ -300,7 +355,7 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
 
   const runRoute = compile('POST', 'ai/run', { body: true, readOnlyOk: true, stream: true }, async ({ res, user, body }) => {
     try {
-      const { feature, boardId, input } = parseRequest(body);
+      const { feature, boardId, input, private: hidden, presence } = parseRequest(body);
       const settings = settingsNow();
       if (!aiEnabledFor(settings, user)) throw new HttpError(403, 'ai_disabled', 'AI is not turned on for this workspace');
       if (!settings.features.includes(feature)) throw new HttpError(403, 'ai_feature_disabled', 'This AI feature is turned off for this workspace');
@@ -314,6 +369,8 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
       const mine = personalKeysFor(settings, user) ? directory.getAiKeyInfo('user', user.id) : null;
       const scope = mine ? 'user' : directory.getAiKeyInfo('workspace') ? 'workspace' : null;
       if (!scope) throw noKey();
+      // a run the workspace pays for stays visible to the people who share the bill
+      if (hidden && scope !== 'user') throw new HttpError(400, 'bad_request', "Runs on the workspace key can't be private");
       const which = scope === 'user' ? { ring, scope, userId: user.id } : { ring, scope };
       if (!ring.configured || !directory.aiKeyReadable(which)) throw new AiError('ai_key_unreadable');
 
@@ -333,7 +390,10 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
           input,
           title: board.title,
           role,
-          by: { id: user.id, name: user.name ?? null },
+          // the name is the account's, never one the request brings
+          by: { id: user.id, name: user.name ?? null, color: presence.color },
+          target: targetOf(input, presence),
+          private: hidden,
           person: `user:${user.id}`,
           workspace: 'workspace',
           keyId: scope === 'user' ? `key:user:${user.id}` : 'key:workspace',
@@ -439,7 +499,7 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
 
   const sendError = (res, err) => {
     if (res.headersSent) return void res.end();
-    const body = JSON.stringify({ error: err.code, message: err.message });
+    const body = JSON.stringify({ error: err.code, message: err.message, ...err.extra });
     res.writeHead(err.status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(body);
   };
@@ -455,7 +515,8 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
         req.resume();
         throw new OpenHttpError(403, 'ai_disabled', 'AI is not turned on');
       }
-      const { feature, boardId, input } = parseRequest(await readJsonBody(req));
+      const { feature, boardId, input, private: hidden, presence } = parseRequest(await readJsonBody(req));
+      if (hidden) throw new OpenHttpError(400, 'bad_request', 'Only a run on your own key can be private');
       if (!roomExists(boardId)) throw new OpenHttpError(404, 'not_found', 'Board not found');
       if (!canWriteRoom('owner', 'board')) throw new OpenHttpError(403, 'forbidden', 'You need to be able to edit this board to use AI on it');
       await runner.execute(
@@ -465,8 +526,10 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
           input,
           title: null,
           role: null,
-          // nobody has a name in open mode, and the client address is never shown
-          by: { id: null, name: null },
+          // open mode has no accounts: the name is what the person calls themselves, and the client address is never shown
+          by: { id: null, name: presence.name, color: presence.color },
+          target: targetOf(input, presence),
+          private: false,
           person: `ip:${clientIp(req)}`,
           workspace: 'workspace',
           keyId: 'key:env',
