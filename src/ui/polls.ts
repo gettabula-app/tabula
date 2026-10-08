@@ -4,7 +4,13 @@ import { POLL_LIMITS, answeredLabel, countPeople, type PollInput, type PollTally
 import { h, icon } from './dom';
 import { dialog, field, popover, toast } from './common';
 import { reopenPollResults } from './idle-bar';
+import { POLL_LIST_MIN, pollCardBox } from './poll-layout';
 import './polls.css';
+
+/** The fade on a list's bottom edge shows while more of it is below. */
+function showMore(list: HTMLElement) {
+  list.classList.toggle('more', list.scrollHeight - list.clientHeight - list.scrollTop > 2);
+}
 
 /** "N of M answered" for the card and the bar alike. */
 function answeredText(app: BoardApp, pollId: Id): string {
@@ -74,7 +80,7 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
     h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'),
       h('span', { class: 'poll-label', 'data-answered': poll.revealed ? undefined : poll.id }, status)),
     h('h2', { class: 'poll-question', id: questionId }, poll.question),
-    h('div', { class: 'poll-scroll' },
+    h('div', { class: 'poll-scroll', onscroll: (e: Event) => showMore(e.currentTarget as HTMLElement) },
       h('fieldset', { class: 'poll-choices', disabled: !canAnswer, 'aria-labelledby': questionId }, ...choices),
       poll.revealed ? resultsList(tally) : null),
     h('div', { class: 'poll-foot' },
@@ -90,11 +96,23 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
 export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLElement) {
   const card = h('section', { class: 'poll-card', 'aria-label': 'Poll', hidden: true });
   parent.appendChild(card);
+  // Sized from what is on screen: the room between the top bar and the session bar's real height, never less than the card's header plus three rows.
   const place = () => {
+    const scroll = card.querySelector<HTMLElement>('.poll-scroll');
+    if (card.hidden || !scroll) return;
     const inset = parseFloat(getComputedStyle(bar).bottom) || 12;
-    card.style.setProperty('--poll-dock', `${inset + bar.offsetHeight + 12}px`);
+    const dock = inset + bar.offsetHeight + 12;
+    const top = parseFloat(getComputedStyle(card).getPropertyValue('--panel-top')) || 72;
+    const viewport = card.parentElement?.clientHeight ?? window.innerHeight;
+    const overhead = card.offsetHeight - scroll.clientHeight;
+    const list = scroll.scrollHeight;
+    const box = pollCardBox({ viewport, top, dock, natural: overhead + list, minimum: overhead + Math.min(POLL_LIST_MIN, list) });
+    card.style.bottom = `${box.bottom}px`;
+    card.style.maxHeight = `${box.height}px`;
+    showMore(scroll);
   };
   new ResizeObserver(place).observe(bar);
+  window.addEventListener('resize', place);
   app.on('presence', () => refreshAnswered(app, card));
   const render = () => {
     const f = app.flow.state();
