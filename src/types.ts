@@ -7,7 +7,10 @@ export type Id = string;
 export type ShapeKind =
   | 'rect' | 'rounded' | 'ellipse' | 'diamond' | 'triangle' | 'hexagon'
   | 'octagon' | 'parallelogram' | 'trapezoid' | 'star' | 'cylinder'
-  | 'document' | 'terminator' | 'manual-input' | 'predefined';
+  | 'document' | 'terminator' | 'manual-input' | 'predefined'
+  | 'pentagon' | 'cross' | 'heart' | 'cloud' | 'arrow-right' | 'arrow-left'
+  | 'arrow-both' | 'chevron' | 'arrow-pentagon' | 'callout-rect' | 'callout-round'
+  | 'delay' | 'merge' | 'off-page' | 'manual-operation' | 'display';
 
 export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
