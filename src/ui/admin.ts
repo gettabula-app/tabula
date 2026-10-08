@@ -1,6 +1,7 @@
 import './admin.css';
 import { ApiError, api, type AdminBoard, type AdminMember, type AdminOverview, type AdminSession, type AuditEntry, type AuditPage, type Me, type Team, type UserRole } from '../api';
 import { setSignedOut, signOut } from '../auth';
+import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logic';
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { fmtAgo, toast } from './common';
 import { h, icon } from './dom';
@@ -38,6 +39,8 @@ const fmtDateTime = (t: number) =>
   new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function describe(e: unknown): string {
+  const hosted = cloudErrorMessage(e);
+  if (hosted) return hosted;
   if (e instanceof ApiError) {
     if (e.status === 0 || e.code === 'network') return NETWORK;
     if (e.code !== 'unknown' && e.message !== e.code) return e.message;
@@ -185,9 +188,31 @@ function overviewView(o: AdminOverview): HTMLElement {
     h('dl', { class: 'admin-facts' }, facts.map(([k, v]) => h('div', { class: 'admin-fact' }, h('dt', null, k), h('dd', null, v)))));
 }
 
-function overviewPanel(): HTMLElement {
+/** Hosted workspaces only (docs/cloud.md): the owner's way into the billing portal. */
+function billingBlock(): HTMLElement {
+  const button = h('button', { class: 'btn' }, 'Manage billing');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await change(async () => {
+        const { url } = await api.billingPortal();
+        const target = portalTarget(url);
+        if (!target) throw new Error('The billing portal address was not valid');
+        location.assign(target);
+      }, 'Opening billing…');
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return h('div', null,
+    h('h3', { class: 'admin-sub' }, 'Billing'),
+    h('p', { class: 'muted' }, 'Change the plan, add seats and update the payment method in the billing portal.'),
+    button);
+}
+
+function overviewPanel(me: Me): HTMLElement {
   const body = h('div', null);
-  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o)));
+  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o), ...(canManageBilling(me) ? [billingBlock()] : [])));
   return body;
 }
 
@@ -530,7 +555,7 @@ function auditPanel(): HTMLElement {
 }
 
 const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
-  overview: () => overviewPanel(),
+  overview: (me) => overviewPanel(me),
   members: membersPanel,
   teams: () => teamsPanel(),
   boards: () => boardsPanel(),

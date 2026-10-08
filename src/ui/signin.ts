@@ -1,6 +1,7 @@
 import './signin.css';
 import { ApiError, api, type InvitePreview, type Me } from '../api';
 import { setSignedIn, type AuthState } from '../auth';
+import { cloudErrorMessage } from '../cloud-logic';
 import { h } from './dom';
 
 interface SignInOptions {
@@ -89,7 +90,7 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
   } catch (err) {
     const expired = err instanceof ApiError && (err.code === 'invalid_token' || err.status === 400);
     renderSignIn(root, {
-      notice: expired ? 'This link has expired or was already used. Request a new one.' : FAILED,
+      notice: cloudErrorMessage(err) ?? (expired ? 'This link has expired or was already used. Request a new one.' : FAILED),
     });
     return;
   }

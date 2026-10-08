@@ -8,6 +8,14 @@ const MAX_LIMITER_KEYS = 50_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const COOKIE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
 
+/** A new person would need a seat the workspace does not have (hosted workspaces, docs/cloud.md). */
+export class SeatLimitError extends Error {
+  constructor() {
+    super('no free seat');
+    this.name = 'SeatLimitError';
+  }
+}
+
 function createLimiter(now) {
   const byEmail = new Map();
   const byIp = new Map();
@@ -43,7 +51,7 @@ function createLimiter(now) {
   };
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now }) {
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true }) {
   const allow = createLimiter(now);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
@@ -114,6 +122,8 @@ export function createAuth({ directory, config, mailer, now = Date.now }) {
       } else if (ownerMayBootstrap(consumed.email)) {
         user = directory.createUser({ email: consumed.email, role: 'owner' });
       } else if (invite) {
+        // Thrown inside the transaction on purpose: the login token and the invite stay unused, so the same link works once a seat is free.
+        if (!seatsAvailable()) throw new SeatLimitError();
         user = directory.createUser({ email: consumed.email, role: 'member' });
       } else {
         return null;

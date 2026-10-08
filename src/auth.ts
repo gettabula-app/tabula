@@ -1,4 +1,5 @@
 import { ApiError, api, type Me, type ServerBoard } from './api';
+import { createMeRefresher, meChanged, type MeRefreshDeps } from './cloud-logic';
 
 export type AuthState =
   | { mode: 'unknown' }
@@ -84,6 +85,33 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
     }
     return commit({ mode: 'offline', me: readJson<Me>(ME_KEY) });
   }
+}
+
+/**
+ * Hosted workspaces (docs/cloud.md): while the tab is open, asks for /api/me every few minutes so a new banner or a
+ * read-only switch shows up. Does nothing for anyone who is signed out or on a server without a control plane.
+ */
+export function startMeRefresh(overrides: Partial<MeRefreshDeps> = {}): () => void {
+  const refresher = createMeRefresher({
+    active: () => state.mode === 'signed-in' && state.me.workspace !== undefined,
+    visible: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
+    fetchMe: () => api.me(),
+    apply: (me) => {
+      if (state.mode === 'signed-in' && meChanged(state.me, me)) setSignedIn(me);
+    },
+    expired: setSignedOut,
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+    ...overrides,
+  });
+  const seen = () => {
+    if (document.visibilityState === 'visible') refresher.resume();
+  };
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', seen);
+  return () => {
+    refresher.stop();
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', seen);
+  };
 }
 
 export async function signOut(a: Pick<typeof api, 'logout'> = api): Promise<void> {

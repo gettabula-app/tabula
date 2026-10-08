@@ -4,6 +4,8 @@
 
 import fs from 'node:fs';
 import { BOARD_ID_RE } from './directory.mjs';
+import { SeatLimitError } from './auth.mjs';
+import { CloudError, addsSeat, validateLimits } from './cloud.mjs';
 
 const MAX_BODY = 64 * 1024;
 const DRAIN_LIMIT = 1024 * 1024;
@@ -13,6 +15,7 @@ const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CONTROL_RE = /\p{Cc}/u;
 const AUDIT_DEFAULT_LIMIT = 50;
 const AUDIT_MAX_LIMIT = 200;
@@ -116,7 +119,7 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }) }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -201,6 +204,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     teams: directory.listTeamsFor(u.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
   });
 
+  // Hosted workspaces (docs/cloud.md): the message names the limit so an admin knows what to do about it.
+  const seatLimited = (problem) =>
+    conflict('seat_limit', `All ${cloud.limits().seatLimit} seats are in use, so ${problem}. Remove or disable someone, or ask the workspace owner to add seats under billing.`);
+
   // ------------------------------------------------------------ handlers
 
   const routes = [
@@ -208,7 +215,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     compile('GET', 'me', {}, ({ user }) => [
       200,
-      { user: userView(user), teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })) },
+      {
+        user: userView(user),
+        teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
+        ...(cloud ? { workspace: cloud.workspaceView() } : {}),
+      },
     ]),
     compile('PATCH', 'me', { body: true }, ({ user, body }) => {
       const name = cleanText(body.name, 'name', 1, 80);
@@ -220,7 +231,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return [200, userView(updated)];
     }),
 
-    compile('POST', 'auth/request', { public: true, body: true }, async ({ req, res, body }) => {
+    compile('POST', 'auth/request', { public: true, body: true, readOnlyOk: true }, async ({ req, res, body }) => {
       const { email, invite } = body;
       if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
@@ -231,21 +242,28 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       }
       return [200, { ok: true }];
     }),
-    compile('POST', 'auth/verify', { public: true, body: true }, ({ res, body }) => {
-      const result = typeof body.token === 'string' ? auth.verifyLogin(body.token) : null;
+    compile('POST', 'auth/verify', { public: true, body: true, readOnlyOk: true }, ({ res, body }) => {
+      let result = null;
+      try {
+        result = typeof body.token === 'string' ? auth.verifyLogin(body.token) : null;
+      } catch (err) {
+        if (!(err instanceof SeatLimitError)) throw err;
+        throw conflict('seat_limit', 'This workspace has no free seat right now. Ask the workspace owner to add seats, then open this link again.');
+      }
       if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
       res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));
       directory.audit(result.user.id, 'auth.login', {});
+      if (cloud) emit('usage-changed');
       return [200, { user: userView(result.user) }];
     }),
-    compile('POST', 'auth/logout', {}, ({ res, user, sessionId }) => {
+    compile('POST', 'auth/logout', { readOnlyOk: true }, ({ res, user, sessionId }) => {
       auth.logout(sessionId);
       audit(user, 'auth.logout', {});
       res.setHeader('set-cookie', auth.clearCookie());
       emit('session-revoked', { userId: user.id, sessionId });
       return [204];
     }),
-    compile('POST', 'auth/logout-all', {}, ({ res, user }) => {
+    compile('POST', 'auth/logout-all', { readOnlyOk: true }, ({ res, user }) => {
       auth.logoutAll(user.id);
       audit(user, 'auth.logout_all', {});
       res.setHeader('set-cookie', auth.clearCookie());
@@ -323,6 +341,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const role = body.role === undefined ? 'member' : oneOf(body.role, TEAM_ROLES, 'role');
       const days = body.days === undefined ? 7 : body.days;
       if (!Number.isInteger(days) || days < 1 || days > 30) throw badRequest('days must be a whole number from 1 to 30');
+      if (cloud && !cloud.seatsAvailable()) throw seatLimited('new invite links cannot be created');
       const invite = directory.transaction(() => {
         const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS });
         audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days });
@@ -474,6 +493,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       if (target.role === 'owner' && !target.disabled && stopsBeingOwner && !hasOtherActiveOwner(target.id)) {
         throw conflict('last_owner', 'The workspace needs at least one active owner');
       }
+      if (cloud && addsSeat(target, patch) && !cloud.seatsAvailable()) throw seatLimited('this change would take another seat');
       const updated = directory.transaction(() => {
         const next = directory.updateUser(target.id, patch);
         audit(user, 'member.update', { userId: target.id, ...patch });
@@ -481,6 +501,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       emit('access-changed', { userId: target.id });
       if (patch.disabled === true) emit('session-revoked', { userId: target.id });
+      if (cloud) emit('usage-changed');
       return [200, memberView(updated)];
     }),
     compile('DELETE', 'members/:id', {}, ({ user, params }) => {
@@ -496,6 +517,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         directory.removeUser(target.id);
       });
       emit('user-removed', { userId: target.id });
+      if (cloud) emit('usage-changed');
       return [204];
     }),
 
@@ -595,6 +617,30 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         }),
       ];
     }),
+
+    // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
+
+    ...(cloud
+      ? [
+          // Called by the control plane with the bearer token (`internal`), never by a browser.
+          compile('GET', 'internal/usage', { internal: true }, () => [200, cloud.seatUsage()]),
+          compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {
+            const checked = validateLimits(body);
+            if (checked.error) throw badRequest(checked.error);
+            return [200, cloud.setLimits(checked.patch)];
+          }),
+          // Open while read-only: an owner whose workspace was locked for billing needs it to put that right.
+          compile('POST', 'billing/portal', { readOnlyOk: true }, async ({ user }) => {
+            if (user.role !== 'owner') throw forbidden('Only the workspace owner can manage billing');
+            try {
+              return [200, { url: await cloud.portalUrl() }];
+            } catch (err) {
+              if (err instanceof CloudError) throw new HttpError(502, 'bad_gateway', err.message);
+              throw err;
+            }
+          }),
+        ]
+      : []),
   ];
 
   // ------------------------------------------------------------ dispatch
@@ -638,7 +684,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     const method = String(req.method).toUpperCase();
     const { route, params } = resolve(method, segments);
 
-    if (!auth.csrfOk(req)) throw new HttpError(403, 'csrf', 'Missing or invalid CSRF protection header');
+    if (route.internal) {
+      // Bearer token only: no cookie, no CSRF header (a browser cannot send this one).
+      if (!cloud.tokenOk(req.headers.authorization)) {
+        res.setHeader('www-authenticate', 'Bearer');
+        throw new HttpError(401, 'unauthenticated', 'A valid bearer token is required');
+      }
+    } else if (!auth.csrfOk(req)) {
+      throw new HttpError(403, 'csrf', 'Missing or invalid CSRF protection header');
+    }
 
     const signedIn = () => {
       const current = auth.authenticate(req.headers.cookie);
@@ -647,7 +701,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return current;
     };
 
-    let session = route.public ? null : signedIn();
+    let session = route.public || route.internal ? null : signedIn();
+    if (cloud && !route.readOnlyOk && !READ_METHODS.has(method) && cloud.limits().readOnly) {
+      throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
+    }
     const body = route.body && BODY_METHODS.has(method) ? await readJson(req) : {};
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) session = signedIn();

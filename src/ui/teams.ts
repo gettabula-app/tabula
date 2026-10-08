@@ -1,6 +1,7 @@
 import './teams.css';
 import type { CreatedInvite, Invite, Me, Member, Team, TeamMember, TeamRole, UserRole } from '../api';
 import { ApiError, api } from '../api';
+import { cloudErrorMessage } from '../cloud-logic';
 import { dialog, field, segmented, toast } from './common';
 import { h, icon } from './dom';
 
@@ -8,7 +9,7 @@ const ROLE_NAMES: Record<UserRole, string> = { owner: 'Owner', admin: 'Admin', m
 const TEAM_ROLE_NAMES: Record<TeamRole, string> = { admin: 'Admin', member: 'Member' };
 
 function fail(e: unknown) {
-  toast(e instanceof Error ? e.message : String(e));
+  toast(cloudErrorMessage(e) ?? (e instanceof Error ? e.message : String(e)));
 }
 
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });

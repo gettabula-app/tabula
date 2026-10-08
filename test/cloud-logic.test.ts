@@ -1,0 +1,374 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError, createApi, type BoardRole, type Me, type Workspace } from '../src/api';
+import { authState, setSignedIn, setSignedOut, startMeRefresh } from '../src/auth';
+import {
+  ME_REFRESH_MS,
+  READ_ONLY_BADGE,
+  bannerText,
+  boardAccess,
+  canManageBilling,
+  cloudErrorMessage,
+  createMeRefresher,
+  meChanged,
+  portalTarget,
+  workspaceOf,
+  type MeRefreshDeps,
+} from '../src/cloud-logic';
+
+// docs/cloud.md, client side.
+
+const workspace = (patch: Partial<Workspace> = {}): Workspace => ({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 1, ...patch });
+const meWith = (role: Me['user']['role'], ws?: Workspace): Me => ({
+  user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role },
+  teams: [],
+  ...(ws ? { workspace: ws } : {}),
+});
+
+afterEach(() => {
+  setSignedOut();
+  vi.restoreAllMocks();
+});
+
+describe('workspaceOf', () => {
+  it('reads the workspace of a signed-in or offline user and nothing else', () => {
+    const ws = workspace({ banner: 'Hi' });
+    expect(workspaceOf({ mode: 'signed-in', me: meWith('owner', ws) })).toEqual(ws);
+    expect(workspaceOf({ mode: 'offline', me: meWith('owner', ws) })).toEqual(ws);
+    expect(workspaceOf({ mode: 'offline', me: null })).toBeNull();
+    expect(workspaceOf({ mode: 'signed-in', me: meWith('owner') })).toBeNull();
+    expect(workspaceOf({ mode: 'open' })).toBeNull();
+    expect(workspaceOf({ mode: 'signed-out' })).toBeNull();
+    expect(workspaceOf({ mode: 'unknown' })).toBeNull();
+  });
+});
+
+describe('bannerText', () => {
+  it.each<[string, Workspace | null | undefined, string | null]>([
+    ['no workspace', null, null],
+    ['an undefined workspace', undefined, null],
+    ['nothing to say', workspace(), null],
+    ['the operator banner', workspace({ banner: 'Payment failed' }), 'Payment failed'],
+    ['a banner with padding', workspace({ banner: '  Trial ends soon ' }), 'Trial ends soon'],
+    ['a blank banner', workspace({ banner: '   ' }), null],
+    ['the banner over the read-only notice', workspace({ banner: 'Pay now', readOnly: true }), 'Pay now'],
+    ['a plain notice for read-only without a banner', workspace({ readOnly: true }), 'This workspace is read-only.'],
+  ])('%s', (_name, ws, text) => {
+    expect(bannerText(ws)).toBe(text);
+  });
+});
+
+describe('boardAccess', () => {
+  it.each<[BoardRole | null | undefined, boolean, boolean, boolean, string | null]>([
+    ['owner', false, false, false, null],
+    ['editor', false, false, false, null],
+    ['commenter', false, true, false, 'View only'],
+    ['viewer', false, true, true, 'View only'],
+    [null, false, false, false, null],
+    [undefined, false, false, false, null],
+    ['owner', true, true, true, READ_ONLY_BADGE],
+    ['editor', true, true, true, READ_ONLY_BADGE],
+    ['commenter', true, true, true, READ_ONLY_BADGE],
+    ['viewer', true, true, true, READ_ONLY_BADGE],
+    [null, true, true, true, READ_ONLY_BADGE],
+  ])('role %s with read-only %s', (role, locked, store, comments, badge) => {
+    expect(boardAccess(role, workspace({ readOnly: locked }))).toEqual({ storeReadOnly: store, commentsReadOnly: comments, badge });
+  });
+
+  it('is the plain role rule without a workspace', () => {
+    expect(boardAccess('owner', null)).toEqual({ storeReadOnly: false, commentsReadOnly: false, badge: null });
+    expect(boardAccess('viewer', undefined)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });
+    expect(boardAccess('commenter', null)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: 'View only' });
+  });
+
+  it('lets a viewer stay a viewer once the workspace is writable again', () => {
+    expect(boardAccess('viewer', workspace({ readOnly: true })).storeReadOnly).toBe(true);
+    expect(boardAccess('viewer', workspace({ readOnly: false }))).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });
+  });
+});
+
+describe('canManageBilling', () => {
+  it.each<[string, Me | null | undefined, boolean]>([
+    ['the owner of a hosted workspace', meWith('owner', workspace()), true],
+    ['an admin of a hosted workspace', meWith('admin', workspace()), false],
+    ['a member of a hosted workspace', meWith('member', workspace()), false],
+    ['a guest of a hosted workspace', meWith('guest', workspace()), false],
+    ['the owner of a plain accounts server', meWith('owner'), false],
+    ['nobody', null, false],
+    ['an unknown user', undefined, false],
+  ])('%s', (_name, me, expected) => {
+    expect(canManageBilling(me)).toBe(expected);
+  });
+});
+
+describe('cloudErrorMessage', () => {
+  it('prefers the server text and falls back to a readable one', () => {
+    expect(cloudErrorMessage(new ApiError(409, 'seat_limit', 'All 3 seats are in use.'))).toBe('All 3 seats are in use.');
+    expect(cloudErrorMessage(new ApiError(409, 'seat_limit', 'seat_limit'))).toBe(
+      'All seats are in use. Remove or disable someone, or ask the workspace owner to add seats.',
+    );
+    expect(cloudErrorMessage(new ApiError(402, 'read_only', 'read_only'))).toBe('This workspace is read-only right now. Ask the workspace owner to check billing.');
+    expect(cloudErrorMessage(new ApiError(402, 'read_only', 'The workspace is locked.'))).toBe('The workspace is locked.');
+  });
+
+  it.each<[string, unknown]>([
+    ['another API error', new ApiError(409, 'last_owner', 'The workspace needs an owner')],
+    ['an inherited property name', new ApiError(400, 'constructor', 'x')],
+    ['a plain error', new Error('seat_limit')],
+    ['a string', 'seat_limit'],
+    ['nothing', undefined],
+  ])('has nothing to say about %s', (_name, error) => {
+    expect(cloudErrorMessage(error)).toBeNull();
+  });
+});
+
+describe('portalTarget', () => {
+  it.each<[unknown, string | null]>([
+    ['https://billing.stripe.com/p/session/abc', 'https://billing.stripe.com/p/session/abc'],
+    ['http://billing.example.com/x', null],
+    ['javascript:alert(1)', null],
+    ['data:text/html,hi', null],
+    ['//billing.example.com', null],
+    ['/portal', null],
+    ['not a url', null],
+    ['', null],
+    [undefined, null],
+    [5, null],
+    [{ url: 'https://x.example.com' }, null],
+  ])('%j', (url, target) => {
+    expect(portalTarget(url)).toBe(target);
+  });
+});
+
+describe('meChanged', () => {
+  it('compares what the server said', () => {
+    const a = meWith('owner', workspace({ banner: 'x' }));
+    expect(meChanged(null, a)).toBe(true);
+    expect(meChanged(a, structuredClone(a))).toBe(false);
+    expect(meChanged(a, meWith('owner', workspace({ banner: 'y' })))).toBe(true);
+    expect(meChanged(a, meWith('owner', workspace({ banner: 'x', readOnly: true })))).toBe(true);
+    expect(meChanged(a, meWith('admin', workspace({ banner: 'x' })))).toBe(true);
+  });
+});
+
+describe('createMeRefresher', () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  function harness(overrides: Partial<MeRefreshDeps> = {}) {
+    let tick: () => void = () => undefined;
+    const state = { active: true, visible: true };
+    const cleared = vi.fn<(handle: unknown) => void>();
+    const intervals: number[] = [];
+    const fetchMe = vi.fn<() => Promise<Me>>(async () => meWith('owner', workspace({ readOnly: true })));
+    const apply = vi.fn<(me: Me) => void>();
+    const expired = vi.fn<() => void>();
+    const refresher = createMeRefresher({
+      active: () => state.active,
+      visible: () => state.visible,
+      fetchMe,
+      apply,
+      expired,
+      setInterval: (fn, ms) => {
+        tick = fn;
+        intervals.push(ms);
+        return 'handle';
+      },
+      clearInterval: cleared,
+      ...overrides,
+    });
+    return { refresher, state, fetchMe, apply, expired, cleared, intervals, tick: () => tick() };
+  }
+
+  it('asks every five minutes', () => {
+    expect(harness().intervals).toEqual([5 * 60 * 1000]);
+    expect(ME_REFRESH_MS).toBe(300_000);
+  });
+
+  it('fetches /api/me on each tick and hands the answer on', async () => {
+    const h = harness();
+    h.tick();
+    await settle();
+    expect(h.fetchMe).toHaveBeenCalledTimes(1);
+    expect(h.apply).toHaveBeenCalledWith(meWith('owner', workspace({ readOnly: true })));
+    h.tick();
+    await settle();
+    expect(h.fetchMe).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays quiet while nobody is signed in on a hosted workspace', async () => {
+    const h = harness();
+    h.state.active = false;
+    h.tick();
+    await settle();
+    expect(h.fetchMe).not.toHaveBeenCalled();
+  });
+
+  it('skips hidden tabs and catches up as soon as the tab is seen', async () => {
+    const h = harness();
+    h.state.visible = false;
+    h.tick();
+    h.tick();
+    await settle();
+    expect(h.fetchMe).not.toHaveBeenCalled();
+    h.state.visible = true;
+    h.refresher.resume();
+    await settle();
+    expect(h.fetchMe).toHaveBeenCalledTimes(1);
+    h.refresher.resume();
+    await settle();
+    expect(h.fetchMe).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overlap two requests', async () => {
+    let release: (me: Me) => void = () => undefined;
+    const h = harness({ fetchMe: () => new Promise<Me>((resolve) => (release = resolve)) });
+    h.tick();
+    h.tick();
+    release(meWith('owner', workspace()));
+    await settle();
+    expect(h.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the session on a 401 and ignores every other failure', async () => {
+    const h = harness({ fetchMe: async () => Promise.reject(new ApiError(401, 'unauthenticated', 'Sign in required')) });
+    h.tick();
+    await settle();
+    expect(h.expired).toHaveBeenCalledTimes(1);
+    expect(h.apply).not.toHaveBeenCalled();
+
+    for (const error of [new ApiError(0, 'network', 'network'), new ApiError(500, 'internal', 'x'), new TypeError('boom'), new ApiError(402, 'read_only', 'x')]) {
+      const other = harness({ fetchMe: async () => Promise.reject(error) });
+      other.tick();
+      await settle();
+      expect(other.expired).not.toHaveBeenCalled();
+      expect(other.apply).not.toHaveBeenCalled();
+    }
+  });
+
+  it('drops an answer that arrives after the person signed out', async () => {
+    let release: (me: Me) => void = () => undefined;
+    const h = harness({ fetchMe: () => new Promise<Me>((resolve) => (release = resolve)) });
+    h.tick();
+    h.state.active = false;
+    release(meWith('owner', workspace()));
+    await settle();
+    expect(h.apply).not.toHaveBeenCalled();
+  });
+
+  it('keeps going after a failure', async () => {
+    let fail = true;
+    const h = harness({ fetchMe: async () => (fail ? Promise.reject(new TypeError('offline')) : meWith('owner', workspace())) });
+    h.tick();
+    await settle();
+    fail = false;
+    h.tick();
+    await settle();
+    expect(h.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops', () => {
+    const h = harness();
+    h.refresher.stop();
+    expect(h.cleared).toHaveBeenCalledWith('handle');
+  });
+});
+
+describe('startMeRefresh', () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  function start(answer: () => Promise<Me>) {
+    let tick: () => void = () => undefined;
+    const fetchMe = vi.fn<() => Promise<Me>>(answer);
+    const stop = startMeRefresh({
+      fetchMe,
+      setInterval: (fn) => {
+        tick = fn;
+        return 1;
+      },
+      clearInterval: () => undefined,
+    });
+    return { fetchMe, stop, tick: () => tick() };
+  }
+
+  it('moves a banner and the read-only switch into the signed-in state', async () => {
+    setSignedIn(meWith('member', workspace()));
+    const s = start(async () => meWith('member', workspace({ readOnly: true, banner: 'Pay up' })));
+    s.tick();
+    await settle();
+    const state = authState();
+    expect(state.mode).toBe('signed-in');
+    expect(workspaceOf(state)).toEqual(workspace({ readOnly: true, banner: 'Pay up' }));
+    s.stop();
+  });
+
+  it('does not notify anyone when nothing changed', async () => {
+    const me = meWith('member', workspace());
+    setSignedIn(me);
+    const s = start(async () => structuredClone(me));
+    const before = authState();
+    s.tick();
+    await settle();
+    expect(authState()).toBe(before);
+    s.stop();
+  });
+
+  it('does nothing on a server without a control plane, or when signed out', async () => {
+    setSignedIn(meWith('owner'));
+    const plain = start(async () => meWith('owner'));
+    plain.tick();
+    await settle();
+    expect(plain.fetchMe).not.toHaveBeenCalled();
+    plain.stop();
+
+    setSignedOut();
+    const out = start(async () => meWith('owner', workspace()));
+    out.tick();
+    await settle();
+    expect(out.fetchMe).not.toHaveBeenCalled();
+    out.stop();
+  });
+
+  it('signs the person out when the session has ended', async () => {
+    setSignedIn(meWith('owner', workspace()));
+    const s = start(async () => Promise.reject(new ApiError(401, 'unauthenticated', 'Sign in required')));
+    s.tick();
+    await settle();
+    expect(authState().mode).toBe('signed-out');
+    s.stop();
+  });
+
+  it('uses the real timers by default', () => {
+    vi.useFakeTimers();
+    try {
+      setSignedIn(meWith('owner', workspace()));
+      const fetchMe = vi.fn<() => Promise<Me>>(async () => meWith('owner', workspace()));
+      const stop = startMeRefresh({ fetchMe });
+      vi.advanceTimersByTime(ME_REFRESH_MS - 1);
+      expect(fetchMe).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(fetchMe).toHaveBeenCalledTimes(1);
+      stop();
+      vi.advanceTimersByTime(ME_REFRESH_MS * 2);
+      expect(fetchMe).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('billing portal request', () => {
+  it('posts with the CSRF header and returns the address', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ url: 'https://billing.example.com/p' }), { status: 200 }));
+    const result = await createApi(fetchFn).billingPortal();
+    expect(result).toEqual({ url: 'https://billing.example.com/p' });
+    const [path, init] = fetchFn.mock.calls[0];
+    expect(path).toBe('/api/billing/portal');
+    expect(init?.method).toBe('POST');
+    expect(init?.headers).toMatchObject({ 'x-mira': '1' });
+  });
+
+  it('surfaces the 502 and 403 of the server', async () => {
+    const reply = (status: number, error: string) => vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ error, message: 'No.' }), { status }));
+    await expect(createApi(reply(502, 'bad_gateway')).billingPortal()).rejects.toMatchObject({ status: 502, code: 'bad_gateway' });
+    await expect(createApi(reply(403, 'forbidden')).billingPortal()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  });
+});
