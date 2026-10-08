@@ -10,6 +10,7 @@ All notable changes to Driftboard are listed here, newest first. The format foll
 - 16 new shapes: pentagon, cross, heart, cloud, right/left/double arrows, chevron, pentagon arrow, speech box, speech bubble, delay, merge, off-page connector, manual operation and display. Shapes are now grouped as Basic, Arrows, Callouts and Flowchart.
 - Vertical text alignment (top, middle, bottom) for shapes and sticky notes, stored per object so it syncs.
 - Locked items show a small lock badge when you hover them.
+- Screenshots of the shapes panel, quick-action bar, text options and lock badge in `docs/images/`, shown in the README.
 
 ### Changed
 - The properties panel is hidden until you press More in the quick-action bar, and has a close button. Its Shape list is grouped.
