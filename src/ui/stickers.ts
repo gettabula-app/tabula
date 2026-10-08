@@ -25,8 +25,8 @@ export async function placeSticker(app: BoardApp, name: string, at?: Point, long
 
 export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: StickerDrag) => HTMLElement) {
   const input = h('input', { type: 'search', class: 'input', placeholder: 'Search stickers', 'aria-label': 'Search stickers' });
-  const grid = h('div', { class: 'icon-grid', role: 'list' });
-  const note = h('p', { class: 'muted small' });
+  const grid = h('div', { class: 'sticker-grid', role: 'list' });
+  const note = h('p', { class: 'stickers-note' });
   let set = (STICKER_SETS.find((s) => s.default) ?? STICKER_SETS[0]).prefix;
   let sets: Record<string, IconSet> = {};
   let seq = 0;
@@ -41,7 +41,7 @@ export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: St
   const tile = (name: string) => draggable(h('button', {
     class: 'sticker-tile', title: `${name}. Click to add, or drag onto the board.`, 'aria-label': name, role: 'listitem',
     onclick: () => placeSticker(app, name),
-  }, h('img', { src: previewUrl(name), alt: '', loading: 'lazy', width: 36, height: 36 })), { kind: 'sticker', name });
+  }, h('img', { src: previewUrl(name), alt: '', loading: 'lazy', width: 28, height: 28 })), { kind: 'sticker', name });
 
   const show = (names: string[], query: string) => {
     if (!names.length) {
@@ -83,18 +83,27 @@ export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: St
   updateNote();
   run();
   requestAnimationFrame(() => input.focus());
-  return h('div', { class: 'drawer-body' }, input, chips, grid, note);
+  return h('div', { class: 'drawer-body stickers' },
+    input,
+    h('div', { class: 'stickers-label' }, 'Set'),
+    h('div', { class: 'sticker-sets' }, chips),
+    grid,
+    note,
+  );
 }
 
 /** The reaction picker shown in the quick-action bar. Each reaction is an ordinary sticker placed beside the selection. */
 export function reactionPicker(app: BoardApp) {
-  return h('div', { class: 'icon-grid reaction-grid', role: 'list' }, ...REACTIONS.map((name) => h('button', {
-    class: 'sticker-tile', title: `${name.split(':')[1]}. Click to react.`, 'aria-label': name, role: 'listitem',
-    onclick: () => {
-      closePopover();
-      const b = app.r.contentBounds(app.selection);
-      if (!b) return;
-      placeSticker(app, name, { x: b.x + b.w + 20, y: b.y - 20 }, REACTION_SIZE);
-    },
-  }, h('img', { src: previewUrl(name), alt: '', loading: 'lazy', width: 28, height: 28 }))));
+  return h('div', { class: 'reactions' },
+    h('div', { class: 'stickers-label' }, 'React'),
+    h('div', { class: 'sticker-grid reaction-grid', role: 'list' }, ...REACTIONS.map((name) => h('button', {
+      class: 'sticker-tile', title: `${name.split(':')[1]}. Click to react.`, 'aria-label': name, role: 'listitem',
+      onclick: () => {
+        closePopover();
+        const b = app.r.contentBounds(app.selection);
+        if (!b) return;
+        placeSticker(app, name, { x: b.x + b.w + 20, y: b.y - 20 }, REACTION_SIZE);
+      },
+    }, h('img', { src: previewUrl(name), alt: '', loading: 'lazy', width: 28, height: 28 })))),
+  );
 }

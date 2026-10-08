@@ -228,11 +228,24 @@ select.input {
 .icon-tile { aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: 8px; background: #fff; }
 .icon-tile:hover { box-shadow: 0 0 0 2px var(--signal); }
 .icon-tile img { width: 26px; height: 26px; }
-.sticker-tile { aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--paper); }
-.sticker-tile:hover { box-shadow: 0 0 0 2px var(--signal); }
-.sticker-tile img { width: 36px; height: 36px; }
+/* Stickers: Swiss rules on the tray. Hairlines and 2px rules, no radius, no shadows, labels 11px uppercase, 8px grid. */
+.stickers-label { margin: 16px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tray-muted); }
+.stickers .input { height: 40px; padding: 0 8px; border: 0; border-bottom: 2px solid var(--tray-text); border-radius: 0; background: transparent; color: var(--tray-text); }
+.stickers .input:focus { border-bottom-color: var(--tray-text); }
+.sticker-sets .segmented { gap: 0; padding: 0; border-radius: 0; background: transparent; border-top: 1px solid var(--tray-line); border-bottom: 1px solid var(--tray-line); }
+.sticker-sets .segmented button { height: 32px; border-radius: 0; background: transparent; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.sticker-sets .segmented button + button { border-left: 1px solid var(--tray-line); }
+.sticker-sets .segmented button:hover { background: var(--tray-hover); color: var(--tray-text); }
+.sticker-sets .segmented button.on { background: var(--signal); color: var(--on-signal); }
+.sticker-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; min-height: 120px; align-content: start; }
+.sticker-grid.loading { opacity: 0.5; }
+.sticker-tile { aspect-ratio: 1; display: grid; place-items: center; padding: 0; border: 1px solid var(--tray-line); border-radius: 0; background: transparent; }
+.sticker-tile:hover { border-color: var(--tray-text); }
+.sticker-tile img { width: 28px; height: 28px; }
+.stickers-note { margin: 16px 0 0; font-size: 12px; line-height: 1.4; color: var(--tray-muted); }
 .reaction-grid { grid-template-columns: repeat(4, 40px); min-height: 0; }
-.reaction-grid .sticker-tile img { width: 28px; height: 28px; }
+.popover:has(> .reactions) { border-radius: 0; box-shadow: none; padding: 16px; }
+.reactions > .stickers-label { margin-top: 0; }
 .empty { grid-column: 1 / -1; padding: 24px 8px; color: var(--tray-muted); text-align: center; }
 .template-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--tray-text) 4%, transparent); text-align: left; }
 .template-row:hover { background: var(--tray-hover); }

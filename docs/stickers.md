@@ -96,12 +96,13 @@ Each placed sticker copies its body into the board document, and every duplicate
 - **Rail.** A Stickers button after Icons, with a new `stickers` glyph in `ICONS` (`src/ui/dom.ts`).
 - **Drawer.** Title "Stickers", then:
   - a search box ("Search stickers", 250 ms debounce as in the Icons tab);
-  - a segmented control of set labels, one per `STICKER_SETS` entry, with `fluent-emoji-flat` selected by default;
-  - a grid of tiles (`.icon-grid` with `.sticker-tile` buttons holding a 36 px image), each with title and aria-label "`<name>`. Click to add, or drag onto the board.";
+  - a "Set" label over a segmented control of set labels, one per `STICKER_SETS` entry, with `fluent-emoji-flat` selected by default;
+  - a grid of square hairline tiles (`.sticker-grid` with `.sticker-tile` buttons holding a 28 px image), each with title and aria-label "`<name>`. Click to add, or drag onto the board.";
   - with an empty search, `collectionIcons(set)` (limit 160), as the Icons tab does; with a query, `searchIcons(query, set)`.
 - **Note.** Under the grid: "`<set label>` stickers are licensed CC BY and need attribution when you publish." when the chosen set has `attribution` (from `iconSets()`), otherwise "Stickers are emoji from open-source sets via Iconify. Placed stickers are stored in the board and work offline."
 - **Quick bar.** One React button (`menu('stickers', 'React with a sticker', …)`), placed after the arrange group and before the Delete group. It is shown for any non-empty selection on a board that is not read-only. Its popover uses the quick bar's own `popover` placement.
-- **Mobile.** At 360 px the quick bar with React must fit without horizontal scroll. The bar already has `max-width: calc(100% - 24px)` and an inner scroller (`src/styles.css`); the check is that a single sticker's bar, and a single sticky's bar, fit at 360 px without the inner scroller activating.
+- **Style.** Swiss rules on the tray: theme variables only (no literal colours), radius 0, no shadows, 1px hairlines and a 2px rule under the search box, labels 11px uppercase, spacing on an 8px grid. The active set chip is the only signal-coloured element, with on-signal text; text uses only the pairs the theme test checks (tray text and tray muted on tray, on-signal on signal). The React popover shows a "React" label over a 4 × 4 grid.
+- **Mobile.** At 360 px the quick bar with React must fit without horizontal scroll, and the drawer keeps a 16px gutter with no horizontal scroll. The bar already has `max-width: calc(100% - 24px)` and an inner scroller (`src/styles.css`); the check is that a single sticker's bar, and a single sticky's bar, fit at 360 px without the inner scroller activating.
 
 ## Roles
 
@@ -185,7 +186,7 @@ NEW:
 
 - `docs/stickers.md`: this spec.
 - `src/stickers.ts`: `STICKER_SETS`, `REACTIONS`, the sizes, `isSticker`, `stickerSize` and `scopeSvgIds`. No DOM and no UI imports.
-- `src/ui/stickers.ts`: `stickersTab(app, close, draggable)`, `placeSticker(app, name, at?, longest?)`, and `reactionPicker(app)`.
+- `src/ui/stickers.ts`: `stickersTab(app, draggable)`, `placeSticker(app, name, at?, longest?)`, and `reactionPicker(app)`.
 - `test/stickers.test.ts`: the unit tests listed above.
 
 EXISTING (one line each):
@@ -197,7 +198,7 @@ EXISTING (one line each):
 - `src/ui/props.ts`: `HAS_STROKE` excludes stickers; the title reads "Sticker".
 - `src/ui/quickbar.ts`: one line that pushes the React group, built with `menu` and `reactionPicker`, for non-read-only selections.
 - `src/ui/dom.ts`: a `stickers` glyph in `ICONS`.
-- `src/styles.css`: `.sticker-tile` (36 px image) and `.reaction-grid` (4 columns); colours use the theme variables.
+- `src/styles.css`: `.stickers-label`, `.sticker-sets`, `.sticker-grid`, `.sticker-tile`, `.stickers-note`, `.reaction-grid` and the React popover rules; theme variables only, no radius or shadows.
 - `test/core.test.ts`: the two icon-markup cases listed above.
 - `README.md`: a row in the "What works today" table for stickers and reactions.
 - `CHANGELOG.md`: an Unreleased Added entry for stickers and reactions, and a Fixed entry for the gradient id collision.
@@ -218,4 +219,4 @@ Settled before implementation:
 8. The Stickers button is disabled for read-only users.
 9. The Icons tab stays as it is, and `src/icons.ts` is not touched.
 
-Changes made while implementing: the empty-search view is `collectionIcons(set)` for every set, replacing the starter grid, so that each set behaves the same. `stickerSize` takes width and height rather than the viewBox.
+Changes made while implementing: the empty-search view is `collectionIcons(set)` for every set, replacing the starter grid, so that each set behaves the same. `stickerSize` takes width and height rather than the viewBox. The drawer takes no close callback, since the Icons tab does not close on placement either.
