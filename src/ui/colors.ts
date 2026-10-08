@@ -14,14 +14,14 @@ export function stickyColorField(app: BoardApp, current: string | undefined, onP
   for (const c of palette) {
     const on = cur === normalizeHex(c.value);
     row.appendChild(h('button', {
-      class: `swatch sticky-swatch${on ? ' on' : ''}`, style: `--c:${c.value}`, title: c.name, 'aria-label': c.name,
+      class: `swatch sticky-swatch${on ? ' on' : ''}`, style: `--c:${c.value}`, 'data-tip': c.name, 'aria-label': c.name,
       role: 'radio', 'aria-checked': String(on), onclick: () => onPick(c.value),
     }, h('span', { class: 'note', 'aria-hidden': 'true' })));
   }
   const isCustom = !!cur && !palette.some((c) => normalizeHex(c.value) === cur);
   const input = h('input', { type: 'color', value: cur ?? '#FFE16B', 'aria-label': 'Choose any colour', tabindex: '-1' });
   const add = h('label', {
-    class: `swatch add${isCustom ? ' on' : ''}`, title: 'Any colour', style: isCustom ? `--c:${cur}` : undefined, tabindex: '0', role: 'button',
+    class: `swatch add${isCustom ? ' on' : ''}`, 'data-tip': 'Any colour', style: isCustom ? `--c:${cur}` : undefined, tabindex: '0', role: 'button',
     'aria-label': 'Choose any colour',
   }, icon('plus', 14), input);
   add.addEventListener('keydown', (e) => {

@@ -66,7 +66,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('div', null, h('div', { class: 'flow-title' }, 'Session ready'), h('div', { class: 'muted small' }, `${f.steps.length} ${f.steps.length === 1 ? 'step' : 'steps'}, about ${Math.round(f.steps.reduce((s, x) => s + (x.durationSec ?? 0), 0) / 60)} minutes`)),
           h('button', { class: 'btn ghost', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement) }, 'Edit steps'),
           h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.start() }, icon('play', 16), 'Start session'),
-          h('button', { class: 'icon-btn', title: 'Hide', 'aria-label': 'Hide', onclick: () => update(hideSession) }, icon('close', 18)))
+          h('button', { class: 'icon-btn', 'aria-label': 'Hide', onclick: () => update(hideSession) }, icon('close', 18)))
         : null;
       const parts = [results, poll, session].filter(Boolean) as HTMLElement[];
       bar.replaceChildren(...parts.flatMap((p, i) => (i ? [h('span', { class: 'bar-sep' }), p] : [p])));
@@ -84,9 +84,9 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     );
     const timerBtns = h('div', { class: 'btn-row' },
       running
-        ? h('button', { class: 'icon-btn', title: 'Pause timer', 'aria-label': 'Pause timer', disabled: ro, onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
-        : h('button', { class: 'icon-btn', title: 'Start timer', 'aria-label': 'Start timer', disabled: ro, onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
-      h('button', { class: 'icon-btn text', title: 'Add one minute', 'aria-label': 'Add one minute', disabled: ro, onclick: () => app.flow.addTime(60_000) }, '+1'),
+        ? h('button', { class: 'icon-btn', 'aria-label': 'Pause timer', disabled: ro, onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
+        : h('button', { class: 'icon-btn', 'aria-label': 'Start timer', disabled: ro, onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
+      h('button', { class: 'icon-btn text', 'aria-label': 'Add one minute', disabled: ro, onclick: () => app.flow.addTime(60_000) }, '+1'),
     );
 
     const extras: HTMLElement[] = [];
@@ -100,7 +100,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     if (step.mode === 'poll' && step.pollId) extras.push(...pollBarControls(app, step.pollId));
 
     bar.replaceChildren(
-      h('button', { class: 'icon-btn', title: 'Previous step', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
+      h('button', { class: 'icon-btn', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
       h('button', { class: 'flow-step', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement), 'aria-label': 'All steps' },
         h('span', { class: 'step-count' }, `${f.active + 1}/${f.steps.length}`),
         h('span', { class: 'step-text' },
@@ -212,7 +212,7 @@ function askButton(app: BoardApp): HTMLElement {
   const paint = () => {
     const left = focus?.cooldownLeft() ?? 0;
     b.disabled = !focus || left > 0;
-    b.title = left > 0 ? cooldownLabel(left) : ASK_LABEL;
+    b.dataset.tip = left > 0 ? cooldownLabel(left) : ASK_LABEL;
     if (left <= 0 || !b.isConnected) clearInterval(timer);
   };
   const countdown = () => {
@@ -261,7 +261,7 @@ function dotsButton(app: BoardApp): HTMLElement {
   const b = h('button', {
     class: `votes-left${left === 0 ? ' none' : ''}`,
     disabled: app.readOnly,
-    title: 'Click a note to add a dot, shift-click to remove one. Click here to change how many dots each person gets.',
+    'data-tip': 'Click a note to add a dot, shift-click to remove one. Click here to change how many dots each person gets.',
     'aria-label': `${unlimited ? 'No dot limit' : `${left} of ${limit} dots left`}. Change dots per person`,
   }, ...body, icon('chevron', 14));
   b.addEventListener('click', () => openDotLimit(app, b));
@@ -331,7 +331,7 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
       let dots: HTMLElement = h('span');
       if (s.mode === 'vote') {
         const cur = s.votesPerPerson ?? 3;
-        const sel = h('select', { class: 'input', 'aria-label': `Step ${i + 1} dots per person`, title: 'Dots per person' },
+        const sel = h('select', { class: 'input', 'aria-label': `Step ${i + 1} dots per person`, 'data-tip': 'Dots per person' },
           ...[...new Set([...DOT_CHOICES, cur > 0 ? cur : 1])].sort((a, b) => a - b).map((n) => h('option', { value: n, selected: n === cur }, `${n} ${n === 1 ? 'dot' : 'dots'}`)),
           h('option', { value: 0, selected: cur <= 0 }, 'No limit'));
         sel.addEventListener('change', () => save({ votesPerPerson: Number(sel.value) }));
@@ -340,9 +340,9 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
         dots = h('button', { class: 'btn ghost poll-btn poll-edit', disabled: locked, 'aria-label': `Edit poll in step ${i + 1}`, onclick: () => openStepPoll(app, s.id, draw) }, 'Edit poll');
       }
       return h('li', { class: i === f.active ? 'current' : '' },
-        h('button', { class: 'icon-btn', title: 'Go to this step', 'aria-label': `Go to step ${i + 1}`, onclick: () => app.flow.goto(i) }, String(i + 1)),
+        h('button', { class: 'icon-btn', 'data-tip': 'Go to this step', 'aria-label': `Go to step ${i + 1}`, onclick: () => app.flow.goto(i) }, String(i + 1)),
         title, mins, h('span', { class: 'muted small' }, 'min'), mode, dots,
-        h('button', { class: 'icon-btn', title: 'Remove step', 'aria-label': `Remove step ${i + 1}`, onclick: () => { app.flow.setSteps(app.flow.state().steps.filter((x) => x.id !== s.id)); draw(); } }, icon('trash', 18)),
+        h('button', { class: 'icon-btn', 'data-tip': 'Remove step', 'aria-label': `Remove step ${i + 1}`, onclick: () => { app.flow.setSteps(app.flow.state().steps.filter((x) => x.id !== s.id)); draw(); } }, icon('trash', 18)),
       );
     }));
   };

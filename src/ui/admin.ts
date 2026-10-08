@@ -655,7 +655,7 @@ export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): voi
   statusLine = h('p', { class: 'admin-status', role: 'status', 'aria-live': 'polite' });
   root.replaceChildren(h('main', { class: 'admin' },
     h('header', { class: 'admin-top' },
-      h('a', { class: 'icon-btn', href: '#/', title: 'Back to boards', 'aria-label': 'Back to boards' }, icon('prev')),
+      h('a', { class: 'icon-btn', href: '#/', 'aria-label': 'Back to boards' }, icon('prev')),
       h('h1', { class: 'admin-title' }, 'Admin'),
       statusLine,
       h('span', { class: 'muted small admin-me' }, me.user.name || me.user.email)),

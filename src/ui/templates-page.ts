@@ -131,7 +131,7 @@ interface MenuItem {
 /** The ⋯ button of a card, with a square popover of actions. */
 function moreButton(name: string, items: MenuItem[]): HTMLButtonElement {
   const more: HTMLButtonElement = h('button', {
-    class: 'icon-btn', title: 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',
+    class: 'icon-btn', 'data-tip': 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',
     onclick: () => {
       const menu = h('div', { class: 'menu' }, ...items.map((item) => h('button', {
         class: 'menu-item', onclick: () => {

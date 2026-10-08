@@ -169,7 +169,7 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
     // A repaint replaces the focused control; keep focus in the panel so keys never fall through to the board.
     const active = document.activeElement as HTMLElement | null;
     const focusKey = active && panel.contains(active) ? (active.dataset.key ?? '') : null;
-    const closeBtn = h('button', { class: 'history-icon', title: 'Close', 'aria-label': 'Close version history', onclick: () => close() }, icon('close', 18));
+    const closeBtn = h('button', { class: 'history-icon', 'data-tip': 'Close', 'aria-label': 'Close version history', onclick: () => close() }, icon('close', 18));
     const save = h('button', {
       class: 'history-btn primary', disabled: status !== 'ready' || !mutable(), title: !mutable() ? lockedText() : null,
       onclick: () => void saveVersion(),

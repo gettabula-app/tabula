@@ -54,7 +54,7 @@ export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: St
   };
 
   const tile = (name: string) => draggable(h('button', {
-    class: 'sticker-tile', title: `${name}. Click to add, or drag onto the board.`, 'aria-label': name, role: 'listitem',
+    class: 'sticker-tile', 'data-tip': `${name}. Click to add, or drag onto the board.`, 'aria-label': name, role: 'listitem',
     onclick: () => placeSticker(app, name),
   }, h('img', { src: previewUrl(name), alt: '', loading: 'lazy', width: 28, height: 28 })), { kind: 'sticker', name });
 
@@ -114,7 +114,7 @@ export function reactionPicker(app: BoardApp) {
   return h('div', { class: 'reactions' },
     h('div', { class: 'stickers-label' }, 'React'),
     h('div', { class: 'sticker-grid reaction-grid', role: 'list' }, ...REACTIONS.map((name) => h('button', {
-      class: 'sticker-tile', title: `${name.split(':')[1]}. Click to react.`, 'aria-label': name, role: 'listitem',
+      class: 'sticker-tile', 'data-tip': `${name.split(':')[1]}. Click to react.`, 'aria-label': name, role: 'listitem',
       onclick: () => {
         closePopover();
         const b = app.r.contentBounds(app.selection);
