@@ -29,6 +29,8 @@
   --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
   --radius: 12px;
   --shadow: 0 10px 28px rgba(16, 24, 32, 0.18), 0 2px 6px rgba(16, 24, 32, 0.12);
+  /* ink of the white class and label editors; the same in every theme */
+  --editor-fallback-ink: #18212B;
 }
 
 * { box-sizing: border-box; }
@@ -78,8 +80,8 @@ hr { border: 0; }
   transform-origin: 0 0; margin: 0; padding: 0; border: 0; outline: none; resize: none; overflow: hidden;
   background: transparent; caret-color: var(--wire); line-height: 1.3; white-space: pre-wrap; overflow-wrap: break-word;
 }
-.text-editor[data-mode='class'] { background: #fff; color: #18212B; padding: 8px !important; box-shadow: 0 0 0 1px var(--wire); border-radius: 4px; overflow: auto; }
-.text-editor[data-mode='label'] { background: #fff; color: #18212B; border-radius: 6px; box-shadow: 0 0 0 1px var(--wire); }
+.text-editor[data-mode='class'] { background: #fff; color: var(--editor-fallback-ink); padding: 8px !important; box-shadow: 0 0 0 1px var(--wire); border-radius: 4px; overflow: auto; }
+.text-editor[data-mode='label'] { background: #fff; color: var(--editor-fallback-ink); border-radius: 6px; box-shadow: 0 0 0 1px var(--wire); }
 .text-editor[data-mode='frame'] { background: var(--canvas); }
 
 /* ------------------------------------------------------------- trays */

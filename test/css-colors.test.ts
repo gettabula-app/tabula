@@ -6,14 +6,14 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Fixed colours that stay the same in every theme: sticky notes, white avatars and cursor labels,
-// the modal scrim, and the white field and dark ink of the class and label editors (the fallback
-// when the object has no colours of its own; editor.ts sets those inline).
+// the modal scrim, and the white field behind the class and label editors (the fallback when the
+// object has no colours of its own; editor.ts sets those inline).
 const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
   { file: 'src/styles.css', selector: '.remote-cursor span', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.avatar', literals: ['#fff'] },
   { file: 'src/styles.css', selector: "[data-tool='sticky']::after", literals: ['#FFE16B'] },
   { file: 'src/styles.css', selector: '.note::after', literals: ['#fff'] },
-  { file: 'src/styles.css', selector: '.text-editor[data-mode', literals: ['#fff', '#18212B'] },
+  { file: 'src/styles.css', selector: '.text-editor[data-mode', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.tile.uml svg', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.icon-tile', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.modal-back', literals: ['rgba(16, 24, 32, 0.4)'] },
