@@ -62,7 +62,7 @@ hr { border: 0; }
 .board-surface[data-tool='sticky'] .canvas, .board-surface[data-tool='text'] .canvas,
 .board-surface[data-tool='shape'] .canvas, .board-surface[data-tool='frame'] .canvas,
 .board-surface[data-tool='pen'] .canvas, .board-surface[data-tool='connector'] .canvas,
-.board-surface[data-tool='uml'] .canvas { cursor: crosshair; }
+.board-surface[data-tool='uml'] .canvas, .board-surface[data-tool='comment'] .canvas { cursor: crosshair; }
 
 .cursor-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .remote-cursor { position: absolute; left: 0; top: 0; display: flex; align-items: flex-start; transition: transform 90ms linear; will-change: transform; }

@@ -6,6 +6,7 @@ import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { WIRE } from './palette';
+import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -75,6 +76,7 @@ export class Renderer {
 
   cam: Camera = { x: -200, y: -120, zoom: 1 };
   overlay: Overlay = emptyOverlay();
+  pins: PinView[] = [];
   editingId: string | null = null;
   isHidden: (o: BaseObj) => boolean = () => false;
   /** Read-only boards show the selection outline but no handles, since they cannot be dragged. */
@@ -162,6 +164,12 @@ export class Renderer {
 
   setOverlay(patch: Partial<Overlay>) {
     Object.assign(this.overlay, patch);
+    this.overlayDirty = true;
+    this.schedule();
+  }
+
+  setPins(pins: PinView[]) {
+    this.pins = pins;
     this.overlayDirty = true;
     this.schedule();
   }
@@ -470,7 +478,30 @@ export class Renderer {
       }
     }
 
+    // pins last, so they sit above selections and handles; overlay only, never in exports
+    for (const p of this.pins) out += this.pinMarkup(p, px);
+
     this.overlayLayer.innerHTML = out;
+  }
+
+  private pinMarkup(p: PinView, px: (v: number) => number) {
+    const R = px(PIN_R);
+    const c = pinCenter({ x: 0, y: 0 }, R);
+    const color = escapeXml(p.color);
+    let body: string;
+    if (p.draft) body = `<path d="${pinPath(R)}" fill="${color}" stroke="#18212B" stroke-width="${px(1.5)}" stroke-dasharray="${px(3)} ${px(2)}"/>`;
+    else if (p.resolved) body = `<path d="${pinPath(R)}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${px(1.5)}"/>`;
+    else body = `<path d="${pinPath(R)}" fill="${color}" stroke="#fff" stroke-width="${px(1.5)}"/>`;
+    // a faded pin is pale, so its label takes the dark ink for contrast
+    const ink = p.draft || p.resolved ? '#18212B' : '#fff';
+    const ring = p.selected ? `<circle cx="${c.x}" cy="${c.y}" r="${px(PIN_R + 3)}" fill="none" stroke="${WIRE}" stroke-width="${px(2)}"/>` : '';
+    const label = `<text x="${c.x}" y="${c.y + px(4)}" font-size="${px(11)}" font-weight="700" fill="${ink}" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${escapeXml(p.label)}</text>`;
+    let badge = '';
+    if (p.count > 1) {
+      const bx = c.x + R * Math.SQRT1_2, by = c.y - R * Math.SQRT1_2;
+      badge = `<circle cx="${bx}" cy="${by}" r="${px(7)}" fill="#18212B"/><text x="${bx}" y="${by + px(3.2)}" font-size="${px(9)}" font-weight="700" fill="#fff" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${p.count}</text>`;
+    }
+    return `<g transform="translate(${p.x} ${p.y})">${ring}${body}${label}${badge}</g>`;
   }
 
   private outline(o: Obj, sw: number, opacity: number) {

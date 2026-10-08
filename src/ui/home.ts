@@ -212,6 +212,7 @@ function serverBoardList(v: AccountView, boards: ServerBoard[]) {
         h('span', { class: 'board-title' }, title),
         h('span', { class: 'board-meta' }, `Edited ${fmtAgo(b.updatedAt)}`)),
       b.role === 'viewer' ? h('span', { class: 'role-badge view' }, 'View only') : null,
+      b.role === 'commenter' ? h('span', { class: 'role-badge view' }, 'Can comment') : null,
       b.role === 'owner' ? h('button', {
         class: 'icon-btn', title: 'Delete board', 'aria-label': `Delete ${title}`, disabled: v.down,
         onclick: () => confirmDeleteBoard(v, b.id, title),

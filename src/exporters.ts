@@ -4,6 +4,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj } from './types';
 import { SCHEMA_VERSION, isBox } from './types';
 import type { FlowState } from './store';
+import type { Thread } from './comments';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
 
@@ -14,11 +15,12 @@ export interface BoardJson {
   meta: BoardMeta;
   objects: Obj[];
   flow: FlowState;
+  comments?: Thread[];
 }
 
-export function toJson(app: BoardApp, ids?: Id[]): BoardJson {
+export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list()): BoardJson {
   const objs = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
-  return {
+  const json: BoardJson = {
     format: 'driftboard',
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
@@ -26,17 +28,22 @@ export function toJson(app: BoardApp, ids?: Id[]): BoardJson {
     objects: objs,
     flow: app.store.getFlow(),
   };
+  if (comments.length && !ids) json.comments = comments;
+  return json;
 }
 
 /** `.drift` = zip of a readable snapshot plus the full CRDT state (history preserved). */
 export function toDrift(app: BoardApp): Uint8Array {
-  return zipSync({
-    'board.json': strToU8(JSON.stringify(toJson(app), null, 2)),
+  const files: Record<string, Uint8Array> = {
+    // Comments travel in comments.yjs, not in the readable snapshot.
+    'board.json': strToU8(JSON.stringify(toJson(app, undefined, []), null, 2)),
     'doc.yjs': Y.encodeStateAsUpdate(app.store.doc),
-  }, { level: 6 });
+  };
+  if (app.conn.comments.list().length > 0) files['comments.yjs'] = Y.encodeStateAsUpdate(app.conn.comments.doc);
+  return zipSync(files, { level: 6 });
 }
 
-export interface ImportedBoard { json: BoardJson; update?: Uint8Array }
+export interface ImportedBoard { json: BoardJson; update?: Uint8Array; comments?: Uint8Array }
 
 export async function readBoardFile(file: File): Promise<ImportedBoard> {
   const buf = new Uint8Array(await file.arrayBuffer());
@@ -44,7 +51,11 @@ export async function readBoardFile(file: File): Promise<ImportedBoard> {
   if (buf[0] === 0x50 && buf[1] === 0x4b) {
     const files = unzipSync(buf);
     if (!files['board.json']) throw new Error('This file is not a Mira board (board.json is missing).');
-    return { json: validate(JSON.parse(strFromU8(files['board.json']))), update: files['doc.yjs'] };
+    return {
+      json: validate(JSON.parse(strFromU8(files['board.json']))),
+      update: files['doc.yjs'],
+      comments: files['comments.yjs'],
+    };
   }
   return { json: validate(JSON.parse(strFromU8(buf))) };
 }
@@ -52,6 +63,7 @@ export async function readBoardFile(file: File): Promise<ImportedBoard> {
 function validate(j: unknown): BoardJson {
   const b = j as BoardJson;
   if (!b || b.format !== 'driftboard' || !Array.isArray(b.objects)) throw new Error('This file is not a Mira board.');
+  if (b.comments && !Array.isArray(b.comments)) throw new Error('This file is not a Mira board.');
   if (b.schemaVersion > SCHEMA_VERSION) throw new Error('This board was made with a newer version of Mira. Update the app to open it.');
   return b;
 }

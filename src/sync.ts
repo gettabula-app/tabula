@@ -3,6 +3,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
 import { Store } from './store';
+import { Comments } from './comments';
 import type { User } from './types';
 import { USER_COLORS } from './palette';
 
@@ -77,11 +78,8 @@ export function touchBoard(id: string, patch: Partial<BoardEntry> = {}) {
 
 export async function deleteBoard(id: string) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(listBoards().filter((b) => b.id !== id)));
-  const doc = new Y.Doc();
-  const idb = new IndexeddbPersistence(`driftboard:${id}`, doc);
-  await idb.whenSynced;
-  await idb.clearData();
-  doc.destroy();
+  await clearLocal(`driftboard:${id}`);
+  await clearLocal(`driftboard:${commentsRoom(id)}`);
 }
 
 // ---------------------------------------------------------------- connection
@@ -101,10 +99,40 @@ export function deniedReason(code: number): DeniedReason | null {
   }
 }
 
+/** The part of a room provider that a denial stops. */
+type Room = { disconnect: () => void; shouldConnect: boolean };
+
+/**
+ * The denial path shared by the board and comments rooms. The first refusal records the reason,
+ * stops every room and calls `denied` once. Later refusals and close codes that are not denials do nothing.
+ */
+export function denyOnce(conn: { denied: DeniedReason | null }, rooms: Room[], code: number | undefined, denied: (reason: DeniedReason) => void): void {
+  if (conn.denied || code === undefined) return;
+  const reason = deniedReason(code);
+  if (!reason) return;
+  conn.denied = reason;
+  for (const room of rooms) {
+    room.disconnect();
+    room.shouldConnect = false;
+  }
+  denied(reason);
+}
+
+const commentsRoom = (id: string) => `${id}~comments`;
+
+async function clearLocal(name: string) {
+  const doc = new Y.Doc();
+  const idb = new IndexeddbPersistence(name, doc);
+  await idb.whenSynced;
+  await idb.clearData();
+  doc.destroy();
+}
+
 export interface BoardConn {
   id: string;
   doc: Y.Doc;
   store: Store;
+  comments: Comments;
   awareness: Awareness;
   provider: WebsocketProvider | null;
   status: SyncStatus;
@@ -117,16 +145,20 @@ export interface BoardConn {
 export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const doc = new Y.Doc();
   const idb = new IndexeddbPersistence(`driftboard:${id}`, doc);
-  await idb.whenSynced;
+  const cdoc = new Y.Doc();
+  const cidb = new IndexeddbPersistence(`driftboard:${commentsRoom(id)}`, cdoc);
+  await Promise.all([idb.whenSynced, cidb.whenSynced]);
   const store = new Store(doc);
+  const comments = new Comments(cdoc);
 
   const url = relayUrl();
   let provider: WebsocketProvider | null = null;
+  let commentsProvider: WebsocketProvider | null = null;
   let awareness: Awareness;
   const statusListeners = new Set<(s: SyncStatus) => void>();
   const deniedListeners = new Set<(r: DeniedReason) => void>();
   const conn: BoardConn = {
-    id, doc, store, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
+    id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
       statusListeners.add(fn);
       return () => statusListeners.delete(fn);
@@ -141,11 +173,23 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       awareness.destroy();
       idb.destroy();
       doc.destroy();
+      commentsProvider?.destroy();
+      commentsProvider?.awareness.destroy();
+      cidb.destroy();
+      cdoc.destroy();
     },
   };
   const setStatus = (s: SyncStatus) => {
     conn.status = s;
     statusListeners.forEach((l) => l(s));
+  };
+  // Either room can be refused; the first refusal stops both.
+  const onClose = (event: CloseEvent | null) => {
+    const rooms = [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null);
+    denyOnce(conn, rooms, event?.code, (reason) => {
+      setStatus('denied');
+      deniedListeners.forEach((l) => l(reason));
+    });
   };
 
   if (url) {
@@ -156,15 +200,10 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       if (conn.denied) return;
       setStatus(status === 'connected' ? 'live' : 'connecting');
     });
-    provider.on('connection-close', (event: CloseEvent | null) => {
-      const reason = event ? deniedReason(event.code) : null;
-      if (!reason || conn.denied || !provider) return;
-      conn.denied = reason;
-      provider.disconnect();
-      provider.shouldConnect = false;
-      setStatus('denied');
-      deniedListeners.forEach((l) => l(reason));
-    });
+    provider.on('connection-close', onClose);
+    commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
+    commentsProvider.awareness.setLocalState(null);
+    commentsProvider.on('connection-close', onClose);
   } else {
     awareness = new Awareness(doc);
   }

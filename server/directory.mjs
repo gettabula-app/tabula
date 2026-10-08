@@ -10,12 +10,15 @@ export const BOARD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
-const SHARE_ROLES = ['editor', 'viewer'];
+const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RANK_ROLE = { 3: 'owner', 2: 'editor', 1: 'viewer' };
+const RANK_ROLE = { 4: 'owner', 3: 'editor', 2: 'commenter', 1: 'viewer' };
 
-const MIGRATIONS = [
+// A share role the CASE does not know ranks 0, which grants nothing.
+const shareRank = (column) => `CASE ${column} WHEN 'editor' THEN 3 WHEN 'commenter' THEN 2 WHEN 'viewer' THEN 1 ELSE 0 END`;
+
+export const MIGRATIONS = [
   `
   CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -95,6 +98,21 @@ const MIGRATIONS = [
     action TEXT NOT NULL,
     detail TEXT NOT NULL DEFAULT '{}'
   );
+  `,
+  // SQLite cannot alter a CHECK constraint, so board_shares is rebuilt to allow the 'commenter' role.
+  `
+  CREATE TABLE board_shares_new (
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'team')),
+    principal_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('editor', 'commenter', 'viewer')),
+    PRIMARY KEY (board_id, principal_type, principal_id)
+  );
+  INSERT INTO board_shares_new (board_id, principal_type, principal_id, role)
+    SELECT board_id, principal_type, principal_id, role FROM board_shares;
+  DROP TABLE board_shares;
+  ALTER TABLE board_shares_new RENAME TO board_shares;
+  CREATE INDEX board_shares_principal ON board_shares(principal_type, principal_id);
   `,
 ];
 
@@ -552,10 +570,10 @@ export function openDirectory(file) {
     if (board.teamId && user.role !== 'guest') {
       const teamRole = getTeamRole(board.teamId, user.id);
       if (teamRole === 'admin') return 'owner';
-      if (teamRole === 'member') rank = 2;
+      if (teamRole === 'member') rank = 3;
     }
     const shared = get(
-      `SELECT MAX(CASE role WHEN 'editor' THEN 2 ELSE 1 END) AS rank FROM board_shares
+      `SELECT MAX(${shareRank('role')}) AS rank FROM board_shares
         WHERE board_id = ? AND (
           (principal_type = 'user' AND principal_id = ?)
           OR (principal_type = 'team' AND principal_id IN (SELECT team_id FROM team_members WHERE user_id = ?)))`,
@@ -578,9 +596,9 @@ export function openDirectory(file) {
     const rows = all(
       `SELECT * FROM (
          SELECT b.*, MAX(
-           CASE WHEN b.owner_id = $uid THEN 3 ELSE 0 END,
-           CASE WHEN $member = 1 THEN CASE tm.role WHEN 'admin' THEN 3 WHEN 'member' THEN 2 ELSE 0 END ELSE 0 END,
-           COALESCE((SELECT MAX(CASE s.role WHEN 'editor' THEN 2 ELSE 1 END) FROM board_shares s
+           CASE WHEN b.owner_id = $uid THEN 4 ELSE 0 END,
+           CASE WHEN $member = 1 THEN CASE tm.role WHEN 'admin' THEN 4 WHEN 'member' THEN 3 ELSE 0 END ELSE 0 END,
+           COALESCE((SELECT MAX(${shareRank('s.role')}) FROM board_shares s
                       WHERE s.board_id = b.id AND (
                         (s.principal_type = 'user' AND s.principal_id = $uid)
                         OR (s.principal_type = 'team' AND s.principal_id IN (SELECT team_id FROM team_members WHERE user_id = $uid)))), 0)

@@ -6,7 +6,8 @@
 //   PORT=8787 DATA_DIR=./data node server/relay.mjs
 //
 // The wire protocol is the standard y-websocket protocol, so any y-websocket
-// client can connect to ws://host:PORT/sync/<boardId>.
+// client can connect to ws://host:PORT/sync/<boardId>. Every board also has a
+// sibling comments room, ws://host:PORT/sync/<boardId>~comments (docs/comments.md).
 //
 // With MIRA_AUTH=on (accounts mode, docs/accounts.md) the relay also serves the
 // HTTP API and decides who may join which room before it touches the room.
@@ -30,7 +31,7 @@ const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
-const ROOM_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = 1000;
 const UNLOAD_AFTER_MS = 60_000;
 const PING_MS = 30_000;
@@ -50,7 +51,21 @@ const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
 
-const roomExists = (id) => fs.existsSync(path.join(DATA_DIR, `${id}.yjs`));
+// A room name is `<boardId>` or `<boardId>~comments` (the `~` cannot occur in a board id).
+function parseRoom(name) {
+  const m = typeof name === 'string' ? ROOM_RE.exec(name) : null;
+  return m ? { boardId: m[1], kind: m[2] ? 'comments' : 'board' } : null;
+}
+
+// Who may write which room. Anything not listed here (an unknown role or kind) may not write.
+function canWriteRoom(role, kind) {
+  if (kind === 'board') return role === 'owner' || role === 'editor';
+  if (kind === 'comments') return role === 'owner' || role === 'editor' || role === 'commenter';
+  return false;
+}
+
+// Leftover comments mean the id was used before, so adopting such a board is as sensitive as adopting its board file.
+const roomExists = (id) => fs.existsSync(path.join(DATA_DIR, `${id}.yjs`)) || fs.existsSync(path.join(DATA_DIR, `${id}~comments.yjs`));
 
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
@@ -77,6 +92,7 @@ const rooms = new Map();
 class Room {
   constructor(name) {
     this.name = name;
+    this.kind = parseRoom(name).kind;
     this.file = path.join(DATA_DIR, `${name}.yjs`);
     this.doc = new Y.Doc({ gc: true });
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -133,7 +149,7 @@ class Room {
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, Y.encodeStateAsUpdate(this.doc));
     fs.renameSync(tmp, this.file);
-    if (directory && this.dirty) {
+    if (directory && this.kind === 'board' && this.dirty) {
       this.dirty = false;
       try {
         const title = this.doc.getMap('meta').get('name');
@@ -185,8 +201,8 @@ class Room {
       const dec = decoding.createDecoder(new Uint8Array(data));
       const type = decoding.readVarUint(dec);
       if (type === MSG_SYNC) {
-        // A viewer may ask for the state (step 1) but never write: step 2 and updates are dropped.
-        if (ws.role === 'viewer' && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) return;
+        // A connection that may not write this room can still ask for the state (step 1): step 2 and updates are dropped.
+        if (ws.canWrite !== true && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) return;
         const enc = encoding.createEncoder();
         encoding.writeVarUint(enc, MSG_SYNC);
         syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
@@ -334,6 +350,7 @@ function authorise(req, board) {
 function deny(ws, code, reason) {
   ws.denied = true;
   ws.role = null;
+  ws.canWrite = false;
   ws.close(code, reason);
 }
 
@@ -354,8 +371,9 @@ function refresh(ws, force) {
       ws.sessionExpiresAt = session.expiresAt;
     }
     ws.role = role;
+    ws.canWrite = canWriteRoom(role, ws.roomKind);
   } catch (err) {
-    log(`room ${ws.boardId}: could not resolve a role`, err?.message);
+    log(`room ${ws.roomName}: could not resolve a role`, err?.message);
     deny(ws, 1011, 'internal_error');
   }
 }
@@ -396,7 +414,8 @@ server.on('upgrade', (req, socket, head) => {
   } catch {
     name = null;
   }
-  if (!name || !ROOM_RE.test(name)) {
+  const parsed = parseRoom(name);
+  if (!parsed) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
     socket.destroy();
     return;
@@ -408,6 +427,7 @@ server.on('upgrade', (req, socket, head) => {
     ws.on('error', () => ws.close());
 
     if (!config.authEnabled) {
+      ws.canWrite = true;
       const room = getRoom(name);
       ws.on('message', (data) => room.onMessage(ws, data));
       ws.on('close', () => room.leave(ws));
@@ -417,7 +437,7 @@ server.on('upgrade', (req, socket, head) => {
 
     let verdict;
     try {
-      verdict = authorise(req, name);
+      verdict = authorise(req, parsed.boardId);
     } catch (err) {
       log(`room ${name}: could not authorise`, err?.message);
       verdict = { code: 1011, reason: 'internal_error' };
@@ -431,8 +451,11 @@ server.on('upgrade', (req, socket, head) => {
     ws.sessionId = verdict.session.sessionId;
     ws.sessionExpiresAt = verdict.session.expiresAt;
     ws.cookie = req.headers.cookie;
-    ws.boardId = name;
+    ws.boardId = parsed.boardId;
+    ws.roomName = name;
+    ws.roomKind = parsed.kind;
     ws.role = verdict.role;
+    ws.canWrite = canWriteRoom(verdict.role, parsed.kind);
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
