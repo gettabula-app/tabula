@@ -49,6 +49,7 @@ export const ICONS = {
   shapes: '<rect x="3.5" y="10" width="10" height="10" rx="1"/><circle cx="16" cy="8" r="5"/>',
   uml: '<rect x="4" y="3.5" width="16" height="17" rx="1"/><path d="M4 8.5h16M4 14h16M7 11.2h6M7 16.8h8"/>',
   icons: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 007 0"/><path d="M9 9.5h.01M15 9.5h.01" stroke-width="2.5"/>',
+  stickers: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.6 1-5.8-4.2-4.1 5.9-.9z"/>',
   templates: '<rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="M3.5 9h17M9.5 9v11"/>',
   undo: '<path d="M8 8H4V4"/><path d="M4.5 8.2A8 8 0 1112 20"/>',
   redo: '<path d="M16 8h4V4"/><path d="M19.5 8.2A8 8 0 1012 20"/>',

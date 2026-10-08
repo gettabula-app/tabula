@@ -228,6 +228,11 @@ select.input {
 .icon-tile { aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: 8px; background: #fff; }
 .icon-tile:hover { box-shadow: 0 0 0 2px var(--signal); }
 .icon-tile img { width: 26px; height: 26px; }
+.sticker-tile { aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--paper); }
+.sticker-tile:hover { box-shadow: 0 0 0 2px var(--signal); }
+.sticker-tile img { width: 36px; height: 36px; }
+.reaction-grid { grid-template-columns: repeat(4, 40px); min-height: 0; }
+.reaction-grid .sticker-tile img { width: 28px; height: 28px; }
 .empty { grid-column: 1 / -1; padding: 24px 8px; color: var(--tray-muted); text-align: center; }
 .template-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--tray-text) 4%, transparent); text-align: left; }
 .template-row:hover { background: var(--tray-hover); }

@@ -100,7 +100,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'templates') => {
+  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates') => {
     const b = h('button', { class: 'rail-btn', title: label, 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
     return b;
@@ -139,6 +139,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     h('hr'),
     drawerBtn('UML', 'uml', 'uml'),
     drawerBtn('Icons', 'icons', 'icons'),
+    drawerBtn('Stickers', 'stickers', 'stickers'),
     drawerBtn('Templates and team exercises', 'templates', 'templates'),
     voteBtn,
     pollBtn,

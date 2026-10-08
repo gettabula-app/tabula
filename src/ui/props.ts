@@ -1,6 +1,7 @@
 import type { BoardApp } from '../app';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
+import { isSticker } from '../stickers';
 import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS } from '../palette';
@@ -21,7 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
 export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
-export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
+export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
 const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128];
 const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extralight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extrabold', 900: 'Black' };
@@ -54,7 +55,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     const first = sel[0];
     const same = sel.every((o) => o.type === first.type);
-    const title = sel.length === 1 ? TYPE_LABEL[first.type] ?? 'Object' : `${sel.length} selected`;
+    const title = sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
     const s = styleOf(first);
     const up = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelected(patch, filter);
     const blocks: (HTMLElement | null)[] = [];
