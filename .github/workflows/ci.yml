@@ -1,14 +1,15 @@
 name: CI
 
-# A push that only touches Markdown, docs/, licence files or dependabot.yml starts no run at all, so it cannot cancel a
-# code run in progress through the concurrency group below. A push that changes the user guide is built by docs.yml.
+# A push that only touches Markdown, docs/, design/ mockups, licence files or dependabot.yml starts no run at all, so it
+# cannot cancel a code run in progress through the concurrency group below. A push that changes the user guide is built
+# by docs.yml.
 # Pull requests have no paths filter on purpose: a workflow that never starts reports nothing, so "CI passed" could wait
 # forever as a required check. Every pull request starts a run and the "changes" job decides what it needs.
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE*', '.github/dependabot.yml']
+    paths-ignore: ['**.md', 'docs/**', 'design/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
 

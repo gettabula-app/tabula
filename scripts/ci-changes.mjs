@@ -11,8 +11,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** Paths that cannot break the app: any Markdown file, anything under docs/, LICENSE* in the repo root, dependabot.yml. */
-const IGNORED = [/\.md$/, /^docs\//, /^LICENSE[^/]*$/, /^\.github\/dependabot\.yml$/];
+/**
+ * Paths that cannot break the app: any Markdown file, anything under docs/, design/ (static mockups that no build or
+ * image includes), LICENSE* in the repo root, dependabot.yml.
+ */
+const IGNORED = [/\.md$/, /^docs\//, /^design\//, /^LICENSE[^/]*$/, /^\.github\/dependabot\.yml$/];
 
 /** @param {string[]} paths @returns {{ code: boolean, guide: boolean }} */
 export function classify(paths) {
