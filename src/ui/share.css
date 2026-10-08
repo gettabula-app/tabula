@@ -1,0 +1,31 @@
+/* Share dialog: who has a role on the board. Theme variables only; radius 0, no shadows, hairlines.
+   Rows wrap: at phone width the role select and Remove sit on their own line under the name. */
+
+.share-people { display: grid; gap: 12px; min-width: 0; margin-bottom: 16px; }
+.share-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-muted); }
+.share-status { min-height: 18px; }
+
+.share-people .input { width: auto; max-width: 100%; min-width: 0; }
+.share-people .share-pick { flex: 1 1 100%; width: 100%; }
+
+.share-list { border-top: 2px solid var(--tray-text); border-bottom: 1px solid var(--tray-line); }
+.share-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 12px 0; border-top: 1px solid var(--tray-line);
+}
+.share-list > :first-child { border-top: 0; }
+.share-who { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
+.share-name { font-weight: 600; }
+.share-kind { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-muted); }
+.share-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+
+.share-add {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+  padding-top: 12px; border-top: 2px solid var(--tray-text);
+}
+.share-hint { flex: 1 1 100%; }
+
+.share-error {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 12px 0 12px 12px; border-left: 4px solid var(--danger);
+}
