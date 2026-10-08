@@ -30,6 +30,15 @@ GET /api/internal/usage
 `seats` counts people with the role `owner`, `admin` or `member` who are not disabled. `guests` counts guests who are not disabled. `members` is everyone with an account, disabled people included.
 
 ```
+GET /api/internal/backup-status
+  -> { enabled: false }                         (backups are off)
+  -> { enabled: true, running, keyId, intervalMinutes, lastRunAt, lastSuccessAt, lastError, lastFailureAt,
+       lastFailureError, consecutiveFailures, lastManifest, bytesStored, objects, manifests, nextRunAt, prune }
+```
+
+The state of the off-site backups (`docs/backups.md`): `{enabled: false}` unless `TABULA_BACKUP_*` is set. Times are milliseconds since the epoch. `lastSuccessAt` moves on every successful run, also one that found nothing to upload; `lastFailureAt` and `lastFailureError` stay after a later success and `consecutiveFailures` counts failed runs since the last success, which is what an alert watches (for example no success for three intervals, or two failures in a row). Errors are short and hold a status and an S3 error code at most, never a key, a header or a URL. Like `usage` it is a plain `GET` and stays reachable while the workspace is read-only.
+
+```
 PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banner?: string | null }
   -> { seatLimit, readOnly, banner }      (what is stored now)
 ```

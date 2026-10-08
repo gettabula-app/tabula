@@ -97,6 +97,25 @@ Tabula can let an AI tool such as Claude Code read and edit boards while people 
 
 In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
 
+### Backups
+
+Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted on the instance first (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). It is off unless the five required variables are all set; some but not all is a startup error that names the missing ones. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). Restore and the admin screen are not built yet.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_BACKUP_S3_ENDPOINT` | none | Required. The S3 endpoint, `https://` (`http://` for localhost only) |
+| `TABULA_BACKUP_BUCKET` | none | Required. The bucket |
+| `TABULA_BACKUP_ACCESS_KEY` | none | Required. Access key id |
+| `TABULA_BACKUP_SECRET_KEY` | none | Required. Secret access key |
+| `TABULA_BACKUP_KEY` | none | Required. Encryption key: 32 bytes as 64 hex characters or base64 (`openssl rand -hex 32`). Never logged |
+| `TABULA_BACKUP_KEY_PREVIOUS` | none | Older keys, comma separated, to read backups made before a key change |
+| `TABULA_BACKUP_PREFIX` | `tabula` | Where in the bucket everything is stored |
+| `TABULA_BACKUP_REGION` | `auto` | Signing region |
+| `TABULA_BACKUP_PATH_STYLE` | `on` | `off` for virtual hosted style (`bucket.endpoint`) |
+| `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between backups, 5 to 10080 |
+| `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep one backup per hour for this long (`0`: none) |
+| `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep one backup per day for this long (`0`: none) |
+
 ## Screenshots
 
 | Shapes panel | Quick actions |

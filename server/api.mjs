@@ -122,7 +122,7 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, mailer = createMailer(config) }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), mailer = createMailer(config) }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -726,6 +726,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       ? [
           // Called by the control plane with the bearer token (`internal`), never by a browser.
           compile('GET', 'internal/usage', { internal: true }, () => [200, cloud.seatUsage()]),
+          // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).
+          compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {
             const checked = validateLimits(body);
             if (checked.error) throw badRequest(checked.error);
