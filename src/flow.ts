@@ -146,14 +146,14 @@ export class Flow {
       votes.forEach((v, k) => {
         if (!key && v.stepId === step.id && v.userId === me && v.itemId === hit.id) key = k;
       });
-      if (key) this.app.store.doc.transact(() => votes.delete(key!), 'votes');
+      if (key) this.app.store.transactAs(() => votes.delete(key!), 'votes');
       return true;
     }
     if (!this.isUnlimited(step) && this.myVotesLeft() <= 0) {
       this.app.emit('flow'); // lets the bar flash "no votes left"
       return true;
     }
-    this.app.store.doc.transact(() => votes.set(`${step.id}:${me}:${newId()}`, { itemId: hit.id, userId: me, stepId: step.id }), 'votes');
+    this.app.store.transactAs(() => votes.set(`${step.id}:${me}:${newId()}`, { itemId: hit.id, userId: me, stepId: step.id }), 'votes');
     return true;
   }
 
@@ -268,7 +268,7 @@ export class Flow {
     const votes = this.app.store.votes;
     const keys: string[] = [];
     votes.forEach((v, k) => v.stepId === f.results && keys.push(k));
-    this.app.store.doc.transact(() => keys.forEach((k) => votes.delete(k)), 'votes');
+    this.app.store.transactAs(() => keys.forEach((k) => votes.delete(k)), 'votes');
     this.app.store.setFlow({ results: null });
   }
 

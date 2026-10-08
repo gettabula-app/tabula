@@ -35,7 +35,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
   // Drag from the library onto the canvas.
   const svg = app.r.svg;
   svg.addEventListener('dragover', (e) => {
-    if (e.dataTransfer?.types.includes(DND)) {
+    if (e.dataTransfer?.types.includes(DND) && !app.readOnly) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
@@ -57,6 +57,7 @@ type DropItem =
   | { kind: 'icon'; name: string };
 
 async function dropItem(app: BoardApp, item: DropItem, p?: Point) {
+  if (app.readOnly) return;
   const place = (type: BaseObj['type'], w: number, hh: number, extra: Partial<BaseObj>) =>
     p ? app.placeAt(type, p, w, hh, extra) : app.placeAtCenter(type, w, hh, extra);
   if (item.kind === 'shape') {

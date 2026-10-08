@@ -46,7 +46,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
 
   function render() {
     const sel = app.selected();
-    const show = open && sel.length > 0;
+    const show = open && sel.length > 0 && !app.readOnly;
     panel.classList.toggle('show', show);
     if (!show) {
       panel.replaceChildren();

@@ -28,7 +28,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   let lock: HTMLButtonElement | undefined;
   let more: HTMLButtonElement | undefined;
 
-  const visible = () => app.selection.length > 0 && app.tool.kind === 'select' && !app.dragging && !app.editor.active;
+  const visible = () => app.selection.length > 0 && app.tool.kind === 'select' && !app.dragging && !app.editor.active && !app.readOnly;
 
   function sync() {
     const show = visible();
@@ -227,6 +227,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   app.on('drag', sync);
   app.on('editing', sync);
   app.on('tool', sync);
+  app.on('readonly', sync);
   props.onToggle(build);
 
   build();

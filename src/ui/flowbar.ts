@@ -25,6 +25,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
 
   const render = () => {
     const f = app.flow.state();
+    const ro = app.readOnly;
     const resultsDots = f.active < 0 ? app.flow.resultsCount() : 0;
     bar.classList.toggle('show', f.steps.length > 0 || resultsDots > 0);
     if (!f.steps.length && !resultsDots) {
@@ -38,13 +39,13 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('span', { class: 'results-dot', 'aria-hidden': 'true' }),
           h('div', null, h('div', { class: 'flow-title' }, 'Vote results'), h('div', { class: 'muted small' }, `${resultsDots} ${resultsDots === 1 ? 'dot' : 'dots'} on the board`)),
           h('button', { class: 'btn ghost', onclick: () => copyResults(app, f.results!) }, 'Copy results'),
-          h('button', { class: 'btn ghost', onclick: () => { app.flow.clearResults(); toast('Dots cleared'); } }, 'Clear dots'))
+          h('button', { class: 'btn ghost', disabled: ro, onclick: () => { app.flow.clearResults(); toast('Dots cleared'); } }, 'Clear dots'))
         : null;
       const session = f.steps.length
         ? h('div', { class: 'flow-idle' },
           h('div', null, h('div', { class: 'flow-title' }, 'Session ready'), h('div', { class: 'muted small' }, `${f.steps.length} ${f.steps.length === 1 ? 'step' : 'steps'}, about ${Math.round(f.steps.reduce((s, x) => s + (x.durationSec ?? 0), 0) / 60)} minutes`)),
-          h('button', { class: 'btn ghost', onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement) }, 'Edit steps'),
-          h('button', { class: 'btn primary', onclick: () => app.flow.start() }, icon('play', 16), 'Start session'))
+          h('button', { class: 'btn ghost', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement) }, 'Edit steps'),
+          h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.start() }, icon('play', 16), 'Start session'))
         : null;
       bar.replaceChildren(...[results, results && session ? h('span', { class: 'bar-sep' }) : null, session].filter(Boolean) as HTMLElement[]);
       return;
@@ -61,14 +62,14 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     );
     const timerBtns = h('div', { class: 'btn-row' },
       running
-        ? h('button', { class: 'icon-btn', title: 'Pause timer', 'aria-label': 'Pause timer', onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
-        : h('button', { class: 'icon-btn', title: 'Start timer', 'aria-label': 'Start timer', onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
-      h('button', { class: 'icon-btn text', title: 'Add one minute', 'aria-label': 'Add one minute', onclick: () => app.flow.addTime(60_000) }, '+1'),
+        ? h('button', { class: 'icon-btn', title: 'Pause timer', 'aria-label': 'Pause timer', disabled: ro, onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
+        : h('button', { class: 'icon-btn', title: 'Start timer', 'aria-label': 'Start timer', disabled: ro, onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
+      h('button', { class: 'icon-btn text', title: 'Add one minute', 'aria-label': 'Add one minute', disabled: ro, onclick: () => app.flow.addTime(60_000) }, '+1'),
     );
 
     const extras: HTMLElement[] = [];
     if ((step.mode === 'private-write' || step.mode === 'vote') && !f.reveal) {
-      extras.push(h('button', { class: 'btn', onclick: () => app.flow.reveal() }, icon('eye', 16), step.mode === 'vote' ? 'Reveal votes' : 'Reveal notes'));
+      extras.push(h('button', { class: 'btn', disabled: ro, onclick: () => app.flow.reveal() }, icon('eye', 16), step.mode === 'vote' ? 'Reveal votes' : 'Reveal notes'));
     }
     if (step.mode === 'vote') {
       extras.push(dotsButton(app));
@@ -76,18 +77,18 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     }
 
     bar.replaceChildren(
-      h('button', { class: 'icon-btn', title: 'Previous step', 'aria-label': 'Previous step', disabled: f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
-      h('button', { class: 'flow-step', onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement), 'aria-label': 'All steps' },
+      h('button', { class: 'icon-btn', title: 'Previous step', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
+      h('button', { class: 'flow-step', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement), 'aria-label': 'All steps' },
         h('span', { class: 'step-count' }, `${f.active + 1}/${f.steps.length}`),
         h('span', { class: 'step-text' },
           h('span', { class: 'flow-title' }, h('span', { class: 'title-text', title: step.title }, step.title), h('span', { class: `mode mode-${step.mode}` }, MODE_LABEL[step.mode])),
           h('span', { class: 'step-instr' }, step.instructions)),
       ),
       timer, timerBtns, ...extras,
-      h('button', { class: 'icon-btn', title: 'Bring everyone to my view', 'aria-label': 'Bring everyone to my view', onclick: () => { app.flow.summon(); toast('Everyone is now looking where you are'); } }, icon('focus', 18)),
+      h('button', { class: 'icon-btn', title: 'Bring everyone to my view', 'aria-label': 'Bring everyone to my view', disabled: ro, onclick: () => { app.flow.summon(); toast('Everyone is now looking where you are'); } }, icon('focus', 18)),
       f.active < f.steps.length - 1
-        ? h('button', { class: 'btn primary', onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
-        : h('button', { class: 'btn primary', onclick: () => finish(app) }, 'Finish'),
+        ? h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
+        : h('button', { class: 'btn primary', disabled: ro, onclick: () => finish(app) }, 'Finish'),
     );
 
   };
@@ -133,6 +134,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     render();
     loop();
   });
+  app.on('readonly', render);
   // A timer that already ran out before this screen opened does not chime.
   const t0 = app.flow.state().timer;
   if (t0 && app.flow.remainingMs() === 0) lastBeepKey = `${t0.startedAt}:${t0.durationMs}`;
@@ -171,6 +173,7 @@ function dotsButton(app: BoardApp): HTMLElement {
   }
   const b = h('button', {
     class: `votes-left${left === 0 ? ' none' : ''}`,
+    disabled: app.readOnly,
     title: 'Click a note to add a dot, shift-click to remove one. Click here to change how many dots each person gets.',
     'aria-label': `${unlimited ? 'No dot limit' : `${left} of ${limit} dots left`}. Change dots per person`,
   }, ...body, icon('chevron', 14));

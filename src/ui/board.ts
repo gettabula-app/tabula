@@ -55,9 +55,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('presence', renderStatus);
   renderStatus();
 
+  const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
   const topLeft = h('div', { class: 'tray top-left' },
     h('button', { class: 'icon-btn', title: 'All boards', 'aria-label': 'All boards', onclick: nav.home }, icon('home', 18)),
-    name, status,
+    name, status, badge,
   );
 
   // ---------------------------------------------------------------- top right
@@ -154,7 +155,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // Sticky colour tray appears while the sticky tool is active.
   const stickyTray = h('div', { class: 'tray tool-tray sticky-tray', 'aria-label': 'Sticky note colour' });
   const renderStickyTray = () => {
-    const show = app.tool.kind === 'sticky';
+    const show = app.tool.kind === 'sticky' && !app.readOnly;
     stickyTray.classList.toggle('show', show);
     if (!show) return;
     stickyTray.style.top = `${stickyBtn.getBoundingClientRect().top - 6}px`;
@@ -173,7 +174,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const penTray = h('div', { class: 'tray tool-tray pen-tray' });
   const penBtn = () => rail.querySelector<HTMLElement>('[data-tool="pen"]');
   const renderPen = () => {
-    penTray.classList.toggle('show', app.tool.kind === 'pen');
+    penTray.classList.toggle('show', app.tool.kind === 'pen' && !app.readOnly);
     const pb = penBtn();
     if (pb && app.tool.kind === 'pen') penTray.style.top = `${pb.getBoundingClientRect().top - 6}px`;
     penTray.replaceChildren(
@@ -206,6 +207,19 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   mountFlowBar(app, chrome);
   firstRunHint(app, chrome);
 
+  // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
+  const syncReadOnly = () => {
+    const ro = app.readOnly;
+    rail.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      b.disabled = ro && b.dataset.tool !== 'select' && b.dataset.tool !== 'hand';
+    });
+    name.readOnly = ro;
+    badge.classList.toggle('show', ro);
+    if (ro && library.tab) library.open(null);
+  };
+  app.on('readonly', syncReadOnly);
+  syncReadOnly();
+
   // Drop .drift / .json files onto the board to import them.
   root.addEventListener('dragover', (e) => {
     if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
@@ -214,6 +228,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     e.preventDefault();
+    if (app.readOnly) return;
     await importInto(app, file);
   });
 }
@@ -231,7 +246,7 @@ async function importInto(app: BoardApp, file: File) {
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
 function firstRunHint(app: BoardApp, chrome: HTMLElement) {
-  if (app.store.cache.size) return;
+  if (app.store.cache.size || app.readOnly) return;
   const hint = h('div', { class: 'empty-hint' },
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
@@ -319,6 +334,12 @@ function minimap(app: BoardApp) {
 function openMenu(app: BoardApp, anchor: HTMLElement) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
+  // Items that change the board are disabled while it is view only.
+  const writeItem = (ic: IconName, label: string, fn: () => void) => {
+    const b = item(ic, label, fn);
+    b.disabled = app.readOnly;
+    return b;
+  };
   const name = () => safeName(app.store.getMeta().name);
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
   fileInput.addEventListener('change', () => {
@@ -345,10 +366,10 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
   paintThemes();
   const pop = popover(anchor, h('div', { class: 'menu' },
     h('div', { class: 'list-label' }, 'Board'),
-    item('grid', 'Board settings', () => openSettings(app)),
+    writeItem('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),
-    item('upload', 'Import a board file into this board', () => fileInput.click()),
-    item('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
+    writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
+    writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
     h('div', { class: 'list-label' }, 'Appearance'),
     themeRows.map((r) => r.row),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
