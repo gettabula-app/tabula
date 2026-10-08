@@ -117,7 +117,7 @@ export class TextEditor {
 
     if (isConnector(o)) {
       // the same pill as the rendered label, sized to the text as it is typed (wide enough for the caret when empty)
-      const g = connectorGeom((x) => this.app.store.get(x), o);
+      const g = connectorGeom((x) => this.app.store.get(x), o, r.connectorLayout());
       if (!g) return;
       const pill = labelPill(ta.value);
       const w = Math.max(pill.w, 24) + 2, h = pill.h; // 2 units of slack so the textarea never wraps sooner than the label

@@ -2,7 +2,7 @@
 
 import type { BaseObj, ConnectorObj, Obj, Point, VAlign } from './types';
 import { isConnector } from './types';
-import { connectorGeom, pathPoints } from './geometry';
+import { connectorGeom, pathPoints, type ConnectorLayout } from './geometry';
 import { headMarkup, shapeDecor, shapePath, textBox } from './shapes';
 import { escapeXml, fitText, fontCss, measure, wrap } from './text';
 import { fontFamily } from './fonts';
@@ -16,6 +16,8 @@ export interface MarkupCtx {
   isHidden?: (o: BaseObj) => boolean;
   /** Object whose label is being edited (label is not drawn). */
   editingId?: string | null;
+  /** Where each connector end sits among the ends on the same side of its shape; called only when a connector is drawn. */
+  layout?: () => ConnectorLayout;
 }
 
 const n = (v: number) => Math.round(v * 100) / 100;
@@ -247,7 +249,7 @@ function pathMarkup(o: BaseObj) {
 }
 
 function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
-  const g = connectorGeom(ctx.get, c);
+  const g = connectorGeom(ctx.get, c, ctx.layout?.());
   if (!g) return '';
   const color = c.stroke ?? CANVAS_INK;
   const sw = c.strokeWidth ?? 2;

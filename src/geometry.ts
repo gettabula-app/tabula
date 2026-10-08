@@ -1,4 +1,4 @@
-import type { BaseObj, ConnectorObj, End, Obj, Point, Rect, Side } from './types';
+import type { BaseObj, ConnectorObj, End, Id, Obj, Point, Rect, Side } from './types';
 import { isBox, isConnector } from './types';
 import { shapeAnchor } from './shapes';
 
@@ -282,7 +282,21 @@ function pairSides(a: BaseObj, b: BaseObj): [Side, Side] | null {
   return b.y > a.y ? ['bottom', 'top'] : ['top', 'bottom'];
 }
 
-export function connectorGeom(get: (id: string) => Obj | undefined, c: Pick<ConnectorObj, 'from' | 'to' | 'route'>): ConnectorGeom | null {
+/** One end of a connector, resolved: the line's attachment, the box and side it sits on, and where the other end is. */
+export interface EndSide extends ResolvedEnd {
+  /** The box this end is attached to; null for a free end. */
+  id: Id | null;
+  /** The point this end faces: the other end's position, or its box's centre. */
+  toward: Point;
+}
+
+export interface ResolvedSides { from: EndSide; to: EndSide }
+
+/**
+ * Where each end of a connector attaches: for a bound end, the box and the side (explicit, facing the other end, or
+ * across the larger gap when both ends are auto-anchored). Null when an end is bound to something that is not a box.
+ */
+export function resolveSides(get: (id: string) => Obj | undefined, c: Pick<ConnectorObj, 'from' | 'to'>): ResolvedSides | null {
   const fromC = endPoint(get, c.from);
   const toC = endPoint(get, c.to);
   if (!fromC || !toC) return null;
@@ -297,6 +311,69 @@ export function connectorGeom(get: (id: string) => Obj | undefined, c: Pick<Conn
       b = { p: sb.p, dir: sb.dir, side: sides[1] };
     }
   }
+  return {
+    from: { ...a, id: a.side && c.from.kind === 'bound' ? c.from.id : null, toward: toC },
+    to: { ...b, id: b.side && c.to.kind === 'bound' ? c.to.id : null, toward: fromC },
+  };
+}
+
+export type EndName = 'from' | 'to';
+
+/** Where a connector end sits among the ends attached to the same side of a shape, counted along that side. */
+export interface EndSlot { index: number; count: number }
+
+/** Slots of the connector ends that are attached to a shape, keyed by connector id and end. */
+export type ConnectorLayout = ReadonlyMap<string, EndSlot>;
+
+const slotKey = (id: Id, end: EndName) => `${id}:${end}`;
+
+export const endSlot = (layout: ConnectorLayout | undefined, id: Id, end: EndName): EndSlot | undefined =>
+  layout?.get(slotKey(id, end));
+
+/**
+ * Groups the bound ends of `connectors` by shape and side, and numbers each group along the side's own axis (top to
+ * bottom on a left or right side, left to right on a top or bottom side, in the shape's unrotated frame) by where the
+ * other end lies, so that lines to the far end do not cross. Free ends and loops back to the same shape take no slot.
+ */
+export function buildConnectorLayout(get: (id: string) => Obj | undefined, connectors: Iterable<ConnectorObj>): ConnectorLayout {
+  const groups = new Map<string, { key: string; at: number; id: Id }[]>();
+  for (const c of connectors) {
+    const r = resolveSides(get, c);
+    if (!r || (r.from.id !== null && r.from.id === r.to.id)) continue;
+    for (const name of ['from', 'to'] as const) {
+      const e = r[name];
+      if (e.id === null || !e.side) continue;
+      const box = get(e.id);
+      if (!isBox(box)) continue;
+      const l = toLocal(box, e.toward);
+      // rounded so that rotation noise cannot defeat the tie-break by id, which all collaborators must agree on
+      const at = Math.round((e.side === 'left' || e.side === 'right' ? l.y : l.x) * 1000);
+      const gk = `${box.id}:${e.side}`;
+      let g = groups.get(gk);
+      if (!g) groups.set(gk, (g = []));
+      g.push({ key: slotKey(c.id, name), at, id: c.id });
+    }
+  }
+  const layout = new Map<string, EndSlot>();
+  for (const g of groups.values()) {
+    g.sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    g.forEach((e, index) => layout.set(e.key, { index, count: g.length }));
+  }
+  return layout;
+}
+
+/**
+ * The routed geometry of a connector. `layout` says where each end sits among the others on its shape's side; it is
+ * accepted so that every caller can pass it, and is not applied yet: all ends still attach at the side's anchor.
+ */
+export function connectorGeom(
+  get: (id: string) => Obj | undefined,
+  c: Pick<ConnectorObj, 'from' | 'to' | 'route'>,
+  _layout?: ConnectorLayout,
+): ConnectorGeom | null {
+  const sides = resolveSides(get, c);
+  if (!sides) return null;
+  const a = sides.from, b = sides.to;
   const p1 = a.p, p2 = b.p;
   const travel = sub(p2, p1);
 
@@ -358,9 +435,9 @@ export function connectorGeom(get: (id: string) => Obj | undefined, c: Pick<Conn
 }
 
 /** Bounds of any object (connectors need their routed geometry). */
-export function objBounds(get: (id: string) => Obj | undefined, o: Obj): Rect | null {
+export function objBounds(get: (id: string) => Obj | undefined, o: Obj, layout?: ConnectorLayout): Rect | null {
   if (isConnector(o)) {
-    const g = connectorGeom(get, o);
+    const g = connectorGeom(get, o, layout);
     return g ? rectOfPoints(g.pts) : null;
   }
   if (o.type === 'frame') {

@@ -347,7 +347,7 @@ export class BoardApp {
       if (!b || p.x < b.x - tol * 3 || p.y < b.y - tol * 3 || p.x > b.x + b.w + tol * 3 || p.y > b.y + b.h + tol * 3) continue;
       if (isConnector(o)) {
         if (opts.connectors === false) continue;
-        const g = connectorGeom((id) => this.store.get(id), o);
+        const g = connectorGeom((id) => this.store.get(id), o, this.r.connectorLayout());
         if (g && distToPolyline(p, g.pts) <= tol + 3 / this.zoom) return o;
         if (g && o.label && Math.hypot(p.x - g.mid.x, p.y - g.mid.y) < 16 / this.zoom) return o;
         continue;
@@ -489,7 +489,7 @@ export class BoardApp {
     const o = this.store.get(this.selection[0]);
     if (!o) return null;
     const tol = 8 / this.zoom;
-    for (const h of handlesFor(o, (id) => this.store.get(id), this.zoom)) {
+    for (const h of handlesFor(o, (id) => this.store.get(id), this.zoom, this.r.connectorLayout())) {
       if (Math.abs(h.p.x - p.x) <= tol && Math.abs(h.p.y - p.y) <= tol) return { id: o.id, h: h.id };
     }
     return null;
@@ -1255,7 +1255,7 @@ export class BoardApp {
       for (const id of ids) {
         for (const c of this.store.connectorsOf(id)) {
           if (ids.has(c.id)) continue;
-          const g = connectorGeom((x) => this.store.get(x), c);
+          const g = connectorGeom((x) => this.store.get(x), c, this.r.connectorLayout());
           if (!g) continue;
           const patch: Partial<ConnectorObj> = {};
           if (c.from.kind === 'bound' && ids.has(c.from.id)) patch.from = { kind: 'free', x: g.start.x, y: g.start.y };
