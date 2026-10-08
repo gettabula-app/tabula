@@ -55,6 +55,7 @@ export function loadConfig(env = process.env) {
     baseUrl,
     origin,
     secureCookies,
+    trustProxy: env.MIRA_TRUST_PROXY === '1',
     cookieName: secureCookies ? '__Host-mira_session' : 'mira_session',
     sessionMs,
     loginTokenMs: 15 * 60 * 1000,

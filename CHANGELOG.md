@@ -5,6 +5,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 ## [Unreleased]
 
 ### Added
+- Accounts and teams mode (opt-in with `MIRA_AUTH=on`): email sign-in links, workspace and team roles, per-board sharing, a server-side HTTP API for all of it, and a relay that checks access on every connection and makes viewers read-only. Open mode is unchanged. See `docs/accounts.md`.
 - CI tests and builds on Node 26 as well as 22 and 24, matching the Docker image's Node 26 base.
 - Toolbars and panels get a hairline outline on the non-default themes so they stay visible on dark canvases.
 - App themes: Default, Ayu, Kanagawa, Matrix and Evergreen. Pick one under Appearance in the board menu; the choice is remembered on this device and applied before the page paints. Every text and accent colour pair meets WCAG AA contrast (checked in tests).
