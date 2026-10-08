@@ -384,7 +384,7 @@ export class Flow {
     s.setFlow({ reveal: true });
   }
 
-  /** Markdown summary of the session: frames, their notes, votes. */
+  /** Markdown summary of the session: frames, their notes, votes. Leaves out what is hidden from this person on the board. */
   summaryMarkdown(): string {
     const s = this.app.store;
     const f = this.state();
@@ -393,9 +393,12 @@ export class Flow {
     const totals = new Map<Id, number>();
     const voteSteps = new Set(f.steps.filter((st) => st.mode === 'vote').map((st) => st.id));
     if (f.results) voteSteps.add(f.results);
+    // Totals of the vote that is running stay hidden until the reveal, as they are on the board.
+    const running = this.activeStep();
+    if (running?.mode === 'vote' && !f.reveal) voteSteps.delete(running.id);
     for (const id of voteSteps) for (const v of this.votesForStep(id)) totals.set(v.itemId, (totals.get(v.itemId) ?? 0) + 1);
     for (const fr of frames) {
-      const kids = s.childrenOf(fr.id).filter((o) => (o as BaseObj).text && !isConnector(o)) as BaseObj[];
+      const kids = s.childrenOf(fr.id).filter((o) => (o as BaseObj).text && !isConnector(o) && !this.isHidden(o as BaseObj)) as BaseObj[];
       if (!kids.length) continue;
       lines.push(`## ${fr.name || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
