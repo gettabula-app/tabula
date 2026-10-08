@@ -180,7 +180,7 @@ describe('access tokens in the directory', () => {
   });
 
   it('adds its table in migration 4 and keeps what a version 3 directory holds', () => {
-    expect(MIGRATIONS).toHaveLength(4);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(4);
     expect(MIGRATIONS[3]).toBe(TOKENS_MIGRATION);
     const file = path.join(tmp(), 'directory.sqlite');
     const d = openDirectory(file);
@@ -190,7 +190,7 @@ describe('access tokens in the directory', () => {
     d.close();
 
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE access_tokens; PRAGMA user_version = 3');
+    raw.exec('DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
     raw.close();
 
     const again = openDirectory(file);
@@ -201,7 +201,7 @@ describe('access tokens in the directory', () => {
     expect(again.findAccessToken(made.token, T0)?.userId).toBe(u.id);
     again.close();
     const check = new DatabaseSync(file);
-    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(4);
+    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(5);
     check.close();
   });
 
