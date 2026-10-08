@@ -17,6 +17,8 @@ import { createProvider as defaultCreateProvider } from './providers.mjs';
 import { DEFAULT_LIMITS, aiEnabledFor, personalKeysFor } from './settings.mjs';
 
 export const RUN_TIMEOUT_MS = 120_000;
+/** Runs at once on a shared key (the workspace key, or the operator's key in open mode); a personal key runs one at a time. */
+export const SHARED_KEY_RUNS = 3;
 const BUSY_RETRY_S = 5;
 const RUN_BODY_LIMIT = 64 * 1024;
 const EDIT_ROLES = new Set(['owner', 'editor']);
@@ -68,7 +70,7 @@ export function parseRequest(body) {
  */
 export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider = defaultCreateProvider, log = console.error, now = Date.now, timeoutMs = RUN_TIMEOUT_MS }) {
   const hourly = createWindowCounter({ now });
-  const gate = createRunGate();
+  const gate = createRunGate({ 'key:workspace': SHARED_KEY_RUNS, 'key:env': SHARED_KEY_RUNS });
 
   const refuse = (res, message, wait) => {
     res.setHeader('retry-after', String(wait));

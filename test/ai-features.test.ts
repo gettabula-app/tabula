@@ -337,6 +337,20 @@ describe('the in-memory limits', () => {
     again();
   });
 
+  it('lets a key with a cap hold that many runs at once, counting each release', () => {
+    const gate = createRunGate({ shared: 3 });
+    const runs = [gate.take(['a', 'shared'])!, gate.take(['b', 'shared'])!, gate.take(['c', 'shared'])!];
+    expect(gate.busy('shared')).toBe(true);
+    expect(gate.take(['d', 'shared'])).toBeNull();
+    runs[0]();
+    runs[0]();
+    expect(gate.busy('shared')).toBe(false);
+    const d = gate.take(['d', 'shared'])!;
+    expect(gate.busy('shared')).toBe(true);
+    for (const release of [d, runs[1], runs[2]]) release();
+    expect(gate.busy('shared')).toBe(false);
+  });
+
   it('lets a person save a few keys an hour, one at a time', () => {
     let t = 0;
     const throttle = createSaveThrottle({ now: () => t, perHour: 2 });

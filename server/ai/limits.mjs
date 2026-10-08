@@ -42,19 +42,29 @@ export function createWindowCounter({ windowMs = HOUR_MS, now = Date.now } = {})
   };
 }
 
-/** The set of keys that have a run in flight. `take` is all or nothing and returns a release function (safe to call twice). */
-export function createRunGate() {
-  const held = new Set();
+/**
+ * Runs in flight per key. A key is busy once it holds `max` runs (1 unless `caps` says more). `take` is all or nothing
+ * and returns a release function (safe to call twice), or null when any key is busy.
+ * @param {Record<string, number>} [caps] runs allowed at once for a key; every other key allows one
+ */
+export function createRunGate(caps = {}) {
+  const held = new Map();
+  const max = (key) => caps[key] ?? 1;
+  const busy = (key) => (held.get(key) ?? 0) >= max(key);
   return {
-    busy: (key) => held.has(key),
+    busy,
     take(keys) {
-      if (keys.some((k) => held.has(k))) return null;
-      for (const k of keys) held.add(k);
+      if (keys.some(busy)) return null;
+      for (const k of keys) held.set(k, (held.get(k) ?? 0) + 1);
       let released = false;
       return () => {
         if (released) return;
         released = true;
-        for (const k of keys) held.delete(k);
+        for (const k of keys) {
+          const n = (held.get(k) ?? 1) - 1;
+          if (n > 0) held.set(k, n);
+          else held.delete(k);
+        }
       };
     },
   };
