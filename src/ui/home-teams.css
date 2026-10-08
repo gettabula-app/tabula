@@ -1,9 +1,4 @@
-/* Home screen in accounts mode: team sections, role badges, user bar. */
+/* Home page in accounts mode: the role column of the team and shared board lists, and the room for Add to workspace on the device list. */
 
-.team-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.team-head h2 { margin: 0; }
-.role-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 99px; font-size: 12px; font-weight: 600; background: var(--rule); color: var(--ink); }
-.role-badge.view { background: var(--signal); color: var(--on-signal); }
-.home-userbar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-.home .btn.ghost { background: transparent; box-shadow: none; }
-.home .btn.ghost:hover { background: var(--rule); }
+.board-table.access { --cols: minmax(0, 1fr) 144px 144px 32px; }
+.board-table.device { --cols: minmax(0, 1fr) 144px 200px; }

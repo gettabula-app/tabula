@@ -5,6 +5,7 @@ export type AdminTab = (typeof ADMIN_TABS)[number];
 
 export type Route =
   | { name: 'home' }
+  | { name: 'templates' }
   | { name: 'board'; id: string }
   | { name: 'signin' }
   | { name: 'verify'; token: string }
@@ -30,6 +31,7 @@ export function parseRoute(hash: string): Route {
   const invite = hash.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
   if (invite) return { name: 'invite', token: invite[1] };
   if (hash === '#/signin') return { name: 'signin' };
+  if (hash === '#/templates') return { name: 'templates' };
   const admin = hash.match(/^#\/admin(?:\/([^/]*))?$/);
   if (admin) return { name: 'admin', tab: adminTab(admin[1]) };
   const verify = hash.match(/^#\/signin\/verify(?:\?(.*))?$/);

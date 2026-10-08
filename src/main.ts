@@ -5,6 +5,7 @@ import { deleteBoard, getUser, openBoard } from './sync';
 import { mountBoardUi } from './ui/board';
 import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
+import { renderTemplates } from './ui/templates-page';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
@@ -148,6 +149,7 @@ async function route() {
     if (r.name === 'signin') renderSignIn(view);
     else if (r.name === 'verify') renderVerify(view, r.token, finish);
     else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
+    else if (r.name === 'templates') renderTemplates(view, nav, auth);
     else renderHome(view, nav, auth);
     return;
   }
