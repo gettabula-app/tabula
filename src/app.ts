@@ -28,6 +28,7 @@ function loadStickyColor(): string {
 import { ensureFont } from './fonts';
 import { Flow } from './flow';
 import { TextEditor } from './editor';
+import { StyleEdit } from './style-edit';
 
 export type Tool =
   | { kind: 'select' }
@@ -71,6 +72,8 @@ export class BoardApp {
   readonly r: Renderer;
   readonly flow: Flow;
   readonly editor: TextEditor;
+  /** Live previews from the properties panel; see style-edit.ts. */
+  readonly styleEdit: StyleEdit;
   tool: Tool = { kind: 'select' };
   selection: Id[] = [];
   /** Shows a short toast; the UI assigns it. */
@@ -122,6 +125,7 @@ export class BoardApp {
     this.r.readOnly = this.readOnly;
     this.flow = new Flow(this);
     this.editor = new TextEditor(this);
+    this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
 
     const meta = this.store.getMeta();
@@ -1363,13 +1367,20 @@ export class BoardApp {
     this.store.transact(() => {
       for (const o of this.selected()) {
         if (filter && !filter(o)) continue;
-        this.store.update(o.id, patch);
-        if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
-          const n = { ...o, ...patch } as BaseObj;
-          this.store.update(o.id, { h: textHeight(n) });
-        }
+        this.writeStyle(o, patch);
       }
     });
+  }
+
+  /** One object's style change, with the size it implies: a text box's height, a class's header. */
+  private writeStyle(o: Obj, patch: Record<string, unknown>) {
+    this.store.update(o.id, patch);
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+      this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
+    }
+    if (o.type === 'uml-class' && 'stereotype' in patch) {
+      this.store.update(o.id, { h: classHeight({ ...o, ...patch } as BaseObj) });
+    }
   }
 
   align(mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom') {
