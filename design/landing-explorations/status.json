@@ -75,8 +75,10 @@
       "started": "2026-10-08T20:36:44Z"
     },
     "pointillism": {
-      "status": "progress",
-      "started": "2026-10-08T21:10:04Z"
+      "status": "ready",
+      "started": "2026-10-08T21:10:04Z",
+      "ready": "2026-10-08T21:20:24.661Z",
+      "thumb": "_thumbs/pointillism.webp"
     },
     "mixed-media": {
       "status": "progress",
@@ -91,7 +93,8 @@
       "started": "2026-10-08T21:12:26.957Z"
     },
     "line-work": {
-      "status": "queued"
+      "status": "progress",
+      "started": "2026-10-08T21:20:24.628Z"
     },
     "textured": {
       "status": "queued"
@@ -112,5 +115,5 @@
       "status": "queued"
     }
   },
-  "updated": "2026-10-08T21:12:27.207Z"
+  "updated": "2026-10-08T21:20:24.794Z"
 }
