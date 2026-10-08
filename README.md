@@ -63,6 +63,17 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 
+### Behind a reverse proxy
+
+Terminate TLS in the proxy and keep these four things true (each is covered by `test/proxy.test.ts`):
+
+1. Set `TABULA_BASE_URL` to the public **https** address. The cookie's `Secure` flag, its `__Host-` name and the allowed WebSocket `Origin` come from that value alone; `X-Forwarded-Proto` is never read.
+2. Pass the public `Host` header through unchanged (nginx: `proxy_set_header Host $host;`). The CSRF check compares `Origin` with `Host`, so a proxy that rewrites `Host` makes every state-changing request fail with `403 csrf`.
+3. Set `TABULA_TRUST_PROXY=1` (exactly `1`, no other value counts) and have the proxy append the real client address to `X-Forwarded-For`; the rate limiter uses the rightmost entry and ignores anything a client put to its left. Without the variable, `X-Forwarded-For` is ignored and every client of the proxy shares one rate limit.
+4. Forward WebSocket upgrades (`Upgrade` and `Connection` headers) for `/sync/*`.
+
+An open WebSocket follows role and access changes (usually at once, otherwise within about 5 seconds) and a session that has run out closes it with code 4401 within about 6 seconds. See `test/live-roles.test.ts`.
+
 Try it locally:
 
 ```bash

@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- Tests for live role changes and session expiry on open sockets, and for running behind a reverse proxy; a "Behind a reverse proxy" section in the README.
 - Hosted workspaces (`MIRA_CLOUD_TOKEN`, `MIRA_CLOUD_URL`, `MIRA_CLOUD_WORKSPACE_ID`, accounts mode only; off and invisible when unset): a control plane can read seat counts (`GET /api/internal/usage`) and set a seat limit, a read-only switch and a banner (`PUT /api/internal/limits`, bearer token, stored in the new `settings` table). A read-only workspace drops board and comment updates on open and new sockets and answers writes with `402 read_only`; a full workspace refuses new invites, invite sign-ins and seat-taking role changes with `409 seat_limit`; `/api/me` reports the workspace. The instance opens the billing portal for the owner (`POST /api/billing/portal`) and reports seat counts to the control plane. The app shows the banner on the home screen and boards, a Workspace is read-only badge, and an owner-only Manage billing button in the admin Overview, and refreshes `/api/me` every five minutes. See `docs/cloud.md`.
 - `npm run dev:accounts` runs the dev server in accounts mode (sign-in links printed to the console).
 - `MIRA_MAIL_WEBHOOK_TOKEN`: sent as a bearer token with each mail webhook request, so a hosted mail relay can authenticate the instance.
