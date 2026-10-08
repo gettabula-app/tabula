@@ -22,7 +22,8 @@ export interface HomeNav {
 
 const LEDE = 'An infinite whiteboard that lives on your device and works offline.';
 const UNTITLED = 'Untitled board';
-const ACCESS: Record<BoardRole, string> = { owner: 'Owner', editor: 'Editor', commenter: 'Can comment', viewer: 'View only' };
+// Only limited access is worth a badge; owning or editing a board is the norm.
+const ACCESS: Partial<Record<BoardRole, string>> = { commenter: 'Can comment', viewer: 'View only' };
 
 const emptyLine = (text: string) => h('p', { class: 'home-empty' }, text);
 const normalise = (query: string) => query.trim().toLowerCase();
@@ -270,7 +271,7 @@ function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 
       h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title)),
       h('span', { class: 'board-sub' },
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
-        r.role ? h('span', { class: 'board-access' }, h('span', { class: 'badge' }, ACCESS[r.role])) : null),
+        r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
       h('span', { class: 'board-actions' }, ...r.actions)))));
 }
 
