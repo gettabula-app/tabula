@@ -414,8 +414,8 @@ Boards are shared, so AI runs are too. Others see a run while it happens and see
 - **Actions for editors.** A small tray on the label row, right of the label: **Discard** and **Accept** (`--signal`, primary), 20px buttons. They are on the ghost area, not in your bar: your bar keeps working on your own run, and the tray says whose preview it is. Accept writes Ana's proposal as one undo step on **your** undo stack. It is applied with your role (`store.transact`, the same validation as Add), and the toast says "Added Ana's 4 stickies." with Undo. Discard writes nothing; the toast says "Discarded Ana's preview."
 - **Viewers and commenters** see the preview and its label, read-only. There is no tray.
 - **Ana's own bar** stays in preview state with Add to board, Discard and Retry. When someone else accepts or discards, her bar returns to idle and a toast says "Ben added your preview." or "Ben discarded your preview."
-- **First action wins.** Ana, Ben and you can act on the same preview within the same second. The relay settles it: the client that acts first claims the run (see "Protocol"), and only that client writes. Anyone else whose click arrives later writes nothing, the preview disappears for them, and they get a toast naming who acted and how: "Ana added her preview first." / "Ana discarded her preview first. Nothing was added." / "Ben added Ana's preview first." The mock shows this with "Ana acts first" (`other-preview-race-default.png`).
-- A preview from someone who disconnects disappears with their awareness state and can no longer be accepted (the relay drops it too). Nothing was written, so nothing is lost but the run.
+- **First action wins.** Ana, Ben and you can act on the same preview within the same second. The relay settles it: the first `resolve` wins (see "Protocol"), and only the app that made it writes. Anyone else whose click arrives later writes nothing, the preview disappears for them, and they get a toast naming who acted and how: "Ana added her preview first." / "Ana discarded her preview first. Nothing was added." / "Ben added Ana's preview first." The mock shows this with "Ana acts first" (`other-preview-race-default.png`).
+- **A preview outlives its owner's connection.** If Ana leaves, her preview stays, still labelled "Ana's AI preview", and any editor can accept or discard it until it expires 10 minutes after it was ready (or the board's room unloads). Her avatar badge goes with her; the label row carries her name.
 
 ### Two previews at once
 
@@ -432,21 +432,52 @@ Boards are shared, so AI runs are too. Others see a run while it happens and see
 - **Workspace keys and credits cannot be private.** The popover says so instead of showing the switch ("Runs on the workspace key can't be private: the workspace pays for them."). A run that spends the workspace's money or allowance stays visible on the board, so the people who share the bill can see what it is spent on. Admins also see it in the audit log and, in phase 2, in usage by person.
 - **Private means private from collaborators, not from the workspace.** The relay still writes the audit row (`ai.<feature>`, `keySource: 'user'`) for a private run, as `docs/ai.md` requires for every run. The row holds no board text, prompt or output. No conflict with `docs/ai.md`: it allows personal keys only when an admin turns them on, and the switch exists only where a personal key is in use.
 
-### Protocol: awareness, not the document
+### Protocol: runs are held by the relay
 
-Same model as focus requests (`docs/focus-requests.md`): run state travels on the Yjs **awareness** state of the person running it, never in the board document. It is never saved, never in history, never in exports or `.drift` files, and it disappears when that client leaves.
+Live runs are **relay-authoritative**, as built in `server/ai/live.mjs` and `server/ai/policy.mjs`; see "Live runs" in `docs/ai.md`, which is the contract. The bar only draws what the relay sends. Awareness carries nothing about AI runs, because awareness is set by each client and can be spoofed: someone could claim to be running a run, or show a preview the relay never validated.
 
-| Awareness field | Value | Set | Cleared |
-| --- | --- | --- | --- |
-| `aiRun` | `{ id, feature: 'summarise' \| 'cluster' \| 'generate', state: 'running' \| 'preview', ts, from: { id, name, color }, target: { x, y, w, h } \| null, preview?: { area: { x, y, w, h }, kind: 'create' \| 'group', count, frameTitle? } }` | When a non-private run starts; updated to `state: 'preview'` with `preview` when the proposal arrives | When the run ends without a preview, on Add, Discard or Stop, when someone else claims it, after 10 minutes, or when the client leaves |
+**State.** The relay keeps each board's runs in memory as `{ id, feature, by: { id, name }, status, startedAt, readyAt, proposal, cut, error, resolvedBy }`. A run starts when the provider is about to be called, and becomes `ready` with the validated proposal or `failed` with an error code. The `progress` and `result` events of the run request carry its `runId`, so the runner's own bar knows which run is its own.
+- **Nothing goes into the board document** until someone accepts. Runs are never saved, never in history, never in exports or `.drift` files.
+- **Lifetime.** A `ready` run nobody settles becomes `expired` after 10 minutes. A run still `running` after 5 minutes is `failed`. A board holds at most 12 open runs; when a 13th starts, the oldest ready one expires to make room. Runs are dropped when the board's room unloads, and a relay restart forgets them all.
+- **A ready run survives its owner disconnecting**, so any editor can still accept or discard it (see "Someone else's preview").
 
-- **The proposal itself is not on awareness.** y-protocols sends a client's whole awareness state on every change, including every cursor move, and a proposal can be tens of kilobytes (up to 30 stickies of up to 2,000 characters each). Awareness carries only a reference (`id`) and the geometry needed to draw the outline and reserve the area.
-- **The relay holds the validated proposal in memory**, keyed by run id, for as long as the preview lives: until Add, Discard, a claim, 10 minutes, or the owner's disconnect. It already has the proposal: it produced and validated it in step 5 of "Running a feature". New endpoints:
-  - `GET /api/ai/runs/:id`: anyone who can read the board fetches the proposal to draw the ghosts. Not found for private runs (except to the owner) and for runs that are gone.
-  - `POST /api/ai/runs/:id/claim { action: 'accept' | 'discard' }`: anyone who can write the board, the owner included. It is atomic; the first claim wins, returns the proposal for `accept`, and drops it. Later claims get `409 ai_run_claimed { by: { name }, action }`, which the client turns into the "…first" toast. Own Add and Discard go through the same claim, so there is one rule for everyone.
-- **This touches a promise in `docs/ai.md`**: "Prompts and outputs are not stored on the server." The proposal is held only in relay memory, never on disk or in logs, for the life of one preview, and only so collaborators can see and accept it. Private runs are not held for anyone but the owner. `docs/ai.md` should say this when it is next edited (open question 19).
-- **Validation on receipt**, as for focus requests: `from.id` must match the `user.id` the same client announced; shapes and numbers are checked (finite, within the board's bounds); names are trimmed and cut to 40 characters; a colour is kept only if it is a hex colour; a run older than 10 minutes is ignored. All text is shown as text. Awareness is advisory: the relay decides who may fetch or claim.
-- **Viewers and commenters** receive awareness like everyone else and can fetch proposals (read access) but cannot claim.
+**Broadcast.** The relay sends message type 6 (`MSG_AI_RUNS`) to sockets in the board room, relay to client only:
+- a `{ kind: 'snapshot', runs }` message to a socket that joins while runs are open;
+- then a `{ kind: 'patch', run }` message for each change.
+
+Every socket gets its own copy, built by `viewFor` and filtered by `canSeeRun`, so who sees what is decided on the server. A `ready` run carries its `proposal` and `cut`. `accepted`, `discarded`, `failed` and `expired` mean the run is gone, and the client removes the outline or preview. Their `resolvedBy` names who settled it, which feeds the "…first" toast and Ana's "Ben added your preview." toast.
+
+**What the bar draws from a run.**
+
+| From the run | Drawn as |
+| --- | --- |
+| `status: 'running'`, `by`, `feature` | The presence line "Ana is asking AI: Summarise…", the avatar badge and the target outline. |
+| `status: 'ready'` and `proposal` | The ghosts and the "Ana's AI preview" label row. |
+| `by.id` | The owner's colour: the colour that person's cursor already uses (`USER_COLORS`, looked up by user id). In open mode `by` is `{ id: null, name: null }`, so the line reads "Someone is asking AI: Summarise…" in `--canvas-ink`, and the label reads "AI preview". |
+| `id` matching your own `runId` | Your own run. It is drawn as your preview, driven by your bar, not as someone else's. |
+
+- **Where the ghosts go.** Ghosts are laid out with the same `nextFree` placement that Accept uses, on the board as it is now. What you see is therefore where the stickies land, whoever accepts.
+- **The prompt is never sent to others** (`PROMPT_VISIBILITY = 'runner'`), which matches "The prompt is never shown" above.
+
+**Settling.** Every Accept and Discard calls `POST /api/ai/runs/:id/resolve { action: 'accept' | 'discard' }`. That covers your own Add to board and Discard in the bar, and Accept and Discard on someone else's label row. The first call wins:
+- **200:** an accept returns the `proposal`. The app of the person who clicked writes it with `store.transact`, as one undo step on their own stack.
+- **409 `ai_run_resolved`:** someone else got there first, or the run failed or expired. The client shows the "…first" toast, using `resolvedBy` from the patch that arrives alongside.
+- **409 `ai_run_running`:** the run hasn't finished yet. The bar can't send this, because Accept only appears on a ready run.
+- **404 `not_found`:** the run is gone.
+- **403 `forbidden`:** the policy says no.
+- **402 `read_only`:** the workspace is read-only.
+
+The relay writes an audit row, `ai.run.accept` or `ai.run.discard`. Who may resolve is `RESOLVE_POLICY = 'editors'`: anyone who can edit the board. That matches "Actions for editors" above. Viewers and commenters get the runs, so they see the outline, the line and the preview, but get no tray, and the relay would refuse them anyway.
+
+**Not in the relay yet** (needed for this design; tracked for the build):
+- **Target.** `live.mjs` has no target, so the outline around Ana's selection or frame has nothing to draw from.
+  - Proposal: the run route already receives the selection ids, or the frame id. It stores them on the run as `target: { ids } | { frameId } | null` and sends them in `viewFor`.
+  - Each client then computes the outline from those ids on its own board. That uses no client-supplied geometry, and the outline follows the stickies if they move.
+  - Runs on the visible area, the whole board or the prompt only get `target: null`.
+- **Private runs.** `live.mjs` has no private flag.
+  - Proposal: the run request carries `private: true`, which is allowed only when the key that resolves is a personal key; otherwise the relay answers `400`.
+  - The relay still starts the run, so `runId`, the audit row and resolve keep working. `viewFor` returns the run only to the runner (`viewer.userId === run.by.id`) and returns `null` to everyone else.
+  - This keeps the rule on the server, next to `canSeeRun`, instead of trusting the client to keep quiet.
 
 ### Colour
 
@@ -482,7 +513,7 @@ For the engineer. The bar is new UI plus a few small changes to existing code.
 - `focus.ts` and the poll card read `--ai-top` (see "Placement").
 - The Share/board menu gets the admin-only "Set up AI" item when AI is off.
 - `docs/ai.md` and `CHANGELOG.md` get the bar, when it ships.
-- Multiplayer (TAB-141): the `aiRun` awareness field with a reader and validator next to `src/focus-requests.ts`; the target outline, label rows, other people's ghosts and their tray in the canvas layer; the avatar badge in the presence tray; the private switch; relay `GET /api/ai/runs/:id` and `POST /api/ai/runs/:id/claim` with the in-memory proposal store. Tests: the validator (spoofed `from.id`, bad shapes, stale runs), the claim race (two claims, one wins, 409 for the other), private runs not fetchable by others, viewers cannot claim, the label-row collision rule, reduced motion.
+- Multiplayer (TAB-141): the relay side is built (`server/ai/live.mjs`, `MSG_AI_RUNS`, `POST /api/ai/runs/:id/resolve`, `server/ai/policy.mjs` and `src/ai-policy.ts`). Still needed: in the relay, `target` and `private` on runs (see "Not in the relay yet" under "Protocol"); in the app, a reader for `MSG_AI_RUNS`, the target outline, label rows, other people's ghosts laid out with `nextFree`, their tray calling `resolve`, the avatar badge, the private switch and the "…first" toasts from `409 ai_run_resolved` and `resolvedBy`. Tests: snapshot then patches, a settled patch removes the preview, a 409 shows the toast and writes nothing, viewers get no tray, open mode reads "Someone", the label-row collision rule, and reduced motion.
 - Tests (from the Linear spec): context selection, preview, accept and undo, permission gating, each error state, a mock provider (no network).
 
 ## Decisions beyond the brief
@@ -536,10 +567,10 @@ Questions 1, 2, 3, 5, 8 and 17 are closed by the decisions above; they stay here
 16. **The model chip is a button with a popover** because the model is not the person's choice (admins pick it). If per-run model choice is wanted later, the same chip becomes a menu.
 17. **Existing entry points.** Decided (Johan, 2026-10-09): the bar is the single entry point; the other items open it with their action armed (see "Entry points").
 18. **Dragging over content.** The bar can be dropped over the objects it is about to act on. It is draggable, so that is the person's choice, but the context pill and the preview ghosts do not move to avoid it.
-19. **Proposals held on the relay (TAB-141).** Sharing previews needs the relay to keep each proposal in memory while its preview lives, which qualifies `docs/ai.md`'s "Prompts and outputs are not stored on the server". Accept the qualification and update `docs/ai.md`, or keep previews private to the owner until added. Recommendation: accept it; memory only, never on disk, never for private runs.
+19. **Proposals held on the relay (TAB-141).** Answered: `docs/ai.md` ("Live runs") now says the relay holds each run and its proposal in memory only, until it is settled or expires, and a restart forgets them.
 20. **Weak person colours.** Amber, teal and orange outlines are under 3:1 on the light canvases, and red labels are just under 4.5:1. Fix in `USER_COLORS` (which also helps cursors), or darken those colours only for AI outlines and labels?
 21. **Others' previews and the viewport.** Should a new preview from someone else ever pan your view? Proposed: never. The avatar badge and the outline are enough, and a follow (`docs/focus-requests.md`) is one click away.
-22. **Leaving with a preview open.** Today the preview dies with the owner's connection. Should another editor be able to adopt it for a short grace period (say 60 seconds) instead?
+22. **Leaving with a preview open.** Answered by the relay design: a ready run survives its owner disconnecting, and any editor can still accept or discard it until it expires after 10 minutes.
 23. **Private by default for personal keys?** Decided off by default. Revisit if people with personal keys turn it on almost every time.
 
 ## The mock
