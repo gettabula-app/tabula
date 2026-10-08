@@ -83,16 +83,22 @@
       "thumb": "_thumbs/pointillism.webp"
     },
     "mixed-media": {
-      "status": "progress",
-      "started": "2026-10-08T21:11:58Z"
+      "status": "ready",
+      "started": "2026-10-08T21:11:58Z",
+      "ready": "2026-10-08T21:29:25.483Z",
+      "thumb": "_thumbs/mixed-media.webp"
     },
     "wabi-sabi": {
-      "status": "progress",
-      "started": "2026-10-08T21:12:26.924Z"
+      "status": "ready",
+      "started": "2026-10-08T21:12:26.924Z",
+      "ready": "2026-10-08T21:31:10.836Z",
+      "thumb": "_thumbs/wabi-sabi.webp"
     },
     "neo-brutalism": {
-      "status": "progress",
-      "started": "2026-10-08T21:12:26.957Z"
+      "status": "ready",
+      "started": "2026-10-08T21:12:26.957Z",
+      "ready": "2026-10-08T21:33:01.073Z",
+      "thumb": "_thumbs/neo-brutalism.webp"
     },
     "line-work": {
       "status": "progress",
@@ -103,13 +109,16 @@
       "started": "2026-10-08T21:20:57.669Z"
     },
     "solarpunk": {
-      "status": "queued"
+      "status": "progress",
+      "started": "2026-10-08T21:29:25.448Z"
     },
     "cassette-futurism": {
-      "status": "queued"
+      "status": "progress",
+      "started": "2026-10-08T21:31:10.801Z"
     },
     "ligne-claire": {
-      "status": "queued"
+      "status": "progress",
+      "started": "2026-10-08T21:33:01.041Z"
     },
     "claymorphism": {
       "status": "queued"
@@ -118,5 +127,5 @@
       "status": "queued"
     }
   },
-  "updated": "2026-10-08T21:20:57.881Z"
+  "updated": "2026-10-08T21:33:01.233Z"
 }

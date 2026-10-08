@@ -1,4 +1,449 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tabula: Mixed Media (queued)</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F4F4F2;color:#222;font:15px/1.5 system-ui,sans-serif}</style></head>
-<body><p>Mixed Media variant queued.</p></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula - an infinite whiteboard for teams</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams: notes, connectors, facilitated exercises and live sync. Open source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,800;1,6..96,500;1,6..96,800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js-anim')</script>
+<style>
+/* One palette. The same hex values are used in every image brief. */
+:root{
+  --paper:#ECE9E2;      /* page ground */
+  --hi:#F7F5F0;         /* light paper: solid backing for text, board ground */
+  --ink:#121216;        /* text, toolbar, rules */
+  --red:#D42A18;        /* accent one */
+  --blue:#2347F5;       /* accent two */
+  --grey:#55555C;       /* secondary text on paper / hi (6.1:1 / 6.8:1) */
+  /* modular type scale, ratio 1.25, base 17px */
+  --s-1:.8rem; --s0:1.0625rem; --s1:1.33rem; --s2:1.66rem; --s3:2.08rem; --s4:2.6rem; --s5:3.25rem; --s6:4.06rem; --s7:5.1rem;
+  --u:8px; --gut:24px; --ease:cubic-bezier(.2,.7,.2,1);
+  --display:"Bodoni Moda","Didot","Bodoni 72",Georgia,serif;
+  --body:"Instrument Sans","Helvetica Neue",Arial,sans-serif;
+  --wrap:1320px;
+  --torn-b:polygon(0.0% 0.0%,100.0% 0.0%,100.0% 100.0%,95.5% 98.3%,90.9% 98.3%,86.4% 99.9%,81.8% 99.8%,77.3% 98.5%,72.7% 98.7%,68.2% 98.8%,63.6% 99.4%,59.1% 98.9%,54.5% 98.9%,50.0% 99.0%,45.5% 99.7%,40.9% 99.2%,36.4% 99.3%,31.8% 98.7%,27.3% 98.2%,22.7% 98.3%,18.2% 99.0%,13.6% 99.2%,9.1% 99.5%,4.5% 99.9%,0.0% 100.0%);
+  --torn-r:polygon(0.0% 0.0%,100.0% 0.0%,99.8% 4.5%,98.5% 9.1%,98.6% 13.6%,99.5% 18.2%,99.1% 22.7%,99.2% 27.3%,98.8% 31.8%,98.6% 36.4%,99.8% 40.9%,99.9% 45.5%,98.5% 50.0%,99.2% 54.5%,98.6% 59.1%,100.0% 63.6%,99.2% 68.2%,98.7% 72.7%,99.6% 77.3%,98.3% 81.8%,98.4% 86.4%,99.9% 90.9%,100.0% 95.5%,99.0% 100.0%,0.0% 100.0%);
+  --torn-t:polygon(0.0% 0.4%,4.5% 0.2%,9.1% 0.7%,13.6% 0.3%,18.2% 0.1%,22.7% 0.7%,27.3% 1.7%,31.8% 1.4%,36.4% 1.4%,40.9% 0.4%,45.5% 1.0%,50.0% 0.5%,54.5% 0.3%,59.1% 0.2%,63.6% 0.4%,68.2% 1.7%,72.7% 1.5%,77.3% 1.5%,81.8% 1.4%,86.4% 0.3%,90.9% 0.6%,95.5% 1.1%,100.0% 1.3%,100.0% 100.0%,0.0% 100.0%);
+  --torn-all:polygon(0.0% 0.4%,4.5% 1.0%,9.1% 0.7%,13.6% 1.1%,18.2% 1.1%,22.7% 0.1%,27.3% 0.0%,31.8% 1.5%,36.4% 0.5%,40.9% 0.4%,45.5% 1.8%,50.0% 0.8%,54.5% 1.5%,59.1% 0.9%,63.6% 1.2%,68.2% 0.3%,72.7% 1.1%,77.3% 1.6%,81.8% 0.9%,86.4% 1.3%,90.9% 1.2%,95.5% 0.1%,100.0% 1.4%,98.9% 4.5%,99.5% 9.1%,99.9% 13.6%,98.4% 18.2%,99.1% 22.7%,98.7% 27.3%,98.4% 31.8%,98.7% 36.4%,98.3% 40.9%,99.3% 45.5%,98.6% 50.0%,99.2% 54.5%,98.3% 59.1%,98.4% 63.6%,99.8% 68.2%,99.8% 72.7%,99.6% 77.3%,98.3% 81.8%,99.2% 86.4%,98.9% 90.9%,99.5% 95.5%,99.1% 100.0%,95.5% 99.3%,90.9% 99.4%,86.4% 98.9%,81.8% 98.9%,77.3% 98.4%,72.7% 98.8%,68.2% 98.3%,63.6% 98.5%,59.1% 98.2%,54.5% 98.8%,50.0% 99.7%,45.5% 98.5%,40.9% 98.3%,36.4% 98.4%,31.8% 99.0%,27.3% 98.7%,22.7% 99.6%,18.2% 98.5%,13.6% 99.0%,9.1% 99.5%,4.5% 99.9%,0.0% 98.5%,1.8% 95.5%,0.2% 90.9%,1.4% 86.4%,0.7% 81.8%,0.3% 77.3%,0.5% 72.7%,1.4% 68.2%,1.6% 63.6%,0.1% 59.1%,1.1% 54.5%,0.1% 50.0%,1.3% 45.5%,0.6% 40.9%,1.6% 36.4%,1.8% 31.8%,0.9% 27.3%,1.8% 22.7%,0.6% 18.2%,0.1% 13.6%,1.1% 9.1%,0.1% 4.5%);
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{font-family:var(--body);font-size:var(--s0);line-height:1.55;color:var(--ink);background:var(--paper);overflow-x:hidden;position:relative}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+p{max-width:60ch}
+h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.02;letter-spacing:-.01em}
+h1{font-size:clamp(3rem,6.4vw,var(--s7))}
+h2{font-size:clamp(2.4rem,4.6vw,var(--s6))}
+h3{font-size:var(--s1);line-height:1.15;font-weight:800;margin-bottom:8px}
+em{font-style:italic;font-weight:500}
+:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.on-ink :focus-visible,.on-blue :focus-visible,.on-red :focus-visible{outline-color:var(--hi)}
+.wrap{width:min(var(--wrap),100% - 64px);margin-inline:auto}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut)}
+.sect{padding:112px 0;position:relative;overflow-x:clip}
+
+/* paper grain over the whole page, generated image, multiplied */
+.grain{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;mix-blend-mode:multiply;opacity:.2;z-index:50}
+
+.kicker{display:flex;align-items:center;gap:12px;font-size:var(--s-1);font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:24px}
+.kicker b{display:inline-grid;place-items:center;min-width:32px;height:24px;padding:0 8px;background:var(--ink);color:var(--hi);letter-spacing:.06em}
+.lede{font-size:var(--s1);line-height:1.45;max-width:38ch}
+
+/* buttons: one primary, one secondary */
+.cta{display:flex;flex-wrap:wrap;gap:16px;margin-top:40px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:56px;padding:0 32px;font-weight:700;font-size:var(--s0);letter-spacing:.02em;text-decoration:none;border:2px solid var(--ink);transition:transform .2s var(--ease),background .2s,color .2s}
+.btn.p{background:var(--ink);color:var(--hi)}
+.btn.p:hover{background:var(--red);border-color:var(--red)}
+.btn.s{background:var(--hi);color:var(--ink)}
+.btn.s:hover{background:var(--ink);color:var(--hi)}
+.on-ink .btn.p,.on-blue .btn.p,.on-red .btn.p{background:var(--hi);color:var(--ink);border-color:var(--hi)}
+.on-ink .btn.p:hover,.on-blue .btn.p:hover,.on-red .btn.p:hover{background:var(--paper)}
+.on-ink .btn.s,.on-blue .btn.s,.on-red .btn.s{background:transparent;color:var(--hi);border-color:var(--hi)}
+.on-ink .btn.s:hover,.on-blue .btn.s:hover,.on-red .btn.s:hover{background:var(--hi);color:var(--ink)}
+
+/* header */
+header{position:sticky;top:0;z-index:60;background:var(--hi);border-bottom:2px solid var(--ink)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;min-height:72px;gap:16px}
+.brand{font-family:var(--display);font-weight:800;font-size:var(--s3);letter-spacing:-.02em;text-decoration:none;line-height:1;display:flex;align-items:baseline;gap:8px}
+.brand::after{content:"";width:10px;height:10px;background:var(--red);align-self:flex-end;margin-bottom:5px}
+nav ul{display:flex;gap:4px;list-style:none;padding:0;align-items:center}
+nav a{display:block;padding:10px 14px;text-decoration:none;font-size:.88rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;border-bottom:2px solid transparent}
+nav a:hover{border-bottom-color:var(--red)}
+nav a.nav-cta{background:var(--ink);color:var(--hi);margin-left:12px;border:2px solid var(--ink)}
+nav a.nav-cta:hover{background:var(--red);border-color:var(--red)}
+
+/* hero */
+.hero{padding:64px 0 96px;overflow:hidden}
+.hero .grid{align-items:center}
+.hero-copy{grid-column:1 / span 5;position:relative;z-index:3}
+.hero-copy h1{margin-bottom:32px}
+.hero-copy h1 em{color:var(--red)}
+.hero-copy small{display:block;margin-top:24px;font-size:.9rem;font-weight:600;letter-spacing:.04em;color:var(--grey)}
+.collage{grid-column:6 / span 7;position:relative;aspect-ratio:1 / .9}
+.collage>*{position:absolute}
+.redblk{left:24%;top:0;width:76%;height:68%;background:var(--red)}
+.blueblk{left:0;bottom:4%;width:22%;height:20%;background:var(--blue)}
+.bd{left:1%;top:11%;width:84%;background:var(--hi);padding:10px;box-shadow:10px 12px 0 rgba(18,18,22,.9);transform:rotate(-1.4deg);z-index:2}
+.bd .stage{position:relative;aspect-ratio:1400 / 1024}
+.bd .stage>img{position:absolute;inset:0;width:100%;height:100%}
+.bd svg.ov{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ov path.l{fill:none;stroke:var(--ink);stroke-width:7;stroke-linejoin:round}
+.ov path.h{fill:var(--ink)}
+.cur{position:absolute;display:flex;flex-direction:column;align-items:flex-start;pointer-events:none;z-index:3}
+.cur svg{width:40px;height:40px;overflow:visible;filter:drop-shadow(0 2px 0 rgba(18,18,22,.5))}
+.cur svg path{stroke:var(--hi);stroke-width:2;stroke-linejoin:round}
+.cur b{margin:-8px 0 0 26px;padding:3px 10px;border:2px solid var(--hi);color:var(--hi);font-size:.82rem;font-weight:700;letter-spacing:.03em;line-height:1.3}
+.cur.c1 svg path,.cur.c1 b{fill:var(--red);background:var(--red)}
+.cur.c2 svg path,.cur.c2 b{fill:var(--blue);background:var(--blue)}
+.cur.c3 svg path,.cur.c3 b{fill:var(--ink);background:var(--ink)}
+.cur svg path{background:none}
+.hand{right:-3%;top:66%;width:54%;z-index:4;mix-blend-mode:multiply}
+.tape{width:22%;z-index:5;opacity:.93}
+.tape.t1{left:-3%;top:8%;transform:rotate(-38deg)}
+.tape.t2{left:78%;top:8%;transform:rotate(24deg)}
+.mk{mix-blend-mode:multiply;z-index:6;pointer-events:none}
+.mk.circ{left:27%;top:51%;width:46%}
+.mk.star{left:90%;top:-2%;width:11%}
+.tag{left:3%;top:79%;z-index:6;max-width:44%;background:var(--hi);padding:14px 18px 16px;transform:rotate(-2deg);clip-path:var(--torn-all);box-shadow:none}
+.tag span{display:block;font-size:var(--s-1);font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--grey);margin-bottom:4px}
+.tag strong{display:block;font-family:var(--display);font-weight:800;font-size:var(--s1);line-height:1.1}
+
+/* section head */
+.head{margin-bottom:64px;align-items:end}
+.head h2{grid-column:1 / span 7}
+.head p{grid-column:9 / span 4;font-size:var(--s1);line-height:1.4}
+
+/* features */
+.feats{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:48px var(--gut)}
+.feat{border-top:3px solid var(--ink);padding-top:16px;display:flex;flex-direction:column}
+.feat .no{font-size:var(--s-1);font-weight:700;letter-spacing:.18em;display:flex;justify-content:space-between;color:var(--grey);margin-bottom:8px}
+.feat img{width:112px;height:112px;margin:8px 0 16px;mix-blend-mode:multiply}
+.feat:nth-child(2n) img{transform:rotate(8deg)}
+.feat:nth-child(3n) img{transform:rotate(-6deg)}
+.feat p{font-size:var(--s0);line-height:1.5}
+
+/* exercises */
+.on-ink{background:var(--ink);color:var(--hi)}
+.ex .art{grid-column:1 / span 6;position:relative;aspect-ratio:1 / 1.02}
+.ex .art>*{position:absolute}
+.ex .art .blk{inset:0 12% 10% 0;background:var(--red)}
+.ex .art .hd{left:0;top:2%;width:88%;mix-blend-mode:multiply}
+.ex .art .tag{left:auto;right:0;top:auto;bottom:0;max-width:56%;color:var(--ink);transform:rotate(1.6deg)}
+.ex .copy{grid-column:8 / span 5;align-self:center}
+.ex h2{margin-bottom:24px}
+.ex .copy>p{font-size:var(--s1);line-height:1.4;max-width:34ch}
+.steps{list-style:none;padding:0;margin-top:40px;counter-reset:st}
+.steps li{display:grid;grid-template-columns:56px 1fr;gap:16px;padding:20px 0;border-top:2px solid var(--hi)}
+.steps li::before{counter-increment:st;content:"0" counter(st);font-family:var(--display);font-weight:800;font-size:var(--s2);line-height:1;color:var(--hi)}
+.steps strong{display:block;font-family:var(--display);font-weight:800;font-size:var(--s1);margin-bottom:4px}
+.steps span{color:var(--hi)}
+
+/* templates */
+.tpl-grid{align-items:start}
+.tpl-side{grid-column:1 / span 4;position:relative}
+.tpl-side h2{margin-bottom:24px}
+.tpl-side p{font-size:var(--s1);line-height:1.4;max-width:30ch}
+.tpl-side .art{position:relative;margin-top:48px;aspect-ratio:1 / .8}
+.tpl-side .art img{position:absolute}
+.tpl-side .art .bl{left:6%;top:14%;width:88%}
+.tpl-side .art .ru{left:-4%;top:0;width:96%;mix-blend-mode:multiply;transform:rotate(-8deg)}
+.tpl-side .art .sc{right:-4%;bottom:-6%;width:60%;mix-blend-mode:multiply;transform:rotate(14deg)}
+.tpl-panel{grid-column:6 / span 7;background:var(--hi);padding:40px 48px;clip-path:var(--torn-all);position:relative}
+.tpl-panel ol{list-style:none;padding:0;columns:2;column-gap:48px;counter-reset:t}
+.tpl-panel li{counter-increment:t;display:grid;grid-template-columns:40px 1fr;align-items:baseline;padding:11px 0;border-top:2px solid var(--ink);break-inside:avoid;font-family:var(--display);font-weight:800;font-size:var(--s1);line-height:1.15}
+.tpl-panel li::before{content:counter(t,decimal-leading-zero);font-family:var(--body);font-weight:700;font-size:var(--s-1);letter-spacing:.14em;color:var(--red)}
+.tpl-panel .count{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;font-size:var(--s-1);font-weight:700;letter-spacing:.18em;text-transform:uppercase}
+.tpl-panel .count em{font-family:var(--display);font-size:var(--s2);letter-spacing:0;text-transform:none;font-weight:800;font-style:italic;color:var(--red)}
+
+/* pricing */
+.tix{list-style:none;padding:0;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gut)}
+.tix li{display:flex;flex-direction:column;gap:8px;padding:32px;min-height:340px;border:2px solid var(--ink);background:var(--hi);position:relative}
+.tix .k{font-size:var(--s-1);font-weight:700;letter-spacing:.18em;text-transform:uppercase}
+.tix b{font-family:var(--display);font-weight:800;font-size:var(--s6);line-height:1;letter-spacing:-.02em;margin-top:auto}
+.tix small{font-size:var(--s0);max-width:26ch}
+.tix .y{background:var(--red);color:var(--hi);border-color:var(--red);transform:translateY(-16px)}
+.tix .y .k,.tix .y small{color:var(--hi)}
+.tix .s3{background:var(--ink);color:var(--hi)}
+.tix .flag{position:absolute;top:-16px;left:24px;background:var(--ink);color:var(--hi);font-size:var(--s-1);font-weight:700;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px}
+.pricenote{margin-top:48px}
+.pricenote a{font-weight:700;text-decoration-thickness:2px;text-underline-offset:5px;text-decoration-color:var(--red)}
+
+/* final */
+.on-blue{background:var(--blue);color:var(--hi);overflow:hidden}
+.final .copy{grid-column:1 / span 7;align-self:center;position:relative;z-index:2}
+.final h2{font-size:clamp(3rem,7vw,var(--s7));margin-bottom:24px}
+.final .lede{max-width:34ch}
+.final .art{grid-column:9 / span 4;position:relative;aspect-ratio:1 / 1.1}
+.final .art>*{position:absolute}
+.final .art .sheet{inset:8% 0 8% 8%;background:var(--hi);color:var(--ink);padding:32px 28px;transform:rotate(2.4deg);clip-path:var(--torn-all);display:flex;flex-direction:column;justify-content:space-between}
+.final .art .sheet span{font-size:var(--s-1);font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--grey)}
+.final .art .sheet strong{font-family:var(--display);font-weight:800;font-size:var(--s3);line-height:1.05}
+.final .art .sheet em{color:var(--red)}
+.final .art .tape{width:34%;left:30%;top:0;transform:rotate(-4deg)}
+.final .art .pushpin{width:30%;right:-8%;bottom:-6%;transform:rotate(18deg);mix-blend-mode:multiply}
+
+footer{background:var(--ink);color:var(--hi);padding:56px 0}
+footer .wrap{display:flex;flex-wrap:wrap;gap:24px 48px;align-items:center;justify-content:space-between}
+footer .brand::after{background:var(--red)}
+footer ul{display:flex;flex-wrap:wrap;gap:8px 32px;list-style:none;padding:0}
+footer a{font-weight:600;text-underline-offset:5px;text-decoration-color:var(--red);text-decoration-thickness:2px}
+footer a:hover{color:var(--paper);text-decoration-color:var(--hi)}
+footer small{font-size:.85rem;display:block;width:100%;color:var(--paper)}
+
+/* motion: the hero layers settle once; section titles fade up once; nothing else moves */
+html.js-anim .collage .L{opacity:0;transform:translate(var(--dx,0),var(--dy,24px)) rotate(var(--rr,0deg))}
+html.js-anim .collage.in .L{opacity:1;transform:none;transition:opacity .5s var(--ease) var(--d,0s),transform .7s var(--ease) var(--d,0s)}
+html.js-anim .collage .L.keep-rot{transform:translate(var(--dx,0),var(--dy,24px)) rotate(calc(var(--rot) + var(--rr,0deg)))}
+html.js-anim .collage.in .L.keep-rot{transform:rotate(var(--rot))}
+html.js-anim .collage .hand{--dx:60px;--dy:0px}
+html.js-anim .ov path.l{stroke-dasharray:1;stroke-dashoffset:1}
+html.js-anim .collage.in .ov path.l{stroke-dashoffset:0;transition:stroke-dashoffset .6s var(--ease) 1s}
+html.js-anim .ov path.h{opacity:0}
+html.js-anim .collage.in .ov path.h{opacity:1;transition:opacity .15s linear 1.5s}
+html.js-anim .cur{opacity:0;transform:translate(-24px,-16px)}
+html.js-anim .collage.in .cur{opacity:1;transform:none;transition:opacity .4s var(--ease) 1.3s,transform .6s var(--ease) 1.3s}
+html.js-anim .sect:not(.hero) h2{opacity:0;transform:translateY(12px)}
+html.js-anim .sect:not(.hero) h2.in{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .4s var(--ease)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+
+@media (max-width:1100px){
+  .feats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tix{grid-template-columns:1fr}
+  .tix li{min-height:0}
+  .tix .y{transform:none}
+  .tix b{margin-top:16px}
+}
+@media (max-width:900px){
+  .hero-copy,.collage{grid-column:1 / -1}
+  .collage{margin-top:56px}
+  .head h2,.head p{grid-column:1 / -1}
+  .head p{margin-top:16px}
+  .ex .art,.ex .copy,.tpl-side,.tpl-panel,.final .copy,.final .art{grid-column:1 / -1}
+  .ex .copy{margin-top:56px}
+  .tpl-panel{margin-top:56px}
+  .tpl-side .art{max-width:420px}
+  .final .art{margin-top:56px;max-width:360px}
+}
+@media (max-width:700px){
+  .wrap{width:calc(100% - 32px)}
+  .sect{padding:64px 0}
+  .hero{padding:40px 0 64px}
+  .head{margin-bottom:40px}
+  nav ul li:not(:last-child){display:none}
+  nav a.nav-cta{margin-left:0}
+  .feats{grid-template-columns:1fr;gap:32px}
+  .feat{display:grid;grid-template-columns:96px 1fr;column-gap:16px;padding-top:12px}
+  .feat .no{grid-column:1 / -1}
+  .feat img{grid-row:2 / span 2;width:96px;height:96px;margin:0}
+  .tpl-panel{padding:32px 24px}
+  .tpl-panel ol{columns:1}
+  .tix li{padding:24px}
+  .tix b{font-size:var(--s5)}
+  .cur svg{width:36px;height:36px}
+  .cur b{font-size:.72rem;padding:2px 8px;margin-left:22px}
+  .cta .btn{flex:1 1 100%}
+  .tag{padding:10px 12px 12px;max-width:52%}
+  .tag strong{font-size:1.05rem}
+  .tag span{font-size:.62rem}
+  .bd{padding:6px;box-shadow:6px 8px 0 rgba(18,18,22,.9)}
+  .ex .art .tag{max-width:64%}
+}
+</style>
+</head>
+<body>
+<img class="grain" src="img/paper.webp" alt="" aria-hidden="true" width="600" height="600" decoding="async">
+<header>
+  <div class="wrap">
+    <a class="brand" href="#top">Tabula</a>
+    <nav aria-label="Main"><ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#exercises">Exercises</a></li>
+      <li><a href="#templates">Templates</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a class="nav-cta" href="#start">Start a board</a></li>
+    </ul></nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="sect hero" aria-labelledby="h1">
+  <div class="wrap grid">
+    <div class="hero-copy">
+      <div class="kicker"><b>01</b>Local-first whiteboard</div>
+      <h1 id="h1">Paste your thinking <em>together.</em></h1>
+      <p class="lede">Tabula is an infinite whiteboard for teams. It works offline in your browser and syncs live the moment everyone is in the room.</p>
+      <div class="cta">
+        <a class="btn p" href="#start">Start a board</a>
+        <a class="btn s" href="#pricing">See pricing</a>
+      </div>
+      <small>Open source. Self-host for free, or use hosted workspaces.</small>
+    </div>
+
+    <div class="collage" role="img" aria-label="A collage: the Tabula board pasted onto red paper with tape, three frames of sticky notes joined by connectors, named cursors for Mara, Idris and Noor, and a photographed hand pointing at the board.">
+      <div class="redblk L" style="--dx:40px;--dy:-24px;--d:0s"></div>
+      <div class="blueblk L" style="--dx:-30px;--dy:30px;--d:.1s"></div>
+      <div class="bd L keep-rot" style="--rot:-1.4deg;--dy:32px;--rr:-3deg;--d:.2s">
+        <div class="stage">
+          <img src="img/board.webp" width="1400" height="1024" alt="" decoding="async" fetchpriority="high">
+          <svg class="ov" viewBox="0 0 1400 1024" aria-hidden="true">
+            <path class="l" pathLength="1" d="M566 316 H950"/>
+            <path class="h" d="M972 316 L946 301 L946 331 Z"/>
+            <path class="l" pathLength="1" d="M1178 519 V572 H1000 V598"/>
+            <path class="h" d="M1000 622 L985 596 L1015 596 Z"/>
+            <path class="l" pathLength="1" d="M363 519 V572 H540 V598"/>
+            <path class="h" d="M540 622 L525 596 L555 596 Z"/>
+          </svg>
+          <div class="cur c1" style="left:41%;top:41%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Mara</b></div>
+          <div class="cur c2" style="left:9%;top:62%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Idris</b></div>
+          <div class="cur c3" style="left:66%;top:22%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Noor</b></div>
+        </div>
+      </div>
+      <img class="tape t1 L keep-rot" style="--rot:-38deg;--dy:-20px;--d:.55s" src="img/tape-1.webp" width="534" height="108" alt="" aria-hidden="true" decoding="async">
+      <img class="tape t2 L keep-rot" style="--rot:24deg;--dy:-20px;--d:.65s" src="img/tape-2.webp" width="286" height="90" alt="" aria-hidden="true" decoding="async">
+      <img class="hand L" style="--d:.45s" src="img/hand-point.webp" width="1000" height="363" alt="" aria-hidden="true" decoding="async">
+      <img class="mk circ L" style="--d:.8s;--dy:0px" src="img/mark-1.webp" width="452" height="338" alt="" aria-hidden="true" decoding="async">
+      <img class="mk star L" style="--d:.9s;--dy:0px" src="img/mark-4.webp" width="357" height="337" alt="" aria-hidden="true" decoding="async">
+      <div class="tag L keep-rot" style="--rot:-2deg;--dy:28px;--d:.7s"><span>Nº 01</span><strong>Notes, lines and cursors, pasted in.</strong></div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="sect" aria-labelledby="h-feat">
+  <div class="wrap">
+    <div class="kicker"><b>02</b>What is on the board</div>
+    <div class="head grid">
+      <h2 id="h-feat">Everything you need to <em>cut, paste and connect.</em></h2>
+      <p>Notes, shapes and lines that stay put, and a room that stays in sync.</p>
+    </div>
+    <ul class="feats">
+      <li class="feat"><div class="no"><span>01</span></div><img src="img/obj-4.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Sticky notes</h3><p>Notes and shapes on a snapping grid. Drop, drag, tidy.</p></div></li>
+      <li class="feat"><div class="no"><span>02</span></div><img src="img/obj-3.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Attached connectors</h3><p>Lines follow the notes they join, however you rearrange them.</p></div></li>
+      <li class="feat"><div class="no"><span>03</span></div><img src="img/obj-5.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Diagrams</h3><p>UML and flowchart shapes, icons, and Mermaid import.</p></div></li>
+      <li class="feat"><div class="no"><span>04</span></div><img src="img/obj-1.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Live presence</h3><p>Cursors, selections and who is here, synced by a small relay.</p></div></li>
+      <li class="feat"><div class="no"><span>05</span></div><img src="img/obj-7.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Offline first</h3><p>Every board lives in your browser first and merges later.</p></div></li>
+      <li class="feat"><div class="no"><span>06</span></div><img src="img/obj-8.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Comment threads</h3><p>Talk on the board itself, right next to the note you mean.</p></div></li>
+      <li class="feat"><div class="no"><span>07</span></div><img src="img/obj-2.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Five themes</h3><p>Default, Ayu, Kanagawa, Matrix and Evergreen.</p></div></li>
+      <li class="feat"><div class="no"><span>08</span></div><img src="img/obj-6.webp" width="440" height="440" alt="" loading="lazy" decoding="async"><div><h3>Teams and roles</h3><p>Owner, admin, member, guest. Editor, commenter, viewer.</p></div></li>
+    </ul>
+  </div>
+</section>
+
+<section id="exercises" class="sect on-ink ex" aria-labelledby="h-ex">
+  <div class="wrap grid">
+    <div class="art" aria-hidden="false">
+      <div class="blk L-ex" aria-hidden="true"></div>
+      <img class="hd" src="img/hand-pen.webp" width="1000" height="1069" alt="A photographed hand holding a marker pen, printed in red and black." decoding="async" loading="lazy">
+      <div class="tag"><span>Step 2 of 4</span><strong>Write in private. Notes stay hidden until the reveal.</strong></div>
+    </div>
+    <div class="copy">
+      <div class="kicker"><b>03</b>Facilitated exercises</div>
+      <h2 id="h-ex">Run the room, <em>not the tool.</em></h2>
+      <p>Guide a session step by step, with timers, and keep every voice equal.</p>
+      <ol class="steps">
+        <li><div><strong>Set the step</strong><span>Session steps with timers keep everyone on the same page.</span></div></li>
+        <li><div><strong>Write in private</strong><span>Notes are hidden from others until you reveal them.</span></div></li>
+        <li><div><strong>Reveal together</strong><span>Cluster the notes and talk them through in comment threads.</span></div></li>
+        <li><div><strong>Vote and poll</strong><span>Dot voting and polls turn a loud room into a clear answer.</span></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="templates" class="sect" aria-labelledby="h-tpl">
+  <div class="wrap grid tpl-grid">
+    <div class="tpl-side">
+      <div class="kicker"><b>04</b>Templates</div>
+      <h2 id="h-tpl">Fourteen ways to <em>start.</em></h2>
+      <p>Pick a template and the frames, columns and prompts are already on the board.</p>
+      <div class="art" aria-hidden="true">
+        <img class="bl" src="img/scrap-blue.webp" width="376" height="272" alt="" loading="lazy" decoding="async">
+        <img class="ru" src="img/obj-5.webp" width="440" height="440" alt="" loading="lazy" decoding="async">
+        <img class="sc" src="img/obj-1.webp" width="440" height="440" alt="" loading="lazy" decoding="async">
+      </div>
+    </div>
+    <div class="tpl-panel">
+      <div class="count"><span>Ready-made boards</span><em>14</em></div>
+      <ol>
+        <li>Start / Stop / Continue</li>
+        <li>4Ls</li>
+        <li>Mad / Sad / Glad</li>
+        <li>Sailboat</li>
+        <li>Crazy 8s</li>
+        <li>Brainstorm + affinity map</li>
+        <li>Lean Coffee</li>
+        <li>Impact / Effort matrix</li>
+        <li>MoSCoW</li>
+        <li>User story map</li>
+        <li>Customer journey map</li>
+        <li>Empathy map</li>
+        <li>SWOT</li>
+        <li>Pre-mortem</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="sect" aria-labelledby="h-price" style="padding-top:48px">
+  <div class="wrap">
+    <div class="kicker"><b>05</b>Pricing</div>
+    <div class="head grid">
+      <h2 id="h-price">Simple, and <em>free to self&#8209;host.</em></h2>
+      <p>Hosted workspaces live at your-team.gettabula.app. Or run it yourself with Docker.</p>
+    </div>
+    <ul class="tix grid">
+      <li><span class="k">Hosted, monthly</span><b>€8</b><small>per seat, per month</small></li>
+      <li class="y"><span class="flag">Two months free</span><span class="k">Hosted, yearly</span><b>€80</b><small>per seat, per year</small></li>
+      <li class="s3"><span class="k">Self-hosted</span><b>Free</b><small>Open source. Run it with Docker on your own machine.</small></li>
+    </ul>
+    <p class="pricenote">Teams, roles and email sign-in links are part of every hosted workspace. <a href="#start">Start a board</a> to try it.</p>
+  </div>
+</section>
+
+<section id="start" class="sect on-blue final" aria-labelledby="h-final">
+  <div class="wrap grid">
+    <div class="copy">
+      <div class="kicker"><b>06</b>Your move</div>
+      <h2 id="h-final">Start a board. <em>Cut the rest.</em></h2>
+      <p class="lede">Open a board in your browser in seconds. Invite the team when you are ready.</p>
+      <div class="cta">
+        <a class="btn p" href="#top">Start a board</a>
+        <a class="btn s" href="#pricing">See pricing</a>
+      </div>
+    </div>
+    <div class="art" aria-hidden="true">
+      <div class="sheet"><span>Open source</span><strong>Local-first. Offline. <em>Yours.</em></strong><span>gettabula.app</span></div>
+      <img class="tape" src="img/tape-1.webp" width="534" height="108" alt="" loading="lazy" decoding="async">
+      <img class="pushpin" src="img/obj-4.webp" width="440" height="440" alt="" loading="lazy" decoding="async">
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top">Tabula</a>
+    <ul>
+      <li><a href="https://gettabula.app">gettabula.app</a></li>
+      <li><a href="https://github.com/gettabula-app/tabula">GitHub gettabula-app/tabula</a></li>
+    </ul>
+    <small>© 2026 Tabula</small>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var hero=document.querySelector('.collage');
+  var titles=[].slice.call(document.querySelectorAll('.sect:not(.hero) h2'));
+  if(reduce||!('IntersectionObserver' in window)){document.documentElement.classList.remove('js-anim');return;}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.2});
+  requestAnimationFrame(function(){hero.classList.add('in');});
+  titles.forEach(function(t){io.observe(t);});
+})();
+</script>
+</body>
+</html>

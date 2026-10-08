@@ -1,4 +1,390 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tabula: Neo-Brutalism (queued)</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F4F4F2;color:#222;font:15px/1.5 system-ui,sans-serif}</style></head>
-<body><p>Neo-Brutalism variant queued.</p></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula: Neo-Brutalism</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams. Sticky notes, facilitated sessions, live cursors, offline by default.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js-anim')</script>
+<style>
+/* Palette, defined once:
+   ink #111111, paper #F6F3EC, white #FFFFFF, lemon #FFE14D, lilac #C9B6FF, mint #7FE3B5, tomato #FF5A3C, grey text #3A3A3A */
+:root{
+  --ink:#111111; --paper:#F6F3EC; --white:#FFFFFF;
+  --lemon:#FFE14D; --lilac:#C9B6FF; --mint:#7FE3B5; --tomato:#FF5A3C;
+  --muted:#3A3A3A;
+  --bw:3px; --off:6px;
+  --display:"Archivo Black","Arial Black",Impact,sans-serif;
+  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  /* type scale 1.25 */
+  --t-1:.8rem; --t0:1.0625rem; --t1:1.3rem; --t2:1.625rem; --t3:2.05rem; --t4:2.55rem;
+  --wrap:1200px; --gut:24px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 var(--t0)/1.6 var(--sans);overflow-x:hidden}
+img,svg{display:block;max-width:100%}
+a{color:inherit}
+h1,h2,h3{font-family:var(--display);font-weight:400;line-height:1.02;margin:0;letter-spacing:-.01em}
+p{margin:0}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 var(--gut)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* focus: ink ring on light, lemon on dark; always visible */
+:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
+.dark :focus-visible,footer :focus-visible{outline-color:var(--lemon)}
+.skip{position:absolute;left:12px;top:-80px;z-index:100;background:var(--lemon);border:var(--bw) solid var(--ink);padding:10px 16px;font-weight:700;text-decoration:none}
+.skip:focus{top:12px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;font:700 1rem/1 var(--sans);text-decoration:none;color:var(--ink);
+  padding:17px 26px;min-height:56px;background:var(--white);border:var(--bw) solid var(--ink);border-radius:0;box-shadow:var(--off) var(--off) 0 var(--ink);
+  cursor:pointer;transition:transform .12s ease,box-shadow .12s ease,background-color .12s ease}
+.btn.primary{background:var(--tomato)}
+.btn.lemon{background:var(--lemon)}
+.btn:hover{transform:translate(3px,3px);box-shadow:3px 3px 0 var(--ink)}
+.btn:active{transform:translate(var(--off),var(--off));box-shadow:0 0 0 var(--ink)}
+.btn.sm{padding:11px 18px;min-height:46px;font-size:.95rem;--off:4px}
+.btn svg{width:20px;height:20px}
+
+/* header */
+header.top{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:var(--bw) solid var(--ink)}
+.bar{display:flex;align-items:center;gap:24px;min-height:76px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
+.logo{display:inline-flex;align-items:center;gap:10px;font:400 1.55rem/1 var(--display);text-decoration:none}
+.logo i{width:34px;height:34px;background:var(--lemon);border:var(--bw) solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center;font-style:normal;font-size:1.05rem}
+nav.main{display:flex;gap:6px;margin-left:auto;margin-right:8px}
+nav.main a{font-weight:600;text-decoration:none;padding:9px 14px;border:var(--bw) solid transparent}
+nav.main a:hover{border-color:var(--ink);background:var(--lemon);box-shadow:3px 3px 0 var(--ink)}
+
+/* hero */
+.hero{padding:72px 0 96px;border-bottom:var(--bw) solid var(--ink)}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.25fr);gap:40px;align-items:center}
+.chip{display:inline-block;font:700 .85rem/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;padding:9px 12px;background:var(--mint);border:var(--bw) solid var(--ink);box-shadow:4px 4px 0 var(--ink);margin-bottom:28px}
+h1{font-size:clamp(2.9rem,5.2vw,4.6rem)}
+h1 mark{background:var(--lemon);color:var(--ink);padding:0 .12em;border:var(--bw) solid var(--ink);box-shadow:6px 6px 0 var(--ink);display:inline-block;line-height:1.05;margin:.08em 0 .06em;transform:none}
+.lede{font-size:var(--t1);line-height:1.5;max-width:30em;margin:30px 0 36px;color:var(--ink)}
+.ctas{display:flex;flex-wrap:wrap;gap:20px}
+.facts{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:40px;font-weight:600;font-size:.95rem;list-style:none;padding:0}
+.facts li::before{content:"";display:inline-block;width:12px;height:12px;background:var(--tomato);border:2px solid var(--ink);margin-right:8px;vertical-align:-1px}
+.stage{position:relative}
+.shot{position:relative;margin:0}
+.shot>img{width:100%;height:auto}
+.over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cur{position:absolute;display:block;pointer-events:none;transform:translate(-4px,-3px)}
+.cur svg{width:40px;height:40px;filter:none}
+.cur b{position:absolute;left:30px;top:30px;font:700 12.5px/1 var(--sans);padding:6px 8px 6px;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);white-space:nowrap;color:var(--ink)}
+.sticker{position:absolute;right:-6px;top:-30px;background:var(--tomato);border:var(--bw) solid var(--ink);box-shadow:5px 5px 0 var(--ink);padding:12px 16px;font:700 .95rem/1.15 var(--sans);transform:rotate(3deg);text-align:center}
+
+/* sections */
+section{padding:112px 0;border-bottom:var(--bw) solid var(--ink)}
+.sec-head{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:48px;align-items:end;margin-bottom:56px}
+.num{display:inline-block;font:700 .85rem/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--paper);padding:8px 12px;margin-bottom:20px}
+h2{font-size:clamp(2.2rem,4.8vw,3.8rem)}
+.sec-head p{font-size:var(--t1);line-height:1.5;max-width:26em}
+h3{font-size:var(--t2);line-height:1.1}
+
+/* features */
+.feat{background:var(--paper)}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px;list-style:none;margin:0;padding:0}
+.card{background:var(--white);border:var(--bw) solid var(--ink);box-shadow:8px 8px 0 var(--ink);display:flex;flex-direction:column}
+.card .art{border-bottom:var(--bw) solid var(--ink);padding:20px;display:grid;place-items:center}
+.card .art img{width:150px;height:150px;background:var(--paper);border:var(--bw) solid var(--ink);box-shadow:5px 5px 0 var(--ink)}
+.card.c1 .art{background:var(--lemon)} .card.c2 .art{background:var(--lilac)} .card.c3 .art{background:var(--mint)} .card.c4 .art{background:var(--tomato)}
+.card .body{padding:24px 22px 28px;display:flex;flex-direction:column;gap:12px}
+.card p{color:var(--muted);font-size:1rem;line-height:1.55}
+.card:nth-child(even){margin-top:36px}
+
+/* how it works */
+.how{background:var(--lilac)}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;list-style:none;margin:0;padding:0;counter-reset:s}
+.step{background:var(--paper);border:var(--bw) solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:28px 26px 32px;position:relative}
+.step:nth-child(2){background:var(--lemon);transform:translateY(28px)}
+.step:nth-child(3){background:var(--mint)}
+.step::before{counter-increment:s;content:"0" counter(s);display:block;font:400 4.5rem/1 var(--display);margin-bottom:16px}
+.step p{margin-top:12px}
+.how .steps{margin-bottom:28px}
+
+/* templates */
+.tpl{background:var(--paper)}
+.tpls{display:flex;flex-wrap:wrap;gap:16px;list-style:none;margin:0;padding:0}
+.tpls li{font:700 1.05rem/1.2 var(--sans);padding:16px 20px;border:var(--bw) solid var(--ink);box-shadow:5px 5px 0 var(--ink);background:var(--white);transition:transform .12s ease,box-shadow .12s ease}
+.tpls li:nth-child(5n+1){background:var(--lemon)} .tpls li:nth-child(5n+2){background:var(--lilac)} .tpls li:nth-child(5n+3){background:var(--mint)} .tpls li:nth-child(5n+4){background:var(--tomato)}
+.tpls li:hover{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--ink)}
+.tpl .more{margin-top:40px;font-weight:600;max-width:40em}
+
+/* pricing */
+.price{background:var(--mint)}
+.plans{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:36px;align-items:stretch}
+.plan{background:var(--paper);border:var(--bw) solid var(--ink);box-shadow:10px 10px 0 var(--ink);padding:34px 32px 36px;display:flex;flex-direction:column;gap:18px}
+.plan.hosted{background:var(--lemon)}
+.plan .tag{font:700 .85rem/1 var(--sans);letter-spacing:.08em;text-transform:uppercase}
+.plan .big{font:400 clamp(3rem,6vw,4.6rem)/1 var(--display)}
+.plan .big small{font:600 1rem/1.3 var(--sans);display:block;margin-top:10px}
+.plan ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.plan li{padding-left:30px;position:relative}
+.plan li::before{content:"";position:absolute;left:0;top:.35em;width:16px;height:16px;background:var(--ink)}
+.plan .btn{align-self:flex-start;margin-top:auto}
+
+/* final */
+.final{background:var(--tomato)}
+.final .wrap{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,5fr);gap:48px;align-items:center}
+.final h2{font-size:clamp(2.6rem,6.2vw,5.2rem)}
+.final p{font-size:var(--t1);margin:24px 0 36px;max-width:24em}
+.final .art{border:var(--bw) solid var(--ink);box-shadow:10px 10px 0 var(--ink);background:var(--paper)}
+.final .art img{width:100%;height:auto}
+
+/* footer */
+footer{background:var(--ink);color:var(--paper);padding:56px 0 48px}
+footer .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:32px;align-items:end}
+footer .logo{color:var(--paper);margin-bottom:14px}
+footer p{color:#D9D5CB;font-size:.95rem}
+footer nav{display:flex;flex-wrap:wrap;gap:8px 24px}
+footer a{font-weight:600;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px;padding:6px 2px}
+footer a:hover{background:var(--lemon);color:var(--ink);text-decoration:none}
+
+/* motion: hero drop once, headings fade up once. Hidden states only exist when JS is on and motion is allowed. */
+@media (prefers-reduced-motion:no-preference){
+  @keyframes drop{from{opacity:0;transform:translateY(-36px)}to{opacity:1;transform:none}}
+  @keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  .hero .chip,.hero h1,.hero .lede,.hero .ctas{animation:drop .5s cubic-bezier(.2,.7,.2,1) both}
+  .hero .chip{animation-delay:.05s} .hero h1{animation-delay:.12s} .hero .lede{animation-delay:.2s} .hero .ctas{animation-delay:.28s}
+  .hero .shot>img{animation:drop .6s cubic-bezier(.2,.7,.2,1) .2s both}
+  .hero .sticker{animation:drop .5s cubic-bezier(.2,.7,.2,1) .7s both}
+  .hero .cur{animation:fadein .4s ease 1s both}
+  .hero .conn{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .5s ease 1.05s forwards}
+  .hero .head{animation:fadein .2s ease 1.5s both}
+  .js-anim .rv{opacity:0;transform:translateY(18px);transition:opacity .4s ease,transform .4s cubic-bezier(.2,.7,.2,1)}
+  .js-anim .rv.in{opacity:1;transform:none}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .btn,.tpls li{transition:none}
+}
+
+/* responsive */
+@media (max-width:1100px){
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card:nth-child(even){margin-top:0}
+}
+@media (max-width:900px){
+  :root{--gut:20px}
+  section{padding:72px 0}
+  .hero{padding:40px 0 72px}
+  .hero .wrap,.sec-head,.plans,.final .wrap,footer .wrap{grid-template-columns:minmax(0,1fr);gap:40px}
+  .sec-head{gap:16px;margin-bottom:40px}
+  .steps{grid-template-columns:minmax(0,1fr)}
+  .step:nth-child(2){transform:none}
+  .stage{margin-top:12px}
+  .sticker{right:0;top:-34px}
+  nav.main{order:3;width:100%;margin:0;gap:2px;justify-content:space-between}
+  nav.main a{padding:8px 6px;font-size:.9rem;white-space:nowrap}
+  .bar{gap:12px}
+  .bar .btn{margin-left:auto}
+}
+@media (max-width:600px){
+  :root{--off:5px}
+  .cards{grid-template-columns:minmax(0,1fr)}
+  .card .art img{width:132px;height:132px}
+  .cur svg{width:36px;height:36px}
+  .cur b{left:26px;top:26px;font-size:12px}
+  .cur.c3{display:none}
+  .cur.c2{left:76%!important}
+  .sticker{top:-52px}
+  .ctas{gap:16px}
+  .ctas .btn{flex:1 1 100%}
+  .plan{padding:26px 22px 30px}
+  .tpls li{font-size:1rem;padding:13px 16px}
+  .final .wrap{gap:36px}
+  h1 mark{box-shadow:5px 5px 0 var(--ink)}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap bar">
+    <a class="logo" href="#top" aria-label="Tabula home"><i aria-hidden="true">T</i>Tabula</a>
+    <nav class="main" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#templates">Templates</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <a class="btn sm lemon" href="#start">Start a board</a>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap">
+    <div class="copy">
+      <span class="chip">Local-first whiteboard</span>
+      <h1>Think loud.<br><mark>Decide</mark> together.</h1>
+      <p class="lede">Tabula is an infinite board for teams: sticky notes, frames, connectors and facilitated sessions. It lives in your browser first, works offline, and syncs live when it can.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#start">Start a board
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M3 10h13M11 4l6 6-6 6"/></svg></a>
+        <a class="btn" href="#pricing">See pricing</a>
+      </div>
+      <ul class="facts">
+        <li>Offline by default</li>
+        <li>Open source</li>
+        <li>14 templates</li>
+      </ul>
+    </div>
+
+    <div class="stage">
+      <figure class="shot">
+        <img src="img/hero.webp" width="1420" height="930" alt="The Tabula board: a dark toolbar on the left, three coloured frames holding sticky notes, connectors between notes and teammates' named cursors.">
+        <svg class="over" viewBox="20 75 1420 930" aria-hidden="true" focusable="false">
+          <g stroke="#111111" stroke-width="9" stroke-linecap="butt" fill="none">
+            <path class="conn" pathLength="1" d="M520 462H592"/>
+            <path class="conn" pathLength="1" d="M438 632H678"/>
+            <path class="conn" pathLength="1" d="M856 632H1102"/>
+          </g>
+          <g fill="#111111" class="head">
+            <path d="M606 462 L580 448 L580 476Z"/>
+            <path d="M699 632 L673 618 L673 646Z"/>
+            <path d="M1124 632 L1098 618 L1098 646Z"/>
+          </g>
+        </svg>
+        <span class="cur c1" style="left:21.5%;top:47.5%"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 3v28l7.5-7 5.5 12.5 6.5-2.8L18 21h10.5z" fill="#FF5A3C" stroke="#111111" stroke-width="2.8" stroke-linejoin="round"/></svg><b style="background:#FF5A3C">Mara</b></span>
+        <span class="cur c2" style="left:86%;top:47%"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 3v28l7.5-7 5.5 12.5 6.5-2.8L18 21h10.5z" fill="#C9B6FF" stroke="#111111" stroke-width="2.8" stroke-linejoin="round"/></svg><b style="background:#C9B6FF">Kofi</b></span>
+        <span class="cur c3" style="left:57.5%;top:53%"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 3v28l7.5-7 5.5 12.5 6.5-2.8L18 21h10.5z" fill="#7FE3B5" stroke="#111111" stroke-width="2.8" stroke-linejoin="round"/></svg><b style="background:#7FE3B5">Ines</b></span>
+      </figure>
+      <div class="sticker" aria-hidden="true">Self-host:<br>free</div>
+    </div>
+  </div>
+</section>
+
+<section class="feat" id="features">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div><span class="num">01 Features</span><h2>One canvas.<br>No ceremony.</h2></div>
+      <p>Everything a team needs to get ideas out, group them and agree, without a setup wizard in sight.</p>
+    </div>
+    <ul class="cards">
+      <li class="card c1">
+        <div class="art"><img src="img/notes.webp" width="480" height="480" loading="lazy" decoding="async" alt="" aria-hidden="true"></div>
+        <div class="body"><h3>Notes, shapes, connectors</h3><p>Sticky notes and shapes snap to a grid. Connectors stay attached when you move things. UML and flowchart shapes included, plus Mermaid import and icons.</p></div>
+      </li>
+      <li class="card c2">
+        <div class="art"><img src="img/timer.webp" width="480" height="480" loading="lazy" decoding="async" alt="" aria-hidden="true"></div>
+        <div class="body"><h3>Facilitated sessions</h3><p>Step through a session with timers. Write privately, with notes hidden until the reveal. Then dot vote, run polls and discuss in comment threads.</p></div>
+      </li>
+      <li class="card c3">
+        <div class="art"><img src="img/offline.webp" width="480" height="480" loading="lazy" decoding="async" alt="" aria-hidden="true"></div>
+        <div class="body"><h3>Offline first, live when it can</h3><p>Every board lives in your browser and works offline. A small relay shares cursors, selections and presence, and merges changes later.</p></div>
+      </li>
+      <li class="card c4">
+        <div class="art"><img src="img/open.webp" width="480" height="480" loading="lazy" decoding="async" alt="" aria-hidden="true"></div>
+        <div class="body"><h3>Open source, your server</h3><p>Self-host with Docker or use a hosted workspace. Teams, roles, and email sign-in links. Five themes, so it fits your eyes.</p></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div><span class="num">02 How it works</span><h2>Three moves<br>to a decision.</h2></div>
+      <p>Pick a frame, run the room, keep what matters. The board is the record.</p>
+    </div>
+    <ol class="steps">
+      <li class="step"><h3>Open a board</h3><p>Start blank or from one of 14 templates. It is on your screen instantly, nothing to install and no account needed to begin.</p></li>
+      <li class="step"><h3>Run the session</h3><p>Set a timer, let everyone write in private, reveal together, then dot vote. Cursors show who is where.</p></li>
+      <li class="step"><h3>Sync when you can</h3><p>Work on a train, on a plane, in a basement. Reconnect and the relay merges everyone's changes.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="tpl" id="templates">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div><span class="num">03 Templates</span><h2>Fourteen ways<br>to start.</h2></div>
+      <p>Retros, prioritisation, research and planning formats, ready on the canvas.</p>
+    </div>
+    <ul class="tpls">
+      <li>Start / Stop / Continue</li>
+      <li>4Ls</li>
+      <li>Mad / Sad / Glad</li>
+      <li>Sailboat</li>
+      <li>Crazy 8s</li>
+      <li>Brainstorm + affinity map</li>
+      <li>Lean Coffee</li>
+      <li>Impact / Effort matrix</li>
+      <li>MoSCoW</li>
+      <li>User story map</li>
+      <li>Customer journey map</li>
+      <li>Empathy map</li>
+      <li>SWOT</li>
+      <li>Pre-mortem</li>
+    </ul>
+  </div>
+</section>
+
+<section class="price" id="pricing">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div><span class="num">04 Pricing</span><h2>Free to host.<br>Fair to rent.</h2></div>
+      <p>Run it yourself for nothing, or let us run it. Same Tabula either way.</p>
+    </div>
+    <div class="plans">
+      <article class="plan">
+        <span class="tag">Self-hosted</span>
+        <div class="big">Free<small>Open source. Run it with Docker.</small></div>
+        <ul><li>Your server, your data</li><li>All features, all templates</li><li>Community support on GitHub</li></ul>
+        <a class="btn" href="https://github.com/gettabula-app/tabula">View on GitHub</a>
+      </article>
+      <article class="plan hosted">
+        <span class="tag">Hosted workspace</span>
+        <div class="big">€8<small>per seat per month, or €80 per seat per year (two months free)</small></div>
+        <ul><li>Your own &lt;slug&gt;.gettabula.app</li><li>Teams, roles and email sign-in links</li><li>We run the relay and backups</li></ul>
+        <a class="btn primary" href="#start">Start a board</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="start">
+  <div class="wrap">
+    <div>
+      <h2 class="rv">Start a board.<br>Right now.</h2>
+      <p>Open a blank canvas, invite your team with a link, and get ideas out of heads and onto the wall.</p>
+      <a class="btn lemon" href="#top">Start a board
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M3 10h13M11 4l6 6-6 6"/></svg></a>
+    </div>
+    <div class="art"><img src="img/cta.webp" width="1100" height="825" loading="lazy" decoding="async" alt="A big red cursor about to click a lilac button, next to a stack of sticky notes and a star."></div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="logo" href="#top"><i aria-hidden="true" style="color:var(--ink)">T</i>Tabula</a>
+      <p>gettabula.app &middot; &copy; 2026 Tabula. Open source.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://gettabula.app">gettabula.app</a>
+      <a href="https://github.com/gettabula-app/tabula">GitHub: gettabula-app/tabula</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var els=document.querySelectorAll('.rv');
+  if(!('IntersectionObserver' in window)||matchMedia('(prefers-reduced-motion: reduce)').matches){els.forEach(function(e){e.classList.add('in')});return;}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.2});
+  els.forEach(function(e){io.observe(e)});
+})();
+</script>
+</body>
+</html>
