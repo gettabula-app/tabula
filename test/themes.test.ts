@@ -8,6 +8,7 @@ const TEXT_PAIRS: [ThemeVar, ThemeVar][] = [
   ['--on-signal', '--signal'],
   ['--tray-text', '--tray'],
   ['--tray-muted', '--tray'],
+  ['--ink', '--paper'],
 ];
 
 function fakeRoot() {
@@ -61,6 +62,11 @@ describe('contrast', () => {
     )
       .filter(({ ratio }) => !(ratio >= 4.5))
       .map(({ label, ratio }) => `${label} ${ratio.toFixed(2)}`);
+    expect(failing).toEqual([]);
+  });
+
+  it('keeps paper text on ink at 4.5:1 or better in every theme', () => {
+    const failing = THEMES.filter((t) => !(contrast(t.vars['--paper'], t.vars['--ink']) >= 4.5)).map((t) => t.id);
     expect(failing).toEqual([]);
   });
 });
