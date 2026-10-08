@@ -60,7 +60,7 @@ export interface AuditEntry { id: number; ts: number; actorId: string | null; ac
 
 Layout (Swiss, symmetric padding, theme variables only, no new colours): a full-page screen with a top bar (back to home, "Admin", signed-in person) and a left tab list: **Overview**, **Members**, **Teams**, **Boards**, **Sessions**, **Audit log**. The selected tab is part of the hash (`#/admin/members`), so reload and back work.
 
-- **Overview**: stat tiles (members active/disabled, teams, boards, active sessions, sign-ins in 7 days, live connections) and an instance card (base URL, mail mode, version).
+- **Overview**: stat tiles (members by role, disabled members, teams, boards, active sessions, sign-ins in 7 days, live connections; members, teams and boards count everything, with the disabled, archived or deleted part on the line under the number) and an instance card (base URL, mail mode, version).
 - **Members**: searchable table (name, email, role select, last seen, active sessions, boards, teams). Row actions: change role, disable/enable, sign out everywhere, remove (second-click confirmation, like comment delete). The controls the server would refuse (acting on an owner as a non-owner, the last owner) are disabled with a title explaining why.
 - **Teams**: all teams (name, members, archived badge) with archive/unarchive.
 - **Boards**: searchable table with a "Show deleted" toggle; open, delete (confirm), restore.

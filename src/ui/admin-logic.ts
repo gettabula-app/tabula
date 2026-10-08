@@ -1,4 +1,4 @@
-import type { AuditEntry, UserRole } from '../api';
+import type { AdminOverview, AuditEntry, UserRole } from '../api';
 
 /** Pure rules and text for the admin dashboard: no DOM, so they can be unit tested. */
 
@@ -272,4 +272,26 @@ export function deviceLabel(userAgent: string | null | undefined): string {
   if (browser && system) return `${browser} on ${system}`;
   if (browser || system) return (browser ?? system)!;
   return userAgent.trim().split(/[\s/;(]/)[0].slice(0, 40) || 'Unknown device';
+/** A stat tile on the Overview: its label, its number and the line under it. */
+export interface OverviewTile { label: string; value: number; sub?: string }
+
+/**
+ * The Overview's stat tiles. Members, teams and boards each count everything, with the part that is out of use
+ * (disabled, archived, deleted) on the line under the number, so the role breakdown adds up to the number above it.
+ */
+export function overviewTiles(o: AdminOverview): OverviewTile[] {
+  const r = o.members.byRole;
+  return [
+    {
+      label: 'Members',
+      value: o.members.total,
+      sub: [countLabel(r.owner, 'owner', 'owners'), countLabel(r.admin, 'admin', 'admins'), countLabel(r.member, 'member', 'members'), countLabel(r.guest, 'guest', 'guests')].join(' · '),
+    },
+    { label: 'Disabled members', value: o.members.disabled, sub: `${o.members.active} active` },
+    { label: 'Teams', value: o.teams.total, sub: `${o.teams.archived} archived` },
+    { label: 'Boards', value: o.boards.total, sub: `${o.boards.deleted} deleted` },
+    { label: 'Active sessions', value: o.sessions.active },
+    { label: 'Sign-ins, last 7 days', value: o.signIns7d },
+    { label: 'Live connections', value: o.live.connections, sub: `${countLabel(o.live.rooms, 'room', 'rooms')} open` },
+  ];
 }
