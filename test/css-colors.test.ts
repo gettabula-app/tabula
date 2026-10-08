@@ -16,7 +16,6 @@ const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
   { file: 'src/styles.css', selector: '.text-editor[data-mode', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.tile.uml svg', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.icon-tile', literals: ['#fff'] },
-  { file: 'src/styles.css', selector: '.modal-back', literals: ['rgba(16, 24, 32, 0.4)'] },
   {
     file: 'src/styles.css',
     selector: '.empty-hint',

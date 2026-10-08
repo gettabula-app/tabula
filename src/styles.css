@@ -352,12 +352,17 @@ select.input {
 /* popovers, menus, dialogs, toast */
 .popover { position: fixed; z-index: 50; max-height: calc(100vh - 16px); overflow: auto; }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
+.popover.tray, :root:not([data-theme='default']) .popover.tray {
+  border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
+}
+.popover .dot-presets button { border-radius: 0; }
 .steps-pop { padding: 0 14px 14px; }
 .steps-pop .pop-head { padding: 16px 0 4px; }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; }
 .menu .list-label { padding: 0 10px; }
-.menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
+.menu-item[aria-checked='true'] { box-shadow: inset 4px 0 0 var(--signal); }
 .menu-item > span:not([class]) { flex: 1; }
 .menu-hint { color: var(--tray-muted); font-size: 12px; }
 
@@ -371,18 +376,44 @@ select.input {
 .font-row { display: grid; grid-template-columns: 1fr auto 18px; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
 .font-row:hover { background: var(--tray-hover); }
 .font-row.on { background: color-mix(in srgb, var(--signal) 12%, transparent); }
+.popover .font-row { border-radius: 0; }
+.popover .font-row.on { background: transparent; box-shadow: inset 4px 0 0 var(--signal); }
+.popover .font-row:hover { background: var(--tray-hover); }
 .font-name { font-size: 20px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .font-meta { color: var(--tray-muted); font-size: 11.5px; }
 .font-list .list-label { padding: 0 10px; }
 .pop-foot { padding-top: 6px; border-top: 1px solid var(--tray-line); }
 
-.modal-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(16, 24, 32, 0.4); }
+.modal-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--tray) 55%, transparent); }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; overflow: hidden; }
-.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 8px 20px; }
-.modal-head h2 { font-size: 20px; }
-.modal-body { padding: 8px 20px 4px; overflow-y: auto; }
+.modal.tray, :root:not([data-theme='default']) .modal.tray { border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px 20px; border-bottom: 2px solid var(--tray-text); }
+.modal-head h2 { font: 700 20px var(--display); letter-spacing: -0.02em; }
+.modal-head .icon-btn:hover { background: var(--tray-text); color: var(--tray); }
+.modal-body { padding: 16px 20px 4px; overflow-y: auto; }
 .modal-body p { margin: 0 0 8px; max-width: 64ch; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 18px; }
+
+/* controls and labels inside dialogs and popovers */
+.modal .list-label, .modal .field-label, .modal .tray-label,
+.menu .list-label, .popover .list-label, .popover .field-label, .popover .tray-label {
+  color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.modal .btn, .popover .btn {
+  border: 1px solid var(--tray-text); border-radius: 0; background: transparent; color: var(--tray-text); font-weight: 600;
+}
+.modal .btn:not(:disabled):hover, .popover .btn:not(:disabled):hover { background: var(--tray-text); color: var(--tray); }
+.modal .btn.primary, .popover .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+.modal .btn.primary:not(:disabled):hover, .popover .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
+.modal .btn.ghost, .popover .btn.ghost { border: 0; }
+.modal .btn.ghost:not(:disabled):hover, .popover .btn.ghost:not(:disabled):hover { background: transparent; color: var(--tray-text); text-decoration: underline; text-underline-offset: 4px; }
+.modal .btn.armed, .popover .btn.armed { border-color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
+.modal .btn.armed:not(:disabled):hover, .popover .btn.armed:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
+.modal .input, .popover .input { border-radius: 0; }
+.modal .input:focus, .popover .input:focus { border-color: var(--tray-text); }
+.modal .input:focus-visible, .popover .input:focus-visible { outline: none; }
+.modal .icon-btn, .popover .icon-btn, .modal kbd { border-radius: 0; }
+.modal :focus-visible, .popover :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .copy-row { display: flex; gap: 8px; }
 .error { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); min-height: 1em; }
@@ -395,7 +426,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
 
 .toast {
   position: fixed; left: 50%; bottom: 76px; z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
-  padding: 10px 16px; border-radius: 10px; background: var(--tray); color: var(--tray-text); box-shadow: var(--shadow); font-weight: 500;
+  padding: 10px 16px; border-radius: 0; border-left: 4px solid var(--signal); background: var(--tray); color: var(--tray-text);
+  box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); font-weight: 500;
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
