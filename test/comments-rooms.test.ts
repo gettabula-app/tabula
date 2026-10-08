@@ -198,8 +198,8 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
     const a = client(`${board}${COMMENTS}`);
     await synced(a);
     a.doc.getMap('threads').set('t1', 1);
-    await sleep(SAVE_WINDOW_MS);
-    expect(fs.existsSync(path.join(dir, `${board}${COMMENTS}.yjs`))).toBe(true);
+    // Wait for the save rather than a fixed window: a slow Windows runner can take longer than the debounce.
+    await until(() => fs.existsSync(path.join(dir, `${board}${COMMENTS}.yjs`)));
     expect(fs.existsSync(path.join(dir, `${board}.yjs`))).toBe(false);
   });
 });
