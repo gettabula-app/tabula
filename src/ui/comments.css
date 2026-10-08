@@ -38,7 +38,7 @@
 
 /* comments panel, placed like the properties panel */
 .comments-panel {
-  position: absolute; right: 12px; top: 72px; width: 300px; max-height: calc(100% - 156px); overflow-y: auto; display: none;
+  position: absolute; right: 12px; top: var(--panel-top); width: 300px; max-height: calc(100% - var(--panel-top) - 84px); overflow-y: auto; display: none;
   padding: 0 14px 14px; box-sizing: border-box; scrollbar-width: thin;
 }
 .comments-panel.show { display: block; }
