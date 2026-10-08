@@ -5,6 +5,7 @@ All notable changes to Driftboard are documented here, newest first. The format 
 ## [Unreleased]
 
 ### Added
+- App themes: Default, Ayu, Kanagawa, Matrix and Evergreen. Pick one under Appearance in the board menu; the choice is remembered on this device and applied before the page paints. Every text and accent colour pair meets WCAG AA contrast (checked in tests).
 - One Shapes button on the left toolbar opens a shapes-only panel with search; click a shape to draw it or drag it onto the board. Sticky notes keep their own toolbar button (the Rectangle and Ellipse buttons are gone; the R, O and D shortcuts still work).
 - Quick-action bar above a selected item: colour, shape, fill, line, route, text, align, lock, duplicate and delete. More opens the full properties panel.
 - 16 new shapes: pentagon, cross, heart, cloud, right/left/double arrows, chevron, pentagon arrow, speech box, speech bubble, delay, merge, off-page connector, manual operation and display. Shapes are now grouped as Basic, Arrows, Callouts and Flowchart.
@@ -18,6 +19,7 @@ All notable changes to Driftboard are documented here, newest first. The format 
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- Text, drawings, icons, connectors and frame titles drawn on the canvas now follow the theme's ink colour, and exports (SVG and PNG) always use the light default colours on white.
 - The properties panel is hidden until you press More in the quick-action bar, and has a close button. Its Shape list is grouped.
 - Locked items are click-through background: clicks and marquee selection pass over them, Select All skips them, and they can't be edited or used as connector targets. Press and hold for 0.6 seconds to unlock one. Dot voting still works on locked notes.
 - Locking an item clears the selection.
