@@ -418,7 +418,7 @@ function openSettings(app: BoardApp) {
   const m = app.store.getMeta();
   const grid = segmented<GridType>([
     { value: 'dots', label: 'Dots' }, { value: 'lines', label: 'Lines' }, { value: 'iso', label: 'Isometric' }, { value: 'none', label: 'None' },
-  ], m.gridType, (v) => { app.store.setMeta({ gridType: v }); refresh(); }, 'Grid type');
+  ], m.gridType, (v) => app.store.setMeta({ gridType: v }), 'Grid type');
   const size = h('select', { class: 'input', 'aria-label': 'Grid size', onchange: (e: Event) => app.store.setMeta({ gridSize: Number((e.target as HTMLSelectElement).value) }) },
     ...[8, 12, 16, 20, 24, 32, 40, 48].map((n) => h('option', { value: n, selected: n === m.gridSize }, `${n}`)));
   const snap = h('input', { type: 'checkbox', checked: m.snap, 'aria-label': 'Snap to grid' });
@@ -433,7 +433,6 @@ function openSettings(app: BoardApp) {
     return b;
   };
   const relay = h('input', { class: 'input', value: getRelaySetting(), placeholder: 'auto, off, or wss://relay.example.com/sync', 'aria-label': 'Relay' });
-  const refresh = () => undefined;
   dialog('Board settings', h('div', { class: 'stack' },
     field('Grid', grid),
     h('div', { class: 'row2' }, field('Grid size', size), field('Snap to grid', h('label', { class: 'check' }, snap, 'Snap while moving and resizing'))),
