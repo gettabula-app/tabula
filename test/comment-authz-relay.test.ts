@@ -222,6 +222,8 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
     await until(() => threadsOf(owners).has('forged'));
 
     expect(threadsOf(owners).get('forged')!.toJSON()).toMatchObject({ authorId: ana.user.id, authorName: ana.user.name, text: 'Posted as Ben' });
+    // The correction reaches the sender after it reaches the owner: wait for it rather than read it in between.
+    await until(() => threadsOf(anas).get('forged')?.get('authorId') === ana.user.id);
     expect(threadsOf(anas).get('forged')!.toJSON()).toMatchObject({ authorId: ana.user.id, authorName: ana.user.name });
     await until(() => anas.notes.length === 1);
     expect(anas.notes).toEqual([{ undone: ['author'] }]);
