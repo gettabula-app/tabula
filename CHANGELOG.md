@@ -70,6 +70,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- The admin audit log reads the trial-ending mail row (`cloud.notify`) as "System sent the trial-ending notice to 2 workspace owners" instead of showing the raw action name.
 - A commenter's board now shows a Can comment badge, as the home list does, instead of View only. The admin dashboard shows its Access tokens section only when AI tool access is turned on. `docs/polls.md` no longer says polls are unbuilt.
 - The Keyboard shortcuts dialog now lists every shortcut and is built from the same table as the key handler; it described [ and ] the wrong way round.
 - The Delete button in comment threads used the plain theme red on the dark comment panel, which was hard to read; it now uses the lighter tray red like other error text on toolbars and dialogs, and a test checks red text on trays reaches 4.5:1 in every theme.
