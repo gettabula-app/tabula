@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { IconError, classifyIconFailure, collectionIcons, failureMessage, failureOf, iconLoader, autoRetryDelay, searchIcons, type IconFailure } from '../src/icons';
+import { IconError, classifyIconFailure, collectionIcons, failureMessage, failureOf, iconLoader, autoRetryDelay, resetIconCaches, searchIcons, type IconFailure } from '../src/icons';
 
 describe('classifyIconFailure', () => {
   const online = true;
@@ -311,9 +311,15 @@ describe('iconLoader', () => {
 
 describe('Iconify requests', () => {
   let fetchMock: Mock<(url: string, init: RequestInit) => Promise<Response>>;
+  let apiBehaviour: (url: string, init: RequestInit) => Promise<Response>;
+  const iconifyCalls = () => fetchMock.mock.calls.filter(([url]) => !url.startsWith('/icons/'));
 
   beforeEach(() => {
-    fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
+    resetIconCaches();
+    apiBehaviour = () => Promise.reject(new Error('unset'));
+    fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>((url, init) => (url === '/icons/manifest.json'
+      ? Promise.resolve(new Response(JSON.stringify({ v: 1, sets: [] }), { status: 200 }))
+      : apiBehaviour(url, init)));
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -325,29 +331,31 @@ describe('Iconify requests', () => {
     const ctl = new AbortController();
     ctl.abort();
     await expect(searchIcons('star', undefined, 96, ctl.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(searchIcons('star', 'fa', 96, ctl.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('ends at the caller abort instead of failing over to the next host', async () => {
-    fetchMock.mockImplementation((_url, init) => new Promise<Response>((_resolve, reject) => {
+    apiBehaviour = (_url, init) => new Promise<Response>((_resolve, reject) => {
       init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
-    }));
+    });
     const ctl = new AbortController();
-    const pending = collectionIcons('lucide', 160, ctl.signal);
+    const pending = collectionIcons('fa', 160, ctl.signal);
+    await vi.waitFor(() => expect(iconifyCalls()).toHaveLength(1));
     ctl.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(iconifyCalls()).toHaveLength(1);
   });
 
   it('reports a network error on every host as unreachable', async () => {
-    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
-    await expect(searchIcons('star')).rejects.toMatchObject({ failure: { kind: 'unreachable' } });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    apiBehaviour = () => Promise.reject(new TypeError('Failed to fetch'));
+    await expect(searchIcons('star', 'fa')).rejects.toMatchObject({ failure: { kind: 'unreachable' } });
+    expect(iconifyCalls()).toHaveLength(3);
   });
 
   it('classifies a rate limit from the final host and fails over before that', async () => {
-    fetchMock.mockImplementation(async () => new Response('busy', { status: 429 }));
-    await expect(searchIcons('star')).rejects.toMatchObject({ failure: { kind: 'rate-limited' } });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    apiBehaviour = async () => new Response('busy', { status: 429 });
+    await expect(searchIcons('star', 'fa')).rejects.toMatchObject({ failure: { kind: 'rate-limited' } });
+    expect(iconifyCalls()).toHaveLength(3);
   });
 });

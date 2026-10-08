@@ -2,16 +2,17 @@
 
 TAB-101. The Icons and Stickers drawers fetch every preview, every search and every icon body from the Iconify API at runtime, and its rate limit (HTTP 429) breaks both drawers. This slice builds the icon sets into the app at build time, serves them from our own relay, loads them lazily in the browser, and keeps them for offline use. The Iconify API stays only as an explicit, online-only fallback for sets we do not host.
 
-This is a plan with measurements. Nothing here is implemented. It was written against `origin/main` at `8b6e855`; `origin/main` has since moved to `7fab011`, and among the files read for this plan only the `packageManager` line in `package.json` differs.
+This page began as the plan with measurements and now also records what was built. The measurements come from the planning prototype (2026-10-08, `@iconify/json` 2.2.540). Where the build departs from the plan, the text says so, and [As built](#as-built) lists every departure. The decisions below are the ones taken: the default build hosts every allowed set, `ICON_SETS=curated` builds the short list, the Font Awesome 6 sets are left out, and the logo sets stay with a trademark note.
 
 ## Decision in short
 
-- **Host a curated list of 22 sets, baked into the image.** 76,746 icons, 18.6 MB on the wire (gzip), about 0.5 MB of search index. The image grows from about 67 MB to about 86 MB (+28%).
-- **Not "all".** The 213 sets whose licence we may ship are 357,248 icons and 78.3 MB gzip: the image would more than double (about 147 MB, +119%). "All" is possible later as a build-time opt-in or a separate image tag, not as a runtime download (see [Why not all, and not a runtime download](#why-not-all-and-not-a-runtime-download)).
-- **Sets we do not host stay reachable online through the existing Iconify API layer**, only when the person picks them, never for a hosted set, and only if their licence passes the same allowlist. Hosted sets never touch the API, which is what ends the 429s.
-- **Build step `scripts/build-icons.mjs`**, run by `npm run build` after `vite build`. Per-set index, 96-icon or 64 KiB shards, a manifest, all gzip-9 and content-hashed, into `dist/icons/`. Gzip only: brotli-11 took 184 s for the full corpus, gzip took 3.4 s, and brotli saves about 15%.
+- **Host every set whose licence we may ship, baked into the image.** 210 sets, 355,218 icons, 77.7 MB of gzip shards plus 1.9 MB of search index (83.5 MB of files, 92 MB on disk). The image grows from about 67 MB to about 147 MB. This is the default build (`npm run build`, the Docker image).
+- **`ICON_SETS=curated` builds a short list instead**: 19 sets, 74,686 icons, 18.1 MB of shards and 0.5 MB of index (the 22 sets of the plan minus the three Font Awesome 6 sets). The list is one exported constant, `CURATED_SETS`, in `scripts/build-icons.mjs`. `docker build --build-arg ICON_SETS=curated` uses it.
+- **Left out of both**: the three Font Awesome 6 sets that Iconify files under "Archive / Unmaintained" (`EXCLUDED_SETS`), every set Iconify marks `hidden`, and every set whose licence is not on the allowlist. The logo sets stay, with a trademark note.
+- **Sets we do not host stay reachable online through the existing Iconify API layer**, only when the person asks for them, never for a hosted set, and only if their licence passes the same allowlist. Hosted sets never touch the API, which is what ends the 429s.
+- **Build step `scripts/build-icons.mjs`**, run by `npm run build` after `vite build`. Per-set index, 96-icon or 64 KiB shards, a manifest, a pin file, all gzip-9 and content-hashed, into `dist/icons/`, plus `LICENSES.txt`. Gzip only. Output is cached by `@iconify/json` version and build inputs, so an unchanged rebuild is a copy.
 - **Search is client side**, over a per-set name index. Previews are `data:` URLs built from shards. Cache Storage through the service worker keeps what was fetched; "Download for offline" fetches every shard of a set. No IndexedDB.
-- **Licence allowlist** read from each set's `info.license.spdx`: CC0, Unlicense, MIT, ISC, Apache-2.0, BSD, OFL-1.1, CC-BY-3.0 and CC-BY-4.0. Everything else, and every set Iconify marks `hidden`, is not built and not offered.
+- **Licence allowlist** read from each set's `info.license.spdx`: CC0, Unlicense, 0BSD, MIT, ISC, Apache-2.0, BSD, OFL-1.1, CC-BY-3.0 and CC-BY-4.0. Everything else, and every set Iconify marks `hidden`, is not built and not offered.
 
 ## Why
 
@@ -136,30 +137,30 @@ A loopback test serving the real files with gzip and a 6-connection agent, for a
 | Curated icons: shards 18.6 MB, index 0.5 MB | +19 MB, about 86 MB |
 | All allowlisted: shards 78.3 MB, index 1.9 MB | +80 MB, about 147 MB |
 
-Gzip files do not compress further, so the compressed and on-disk sizes are about the same (curated 21.6 MB on disk with 4 KiB blocks, all 90.1 MB). Shipping the raw JSON beside them would add 82.7 MB (curated) or 310.7 MB (all) on disk for no benefit; the design ships only the gzip files. Adding 22 `@iconify-json/*` devDependencies adds 87 MB unpacked to the build stage and to each CI install (the 9 test jobs and the Docker build), not to the final image. `@iconify/json` would be a 104 MB download on every install, which is why the per-set packages are used.
+Gzip files do not compress further, so the compressed and on-disk sizes are about the same (curated 21.6 MB on disk with 4 KiB blocks, all 90.1 MB). Shipping the raw JSON beside them would add 82.7 MB (curated) or 310.7 MB (all) on disk for no benefit; the design ships only the gzip files. The plan proposed 22 `@iconify-json/*` devDependencies (87 MB unpacked) to avoid `@iconify/json`'s 104 MB download on every install. The default build needs every set, so the single `@iconify/json` package is used instead (see As built); it is in the build stage and each CI install, not in the final image.
 
 ## Decision
 
-### Curated, not all
+### All allowed sets by default, a short list on request
 
-The curated list covers the sets people already pick (every `POPULAR_SETS` entry, all three sticker sets) plus common UI, brand and flag sets. "All" is 4.2 times the bytes for a tail of 191 more sets that the picker does not feature, and several of the heaviest are colour and brand sets (`token-branded`, `thesvg-color`, `selfhst`, `game-icons`). The list is a plain file (`scripts/icon-sets.json`), so a set is added by listing it and adding its devDependency.
+The picker advertises one search over everything, and a drawer that only finds a third of it is the old problem in a new place, so the default hosts all allowed sets. The cost is the image: 4.2 times the bytes of the short list, and the build stage downloads `@iconify/json` (104 MB). The short list stays for people who build their own image and want it small: `ICON_SETS=curated`. It is `POPULAR_SETS`, the three sticker sets and six broadly useful sets (`bi ri ion iconoir octicon circle-flags`), 19 sets. Heavy colour sets dominate the default's size: `noto` alone is 3.9 MB, `token-branded` 3.6, `thesvg-color` 3.2, `selfhst` 2.8, `logos` 2.7.
 
-### Why not all, and not a runtime download
+Adding a set to the short list is one line in `CURATED_SETS`. Leaving one out of everything is one line in `EXCLUDED_SETS`.
 
-The question was whether "all" could be an opt-in download from our server instead of baked into the image. The server is the image: bytes it can serve either ship in it or arrive from somewhere else at run time.
+### Other ways to host more or less
 
 | Option | Verdict |
 | --- | --- |
-| Curated baked in (this plan) | Recommended. +19 MB. |
-| Build-time opt-in `--all` (reads `@iconify/json`, applies the allowlist) | Cheap to add and the UI follows the manifest. Costs +80 MB, and the build stage downloads 104 MB. Not in this slice. |
-| A second image tag with everything (`:full`) | Needs the option above plus a CI job. Not in this slice. |
+| All allowed sets baked in | The default. +80 MB. |
+| Curated list baked in (`ICON_SETS=curated`) | Built on request. +19 MB. |
+| A second image tag (`:full`) | Not needed: the default image is the full one. A separate tag for the short list would need a CI job. Not in this slice. |
 | Operator builds `dist/icons`-shaped files into `DATA_DIR/icons` and the relay prefers them | No image growth, set choice by the operator. Not in this slice. |
 | Relay downloads `@iconify/json` at first start and builds | Outbound network from the server, a build pipeline and 104 MB in the runtime image, a slow cold start. Rejected. |
 | Browser downloads sets on demand | Already the design: any hosted set can be fetched whole ("Download for offline"). This is per person, not per instance. |
 
 ### Keep the API as an online-only fallback
 
-Dropping it would remove most of the 239 sets the picker lists today and the "200,000+" claim. Instead:
+Dropping it would remove every set Tabula does not host. Instead:
 
 - A hosted prefix never calls the API, for search, browsing, previews or bodies.
 - A prefix we do not host works as today (the `api(path, signal)` layer, including whatever error handling and abort support `fix/icons-retry` adds) but only after the person asks for online sets, so opening a drawer makes no request to Iconify. "All icon sets" means all hosted sets.
@@ -170,23 +171,13 @@ Dropping it would remove most of the 239 sets the picker lists today and the "20
 
 `scripts/build-icons.mjs` is plain Node ESM with no new runtime dependency (`fs`, `zlib`, `crypto`; it must run on Linux, macOS and Windows and on Node 22.13 and later). The pure parts (licence rule, packer, index builder, body check) are exported from `scripts/lib/icons-build.mjs` so the tests import them.
 
-`package.json`: `"build": "tsc --noEmit && vite build && node scripts/build-icons.mjs"` and `"build:icons": "node scripts/build-icons.mjs"`. The order matters: `vite build` empties `dist/`. The script writes `dist/icons/` and nothing else.
+`package.json`: `"build": "tsc --noEmit && vite build && node scripts/build-icons.mjs"`, `"build:app": "tsc --noEmit && vite build"` and `"build:icons": "node scripts/build-icons.mjs"`. The order matters: `vite build` empties `dist/`. The script writes `dist/icons/` and nothing else. `npm test` does not run it.
 
-**Input.** `scripts/icon-sets.json`:
-
-```json
-{
-  "sets": ["lucide", "tabler", "ph", "mdi", "material-symbols", "carbon", "heroicons", "logos", "simple-icons", "fluent-emoji-flat", "twemoji", "devicon", "noto", "bi", "ri", "ion", "iconoir", "octicon", "fa6-solid", "fa6-regular", "fa6-brands", "circle-flags"],
-  "pinned": ["fluent-emoji-flat:thumbs-up", "…the 16 REACTIONS…"],
-  "shard": { "icons": 96, "bytes": 65536 }
-}
-```
-
-The order is the priority order in the picker and in cross-set search. Each set is read from `node_modules/@iconify-json/<prefix>/`: `icons.json` (icons, aliases, set-wide `width`, `height`), `info.json` (name, author, licence, category, palette, `hidden`) and the optional `metadata.json` (categories). No new environment variable: the set list is this file.
+**Input.** The sets are read from the installed `@iconify/json` (an exact-pinned devDependency, `node_modules/@iconify/json/json/<prefix>.json`: icons, aliases, set-wide `width`, `height`, `left`, `top`, `info` with name, author, licence, category and `hidden`, and `categories`). `ICON_SETS` chooses the sets: unset or `all` builds every set that passes the rules below (minus `EXCLUDED_SETS`), `curated` builds `CURATED_SETS`. Any other value stops the script. The order of `CURATED_SETS` is the priority order in the picker and in cross-set search; sets that are not in it follow by prefix. The 16 pinned reactions and the shard limits (96 icons or 64 KiB) are constants in the script and its library.
 
 **For each set:**
 
-1. Check the licence (below). A set that fails stops the build with the set, its licence id and the reason.
+1. Check the licence (below). In the default build a set that fails is skipped and counted. A set named in `CURATED_SETS` that fails stops the build with the set, its licence id and the reason.
 2. Check every body (below). Any hit stops the build with `prefix:name` and the pattern.
 3. Order the icons: category order for a set that has categories, name order otherwise. Aliases that carry a transform (rotate, flip) or a size of their own are turned into icons with their own body (`<g transform>` around the parent body, rotation in 90 degree steps about the view box centre); there are 36 in the allowlisted corpus (`fa` 29, `fluent-emoji-flat` 6, `fluent-emoji-high-contrast` 1), 6 of them in the curated list. The current `iconData` ignores these transforms (a bug), so this fixes hosted sets. Plain aliases stay pointers.
 4. Pack names into shards. A shard closes at 96 icons or 64 KiB of raw JSON.
@@ -234,11 +225,15 @@ Shard (`s/<prefix>.<n>.<hash>.json`), set defaults once, overrides only where an
 
 Only the body and `width`, `height`, `left`, `top` survive; the rest of the Iconify fields are dropped. `w`, `h`, `l` and `t` default to the set's width, height, 0 and 0.
 
-**Determinism and layers.** Keys and names are sorted, nothing contains a timestamp, and the script sets every output file's modification time to a fixed date, so rebuilding unchanged inputs gives byte-identical files and an identical Docker layer. In the Dockerfile the build stage moves the output out of `dist/` (`RUN npm run build && mv dist/icons /icons`) and the final stage copies `/icons` to `dist/icons` in its own layer, before it copies `dist/`. Because `dist/` no longer contains the icons, they are not copied twice, and an app-only deploy reuses the 19 MB layer instead of pushing it again.
+**Determinism and layers.** Keys and names are sorted, nothing contains a timestamp, the gzip header's operating-system byte is fixed, and the script sets every output file's modification time to a fixed date, so rebuilding unchanged inputs gives byte-identical files and an identical Docker layer. In the Dockerfile the build stage moves the output out of `dist/` (`RUN npm run build && mv dist/icons /icons`) and the final stage copies `/icons` to `dist/icons` in its own layer, before it copies `dist/`. Because `dist/` no longer contains the icons, they are not copied twice, and an app-only deploy reuses the icon layer (about 80 MB for the default build) instead of pushing it again.
 
-**Dev.** `dist/icons/` must exist for `npm run dev`. `scripts/dev.mjs` runs the script first when `dist/icons/manifest.json` is missing (about 1 s for the curated list), and `vite.config.ts` proxies `/icons` to the relay on 8787. The relay serves `/icons/` without needing `dist/index.html` (today it answers 503 for everything until the app is built).
+**Cache.** Output is kept in `node_modules/.cache/tabula-icons/<key>/` (gitignored with `node_modules`, outside every Docker context). The key is a hash of the `@iconify/json` version, the set selection, the exclusions, the pinned names, the shard limits, the gzip level and the source of the two build files, so a changed packer cannot serve stale output. A hit hard-links the files into `dist/icons/` (copies them across volumes); a miss builds and then keeps the result, and only one key is kept. The Docker build stage mounts the same directory as a BuildKit cache.
 
-**CI.** `npm ci` installs the 22 packages in each job (87 MB unpacked, cached by `actions/setup-node`), and the build step costs about 1 s. Dependabot gets its own group for `@iconify-json/*` (monthly, separate from the dev-dependencies group) because icon sets publish often and a bump can rename icons; the tests below catch a renamed reaction.
+**Gzip level.** Measured on the full build, level 6 took 7.8 s and produced 77.9 MB of shards; level 9 took 9.6 s and 77.7 MB. Level 9 is used: both are far inside the 15 s budget and the image is smaller. The work is mostly one thread parsing and packing; compression runs on the thread pool.
+
+**Dev.** `dist/icons/` must exist for `npm run dev`. `scripts/dev.mjs` runs the script first when `dist/icons/manifest.json.gz` is missing (about 9 s for the default build, 3 s with `ICON_SETS=curated`), and `vite.config.ts` proxies `/icons` to the relay on 8787. The relay serves `/icons/` without needing `dist/index.html` (today it answers 503 for everything until the app is built).
+
+**CI.** `npm ci` installs `@iconify/json` in every job (104 MB download, 487 MB unpacked, cached by `actions/setup-node`). Only the job that makes the `dist` artifact (Linux, Node 24) runs `npm run build:icons`; the other eight matrix jobs run `npm run build:app` and the tests. The Docker build runs `npm run build`. Dependabot gets its own group for `@iconify/json` (separate from the dev-dependencies group, which excludes it) because icon sets publish often and a bump can rename icons; the tests below catch a renamed reaction.
 
 ## Serving
 
@@ -299,7 +294,7 @@ Behaviour:
 
 ### UI changes
 
-- Icons tab: placeholder "Search 76,000+ icons" computed from the manifest; the set list is "Popular" and "Hosted sets" (both work offline once downloaded) plus an "Online sets" button below it, which calls `onlineIconSets` and adds an "Online only" group, each labelled `(licence)` as today. The note under the grid keeps its CC BY sentence and adds a Licences link.
+- Icons tab: placeholder "Search 355,000+ icons" computed from the manifest; the set list is "Popular" and "Hosted sets" (both work offline once downloaded) plus an "Online sets" button below it, which calls `onlineIconSets` and adds an "Online only" group, each labelled `(licence)` as today. The note under the grid keeps its CC BY sentence and adds a Licences link.
 - Stickers tab: unchanged apart from the offline row.
 - Home footer: "Icons by Iconify" becomes "Icon sets by their authors, see Icon credits" with a button.
 
@@ -307,7 +302,7 @@ Behaviour:
 
 **Recommendation: Cache Storage through the service worker, not IndexedDB.** Shards are immutable files with hashed names, which is what a URL-keyed cache stores best; the service worker already caches every one the first time it is fetched, so browsing needs no extra code, and "Download for offline" is "fetch every shard URL of this set" with a progress count. IndexedDB would add a schema, a second copy of the data and per-icon queries nobody needs, since a search scans names and a placement needs one shard. Safari's seven-day cap on script-writable storage applies to both stores alike.
 
-- **Which sets.** An offline row in the Icons tab (for the selected set, or "all 22 sets" when All is selected) and in the Stickers tab (the three sticker sets, 6.8 MB). It shows the transfer size and the stored size: Cache Storage keeps the decoded body, so downloading the sticker sets sends about 6.8 MB and stores about 42 MB, and all 22 curated sets send 19 MB and store about 83 MB. Check the stored figure with `navigator.storage.estimate()` in the manual tests.
+- **Which sets.** An offline row in the Icons tab (for the selected set, or the 12 popular sets when All is selected) and in the Stickers tab (the three sticker sets, 6.8 MB). It shows the transfer size and the stored size: Cache Storage keeps the decoded body, so downloading the sticker sets sends about 6.8 MB and stores about 42 MB, and the popular sets send 13 MB and store about 53 MB. Check the stored figure with `navigator.storage.estimate()` in the manual tests.
 - **States.** Not downloaded (button with sizes), Downloading n of m with Cancel, Available offline with Remove, Update available (the manifest's index hash for the set differs from the cached one). The state comes from `caches.match` over the set's shard URLs; a small per-device list of downloaded set prefixes, `driftboard:icons-offline` in `localStorage` (existing key prefix; wrapped in try/catch, the UI works without it), says which sets to keep fresh.
 - **Updates.** After loading a newer manifest, a downloaded set whose index hash changed re-fetches only the shards that are new and deletes the shard URLs the new index no longer lists. Sets that were only browsed are not pruned. Remove deletes a set's entries; the cache is not cleared as a whole.
 - **Guards.** The row is hidden when `caches` is undefined (a page that is not a secure context has no service worker either). Before a download it compares the stored size with `navigator.storage.estimate()` and asks for `navigator.storage.persist()` after the first download, best effort. The download uses the same six-at-a-time limit and the abort signal.
@@ -327,7 +322,7 @@ The build and the client share one rule, keyed on `info.license.spdx` exactly (a
 
 Blocked in particular: any id containing `-NC` or a title containing "NonCommercial" (checked on its own as well, so an allowlist edit cannot let one through), `-SA-` ShareAlike (the stickers spec already left OpenMoji out for this), GPL, LGPL, AGPL, MPL and EPL families, a missing `spdx`, any other id, and any set with `hidden: true`.
 
-- **Credits.** A dialog (new `src/ui/icon-credits.ts`, opened from the Icons and Stickers notes and the home footer) lists the hosted sets from the manifest by class: name, author link, licence id linking to the licence. `LICENSES.txt` is the same list as plain text. Per-set packages do not ship licence texts (the nine files in `@iconify-json/lucide` have none), so the notice is the id and the upstream URL; whether that is enough is an open question.
+- **Credits.** A dialog (new `src/ui/icon-credits.ts`, opened from the Icons and Stickers notes and the home footer) lists the hosted sets from the manifest by class: name, author link, licence id linking to the licence. `LICENSES.txt` is the same list as plain text. The data package ships no licence texts (the per-set packages, for example `@iconify-json/lucide`, have none), so the notice is the id and the upstream URL; whether that is enough is an open question.
 - **Brand logos.** `logos`, `simple-icons` and `devicon` are CC0 or MIT as artwork, but the marks are trademarks of their owners. The licence metadata does not say so. Not decided here.
 - **Unchanged.** Exports carry no credit line (as in `docs/stickers.md`).
 
@@ -349,11 +344,11 @@ Automated (`npm test`, vitest):
   - defaults and overrides: an icon with the set's width and height has no `w` or `h`; `left` and `top` survive; the shard round-trips to the source body;
   - the index: alias positions point at the right icon, a nested alias resolves, a dangling alias is dropped, a transformed alias becomes an icon whose body wraps the parent's, categories become index lists, and the shard list adds up to `n`;
   - the body gate fails on `<script`, `onload=`, `javascript:`, `<foreignObject`, `<style` and an external `href`, and passes ordinary bodies;
-  - a build over a two-set fixture (a temp directory shaped like `node_modules/@iconify-json`): the manifest, the file names, `.gz` contents, a second build giving byte-identical output, and a failure for a blocked licence.
+  - a build over a small fixture (a temp directory shaped like `node_modules/@iconify/json`): the manifest, the file names, `.gz` contents, a second build giving byte-identical output with and without the cache, skipped hidden, blocked and excluded sets, and a failure for a listed set with a blocked licence.
 - `test/icon-search.test.ts` (new): exact token over prefix over substring, several tokens, alias and category hits, set-priority ties, the per-set cap and the limit, an empty query, and canonical names with no duplicates.
 - `test/icons-client.test.ts` (new, a stub `fetch`): `iconData` returns the set's defaults and resolves an alias; an HTML body with status 200 and a 404 are errors; a hosted prefix makes no request to an Iconify host while an online prefix does; the abort signal cancels in-flight loads; `previewUrl` is a `data:image/svg+xml` URL, carries the view box, and has a `<script>` stripped; `licenceTier` agrees with the build rule over the shared table; the offline status with a fake `caches`.
 - `test/relay-icons.test.ts` (new, a relay on a fixture `DIST_DIR`): a hashed shard returns gzip with `immutable` when gzip is accepted and plain bytes when it is not; `manifest.json` is `no-cache`; a missing `/icons/` path is `404` with a JSON body, not `index.html`; `/icons/` works with no `index.html`.
-- `test/stickers.test.ts` (extended): build the curated list into a temp directory from the installed packages (about 1 s) and check that every `STICKER_SETS` and `POPULAR_SETS` prefix is hosted, that all 16 `REACTIONS` resolve and equal the `pinned` list, and that the total gzip size stays under a budget of 21 MB (about 10% above the 19 MB measured, so an accidental addition is noticed and a deliberate one raises the number).
+- `test/stickers.test.ts` (extended): build the curated list into a temp directory from the installed `@iconify/json` (about 3 s) and check that every `STICKER_SETS` and `POPULAR_SETS` prefix is hosted, that all 16 `REACTIONS` resolve and equal the `pinned` list, and that the total gzip size stays under a budget of 20 MB (about 8% above the 18.5 MB measured for the 19 curated sets, so an accidental addition is noticed and a deliberate one raises the number). The default build is not built in the test run.
 
 Manual, in the dev server and in a built image:
 
@@ -369,64 +364,77 @@ Manual, in the dev server and in a built image:
 
 ## Not in this slice
 
-- **"All" sets**: the `--all` flag, a `:full` image, an operator-provided `DATA_DIR/icons`. All sit on the same manifest and need no client change.
+- **A `:full` image tag and an extra CI job**, and an operator-provided `DATA_DIR/icons`. They sit on the same manifest and need no client change; the default image already hosts everything.
 - **Credit lines in exports and a "credits used on this board" list.**
 - **Brotli**, HTTP/2 on the relay, compressing the app's own script and stylesheet.
 - **Storing compressed shards in the cache** (4 to 6 times less stored space, a decompress per read).
-- **Search in a worker.** The scan is 17 to 28 ms for the curated list and 70 to 85 ms for all 213 sets.
+- **Search in a worker.** The scan is 17 to 28 ms for the curated list and 70 to 85 ms for all 210 sets.
 - **Synonyms and fuzzy matching.** Matching is on names, aliases and categories only.
 - **Alias transforms on the online path.** The Iconify fallback keeps ignoring them, as today.
 - **A size limit for a placed body.** `devicon:nano-wordmark` is 350 KB in every board that uses it; that already happens today.
-- **Trademark guidance for logo sets and a decision on sets Iconify files under "Archive / Unmaintained"** (see questions).
+- **Trademark guidance for logo sets beyond the note in the credits.** The other 27 sets Iconify files under "Archive / Unmaintained" (Font Awesome 4 and 5, for example) are hosted; only the Font Awesome 6 sets are left out.
 - **Removing the Iconify API.** It remains the online fallback.
 
 ## Files
 
 NEW:
 
-- `docs/icons-selfhost.md`: this plan.
-- `scripts/build-icons.mjs`, `scripts/lib/icons-build.mjs`: the build step and its pure parts.
-- `scripts/icon-sets.json`: the set list, pinned names and shard limits.
+- `docs/icons-selfhost.md`: this page.
+- `scripts/build-icons.mjs`, `scripts/lib/icons-build.mjs`: the build step (with `CURATED_SETS`, `EXCLUDED_SETS` and the pinned names) and its pure parts.
 - `src/icon-search.ts`, `src/icon-licences.ts`, `src/icon-offline.ts`: pure search, the licence rule, Cache Storage.
-- `src/ui/icon-credits.ts`, and the offline row (in `src/ui/icon-offline.ts`).
+- `src/ui/icon-credits.ts`, `src/ui/icon-offline.ts`: the credits dialog and the "Download for offline" row.
 - `test/icons-build.test.ts`, `test/icon-search.test.ts`, `test/icons-client.test.ts`, `test/relay-icons.test.ts`.
 
 EXISTING (one line each):
 
-- `package.json`, `package-lock.json`: `build` and `build:icons` scripts; 22 `@iconify-json/*` devDependencies.
-- `src/icons.ts`: manifest, hosted and online paths, `loadPreviews`. The Iconify host list, failover and `setIconHost` stay for the online path (nothing calls `setIconHost` today).
-- `src/ui/library.ts`: the Icons tab calls `loadPreviews`, the Online sets button, the offline row and the licences link; `dropItem` is unchanged.
-- `src/ui/stickers.ts`: `loadPreviews` for the grid and the reaction picker, the offline row.
-- `src/ui/home.ts`: the footer credit.
-- `src/styles.css`: the offline row and progress, theme variables only.
-- `public/sw.js`: the `/icons/` branch and the activate filter.
+- `package.json`, `package-lock.json`: `build`, `build:app` and `build:icons` scripts; `@iconify/json` devDependency (exact version).
+- `src/icons.ts`: manifest, hosted and online paths, `loadPreviews`, `onlineIconSets`. The Iconify host list, failover, retry and `setIconHost` stay for the online path.
+- `src/ui/library.ts`: the Icons tab searches hosted sets, shows more, loads online sets on request, and carries the offline row and the licences link; `dropItem` is unchanged.
+- `src/ui/stickers.ts`: preview filling for the grid and the reaction picker, the offline row.
+- `src/ui/topbar.ts`: the footer credit (the plan named `home.ts`; the footer lives in `pageFooter`).
+- `src/styles.css`: the offline row, progress bar, credits and link button, theme variables only.
+- `public/sw.js`: the `/icons/` branch, the `tabula-icons-v1` cache and the activate filter; `VERSION` is `tabula-v2`.
 - `server/relay.mjs`: `serveIcons` (gzip mapping, cache headers, 404).
-- `vite.config.ts`: dev proxy for `/icons`. `scripts/dev.mjs`: build icons when missing.
-- `Dockerfile`: the build stage moves `dist/icons` aside and the final stage copies it as its own layer.
-- `.github/dependabot.yml`: a group for `@iconify-json/*`.
-- `README.md`: the Iconify row, "downloadable offline icon sets" leaves the not-built list, the project layout. `CHANGELOG.md`: an Unreleased Added entry. `docs/stickers.md`: the Offline section, which describes the old service-worker behaviour.
+- `vite.config.ts`: dev proxy for `/icons`. `scripts/dev.mjs`: builds icons when missing.
+- `Dockerfile`: the build stage moves `dist/icons` aside and the final stage copies it as its own layer; `ARG ICON_SETS`.
+- `.github/workflows/ci.yml`, `.github/dependabot.yml`: icons built in the artifact job only; a group for `@iconify/json`.
+- `README.md`, `CHANGELOG.md`, `docs/stickers.md`.
+- `test/stickers.test.ts`, `test/icon-loading.test.ts`: the hosted-set checks; the Iconify request tests now use a set that is not hosted.
 
-Untouched: `src/app.ts`, `src/render.ts`, `src/markup.ts`, `src/stickers.ts`, `src/store.ts`, the board format and schema version.
+Untouched: `src/app.ts`, `src/render.ts`, `src/geometry.ts`, `src/markup.ts`, `src/stickers.ts`, `src/store.ts`, the board format and schema version.
+
+## As built
+
+- **Source.** `@iconify/json` (one package, exact-pinned), not 22 `@iconify-json/*` packages: the default build needs every set. The CI install downloads it in every job.
+- **Sets.** 210 sets, 355,218 icons (the plan counted 213 sets and 357,248 icons, including the three Font Awesome 6 sets). 16 sets are hidden and 15 fail the licence rule; both are skipped. `ICON_SETS=curated` is 19 sets, not 22, for the same reason.
+- **Manifest.** Entries carry no `h` or `pal`: nothing reads them. They add `tm` for logo sets (category "Logos", and the `devicon` sets).
+- **Alias transforms.** 36 aliases in the built sets are flipped (`fa` 29, `fluent-emoji-flat` 6, `fluent-emoji-high-contrast` 1; no alias has a rotation or a size of its own). Each becomes an icon with a `<g transform>` around the parent's body. Rotation and own sizes are handled as well.
+- **Set-wide `left` and `top`.** One set (`jam`) has them. A shard carries them as `l` and `t` when they are not zero.
+- **Online sets.** The Iconify list is filtered by the licence rule and by `hidden`, and hosted sets are removed from it. With the default build that leaves the three Font Awesome 6 sets and anything Iconify adds after the build.
+- **Offline for "All icon sets".** The row offers the popular sets (13 MB), not all 210 (78 MB to send, about 310 MB to store). Any single set can be downloaded.
+- **Search.** The first cross-set query loads the popular sets' indexes and shows results from them; the other indexes load in batches of 24 and the grid updates as they arrive. A query's results are capped at 8 per set for 48, scaling with the limit. "Show more" raises the limit by 48.
+- **Failures.** A failed hosted load uses the same messages and Retry as the online path. The offline message is unchanged: a set is available offline once downloaded or visited.
+- **Docker.** The daemon was not running when this was written, so no image was built. The final image is estimated from the parts: 64.0 MB base, 2.6 MB production modules, 0.7 MB app and 79.7 MB of icon files, about 147 MB compressed (about +80 MB).
 
 ## Decisions and open questions
 
-Proposed, awaiting a yes:
+Decided:
 
-1. Curated list of 22 sets baked in; "all" is not baked in.
+1. The default build hosts every allowed set; `ICON_SETS=curated` builds the short list (19 sets). Both are documented in the README.
 2. Hosted sets never call the Iconify API; other sets are online-only, on request, and licence-filtered.
-3. Gzip only; the relay serves the `.gz` files with `Content-Encoding`.
+3. Gzip only (level 9); the relay serves the `.gz` files with `Content-Encoding`.
 4. Shards of 96 icons or 64 KiB, in category order where a set has categories and name order otherwise; search results capped at 48 and 8 per set.
 5. Cache Storage via the service worker; no IndexedDB.
 6. Previews are `data:` URLs in `<img>`.
-7. The allowlist in the licences table, with `hidden` sets blocked.
-8. No new environment variable; the set list is `scripts/icon-sets.json`.
+7. The allowlist in the licences table, with `hidden` sets blocked. OFL-1.1 is allowed (seven sets, 0.5 MB).
+8. The Font Awesome 6 sets (`fa6-solid`, `fa6-regular`, `fa6-brands`), which Iconify files under "Archive / Unmaintained", are left out. The other sets under that heading stay.
+9. The logo sets (`logos`, `simple-icons`, `devicon` and the other sets Iconify files under "Logos") stay, with a trademark note in `LICENSES.txt` and in the credits dialog and drawer notes.
+10. `dist/icons/LICENSES.txt` lists every hosted set (name, author, licence id, URL); the drawers' Licences link opens the credits dialog, which links to it.
+11. The Iconify API stays as the online fallback for sets that are not hosted and pass the licence rule, using the existing classify and retry code.
+12. No `:full` image tag and no extra CI job in this slice.
+13. The `fix/icons-retry` work (classification, retry, abort) is on `main`; this builds on it.
 
 Open:
 
-- The three Font Awesome 6 sets (CC-BY-4.0) are filed by Iconify under "Archive / Unmaintained". Keep them for recognition, or swap in a maintained set such as `fluent` (2.5 MB gzip) or `solar` (2.3 MB, CC-BY-4.0)?
-- `logos`, `simple-icons` and `devicon` are trademarks. Fine to host, as they are in `POPULAR_SETS` today?
-- Is "licence id plus upstream URL" enough notice for MIT, Apache-2.0 and OFL sets, or should the build also bundle each licence text (the per-set packages have none, so it would be a list kept in the repo)?
-- Is OFL-1.1, written for fonts, acceptable for icon data? It is 7 built sets and 0.5 MB.
-- Is the online fallback wanted at all, given the privacy line, or should unhosted sets simply go away?
-- Is a `:full` image tag worth a CI job, or is the build-time flag enough?
-- `fix/icons-retry` rewrites the top of `src/icons.ts`. Which lands first? This plan assumes that branch merges first and the work here rebases onto its `api(path, signal)`.
+- Is "licence id plus upstream URL" enough notice for MIT, Apache-2.0 and OFL sets, or should the build also bundle each licence text? The per-set data has none, so it would be a list kept in the repo.
+- The Tauri desktop shell bundles `dist/`, which would now include 92 MB of icon files that its static server cannot serve (they are `.gz` only). The spike is outside CI and releases; it needs its own decision.

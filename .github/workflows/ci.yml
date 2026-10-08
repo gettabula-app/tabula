@@ -55,7 +55,10 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - run: npm run build:app
+      # the icon sets are built once, where the dist artifact is made, and again in the Docker build
+      - run: npm run build:icons
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         with:

@@ -7,8 +7,14 @@ updates:
       day: monday
     open-pull-requests-limit: 10
     groups:
+      # icon sets publish often and a bump can rename an icon, so it gets its own pull request
+      icon-sets:
+        patterns:
+          - '@iconify/json'
       dev-dependencies:
         dependency-type: development
+        exclude-patterns:
+          - '@iconify/json'
         update-types:
           - minor
           - patch

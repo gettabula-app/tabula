@@ -16,6 +16,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
@@ -451,6 +452,51 @@ function serveDocs(req, res, url) {
   sendFile(res, file, 200, 'no-cache');
 }
 
+// The icon sets built by scripts/build-icons.mjs (docs/icons-selfhost.md). Files are stored as <name>.gz and sent
+// under the name without .gz. A missing file is a real 404: the single-page app's index.html must never stand in
+// for an icon file, or a client could not tell "not hosted" from "offline" and a cache would keep an HTML page.
+const ICONS_DIR = path.join(DIST, 'icons');
+const HASHED_ICON = /\.[0-9a-f]{8}\.json$/;
+
+const acceptsGzip = (header) => {
+  for (const part of String(header || '').split(',')) {
+    const [coding, ...params] = part.trim().toLowerCase().split(';');
+    if (coding !== 'gzip' && coding !== '*') continue;
+    const q = params.map((x) => x.trim()).find((x) => x.startsWith('q='));
+    return !q || Number(q.slice(2)) > 0;
+  }
+  return false;
+};
+
+function serveIcons(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { allow: 'GET, HEAD' }).end();
+    return;
+  }
+  const file = path.resolve(ICONS_DIR, decodeURIComponent(url.pathname).slice('/icons/'.length));
+  // checked before any file system call, so a path outside the icons folder is never even looked at
+  if (!file.startsWith(ICONS_DIR + path.sep) || file.endsWith('.gz') || file.includes('\0')) return sendJson(res, 404, { error: 'not_found' });
+  const isFile = (f) => fs.existsSync(f) && fs.statSync(f).isFile();
+  const zipped = isFile(`${file}.gz`);
+  const source = zipped ? `${file}.gz` : file;
+  if (!isFile(source)) return sendJson(res, 404, { error: 'not_found' });
+  const gzip = zipped && acceptsGzip(req.headers['accept-encoding']);
+  const headers = {
+    'content-type': file.endsWith('.txt') ? 'text/plain; charset=utf-8' : 'application/json',
+    'cache-control': HASHED_ICON.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    vary: 'Accept-Encoding',
+  };
+  if (gzip) headers['content-encoding'] = 'gzip';
+  if (gzip || !zipped) headers['content-length'] = fs.statSync(source).size;
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') return res.end();
+  const body = fs.createReadStream(source).on('error', () => res.destroy());
+  if (zipped && !gzip) body.pipe(zlib.createGunzip()).on('error', () => res.destroy()).pipe(res);
+  else body.pipe(res);
+}
+
 function serveStatic(req, res, url) {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
@@ -505,6 +551,8 @@ async function onRequest(req, res) {
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
+    } else if (url.pathname.startsWith('/icons/')) {
+      serveIcons(req, res, url);
     } else {
       serveStatic(req, res, url);
     }

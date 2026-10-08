@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:accounts": "node scripts/dev.mjs --accounts",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-icons.mjs",
+    "build:app": "tsc --noEmit && vite build",
+    "build:icons": "node scripts/build-icons.mjs",
     "start": "node server/relay.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --deny-warnings",
@@ -32,6 +34,7 @@
     "yjs": "^13.6.33"
   },
   "devDependencies": {
+    "@iconify/json": "2.2.540",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@tauri-apps/cli": "2.12.1",
     "@types/node": "^26.6.4",

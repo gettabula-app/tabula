@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/sync': { target: 'ws://localhost:8787', ws: true },
       '/api': { target: 'http://localhost:8787' },
+      '/icons': { target: 'http://localhost:8787' },
     },
   },
   build: { target: 'es2022', sourcemap: true },
