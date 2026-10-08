@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { Store, newId } from '../src/store';
 import { Flow } from '../src/flow';
-import { PollError, answerKey, type PollInput } from '../src/polls';
+import { PollError, answerKey, stateKey, type PollInput } from '../src/polls';
 import { readBoardFile, toJson } from '../src/exporters';
 import type { BaseObj, Poll } from '../src/types';
 
 /** The parts of BoardApp that Flow and Polls use, without any DOM. */
-function fakeApp(userId = 'me', doc = new Y.Doc()) {
+function fakeApp(userId = 'me', doc = new Y.Doc(), readOnly = false) {
   const store = new Store(doc);
+  if (readOnly) store.setReadOnly(true);
   const app = {
     store,
     user: { id: userId, name: `name-${userId}`, color: '#123456' },
@@ -254,6 +255,116 @@ describe('sync between people', () => {
     bob.flow.polls.choose(id, bob.flow.polls.get(id)!.options[0].id);
     Y.applyUpdate(alice.doc, Y.encodeStateAsUpdate(bob.doc));
     expect(alice.store.pollAnswers.get(answerKey(id, 'bob'))).toBeDefined();
+  });
+});
+
+describe('concurrent changes to one poll', () => {
+  /** Two people on the same board with a poll open, then each changes it before seeing the other's change. */
+  function openPollOnTwoDevices() {
+    const alice = fakeApp('alice');
+    alice.flow.setSteps([write('w')]);
+    alice.flow.start();
+    alice.flow.quickPoll(input());
+    const id = runningPoll(alice.flow).id;
+    const bob = fakeApp('bob');
+    Y.applyUpdate(bob.doc, Y.encodeStateAsUpdate(alice.doc));
+    return { alice, bob, id };
+  }
+  const exchange = (a: Y.Doc, b: Y.Doc) => {
+    const toB = Y.encodeStateAsUpdate(a, Y.encodeStateVector(b));
+    const toA = Y.encodeStateAsUpdate(b, Y.encodeStateVector(a));
+    Y.applyUpdate(b, toB);
+    Y.applyUpdate(a, toA);
+  };
+
+  it('keeps a reveal and a step change made at the same time', () => {
+    const { alice, bob, id } = openPollOnTwoDevices();
+    alice.flow.polls.reveal(id);
+    bob.flow.goto(0); // moving off the poll step closes the poll
+    exchange(alice.doc, bob.doc);
+    for (const who of [alice, bob]) {
+      const poll = who.flow.polls.get(id)!;
+      expect(poll.revealed).toBe(true);
+      expect(poll.closedAt).toEqual(expect.any(Number));
+      expect(poll.openedAt).toEqual(expect.any(Number));
+    }
+  });
+
+  it('keeps a reveal and the end of the session made at the same time, in either order of arrival', () => {
+    for (const first of ['alice', 'bob'] as const) {
+      const { alice, bob, id } = openPollOnTwoDevices();
+      bob.flow.polls.reveal(id);
+      alice.flow.end();
+      const [from, to] = first === 'alice' ? [alice, bob] : [bob, alice];
+      Y.applyUpdate(to.doc, Y.encodeStateAsUpdate(from.doc));
+      Y.applyUpdate(from.doc, Y.encodeStateAsUpdate(to.doc));
+      expect(alice.flow.polls.get(id)).toMatchObject({ revealed: true, closedAt: expect.any(Number) });
+      expect(bob.flow.polls.get(id)).toMatchObject({ revealed: true, closedAt: expect.any(Number) });
+    }
+  });
+
+  it('agrees on one close time when two devices close the poll at once', () => {
+    const { alice, bob, id } = openPollOnTwoDevices();
+    alice.flow.goto(0);
+    bob.flow.end();
+    exchange(alice.doc, bob.doc);
+    const closed = alice.flow.polls.get(id)!.closedAt;
+    expect(closed).toEqual(expect.any(Number));
+    expect(bob.flow.polls.get(id)!.closedAt).toBe(closed);
+  });
+
+  it('prefers the earlier time when the definition and pollState disagree', () => {
+    const { alice, id } = openPollOnTwoDevices();
+    const def = alice.store.polls.get(id)!;
+    alice.store.transact(() => {
+      alice.store.polls.set(id, { ...def, closedAt: 1000 });
+      alice.store.pollState.set(stateKey(id, 'closedAt'), 2000);
+    });
+    expect(alice.flow.polls.get(id)!.closedAt).toBe(1000);
+  });
+
+  it('survives an older client that rewrites the whole poll value', () => {
+    const { alice, bob, id } = openPollOnTwoDevices();
+    // bob runs a build from before pollState: it reveals by rewriting the value it had, which has no closedAt
+    const stale = bob.store.polls.get(id)!;
+    bob.store.transact(() => bob.store.polls.set(id, { ...stale, revealed: true }));
+    alice.flow.goto(0);
+    exchange(alice.doc, bob.doc);
+    for (const who of [alice, bob]) expect(who.flow.polls.get(id)).toMatchObject({ revealed: true, closedAt: expect.any(Number) });
+    // and the reveal now has its own key, so a later rewrite by an older client cannot take it back
+    expect(alice.store.pollState.get(stateKey(id, 'revealed'))).toBe(true);
+  });
+});
+
+describe('polls from before pollState', () => {
+  const legacyDoc = () => {
+    const doc = new Y.Doc();
+    const poll: Poll = {
+      id: 'old', question: 'Lunch?', options: [{ id: 'o1', text: 'Yes' }, { id: 'o2', text: 'No' }],
+      multiple: false, anonymous: true, revealed: true, createdAt: 1, createdBy: 'someone', openedAt: 10, closedAt: 20,
+    };
+    doc.getMap('polls').set('old', poll);
+    return doc;
+  };
+
+  it('reads them as before and moves their changing fields into pollState', () => {
+    const { flow, store } = fakeApp('me', legacyDoc());
+    expect(flow.polls.get('old')).toMatchObject({ revealed: true, openedAt: 10, closedAt: 20 });
+    expect([store.pollState.get(stateKey('old', 'revealed')), store.pollState.get(stateKey('old', 'openedAt')), store.pollState.get(stateKey('old', 'closedAt'))])
+      .toEqual([true, 10, 20]);
+  });
+
+  it('reads them without writing anything on a read-only board', () => {
+    const { flow, store } = fakeApp('me', legacyDoc(), true);
+    expect(flow.polls.get('old')).toMatchObject({ revealed: true, openedAt: 10, closedAt: 20 });
+    expect(store.pollState.size).toBe(0);
+  });
+
+  it('removes a poll with its state', () => {
+    const { flow, store } = fakeApp('me', legacyDoc());
+    flow.polls.remove('old');
+    expect(store.polls.size).toBe(0);
+    expect(store.pollState.size).toBe(0);
   });
 });
 

@@ -44,6 +44,8 @@ export class Store {
   readonly votes: Y.Map<Vote>;
   readonly polls: Y.Map<Poll>;
   readonly pollAnswers: Y.Map<PollAnswer>;
+  /** A poll's changing fields, one key each (`${pollId}:revealed`), so concurrent changes merge. See polls.ts. */
+  readonly pollState: Y.Map<unknown>;
   readonly cache = new Map<Id, Obj>();
   readonly undo: Y.UndoManager;
 
@@ -62,6 +64,7 @@ export class Store {
     this.votes = doc.getMap('votes');
     this.polls = doc.getMap('polls');
     this.pollAnswers = doc.getMap('pollAnswers');
+    this.pollState = doc.getMap('pollState');
 
     this.objects.forEach((m, id) => this.cache.set(id, m.toJSON() as Obj));
     this.rebuildBoundIndex();
