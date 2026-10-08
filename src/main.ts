@@ -9,6 +9,9 @@ import { TEMPLATES, insertTemplate } from './templates';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import type { Obj } from './types';
+import { applyTheme, getStoredTheme } from './themes';
+
+applyTheme(getStoredTheme());
 
 const root = document.getElementById('app')!;
 let current: BoardApp | null = null;
