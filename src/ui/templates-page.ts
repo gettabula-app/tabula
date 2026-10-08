@@ -9,6 +9,7 @@ import { builtinThumbnail, thumbnailSvg } from '../template-thumb';
 import { getTemplate, listTemplates, onTemplatesChange, putTemplate, removeTemplate } from '../template-store';
 import { NAME_MAX, builtinToCustom, duplicateTemplate, exportTemplateFile, parseTemplateFile } from '../template-file';
 import type { CustomTemplate } from '../custom-templates';
+import { storedWhere } from '../desktop-env';
 import type { AuthState } from '../auth';
 import type { HomeNav } from './home';
 import { createWorkspaceBanner } from './workspace';
@@ -276,7 +277,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
             paint();
           }))),
       h('div', { class: 'tpl-results' }, count, mineSection, builtinSection, empty),
-      pageFooter(me ? 'Boards sync through your workspace server when it is reachable.' : 'Boards are stored in this browser.'))));
+      pageFooter(me ? 'Boards sync through your workspace server when it is reachable.' : `Boards are stored ${storedWhere()}.`))));
   paint();
   load();
   const off = onTemplatesChange(() => {
