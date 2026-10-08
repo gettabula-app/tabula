@@ -4,7 +4,7 @@ The tool rail on the left of a board holds everything you draw with. This page c
 
 ## The tool rail
 
-Each tool has a one-letter shortcut. Hover a button to see it.
+Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus onto it, to see its name and shortcut.
 
 | Key | Tool |
 |---|---|
@@ -71,7 +71,9 @@ Board-wide heading and body fonts for new objects are set in **Board settings** 
 
 - **Pen** (`P`): drag to draw freehand. A tray shows colours and three widths while the pen is active.
 - **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it.
-- **Icons**: open the **Icons** drawer, search, then click an icon to add it or drag it onto the board. Change its colour with the properties panel.
+- **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Change its colour with the properties panel.
+- **Offline icons**: with **All icon sets** selected, the row **Popular icon sets (N)** has **Download for offline**. With one set selected, the row shows that set's name instead. Downloaded sets search and preview without a connection; **Update** and **Remove** work as they do for stickers (see [Stickers](stickers.md#offline)). Icons already on the board stay there.
+- **Online sets**: this button in the Icons drawer loads more sets from Iconify. Those sets cannot be downloaded, need a connection, and each search sends your query to Iconify.
 - **UML**: the **UML** drawer holds classes, actors, lifelines and other UML elements, and the relationship connectors. See [Connectors](connectors.md#uml-relationships).
 - **Import Mermaid**: see [Export and import](export-import.md#importing-mermaid).
 

@@ -8,7 +8,7 @@ Click **Stickers** on the tool rail. The drawer opens on the side.
 
 - **Set** chooses the emoji style: **Fluent**, **Twemoji** or **Noto**. Fluent is the default.
 - **Search stickers** filters the current set. Results appear after a short pause.
-- A note under the grid names the licence. Some sets need attribution if you publish your board.
+- A note under the grid names the licence. Some sets need attribution if you publish your board. **Licences** opens a list of every set and what its licence asks for.
 
 ## Place a sticker
 
@@ -33,10 +33,24 @@ A small sticker is placed beside the top right corner of your selection. It does
 
 ## Offline
 
-- Stickers already on the board always display, including in PNG and SVG exports.
-- Browsing and searching the drawer needs a connection. Sets and previews you have viewed before may still load offline.
-- A reaction you have never used on this device cannot load offline. You will see a message that the icon could not be loaded.
-- If a search fails, the drawer says why and shows **Retry**. It also retries when your connection returns.
+Stickers already on the board always display, including in PNG and SVG exports, with or without a connection.
+
+The drawer works offline once you download the sticker sets to this device:
+
+1. Open the **Stickers** drawer.
+2. Below the grid, the **Sticker sets** row says how much data the download uses and has a **Download for offline** button. The row is hidden in browsers that have no offline storage.
+3. Click **Download for offline**. The row shows the progress, for example "Downloading Sticker sets: 40 of 120 files", with a bar. Click **Cancel** to stop. The download carries on if you close the drawer.
+4. When it finishes, the row says the sets are available offline.
+
+With the sets downloaded, searching and previews work without a connection, for all three sets (Fluent, Twemoji and Noto).
+
+- **Remove** on the same row deletes the offline copy. The sets stay available online, and stickers already on boards are not affected.
+- If the server has a newer version of the sets, the row says an update is available. **Update** downloads only the files that changed, and **Remove** is still there.
+- If the device does not have enough free storage, the download stops with a message saying so.
+
+You do not have to download to use a sticker you have already seen: the browser keeps each sticker image you load. A sticker from a set you have neither downloaded nor viewed does not load until you are back online.
+
+If the drawer cannot load a set or a preview, it says why and shows **Retry**. It also tries again when your connection returns.
 
 ## Related
 

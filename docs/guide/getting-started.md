@@ -36,7 +36,7 @@ From top to bottom:
 - A dot vote button and a quick poll button.
 - **Undo** and **Redo**.
 
-Hover over any button to see its name and shortcut. On a board you can only view, only **Select** and **Hand** stay active (and **Comment**, if you are allowed to comment).
+Hover over a button for half a second, or move keyboard focus onto it, to see a tooltip with its name and, where it has one, its shortcut as a key chip; `Esc` closes it. Tooltips do not appear on touch screens. On a board you can only view, only **Select** and **Hand** stay active (and **Comment**, if you are allowed to comment).
 
 ### Quick-action bar
 
