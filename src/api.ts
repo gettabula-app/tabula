@@ -77,6 +77,68 @@ export interface Member {
   teams: { id: string; name: string; role: TeamRole }[];
 }
 
+export interface AdminOverview {
+  members: { total: number; active: number; disabled: number; byRole: Record<UserRole, number> };
+  teams: { total: number; archived: number };
+  boards: { total: number; deleted: number };
+  sessions: { active: number };
+  signIns7d: number;
+  live: { rooms: number; connections: number };
+  instance: { authEnabled: true; baseUrl: string; mail: 'log' | 'file' | 'webhook' | 'smtp'; version: string };
+}
+
+export interface AdminMember {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  disabled: boolean;
+  createdAt: number;
+  lastSeenAt: number | null;
+  activeSessions: number;
+  boardCount: number;
+  teams: { id: string; name: string; role: TeamRole }[];
+}
+
+export interface AdminSession {
+  id: string;
+  userId: string;
+  userName: string;
+  email: string;
+  createdAt: number;
+  lastSeen: number;
+  expiresAt: number;
+  current: boolean;
+}
+
+export interface AdminBoard {
+  id: string;
+  title: string;
+  ownerId: string | null;
+  ownerName: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+  shareCount: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  ts: number;
+  actorId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  action: string;
+  detail: Record<string, unknown>;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  next: number | null;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -144,6 +206,12 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
   }
 
   const seg = (s: string) => encodeURIComponent(s);
+  const qs = (params: Record<string, string | number | undefined>) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
+    const s = q.toString();
+    return s ? `?${s}` : '';
+  };
 
   return {
     config: () => call<{ authEnabled: boolean }>('GET', '/api/config'),
@@ -188,6 +256,16 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     updateMember: (id: string, patch: { role?: UserRole; disabled?: boolean }) =>
       call<Member>('PATCH', `/api/members/${seg(id)}`, patch),
     removeMember: (id: string) => call<void>('DELETE', `/api/members/${seg(id)}`),
+
+    adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),
+    adminMembers: () => call<AdminMember[]>('GET', '/api/admin/members'),
+    revokeMemberSessions: (id: string) => call<void>('POST', `/api/admin/members/${seg(id)}/revoke-sessions`),
+    adminSessions: () => call<AdminSession[]>('GET', '/api/admin/sessions'),
+    revokeSession: (id: string) => call<void>('DELETE', `/api/admin/sessions/${seg(id)}`),
+    adminBoards: (deleted = false) => call<AdminBoard[]>('GET', `/api/admin/boards${qs({ deleted: deleted ? 1 : undefined })}`),
+    restoreBoard: (id: string) => call<void>('POST', `/api/admin/boards/${seg(id)}/restore`),
+    adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
+      call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),
   };
 }
 

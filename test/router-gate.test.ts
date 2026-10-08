@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { needsSignIn, parseRoute, resolveRoute, returnHash, type Route } from '../src/route';
+import { needsSignIn, parseRoute, resolveRoute, returnHash, type AdminTab, type Route } from '../src/route';
 import type { AuthState } from '../src/auth';
 
 type Mode = AuthState['mode'];
@@ -9,6 +9,7 @@ const signin: Route = { name: 'signin' };
 const board = (id: string): Route => ({ name: 'board', id });
 const verify = (token: string): Route => ({ name: 'verify', token });
 const invite = (token: string): Route => ({ name: 'invite', token });
+const admin = (tab: AdminTab): Route => ({ name: 'admin', tab });
 
 describe('parseRoute', () => {
   it.each<[string, Route]>([
@@ -23,6 +24,17 @@ describe('parseRoute', () => {
     ['#/b/has space', home],
     ['#/b/abc/extra', home],
     ['#/signin', signin],
+    ['#/admin', admin('overview')],
+    ['#/admin/', admin('overview')],
+    ['#/admin/overview', admin('overview')],
+    ['#/admin/members', admin('members')],
+    ['#/admin/teams', admin('teams')],
+    ['#/admin/boards', admin('boards')],
+    ['#/admin/sessions', admin('sessions')],
+    ['#/admin/audit', admin('audit')],
+    ['#/admin/bogus', admin('overview')],
+    ['#/admin/members/x', home],
+    ['#/admin/members/', home],
     ['#/signin/verify?token=abc', verify('abc')],
     ['#/signin/verify?token=a%2Bb', verify('a+b')],
     ['#/signin/verify?x=1&token=abc_-9', verify('abc_-9')],
@@ -45,6 +57,8 @@ describe('resolveRoute', () => {
     ['#/signin', home],
     ['#/signin/verify?token=abc', home],
     ['#/invite/abc', home],
+    ['#/admin', home],
+    ['#/admin/members', home],
     ['#/b/abc', board('abc')],
     ['#/', home],
   ])('open mode: %j', (hash, route) => {
@@ -55,6 +69,8 @@ describe('resolveRoute', () => {
     ['signed-out', '#/signin', signin],
     ['signed-in', '#/signin', signin],
     ['offline', '#/signin', signin],
+    ['signed-in', '#/admin/audit', admin('audit')],
+    ['offline', '#/admin/members', admin('members')],
     ['signed-in', '#/signin/verify?token=abc', verify('abc')],
     ['signed-out', '#/invite/abc', invite('abc')],
     ['offline', '#/b/abc', board('abc')],
@@ -70,13 +86,14 @@ describe('needsSignIn', () => {
     ['signin', signin],
     ['verify', verify('abc')],
     ['invite', invite('abc')],
+    ['admin', admin('members')],
   ];
   const gated: Record<Mode, string[]> = {
     unknown: [],
     open: [],
     offline: [],
     'signed-in': [],
-    'signed-out': ['home', 'board'],
+    'signed-out': ['home', 'board', 'admin'],
   };
 
   it.each(Object.entries(gated).flatMap(([mode, names]) =>
@@ -96,6 +113,7 @@ describe('returnHash', () => {
     ['#/signin', null],
     ['#/signin/verify?token=abc', null],
     ['#/invite/abc', null],
+    ['#/admin/members', null],
     ['#/b/' + 'a'.repeat(65), null],
     ['https://elsewhere.example/', null],
   ])('%j', (hash, expected) => {
