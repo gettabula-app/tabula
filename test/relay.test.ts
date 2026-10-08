@@ -19,7 +19,7 @@ const startRelay = () =>
     setTimeout(() => reject(new Error('relay did not start')), 8000);
   });
 
-const stopRelay = (p: ChildProcess) => new Promise<void>((r) => { p.once('exit', () => r()); p.kill('SIGTERM'); });
+const stopRelay = (p: ChildProcess) => new Promise<void>((r) => { if (p.exitCode !== null || p.signalCode !== null) return r(); p.once('exit', () => r()); p.kill('SIGTERM'); });
 
 const client = (room: string) => {
   const doc = new Y.Doc();
@@ -40,7 +40,7 @@ describe('relay', () => {
     relay = await startRelay();
   });
   afterAll(async () => {
-    if (relay && relay.exitCode === null) await stopRelay(relay);
+    if (relay && relay.exitCode === null && relay.signalCode === null) await stopRelay(relay);
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 

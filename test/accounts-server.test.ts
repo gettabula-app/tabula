@@ -51,6 +51,7 @@ const startRelay = (port = PORT, dir = dataDir, env: Record<string, string> = {}
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
+    if (p.exitCode !== null || p.signalCode !== null) return r();
     p.once('exit', () => r());
     p.kill('SIGTERM');
   });
@@ -210,7 +211,7 @@ describe('accounts mode server', () => {
   });
 
   afterAll(async () => {
-    if (relay && relay.exitCode === null) await stopRelay(relay);
+    if (relay && relay.exitCode === null && relay.signalCode === null) await stopRelay(relay);
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -1098,7 +1099,7 @@ describe('other server configurations', () => {
 
   afterAll(async () => {
     for (const s of servers) {
-      if (s.proc.exitCode === null) await stopRelay(s.proc);
+      if (s.proc.exitCode === null && s.proc.signalCode === null) await stopRelay(s.proc);
       fs.rmSync(s.dir, { recursive: true, force: true });
     }
   });

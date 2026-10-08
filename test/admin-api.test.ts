@@ -63,6 +63,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
+    if (p.exitCode !== null || p.signalCode !== null) return r();
     p.once('exit', () => r());
     p.kill('SIGTERM');
   });
@@ -79,7 +80,7 @@ async function launch(env: Record<string, string> = {}): Promise<Server> {
 
 afterAll(async () => {
   for (const s of servers) {
-    if (s.proc.exitCode === null) await stopRelay(s.proc);
+    if (s.proc.exitCode === null && s.proc.signalCode === null) await stopRelay(s.proc);
     fs.rmSync(s.dir, { recursive: true, force: true });
   }
 });

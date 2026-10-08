@@ -35,6 +35,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
+    if (p.exitCode !== null || p.signalCode !== null) return r();
     p.once('exit', () => r());
     p.kill('SIGTERM');
   });
@@ -88,7 +89,7 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
     providers.clear();
   });
   afterAll(async () => {
-    if (relay && relay.exitCode === null) await stopRelay(relay);
+    if (relay && relay.exitCode === null && relay.signalCode === null) await stopRelay(relay);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -377,7 +378,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
   });
 
   afterAll(async () => {
-    if (relay && relay.exitCode === null) await stopRelay(relay);
+    if (relay && relay.exitCode === null && relay.signalCode === null) await stopRelay(relay);
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 

@@ -44,8 +44,10 @@ All notable changes to Mira are documented here, newest first. The format follow
 - The default size of a new triangle is now square, like the other symmetric shapes.
 - Rewrote ternary/short-circuit expression statements in `src/app.ts` as `if` statements and simplified small lint findings in `src/mermaid.ts`, `src/markup.ts` and `test/core.test.ts`, with no change in behaviour.
 - In accounts mode the name in Your name and colour is the account name and is saved to the server; the Share dialog explains who can open a board.
+- nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).
 - On the home screen, boards that someone shared with you no longer appear under Personal, and the sign-in card is centred on the page.
 - The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
 - Labels in the board menu were right-aligned next to their icons; they are now left-aligned.
