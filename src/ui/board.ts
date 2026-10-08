@@ -15,6 +15,7 @@ import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
 import { UNLIMITED } from '../flow';
+import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 
 type IconName = keyof typeof ICONS;
@@ -325,12 +326,31 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
     if (f) importInto(app, f);
   });
   const sel = app.selection.length ? app.selection : undefined;
+  const themeRows = THEMES.map((t) => {
+    const check = h('span', { class: 'theme-check' });
+    const row = h('button', { class: 'menu-item theme-item', role: 'menuitemradio', onclick: () => { setTheme(t.id); paintThemes(); } },
+      h('div', { class: 'theme-preview', 'aria-hidden': 'true', style: `--c:${t.vars['--canvas']};--t:${t.vars['--tray']};--a:${t.vars['--signal']}` }),
+      h('span', null, t.name),
+      check);
+    return { id: t.id, row, check };
+  });
+  const paintThemes = () => {
+    const current = getStoredTheme();
+    for (const r of themeRows) {
+      const on = r.id === current;
+      r.row.setAttribute('aria-checked', String(on));
+      r.check.replaceChildren(on ? icon('check', 16) : '');
+    }
+  };
+  paintThemes();
   const pop = popover(anchor, h('div', { class: 'menu' },
     h('div', { class: 'list-label' }, 'Board'),
     item('grid', 'Board settings', () => openSettings(app)),
     item('user', 'Your name and colour', () => openProfile(app)),
     item('upload', 'Import a board file into this board', () => fileInput.click()),
     item('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
+    h('div', { class: 'list-label' }, 'Appearance'),
+    themeRows.map((r) => r.row),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
     item('download', 'PNG image', async () => {
       toast('Preparing image…');
