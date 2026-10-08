@@ -118,6 +118,49 @@ export function denyOnce(conn: { denied: DeniedReason | null }, rooms: Room[], c
   denied(reason);
 }
 
+/**
+ * Hosted workspaces (docs/cloud.md): the relay sends one message of this type on every open socket when the workspace's
+ * read-only switch flips. It is not a y-websocket type (those are 0 sync, 1 awareness, 2 auth, 3 query awareness).
+ *
+ * Checked against y-websocket 3.1.0: every provider copies the default table to its own `messageHandlers`, indexed by the
+ * first varUint of a message, and calls `handler(encoder, decoder, provider, emitSynced, messageType)`. An index that is
+ * not filled makes it log "Unable to compute message" and carry on, so an old client survives the new message. A handler
+ * must leave the encoder empty, because anything written to it is sent back to the relay.
+ */
+export const MSG_WORKSPACE = 4;
+
+/** The part of a room provider that carries the table of message handlers. */
+type HintTarget = { messageHandlers: WebsocketProvider['messageHandlers'] };
+
+/**
+ * Calls `callback` whenever the relay says the workspace's read-only switch flipped. The hint carries no authority, so
+ * the payload is not read: the callback asks the server what is true. It never throws into the socket.
+ */
+export function onWorkspaceHint(provider: HintTarget, callback: () => void): void {
+  provider.messageHandlers[MSG_WORKSPACE] = () => {
+    try {
+      callback();
+    } catch {
+      /* a failing listener must not break the socket */
+    }
+  };
+}
+
+/** The part of a room provider that a resync restarts. */
+type Resyncable = { disconnect: () => void; connect: () => void };
+
+/**
+ * Starts the room connections again so the fresh state exchange (sync step 1 and 2) sends everything typed while the
+ * relay was dropping updates. A refused connection stays stopped.
+ */
+export function resyncRooms(conn: { denied: DeniedReason | null }, rooms: Resyncable[]): void {
+  if (conn.denied) return;
+  for (const room of rooms) {
+    room.disconnect();
+    room.connect();
+  }
+}
+
 const commentsRoom = (id: string) => `${id}~comments`;
 
 async function clearLocal(name: string) {
@@ -139,6 +182,10 @@ export interface BoardConn {
   denied: DeniedReason | null;
   onStatus: (fn: (s: SyncStatus) => void) => () => void;
   onDenied: (fn: (r: DeniedReason) => void) => () => void;
+  /** The relay says a hosted workspace's read-only switch flipped (either room's socket; one flip arrives once per socket). */
+  onWorkspaceHint: (fn: () => void) => () => void;
+  /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
+  resync: () => void;
   destroy: () => void;
 }
 
@@ -157,6 +204,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   let awareness: Awareness;
   const statusListeners = new Set<(s: SyncStatus) => void>();
   const deniedListeners = new Set<(r: DeniedReason) => void>();
+  const hintListeners = new Set<() => void>();
   const conn: BoardConn = {
     id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
@@ -168,6 +216,11 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       if (conn.denied) fn(conn.denied);
       return () => deniedListeners.delete(fn);
     },
+    onWorkspaceHint: (fn) => {
+      hintListeners.add(fn);
+      return () => hintListeners.delete(fn);
+    },
+    resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
       provider?.destroy();
       awareness.destroy();
@@ -192,6 +245,8 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     });
   };
 
+  const hinted = () => hintListeners.forEach((l) => l());
+
   if (url) {
     provider = new WebsocketProvider(url, id, doc, { maxBackoffTime: 8000 });
     awareness = provider.awareness;
@@ -201,9 +256,11 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       setStatus(status === 'connected' ? 'live' : 'connecting');
     });
     provider.on('connection-close', onClose);
+    onWorkspaceHint(provider, hinted);
     commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
+    onWorkspaceHint(commentsProvider, hinted);
   } else {
     awareness = new Awareness(doc);
   }

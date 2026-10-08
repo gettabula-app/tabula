@@ -15,8 +15,8 @@ import { toast } from './ui/common';
 import type { Obj } from './types';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, type ServerBoard } from './api';
-import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, startMeRefresh, type AuthState } from './auth';
-import { boardAccess, workspaceOf } from './cloud-logic';
+import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
+import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
 
@@ -163,11 +163,15 @@ async function route() {
     conn.destroy();
     return;
   }
+  // When a locked workspace becomes writable again the board reconnects, so what was typed while the relay dropped it is sent.
+  const watchUnlock = createUnlockWatcher(() => conn.resync());
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
   const applyAccess = () => {
-    const access = boardAccess(role, workspaceOf(authState()));
+    const workspace = workspaceOf(authState());
+    const access = boardAccess(role, workspace);
     conn.store.setReadOnly(access.storeReadOnly);
     conn.comments.setReadOnly(access.commentsReadOnly);
+    watchUnlock(workspace);
   };
   applyAccess();
   const job = pending?.id === id ? pending : null;
@@ -199,8 +203,11 @@ async function route() {
   const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
   root.appendChild(banner.el);
   const unsubscribe = onAuth(applyAccess);
+  // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
+  const unhint = conn.onWorkspaceHint(refreshMeSoon);
   releaseWorkspace = () => {
     unsubscribe();
+    unhint();
     banner.dispose();
   };
   if (accounts) {

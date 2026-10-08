@@ -5,6 +5,8 @@ import type { AuthState } from './auth';
 
 export const READ_ONLY_BADGE = 'Workspace is read-only';
 export const ME_REFRESH_MS = 5 * 60 * 1000;
+/** Hints that arrive this close together (the board and comments sockets get one each) become one refresh. */
+export const HINT_COALESCE_MS = 150;
 
 const READ_ONLY_BANNER = 'This workspace is read-only.';
 
@@ -79,15 +81,27 @@ export interface MeRefreshDeps {
   expired: () => void;
   setInterval: (fn: () => void, ms: number) => unknown;
   clearInterval: (handle: unknown) => void;
+  /** The real timers when left out. */
+  setTimeout?: (fn: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
 }
 
 /** Asks the server who the user is every few minutes, so a banner or a read-only switch shows up without a reload. */
 export function createMeRefresher(deps: MeRefreshDeps, ms = ME_REFRESH_MS) {
+  const startTimer = deps.setTimeout ?? ((fn, delay) => setTimeout(fn, delay));
+  const stopTimer = deps.clearTimeout ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   let busy = false;
   let missed = false;
+  let hintTimer: unknown = null;
+  let again = false;
 
-  async function run() {
-    if (busy || !deps.active()) return;
+  async function run(afterHint = false) {
+    if (busy) {
+      // The answer on its way may have been read before the change the hint is about, so ask once more when it lands.
+      again ||= afterHint;
+      return;
+    }
+    if (!deps.active()) return;
     if (!deps.visible()) {
       missed = true;
       return;
@@ -102,6 +116,10 @@ export function createMeRefresher(deps: MeRefreshDeps, ms = ME_REFRESH_MS) {
       if (error instanceof ApiError && error.status === 401) deps.expired();
     } finally {
       busy = false;
+      if (again) {
+        again = false;
+        void run();
+      }
     }
   }
 
@@ -111,6 +129,37 @@ export function createMeRefresher(deps: MeRefreshDeps, ms = ME_REFRESH_MS) {
     resume: () => {
       if (missed) void run();
     },
-    stop: () => deps.clearInterval(handle),
+    /**
+     * The relay says the workspace changed. The hint is not trusted: it only brings the refresh forward, and hints that
+     * come in a burst are one request.
+     */
+    hint: () => {
+      if (hintTimer !== null) return;
+      hintTimer = startTimer(() => {
+        hintTimer = null;
+        void run(true);
+      }, HINT_COALESCE_MS);
+    },
+    stop: () => {
+      deps.clearInterval(handle);
+      if (hintTimer !== null) stopTimer(hintTimer);
+      hintTimer = null;
+    },
+  };
+}
+
+/**
+ * Reports the moment a workspace goes from read-only back to writable. `onUnlock` is where a board reconnects, so that
+ * what was typed while the relay dropped updates is sent in a fresh sync. Nothing else counts: turning read-only, a
+ * change of banner and a missing workspace (open mode, signed out) all leave it quiet. Call it with the first known
+ * workspace to set the starting point, then on every change of the signed-in state.
+ */
+export function createUnlockWatcher(onUnlock: () => void): (workspace: Workspace | null | undefined) => void {
+  let locked = false;
+  return (workspace) => {
+    if (!workspace) return;
+    const unlocked = locked && !workspace.readOnly;
+    locked = workspace.readOnly;
+    if (unlocked) onUnlock();
   };
 }

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApi, type BoardRole, type Me, type Workspace } from '../src/api';
 import { authState, setSignedIn, setSignedOut, startMeRefresh } from '../src/auth';
 import {
+  HINT_COALESCE_MS,
   ME_REFRESH_MS,
   READ_ONLY_BADGE,
   bannerText,
@@ -9,6 +10,7 @@ import {
   canManageBilling,
   cloudErrorMessage,
   createMeRefresher,
+  createUnlockWatcher,
   meChanged,
   portalTarget,
   workspaceOf,
@@ -269,6 +271,167 @@ describe('createMeRefresher', () => {
     const h = harness();
     h.refresher.stop();
     expect(h.cleared).toHaveBeenCalledWith('handle');
+  });
+
+  describe('hints from the relay', () => {
+    function timers() {
+      const waiting = new Map<number, { fn: () => void; ms: number }>();
+      let next = 0;
+      return {
+        setTimeout: (fn: () => void, ms: number) => {
+          waiting.set(++next, { fn, ms });
+          return next;
+        },
+        clearTimeout: (handle: unknown) => void waiting.delete(handle as number),
+        waiting: () => [...waiting.values()],
+        fire: () => {
+          const due = [...waiting.values()];
+          waiting.clear();
+          due.forEach((t) => t.fn());
+        },
+      };
+    }
+
+    it('turns a burst of hints into one request after a short wait', async () => {
+      const t = timers();
+      const h = harness({ setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+      h.refresher.hint();
+      h.refresher.hint();
+      h.refresher.hint();
+      expect(t.waiting().map((w) => w.ms)).toEqual([HINT_COALESCE_MS]);
+      expect(h.fetchMe).not.toHaveBeenCalled();
+      t.fire();
+      await settle();
+      expect(h.fetchMe).toHaveBeenCalledTimes(1);
+      expect(h.apply).toHaveBeenCalledTimes(1);
+
+      h.refresher.hint();
+      t.fire();
+      await settle();
+      expect(h.fetchMe).toHaveBeenCalledTimes(2);
+    });
+
+    it('asks again when a hint arrives while an older answer is still on its way', async () => {
+      const t = timers();
+      const releases: Array<(me: Me) => void> = [];
+      const h = harness({
+        setTimeout: t.setTimeout,
+        clearTimeout: t.clearTimeout,
+        fetchMe: () => new Promise<Me>((resolve) => releases.push(resolve)),
+      });
+      h.refresher.hint();
+      t.fire();
+      h.refresher.hint();
+      t.fire();
+      expect(releases).toHaveLength(1);
+      releases[0](meWith('owner', workspace({ readOnly: true })));
+      await settle();
+      expect(releases).toHaveLength(2);
+      releases[1](meWith('owner', workspace()));
+      await settle();
+      expect(h.apply).toHaveBeenCalledTimes(2);
+      expect(releases).toHaveLength(2);
+    });
+
+    it('stays quiet for anyone who is not on a hosted workspace', async () => {
+      const t = timers();
+      const h = harness({ setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+      h.state.active = false;
+      h.refresher.hint();
+      t.fire();
+      await settle();
+      expect(h.fetchMe).not.toHaveBeenCalled();
+    });
+
+    it('leaves a hidden tab for when it is seen again', async () => {
+      const t = timers();
+      const h = harness({ setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+      h.state.visible = false;
+      h.refresher.hint();
+      t.fire();
+      await settle();
+      expect(h.fetchMe).not.toHaveBeenCalled();
+      h.state.visible = true;
+      h.refresher.resume();
+      await settle();
+      expect(h.fetchMe).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops a hint that is still waiting when it stops', async () => {
+      const t = timers();
+      const h = harness({ setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
+      h.refresher.hint();
+      h.refresher.stop();
+      expect(t.waiting()).toEqual([]);
+      t.fire();
+      await settle();
+      expect(h.fetchMe).not.toHaveBeenCalled();
+    });
+
+    it('uses the real timers by default', () => {
+      vi.useFakeTimers();
+      try {
+        const h = harness();
+        h.refresher.hint();
+        vi.advanceTimersByTime(HINT_COALESCE_MS - 1);
+        expect(h.fetchMe).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(h.fetchMe).toHaveBeenCalledTimes(1);
+        h.refresher.hint();
+        h.refresher.stop();
+        vi.advanceTimersByTime(HINT_COALESCE_MS * 2);
+        expect(h.fetchMe).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+});
+
+describe('createUnlockWatcher', () => {
+  it('fires once when a read-only workspace becomes writable', () => {
+    const onUnlock = vi.fn<() => void>();
+    const watch = createUnlockWatcher(onUnlock);
+    watch(workspace({ readOnly: true }));
+    watch(workspace({ readOnly: true, banner: 'Pay up' }));
+    expect(onUnlock).not.toHaveBeenCalled();
+    watch(workspace({ readOnly: false }));
+    expect(onUnlock).toHaveBeenCalledTimes(1);
+    watch(workspace({ readOnly: false, banner: 'Welcome back' }));
+    expect(onUnlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('is quiet when the workspace turns read-only, or was never locked', () => {
+    const onUnlock = vi.fn<() => void>();
+    const watch = createUnlockWatcher(onUnlock);
+    watch(workspace());
+    watch(workspace({ readOnly: true }));
+    watch(workspace());
+    expect(onUnlock).toHaveBeenCalledTimes(1);
+
+    const other = vi.fn<() => void>();
+    const never = createUnlockWatcher(other);
+    never(workspace());
+    never(workspace({ banner: 'Hello' }));
+    never(workspace({ readOnly: true }));
+    expect(other).not.toHaveBeenCalled();
+  });
+
+  it('does not take a missing workspace (open mode, signed out) for an unlock', () => {
+    const onUnlock = vi.fn<() => void>();
+    const watch = createUnlockWatcher(onUnlock);
+    watch(workspace({ readOnly: true }));
+    watch(null);
+    watch(undefined);
+    expect(onUnlock).not.toHaveBeenCalled();
+    watch(workspace());
+    expect(onUnlock).toHaveBeenCalledTimes(1);
+
+    const plain = vi.fn<() => void>();
+    const open = createUnlockWatcher(plain);
+    open(null);
+    open(null);
+    expect(plain).not.toHaveBeenCalled();
   });
 });
 
