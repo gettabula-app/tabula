@@ -1,11 +1,11 @@
 import type { BoardApp } from '../app';
-import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation } from '../types';
+import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
 import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS } from '../palette';
 import { stickyColorField } from './colors';
-import { SHAPE_KINDS, HEADS } from '../shapes';
+import { SHAPE_GROUPS, SHAPE_KINDS, HEADS } from '../shapes';
 import { RELATIONS, classHeight } from '../uml';
 import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
@@ -19,9 +19,9 @@ const TYPE_LABEL: Record<string, string> = {
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
 };
 
-const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
-const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
-const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
+export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
+export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
+export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
 const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128];
 const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extralight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extrabold', 900: 'Black' };
@@ -29,6 +29,8 @@ const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extralight', 3
 export function mountProps(app: BoardApp, parent: HTMLElement) {
   const panel = h('aside', { class: 'props tray', 'aria-label': 'Selection properties' });
   parent.appendChild(panel);
+  let open = false;
+  const toggled: (() => void)[] = [];
   let timer = 0;
   const schedule = () => {
     clearTimeout(timer);
@@ -44,8 +46,9 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
 
   function render() {
     const sel = app.selected();
-    panel.classList.toggle('show', sel.length > 0);
-    if (!sel.length) {
+    const show = open && sel.length > 0;
+    panel.classList.toggle('show', show);
+    if (!show) {
       panel.replaceChildren();
       return;
     }
@@ -69,7 +72,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     if (same && first.type === 'shape') {
       const sel2 = h('select', { class: 'input', 'aria-label': 'Shape', onchange: (e: Event) => up({ kind: (e.target as HTMLSelectElement).value as ShapeKind }) },
-        ...SHAPE_KINDS.map((k) => h('option', { value: k.kind, selected: (first as BaseObj).kind === k.kind }, k.label)));
+        ...SHAPE_GROUPS.map(([group, label]) => h('optgroup', { label }, ...SHAPE_KINDS.filter((k) => k.group === group).map((k) => h('option', { value: k.kind, selected: (first as BaseObj).kind === k.kind }, k.label)))));
       blocks.push(field('Shape', sel2));
     }
     if (same && first.type === 'frame' && sel.length === 1) {
@@ -138,6 +141,13 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
         { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
       ], s.align, (v) => up({ align: v }, HAS_TEXT), 'Text alignment')));
+      if (sel.some((o) => o.type === 'shape' || o.type === 'sticky')) {
+        blocks.push(field('Vertical', segmented<VAlign>([
+          { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
+          { value: 'middle', label: 'Align middle', icon: icon('alignMiddleV', 16) },
+          { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
+        ], s.valign, (v) => up({ valign: v }, (o) => o.type === 'shape' || o.type === 'sticky'), 'Vertical alignment')));
+      }
       blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: c, value: c })), s.textColor, (v) => up({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
     }
 
@@ -174,9 +184,15 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('trash', 'Delete (Del)', () => app.deleteSelection(), 'danger'),
     ));
 
-    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title)), ...blocks.filter(Boolean) as HTMLElement[]);
+    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18))), ...blocks.filter(Boolean) as HTMLElement[]);
+  }
+  function toggle() {
+    open = !open;
+    render();
+    toggled.forEach((f) => f());
   }
   render();
+  return { toggle, isOpen: () => open, onToggle: (fn: () => void) => { toggled.push(fn); } };
 }
 
 function btn(name: Parameters<typeof icon>[0], label: string, onClick: () => void, cls = '') {

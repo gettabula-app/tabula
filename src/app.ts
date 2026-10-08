@@ -47,7 +47,7 @@ type Drag =
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
   | { mode: 'pen'; pts: Point[] };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing';
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
@@ -172,6 +172,11 @@ export class BoardApp {
 
   selected(): Obj[] {
     return this.selection.map((id) => this.store.get(id)).filter(Boolean) as Obj[];
+  }
+
+  get dragging(): boolean {
+    const d = this.drag;
+    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || (d.mode === 'move' && d.moved));
   }
 
   setTool(t: Tool) {
@@ -320,6 +325,7 @@ export class BoardApp {
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
         this.cancelLongPress();
         this.drag = null;
+        this.emit('drag');
         this.r.setOverlay({ marquee: null, preview: '' });
       }
     });
@@ -432,6 +438,7 @@ export class BoardApp {
         const c = center(o);
         this.drag = { mode: 'rotate', id: o.id, c, a0: Math.atan2(p.y - c.y, p.x - c.x), r0: o.rotation || 0 };
       } else if (isBox(o)) this.drag = { mode: 'resize', id: o.id, handle: hh.h, o0: { ...o } };
+      this.emit('drag');
       return;
     }
 
@@ -620,7 +627,9 @@ export class BoardApp {
   private doMove(d: Extract<Drag, { mode: 'move' }>, p: Point, e: PointerEvent) {
     let dx = p.x - d.start.x, dy = p.y - d.start.y;
     if (!d.moved && Math.hypot(dx, dy) * this.zoom < 3) return;
+    const first = !d.moved;
     d.moved = true;
+    if (first) this.emit('drag');
     const guides: { x1: number; y1: number; x2: number; y2: number }[] = [];
     if (!e.altKey) {
       const b = d.bounds;
@@ -728,6 +737,7 @@ export class BoardApp {
     this.r.root.classList.remove('panning');
     if (!d) return;
     this.flushQueue();
+    this.emit('drag');
     const p = this.worldOf(e);
     switch (d.mode) {
       case 'move':

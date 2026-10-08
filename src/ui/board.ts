@@ -4,6 +4,7 @@ import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
+import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
 import { openFontPicker } from './fontpicker';
@@ -199,7 +200,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   renderStickyTray();
-  mountProps(app, chrome);
+  const props = mountProps(app, chrome);
+  mountQuickbar(app, chrome, props);
   mountFlowBar(app, chrome);
   firstRunHint(app, chrome);
 
