@@ -230,7 +230,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     toggled.forEach((f) => f());
   }
   render();
-  return { toggle, isOpen: () => open, onToggle: (fn: () => void) => { toggled.push(fn); } };
+  return { el: panel, toggle, isOpen: () => open, onToggle: (fn: () => void) => { toggled.push(fn); } };
 }
 
 function btn(name: Parameters<typeof icon>[0], label: string, onClick: () => void, cls = '', key?: string) {

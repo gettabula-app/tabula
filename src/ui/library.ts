@@ -16,6 +16,7 @@ import { gridView, placeSticker, previewFiller, stickersTab, withPreviews, type 
 import { openIconCredits } from './icon-credits';
 import { offlineRow } from './icon-offline';
 import { reopenSession } from './idle-bar';
+import { placeClicked } from './place-click';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
 
@@ -71,7 +72,7 @@ type DropItem =
 async function dropItem(app: BoardApp, item: DropItem, p?: Point) {
   if (app.readOnly) return;
   const place = (type: BaseObj['type'], w: number, hh: number, extra: Partial<BaseObj>) =>
-    p ? app.placeAt(type, p, w, hh, extra) : app.placeAtCenter(type, w, hh, extra);
+    p ? app.placeAt(type, p, w, hh, extra) : placeClicked(app, type, w, hh, extra);
   if (item.kind === 'shape') {
     const sz = defaultSize(item.shape);
     place('shape', sz.w, sz.h, { kind: item.shape });

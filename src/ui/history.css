@@ -2,7 +2,7 @@
    hairlines and 2px rules, no radius, no shadow, 11px uppercase labels, an 8px grid. Theme variables only. */
 
 .history-panel {
-  position: absolute; top: 72px; right: 12px; bottom: 72px; width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
+  position: absolute; top: var(--panel-top); right: 12px; bottom: 72px; width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
   box-sizing: border-box; background: var(--tray); color: var(--tray-text); color-scheme: dark;
   border: 1px solid var(--tray-line); border-radius: 0; box-shadow: none; outline: none;
 }
@@ -102,7 +102,7 @@
 .history-confirm p { margin: 0 0 8px; line-height: 1.5; }
 
 @media (max-width: 720px) {
-  .history-panel, .chrome.history-previewing > .history-panel { left: 16px; right: 16px; top: 72px; bottom: 16px; width: auto; }
+  .history-panel, .chrome.history-previewing > .history-panel { left: 16px; right: 16px; top: var(--panel-top); bottom: 16px; width: auto; }
   .chrome.history-previewing > .history-panel { display: none; }
   .history-preview { padding-right: 0; }
   .history-banner { padding: 16px; }
