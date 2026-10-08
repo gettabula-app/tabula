@@ -847,27 +847,25 @@ describe('the limits', () => {
     expect((await w.run(owner, generate(boardId))).status).toBe(429);
   });
 
-  it('allows one run at a time per key: the workspace key serves one person at a time, a personal key is its own', async () => {
+  it('allows three runs at once on the workspace key and one on a personal key', async () => {
     const { w, owner, boardId } = await ready({}, { personalKeys: '1' });
-    const a = w.person('member');
-    const b = w.person('member');
-    const c = w.person('member');
-    for (const p of [a, b, c]) w.share(boardId, p, 'editor');
-    w.directory.saveAiKey({ ring: w.ring, scope: 'user', userId: c.user.id, provider: 'anthropic', apiKey: newKey() });
+    const [a, b, c, d] = [w.person('member'), w.person('member'), w.person('member'), w.person('member')];
+    for (const p of [a, b, c, d]) w.share(boardId, p, 'editor');
+    w.directory.saveAiKey({ ring: w.ring, scope: 'user', userId: d.user.id, provider: 'anthropic', apiKey: newKey() });
     const held = hold(w);
-    const running = w.run(a, generate(boardId));
-    await held.started;
-    const busy = await w.run(b, generate(boardId));
+    const running = [w.run(a, generate(boardId)), w.run(b, generate(boardId)), w.run(owner, generate(boardId))];
+    await until(() => w.calls.length === 3);
+    const busy = await w.run(c, generate(boardId));
     expect([busy.status, busy.json.error]).toEqual([429, 'rate_limited']);
     expect(busy.json.message).toContain('key is busy');
     expect(busy.headers.get('retry-after')).not.toBeNull();
-    // the owner uses the workspace key too
-    expect((await w.run(owner, generate(boardId))).status).toBe(429);
-    // c has a key of their own, so c is not held up (and the held script is the one answering: release it after)
-    const own = w.run(c, generate(boardId));
-    await until(() => w.calls.length === 2);
+    // d has a key of their own, so d is not held up by the workspace key (the held script answers: release it after)
+    const own = w.run(d, generate(boardId));
+    await until(() => w.calls.length === 4);
+    // but a personal key runs one at a time: d's second request is refused as d's own run in progress
+    expect((await w.run(d, generate(boardId))).status).toBe(429);
     held.release();
-    expect(resultOf(await running)).toHaveLength(1);
+    for (const r of running) expect(resultOf(await r)).toHaveLength(1);
     expect(resultOf(await own)).toHaveLength(1);
     w.state.script = null;
     expect((await w.run(b, generate(boardId))).status).toBe(200);

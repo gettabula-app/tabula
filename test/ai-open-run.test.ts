@@ -170,28 +170,29 @@ describe('when AI is on', () => {
     expect(limited.json.message).toContain('200');
   });
 
-  it('allows one run at a time per address and one on the operator key', async () => {
+  it('allows one run at a time per address and three at once on the operator key', async () => {
     const w = world();
     const post = await serve(w);
     const started = deferred();
     const release = deferred();
+    let n = 0;
     w.state.script = async function* () {
-      started.resolve();
+      if (++n === 3) started.resolve();
       await release.promise;
       yield { type: 'result', value: { objects: [{ text: 'held' }] }, usage: {} };
     };
-    const first = post(generate(), ip(1));
+    const first = [post(generate(), ip(1)), post(generate(), ip(2)), post(generate(), ip(3))];
     await started.promise;
     const sameAddress = await post(generate(), ip(1));
     expect([sameAddress.status, sameAddress.json.error]).toEqual([429, 'rate_limited']);
     expect(sameAddress.json.message).toContain('in progress');
-    const otherAddress = await post(generate(), ip(2));
-    expect([otherAddress.status, otherAddress.json.error]).toEqual([429, 'rate_limited']);
-    expect(otherAddress.json.message).toContain('key is busy');
+    const fourth = await post(generate(), ip(4));
+    expect([fourth.status, fourth.json.error]).toEqual([429, 'rate_limited']);
+    expect(fourth.json.message).toContain('key is busy');
     release.resolve();
-    expect((await first).events.at(-1)!.event).toBe('result');
+    for (const r of first) expect((await r).events.at(-1)!.event).toBe('result');
     w.state.script = null;
-    expect((await post(generate(), ip(2))).status).toBe(200);
+    expect((await post(generate(), ip(4))).status).toBe(200);
   });
 
   it('uses the socket address when the relay is not behind a proxy, so a header cannot buy a fresh allowance', async () => {
