@@ -33,6 +33,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- Admin dashboard redesigned in a Swiss style: numbered section index, large flush-left headings, overview figures in a ruled band, tables on hairlines instead of rounded cards, square buttons, chips and badges, and no shadows. Manage billing is now the primary action.
 - Minimum Node version is now 22.13 (built-in SQLite for the upcoming accounts mode).
 - Swiss design pass: the Select, Hand and Pen icons are re-centred in their 24 px box; every button now has the same 9 px inset on all sides (22 px icons in the 40 px toolbar buttons, 18 px in 36 px buttons, 16 px in labelled buttons); padding is symmetric on the top-right tray, step list, steps popover, quick-action chip, tiles and the sticky colour tray; the close buttons line up with the title inset; drawers and tool trays keep the same gutter when the toolbar narrows on short screens; the running flow-bar step is 36 px high so its end buttons have even spacing.
 - The app is now called Mira (it was called Driftboard in the interface and documentation). Saved boards, settings and old .drift files keep working: only user-visible text changed.
@@ -47,6 +48,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).
 - On the home screen, boards that someone shared with you no longer appear under Personal, and the sign-in card is centred on the page.
 - The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
