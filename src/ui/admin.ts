@@ -3,6 +3,7 @@ import { ApiError, api, type AdminBoard, type AdminMember, type AdminOverview, t
 import { setSignedOut, signOut } from '../auth';
 import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logic';
 import { ADMIN_TABS, type AdminTab } from '../route';
+import { aiAdminPanel } from './ai';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
 import { tokensAdminPanel } from './tokens';
@@ -18,6 +19,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   boards: 'Boards',
   sessions: 'Sessions',
   tokens: 'Access tokens',
+  ai: 'AI',
   audit: 'Audit log',
 };
 
@@ -33,6 +35,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Invites', prefix: 'invite.' },
   { label: 'Sign-ins', prefix: 'auth.login' },
   { label: 'Sessions', prefix: 'admin.session' },
+  { label: 'AI', prefix: 'ai.' },
 ];
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -644,6 +647,7 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   boards: () => boardsPanel(),
   sessions: () => sessionsPanel(),
   tokens: (me) => tokensAdminPanel(me, { head, loadList, change, armable, emptyLine }),
+  ai: () => aiAdminPanel({ head, loadList, change, armable, emptyLine }),
   audit: () => auditPanel(),
 };
 

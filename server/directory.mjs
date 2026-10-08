@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
+import { AI_KEYS_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 
 export { normaliseEmail };
 
@@ -131,6 +132,8 @@ export const MIGRATIONS = [
   `,
   // Custom templates shared through the server (docs/custom-templates.md).
   TEMPLATES_MIGRATION,
+  // Encrypted provider API keys for the AI features, one for the workspace and one per person (docs/ai.md).
+  AI_KEYS_MIGRATION,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -902,6 +905,7 @@ export function openDirectory(file) {
     setSetting,
     ...createTokenStore({ get, all, run, transaction }),
     ...createTemplateStore({ get, all, run }),
+    ...createAiKeyStore({ get, run, transaction }),
     audit,
     listAudit,
     listAuditPage,

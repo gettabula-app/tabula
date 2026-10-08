@@ -95,6 +95,14 @@ describe('auditSentence', () => {
     ['cloud.notify to one owner', entry('cloud.notify', { template: 'trial-ending', count: 1 }, { actorId: null, actorName: null, actorEmail: null }), 'System sent the trial-ending notice to 1 workspace owner'],
     ['cloud.notify without details', entry('cloud.notify', {}, { actorId: null, actorName: null, actorEmail: null }), 'System sent a notice to the workspace owners'],
     ['cloud.limits without limits', entry('cloud.limits', { seatLimit: null, readOnly: false, banner: 'Hi' }), 'ana@example.com updated the workspace limits'],
+    ['ai.settings turned on with a model', entry('ai.settings', { enabled: true, model: 'claude-sonnet-5-5' }), 'ana@example.com changed the AI settings (turned on, model claude-sonnet-5-5)'],
+    ['ai.settings turned off', entry('ai.settings', { enabled: false }), 'ana@example.com changed the AI settings (turned off)'],
+    ['ai.settings with the rest', entry('ai.settings', { features: ['generate'], personalKeys: false, membersOnly: true, limits: { perPersonHour: 3 } }), 'ana@example.com changed the AI settings (1 feature, personal keys off, members only, limits)'],
+    ['ai.settings with personal keys on and guests allowed', entry('ai.settings', { features: [], personalKeys: true, membersOnly: false }), 'ana@example.com changed the AI settings (0 features, personal keys allowed, guests allowed)'],
+    ['ai.key.set for the workspace', entry('ai.key.set', { scope: 'workspace', provider: 'anthropic' }), 'ana@example.com set the workspace AI key'],
+    ['ai.key.set for a person', entry('ai.key.set', { scope: 'user', provider: 'anthropic' }), 'ana@example.com added their own AI key'],
+    ['ai.key.delete for the workspace', entry('ai.key.delete', { scope: 'workspace' }), 'ana@example.com removed the workspace AI key'],
+    ['ai.key.delete for a person', entry('ai.key.delete', { scope: 'user' }), 'ana@example.com removed their own AI key'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -143,6 +151,7 @@ describe('auditSentence', () => {
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
+      'ai.settings', 'ai.key.set', 'ai.key.delete',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });

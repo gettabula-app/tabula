@@ -190,7 +190,7 @@ describe('access tokens in the directory', () => {
     d.close();
 
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE templates; DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
+    raw.exec('DROP TABLE templates; DROP TABLE ai_keys; DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
     raw.close();
 
     const again = openDirectory(file);

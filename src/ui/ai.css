@@ -1,0 +1,88 @@
+/* AI settings: the "Your AI key" dialog and the AI tab of the admin dashboard. Theme variables only; radius 0, no shadows.
+   Flush-left type, one 2px rule and hairlines, like the tokens dialog and the rest of the dashboard. */
+
+.ai { display: grid; gap: 24px; min-width: 0; }
+.ai-intro, .ai-state, .ai-problem, .ai-source, .ai-meta { margin: 0; line-height: 1.5; }
+.ai-problem { min-height: 24px; font-size: 13px; }
+.ai-problem:empty { min-height: 0; }
+.ai-meta { font-size: 13px; overflow-wrap: anywhere; }
+.ai-field { display: grid; gap: 8px; min-width: 0; }
+.ai-field .input, .ai-limit .input { width: 100%; }
+
+/* Label style: 11px uppercase meta. */
+.ai-label { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.ai-limit { display: block; min-width: 0; }
+
+/* The one sentence about data leaving the instance: a heavy rule on the left, never hidden. */
+.ai-notice { margin: 0 0 24px; padding: 0 0 0 16px; border-left: 4px solid var(--signal); line-height: 1.5; }
+.ai > .ai-notice { margin-bottom: 0; }
+
+.ai-error {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;
+  margin: 0 0 24px; padding: 16px 16px 16px 20px; border-left: 4px solid var(--danger);
+}
+.ai > .ai-error { margin-bottom: 0; }
+.ai-error span { flex: 1 1 200px; line-height: 1.5; }
+
+/* A stored key: its provider and last four characters, the dates, and Remove. */
+.ai-key {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: center;
+  margin: 0 0 24px; padding: 16px 0; border-top: 2px solid currentColor; border-bottom: 1px solid currentColor;
+}
+.ai > .ai-key { margin-bottom: 0; }
+.ai-key-who { min-width: 0; }
+.ai-key-line { font-weight: 600; overflow-wrap: anywhere; }
+.ai-key-who .ai-meta { margin-top: 4px; }
+.ai-warn { font-weight: 600; }
+
+/* The "Your AI key" dialog. */
+.ai-dialog {
+  width: min(560px, 100%); border-radius: 0; box-shadow: none;
+  border: 1px solid var(--tray-line); border-top: 2px solid var(--tray-text);
+}
+.ai-dialog .modal-head { padding: 16px 16px 8px 24px; }
+.ai-dialog .modal-head h2 { font: 800 20px/1.2 var(--display); letter-spacing: -0.02em; }
+.ai-dialog .icon-btn { border-radius: 0; }
+.ai-dialog .modal-body { padding: 8px 24px 24px; }
+.ai-dialog .ai-intro, .ai-dialog .ai-state, .ai-dialog .ai-meta { color: var(--tray-muted); }
+.ai-dialog .ai-key { border-top-color: var(--tray-text); border-bottom-color: var(--tray-line); }
+.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: 0; border: 1px solid var(--tray-line); }
+.ai-dialog .input:focus { border-color: var(--tray-text); }
+.ai-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.ai-dialog .input:focus-visible { outline: none; }
+.ai-dialog .btn-row { gap: 8px; }
+.ai-dialog .btn {
+  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: 0; background: none; color: var(--tray-text);
+  font-size: 13px; font-weight: 600;
+}
+.ai-dialog .btn:not(:disabled):hover { background: var(--tray-text); color: var(--tray); }
+.ai-dialog .btn:disabled { opacity: 0.5; }
+.ai-dialog .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+.ai-dialog .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
+.ai-dialog .btn.armed { border-color: var(--danger); color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); }
+.ai-dialog .btn.armed:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+
+/* The admin tab: the definition list of the overview, with the controls in the value column. */
+.ai-admin { min-width: 0; }
+.ai-admin .admin-fact { align-items: start; }
+.ai-checks { display: grid; gap: 8px; }
+.ai-check { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.4; }
+.ai-check input { flex: none; width: 16px; height: 16px; margin-top: 2px; accent-color: var(--ink); }
+.ai-check span { min-width: 0; overflow-wrap: anywhere; }
+.ai-model { max-width: 280px; }
+.ai-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 200px)); gap: 24px; }
+.ai-actions { align-items: center; gap: 16px; margin-top: 24px; }
+.ai-actions .ai-problem { min-height: 0; }
+.ai-admin .admin-sub { margin-top: 48px; }
+.ai-admin .ai-key { color: var(--ink); border-bottom-color: var(--rule); }
+.ai-admin .ai-meta { color: var(--graphite); }
+.ai-admin .ai-warn { color: var(--ink); }
+.ai-admin .ai-field { max-width: 480px; margin-top: 24px; }
+
+@media (max-width: 720px) {
+  .ai-dialog .modal-head { padding-left: 16px; }
+  .ai-dialog .modal-body { padding: 8px 16px 24px; }
+  .ai-key { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
+  .ai-key .btn { justify-self: start; }
+  .ai-limits { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}

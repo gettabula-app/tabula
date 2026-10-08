@@ -91,6 +91,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
+  'ai.settings', 'ai.key.set', 'ai.key.delete',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -228,6 +229,20 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const notice = d.template === 'trial-ending' ? 'the trial-ending notice' : 'a notice';
       return `${who} sent ${notice} to ${count === null ? 'the workspace owners' : countLabel(count, 'workspace owner', 'workspace owners')}`;
     }
+    case 'ai.settings': {
+      const changes: string[] = [];
+      if (flag(d.enabled) !== undefined) changes.push(d.enabled ? 'turned on' : 'turned off');
+      if (text(d.model)) changes.push(`model ${text(d.model)}`);
+      if (Array.isArray(d.features)) changes.push(countLabel(d.features.length, 'feature', 'features'));
+      if (flag(d.personalKeys) !== undefined) changes.push(d.personalKeys ? 'personal keys allowed' : 'personal keys off');
+      if (flag(d.membersOnly) !== undefined) changes.push(d.membersOnly ? 'members only' : 'guests allowed');
+      if (d.limits !== undefined) changes.push('limits');
+      return `${who} changed the AI settings${changes.length ? ` (${changes.join(', ')})` : ''}`;
+    }
+    case 'ai.key.set':
+      return d.scope === 'user' ? `${who} added their own AI key` : `${who} set the workspace AI key`;
+    case 'ai.key.delete':
+      return d.scope === 'user' ? `${who} removed their own AI key` : `${who} removed the workspace AI key`;
     default:
       return entry.action;
   }

@@ -27,6 +27,8 @@ export interface Me {
   workspace?: Workspace;
   /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
   mcp?: boolean;
+  /** Present only when this person may bring their own AI key (docs/ai.md). */
+  ai?: { personalKeys: true };
 }
 
 export type AccessScope = 'read' | 'comment' | 'write';
@@ -56,6 +58,53 @@ export interface AdminAccessToken extends AccessToken {
   userName: string;
   email: string;
   userRole: UserRole;
+}
+
+export type AiFeature = 'generate' | 'summarise' | 'cluster';
+
+/** A stored AI key as the server shows it: never the key, only its last four characters. */
+export interface AiKeyInfo {
+  provider: string;
+  hint: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+/** GET /api/ai/config (docs/ai.md): what AI is available to the person who asks. */
+export interface AiConfig {
+  enabled: boolean;
+  features: AiFeature[];
+  keySource: 'user' | 'workspace' | null;
+  model: string;
+  /** Whether this person may add a key of their own. */
+  personalKeys: boolean;
+  /** Whether the server can store keys (TABULA_AI_SECRET is set). */
+  hasSecret: boolean;
+  myKey: AiKeyInfo | null;
+}
+
+/** GET and PUT /api/admin/ai: the workspace's AI settings and its key. */
+export interface AdminAi {
+  enabled: boolean;
+  features: AiFeature[];
+  model: string;
+  personalKeys: boolean;
+  membersOnly: boolean;
+  limits: { perPersonHour: number; perWorkspaceHour: number };
+  hasSecret: boolean;
+  /** `readable` is false when the key was written under a secret this server no longer has. */
+  key: (AiKeyInfo & { readable: boolean }) | null;
+}
+
+export interface AdminAiPatch {
+  enabled?: boolean;
+  features?: AiFeature[];
+  model?: string;
+  personalKeys?: boolean;
+  membersOnly?: boolean;
+  limits?: { perPersonHour?: number; perWorkspaceHour?: number };
+  apiKey?: string;
+  provider?: string;
 }
 
 export interface Team {
@@ -245,7 +294,7 @@ export class ApiError extends Error {
   }
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A hung server must not freeze the app: a timeout rejects like any other network failure. */
 const REQUEST_TIMEOUT_MS = 8000;
@@ -402,6 +451,13 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     revokeAllAccessTokens: () => call<{ revoked: number }>('POST', '/api/me/tokens/revoke-all'),
     adminAccessTokens: () => call<AdminAccessToken[]>('GET', '/api/admin/tokens'),
     adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
+
+    aiConfig: () => call<AiConfig>('GET', '/api/ai/config'),
+    saveMyAiKey: (input: { provider: string; apiKey: string }) => call<{ provider: string; hint: string }>('PUT', '/api/ai/keys/me', input),
+    deleteMyAiKey: () => call<void>('DELETE', '/api/ai/keys/me'),
+    adminAi: () => call<AdminAi>('GET', '/api/admin/ai'),
+    updateAdminAi: (patch: AdminAiPatch) => call<AdminAi>('PUT', '/api/admin/ai', patch),
+    deleteAdminAiKey: () => call<void>('DELETE', '/api/admin/ai/key'),
 
     adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),
     adminMembers: () => call<AdminMember[]>('GET', '/api/admin/members'),
