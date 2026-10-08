@@ -7,6 +7,7 @@ import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
+import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
 import { openFontPicker } from './fontpicker';
 import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
@@ -99,7 +100,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'templates') => {
+  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates') => {
     const b = h('button', { class: 'rail-btn', title: label, 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
     return b;
@@ -122,6 +123,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     voteBtn.setAttribute('aria-pressed', String(on));
   };
   app.on('flow', syncVote);
+  const pollBtn = h('button', { class: 'rail-btn', title: 'Start a quick poll', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
+  pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
     toolBtn('Select', 'select', { kind: 'select' }, 'V'),
     toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
@@ -136,8 +139,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     h('hr'),
     drawerBtn('UML', 'uml', 'uml'),
     drawerBtn('Icons', 'icons', 'icons'),
+    drawerBtn('Stickers', 'stickers', 'stickers'),
     drawerBtn('Templates and team exercises', 'templates', 'templates'),
     voteBtn,
+    pollBtn,
     h('hr'),
     h('button', { class: 'rail-btn', title: 'Undo (Ctrl/Cmd+Z)', 'aria-label': 'Undo', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
     h('button', { class: 'rail-btn', title: 'Redo (Shift+Ctrl/Cmd+Z)', 'aria-label': 'Redo', onclick: () => app.store.undo.redo() }, icon('redo', 22)),

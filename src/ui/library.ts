@@ -8,8 +8,9 @@ import { TEMPLATES, insertTemplate } from '../templates';
 import { POPULAR_SETS, iconData, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
+import { placeSticker, stickersTab, type StickerDrag } from './stickers';
 
-export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'templates';
+export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
 
 const DND = 'application/x-driftboard';
 
@@ -24,8 +25,8 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     drawer.classList.toggle('show', !!tab);
     listeners.forEach((l) => l(tab));
     if (!tab) return drawer.replaceChildren();
-    const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', templates: 'Templates' }[tab];
-    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app) : templatesTab(app, () => open(null));
+    const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', stickers: 'Stickers', templates: 'Templates' }[tab];
+    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app) : tab === 'stickers' ? stickersTab(app, draggable) : templatesTab(app, () => open(null));
     drawer.replaceChildren(
       h('div', { class: 'drawer-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
@@ -54,7 +55,8 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
 type DropItem =
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'uml'; index: number }
-  | { kind: 'icon'; name: string };
+  | { kind: 'icon'; name: string }
+  | StickerDrag;
 
 async function dropItem(app: BoardApp, item: DropItem, p?: Point) {
   if (app.readOnly) return;
@@ -79,6 +81,8 @@ async function dropItem(app: BoardApp, item: DropItem, p?: Point) {
     } catch {
       toast('That icon could not be loaded. Check your connection and try again.');
     }
+  } else if (item.kind === 'sticker') {
+    await placeSticker(app, item.name, p);
   }
 }
 

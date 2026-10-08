@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
-import type { BoardMeta, ConnectorObj, Id, Obj, Step, Timer, Vote } from './types';
+import type { BoardMeta, ConnectorObj, Id, Obj, Poll, PollAnswer, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
 
 /** Transaction origin for edits made on this device; only these are undoable. */
@@ -42,6 +42,8 @@ export class Store {
   readonly meta: Y.Map<unknown>;
   readonly flow: Y.Map<unknown>;
   readonly votes: Y.Map<Vote>;
+  readonly polls: Y.Map<Poll>;
+  readonly pollAnswers: Y.Map<PollAnswer>;
   readonly cache = new Map<Id, Obj>();
   readonly undo: Y.UndoManager;
 
@@ -58,6 +60,8 @@ export class Store {
     this.meta = doc.getMap('meta');
     this.flow = doc.getMap('flow');
     this.votes = doc.getMap('votes');
+    this.polls = doc.getMap('polls');
+    this.pollAnswers = doc.getMap('pollAnswers');
 
     this.objects.forEach((m, id) => this.cache.set(id, m.toJSON() as Obj));
     this.rebuildBoundIndex();

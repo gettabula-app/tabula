@@ -1,0 +1,84 @@
+/* Poll surfaces: flat Swiss layout. Theme variables and color-mix() only; square corners, hairlines, 2px ink rules, no shadows; 8px spacing grid. */
+
+.poll-label {
+  margin: 0; font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--graphite);
+}
+
+/* answering card, docked above the session bar */
+.poll-card {
+  position: absolute; left: 16px; right: 16px; margin: 0 auto; max-width: 560px; z-index: 11;
+  max-height: min(60vh, 520px); overflow-y: auto; box-sizing: border-box; padding: 16px; min-width: 0;
+  display: flex; flex-direction: column; gap: 16px; overflow-wrap: anywhere;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-top: 2px solid var(--ink);
+}
+.poll-card[hidden] { display: none; }
+.poll-card :focus-visible, .poll-compose :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.poll-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.poll-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.poll-choices { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; }
+.poll-choices legend { padding: 0 0 8px; font: 700 18px/1.3 var(--display); overflow-wrap: anywhere; }
+.poll-choice {
+  display: flex; align-items: center; gap: 16px; min-width: 0; min-height: 40px; padding: 8px 16px;
+  border-top: 1px solid var(--rule); color: var(--ink); cursor: pointer;
+}
+.poll-choice:last-child { border-bottom: 1px solid var(--rule); }
+.poll-choice input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
+.poll-choice span { min-width: 0; overflow-wrap: anywhere; }
+.poll-choice:hover { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
+.poll-choice:has(input:checked) { background: var(--signal); color: var(--on-signal); }
+.poll-choices:disabled .poll-choice { cursor: default; }
+.poll-choices:disabled .poll-choice:hover { background: transparent; }
+.poll-choices:disabled .poll-choice:has(input:checked) { background: var(--signal); }
+.poll-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.poll-note { color: var(--graphite); font-size: 13px; }
+.poll-card .btn {
+  height: 40px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); font-weight: 600;
+}
+.poll-card .btn:hover { background: var(--canvas); }
+
+.poll-results-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 16px; border-top: 2px solid var(--ink); }
+.poll-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+.poll-results li { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--rule); }
+.poll-results li:first-child { border-top: 0; }
+.poll-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; min-width: 0; }
+.poll-row-head > span:first-child { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.poll-row-head > span:last-child { flex: none; color: var(--graphite); font-size: 13px; }
+.poll-bar { height: 8px; border: 1px solid var(--rule); background: var(--paper); }
+.poll-bar span { display: block; height: 100%; background: var(--ink); }
+.poll-names { color: var(--graphite); font-size: 13px; overflow-wrap: anywhere; }
+
+/* session bar: idle results block and running-step controls (the bar is dark) */
+.poll-btn { border-radius: 0; }
+.poll-summary { display: flex; align-items: center; gap: 16px; padding: 8px 16px; min-width: 0; }
+.poll-summary-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 240px; }
+.poll-summary .poll-label { color: var(--tray-muted); }
+.poll-summary-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poll-chip { flex: none; display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--tray-line); color: var(--tray-muted); white-space: nowrap; }
+.poll-edit { height: 32px; padding: 0 8px; font-size: 12.5px; }
+
+/* quick poll popover and step editor composer */
+.popover.poll-pop {
+  width: min(360px, calc(100vw - 32px)); padding: 0; box-sizing: border-box; border-radius: 0 !important; box-shadow: none !important;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-top: 2px solid var(--ink);
+}
+.poll-compose { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 16px; background: var(--paper); color: var(--ink); }
+.poll-compose .field { margin-top: 0; }
+.poll-compose .field-label { margin: 0 0 8px; font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--graphite); }
+.poll-compose .input { height: 40px; padding: 0 8px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); }
+.poll-compose .input::placeholder { color: var(--graphite); }
+.poll-compose .input:focus { border-color: var(--ink); }
+.poll-compose-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.poll-compose-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.poll-compose-options li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.poll-compose-options .input { flex: 1; min-width: 0; }
+.poll-compose .icon-btn { width: 40px; height: 40px; border-radius: 0; color: var(--ink); }
+.poll-compose .icon-btn:hover { background: var(--canvas); }
+.poll-compose .btn {
+  height: 40px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); font-weight: 600;
+}
+.poll-compose .btn:hover { background: var(--canvas); }
+.poll-compose .btn.primary { background: var(--signal); color: var(--on-signal); }
+.poll-compose .btn.primary:hover { background: var(--signal); }
+.poll-check { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; font-size: 14px; }
+.poll-check input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
+.poll-compose-actions { justify-content: flex-end; gap: 8px; }

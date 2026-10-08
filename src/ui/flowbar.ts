@@ -5,9 +5,10 @@ import { newId } from '../store';
 import { h, icon } from './dom';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
+import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock } from './polls';
 
 const MODE_LABEL: Record<StepMode, string> = {
-  write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss',
+  write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
 };
 
 const fmt = (ms: number) => {
@@ -19,6 +20,7 @@ const fmt = (ms: number) => {
 export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   const bar = h('section', { class: 'flowbar tray', 'aria-label': 'Facilitation' });
   parent.appendChild(bar);
+  mountPollCard(app, parent, bar);
   let tick = 0;
   let lastBeepKey = '';
   let warnedKey = '';
@@ -27,8 +29,9 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const f = app.flow.state();
     const ro = app.readOnly;
     const resultsDots = f.active < 0 ? app.flow.resultsCount() : 0;
-    bar.classList.toggle('show', f.steps.length > 0 || resultsDots > 0);
-    if (!f.steps.length && !resultsDots) {
+    const pollResults = f.active < 0 ? app.flow.polls.latestClosed() : undefined;
+    bar.classList.toggle('show', f.steps.length > 0 || resultsDots > 0 || !!pollResults);
+    if (!f.steps.length && !resultsDots && !pollResults) {
       bar.replaceChildren();
       return;
     }
@@ -41,13 +44,15 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('button', { class: 'btn ghost', onclick: () => copyResults(app, f.results!) }, 'Copy results'),
           h('button', { class: 'btn ghost', disabled: ro, onclick: () => { app.flow.clearResults(); toast('Dots cleared'); } }, 'Clear dots'))
         : null;
+      const poll = pollResults ? pollResultsBlock(app, pollResults) : null;
       const session = f.steps.length
         ? h('div', { class: 'flow-idle' },
           h('div', null, h('div', { class: 'flow-title' }, 'Session ready'), h('div', { class: 'muted small' }, `${f.steps.length} ${f.steps.length === 1 ? 'step' : 'steps'}, about ${Math.round(f.steps.reduce((s, x) => s + (x.durationSec ?? 0), 0) / 60)} minutes`)),
           h('button', { class: 'btn ghost', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement) }, 'Edit steps'),
           h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.start() }, icon('play', 16), 'Start session'))
         : null;
-      bar.replaceChildren(...[results, results && session ? h('span', { class: 'bar-sep' }) : null, session].filter(Boolean) as HTMLElement[]);
+      const parts = [results, poll, session].filter(Boolean) as HTMLElement[];
+      bar.replaceChildren(...parts.flatMap((p, i) => (i ? [h('span', { class: 'bar-sep' }), p] : [p])));
       return;
     }
     bar.classList.add('running');
@@ -75,6 +80,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
       extras.push(dotsButton(app));
       if (f.reveal) extras.push(h('button', { class: 'btn', onclick: () => copyResults(app, step.id) }, 'Copy results'));
     }
+    if (step.mode === 'poll' && step.pollId) extras.push(...pollBarControls(app, step.pollId));
 
     bar.replaceChildren(
       h('button', { class: 'icon-btn', title: 'Previous step', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
@@ -220,9 +226,11 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
   const draw = () => {
     const f = app.flow.state();
     list.replaceChildren(...f.steps.map((s, i) => {
-      const title = h('input', { class: 'input', value: s.title, 'aria-label': `Step ${i + 1} title` });
+      const poll = s.pollId ? app.flow.polls.get(s.pollId) : undefined;
+      const locked = poll?.openedAt !== undefined;
+      const title = h('input', { class: 'input', value: s.title, disabled: s.mode === 'poll', 'aria-label': `Step ${i + 1} title` });
       const mins = h('input', { class: 'input mins', type: 'number', min: '0', max: '120', value: String(Math.round((s.durationSec ?? 0) / 60)), 'aria-label': `Step ${i + 1} minutes` });
-      const mode = h('select', { class: 'input', 'aria-label': `Step ${i + 1} mode` }, ...(Object.keys(MODE_LABEL) as StepMode[]).map((m) => h('option', { value: m, selected: m === s.mode }, MODE_LABEL[m])));
+      const mode = h('select', { class: 'input', disabled: locked, 'aria-label': `Step ${i + 1} mode` }, ...(Object.keys(MODE_LABEL) as StepMode[]).map((m) => h('option', { value: m, selected: m === s.mode }, MODE_LABEL[m])));
       const save = (patch: Partial<Step>) => {
         const steps = app.flow.state().steps.map((x) => (x.id === s.id ? { ...x, ...patch } : x));
         app.flow.setSteps(steps);
@@ -230,7 +238,12 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
       title.addEventListener('change', () => save({ title: title.value }));
       mins.addEventListener('change', () => save({ durationSec: Number(mins.value) * 60 || undefined }));
       mode.addEventListener('change', () => {
-        save({ mode: mode.value as StepMode, votesPerPerson: mode.value === 'vote' ? s.votesPerPerson ?? 3 : undefined });
+        if (mode.value === 'poll') {
+          mode.value = s.mode;
+          openStepPoll(app, s.id, draw);
+          return;
+        }
+        save({ mode: mode.value as StepMode, votesPerPerson: mode.value === 'vote' ? s.votesPerPerson ?? 3 : undefined, pollId: undefined });
         draw();
       });
       let dots: HTMLElement = h('span');
@@ -241,6 +254,8 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
           h('option', { value: 0, selected: cur <= 0 }, 'No limit'));
         sel.addEventListener('change', () => save({ votesPerPerson: Number(sel.value) }));
         dots = sel;
+      } else if (s.mode === 'poll') {
+        dots = h('button', { class: 'btn ghost poll-btn poll-edit', disabled: locked, 'aria-label': `Edit poll in step ${i + 1}`, onclick: () => openStepPoll(app, s.id, draw) }, 'Edit poll');
       }
       return h('li', { class: i === f.active ? 'current' : '' },
         h('button', { class: 'icon-btn', title: 'Go to this step', 'aria-label': `Go to step ${i + 1}`, onclick: () => app.flow.goto(i) }, String(i + 1)),
