@@ -75,7 +75,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   }
 
   function open(anchor: HTMLElement, content: HTMLElement) {
-    popover(anchor, content, { side: below ? 'top' : 'bottom', className: 'qb-pop' });
+    popover(anchor, content, { side: below ? 'bottom' : 'top', className: 'qb-pop' });
   }
 
   const styleValue = (key: 'fill' | 'stroke') => (): string => {
