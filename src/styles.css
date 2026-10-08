@@ -28,6 +28,8 @@
   --ui: 'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
   --radius: 12px;
+  --panel-top: 72px;
+  --rail-clear: 76px;
   --shadow: 0 10px 28px rgba(16, 24, 32, 0.18), 0 2px 6px rgba(16, 24, 32, 0.12);
   /* ink of the white class and label editors; the same in every theme */
   --editor-fallback-ink: #18212B;
@@ -197,7 +199,7 @@ select.input {
 
 /* drawer */
 .drawer {
-  position: absolute; left: 76px; top: 72px; bottom: 76px; width: 312px; display: none; flex-direction: column; overflow: hidden;
+  position: absolute; left: 76px; top: var(--panel-top); bottom: 76px; width: 312px; display: none; flex-direction: column; overflow: hidden;
 }
 .drawer.show { display: flex; }
 .drawer { contain: layout paint; }
@@ -298,20 +300,23 @@ select.input {
 .minimap canvas { display: block; width: 220px; height: 140px; cursor: pointer; border-radius: 6px; background: var(--tray-2); }
 
 /* facilitation bar */
+/* The bar is as wide as its content, centred, and never wider than the space between the rail and the zoom tray. Groups wrap inside it. */
 .flowbar {
-  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: none; align-items: center; gap: 6px;
-  padding: 6px; max-width: calc(100% - 456px);
+  position: absolute; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: fit-content; max-width: calc(100% - 456px);
+  display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; box-shadow: none;
 }
+:root:not([data-theme='default']) .flowbar.tray { box-shadow: 0 0 0 1px var(--tray-line); }
 .flowbar.show { display: flex; }
 .flowbar .btn-row { flex-wrap: nowrap; gap: 2px; }
-.flowbar.running { box-shadow: var(--shadow), 0 0 0 2px var(--signal); }
-.flow-idle { display: flex; align-items: center; gap: 12px; padding: 2px 4px 2px 10px; }
+.flowbar.running { outline: 2px solid var(--signal); }
+.flow-idle { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 2px 4px 2px 10px; }
 .flow-title { font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .flow-step {
   display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 150px; max-width: 420px; height: 36px; padding: 0 10px 0 6px;
   border: 0; border-radius: 8px; background: transparent; text-align: left; overflow: hidden;
 }
 .flowbar > :not(.flow-step) { flex: none; }
+.flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .flow-step .flow-title { min-width: 0; }
 .flow-step .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
 .flow-step .mode { flex: none; }
@@ -345,7 +350,7 @@ select.input {
 .dot-presets button:hover { background: var(--tray-hover); }
 .dot-presets button.on { background: var(--signal); color: var(--on-signal); }
 .dot-presets button.wide { grid-column: 1 / -1; }
-.flow-results { display: flex; align-items: center; gap: 10px; padding: 2px 2px 2px 10px; }
+.flow-results { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 2px 2px 2px 10px; }
 .results-dot { width: 14px; height: 14px; border-radius: 50%; background: color-mix(in srgb, var(--wire) 70%, var(--tray-text)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wire) 25%, transparent); flex: none; }
 .bar-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--tray-line); }
 
@@ -464,11 +469,14 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
 .wordmark { font: 800 clamp(48px, 8vw, 96px)/0.9 var(--display); letter-spacing: -0.035em; color: var(--ink); }
 
 @media (max-width: 860px) {
+  :root { --panel-top: 120px; }
   .top-left { max-width: calc(100% - 24px); }
   .top-right { top: 64px; }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
-  .flowbar { max-width: calc(100% - 24px); bottom: 60px; flex-wrap: wrap; }
+  .flowbar { left: var(--rail-clear); right: 12px; max-width: none; bottom: 60px; }
+  .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
+  .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }
 }
 
