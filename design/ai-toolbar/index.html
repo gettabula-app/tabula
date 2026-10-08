@@ -1,0 +1,1218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI toolbar mock</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap">
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&display=swap">
+<style>
+/* TAB-123 mock of the floating AI prompt toolbar. Static: nothing here calls a model.
+   Tokens and chrome classes (.tray, .icon-btn, .btn, .chip, .input, .tip, kbd, .toast) are copied from src/styles.css and
+   src/ui/tooltip.css so the bar sits next to the real trays. Colour comes only from var() and color-mix(). */
+
+:root {
+  --canvas: #EEF1F4; --paper: #FFFFFF; --ink: #18212B; --graphite: #5B6672; --rule: #D5DBE2;
+  --signal: #FFD23F; --wire: #2F6FED; --danger: #D41E24; --on-signal: #18212B;
+  --canvas-ink: #18212B; --canvas-rule: #C9D1DA;
+  --tray: #18212B; --tray-2: #222D39; --tray-line: rgba(233, 237, 242, 0.12); --tray-text: #E9EDF2; --tray-muted: #98A4B1; --tray-hover: rgba(233, 237, 242, 0.08);
+  --grid-dot: #AEB8C4; --grid-line: #DDE3E9; --grid-major: #C6CFD8;
+  --ui: 'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  --radius: 12px; --rail-clear: 76px;
+  --shadow: 0 10px 28px rgba(16, 24, 32, 0.18), 0 2px 6px rgba(16, 24, 32, 0.12);
+  /* Board content, not chrome: the sticky palette from src/palette.ts, the same in every theme. */
+  --s-yellow: #FFE16B; --s-orange: #FFB979; --s-pink: #FFA3C4; --s-violet: #CDB8FF; --s-blue: #A3D2FF; --s-teal: #8FE3CA; --s-green: #BCE88C;
+  --sticky-ink: #1D1A12;
+  /* Set by the script from the bottom chrome. */
+  --ai-bottom: 16px;
+}
+:root[data-theme='ayu'] {
+  color-scheme: dark;
+  --canvas: #1F2430;
+  --paper: #272D38;
+  --ink: #CCCAC2;
+  --graphite: #8F969D;
+  --rule: #3D4455;
+  --signal: #FFCC66;
+  --on-signal: #1F2430;
+  --wire: #73D0FF;
+  --danger: #F28779;
+  --tray: #171B24;
+  --tray-2: #232834;
+  --tray-line: rgba(204, 202, 194, 0.12);
+  --tray-text: #CCCAC2;
+  --tray-muted: #8A9199;
+  --tray-hover: rgba(204, 202, 194, 0.08);
+  --grid-dot: #3A4150;
+  --grid-line: #2A3040;
+  --grid-major: #3A4150;
+  --canvas-ink: #CCCAC2;
+  --canvas-rule: #3D4455;
+}
+:root[data-theme='kanagawa'] {
+  color-scheme: dark;
+  --canvas: #1F1F28;
+  --paper: #2A2A37;
+  --ink: #DCD7BA;
+  --graphite: #A6A69C;
+  --rule: #363646;
+  --signal: #E6C384;
+  --on-signal: #1F1F28;
+  --wire: #7E9CD8;
+  --danger: #E56E7B;
+  --tray: #16161D;
+  --tray-2: #2A2A37;
+  --tray-line: rgba(220, 215, 186, 0.12);
+  --tray-text: #DCD7BA;
+  --tray-muted: #9C9A8A;
+  --tray-hover: rgba(220, 215, 186, 0.08);
+  --grid-dot: #3A3A4A;
+  --grid-line: #2A2A37;
+  --grid-major: #3A3A4A;
+  --canvas-ink: #DCD7BA;
+  --canvas-rule: #54546D;
+}
+:root[data-theme='matrix'] {
+  color-scheme: dark;
+  --canvas: #050A06;
+  --paper: #0B140C;
+  --ink: #3DFF70;
+  --graphite: #1FA84A;
+  --rule: #14501F;
+  --signal: #00FF41;
+  --on-signal: #021004;
+  --wire: #22D3EE;
+  --danger: #FF4D4D;
+  --tray: #0A120B;
+  --tray-2: #102014;
+  --tray-line: rgba(61, 255, 112, 0.16);
+  --tray-text: #8CFFA8;
+  --tray-muted: #3FBF62;
+  --tray-hover: rgba(61, 255, 112, 0.1);
+  --grid-dot: #0F3A1A;
+  --grid-line: #0B2412;
+  --grid-major: #124B22;
+  --canvas-ink: #3DFF70;
+  --canvas-rule: #14501F;
+}
+:root[data-theme='evergreen'] {
+  color-scheme: light;
+  --canvas: #EEF3EC;
+  --paper: #FFFFFF;
+  --ink: #14301F;
+  --graphite: #4F6B5A;
+  --rule: #CBD9CE;
+  --signal: #E0B040;
+  --on-signal: #14301F;
+  --wire: #1E6FD9;
+  --danger: #C14036;
+  --tray: #0F2A1D;
+  --tray-2: #1B3F2C;
+  --tray-line: rgba(226, 240, 228, 0.14);
+  --tray-text: #E6F2E8;
+  --tray-muted: #9DB8A5;
+  --tray-hover: rgba(226, 240, 228, 0.09);
+  --grid-dot: #A9BDAE;
+  --grid-line: #D8E3DB;
+  --grid-major: #BCCDC1;
+  --canvas-ink: #14301F;
+  --canvas-rule: #CBD9CE;
+}
+
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 14px/1.45 var(--ui); color: var(--ink); background: var(--canvas); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; overflow-x: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.ico { display: inline-flex; flex: none; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[hidden] { display: none !important; }
+
+/* ------------------------------------------------ reviewer panel (not part of the product) */
+.review { flex: none; padding: 12px 16px; background: var(--paper); color: var(--ink); border-bottom: 2px solid var(--ink); }
+.review :focus-visible { outline: 2px solid var(--ink); }
+.review h1 { margin: 0 0 8px; font: 700 11px/16px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; }
+.review h1 span { color: var(--graphite); font-weight: 500; letter-spacing: 0; text-transform: none; margin-left: 8px; }
+.review-grid { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; }
+.review label { display: flex; flex-direction: column; gap: 2px; font: 600 11px/16px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--graphite); }
+.review select, .review button { height: 32px; padding: 0 8px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); font: 500 13px var(--ui); color: var(--ink); text-transform: none; letter-spacing: 0; }
+.review button:hover, .review select:hover { border-color: var(--ink); }
+.review .chk { flex-direction: row; align-items: center; gap: 8px; height: 32px; }
+.review .chk input { width: 16px; height: 16px; accent-color: var(--ink); }
+.review .note { flex: 1 1 280px; margin: 0; font-size: 12px; color: var(--graphite); }
+
+/* ------------------------------------------------ the fake board */
+.board-root { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; background-color: var(--canvas);
+  background-image: radial-gradient(circle, var(--grid-dot) 1.1px, transparent 1.3px); background-size: 24px 24px; background-position: 12px 12px; }
+body.bare .review { display: none; }
+body.bare { height: 100vh; }
+
+.chrome { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.chrome > * { pointer-events: auto; }
+.tray { background: var(--tray); color: var(--tray-text); border-radius: var(--radius); box-shadow: var(--shadow); color-scheme: dark; }
+:root:not([data-theme='default']) .tray { box-shadow: var(--shadow), 0 0 0 1px var(--tray-line); }
+.tray .muted { color: var(--tray-muted); }
+
+.icon-btn, .rail-btn { display: inline-grid; place-items: center; border: 0; background: transparent; border-radius: 8px; color: inherit; width: 36px; height: 36px; padding: 0; flex: none; }
+.icon-btn:hover, .rail-btn:hover { background: var(--tray-hover); }
+.icon-btn.on, .rail-btn.on { background: var(--signal); color: var(--on-signal); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--tray-hover); font-weight: 500; white-space: nowrap; }
+.btn:hover { background: color-mix(in srgb, var(--tray-text) 14%, transparent); }
+.btn.primary { background: var(--signal); color: var(--on-signal); font-weight: 600; }
+.btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }
+.btn.ghost { background: transparent; }
+.btn.ghost:hover { background: var(--tray-hover); }
+[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+
+/* stubs of the real chrome */
+.top-left { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; }
+.top-right { position: absolute; right: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; }
+.board-name { padding: 0 8px; font-weight: 600; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-status { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 99px; background: color-mix(in srgb, var(--tray-text) 8%, transparent); color: var(--tray-muted); font-size: 12.5px; font-weight: 500; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--tray); background: var(--graphite); color: var(--tray-text); font: 700 11px var(--ui); display: grid; place-items: center; }
+.rail { position: absolute; left: 12px; top: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; }
+.rail-btn { width: 40px; height: 40px; }
+.rail hr { width: 100%; height: 1px; border: 0; background: var(--tray-line); margin: 4px 0; }
+.zoom-tray { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 4px; }
+.zoom-label { min-width: 54px; height: 36px; border: 0; border-radius: 8px; background: transparent; font-weight: 600; }
+.menu { position: absolute; right: 12px; top: 64px; min-width: 200px; padding: 4px; border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); z-index: 30; }
+.menu-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tray-text); text-align: left; font-size: 13px; }
+.menu-item:hover { background: var(--tray-hover); }
+
+/* the session bar (stub of .flowbar) */
+.flowbar { position: absolute; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: fit-content; max-width: calc(100% - 456px); display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; }
+.flowbar.show { display: flex; }
+.flow-step { display: flex; align-items: center; gap: 10px; min-width: 150px; height: 36px; padding: 0 10px 0 6px; }
+.step-count { flex: none; padding: 3px 7px; border-radius: 6px; background: var(--tray-2); color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+.step-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.step-instr { color: var(--tray-muted); font-size: 12.5px; white-space: nowrap; }
+.timer { width: 84px; height: 36px; border-radius: 8px; background: color-mix(in srgb, var(--tray-text) 6%, transparent); display: grid; place-items: center; flex: none; font: 700 17px var(--ui); letter-spacing: 0.02em; }
+.bar-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--tray-line); }
+@media (max-width: 860px) {
+  .flowbar { left: var(--rail-clear); right: 12px; max-width: none; bottom: 60px; margin: 0; width: auto; }
+  .flowbar .bar-sep { display: none; }
+  .rail-btn { width: 34px; height: 34px; }
+  .rail { gap: 1px; }
+}
+
+/* objects on the canvas */
+.world { position: absolute; inset: 0; }
+.sticky { position: absolute; width: var(--ss, 104px); height: var(--ss, 104px); padding: 10px; background: var(--c, var(--s-yellow)); color: var(--sticky-ink); font: 500 12.5px/1.25 var(--ui); overflow: hidden; overflow-wrap: anywhere;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas-ink) 28%, transparent); }
+.frame { position: absolute; border: 2px solid var(--canvas-rule); background: color-mix(in srgb, var(--paper) 45%, transparent); }
+.frame-title { position: absolute; left: -2px; top: -26px; font: 600 13px/20px var(--ui); color: var(--canvas-ink); white-space: nowrap; }
+.sel-box { position: absolute; border: 1.5px solid var(--wire); pointer-events: none; display: none; }
+.sel-box i { position: absolute; width: 8px; height: 8px; background: var(--paper); border: 1.5px solid var(--wire); }
+.sel-box i:nth-child(1) { left: -5px; top: -5px; } .sel-box i:nth-child(2) { right: -5px; top: -5px; } .sel-box i:nth-child(3) { left: -5px; bottom: -5px; } .sel-box i:nth-child(4) { right: -5px; bottom: -5px; }
+.sticky.sel { outline: 1.5px solid var(--wire); outline-offset: 0; }
+.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; z-index: 12; }
+.quickbar.show { display: flex; }
+.qb-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--tray-line); }
+.qb-chip { display: block; width: 18px; height: 18px; border-radius: 5px; background: var(--c); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tray-text) 35%, transparent); }
+
+/* preview ghosts */
+.pv { display: none; }
+/* Ghost stickies keep their true colours (no opacity: translucent stickies turn muddy on dark canvases); a dashed canvas-ink edge marks them as not yet on the board. */
+.sticky.pv { box-shadow: none; outline: 1.5px dashed color-mix(in srgb, var(--canvas-ink) 55%, transparent); outline-offset: -1.5px; }
+.pv[data-on='0'] { display: none !important; }
+/* The proposal area: a dashed canvas-ink edge (>= 3:1 on every canvas) and a faint --signal wash; --signal itself carries only the label. */
+.ghost-area { position: absolute; display: none; border: 2px dashed color-mix(in srgb, var(--canvas-ink) 55%, transparent); background: color-mix(in srgb, var(--signal) 8%, transparent); pointer-events: none; }
+.ghost-label { position: absolute; left: -2px; top: -22px; height: 20px; padding: 0 8px; background: var(--signal); color: var(--on-signal); font: 600 11px/20px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; }
+.ghost-head { position: absolute; display: none; font: 700 13px/20px var(--ui); color: var(--canvas-ink); border-bottom: 2px dashed var(--canvas-ink); padding-bottom: 2px; }
+.arrows { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; color: color-mix(in srgb, var(--canvas-ink) 32%, transparent); }
+body[data-preview='create'] .pv.k-create, body[data-preview='create'] .ghost-area.k-create { display: block; }
+body[data-preview='group'] .pv.k-group, body[data-preview='group'] .ghost-area.k-group, body[data-preview='group'] .ghost-head, body[data-preview='group'] .arrows { display: block; }
+body[data-preview='group'] .ghost-head { display: block; }
+body[data-added='create'] .pv.k-create { display: block; outline: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas-ink) 28%, transparent); }
+body[data-added='create'] .ghost-frame { display: block; }
+body[data-added='group'] .pv.k-group { display: block; outline: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas-ink) 28%, transparent); }
+body[data-added='group'] .ghost-head { display: block; border-bottom-style: solid; }
+body[data-added='group'] .sticky.moved { visibility: hidden; }
+.ghost-frame { display: none; }
+
+/* ------------------------------------------------ other people's runs (TAB-141) */
+/* --ana is a person's colour (USER_COLORS in src/palette.ts), set per person like cursor colours; --ana-ink is white or the ink, whichever contrasts more. */
+.avatar.oth-av { position: relative; z-index: 1; background: var(--ana); color: var(--ana-ink); cursor: default; }
+.oth-badge { position: absolute; right: -6px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%; display: none; place-items: center; background: var(--signal); color: var(--on-signal); box-shadow: 0 0 0 2px var(--tray); }
+.oth-av.busy .oth-badge { display: grid; }
+.top-right .avatar + .avatar { margin-left: -6px; }
+@media (max-width: 600px) { .top-right .avatar + .avatar { display: none; } }
+.oth-run { position: absolute; display: none; pointer-events: none; z-index: 4; }
+.oth-ring { position: absolute; inset: 0; border: 2px solid var(--ana); border-radius: 6px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ana) 18%, transparent); animation: oth-pulse 2.4s ease-in-out infinite; }
+@keyframes oth-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .oth-ring { animation: none; opacity: 1; border-style: dashed; box-shadow: none; } }
+.oth-label { flex: none; height: 20px; padding: 0 8px; background: var(--ana); color: var(--ana-ink); font: 600 11px/20px var(--ui); white-space: nowrap; }
+.oth-head .oth-label { letter-spacing: 0.08em; text-transform: uppercase; }
+.oth-run > .oth-label { position: absolute; left: -2px; bottom: 100%; margin-bottom: 4px; }
+.oth-area { position: absolute; display: none; border: 2px dashed var(--ana); background: color-mix(in srgb, var(--ana) 8%, transparent); pointer-events: none; }
+.sticky.oth-pv { display: none; z-index: 2; box-shadow: none; outline: 1.5px dashed color-mix(in srgb, var(--ana) 80%, var(--canvas-ink)); outline-offset: -1.5px; }
+.sticky.pv { z-index: 3; }
+.ghost-area { z-index: 3; }
+.ghost-label { z-index: 6; }
+.oth-head { position: absolute; display: none; align-items: stretch; gap: 4px; z-index: 6; height: 20px; }
+.oth-actions { display: flex; align-items: center; gap: 2px; padding: 0 2px; height: 24px; margin-top: -2px; border-radius: 6px; }
+.oth-actions[hidden] { display: none; }
+.oth-btn { height: 20px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--tray-text); font: 600 11.5px/20px var(--ui); }
+.oth-btn:hover { background: var(--tray-hover); }
+.oth-btn.primary { background: var(--signal); color: var(--on-signal); }
+.oth-btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }
+.board-root[data-other='running'] .oth-run { display: block; }
+.board-root[data-other='preview'] .oth-area, .board-root[data-other='preview'] .oth-head { display: flex; }
+.board-root[data-other='preview'] .oth-area { display: block; }
+.board-root[data-other='preview'] .sticky.oth-pv:not([hidden]) { display: block; }
+.board-root[data-other-done='accept'] .sticky.oth-pv:not([hidden]) { display: block; outline: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas-ink) 28%, transparent); }
+.pop-switch { display: flex; gap: 10px; align-items: flex-start; padding: 8px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; cursor: pointer; }
+.pop-switch b { color: var(--tray-text); font-weight: 600; }
+.pop-switch input { flex: none; margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--signal); }
+
+/* ------------------------------------------------ the AI bar */
+/* Centred on the page, not on the canvas beside the rail: equal insets keep the collapsed button and the open bar on the page's centre line and clear of the zoom tray (244px) on both sides. */
+.ai-dock { position: absolute; bottom: var(--ai-bottom); left: 244px; right: 244px; display: flex; justify-content: center; pointer-events: none; z-index: 11; }
+.ai-dock > * { pointer-events: auto; }
+.ai-dock.dragged { right: auto; justify-content: flex-start; }
+/* Below 1000px the 488px of insets leave too little room, so the bar rises above the zoom tray (stack() sets --ai-bottom) and keeps equal insets. */
+@media (max-width: 1000px) { .ai-dock:not(.dragged) { left: calc(var(--rail-clear) + 12px); right: calc(var(--rail-clear) + 12px); } }
+@media (max-width: 860px) { .ai-dock:not(.dragged) { left: 12px; right: 12px; } }
+
+.ai-fab { width: 40px; height: 40px; border: 0; padding: 0; display: inline-grid; place-items: center; color: var(--tray-text); }
+.ai-fab:hover { background: color-mix(in srgb, var(--tray) 85%, var(--tray-text)); }
+.ai-fab[hidden], .ai-bar[hidden] { display: none; }
+
+.ai-bar { position: relative; width: min(640px, 100% - 0px); display: flex; flex-direction: column; overflow: hidden; font-size: 13px;
+  transition: opacity 160ms ease, transform 160ms ease; }
+.ai-dock:not(.dragged) .ai-bar { width: min(640px, 100%); }
+.ai-dock.dragged .ai-bar { width: min(640px, calc(100vw - 24px)); }
+.ai-bar[data-open='false'] { opacity: 0; transform: translateY(8px); pointer-events: none; }
+.ai-fab { transition: opacity 160ms ease, transform 160ms ease; }
+.ai-fab[data-open='false'] { opacity: 0; transform: translateY(8px); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .ai-bar, .ai-fab { transition: none; } }
+
+/* DOM order is the tab order (row 2, then the chips); visual order is set here. */
+.ai-chips { order: 1; display: flex; gap: 6px; padding: 8px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.ai-chips::-webkit-scrollbar { display: none; }
+.ai-main { order: 2; display: flex; align-items: center; gap: 8px; padding: 8px; min-height: 52px; }
+.ai-disclosure { order: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 6px 12px 8px; border-top: 1px solid var(--tray-line); font-size: 11px; line-height: 16px; color: var(--tray-muted); }
+.ai-disclosure .sep::before { content: '\00B7'; margin-right: 8px; }
+
+.chip { flex: none; height: 28px; padding: 0 12px; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--tray-text) 6%, transparent); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.chip:hover { background: var(--tray-hover); }
+.chip[aria-disabled='true']:hover { background: color-mix(in srgb, var(--tray-text) 6%, transparent); }
+/* armed: the app's .chip.on */
+.chip.on, .chip.on:hover { background: var(--tray-text); color: var(--tray); }
+.ai-model.armed { color: var(--tray-text); font-weight: 600; }
+
+.ai-grip { flex: none; width: 20px; height: 36px; margin-right: -4px; border: 0; background: transparent; color: var(--tray-muted); display: grid; place-items: center; cursor: grab; border-radius: 6px; touch-action: none; padding: 0; }
+.ai-grip:hover { color: var(--tray-text); background: var(--tray-hover); }
+.ai-bar.dragging .ai-grip { cursor: grabbing; }
+
+.ai-ctx { flex: none; height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border: 1px solid var(--tray-line); border-radius: 8px; background: transparent; font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+.ai-ctx:hover { background: var(--tray-hover); }
+.ai-field { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
+.ai-input { width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: 8px; border: 1px solid var(--tray-line); background: color-mix(in srgb, var(--tray-text) 6%, transparent); color: var(--tray-text); outline: none; font-size: 13px; }
+.ai-input:focus { border-color: var(--signal); }
+.ai-input::placeholder { color: var(--tray-muted); opacity: 1; }
+.ai-hist { position: absolute; right: 2px; top: 2px; width: 32px; height: 32px; }
+.ai-status { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px; font-weight: 500; }
+.ai-status span.t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-summary { flex: 1 1 0; min-width: 0; padding: 0 4px; font-weight: 500; line-height: 1.3; }
+.ai-summary small { display: block; font-size: 11px; font-weight: 400; color: var(--tray-muted); }
+.ai-error { flex: 1 1 0; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 0 4px; color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); font-weight: 500; line-height: 1.35; }
+.ai-error .ico { margin-top: 1px; }
+.ai-error a, .ai-error .link { color: inherit; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.ai-error .muted-msg { color: var(--tray-text); font-weight: 400; }
+.ai-model { flex: none; height: 36px; display: inline-flex; align-items: center; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tray-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.ai-model:hover { background: var(--tray-hover); color: var(--tray-text); }
+.ai-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+.ai-bar .btn { height: 36px; }
+
+.ai-bar[data-ui='running'] .ai-chips, .ai-bar[data-ui='preview'] .ai-chips { opacity: 0.4; pointer-events: none; }
+.ai-bar[data-ui='running'] .ai-ctx { opacity: 0.4; pointer-events: none; }
+.ai-bar .ai-model-line { display: none; }
+
+.ai-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; display: none; }
+.ai-bar[data-ui='running'] .ai-progress { display: block; }
+.ai-progress::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--signal); animation: ai-slide 1.4s linear infinite; }
+@keyframes ai-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .ai-progress::before { animation: none; width: 100%; } }
+
+/* popovers on the bar */
+.pop { position: absolute; z-index: 20; min-width: 240px; max-width: 320px; padding: 4px; border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); font-size: 13px; }
+.pop .menu-item[aria-checked='true'] { background: var(--tray-hover); }
+.pop .menu-item .menu-hint { margin-left: auto; color: var(--tray-muted); font-size: 12px; }
+.pop .menu-item[aria-disabled='true'] { opacity: 0.4; }
+.pop-note { padding: 8px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; }
+.pop-note b { color: var(--tray-text); font-weight: 600; }
+.pop-label { padding: 8px 8px 4px; color: var(--tray-muted); font: 600 11px/16px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* tooltip: tooltip.css */
+.tip { position: fixed; left: 0; top: 0; z-index: 90; display: flex; align-items: baseline; gap: 8px; width: max-content; max-width: 280px; padding: 4px 8px; background: var(--tray-text); color: var(--tray); border: 1px solid var(--tray); border-radius: 0; font: 500 12px/16px var(--ui); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+.tip.show { opacity: 1; visibility: visible; transition: opacity 120ms ease; }
+.tip-key { flex: none; padding: 0 4px; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); font-size: 11px; font-weight: 600; line-height: 14px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .tip, .tip.show { transition: none; } }
+
+.toast { position: absolute; left: 50%; bottom: 80px; z-index: 70; transform: translate(-50%, 8px); opacity: 0; pointer-events: none; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-radius: 0; border-left: 4px solid var(--signal); background: var(--tray); color: var(--tray-text); box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); font-weight: 500; transition: opacity 160ms, transform 160ms; max-width: calc(100% - 24px); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast button { border: 0; background: transparent; padding: 0; font: 600 13px var(--ui); color: var(--signal); text-decoration: underline; text-underline-offset: 3px; }
+.toast kbd { font: 600 11px var(--ui); padding: 0 4px; border: 1px solid var(--tray-line); background: var(--tray-2); color: var(--tray-muted); }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* ------------------------------------------------ phone */
+@media (max-width: 860px) {
+  .ai-bar, .ai-dock:not(.dragged) .ai-bar { width: min(640px, 100%); }
+  .ai-main { flex-wrap: wrap; }
+  .ai-grip { display: none; }
+  .ai-bar[data-ui='preview'] .ai-actions, .ai-bar[data-ui='error'] .ai-actions { order: 5; flex: 1 1 100%; }
+  .ai-bar[data-ui='preview'] .ai-actions .btn { flex: 1 1 0; }
+  .ai-bar[data-ui='error'] .ai-actions { padding-left: 30px; }
+  .ai-bar[data-ui='error'] .ai-actions:not(:has(.btn)) { order: 3; flex: none; padding: 0; }
+  .ai-bar[data-ui='running'] .ai-ctx { display: none; }
+  .ai-bar[data-ui='preview'] #collapseBtn, .ai-bar[data-ui='error'] #collapseBtn { order: 4; }
+  .ai-summary, .ai-error { flex: 1 1 0; }
+  .ai-ctx { padding: 0 6px 0 8px; }
+  .ai-model { display: none !important; }
+  .ai-bar .ai-model-line { display: inline-flex; }
+  .ai-model-line { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .ai-disclosure > span:first-child { flex: 1 1 100%; }
+  .ai-disclosure > span:nth-child(2)::before { content: none; margin: 0; }
+}
+@media (max-width: 600px) {
+  .review { padding: 8px 12px; }
+  .sticky { font-size: 11.5px; padding: 8px; overflow-wrap: break-word; }
+  .top-left .sync-status { display: none; }
+  .board-name { max-width: 12ch; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-6.5 8 6.5V20h-5.5v-5.5h-5V20H4z"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0119 0M5.5 12.5a9.5 9.5 0 0113 0M8.6 15.8a5 5 0 016.8 0"/><circle cx="12" cy="19" r=".9" fill="currentColor"/></symbol>
+<symbol id="i-comment" viewBox="0 0 24 24"><g transform="translate(0 -.25)"><path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/></g></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+<symbol id="i-map" viewBox="0 0 24 24"><path d="M3.5 6.5l5.5-2.5 6 2.5 5.5-2.5v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></symbol>
+<symbol id="i-vote" viewBox="0 0 24 24"><circle cx="8" cy="12" r="3"/><circle cx="16" cy="8" r="3"/><circle cx="16" cy="16" r="3"/></symbol>
+<symbol id="i-select" viewBox="0 0 24 24"><path d="M5.5 5.35l13 6.2-5.6 1.7-2.6 5.4z"/><path d="M13.1 13.45l5 5"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><g transform="translate(1.6 0.75)"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V13a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 14.2a1.6 1.6 0 012.4-2L8 14"/></g></symbol>
+<symbol id="i-sticky" viewBox="0 0 24 24"><path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/></symbol>
+<symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/></symbol>
+<symbol id="i-shapes" viewBox="0 0 24 24"><rect x="3.5" y="10" width="10" height="10" rx="1"/><circle cx="16" cy="8" r="5"/></symbol>
+<symbol id="i-connector" viewBox="0 0 24 24"><path d="M5 19L18 6"/><path d="M11 6h7v7"/></symbol>
+<symbol id="i-pen" viewBox="0 0 24 24"><g transform="translate(0.15 -1.75)"><path d="M4 20c3-1 4-4 6-7s5-6 8-7c1-.4 2 .6 1.6 1.6-1 3-4 6-7 8s-6 3-7 6"/></g></symbol>
+<symbol id="i-frame" viewBox="0 0 24 24"><path d="M7 3v18M17 3v18M3 7h18M3 17h18"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 8H4V4"/><path d="M4.5 8.2A8 8 0 1112 20"/></symbol>
+<symbol id="i-redo" viewBox="0 0 24 24"><path d="M16 8h4V4"/><path d="M19.5 8.2A8 8 0 1012 20"/></symbol>
+<symbol id="i-dup" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="1.5"/><path d="M14.2 11.5v5.5M11.5 14.2H17"/><path d="M15.5 8.5V5a1 1 0 00-1-1H5a1 1 0 00-1 1v9.5a1 1 0 001 1h3.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></symbol>
+<symbol id="i-front" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1" fill="currentColor" fill-opacity=".18"/><path d="M4 15V5a1 1 0 011-1h10"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+<symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 108.5-8.5c-2.5 0-4.8 1.1-6.4 2.9L3.5 8.5"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 1.8"/></symbol>
+<symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M11.5 5c.6 4.4 2.3 6.1 6.5 6.5-4.2.4-5.9 2.1-6.5 6.5-.6-4.4-2.3-6.1-6.5-6.5 4.2-.4 5.9-2.1 6.5-6.5z"/><path d="M19 2.5v3M17.5 4h3" stroke-width="1.5"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></g></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.2" r=".9" fill="currentColor"/></symbol>
+<symbol id="i-wifioff" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M2.5 9a14 14 0 015-2.9M10 5.2a14 14 0 0111.5 3.8M5.5 12.5a9.5 9.5 0 014.2-2.4M14 10.1a9.5 9.5 0 014.5 2.4M8.6 15.8a5 5 0 013.6-1.2M15.4 15.8"/><circle cx="12" cy="19" r=".9" fill="currentColor"/></symbol>
+</defs></svg>
+
+<section class="review" aria-label="Reviewer controls (not part of the product)">
+  <h1>TAB-123 AI toolbar mock <span>Static. Nothing calls a model. Controls here are for reviewing only; the board below is the design.</span></h1>
+  <div class="review-grid">
+    <label>Theme <select id="p-theme"></select></label>
+    <label>State
+      <select id="p-state">
+        <option value="idle">Idle</option>
+        <option value="collapsed">Collapsed</option>
+        <option value="typing">Idle, prompt typed</option>
+        <option value="armed">Armed: Summarise</option>
+        <option value="armed-cluster">Armed: Cluster (9 selected)</option>
+        <option value="armed-ideas">Armed: Generate, prompt typed</option>
+        <option value="from-menu">Opened from board menu: Summarise armed</option>
+        <option value="from-tray">Opened from sticky tray: Generate armed</option>
+        <option value="from-quickbar">Opened from quick bar: Cluster armed</option>
+        <option value="running">Running</option>
+        <option value="preview">Preview: summary (create)</option>
+        <option value="preview-group">Preview: cluster (group)</option>
+        <option value="added">Just added (undo toast)</option>
+        <option value="err-nokey">Error: no key</option>
+        <option value="err-invalid">Error: key rejected</option>
+        <option value="err-rate">Error: rate limited</option>
+        <option value="err-down">Error: provider down</option>
+        <option value="err-refused">Error: refused</option>
+        <option value="err-credits">Error: out of credits</option>
+        <option value="err-offline">Error: offline</option>
+      </select>
+    </label>
+    <label>Role
+      <select id="p-role">
+        <option value="admin">Admin</option>
+        <option value="editor">Editor</option>
+        <option value="commenter">Commenter</option>
+        <option value="viewer">Viewer</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" id="p-ai" checked> AI on for workspace</label>
+    <label>Key source
+      <select id="p-key">
+        <option value="workspace">Workspace key</option>
+        <option value="user">Your key</option>
+        <option value="credits">Credits (1,240 left)</option>
+      </select>
+    </label>
+    <label>Selected stickies
+      <select id="p-sel"><option value="0">None</option><option value="1">1</option><option value="3">3</option><option value="9">9</option><option value="12">12</option></select>
+    </label>
+    <label>Context
+      <select id="p-ctx"><option value="sel">Selection</option><option value="view">Visible area (23)</option><option value="board">Whole board (42)</option><option value="none">Prompt only</option></select>
+    </label>
+    <label class="chk"><input type="checkbox" id="p-session"> Session bar shown</label>
+    <label>Other person (Ana)
+      <select id="p-other"><option value="none">None</option><option value="running">Running</option><option value="preview">Preview</option></select>
+    </label>
+    <label>Two previews
+      <select id="p-two"><option value="off">Off</option><option value="side">Side by side</option><option value="overlap">Overlapping</option></select>
+    </label>
+    <label class="chk"><input type="checkbox" id="p-priv"> Private run (your key)</label>
+    <label class="chk"><input type="checkbox" id="p-anawins"> Ana acts first</label>
+    <label>Next run ends with
+      <select id="p-out">
+        <option value="ok">A proposal</option>
+        <option value="err-nokey">No key</option><option value="err-invalid">Key rejected</option><option value="err-rate">Rate limited</option>
+        <option value="err-down">Provider down</option><option value="err-refused">Refused</option><option value="err-credits">Out of credits</option><option value="err-offline">Offline</option>
+      </select>
+    </label>
+    <label>Chips
+      <select id="p-chips"><option value="v1">v1 only (3)</option><option value="all">Planned set (8)</option></select>
+    </label>
+    <button id="p-reset" type="button">Reset remembered state</button>
+  </div>
+  <p class="note" id="p-note"></p>
+</section>
+
+<main class="board-root" id="board">
+  <div class="world" id="world"></div>
+
+  <div class="chrome" id="chrome">
+    <div class="tray top-left">
+      <button class="icon-btn" aria-label="Home"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"/></svg></span></button>
+      <span class="board-name">Sprint retro</span>
+      <span class="sync-status"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-wifi"/></svg>Live</span>
+    </div>
+    <div class="tray top-right">
+      <span class="avatar oth-av" id="anaAv" tabindex="0" hidden>AN<span class="oth-badge" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#i-spark"/></svg></span></span>
+      <span class="avatar">TO</span>
+      <button class="icon-btn" aria-label="Comments"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-comment"/></svg></span></button>
+      <button class="btn primary" style="height:36px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-share"/></svg>Share</button>
+      <button class="icon-btn" id="moreBtn" aria-label="Board menu" aria-haspopup="menu" aria-expanded="false"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-dots"/></svg></span></button>
+    </div>
+    <div class="tray menu" id="moreMenu" role="menu" aria-label="Board menu" hidden></div>
+    <div class="tray rail" aria-label="Tools" role="toolbar" id="rail"></div>
+
+    <div class="tray quickbar" id="quickbar" role="toolbar" aria-label="Quick actions"></div>
+
+    <div class="tray flowbar" id="flowbar" role="toolbar" aria-label="Session">
+      <div class="flow-step"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-vote"/></svg><span class="step-count">2 / 4</span><span class="step-text"><b style="font-weight:600">Vote</b><span class="step-instr">Dot-vote on what matters most</span></span></div>
+      <span class="bar-sep"></span>
+      <span class="timer">04:32</span>
+      <button class="btn">Next step</button>
+    </div>
+
+    <div class="ai-dock" id="dock"></div>
+    <div class="tray zoom-tray" id="zoom">
+      <button class="icon-btn" aria-label="Zoom out"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-minus"/></svg></span></button>
+      <button class="zoom-label">100%</button>
+      <button class="icon-btn" aria-label="Zoom in"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-plus"/></svg></span></button>
+      <button class="icon-btn" aria-label="Fit board"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fit"/></svg></span></button>
+      <button class="icon-btn" aria-label="Minimap"><span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-map"/></svg></span></button>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</main>
+<div class="tip" id="tip" role="tooltip"><span class="tip-label"></span><span class="tip-key" hidden></span></div>
+
+<script>
+'use strict';
+/* TAB-123 mock. Every behaviour here is faked; the comments say what the real build would do. */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const ic = (name, size = 18) => `<span class="ico" aria-hidden="true"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><use href="#i-${name}"/></svg></span>`;
+const store = {
+  get(k) { try { return localStorage.getItem('driftboard:' + k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem('driftboard:' + k, v); } catch { /* storage may be blocked */ } },
+  del(k) { try { localStorage.removeItem('driftboard:' + k); } catch { /* ignore */ } },
+};
+const params = new URLSearchParams(location.search);
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const board = $('#board'), world = $('#world'), chrome = $('#chrome'), dock = $('#dock');
+if (params.has('bare')) document.body.classList.add('bare');
+
+/* ------------------------------------------------------------------ data */
+const BOARD_STICKIES = 42, VISIBLE_STICKIES = 23, WORKSPACE_CREDITS = 1240;
+const ST = [
+  ['s1', 'Deploys are too slow', 'yellow'], ['s2', 'Pairing helped new hires', 'green'], ['s3', 'Too many meetings', 'pink'],
+  ['s4', 'On-call handoff is unclear', 'orange'], ['s5', 'Great demo day', 'green'], ['s6', 'Flaky tests block merges', 'pink'],
+  ['s7', 'Docs are out of date', 'orange'], ['s8', 'New staging env is a win', 'blue'], ['s9', 'Standups run long', 'yellow'],
+  ['s10', 'Customer call notes', 'violet'], ['s11', 'Q3 planning is vague', 'blue'], ['s12', 'Spike: caching', 'teal'],
+];
+const SEL = { 1: ['s2'], 3: ['s1', 's5', 's8'], 9: ST.slice(0, 9).map((s) => s[0]), 12: ST.map((s) => s[0]) };
+const GROUPS = [
+  ['Delivery', ['s1', 's6', 's8', 's12']],
+  ['Team', ['s2', 's4', 's5', 's10']],
+  ['Process', ['s3', 's7', 's9', 's11']],
+];
+const SUMMARY_GHOSTS = ['Summary: shipping is slow, the team is happy', 'Action: cut deploy time', 'Action: fix flaky tests', 'Action: trim recurring meetings', 'Action: refresh the docs', 'Keep: pairing and demo days'];
+const IDEA_GHOSTS = ['Pair on every incident', 'Weekly deploy review', 'Rotate the facilitator', 'Quarantine flaky tests', 'Demo on Fridays', 'Write the runbook first'];
+
+/* ------------------------------------------------------------------ state */
+const S = {
+  theme: params.get('theme') || 'default', ui: 'idle', open: true, err: null, role: params.get('role') || 'admin', ai: params.get('ai') !== '0',
+  key: params.get('key') || 'workspace', sel: Number(params.get('sel') ?? 3), ctx: params.get('ctx') || 'sel', session: params.get('session') === '1',
+  out: params.get('outcome') || 'ok', chips: params.get('chips') || 'v1', prompt: '', armed: params.get('armed') || null, other: params.get('other') || 'none', two: params.get('two') || 'off', priv: params.get('private') === '1', anaWins: params.get('anawins') === '1', otherDone: null, feature: 'summarise', added: null, retryIn: 0, pop: null,
+};
+if (S.sel === 0 && S.ctx === 'sel') S.ctx = 'view';
+if (!params.has('private') && store.get('ai-private') === '1') S.priv = true; // remembered per person in this browser
+{
+  const saved = store.get('ai-bar');
+  if (saved === 'collapsed') S.open = false;
+}
+let history = (store.get('ai-history') || '').split('\n').filter(Boolean);
+if (!history.length) history = ['ten risks of moving to the cloud', 'ideas for the retro warm-up', 'five ways to speed up deploys'];
+let histIdx = -1, runTimer = 0, cdTimer = 0, toastTimer = 0, tipTimer = 0;
+const isPhone = () => board.clientWidth <= 860; // the AI bar's compact layout: the app's own chrome reflows at 860
+const isNarrow = () => board.clientWidth <= 600; // the fake board's own arrangement
+const canUse = () => S.ai && (S.role === 'admin' || S.role === 'editor');
+const isAdmin = () => S.role === 'admin';
+
+const count = () => (S.ctx === 'sel' ? S.sel : S.ctx === 'view' ? VISIBLE_STICKIES : S.ctx === 'board' ? BOARD_STICKIES : 0);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const ctxLabel = () => (S.ctx === 'sel' ? plural(S.sel, 'sticky', 'stickies') : S.ctx === 'view' ? 'Visible area' : S.ctx === 'board' ? 'Whole board' : 'Prompt only');
+const sendsText = () => {
+  const n = count(), p = S.prompt.trim();
+  if (S.ctx === 'none') return p ? 'Sends only your prompt' : 'Sends only what you type';
+  const what = S.ctx === 'sel' ? `${plural(n, 'selected sticky', 'selected stickies')}` : S.ctx === 'view' ? `the ${n} stickies in view` : `all ${n} stickies`;
+  return `Sends ${what}${p ? ' and your prompt' : ''}`;
+};
+const keyText = () => (S.key === 'user' ? (S.priv ? 'Uses your key · Private run' : 'Uses your key') : S.key === 'credits' ? 'Uses AI credits' : 'Uses the workspace key');
+const tokens = () => 1000 + 100 * count() + Math.round(S.prompt.length / 4);
+const fmtTok = (n) => (n < 1000 ? '~' + Math.round(n / 50) * 50 : '~' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k');
+const credits = () => Math.max(1, Math.round(((tokens() * 4 + 1200 * 20) / 1e6 / 0.01) * 0.92));
+const costText = () => (S.key === 'credits' ? `~${credits()} credits · ${WORKSPACE_CREDITS.toLocaleString('en')} left` : `${fmtTok(tokens())} tokens`);
+const modelText = () => (S.armed ? `${FEATURES[S.armed].label} · ${costText()}` : S.key === 'credits' ? costText() : `Opus 5.5 · ${costText()}`);
+
+const FEATURES = {
+  summarise: { label: 'Summarise', reason: () => (S.ctx === 'none' ? 'Choose what to summarise: a selection, the visible area or the whole board' : S.ctx === 'sel' && S.sel < 2 ? 'Select 2 or more stickies to summarise' : '') },
+  cluster: { label: 'Cluster', reason: () => (S.ctx !== 'sel' || S.sel < 2 ? 'Select 2 or more stickies to cluster' : S.sel > 200 ? 'Select 200 stickies or fewer to cluster' : '') },
+  ideas: { label: 'Generate ideas', reason: () => '' },
+};
+const PLANNED = [['mindmap', 'Mind map'], ['rewrite', 'Rewrite'], ['table', 'Table'], ['slides', 'Slides'], ['translate', 'Translate']];
+
+/* ------------------------------------------------------------------ board objects */
+const rail = $('#rail');
+rail.innerHTML = ['select', 'hand', '|', 'sticky', 'text', 'shapes', 'connector', 'pen', 'frame', 'comment', '|', 'undo', 'redo'].map((n) => (n === '|' ? '<hr>' : `<button class="rail-btn${n === 'select' ? ' on' : ''}" aria-label="${n[0].toUpperCase() + n.slice(1)}">${ic(n, 22)}</button>`)).join('');
+
+const el = (cls, html = '', style = '') => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; if (style) d.style.cssText = style; return d; };
+const frame = el('frame', '<span class="frame-title">Sprint retro</span>');
+world.appendChild(frame);
+const stickies = {};
+for (const [id, text, c] of ST) { const d = el('sticky', text); d.style.setProperty('--c', `var(--s-${c})`); d.dataset.id = id; stickies[id] = d; world.appendChild(d); }
+const ghostArea = el('ghost-area k-create', '<span class="ghost-label">Preview</span>');
+const ghostFrame = el('frame ghost-frame', '<span class="frame-title">Summary</span>');
+const groupArea = el('ghost-area k-group', '<span class="ghost-label">Preview</span>');
+world.append(ghostFrame, ghostArea, groupArea);
+const gCreate = SUMMARY_GHOSTS.map((t, i) => { const d = el('sticky pv k-create', t); d.style.setProperty('--c', `var(--s-${['yellow', 'pink', 'pink', 'orange', 'orange', 'green'][i]})`); world.appendChild(d); return d; });
+const gGroup = {}; for (const [id, text, c] of ST) { const d = el('sticky pv k-group', text); d.style.setProperty('--c', `var(--s-${c})`); gGroup[id] = d; world.appendChild(d); }
+const heads = GROUPS.map(([t]) => { const d = el('ghost-head', t); world.appendChild(d); return d; });
+const arrows = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+arrows.setAttribute('class', 'arrows');
+arrows.innerHTML = '<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>';
+world.insertBefore(arrows, stickies.s1);
+const selBox = el('sel-box', '<i></i><i></i><i></i><i></i>'); world.appendChild(selBox);
+const qb = $('#quickbar');
+qb.innerHTML = `<button class="icon-btn" aria-label="Sticky colour"><span class="qb-chip" style="--c:var(--s-yellow)"></span></button><span class="qb-sep"></span>${['dup', 'lock', 'front', 'trash'].map((n) => `<button class="icon-btn" aria-label="${n}">${ic(n, 20)}</button>`).join('')}`;
+
+/* ---------------------------------------------------------------- multiplayer (TAB-141)
+   Ana is another editor on the board. What we draw for her comes from her awareness state (aiRun) and, for a preview,
+   the proposal the relay holds for her run. Everything here is faked. */
+const ANA = { name: 'Ana', color: '#7A5AF8', target: ['s10', 's11', 's12'], feature: 'Summarise' };
+function inkOn(hex) { // the label text: white or the app ink, whichever contrasts more with the person's colour
+  const l = (h) => { const [r, g, b] = [1, 3, 5].map((i) => { const c = parseInt(h.slice(i, i + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const L = l(hex); return (1.05 / (L + 0.05)) >= ((L + 0.05) / (l('#18212B') + 0.05)) ? '#FFFFFF' : '#18212B';
+}
+board.style.setProperty('--ana', ANA.color); board.style.setProperty('--ana-ink', inkOn(ANA.color));
+const ANA_GHOSTS = [['Summary: customers want faster answers', 'violet'], ['Action: share call notes weekly', 'blue'], ['Action: write down Q3 goals', 'blue'], ['Keep: the caching spike', 'teal']];
+const othRun = el('oth-run', '<span class="oth-ring"></span><span class="oth-label">Ana is asking AI: Summarise…</span>');
+const othArea = el('oth-area');
+const othHead = el('oth-head', '<span class="oth-label">Ana’s AI preview</span><span class="oth-actions tray" role="group" aria-label="Ana’s AI preview"><button type="button" class="oth-btn" id="othDiscard" data-tip="Discard Ana’s preview">Discard</button><button type="button" class="oth-btn primary" id="othAccept" data-tip="Add Ana’s preview to the board">Accept</button></span>');
+const gAna = ANA_GHOSTS.map(([txt, c]) => { const d = el('sticky oth-pv', txt); d.style.setProperty('--c', `var(--s-${c})`); return d; });
+world.append(othRun, othArea, ...gAna, othHead);
+const myLabel = ghostArea.querySelector('.ghost-label');
+
+function layoutOther() {
+  const phone = isNarrow(), ss = phone ? 76 : 104, step = ss + 16;
+  // her target: the selection she ran on
+  const rs = ANA.target.map((i) => ({ x: parseFloat(stickies[i].style.left), y: parseFloat(stickies[i].style.top) }));
+  const x0 = Math.min(...rs.map((r) => r.x)) - 8, y0 = Math.min(...rs.map((r) => r.y)) - 8, x1 = Math.max(...rs.map((r) => r.x)) + ss + 8, y1 = Math.max(...rs.map((r) => r.y)) + ss + 8;
+  Object.assign(othRun.style, { left: x0 + 'px', top: y0 + 'px', width: x1 - x0 + 'px', height: y1 - y0 + 'px' });
+  // her preview
+  let ax, ay, cols;
+  if (phone) { cols = 2; ax = S.two !== 'off' ? 196 : 84; ay = S.two !== 'off' ? 446 : 412; }
+  else if (S.two === 'overlap') { cols = 2; ax = 660; ay = 150; }
+  else { cols = 2; ax = 880; ay = 120; }
+  const n = phone && S.two !== 'off' ? 2 : 4;
+  gAna.forEach((d, i) => { d.hidden = i >= n; d.style.left = ax + 10 + (i % cols) * step + 'px'; d.style.top = ay + 10 + Math.floor(i / cols) * step + 'px'; });
+  const aw = cols * step + 4, ah = Math.ceil(n / cols) * step + 4;
+  Object.assign(othArea.style, { left: ax + 'px', top: ay + 'px', width: aw + 'px', height: ah + 'px' });
+  // label row: above the area's top-left; if it would collide with a label row stacked above it (mine), it moves under the area
+  othHead.classList.remove('below');
+  // the label row stays inside the board, 8px from the right edge
+  Object.assign(othHead.style, { left: Math.max(8, Math.min(ax - 2, board.clientWidth - (othHead.offsetWidth || 220) - 8)) + 'px', top: ay - 24 + 'px' });
+  // Obstacles: label rows stacked above it (mine), the selection quick bar and the AI bar. Try above the area, then below it.
+  if (othHead.offsetWidth) {
+    const hit = (a, b) => b && b.width && a.left < b.right + 4 && b.left < a.right + 4 && a.top < b.bottom + 2 && b.top < a.bottom + 2;
+    const obstacles = [document.body.dataset.preview ? myLabel.getBoundingClientRect() : null, qb.classList.contains('show') ? qb.getBoundingClientRect() : null];
+    if (obstacles.some((o) => hit(othHead.getBoundingClientRect(), o))) { othHead.classList.add('below'); othHead.style.top = ay + ah + 4 + 'px'; }
+  }
+}
+
+function paintOther() {
+  const st = S.otherDone ? 'none' : S.other;
+  board.dataset.other = st;
+  const editor = S.role === 'admin' || S.role === 'editor';
+  othHead.querySelector('.oth-actions').hidden = !editor;
+  const av = $('#anaAv');
+  av.hidden = S.other === 'none'; // Ana is on the board only in the multiplayer states
+  av.classList.toggle('busy', st !== 'none');
+  const line = st === 'running' ? 'Ana is asking AI: Summarise…' : st === 'preview' ? 'Ana has an AI preview on this board' : 'Ana';
+  av.dataset.tip = line; av.setAttribute('aria-label', line);
+  // my own label says "Your AI preview" once someone else's preview is on the board
+  myLabel.textContent = st === 'preview' ? 'Your AI preview' : 'Preview';
+  // what Ana's own bar would do is not drawn: she is on another computer
+  layoutOther();
+}
+
+function otherAct(kind) {
+  if (S.anaWins) { S.otherDone = 'lost'; paint(); toast(kind === 'accept' ? 'Ana discarded her preview first. Nothing was added.' : 'Ana added her preview first.'); return; }
+  S.otherDone = kind; paint();
+  if (kind === 'accept') toast('Added Ana’s 4 stickies.', 'Undo', () => { S.otherDone = null; paint(); });
+  else toast('Discarded Ana’s preview.');
+}
+
+function layout() {
+  const phone = isNarrow();
+  const ss = phone ? 76 : 104, gap = phone ? 8 : 20, pad = phone ? 10 : 20;
+  world.style.setProperty('--ss', ss + 'px');
+  const fx = phone ? 84 : 130, fy = phone ? 108 : 120, fw = 3 * ss + 2 * gap + 2 * pad;
+  Object.assign(frame.style, { left: fx + 'px', top: fy + 'px', width: fw + 'px', height: fw + 'px' });
+  ST.forEach(([id], i) => {
+    const d = stickies[id];
+    let x, y;
+    if (i < 9) { const jx = [0, 6, -4, 5, -6, 3, -3, 6, -5][i], jy = [4, -4, 6, -2, 5, -6, 4, 2, -3][i]; x = fx + pad + (i % 3) * (ss + gap) + (phone ? 0 : jx); y = fy + pad + Math.floor(i / 3) * (ss + gap) + (phone ? 0 : jy); }
+    else { x = phone ? 420 : 1180; y = (phone ? 120 : 130) + (i - 9) * (ss + 20); }
+    d.style.left = x + 'px'; d.style.top = y + 'px';
+  });
+  // summary preview: 2 columns on desktop, 3 on a phone
+  const px = phone ? 84 : 600, py = phone ? 412 : 120, cols = phone ? 3 : 2, step = ss + 16;
+  gCreate.forEach((d, i) => { d.style.left = px + 10 + (i % cols) * step + 'px'; d.style.top = py + 10 + Math.floor(i / cols) * step + 'px'; });
+  const rows = Math.ceil(6 / cols), aw = cols * step + 4, ah = rows * step + 4;
+  for (const a of [ghostArea, ghostFrame]) Object.assign(a.style, { left: px + 'px', top: py + 'px', width: aw + 'px', height: ah + 'px' });
+  // group preview
+  const selIds = SEL[S.sel] || [];
+  const colW = ss + 36, gx = phone ? 84 : 610, gy = phone ? 412 : 128;
+  let maxRows = 0, usedCols = 0;
+  GROUPS.forEach(([title, ids], c) => {
+    const mine = ids.filter((i) => selIds.includes(i));
+    heads[c].style.display = '';
+    heads[c].dataset.n = mine.length;
+    Object.assign(heads[c].style, { left: gx + c * colW + 'px', top: gy + 'px', width: ss + 'px' });
+    mine.forEach((id, r) => { Object.assign(gGroup[id].style, { left: gx + c * colW + 'px', top: gy + 36 + r * (ss + 14) + 'px' }); });
+    if (mine.length) { usedCols = c + 1; maxRows = Math.max(maxRows, mine.length); }
+  });
+  for (const id of Object.keys(gGroup)) gGroup[id].dataset.on = selIds.includes(id) ? '1' : '0';
+  Object.assign(groupArea.style, { left: gx - 14 + 'px', top: gy - 14 + 'px', width: Math.max(1, usedCols) * colW - 36 + 28 + 'px', height: 36 + maxRows * (ss + 14) + 14 + 'px' });
+  paintSelection();
+  drawArrows();
+  layoutOther();
+  stack();
+}
+
+function rectIn(node) { const b = board.getBoundingClientRect(), r = node.getBoundingClientRect(); return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height }; }
+
+function paintSelection() {
+  const ids = S.ctx === 'sel' ? SEL[S.sel] || [] : [];
+  for (const [id] of ST) stickies[id].classList.toggle('sel', ids.includes(id));
+  if (!ids.length) { selBox.style.display = 'none'; qb.classList.remove('show'); return; }
+  const rs = ids.map((i) => rectIn(stickies[i]));
+  const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y)), x1 = Math.max(...rs.map((r) => r.x + r.w)), y1 = Math.max(...rs.map((r) => r.y + r.h));
+  const editor = S.role === 'admin' || S.role === 'editor';
+  selBox.style.display = ids.length > 1 ? 'block' : 'none';
+  Object.assign(selBox.style, { left: x0 - 4 + 'px', top: y0 - 4 + 'px', width: x1 - x0 + 8 + 'px', height: y1 - y0 + 8 + 'px' });
+  qb.classList.toggle('show', editor);
+  if (!editor) return;
+  const w = qb.offsetWidth, h = qb.offsetHeight;
+  let x = (x0 + x1) / 2 - w / 2, y = y0 - 12 - h - (ids.length === 1 ? 28 : 0);
+  if (y < 72) y = y1 + 12;
+  x = Math.max(12, Math.min(board.clientWidth - w - 12, x));
+  qb.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+function drawArrows() {
+  for (const p of $$('path.ar', arrows)) p.remove();
+  if (document.body.dataset.preview !== 'group') return;
+  const b = board.getBoundingClientRect();
+  GROUPS.forEach(([, ids], c) => {
+    const h = rectIn(heads[c]);
+    for (const id of ids) {
+      if (stickies[id].classList.contains('sel') === false) continue;
+      const r = rectIn(stickies[id]);
+      const x1 = r.x + r.w / 2, y1 = r.y + r.h / 2, x2 = h.x + h.w / 2, y2 = h.y - 6;
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('class', 'ar');
+      p.setAttribute('d', `M${x1} ${y1} C ${x1 + 80} ${y1}, ${x2} ${y2 + 70}, ${x2} ${y2}`);
+      p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor'); p.setAttribute('stroke-width', '1.25'); p.setAttribute('marker-end', 'url(#ah)');
+      arrows.appendChild(p);
+    }
+  });
+  void b;
+}
+
+/* ------------------------------------------------------------------ the bar */
+dock.innerHTML = `
+<button class="tray ai-fab" id="fab" type="button" aria-label="Ask AI" aria-expanded="false" aria-controls="bar" data-tip="Ask AI" data-key="Ctrl/Cmd+K" data-open="false" hidden>${ic('spark', 22)}</button>
+<section class="tray ai-bar" id="bar" aria-label="Ask AI" data-ui="idle" data-open="true">
+  <div class="ai-main" id="main">
+    <button class="ai-ctx" id="ctxBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Context"><span id="ctxLabel"></span>${ic('chevron', 14)}</button>
+    <div class="ai-field" id="field">
+      <input class="ai-input" id="prompt" type="text" aria-label="Prompt" placeholder="Generate sticky notes about…" autocomplete="off" enterkeyhint="send" spellcheck="true">
+      <button class="icon-btn ai-hist" id="histBtn" type="button" aria-label="Prompt history" aria-haspopup="listbox" aria-expanded="false">${ic('history', 18)}</button>
+    </div>
+    <div class="ai-status" id="status" role="status" aria-live="polite"></div>
+    <div class="ai-summary" id="summary"></div>
+    <div class="ai-error" id="err" role="alert"></div>
+    <button class="ai-model" id="modelBtn" type="button" aria-haspopup="dialog" aria-expanded="false"></button>
+    <div class="ai-actions" id="actions"></div>
+    <button class="icon-btn" id="collapseBtn" type="button" aria-label="Collapse AI bar" data-tip="Collapse" data-key="Ctrl/Cmd+K"></button>
+    <button class="ai-grip" id="grip" type="button" aria-label="Move AI bar" data-tip="Drag to move. Double-click to dock.">${ic('grip', 16)}</button>
+  </div>
+  <div class="ai-chips" id="chips" role="toolbar" aria-label="AI quick actions"></div>
+  <div class="ai-disclosure" id="disc"></div>
+  <div class="ai-progress" aria-hidden="true"></div>
+</section>`;
+const bar = $('#bar'), fab = $('#fab'), prompt = $('#prompt'), ctxBtn = $('#ctxBtn'), chipsEl = $('#chips'), actions = $('#actions'), status = $('#status'), summary = $('#summary'), errEl = $('#err'), modelBtn = $('#modelBtn'), collapseBtn = $('#collapseBtn'), grip = $('#grip'), disc = $('#disc');
+$('#main').style.display = 'flex';
+const off = (node, isOff) => { node.classList.toggle('is-off', isOff); node.style.cssText = isOff ? 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;padding:0;margin:-1px' : ''; };
+grip.style.order = '-1';
+
+function toast(msg, actionLabel, fn) {
+  const t = $('#toast');
+  t.innerHTML = `<span></span>${actionLabel ? `<button type="button" data-tip="${actionLabel}" data-key="Ctrl/Cmd+Z">${actionLabel}</button>` : ''}`;
+  t.firstChild.textContent = msg;
+  if (actionLabel) t.querySelector('button').onclick = () => { fn(); t.classList.remove('show'); };
+  const r = (bar.hidden ? fab : bar).getBoundingClientRect(), b = board.getBoundingClientRect();
+  t.style.bottom = b.bottom - r.top + 8 + 'px';
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), actionLabel ? 8000 : 3200);
+}
+
+function chipDefs() {
+  const list = Object.entries(FEATURES).map(([id, f]) => ({ id, label: f.label, reason: f.reason() }));
+  if (S.chips === 'all') for (const [id, label] of PLANNED) list.push({ id, label, reason: 'Coming soon', planned: true });
+  return list;
+}
+
+function paintChips() {
+  const defs = chipDefs();
+  const cur = document.activeElement && chipsEl.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+  if (S.armed && FEATURES[S.armed] && FEATURES[S.armed].reason()) S.armed = null;
+  chipsEl.innerHTML = defs.map((d, i) => `<button class="chip${S.armed === d.id ? ' on' : ''}" type="button" data-id="${d.id}" aria-pressed="${S.armed === d.id}" tabindex="${i === 0 ? 0 : -1}" ${d.reason ? `aria-disabled="true" data-tip="${d.reason}"` : `data-tip="${d.label}"`}>${d.label}</button>`).join('');
+  if (cur) { const n = $(`[data-id="${cur}"]`, chipsEl); if (n) { $$('.chip', chipsEl).forEach((c) => (c.tabIndex = -1)); n.tabIndex = 0; n.focus(); } }
+  // an enabled chip needs no tooltip: its label says it all
+  for (const c of $$('.chip:not([aria-disabled])', chipsEl)) c.removeAttribute('data-tip');
+}
+
+/** What Run or Enter starts: the armed chip, else Generate when a prompt is typed. Generate always needs a prompt. */
+function runTarget() {
+  if (S.armed && S.armed !== 'ideas') return S.armed;
+  return S.prompt.trim() ? 'ideas' : null;
+}
+
+function actionBtn(cls, label, id, tip, key, disabled) {
+  return `<button class="btn ${cls}" type="button" id="${id}"${tip ? ` data-tip="${tip}"` : ''}${key ? ` data-key="${key}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${label}</button>`;
+}
+
+function errView() {
+  const k = S.err, admin = isAdmin();
+  const a = (label, what) => `<a href="#" class="link" data-mock="${what}">${label}</a>`;
+  switch (k) {
+    case 'nokey': return { icon: 'alert', msg: `AI isn't set up for this workspace. ${admin ? a('Set up AI', 'Opens AI settings in the admin dashboard.') : '<span class="muted-msg">Ask a workspace admin.</span>'}`, retry: false };
+    case 'invalid': return { icon: 'alert', msg: `The AI key was rejected. ${admin || S.key === 'user' ? `Check it in ${a('AI settings', 'Opens AI settings.')}.` : '<span class="muted-msg">Ask a workspace admin to check it.</span>'}`, retry: false };
+    case 'rate': return { icon: 'alert', msg: S.retryIn > 0 ? `Too many requests. Try again in <span id="cd">${S.retryIn}</span> s.` : 'Too many requests. You can try again now.', sr: S.retryIn > 0 ? `Too many requests. Try again in ${S.retryIn} seconds.` : 'You can try again now.', retry: true, wait: S.retryIn > 0 };
+    case 'down': return { icon: 'alert', msg: "Anthropic isn't responding. Try again in a moment.", retry: true };
+    case 'refused': return { icon: 'alert', msg: 'The AI declined this request. Nothing was changed.', edit: true };
+    case 'credits': return { icon: 'alert', msg: `Your workspace has used this month's AI credits. ${admin ? a('Add credits', 'Opens billing in the admin dashboard.') : '<span class="muted-msg">Ask a workspace admin.</span>'}`, retry: false };
+    case 'offline': return { icon: 'wifioff', msg: "You're offline. AI needs a connection.", retry: true };
+    default: return { icon: 'alert', msg: '', retry: false };
+  }
+}
+
+const runLabel = () => ({ summarise: `Summarising ${plural(count(), 'sticky', 'stickies')}…`, cluster: `Clustering ${plural(count(), 'sticky', 'stickies')}…`, ideas: 'Generating ideas…' }[S.feature]);
+const proposalKind = () => (S.feature === 'cluster' ? 'group' : 'create');
+const groupCount = () => GROUPS.filter(([, ids]) => ids.some((i) => (SEL[S.sel] || []).includes(i))).length;
+const previewLine = () => (proposalKind() === 'group' ? `Moves ${plural(Math.min(S.sel, 12), 'sticky', 'stickies')} into ${plural(groupCount(), 'group', 'groups')}` : S.feature === 'summarise' ? '6 stickies in a new frame “Summary”' : '6 new stickies');
+
+function paint() {
+  board.dataset.otherDone = S.otherDone || '';
+  const root = document.documentElement;
+  if (S.theme === 'default') root.removeAttribute('data-theme'); else root.dataset.theme = S.theme;
+  const usable = canUse();
+  dock.hidden = !usable;
+  document.body.dataset.preview = S.ui === 'preview' ? proposalKind() : '';
+  document.body.dataset.added = S.added || '';
+  for (const [id] of ST) stickies[id].classList.toggle('moved', S.added === 'group' && (SEL[S.sel] || []).includes(id));
+  bar.dataset.ui = S.ui;
+  // open or closed
+  const wasOpen = !bar.hidden;
+  if (S.open && !wasOpen) { bar.hidden = false; fab.dataset.open = 'false'; void bar.offsetWidth; bar.dataset.open = 'true'; fab.setAttribute('aria-expanded', 'true'); setTimeout(() => { if (S.open) fab.hidden = true; }, reduced() ? 0 : 160); }
+  if (!S.open && wasOpen) { fab.hidden = false; void fab.offsetWidth; fab.dataset.open = 'true'; bar.dataset.open = 'false'; fab.setAttribute('aria-expanded', 'false'); setTimeout(() => { if (!S.open) bar.hidden = true; }, reduced() ? 0 : 160); }
+  if (S.open && wasOpen) { fab.hidden = true; bar.dataset.open = 'true'; }
+  if (!S.open && !wasOpen) { fab.hidden = false; fab.dataset.open = 'true'; }
+
+  const phone = isPhone();
+  const run = S.ui === 'running', prev = S.ui === 'preview', err = S.ui === 'error', idle = S.ui === 'idle';
+  $('#ctxLabel').textContent = ctxLabel();
+  ctxBtn.hidden = prev || err;
+  $('#field').hidden = !idle;
+  off(status, !run); status.textContent = run ? runLabel() : '';
+  if (run) status.innerHTML = `<span class="t">${runLabel()}</span>`;
+  summary.hidden = !prev; summary.innerHTML = prev ? `${previewLine()}` : '';
+  const ev = err ? errView() : null;
+  off(errEl, !err);
+  if (err) {
+    errEl.innerHTML = `${ic(ev.icon, 18)}<span>${ev.sr ? `<span class="sr">${ev.sr}</span><span aria-hidden="true">${ev.msg}</span>` : ev.msg}</span>`;
+  } else errEl.innerHTML = '';
+  // model chip: desktop in row 2, phone in the disclosure line
+  modelBtn.hidden = !(idle || run);
+  modelBtn.textContent = modelText();
+  modelBtn.setAttribute('aria-label', `${modelText()}. Model and cost details`);
+  modelBtn.dataset.tip = 'Estimate before you run. Click for details.';
+  // actions
+  let html = '';
+  if (idle) {
+    const target = runTarget(), ok = !!target;
+    const tip = !ok ? 'Type what to generate, or pick an action above' : target === 'ideas' ? 'Generate sticky notes' : FEATURES[target].label;
+    html = actionBtn('primary', 'Run', 'runBtn', tip, ok ? 'Enter' : '', !ok);
+  }
+  else if (run) html = actionBtn('', 'Stop', 'stopBtn', 'Stop', 'Esc');
+  else if (prev) html = actionBtn('ghost', 'Discard', 'discardBtn', 'Discard', 'Esc') + actionBtn('', 'Retry', 'retryBtn', 'Run it again', '') + actionBtn('primary', 'Add to board', 'addBtn', 'Add to board', 'Enter');
+  else if (err) {
+    if (ev.retry) html += actionBtn('', ev.wait ? 'Retry' : 'Retry', 'retryBtn', ev.wait ? 'Available when the countdown ends' : 'Run it again', '', ev.wait);
+    if (ev.edit) html += actionBtn('', 'Edit request', 'editBtn', 'Back to the prompt', '');
+    html += `<button class="icon-btn" type="button" id="dismissBtn" aria-label="Dismiss" data-tip="Dismiss" data-key="Esc">${ic('close', 18)}</button>`;
+  }
+  actions.innerHTML = html;
+  collapseBtn.innerHTML = ic(phone ? 'chevron' : 'minus', 18);
+  collapseBtn.setAttribute('aria-disabled', run || prev ? 'true' : 'false');
+  if (!(run || prev)) collapseBtn.removeAttribute('aria-disabled');
+  grip.hidden = phone;
+  paintChips();
+  // disclosure
+  let d1;
+  if (prev) d1 = 'Nothing is on the board until you add it';
+  else d1 = sendsText() + ' to Anthropic';
+  const d2 = prev ? (proposalKind() === 'group' ? 'Enter moves them, Esc discards' : 'Enter adds, Esc discards') : run ? (S.key === 'user' && S.priv ? 'Private run \u00B7 Esc stops' : 'Esc stops') : keyText();
+  disc.innerHTML = `<span>${d1}</span><span class="sep">${d2}</span>${phone && (idle || run) ? `<span class="sep"><button class="ai-model-line" id="modelLine" type="button" aria-haspopup="dialog" aria-label="${modelText()}. Model and cost details">${modelText()}</button></span>` : ''}`;
+  if (prompt.value !== S.prompt) prompt.value = S.prompt;
+  prompt.placeholder = S.armed === 'summarise' || S.armed === 'cluster' ? 'Optional instruction…' : 'Generate sticky notes about…';
+  modelBtn.classList.toggle('armed', !!S.armed);
+  // panel mirrors
+  $('#p-theme').value = S.theme; $('#p-role').value = S.role; $('#p-ai').checked = S.ai; $('#p-key').value = S.key; $('#p-sel').value = String(S.sel); $('#p-ctx').value = S.ctx;
+  $('#p-session').checked = S.session; $('#p-other').value = S.other; $('#p-two').value = S.two; $('#p-priv').checked = S.priv; $('#p-anawins').checked = S.anaWins; $('#p-out').value = S.out; $('#p-chips').value = S.chips;
+  $('#flowbar').classList.toggle('show', S.session);
+  $('#p-note').textContent = !S.ai ? (isAdmin() ? 'AI is off for the workspace: no bar and no shortcut. An admin sees "Set up AI" in the board menu (the dots at top right).' : 'AI is off for the workspace: no bar, no shortcut, nothing in the menu.') : !usable ? `${S.role === 'viewer' ? 'Viewers' : 'Commenters'} cannot apply AI results: no bar, no shortcut, nothing in the menu.` : '';
+  paintOther();
+  layoutSoon();
+}
+
+let lay = 0;
+function layoutSoon() { cancelAnimationFrame(lay); lay = requestAnimationFrame(() => { stack(); paintSelection(); drawArrows(); layoutOther(); }); }
+
+/* The bar stacks above the session bar when it shows; the zoom tray stays clear on phones. */
+function stack() {
+  const b = board.getBoundingClientRect(), phone = isPhone();
+  let bottom = board.clientWidth <= 1000 ? 64 : 16; // at 1000px and below the bar sits above the zoom tray
+  const fb = $('#flowbar');
+  if (S.session) { const r = fb.getBoundingClientRect(); bottom = Math.max(bottom, b.bottom - r.top + 8); }
+  board.style.setProperty('--ai-bottom', bottom + 'px');
+  if (phone) dock.classList.remove('dragged');
+  else restorePos();
+}
+
+/* ------------------------------------------------------------------ transitions */
+function setOpen(v, focus) {
+  S.open = v; store.set('ai-bar', v ? 'open' : 'collapsed'); closePop(); paint();
+  if (focus) setTimeout(() => (v ? prompt : fab).focus(), 0);
+}
+function start(feature) {
+  if (!canUse() || S.ui === 'running') return;
+  const f = FEATURES[feature]; if (f && f.reason()) return;
+  if (S.prompt.trim()) { history = [S.prompt.trim(), ...history.filter((h) => h !== S.prompt.trim())].slice(0, 20); store.set('ai-history', history.join('\n')); }
+  S.feature = feature; S.ui = 'running'; S.added = null; S.err = null; closePop(); paint();
+  clearTimeout(runTimer);
+  runTimer = setTimeout(() => {
+    if (S.out === 'ok') { S.ui = 'preview'; paint(); setTimeout(() => $('#addBtn') && $('#addBtn').focus(), 0); }
+    else fail(S.out.slice(4));
+  }, params.has('slow') ? 600000 : 2400);
+}
+function fail(kind) {
+  S.ui = 'error'; S.err = kind; clearInterval(cdTimer);
+  if (kind === 'rate') { S.retryIn = 40; cdTimer = setInterval(() => { S.retryIn = Math.max(0, S.retryIn - 1); const cd = $('#cd'); if (S.retryIn > 0 && cd) cd.textContent = S.retryIn; else { clearInterval(cdTimer); paint(); } }, 1000); }
+  paint();
+}
+function stop() { clearTimeout(runTimer); S.ui = 'idle'; paint(); setTimeout(() => prompt.focus(), 0); }
+function discard() { S.ui = 'idle'; paint(); setTimeout(() => prompt.focus(), 0); }
+function add(byKeyboard) {
+  S.added = proposalKind(); S.ui = 'idle'; S.prompt = ''; S.armed = null; paint();
+  if (byKeyboard) setTimeout(() => prompt.focus(), 0);
+  const n = proposalKind() === 'group' ? plural(Math.min(S.sel, 12), 'sticky', 'stickies') : '6 stickies';
+  toast(proposalKind() === 'group' ? `Moved ${n} into ${plural(groupCount(), 'group', 'groups')}.` : `Added ${n}.`, 'Undo', () => { S.added = null; paint(); });
+}
+
+/* ------------------------------------------------------------------ popovers */
+function closePop(refocus) {
+  const p = $('.pop'); if (!p) return;
+  const a = p.anchor; p.remove(); S.pop = null;
+  for (const b of [ctxBtn, $('#histBtn'), modelBtn, $('#modelLine')]) if (b) b.setAttribute('aria-expanded', 'false');
+  if (refocus && a) a.focus();
+}
+function openPop(kind, anchor) {
+  if (S.pop === kind) { closePop(true); return; }
+  closePop();
+  const p = document.createElement('div'); p.className = 'tray pop'; p.anchor = anchor; S.pop = kind;
+  if (kind === 'ctx') {
+    p.setAttribute('role', 'menu'); p.setAttribute('aria-label', 'What the AI works on');
+    const items = [['sel', S.sel ? plural(S.sel, 'selected sticky', 'selected stickies') : 'Selection', S.sel ? '' : 'Nothing selected', !S.sel], ['view', 'Visible area', `${VISIBLE_STICKIES} stickies`], ['board', 'Whole board', `${BOARD_STICKIES} stickies`], ['none', 'Prompt only', 'No board content']];
+    p.innerHTML = items.map(([id, l, h, dis]) => `<button class="menu-item" role="menuitemradio" aria-checked="${S.ctx === id}" data-ctx="${id}" ${dis ? 'aria-disabled="true"' : ''}><span>${l}</span><span class="menu-hint">${h}</span></button>`).join('');
+  } else if (kind === 'hist') {
+    p.setAttribute('role', 'listbox'); p.setAttribute('aria-label', 'Recent prompts');
+    p.innerHTML = history.length ? history.slice(0, 6).map((h, i) => `<button class="menu-item" role="option" aria-selected="false" data-h="${i}"><span></span></button>`).join('') : '<div class="pop-note">No prompts yet.</div>';
+    $$('.menu-item', p).forEach((b, i) => (b.firstChild.textContent = history[i]));
+  } else {
+    p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Model and cost'); p.style.maxWidth = '300px';
+    const credit = S.key === 'credits';
+    p.innerHTML = `<div class="pop-label">Model</div><div class="pop-note"><b>Claude Opus 5.5</b><br>Chosen by your workspace admin.${isAdmin() ? ' <a href="#" class="link" data-mock="Opens AI settings." style="color:inherit">AI settings</a>' : ''}</div>
+      <div class="pop-label">Visibility</div>${S.key === 'user'
+        ? `<label class="pop-switch"><input type="checkbox" role="switch" id="privSw" ${S.priv ? 'checked' : ''}><span><b>Private run</b><br>${S.priv ? 'Nobody else on this board sees the run or the preview until you add it.' : 'Off: others on this board see that you are asking AI, and see your preview.'}</span></label>`
+        : `<div class="pop-note">Others on this board see that you are asking AI, and see your preview. Runs on ${S.key === 'credits' ? 'AI credits' : 'the workspace key'} can’t be private: the workspace pays for them.</div>`}
+      <div class="pop-label">This run</div><div class="pop-note">About <b>${(Math.round(tokens() / 50) * 50).toLocaleString("en")} tokens</b> go in; the reply is capped at 4,000.${credit ? ` That is roughly <b>${credits()} credits</b> of ${WORKSPACE_CREDITS.toLocaleString('en')} left this month.` : ''} An estimate, not a bill.</div>`;
+  }
+  chrome.appendChild(p);
+  anchor.setAttribute('aria-expanded', 'true');
+  const b = board.getBoundingClientRect(), r = anchor.getBoundingClientRect(), pw = p.offsetWidth;
+  p.style.left = Math.max(8, Math.min(b.width - pw - 8, r.left - b.left)) + 'px';
+  p.style.bottom = b.bottom - r.top + 8 + 'px';
+  const first = $('.menu-item[aria-checked="true"], .menu-item', p);
+  if (kind !== 'model' && first) first.focus();
+  else if (kind === 'model') p.tabIndex = -1;
+  return p;
+}
+
+/* ------------------------------------------------------------------ tooltip (src/ui/tooltip.ts, simplified) */
+const tip = $('#tip');
+function showTip(t) {
+  const label = t.dataset.tip || t.getAttribute('aria-label'); if (!label) return;
+  $('.tip-label', tip).textContent = label;
+  const k = $('.tip-key', tip); k.textContent = t.dataset.key || ''; k.hidden = !t.dataset.key;
+  tip.classList.add('show');
+  const r = t.getBoundingClientRect(), s = tip.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+  let top = r.top - s.height - 8; if (top < 4) top = r.bottom + 8;
+  tip.style.left = Math.round(Math.max(4, Math.min(vw - s.width - 4, r.left + r.width / 2 - s.width / 2))) + 'px'; tip.style.top = Math.round(top) + 'px';
+}
+const hideTip = () => { clearTimeout(tipTimer); tip.classList.remove('show'); };
+const TARGET = '[data-tip], .icon-btn[aria-label], .rail-btn[aria-label]';
+document.addEventListener('pointerover', (e) => { if (e.pointerType !== 'mouse') return; const t = e.target.closest(TARGET); if (t) { clearTimeout(tipTimer); tipTimer = setTimeout(() => showTip(t), 500); } });
+document.addEventListener('pointerout', (e) => { const t = e.target.closest(TARGET); if (t) hideTip(); });
+document.addEventListener('focusin', (e) => { const t = e.target.closest(TARGET); if (t && e.target.matches(':focus-visible')) showTip(t); });
+document.addEventListener('focusout', hideTip);
+window.addEventListener('pointerdown', hideTip, true);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); }, true);
+
+/* ------------------------------------------------------------------ events */
+prompt.addEventListener('input', () => { S.prompt = prompt.value; histIdx = -1; paintLite(); });
+function paintLite() { paint(); }
+prompt.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); const t = runTarget(); if (t) start(t); }
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (!S.prompt || histIdx >= 0)) {
+    e.preventDefault();
+    histIdx = Math.max(-1, Math.min(history.length - 1, histIdx + (e.key === 'ArrowUp' ? 1 : -1)));
+    S.prompt = histIdx < 0 ? '' : history[histIdx]; paint();
+  }
+});
+bar.addEventListener('click', (e) => {
+  const t = e.target.closest('button, a'); if (!t) return;
+  if (t.matches('a[data-mock]')) { e.preventDefault(); toast(t.dataset.mock + ' (mock)'); return; }
+  if (t.getAttribute('aria-disabled') === 'true') return;
+  switch (t.id) {
+    case 'runBtn': { const t = runTarget(); if (t) start(t); } break;
+    case 'stopBtn': stop(); break;
+    case 'discardBtn': discard(); break;
+    case 'retryBtn': start(S.feature); break;
+    case 'addBtn': add(e.detail === 0); break;
+    case 'editBtn': S.ui = 'idle'; paint(); prompt.focus(); break;
+    case 'dismissBtn': S.ui = 'idle'; paint(); setTimeout(() => prompt.focus(), 0); break;
+    case 'collapseBtn': setOpen(false, true); break;
+    case 'ctxBtn': openPop('ctx', t); break;
+    case 'histBtn': openPop('hist', t); break;
+    case 'modelBtn': case 'modelLine': openPop('model', t); break;
+    default:
+      if (t.classList.contains('chip')) {
+        // Decided (Johan, 2026-10-09): a chip arms its action; Run or Enter starts it. A second click disarms.
+        if (S.ui !== 'idle') return;
+        S.armed = S.armed === t.dataset.id ? null : t.dataset.id; paint();
+        if (S.armed) setTimeout(() => prompt.focus(), 0);
+      }
+  }
+});
+fab.addEventListener('click', () => setOpen(true, true));
+othHead.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) otherAct(b.id === 'othAccept' ? 'accept' : 'discard'); });
+chrome.addEventListener('change', (e) => { if (e.target.id === 'privSw') { S.priv = e.target.checked; store.set('ai-private', S.priv ? '1' : ''); const a = $('.pop').anchor; closePop(); paint(); openPop('model', a === modelBtn || !a ? modelBtn : a); } });
+chrome.addEventListener('click', (e) => {
+  const t = e.target.closest('.pop button, .pop a'); if (!t) return;
+  if (t.dataset.mock) { e.preventDefault(); toast(t.dataset.mock + ' (mock)'); return; }
+  if (t.dataset.ctx && t.getAttribute('aria-disabled') !== 'true') { S.ctx = t.dataset.ctx; closePop(true); paint(); }
+  if (t.dataset.h !== undefined) { S.prompt = history[Number(t.dataset.h)]; closePop(); paint(); prompt.focus(); }
+});
+document.addEventListener('pointerdown', (e) => { if (S.pop && !e.target.closest('.pop') && !e.target.closest('[aria-haspopup]')) closePop(); });
+chipsEl.addEventListener('keydown', (e) => {
+  const cs = $$('.chip', chipsEl), i = cs.indexOf(document.activeElement); if (i < 0) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: cs.length - 1 }[e.key]; if (to === undefined) return;
+  e.preventDefault(); const n = cs[(to + cs.length) % cs.length]; cs.forEach((c) => (c.tabIndex = -1)); n.tabIndex = 0; n.focus(); n.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+});
+chrome.addEventListener('keydown', (e) => {
+  const p = e.target.closest('.pop'); if (!p) return;
+  const items = $$('.menu-item', p), i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); }
+  if (e.key === 'Tab') closePop();
+});
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+    if (!canUse()) return; // viewers, commenters and AI-off workspaces never reach this: the shortcut does not exist for them
+    e.preventDefault(); setOpen(!S.open || (S.open && !bar.contains(document.activeElement)) ? true : false, true); return;
+  }
+  if (e.key === 'Escape' && canUse()) {
+    if (S.pop) { closePop(true); return; }
+    if (S.ui === 'running') { e.preventDefault(); stop(); }
+    else if (S.ui === 'preview') { e.preventDefault(); discard(); }
+    else if (S.ui === 'error') { e.preventDefault(); S.ui = 'idle'; paint(); setTimeout(() => prompt.focus(), 0); }
+    else if (S.ui === 'idle' && S.armed) { e.preventDefault(); S.armed = null; paint(); }
+  }
+  // Fallback for Ctrl/Cmd+K: "/" when no text field has focus.
+  const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
+  if (e.key === '/' && !mod && !e.altKey && !typing && canUse()) { e.preventDefault(); setOpen(true, true); }
+  if (e.key === 'Enter' && S.ui === 'preview' && document.activeElement === document.body) { e.preventDefault(); add(true); }
+});
+
+/* chips roving tabindex survives repaint only for the first chip; focus stays where the user put it */
+
+/* ------------------------------------------------------------------ drag */
+function savePos(p) { store.set('ai-bar-pos', p ? `${Math.round(p.left)},${Math.round(p.bottom)}` : ''); }
+function restorePos() {
+  const raw = store.get('ai-bar-pos'); if (!raw || isPhone()) { dock.classList.remove('dragged'); dock.style.left = dock.style.bottom = ''; return; }
+  const [l, b] = raw.split(',').map(Number); if (Number.isNaN(l)) return;
+  applyPos(l, b);
+}
+function applyPos(l, b) {
+  const w = (bar.hidden ? fab : bar).offsetWidth || 640, h = (bar.hidden ? fab : bar).offsetHeight || 112;
+  l = Math.max(8, Math.min(board.clientWidth - w - 8, l)); b = Math.max(8, Math.min(board.clientHeight - h - 8, b));
+  dock.classList.add('dragged'); dock.style.left = l + 'px'; dock.style.bottom = b + 'px'; dock.style.right = 'auto';
+  return { left: l, bottom: b };
+}
+function dockAgain() { savePos(null); dock.classList.remove('dragged'); dock.style.left = dock.style.bottom = dock.style.right = ''; stack(); }
+let drag = null;
+grip.addEventListener('pointerdown', (e) => {
+  if (isPhone()) return;
+  const br = board.getBoundingClientRect(), r = bar.getBoundingClientRect();
+  drag = { x: e.clientX, y: e.clientY, left: r.left - br.left, bottom: br.bottom - r.bottom }; grip.setPointerCapture(e.pointerId); bar.classList.add('dragging');
+});
+grip.addEventListener('pointermove', (e) => { if (!drag) return; const p = applyPos(drag.left + e.clientX - drag.x, drag.bottom - (e.clientY - drag.y)); drag.cur = p; closePop(); });
+grip.addEventListener('pointerup', () => { if (drag && drag.cur) savePos(drag.cur); drag = null; bar.classList.remove('dragging'); layoutSoon(); });
+grip.addEventListener('dblclick', dockAgain);
+grip.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 32 : 8, br = board.getBoundingClientRect(), r = bar.getBoundingClientRect();
+  const cur = { left: r.left - br.left, bottom: br.bottom - r.bottom };
+  const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+  if (e.key === 'Home') { e.preventDefault(); dockAgain(); return; }
+  if (!d) return; e.preventDefault(); const p = applyPos(cur.left + d[0], cur.bottom + d[1]); savePos(p); layoutSoon();
+});
+
+/* ------------------------------------------------------------------ board menu stub */
+const moreBtn = $('#moreBtn'), moreMenu = $('#moreMenu');
+moreBtn.addEventListener('click', () => {
+  const open = moreMenu.hidden;
+  moreMenu.innerHTML = ['Board settings', 'Export board'].map((l) => `<button class="menu-item" role="menuitem">${l}</button>`).join('') + (isAdmin() && !S.ai ? '<hr style="border:0;height:1px;background:var(--tray-line);margin:4px 0"><button class="menu-item" role="menuitem" id="setupAi">Set up AI</button>' : '');
+  moreMenu.hidden = !open; moreBtn.setAttribute('aria-expanded', String(open));
+  const s = $('#setupAi'); if (s) s.onclick = () => { moreMenu.hidden = true; toast('Opens AI settings in the admin dashboard. (mock)'); };
+});
+
+/* ------------------------------------------------------------------ panel */
+const THEMES = [["default","Default"],["ayu","Ayu"],["kanagawa","Kanagawa"],["matrix","Matrix"],["evergreen","Evergreen"]];
+$('#p-theme').innerHTML = THEMES.map(([id, n]) => `<option value="${id}">${n}</option>`).join('');
+$('#p-theme').onchange = (e) => { S.theme = e.target.value; paint(); };
+$('#p-role').onchange = (e) => { S.role = e.target.value; closePop(); paint(); };
+$('#p-ai').onchange = (e) => { S.ai = e.target.checked; paint(); };
+$('#p-key').onchange = (e) => { S.key = e.target.value; paint(); };
+$('#p-sel').onchange = (e) => { S.sel = Number(e.target.value); S.ctx = S.sel ? 'sel' : S.ctx === 'sel' ? 'view' : S.ctx; paint(); };
+$('#p-ctx').onchange = (e) => { S.ctx = e.target.value; if (S.ctx === 'sel' && !S.sel) S.sel = 3; paint(); };
+$('#p-session').onchange = (e) => { S.session = e.target.checked; paint(); };
+$('#p-out').onchange = (e) => { S.out = e.target.value; paint(); };
+$('#p-chips').onchange = (e) => { S.chips = e.target.value; paint(); };
+$('#p-reset').onclick = () => { for (const k of ['ai-bar', 'ai-bar-pos', 'ai-history']) store.del(k); history = ['ten risks of moving to the cloud', 'ideas for the retro warm-up', 'five ways to speed up deploys']; dockAgain(); S.open = true; paint(); };
+$('#p-state').onchange = (e) => setState(e.target.value);
+$('#p-other').onchange = (e) => { S.other = e.target.value; S.otherDone = null; if (S.other !== 'preview') S.two = 'off'; paint(); };
+$('#p-two').onchange = (e) => { S.two = e.target.value; S.otherDone = null; if (S.two !== 'off') { S.other = 'preview'; S.ui = 'preview'; S.feature = 'summarise'; } paint(); };
+$('#p-priv').onchange = (e) => { S.priv = e.target.checked; if (S.priv) S.key = 'user'; paint(); };
+$('#p-anawins').onchange = (e) => { S.anaWins = e.target.checked; };
+
+function setState(v) {
+  clearTimeout(runTimer); clearInterval(cdTimer); closePop(); S.added = null; S.err = null; S.prompt = ''; S.ui = 'idle'; S.open = true; $('#toast').classList.remove('show');
+  if (v === 'collapsed') S.open = false;
+  S.armed = null;
+  if (v === 'typing') S.prompt = 'ten risks of moving to the cloud';
+  if (v === 'armed') S.armed = 'summarise';
+  if (v === 'armed-cluster') { S.armed = 'cluster'; S.sel = 9; S.ctx = 'sel'; }
+  if (v === 'armed-ideas') { S.armed = 'ideas'; S.prompt = 'ten risks of moving to the cloud'; }
+  if (v === 'from-menu') { S.armed = 'summarise'; S.ctx = 'board'; }
+  if (v === 'from-tray') { S.armed = 'ideas'; S.ctx = 'none'; }
+  if (v === 'from-quickbar') { S.armed = 'cluster'; S.sel = 9; S.ctx = 'sel'; }
+  if (v === 'running') { S.ui = 'running'; if (!FEATURES[S.feature]) S.feature = 'summarise'; }
+  if (v === 'preview') { S.ui = 'preview'; S.feature = 'summarise'; }
+  if (v === 'preview-group') { S.ui = 'preview'; S.feature = 'cluster'; S.sel = 9; S.ctx = 'sel'; }
+  if (v === 'added') { S.feature = 'summarise'; S.added = 'create'; }
+  if (v.startsWith('err-')) { S.feature = 'summarise'; fail(v.slice(4)); }
+  paint();
+  if (v === 'added') toast('Added 6 stickies.', 'Undo', () => { S.added = null; paint(); });
+  if (v.startsWith('from-')) setTimeout(() => prompt.focus(), 0);
+}
+
+new ResizeObserver(() => { layout(); }).observe(board);
+if (params.has('ctx') && params.get('ctx') === 'sel' && !params.has('sel')) S.sel = 3;
+paint();
+layout();
+$('#p-state').value = params.get('state') || 'idle';
+if (params.get('state')) setState(params.get('state'));
+if (S.two !== 'off') { S.other = 'preview'; S.ui = 'preview'; S.feature = 'summarise'; paint(); }
+if (S.priv) { S.key = 'user'; paint(); }
+document.fonts && document.fonts.ready.then(() => { layout(); });
+window.__mock = { S, setState, paint, otherAct };
+
+</script>
+</body>
+</html>
