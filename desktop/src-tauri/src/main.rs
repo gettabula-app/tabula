@@ -1,10 +1,20 @@
-// Tabula desktop shell (TAB-100 spike): a window around the built web app, plus the glue that hands a `.drift` file
-// the operating system asked us to open to the page. See docs/desktop.md.
+// Tabula desktop shell (TAB-100): a window around the built web app, plus the glue that hands a `.drift` file the
+// operating system asked us to open to the page, board backups and native save dialogs. See docs/desktop.md.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{collections::HashSet, path::PathBuf, sync::Mutex};
+mod backup;
 
-use tauri::{ipc::Response, AppHandle, Emitter, Manager, State, Url};
+use std::{
+  collections::HashSet,
+  path::{Path, PathBuf},
+  sync::Mutex,
+};
+
+use tauri::{
+  ipc::{InvokeBody, Request, Response},
+  AppHandle, Emitter, Manager, State, Url, WebviewWindow,
+};
+use tauri_plugin_dialog::DialogExt;
 
 /// Files the system asked us to open. `pending` is what the page has not collected yet; `granted` is every path the
 /// page may read, so the read command cannot be used on arbitrary paths.
@@ -73,6 +83,72 @@ fn read_opened_file(path: String, state: State<Shared>) -> Result<Response, Stri
   std::fs::read(&path).map(Response::new).map_err(|e| e.to_string())
 }
 
+/// `<local app data>/backups`. Local rather than roaming data: on Windows that is `%LOCALAPPDATA%\<identifier>`, next to
+/// the webview's own data, and a roaming profile would copy every board backup around at each sign-in. On macOS both are
+/// `~/Library/Application Support/<identifier>`.
+fn backups_dir(app: &AppHandle) -> Result<PathBuf, String> {
+  app.path().app_local_data_dir().map(|d| d.join("backups")).map_err(|e| e.to_string())
+}
+
+/// The value of a request header the page set, as text. Header values travel as ASCII.
+fn header<'a>(request: &'a Request, name: &str) -> Result<&'a str, String> {
+  request.headers().get(name).and_then(|v| v.to_str().ok()).ok_or_else(|| format!("missing header {name}"))
+}
+
+/// The raw bytes the page sent with `invoke(cmd, bytes, { headers })`. Raw bodies skip JSON, which matters for a board
+/// or an image of several megabytes.
+fn body<'a>(request: &'a Request) -> Result<&'a [u8], String> {
+  match request.body() {
+    InvokeBody::Raw(bytes) => Ok(bytes),
+    InvokeBody::Json(_) => Err("expected a raw body".into()),
+  }
+}
+
+/// Writes the backup copy of a board: the `.drift` bytes in the body, the board id in `x-board-id`.
+#[tauri::command]
+fn backup_board(app: AppHandle, request: Request) -> Result<(), String> {
+  backup::write_backup(&backups_dir(&app)?, header(&request, "x-board-id")?, body(&request)?)
+}
+
+/// Ids of the boards that have a backup.
+#[tauri::command]
+fn list_backups(app: AppHandle) -> Result<Vec<String>, String> {
+  backup::list_backups(&backups_dir(&app)?)
+}
+
+#[tauri::command]
+fn read_backup(app: AppHandle, id: String) -> Result<Response, String> {
+  backup::read_backup(&backups_dir(&app)?, &id).map(Response::new)
+}
+
+/// Called when the person deletes a board, so the next start does not restore it.
+#[tauri::command]
+fn delete_backup(app: AppHandle, id: String) -> Result<(), String> {
+  backup::delete_backup(&backups_dir(&app)?, &id)
+}
+
+/// The suggested name in the save dialog: the last part of what the page sent, never a folder.
+fn suggested_name(name: &str) -> String {
+  Path::new(name.trim()).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty()).unwrap_or("board").to_owned()
+}
+
+/// Shows the system Save dialog and writes the bytes in the body to the file the person picks. The page never names
+/// the path, so it cannot write anywhere the person did not choose. Returns the path, or `None` if they cancelled.
+#[tauri::command]
+async fn save_export(window: WebviewWindow, request: Request<'_>) -> Result<Option<String>, String> {
+  let name = suggested_name(header(&request, "x-file-name")?);
+  let mut dialog = window.dialog().file().set_parent(&window).set_file_name(&name);
+  if let Some(ext) = Path::new(&name).extension().and_then(|e| e.to_str()) {
+    dialog = dialog.add_filter(format!("{} file", ext.to_uppercase()), &[ext]);
+  }
+  // The blocking variant must not run on the main thread, which is where a plain command would run.
+  let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file()).await.map_err(|e| e.to_string())?;
+  let Some(picked) = picked else { return Ok(None) };
+  let path = picked.into_path().map_err(|e| e.to_string())?;
+  std::fs::write(&path, body(&request)?).map_err(|e| e.to_string())?;
+  Ok(Some(path.to_string_lossy().into_owned()))
+}
+
 fn main() {
   let app = tauri::Builder::default()
     // Registered first, as the plugin requires. A second launch (Windows and Linux open each double-clicked file in a
@@ -84,8 +160,17 @@ fn main() {
         let _ = window.set_focus();
       }
     }))
+    .plugin(tauri_plugin_dialog::init())
     .manage(Shared::default())
-    .invoke_handler(tauri::generate_handler![take_opened_files, read_opened_file])
+    .invoke_handler(tauri::generate_handler![
+      take_opened_files,
+      read_opened_file,
+      backup_board,
+      list_backups,
+      read_backup,
+      delete_backup,
+      save_export
+    ])
     .setup(|#[allow(unused_variables)] app| {
       #[cfg(any(windows, target_os = "linux"))]
       receive(app.handle(), drift_paths(std::env::args().skip(1)));
@@ -121,6 +206,14 @@ mod tests {
   fn windows_paths_are_not_urls() {
     let got = drift_paths(args(&[r"C:\Users\ann\boards\retro.drift"]));
     assert_eq!(got, vec![PathBuf::from(r"C:\Users\ann\boards\retro.drift")]);
+  }
+
+  #[test]
+  fn suggested_name_is_a_file_name_only() {
+    assert_eq!(suggested_name("retro-board.drift"), "retro-board.drift");
+    assert_eq!(suggested_name("../../etc/passwd"), "passwd");
+    assert_eq!(suggested_name("  "), "board");
+    assert_eq!(suggested_name(".."), "board");
   }
 
   #[test]
