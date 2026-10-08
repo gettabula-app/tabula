@@ -174,6 +174,7 @@ export class BoardApp {
   }
 
   setTool(t: Tool) {
+    this.cancelLongPress();
     this.tool = t;
     this.r.root.dataset.tool = t.kind;
     this.r.setOverlay({ anchorsFor: null, anchorHot: null });
@@ -958,6 +959,7 @@ export class BoardApp {
       if (e.shiftKey && e.code === 'Digit0') return this.zoomTo(1);
       if (k === 'delete' || k === 'backspace') { e.preventDefault(); this.deleteSelection(); return; }
       if (k === 'escape') {
+        this.cancelLongPress();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         this.setSelection([]);
         this.setTool({ kind: 'select' });
@@ -987,6 +989,7 @@ export class BoardApp {
         this.r.root.classList.remove('space');
       }
     }, { signal });
+    window.addEventListener('blur', () => this.cancelLongPress(), { signal });
     window.addEventListener('paste', (e) => {
       const tgt = e.target as HTMLElement;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;
