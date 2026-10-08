@@ -17,6 +17,7 @@ import { remapObjects } from './custom-templates';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex } from './palette';
+import { TOOL_KEYS } from './shortcuts';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 function loadStickyColor(): string {
@@ -1188,13 +1189,8 @@ export class BoardApp {
       }
       if (k === ']') { if (!ro) this.bringToFront(); return; }
       if (k === '[') { if (!ro) this.sendToBack(); return; }
-      const tools: Record<string, Tool> = {
-        v: { kind: 'select' }, h: { kind: 'hand' }, n: { kind: 'sticky' }, s: { kind: 'sticky' }, t: { kind: 'text' },
-        r: { kind: 'shape', shape: 'rect' }, o: { kind: 'shape', shape: 'ellipse' }, d: { kind: 'shape', shape: 'diamond' },
-        l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' },
-      };
       // commenters have a read-only board but may still use the comment tool; setTool checks the comments document
-      if (tools[k] && (!ro || k === 'v' || k === 'h' || k === 'c')) this.setTool(tools[k]);
+      if (TOOL_KEYS[k] && (!ro || k === 'v' || k === 'h' || k === 'c')) this.setTool(TOOL_KEYS[k]);
     }, { signal });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {
