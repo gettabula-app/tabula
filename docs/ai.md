@@ -2,7 +2,7 @@
 
 AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: each plan includes credits, and more can be bought.
 
-Status: spec for review (TAB-96). Nothing is built. Recommended answers to the open questions in TAB-99 are at the end.
+Status: **slice A of phase 1 is built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints, and their admin and account screens.** `POST /api/ai/run`, the features, the board entry points and everything in phase 2 are not built yet. "Slice A: what is built" below lists where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
 
 ## Summary
 
@@ -94,7 +94,7 @@ Resolution for a run in accounts mode: the person's own key if they set one and 
 - **Never returned.** `GET` endpoints return `{ provider, hint, createdAt, lastUsedAt }`. There is no endpoint that reveals a key, to anyone.
 - **Never synced, never logged.** Keys are not in any Yjs document, `.drift` file or export. The request and error loggers redact `authorization`, `x-api-key` and the `apiKey` body field; a test asserts that a known key never appears in logs, audit rows or responses.
 - **Verified on save** with a cheap call (`models.list()` for Anthropic). A key that fails is not stored (`ai_key_invalid`).
-- **Rotation.** `TABULA_AI_SECRET_PREVIOUS` decrypts rows written under the old secret, which are re-encrypted on next use; `key_version` says which secret wrote a row.
+- **Rotation.** `TABULA_AI_SECRET_PREVIOUS` decrypts rows written under the old secret, which are re-encrypted on next use; `key_version` says which secret wrote a row. The steps are in "Rotating TABULA_AI_SECRET" below.
 - Deleting a person removes their key (foreign key cascade). Deleting the workspace key is immediate; runs in flight finish.
 
 ### Endpoints
@@ -109,6 +109,17 @@ POST   /api/ai/run       { feature, boardId, input }      -> text/event-stream
 ```
 
 All follow the existing API rules (JSON, CSRF header on writes, audit rows). In open mode only `GET /api/ai/config` and `POST /api/ai/run` exist.
+
+### Rotating TABULA_AI_SECRET
+
+`TABULA_AI_SECRET` is 32 random bytes as standard base64 (44 characters, for example `openssl rand -base64 32`). To replace it without asking anyone to enter their key again:
+
+1. Generate the new secret.
+2. Set `TABULA_AI_SECRET_PREVIOUS` to the **old** value and `TABULA_AI_SECRET` to the **new** one, then restart the relay. It refuses to start if either is malformed, or if the previous one is set without the current one.
+3. Keys written under the old secret keep working. Each is sealed again under the new secret the next time it is used for a run, so a key nobody uses stays under the old secret.
+4. Once every key has been used (or entered again), remove `TABULA_AI_SECRET_PREVIOUS` and restart. Admin, AI shows a workspace key the current secrets cannot open as unreadable; a person whose key cannot be opened gets `ai_key_unreadable` on a run and enters it again.
+
+Changing the secret without keeping the old one as `TABULA_AI_SECRET_PREVIOUS` makes every stored key unreadable. Nothing is lost that the provider's console cannot reissue: enter the keys again. Removing the secret altogether turns saving keys off (`ai_unconfigured`); the stored rows stay in the directory and open again when the secret comes back.
 
 ## Running a feature
 
@@ -157,7 +168,7 @@ Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of 
 
 ## Privacy and admin controls
 
-- **Off until an admin turns it on**, per workspace, with a notice that board content is sent to the chosen provider and processed under that provider's API terms. In open mode it is on when `TABULA_AI_API_KEY` is set.
+- **Off until an admin turns it on**, per workspace, with a notice that board content is sent to the chosen provider and processed under that provider's API terms. In open mode it is on only when `TABULA_AI_API_KEY` is set **and** `TABULA_AI_OPEN=1`: a key alone never turns it on.
 - Admin settings (a new **AI** tab in the admin dashboard): on or off; which features; the model; whether people may use personal keys; the workspace key; the rate limits; and in phase 2 the credit balance and usage.
 - **What leaves the instance:** only the content of the run (the board or part of it, minus private notes, plus the prompt). No emails, member names (sticky authors are not sent), comments or other boards.
 - **What is kept:** the audit row and the usage row (counts and tokens). Prompts and outputs are not stored on the server. The applied stickies are ordinary board content.
@@ -195,6 +206,32 @@ The control plane already owns Stripe for seats. It adds an AI allowance to each
 - Run: the check order (signed out, AI off, viewer, commenter, read-only workspace, no key, rate limit), private notes never sent, fencing applied, content caps, invalid proposals refused, one audit row without text.
 - App: proposal preview, Add as one undo entry, Discard writes nothing, read-only roles see no entry points.
 - Phase 2: credit arithmetic from usage, allowance and packs, refusal at zero, BYOK unaffected by the balance; the control plane call with a fake gateway.
+
+## Slice A: what is built
+
+This is the first slice of phase 1 (TAB-97). The text above is the design; these are the points where the code adds to it or chose between options.
+
+**Environment.** `TABULA_AI_API_KEY`, `TABULA_AI_OPEN` (open mode), `TABULA_AI_SECRET`, `TABULA_AI_SECRET_PREVIOUS`, `TABULA_AI_PROVIDER` (only `anthropic`) and `TABULA_AI_MODEL` (default `claude-opus-5-5`); the old `MIRA_` spellings still work. In accounts mode `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored with a warning, because the workspace key lives in the directory. The config keeps the secrets out of anything that prints or serialises it.
+
+> **Open mode and cost.** With `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1`, anyone who has a board link can run the AI features and spend the operator's key, because open mode has no accounts. Use it for a private instance or behind something that decides who may reach it, and set a spending limit in the provider's console.
+
+**Keys.** The key version is one byte, the first byte of an HMAC of the secret, so nobody numbers secrets. It is stored in `key_version` and is also the first byte of the `ciphertext` blob. The AES-256-GCM key is derived from the secret with HKDF, the nonce is 96 random bits per row, and the associated data is the version, the scope and the user. A unique index per scope (and per user) allows one workspace row and one row per person, and a check ties `scope` to `user_id`. A custom `baseUrl` is refused in v1 (`400`); the provider layer only accepts an `https://` one, for the later OpenAI-compatible adapter.
+
+**Settings** are rows of the `settings` table: `ai.enabled`, `ai.features`, `ai.model`, `ai.personalKeys`, `ai.membersOnly` (default off: guests may use AI), `ai.limits.perPersonHour` (20, at most 1000) and `ai.limits.perWorkspaceHour` (200, at most 10000). The limits are stored and edited here; `run.mjs` will enforce them.
+
+**Endpoints** beyond the list above:
+
+- `GET /api/ai/config` also returns `personalKeys` (whether this person may add a key), `hasSecret` (whether the server can store keys) and `myKey` (`{ provider, hint, createdAt, lastUsedAt }` or null). `enabled` and `personalKeys` are false for a guest when `membersOnly` is on. In open mode `keySource` is `workspace` for the operator's key.
+- `GET /api/admin/ai` returns the settings, `hasSecret` and the workspace key as `{ provider, hint, createdAt, lastUsedAt, readable }`; `PUT /api/admin/ai` answers the same. `readable` is false for a key the current secrets cannot open.
+- `GET /api/me` carries `ai: { personalKeys: true }` only when this person may add a key, so the account menu can offer **Your AI key** without another request.
+- A key is verified with the provider (a `models.list` call with a 5 second timeout) before anything is stored. In `PUT /api/admin/ai` the settings and the key are one change: if the key is refused, the settings in that request are not applied either. The caller is checked again after the provider answers.
+- Errors: `ai_key_invalid` 400, `ai_rate_limited` 429 with `retry-after`, `ai_unavailable` 502, `ai_unconfigured` 409 (no secret on the server), `ai_key_unreadable` 409 (a stored key the secrets cannot open), anything else `internal` 500. Their messages are fixed text.
+- `DELETE /api/ai/keys/me` and `DELETE /api/admin/ai/key` answer 204 whether or not there was a key, and work while the workspace is read-only. A person can remove their key even after personal keys were switched off.
+- Audit rows: `ai.settings` (the changed settings only), `ai.key.set` and `ai.key.delete` (`{ scope, provider }` and `{ scope }`; never a key or its hint). The audit log has an AI filter.
+
+**Logging.** A raw provider error can carry the request headers, so every provider error is mapped to an `AiError` with a fixed message before it leaves `server/ai/anthropic.mjs`. The API's and the relay's error logs write an AI or provider error as its name, code and status only, and any other error as its stack with anything shaped like a key blanked.
+
+**Provider.** `messages.stream(...)` and `finalMessage()`; the system prompt first with `cache_control`; `output_config` with the JSON schema and the effort; `stop_reason: "refusal"` checked first. Server-side fallbacks (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) are set for Claude Opus 5.5 and Claude Sonnet 5.5 only, in one function (`openStream` in `server/ai/anthropic.mjs`), because the field exists only on the SDK's beta client. Claude Haiku 5.5 has no fallback and uses the plain client. The SDK is pinned at exactly 0.128.0 and loaded on first use.
 
 ## Not in this slice
 

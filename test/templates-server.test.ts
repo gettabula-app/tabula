@@ -392,13 +392,13 @@ describe('templates in the directory', () => {
     old.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ana', 'member', 0, 1)").run();
     old.close();
     const d = openDirectory(file);
-    expect(MIGRATIONS).toHaveLength(6);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(6);
     expect(d.getUser('u1')?.email).toBe('a@example.com');
     const id = make(d, 'u1', 'personal');
     expect(d.listTemplatesFor({ id: 'u1', role: 'member' }).map((t: { id: string }) => t.id)).toEqual([id]);
     d.close();
     const raw = new DatabaseSync(file);
-    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.length });
     raw.close();
   });
 

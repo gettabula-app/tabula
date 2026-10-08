@@ -116,6 +116,23 @@ Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted o
 | `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep one backup per hour for this long (`0`: none) |
 | `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep one backup per day for this long (`0`: none) |
 
+### AI features (bring your own key)
+
+AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic is the only provider for now. This release has the settings and the keys; the features themselves follow (see [docs/ai.md](docs/ai.md)).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_AI_SECRET` | none | Accounts mode: 32 random bytes as base64 (`openssl rand -base64 32`) that encrypts stored API keys. Without it keys cannot be saved. The relay refuses to start if it is set but malformed |
+| `TABULA_AI_SECRET_PREVIOUS` | none | The secret you are rotating away from, so keys written under it still open and are sealed again under the new one on next use. See "Rotating TABULA_AI_SECRET" in [docs/ai.md](docs/ai.md) |
+| `TABULA_AI_API_KEY` | none | Open mode: the operator's provider key |
+| `TABULA_AI_OPEN` | unset | Open mode: `1` lets the AI features use `TABULA_AI_API_KEY`. A key alone never turns AI on |
+| `TABULA_AI_PROVIDER` | `anthropic` | The provider (only `anthropic`) |
+| `TABULA_AI_MODEL` | `claude-opus-5-5` | The default model: `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5` |
+
+In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
+
+**Open mode warning:** with `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` set, anyone who has a board link spends your key, because open mode has no accounts. Only do this on a private instance, and set a spending limit with the provider.
+
 ## Screenshots
 
 | Shapes panel | Quick actions |

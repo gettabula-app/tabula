@@ -1,6 +1,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withLegacyEnv } from './env.mjs';
+import { DEFAULT_MODEL, MODELS } from './ai/anthropic.mjs';
+import { PROVIDERS } from './ai/providers.mjs';
+import { parseSecret } from './ai/keys.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -42,6 +45,44 @@ function loadMcp(env, authEnabled, url) {
   }
   if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
   return { mode: 'open', token, scope: scope || 'read', ignored: [] };
+}
+
+// AI features (docs/ai.md). The secrets are not enumerable, so printing or serialising the config never shows them.
+// Open mode has no accounts to own a key, so it needs both the operator's key and the explicit TABULA_AI_OPEN=1: a key
+// alone never turns AI on, because anyone with a board link would then spend it.
+const AI_KEY_RE = /^\S{8,512}$/;
+
+function hide(object, names) {
+  for (const name of names) Object.defineProperty(object, name, { value: object[name], enumerable: false, writable: true, configurable: true });
+  return object;
+}
+
+function loadAi(env, authEnabled, warn) {
+  const provider = (env.TABULA_AI_PROVIDER || '').trim() || 'anthropic';
+  if (!PROVIDERS.includes(provider)) throw new Error(`TABULA_AI_PROVIDER must be one of ${PROVIDERS.join(', ')} (got "${provider.slice(0, 20)}")`);
+  const model = (env.TABULA_AI_MODEL || '').trim() || DEFAULT_MODEL;
+  if (!MODELS.includes(model)) throw new Error(`TABULA_AI_MODEL must be one of ${MODELS.join(', ')} (got "${model.slice(0, 40)}")`);
+
+  const secret = parseSecret(env.TABULA_AI_SECRET, 'TABULA_AI_SECRET');
+  const previous = parseSecret(env.TABULA_AI_SECRET_PREVIOUS, 'TABULA_AI_SECRET_PREVIOUS');
+  if (previous && !secret) throw new Error('TABULA_AI_SECRET_PREVIOUS needs TABULA_AI_SECRET too');
+
+  const apiKey = (env.TABULA_AI_API_KEY || '').trim();
+  if (apiKey && !AI_KEY_RE.test(apiKey)) throw new Error('TABULA_AI_API_KEY must be 8 to 512 characters without spaces');
+  const flag = (env.TABULA_AI_OPEN || '').trim();
+  if (flag !== '' && flag !== '0' && flag !== '1') throw new Error('TABULA_AI_OPEN must be 1 or 0');
+
+  let open = null;
+  if (authEnabled) {
+    if (apiKey || flag === '1') warn('TABULA_AI_API_KEY and TABULA_AI_OPEN are ignored in accounts mode: the workspace key is set in the admin dashboard');
+  } else if (apiKey && flag === '1') {
+    open = hide({ apiKey }, ['apiKey']);
+  } else if (apiKey) {
+    warn('AI is off: TABULA_AI_API_KEY is set but TABULA_AI_OPEN is not 1. Anyone with a board link would spend this key, so it is not used until you set TABULA_AI_OPEN=1');
+  } else if (flag === '1') {
+    warn('TABULA_AI_OPEN=1 does nothing without TABULA_AI_API_KEY');
+  }
+  return hide({ provider, model, secret, previous, open }, ['secret', 'previous', 'open']);
 }
 
 // Hosted workspaces (docs/cloud.md). All three variables or none; the result is null unless accounts mode is on too.
@@ -119,6 +160,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
 
   const cloud = loadCloud(env, authEnabled);
   const mcp = loadMcp(env, authEnabled, url);
+  const ai = loadAi(env, authEnabled, warn);
 
   return {
     authEnabled,
@@ -133,6 +175,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     dataDir,
     port,
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
+    ai,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),
   };

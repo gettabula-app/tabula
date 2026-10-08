@@ -27,6 +27,7 @@ import { SHORTCUTS } from '../shortcuts';
 import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
+import { openAiKeyDialog } from './ai';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
@@ -436,6 +437,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       ? item('user', 'Admin', () => { location.hash = '#/admin'; })
       : null,
     auth.me.mcp ? item('link', 'AI tool access', () => openTokensDialog(auth.me)) : null,
+    auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));

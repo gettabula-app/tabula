@@ -1,6 +1,6 @@
 import type { AuthState } from './auth';
 
-export const ADMIN_TABS = ['overview', 'members', 'teams', 'boards', 'sessions', 'tokens', 'audit'] as const;
+export const ADMIN_TABS = ['overview', 'members', 'teams', 'boards', 'sessions', 'tokens', 'ai', 'audit'] as const;
 export type AdminTab = (typeof ADMIN_TABS)[number];
 
 export type Route =

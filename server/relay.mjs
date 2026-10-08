@@ -30,6 +30,8 @@ import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { saveDelay } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
+import { scrubText } from './ai/errors.mjs';
+import { openAiConfig } from './ai/routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -562,6 +564,8 @@ async function onRequest(req, res) {
         if (!(await api.handle(req, res))) sendJson(res, 404, { error: 'not_found' });
       } else if (url.pathname === '/api/config') {
         sendJson(res, 200, { authEnabled: false });
+      } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
+        sendJson(res, 200, openAiConfig(config));
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
@@ -571,7 +575,7 @@ async function onRequest(req, res) {
       serveStatic(req, res, url);
     }
   } catch (err) {
-    log('request failed', req.method, err?.message);
+    log('request failed', req.method, scrubText(err?.message));
     if (res.headersSent) res.end();
     else if (err instanceof URIError || err instanceof TypeError) res.writeHead(400).end();
     else res.writeHead(500).end();

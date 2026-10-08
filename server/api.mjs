@@ -11,6 +11,8 @@ import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
 import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from './tokens.mjs';
+import { describeError } from './ai/errors.mjs';
+import { createAiRoutes } from './ai/routes.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -128,7 +130,8 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), mailer = createMailer(config) }) {
+// `ai` can replace the provider factory (docs/ai.md); the tests do, so no request leaves the machine.
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), mailer = createMailer(config), ai = {} }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -287,6 +290,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
+  const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, conflict }, ...ai });
+
   // ------------------------------------------------------------ handlers
 
   const routes = [
@@ -299,6 +304,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
         ...(cloud ? { workspace: cloud.workspaceView() } : {}),
         ...(config.mcp ? { mcp: true } : {}),
+        ...aiApi.meFlag(user),
       },
     ]),
     compile('PATCH', 'me', { body: true }, ({ user, body }) => {
@@ -858,6 +864,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ]
       : []),
 
+    // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
+
+    ...aiApi.routes,
+
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 
     ...(cloud
@@ -1005,7 +1015,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (err.status === 413) res.setHeader('connection', 'close');
         send(res, err.status, { error: err.code, message: err.message });
       } else {
-        console.error('api: unexpected error:', err);
+        console.error('api: unexpected error:', describeError(err));
         send(res, 500, { error: 'internal', message: 'Something went wrong' });
       }
     }
