@@ -2,6 +2,7 @@
 // the client only mirrors it. Handlers are synchronous after the body is read, so each
 // check-then-act sequence runs without interleaving with another request.
 
+import fs from 'node:fs';
 import { BOARD_ID_RE } from './directory.mjs';
 
 const MAX_BODY = 64 * 1024;
@@ -13,6 +14,17 @@ const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
 const CONTROL_RE = /\p{Cc}/u;
+const AUDIT_DEFAULT_LIMIT = 50;
+const AUDIT_MAX_LIMIT = 200;
+const AUDIT_MAX_ACTION = 100;
+
+const VERSION = (() => {
+  try {
+    return String(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? 'unknown');
+  } catch {
+    return 'unknown';
+  }
+})();
 
 class HttpError extends Error {
   constructor(status, code, message) {
@@ -104,7 +116,7 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }) }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -174,6 +186,11 @@ export function createApi({ directory, auth, config, roomExists, events }) {
   const canSee = (visible, type, id) => visible === null || (type === 'team' ? visible.teams : visible.users).has(id);
 
   const hasOtherActiveOwner = (userId) => directory.listUsers().some((u) => u.id !== userId && u.role === 'owner' && !u.disabled);
+
+  // Acting on an owner is for owners, the same rule as PATCH and DELETE /api/members/:id.
+  const guardOwner = (user, target, action) => {
+    if (target.role === 'owner' && user.role !== 'owner') throw forbidden(`Only an owner can ${action} an owner`);
+  };
 
   const memberView = (u) => ({
     id: u.id,
@@ -481,6 +498,103 @@ export function createApi({ directory, auth, config, roomExists, events }) {
       emit('user-removed', { userId: target.id });
       return [204];
     }),
+
+    // ---------------------------------------------------------- admin console (docs/admin.md)
+
+    compile('GET', 'admin/overview', {}, ({ user }) => {
+      requireAdmin(user);
+      const live = liveStats();
+      return [
+        200,
+        {
+          ...directory.adminStats(),
+          live: { rooms: live.rooms, connections: live.connections },
+          instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: VERSION },
+        },
+      ];
+    }),
+
+    compile('GET', 'admin/members', {}, ({ user }) => {
+      requireAdmin(user);
+      return [
+        200,
+        directory.listMembersAdmin().map((u) => ({
+          ...memberView(u),
+          createdAt: u.createdAt,
+          lastSeenAt: u.lastSeenAt,
+          activeSessions: u.activeSessions,
+          boardCount: u.boardCount,
+        })),
+      ];
+    }),
+    compile('POST', 'admin/members/:id/revoke-sessions', {}, ({ res, user, params }) => {
+      requireAdmin(user);
+      const target = directory.getUser(params.id);
+      if (!target) throw notFound('Member not found');
+      guardOwner(user, target, 'sign out');
+      directory.transaction(() => {
+        const count = directory.revokeUserSessions(target.id);
+        audit(user, 'admin.sessions.revoke', { userId: target.id, count });
+      });
+      if (target.id === user.id) res.setHeader('set-cookie', auth.clearCookie());
+      emit('session-revoked', { userId: target.id });
+      return [204];
+    }),
+
+    compile('GET', 'admin/sessions', {}, ({ user, sessionId }) => {
+      requireAdmin(user);
+      return [200, directory.listActiveSessions().map((s) => ({ ...s, current: s.id === sessionId }))];
+    }),
+    compile('DELETE', 'admin/sessions/:id', {}, ({ res, user, params, sessionId }) => {
+      requireAdmin(user);
+      const session = directory.getActiveSession(params.id);
+      const target = session ? directory.getUser(session.userId) : null;
+      if (!session || !target) throw notFound('Session not found');
+      guardOwner(user, target, 'sign out');
+      directory.transaction(() => {
+        directory.revokeSession(session.id);
+        audit(user, 'admin.session.revoke', { sessionId: session.id, userId: target.id });
+      });
+      if (session.id === sessionId) res.setHeader('set-cookie', auth.clearCookie());
+      emit('session-revoked', { userId: target.id, sessionId: session.id });
+      return [204];
+    }),
+
+    compile('GET', 'admin/boards', {}, ({ user, query }) => {
+      requireAdmin(user);
+      const deleted = query.get('deleted');
+      return [200, directory.listBoardsAdmin({ includeDeleted: deleted === '1' || deleted === 'true' })];
+    }),
+    compile('POST', 'admin/boards/:id/restore', {}, ({ user, params }) => {
+      requireAdmin(user);
+      const board = directory.getBoardAdmin(params.id);
+      if (!board) throw notFound('Board not found');
+      if (board.deletedAt == null) throw conflict('not_deleted', 'This board is not deleted');
+      const restored = directory.transaction(() => {
+        directory.restoreBoard(board.id);
+        audit(user, 'board.restore', { boardId: board.id });
+        return directory.getBoardAdmin(board.id);
+      });
+      return [200, { ...restored, role: directory.boardRole(board.id, user.id) }];
+    }),
+
+    compile('GET', 'admin/audit', {}, ({ user, query }) => {
+      requireAdmin(user);
+      const rawLimit = query.get('limit');
+      const limit = rawLimit === null || rawLimit.trim() === '' ? Number.NaN : Math.trunc(Number(rawLimit));
+      const rawBefore = query.get('before');
+      if (rawBefore !== null && rawBefore !== '' && !/^\d{1,15}$/.test(rawBefore)) throw badRequest('before must be an entry id');
+      const action = query.get('action') ?? '';
+      if (action.length > AUDIT_MAX_ACTION) throw badRequest(`action must be at most ${AUDIT_MAX_ACTION} characters`);
+      return [
+        200,
+        directory.listAuditPage({
+          limit: Number.isNaN(limit) ? AUDIT_DEFAULT_LIMIT : Math.min(Math.max(limit, 1), AUDIT_MAX_LIMIT),
+          before: rawBefore ? Number(rawBefore) : null,
+          action,
+        }),
+      ];
+    }),
   ];
 
   // ------------------------------------------------------------ dispatch
@@ -514,7 +628,7 @@ export function createApi({ directory, auth, config, roomExists, events }) {
     return { route, params };
   }
 
-  async function dispatch(req, res, pathname) {
+  async function dispatch(req, res, pathname, query) {
     let segments;
     try {
       segments = pathname.split('/').slice(2).map(decodeURIComponent);
@@ -542,6 +656,7 @@ export function createApi({ directory, auth, config, roomExists, events }) {
       req,
       res,
       params,
+      query,
       body,
       user: session?.user,
       sessionId: session?.sessionId,
@@ -551,8 +666,11 @@ export function createApi({ directory, auth, config, roomExists, events }) {
 
   async function handle(req, res) {
     let pathname;
+    let query;
     try {
-      pathname = new URL(req.url, 'http://x').pathname;
+      const url = new URL(req.url, 'http://x');
+      pathname = url.pathname;
+      query = url.searchParams;
     } catch {
       return false;
     }
@@ -561,7 +679,7 @@ export function createApi({ directory, auth, config, roomExists, events }) {
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
     try {
-      await dispatch(req, res, pathname);
+      await dispatch(req, res, pathname, query);
     } catch (err) {
       if (res.headersSent) {
         res.end();
