@@ -20,7 +20,7 @@ Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 
 ## Calls from the control plane
 
-Both endpoints sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-tabula` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
+The endpoints below sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-tabula` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
 
 ```
 GET /api/internal/usage
@@ -39,12 +39,27 @@ PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banne
 - The limits are stored in the `settings` table (`cloud.limits`, one JSON value; migration 3) and survive restarts. Each change writes an audit row `cloud.limits` with no actor (the dashboard shows "System") and tells the relay, which applies it to open sockets at once.
 - This endpoint stays reachable while the workspace is read-only (it is how the lock is lifted).
 
+```
+POST /api/internal/notify  { template: 'trial-ending', date: string }
+  -> { sent }                          (owners mailed)
+  -> { sent: 0, duplicate: true }      (this date was notified before; nothing is sent)
+```
+
+Asks the instance to mail the workspace owners: every account with the role `owner` that is not disabled, and nobody else. It is how the control plane warns of a trial that is about to turn into a paid subscription.
+
+- The body is strict, like the limits: unknown fields are `400`, and so is any `template` but `trial-ending` (an allowlist, so more notices can be added later). `date` is written as `7 Nov 2026` (day, three letter month, year; nothing else, so it is safe in a subject line). An empty body is `400` too.
+- Each owner gets one mail through the instance's own mailer (see `TABULA_MAIL` in the README) with `template: 'trial-ending'`, `params: { link, date }` (`link` is the workspace address, `<TABULA_BASE_URL>/`) and the subject `Your Tabula trial ends on <date>`. The `text` says that the free trial of the workspace ends on that date, that the subscription then starts automatically with the card on file, and that the owner can review or cancel it under Admin, Overview, Manage billing, followed by the link on a line of its own. With a mail relay in webhook mode the relay renders its own wording from `template` and `params`; the text is what the `log`, `file` and `smtp` modes send.
+- The mails are sent together and awaited. `200 {sent}` counts the owners mailed, so one owner whose mail failed does not fail the call. When every mail failed the answer is `502 {error: 'bad_gateway'}` so the control plane retries; the log says how many failed, never to whom. No owner to mail is `200 {sent: 0}`.
+- **A repeat is not mailed again.** After a call that mailed at least one owner, the instance keeps the date in the `settings` table (`cloud.trialEndingNotified`). The same date again answers `200 {sent: 0, duplicate: true}` and sends nothing, also when it arrives while the first call is still sending, so a retried job never mails twice. Only the last date is kept: another date mails again. Nothing is kept after `502` or when there was no owner, so those calls can be retried.
+- A call that mailed someone writes an audit row `cloud.notify` with no actor (the dashboard shows "System") and `{template, count}`. Addresses are never stored there.
+- Like the limits, this endpoint stays reachable while the workspace is read-only.
+
 ## Read-only
 
 While `readOnly` is true:
 
 - **Relay**: every connection is read-only for the board room and the comments room, whatever the person's role. Sockets that are already open are re-evaluated the moment the limits change, in both directions, and told about it (see below). Document updates are dropped, state requests and awareness (cursors) still work.
-- **API**: every mutating route answers `402 {error: 'read_only', message}`. Not blocked: all `GET`s, `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `POST /api/auth/logout-all`, `PUT /api/internal/limits` and `POST /api/billing/portal` (the owner has to reach billing to put things right). Signed-out writers still get `401` first.
+- **API**: every mutating route answers `402 {error: 'read_only', message}`. Not blocked: all `GET`s, `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `POST /api/auth/logout-all`, `PUT /api/internal/limits`, `POST /api/internal/notify` and `POST /api/billing/portal` (the owner has to reach billing to put things right). Signed-out writers still get `401` first.
 - **App**: boards open read-only (the same switch as for viewers) with a **Workspace is read-only** badge instead of **View only**; the banner shows as described below. An open board switches within a request round trip of the change, and reconnects when the workspace is writable again.
 
 ### Telling open boards at once
@@ -98,4 +113,4 @@ Sent 30 seconds after the last change to the people in the workspace (an account
 
 ## Tests
 
-`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal and the usage reports in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints, the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules, including the coalescing of hints and the unlock watcher, and `test/workspace-hint.test.ts` runs a board's chain from hint to refresh to reconnect with fake providers. The hint on the wire, who gets it, that clients cannot send it and that a reconnect sends what was typed during the lock are in `test/cloud-relay.test.ts`.
+`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal, the usage reports and the trial-ending notice (owners only, the duplicate guard, partial and total mail failure) in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints (including the trial-ending notice through the real mail setting), the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules, including the coalescing of hints and the unlock watcher, and `test/workspace-hint.test.ts` runs a board's chain from hint to refresh to reconnect with fake providers. The hint on the wire, who gets it, that clients cannot send it and that a reconnect sends what was typed during the lock are in `test/cloud-relay.test.ts`.

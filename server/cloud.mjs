@@ -14,6 +14,22 @@ const SEAT_ROLES = ['owner', 'admin', 'member'];
 const LIMIT_FIELDS = ['seatLimit', 'readOnly', 'banner'];
 const NOT_SINGLE_LINE_RE = /[\p{Cc}\u2028\u2029]/u;
 const BEARER_RE = /^bearer +(\S+)$/i;
+const NOTIFY_FIELDS = ['template', 'date'];
+const NOTIFY_DATE_MAX = 40;
+const NOTIFY_DATE_RE = /^\d{1,2} [A-Z][a-z]{2} \d{4}$/;
+const ADDRESS_RE = /\S+@\S+/g;
+
+// What the control plane may ask the instance to mail the owners. `setting` remembers the last date notified, so a
+// retried job never mails twice. `text` is for the log, file and smtp mail modes; a hosted relay renders its own
+// wording from the template name and params.
+const NOTIFY_TEMPLATES = {
+  'trial-ending': {
+    setting: 'cloud.trialEndingNotified',
+    subject: (date) => `Your Tabula trial ends on ${date}`,
+    text: (date, link) =>
+      `The free trial of this Tabula workspace ends on ${date}.\n\nThe subscription then starts automatically with the card on file. The workspace owner can review or cancel it under Admin, Overview, Manage billing:\n\n${link}\n`,
+  },
+};
 
 const DEFAULT_LIMITS = Object.freeze({ seatLimit: null, readOnly: false, banner: null });
 
@@ -60,6 +76,22 @@ export function validateLimits(body) {
   const checked = checkLimits(body);
   if (checked.patch && Object.keys(checked.patch).length === 0) return { error: 'Nothing to change' };
   return checked;
+}
+
+/** Strict check of a POST /api/internal/notify body: `{ notice: { template, date } }` or `{ error }`. */
+export function validateNotify(body) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return { error: 'The request body must be a JSON object' };
+  for (const key of Object.keys(body)) {
+    if (!NOTIFY_FIELDS.includes(key)) return { error: `Unknown field: ${key.slice(0, 40)}` };
+  }
+  const { template, date } = body;
+  if (typeof template !== 'string' || !Object.hasOwn(NOTIFY_TEMPLATES, template)) {
+    return { error: `template must be one of ${Object.keys(NOTIFY_TEMPLATES).join(', ')}` };
+  }
+  if (typeof date !== 'string' || date.length > NOTIFY_DATE_MAX || !NOTIFY_DATE_RE.test(date)) {
+    return { error: 'date must look like "7 Nov 2026"' };
+  }
+  return { notice: { template, date } };
 }
 
 const usesSeat = (user) => SEAT_ROLES.includes(user.role) && !user.disabled;
@@ -183,6 +215,46 @@ export function createCloud({
     return url;
   }
 
+  const notifying = new Set();
+
+  /**
+   * Mails every enabled owner (docs/cloud.md). `mailer` and `baseUrl` come from the caller. Answers `{ sent }`, or
+   * `{ sent: 0, duplicate: true }` when this date was notified before (or is being notified right now); throws a
+   * CloudError when every mail failed, so the control plane retries. Addresses never reach the log or the audit row.
+   */
+  async function notify({ template, date }, { mailer, baseUrl }) {
+    const { setting, subject, text } = NOTIFY_TEMPLATES[template];
+    const pending = `${template} ${date}`;
+    if (directory.getSetting(setting) === date || notifying.has(pending)) return { sent: 0, duplicate: true };
+    const owners = directory.listOwnerEmails();
+    if (owners.length === 0) return { sent: 0 };
+
+    notifying.add(pending);
+    try {
+      const link = `${baseUrl}/`;
+      // The async wrapper turns a mailer that throws at once into a rejection like any other failure.
+      const results = await Promise.allSettled(
+        owners.map(async (to) =>
+          mailer.send({ to, template, params: { link, date }, subject: subject(date), text: text(date, link) }),
+        ),
+      );
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length > 0) {
+        const reason = describe(failures[0].reason).replace(ADDRESS_RE, '<address>');
+        log(`cloud: ${failures.length} of ${owners.length} ${template} mails could not be sent: ${reason}`);
+      }
+      const sent = owners.length - failures.length;
+      if (sent === 0) throw new CloudError('The mails could not be sent right now. Try again in a minute.');
+      directory.transaction(() => {
+        directory.setSetting(setting, date);
+        directory.audit(null, 'cloud.notify', { template, count: sent });
+      });
+      return { sent };
+    } finally {
+      notifying.delete(pending);
+    }
+  }
+
   let usageTimer = null;
   let pushed = null;
 
@@ -218,6 +290,7 @@ export function createCloud({
     seatsAvailable,
     workspaceView,
     portalUrl,
+    notify,
     scheduleUsagePush,
     close() {
       if (usageTimer !== null) clearTimer(usageTimer);
