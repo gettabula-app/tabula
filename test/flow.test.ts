@@ -122,3 +122,46 @@ describe('sticky colours', () => {
     expect(svg).toContain('url(#sticky-curl-shadow)');
   });
 });
+
+describe('markdown summary and hidden content', () => {
+  const frame = { id: 'f', type: 'frame', x: 0, y: 0, w: 800, h: 600, rotation: 0, z: 'a0', name: 'Ideas' } as BaseObj;
+  const inFrame = (id: string, extra: Partial<BaseObj> = {}): BaseObj => ({ ...note(id), x: 10, y: 10, parent: 'f', ...extra }) as BaseObj;
+
+  it('leaves out private notes by other people until the reveal', () => {
+    const doc = new Y.Doc();
+    const A = fakeApp(doc, 'ana');
+    const B = fakeApp(doc, 'ben');
+    A.store.transact(() => {
+      A.store.create(frame);
+      A.store.create(inFrame('mine', { text: 'ana secret', privateStep: 's', createdBy: 'ana' } as never));
+      A.store.create(inFrame('open', { text: 'visible' }));
+    });
+    const forBen = B.flow.summaryMarkdown();
+    expect(forBen).toContain('visible');
+    expect(forBen).not.toContain('ana secret');
+    expect(A.flow.summaryMarkdown()).toContain('ana secret'); // the author still sees their own
+    B.flow.reveal();
+    expect(B.flow.summaryMarkdown()).toContain('ana secret');
+  });
+
+  it('shows vote totals of a running vote only after the reveal', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => { store.create(frame); store.create(inFrame('a', { text: 'alpha' })); });
+    flow.quickVote(UNLIMITED);
+    flow.handleClick(store.get('a')!, false);
+    flow.handleClick(store.get('a')!, false);
+    expect(flow.summaryMarkdown()).toContain('- alpha');
+    expect(flow.summaryMarkdown()).not.toContain('vote');
+    flow.reveal();
+    expect(flow.summaryMarkdown()).toContain('- alpha (2 votes)');
+  });
+
+  it('keeps totals of a finished vote', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => { store.create(frame); store.create(inFrame('a', { text: 'alpha' })); });
+    flow.quickVote(UNLIMITED);
+    flow.handleClick(store.get('a')!, false);
+    flow.end();
+    expect(flow.summaryMarkdown()).toContain('- alpha (1 vote)');
+  });
+});
