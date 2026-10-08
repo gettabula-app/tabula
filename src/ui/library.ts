@@ -229,7 +229,7 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
   const input = h('input', { type: 'search', class: 'input', placeholder: 'Search icons', 'aria-label': 'Search icons' });
   const setSel = h('select', { class: 'input', 'aria-label': 'Icon set' }, h('option', { value: '' }, 'All icon sets'));
   const onlineBtn = h('button', {
-    class: 'btn wide', title: 'Sets Tabula does not host. Searching them sends your query to Iconify.',
+    class: 'btn wide', 'data-tip': 'Sets Tabula does not host. Searching them sends your query to Iconify.',
     onclick: () => void loadOnline(),
   }, 'Online sets');
   const onlineMsg = h('p', { class: 'muted small' });
