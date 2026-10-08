@@ -68,7 +68,7 @@
 }
 .history-link:hover:not(:disabled) { color: var(--tray-text); }
 .history-link:disabled { opacity: 0.6; }
-.history-link.armed { color: var(--danger); }
+.history-link.armed { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 
 .history-state { margin: 0; padding: 16px; color: var(--tray-muted); line-height: 1.5; }
 .history-state p { margin: 0 0 8px; }
