@@ -83,6 +83,7 @@ export interface BaseObj extends Partial<StyleFields> {
   ref?: string;
   body?: string;
   viewBox?: [number, number, number, number];
+  sticker?: boolean;
   // path
   points?: number[]; // flat [x0,y0,x1,y1,...] relative to x,y
   // uml-class

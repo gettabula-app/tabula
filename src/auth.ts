@@ -87,6 +87,17 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
   }
 }
 
+let current: ReturnType<typeof createMeRefresher> | null = null;
+
+/**
+ * Hosted workspaces (docs/cloud.md): the relay says the workspace changed (an open socket got a hint). Brings the next
+ * /api/me forward without trusting the hint; the answer goes through the same path as the five minute refresh. Does
+ * nothing before the refresher has started, in open mode and on servers without a control plane.
+ */
+export function refreshMeSoon() {
+  current?.hint();
+}
+
 /**
  * Hosted workspaces (docs/cloud.md): while the tab is open, asks for /api/me every few minutes so a new banner or a
  * read-only switch shows up. Does nothing for anyone who is signed out or on a server without a control plane.
@@ -104,12 +115,14 @@ export function startMeRefresh(overrides: Partial<MeRefreshDeps> = {}): () => vo
     clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
     ...overrides,
   });
+  current = refresher;
   const seen = () => {
     if (document.visibilityState === 'visible') refresher.resume();
   };
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', seen);
   return () => {
     refresher.stop();
+    if (current === refresher) current = null;
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', seen);
   };
 }

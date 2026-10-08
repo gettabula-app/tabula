@@ -86,6 +86,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
   'invite.create', 'invite.revoke', 'invite.accept',
   'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
+  'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits',
@@ -183,6 +184,18 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const principal = d.principalType === 'team' ? teamLabelFor(d.principalId) : (named('user', d.principalId) ?? 'someone');
       return `${who} removed ${principal} from ${boardLabel}`;
     }
+    case 'board.version.create': {
+      const label = text(d.label);
+      return label ? `${who} saved the version ${quote(label)} of ${boardLabel}` : `${who} saved a version of ${boardLabel}`;
+    }
+    case 'board.version.rename': {
+      const label = text(d.label);
+      return label ? `${who} named a version of ${boardLabel} ${quote(label)}` : `${who} renamed a version of ${boardLabel}`;
+    }
+    case 'board.version.delete':
+      return `${who} deleted a version of ${boardLabel}`;
+    case 'board.version.restore':
+      return `${who} restored a version of ${boardLabel}`;
     case 'member.update': {
       if (role) return `${who} changed ${member} to ${role}`;
       if (flag(d.disabled) === true) return `${who} disabled ${member}`;

@@ -25,7 +25,7 @@ Tabula was called Mira before. The old `MIRA_<X>` variable names are deprecated 
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `TABULA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
 
-The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer).
+The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer). Version history is kept as files under `<DATA_DIR>/history/<boardId>/` in both modes (`docs/history.md`).
 
 ## Roles
 
@@ -78,7 +78,7 @@ Tokens (login, session, invite) are 32 random bytes, base64url, shown once and s
 
 ## HTTP API
 
-JSON in and out. Errors: `{error: <code>, message?: <text>}` with status `400` (bad input), `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 conflict`, `429 rate_limited`. In open mode every `/api/*` route except `/api/health` and `/api/config` answers `404`.
+JSON in and out. Errors: `{error: <code>, message?: <text>}` with status `400` (bad input), `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 conflict`, `429 rate_limited`. In open mode every `/api/*` route except `/api/health`, `/api/config` and the board version routes (`docs/history.md`) answers `404`.
 
 ```
 GET    /api/health                      public  {ok, rooms, connections}                       (exists today)
@@ -113,9 +113,11 @@ DELETE /api/boards/:id/shares/:principalType/:principalId -> 204
 GET    /api/members                     -> [{id,email,name,role,disabled,teams:[{id,name,role}]}]   (workspace admin)
 PATCH  /api/members/:id {role?, disabled?} -> member  (admins; only an owner may change an owner or grant owner; the last owner cannot be demoted or disabled: 409)
 DELETE /api/members/:id                 -> 204  (admins; same owner rules; revokes sessions and closes sockets)
+
+GET    /api/boards/:id/versions   and the routes under it: version history of a board (owners and editors only), see docs/history.md
 ```
 
-Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`).
+Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`, `board.version.restore`).
 
 ## Relay (WebSocket `/sync/<boardId>` and `/sync/<boardId>~comments`)
 

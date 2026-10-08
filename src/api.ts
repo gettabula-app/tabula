@@ -23,6 +23,37 @@ export interface Me {
   user: ApiUser;
   teams: { id: string; name: string; role: TeamRole }[];
   workspace?: Workspace;
+  /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
+  mcp?: boolean;
+}
+
+export type AccessScope = 'read' | 'comment' | 'write';
+
+/** A personal access token for the MCP endpoint, without the secret. */
+export interface AccessToken {
+  id: string;
+  name: string;
+  scope: AccessScope;
+  /** null = every board the person can access. */
+  boardIds: string[] | null;
+  /** The last four characters of the token, to tell tokens apart. */
+  hint: string;
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+}
+
+/** The answer to creating a token: the only time the secret and the endpoint address are sent. */
+export interface CreatedAccessToken extends AccessToken {
+  token: string;
+  url: string;
+}
+
+export interface AdminAccessToken extends AccessToken {
+  userId: string;
+  userName: string;
+  email: string;
+  userRole: UserRole;
 }
 
 export interface Team {
@@ -148,6 +179,21 @@ export interface AuditPage {
   next: number | null;
 }
 
+export type VersionKind = 'auto' | 'named' | 'pre-restore' | 'restore';
+
+/** One saved version of a board (docs/history.md). */
+export interface Version {
+  id: string;
+  createdAt: number;
+  kind: VersionKind;
+  label: string | null;
+  by: string | null;
+  byName: string | null;
+  objects: number;
+  bytes: number;
+  from: string | null;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -164,12 +210,22 @@ type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
 /** A hung server must not freeze the app: a timeout rejects like any other network failure. */
 const REQUEST_TIMEOUT_MS = 8000;
+/** A version's state can be a few hundred kilobytes on a slow link. */
+const BYTES_TIMEOUT_MS = 30000;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
 type Body = { valid: true; data: unknown } | { valid: false };
+
+/** The shared mapping of an error response to an ApiError. */
+function failure(res: Response, body: Body): ApiError {
+  const fields: Record<string, unknown> = body.valid && isRecord(body.data) ? body.data : {};
+  const code = typeof fields.error === 'string' ? fields.error : 'unknown';
+  const message = typeof fields.message === 'string' ? fields.message : code;
+  return new ApiError(res.status, code, message);
+}
 
 async function readBody(res: Response): Promise<Body> {
   let text: string;
@@ -204,14 +260,27 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
       throw new ApiError(0, 'network', 'network');
     }
     const body = await readBody(res);
-    if (!res.ok) {
-      const fields: Record<string, unknown> = body.valid && isRecord(body.data) ? body.data : {};
-      const code = typeof fields.error === 'string' ? fields.error : 'unknown';
-      const message = typeof fields.message === 'string' ? fields.message : code;
-      throw new ApiError(res.status, code, message);
-    }
+    if (!res.ok) throw failure(res, body);
     if (!body.valid) throw new ApiError(res.status, 'unknown', 'unknown');
     return body.data as T;
+  }
+
+  /** A binary GET (a version's state). The shared call() parses every body as JSON. */
+  async function callBytes(path: string): Promise<Uint8Array> {
+    const init: RequestInit = { method: 'GET', credentials: 'same-origin', headers: { accept: 'application/octet-stream' } };
+    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(BYTES_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetchFn(path, init);
+    } catch {
+      throw new ApiError(0, 'network', 'network');
+    }
+    if (!res.ok) throw failure(res, await readBody(res));
+    try {
+      return new Uint8Array(await res.arrayBuffer());
+    } catch {
+      throw new ApiError(0, 'network', 'network');
+    }
   }
 
   const seg = (s: string) => encodeURIComponent(s);
@@ -267,6 +336,23 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     removeMember: (id: string) => call<void>('DELETE', `/api/members/${seg(id)}`),
 
     billingPortal: () => call<{ url: string }>('POST', '/api/billing/portal'),
+
+    versions: (boardId: string) => call<{ versions: Version[] }>('GET', `/api/boards/${seg(boardId)}/versions`),
+    versionState: (boardId: string, id: string) => callBytes(`/api/boards/${seg(boardId)}/versions/${seg(id)}/state`),
+    saveVersion: (boardId: string, label: string, by?: string) =>
+      call<Version>('POST', `/api/boards/${seg(boardId)}/versions`, { label, by }),
+    nameVersion: (boardId: string, id: string, label: string, by?: string) =>
+      call<Version>('PATCH', `/api/boards/${seg(boardId)}/versions/${seg(id)}`, { label, by }),
+    deleteVersion: (boardId: string, id: string) => call<void>('DELETE', `/api/boards/${seg(boardId)}/versions/${seg(id)}`),
+    beginRestore: (boardId: string, id: string, by?: string) =>
+      call<{ preRestore: Version | null }>('POST', `/api/boards/${seg(boardId)}/versions/${seg(id)}/begin-restore`, { by }),
+    accessTokens: () => call<AccessToken[]>('GET', '/api/me/tokens'),
+    createAccessToken: (input: { name: string; scope: AccessScope; boardIds?: string[]; days?: number }) =>
+      call<CreatedAccessToken>('POST', '/api/me/tokens', input),
+    revokeAccessToken: (id: string) => call<void>('DELETE', `/api/me/tokens/${seg(id)}`),
+    revokeAllAccessTokens: () => call<{ revoked: number }>('POST', '/api/me/tokens/revoke-all'),
+    adminAccessTokens: () => call<AdminAccessToken[]>('GET', '/api/admin/tokens'),
+    adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
 
     adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),
     adminMembers: () => call<AdminMember[]>('GET', '/api/admin/members'),

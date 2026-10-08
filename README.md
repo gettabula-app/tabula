@@ -63,6 +63,17 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 
+### Behind a reverse proxy
+
+Terminate TLS in the proxy and keep these four things true (each is covered by `test/proxy.test.ts`):
+
+1. Set `TABULA_BASE_URL` to the public **https** address. The cookie's `Secure` flag, its `__Host-` name and the allowed WebSocket `Origin` come from that value alone; `X-Forwarded-Proto` is never read.
+2. Pass the public `Host` header through unchanged (nginx: `proxy_set_header Host $host;`). The CSRF check compares `Origin` with `Host`, so a proxy that rewrites `Host` makes every state-changing request fail with `403 csrf`.
+3. Set `TABULA_TRUST_PROXY=1` (exactly `1`, no other value counts) and have the proxy append the real client address to `X-Forwarded-For`; the rate limiter uses the rightmost entry and ignores anything a client put to its left. Without the variable, `X-Forwarded-For` is ignored and every client of the proxy shares one rate limit.
+4. Forward WebSocket upgrades (`Upgrade` and `Connection` headers) for `/sync/*`.
+
+An open WebSocket follows role and access changes (usually at once, otherwise within about 5 seconds) and a session that has run out closes it with code 4401 within about 6 seconds. See `test/live-roles.test.ts`.
+
 Try it locally:
 
 ```bash
@@ -73,6 +84,18 @@ TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start
 Open http://localhost:8787, enter that address, and open the sign-in link that the relay prints to its console. When serving the built app from another origin (for example Vite on :5173 in development), set `TABULA_BASE_URL` to that origin, otherwise sockets are refused.
 
 The full design (roles, the HTTP API, the relay rules and the SQLite schema) is in [docs/accounts.md](docs/accounts.md).
+
+### AI tools (MCP)
+
+Tabula can let an AI tool such as Claude Code read and edit boards while people are working on them. It is off by default; set `TABULA_MCP=on` to serve `POST /mcp`. Tokens are bearer secrets that can change boards, so the relay refuses to start with MCP on unless `TABULA_BASE_URL` is an `https://` address (`http://localhost` is fine for trying it).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_MCP` | `off` | `on` serves `/mcp` |
+| `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters. Required when `TABULA_MCP=on` without accounts |
+| `TABULA_MCP_SCOPE` | `read` | Open mode only: what the shared token may do, `read`, `comment` or `write` |
+
+In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
 
 ## Screenshots
 
@@ -103,15 +126,17 @@ The full design (roles, the HTTP API, the relay rules and the SQLite schema) is 
 | UML | Class/interface/abstract/enum (edited as text: name, `--`, members), actor, use case, lifeline, state, initial/final, package, component, note; 13 relationship presets; Mermaid import (flowchart, classDiagram, stateDiagram-v2, sequenceDiagram) with auto-layout; copy selection as Mermaid |
 | Fontshare | Full catalogue (100 families), searchable picker with live previews, weights per family, board heading/body fonts, offline caching via the service worker |
 | Iconify | Search 200k+ icons, filter by set, licence notice for CC BY sets, failover to backup hosts; placed icons store their SVG (sanitised) and render offline |
+| Stickers | Fluent, Twemoji and Noto emoji in a Stickers drawer, drawn in full colour; placed stickers are stored in the board, so they work offline and export with it; a React button in the quick-action bar drops a reaction next to the selection |
 | Team exercises | 14 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem); session bar with steps, shared timer with chime, private writing + reveal, bring everyone to my view, step editor, Markdown summary |
 | Dot voting | One-click dot vote from the toolbar on any board (no template needed); dots per person can be any number or unlimited, set per step or changed live for everyone mid-vote, with the number of people on the board and dots placed so far shown alongside; click to add a dot, shift-click to remove; totals hidden until reveal; many dots on one note collapse into a counted badge; results stay on the board after the vote until cleared, with ranked results to copy |
 | Polls | Facilitated polls from the toolbar's quick poll button or as a session step: a question with 2–10 options, single or multiple choice, anonymous by default or named; one answer per person, changeable until the poll closes; a card above the session bar for answering and, after reveal, a ranked list with percentages; reveal, copy results as Markdown, or add them to the board as a sticky; answers sync live and work offline, travel in `.drift` and JSON exports, and appear in the Markdown summary once revealed |
 | Comments | Threaded comments pinned to a spot or an object (press C or use the speech-bubble tool): post, reply, edit, delete, resolve and reopen; pins follow the object through move, resize and rotate; a Comments panel lists open and resolved threads and flies to a pin; pins can be hidden from the board menu; comments sync live in their own room, work offline, travel in `.drift` and JSON exports, and never appear in PNG/SVG exports. In accounts mode the new **commenter** role can comment on a board without being able to edit it |
-| Import/export | `.drift` (zip of readable `board.json` + full CRDT history), JSON, SVG, PNG (2×, real fonts), Markdown summary, Mermaid; drop files on the board or open them from the home screen |
+| Version history | Browse earlier versions of a board, preview one read-only and restore it (board menu, owners and editors). The relay saves snapshots while people edit, before large deletions and when everyone leaves, and anyone can save a named version; a restore is an ordinary edit that syncs to everyone, shows up as a new version and undoes with Ctrl+Z. See [docs/history.md](docs/history.md) |
+| Import/export | `.drift` (zip of readable `board.json` + the board's sync data), JSON, SVG, PNG (2×, real fonts), Markdown summary, Mermaid; drop files on the board or open them from the home screen |
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, version history, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
+End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
 
 ## Fonts and icons
 

@@ -194,6 +194,26 @@ describe('rendering safety and fonts', () => {
     expect(clean).toContain('<path d="M0 0"');
   });
 
+  it('keeps the ids of two icons that share a body apart', () => {
+    const body = '<defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs><path fill="url(#g)" d="M0 0h24v24H0z"/>';
+    const get = () => undefined;
+    const a = box('a1', 0, 0, 48, 48, { type: 'icon', body, viewBox: [0, 0, 24, 24] });
+    const b = box('b2', 60, 0, 48, 48, { type: 'icon', body, viewBox: [0, 0, 24, 24] });
+    const svg = objectMarkup(a, { get }) + objectMarkup(b, { get });
+    expect(svg).toContain('id="ia1-g"');
+    expect(svg).toContain('id="ib2-g"');
+    expect(svg).toContain('fill="url(#ia1-g)"');
+    expect(svg).toContain('fill="url(#ib2-g)"');
+    expect(svg).not.toContain('url(#g)');
+  });
+
+  it('embeds a sticker body inline with no external references', () => {
+    const sticker = box('s1', 0, 0, 120, 120, { type: 'icon', sticker: true, ref: 'twemoji:rocket', body: '<path fill="#55ACEE" d="M0 0h36v36H0z"/>', viewBox: [0, 0, 36, 36] });
+    const svg = objectMarkup(sticker, { get: () => undefined });
+    expect(svg).toContain('<path fill="#55ACEE" d="M0 0h36v36H0z"/>');
+    expect(svg).not.toMatch(/href="http|url\(http/);
+  });
+
   it('escapes text in markup', () => {
     const svg = objectMarkup(box('t', 0, 0, 200, 80, { text: '<img src=x onerror=alert(1)>' }), { get: () => undefined });
     expect(svg).not.toContain('<img');

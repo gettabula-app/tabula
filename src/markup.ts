@@ -8,6 +8,7 @@ import { escapeXml, fitText, fontCss, measure, wrap } from './text';
 import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, inkOn } from './palette';
+import { scopeSvgIds } from './stickers';
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -215,7 +216,7 @@ function iconMarkup(o: BaseObj) {
   const s = styleOf(o);
   const vb = o.viewBox || [0, 0, 24, 24];
   const color = (o as BaseObj).textColor ?? s.stroke;
-  const body = sanitizeSvgBody(o.body || '');
+  const body = scopeSvgIds(sanitizeSvgBody(o.body || ''), o.id);
   return wrapG(
     o,
     `<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" viewBox="${vb.join(' ')}" color="${escapeXml(color)}" style="color:${escapeXml(color)}" overflow="visible">${body}</svg>`,

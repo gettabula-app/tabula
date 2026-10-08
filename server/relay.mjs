@@ -25,6 +25,8 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
+import { createHistory } from './history.mjs';
+import { saveDelay } from './save-delay.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -37,12 +39,16 @@ const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = 1000;
-const UNLOAD_AFTER_MS = 60_000;
+const SAVE_MAX_WAIT_MS = 30_000;
+const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
 const ROLE_RECHECK_MS = 5_000;
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+// Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
+// workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
+const MSG_WORKSPACE = 4;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -73,6 +79,18 @@ function canWriteRoom(role, kind) {
 // Leftover comments mean the id was used before, so adopting such a board is as sensitive as adopting its board file.
 const roomExists = (id) => fs.existsSync(path.join(DATA_DIR, `${id}.yjs`)) || fs.existsSync(path.join(DATA_DIR, `${id}~comments.yjs`));
 
+// Version history (docs/history.md), in both modes. The state of a board room: the live room, else its file.
+function boardState(id) {
+  const room = rooms.get(id);
+  if (room) return Y.encodeStateAsUpdate(room.doc);
+  try {
+    return fs.readFileSync(path.join(DATA_DIR, `${id}.yjs`));
+  } catch {
+    return null;
+  }
+}
+const history = createHistory({ dataDir: DATA_DIR, boardState, log });
+
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
 let directory = null;
@@ -91,7 +109,7 @@ if (config.authEnabled) {
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history });
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
@@ -119,6 +137,7 @@ class Room {
     this.saveTimer = null;
     this.unloadTimer = null;
     this.dirty = false;
+    this.firstUnsavedAt = null;
 
     if (fs.existsSync(this.file)) {
       try {
@@ -155,16 +174,22 @@ class Room {
     for (const ws of this.conns.keys()) send(ws, msg);
   }
 
+  // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
   scheduleSave() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.save(), SAVE_DEBOUNCE_MS);
+    const now = Date.now();
+    this.firstUnsavedAt ??= now;
+    const delay = saveDelay({ now, firstUnsavedAt: this.firstUnsavedAt, debounceMs: SAVE_DEBOUNCE_MS, maxWaitMs: SAVE_MAX_WAIT_MS });
+    this.saveTimer = setTimeout(() => this.save(), delay);
   }
 
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
+    this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, Y.encodeStateAsUpdate(this.doc));
+    const bytes = Y.encodeStateAsUpdate(this.doc);
+    fs.writeFileSync(tmp, bytes);
     fs.renameSync(tmp, this.file);
     if (directory && this.kind === 'board' && this.dirty) {
       this.dirty = false;
@@ -175,6 +200,7 @@ class Room {
         log(`room ${this.name}: could not update the directory`, err?.message);
       }
     }
+    history.onSave(this, bytes);
   }
 
   join(ws) {
@@ -202,15 +228,22 @@ class Room {
     if (ids?.size) awarenessProtocol.removeAwarenessStates(this.awareness, [...ids], null);
     if (this.conns.size === 0) {
       if (this.saveTimer) this.save();
-      this.unloadTimer = setTimeout(() => {
-        if (this.conns.size === 0) {
-          this.save();
-          this.doc.destroy();
-          rooms.delete(this.name);
-          log(`room ${this.name}: unloaded`);
-        }
-      }, UNLOAD_AFTER_MS);
+      this.releaseIfIdle();
     }
+  }
+
+  // Starts the unload timer when nobody is connected. A room opened for an MCP edit would otherwise stay in memory.
+  releaseIfIdle() {
+    if (this.conns.size !== 0) return;
+    clearTimeout(this.unloadTimer);
+    this.unloadTimer = setTimeout(() => {
+      if (this.conns.size === 0) {
+        this.save();
+        this.doc.destroy();
+        rooms.delete(this.name);
+        log(`room ${this.name}: unloaded`);
+      }
+    }, UNLOAD_AFTER_MS);
   }
 
   onMessage(ws, data) {
@@ -241,6 +274,51 @@ function getRoom(name) {
     log(`room ${name}: loaded`);
   }
   return r;
+}
+
+// MCP (docs/mcp.md) edits the live room documents through this, never the files. `read` loads nothing into memory
+// (a room that is open is read in place, otherwise the file is decoded into a throwaway document); `write` applies
+// fn inside one transaction on the room's own doc, so the update listener broadcasts it to every socket and saves it.
+// Callers have authorised the board before they get here: getRoom() creates the room file for an unknown name.
+const roomAccess = {
+  exists: (name) => rooms.has(name) || fs.existsSync(path.join(DATA_DIR, `${name}.yjs`)),
+  read(name, fn) {
+    const open = rooms.get(name);
+    if (open) return fn(open.doc);
+    const doc = new Y.Doc({ gc: true });
+    try {
+      const file = path.join(DATA_DIR, `${name}.yjs`);
+      if (fs.existsSync(file)) Y.applyUpdate(doc, fs.readFileSync(file));
+      return fn(doc);
+    } finally {
+      doc.destroy();
+    }
+  },
+  write(name, origin, fn) {
+    const room = getRoom(name);
+    try {
+      let result;
+      room.doc.transact(() => {
+        result = fn(room.doc);
+      }, origin);
+      return result;
+    } finally {
+      room.releaseIfIdle();
+    }
+  },
+};
+
+let mcp = null;
+if (config.mcp) {
+  const { createMcp } = await import('./mcp.mjs');
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
+}
+
+function workspaceHint(readOnly) {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_WORKSPACE);
+  encoding.writeVarString(enc, JSON.stringify({ readOnly }));
+  return encoding.toUint8Array(enc);
 }
 
 function send(ws, msg) {
@@ -306,7 +384,11 @@ function sendJson(res, status, body) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/api/health') {
+    if (url.pathname === '/mcp') {
+      // Never the single-page app: /mcp is either the endpoint or a 404.
+      if (mcp) await mcp.handle(req, res);
+      else sendJson(res, 404, { error: 'not_found' });
+    } else if (url.pathname === '/api/health') {
       sendJson(res, 200, { ok: true, ...liveStats() });
     } else if (url.pathname.startsWith('/api/')) {
       // Anything under /api/ is answered here and never falls through to the single-page app.
@@ -314,7 +396,7 @@ async function onRequest(req, res) {
         if (!(await api.handle(req, res))) sendJson(res, 404, { error: 'not_found' });
       } else if (url.pathname === '/api/config') {
         sendJson(res, 200, { authEnabled: false });
-      } else {
+      } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
     } else {
@@ -411,9 +493,18 @@ if (config.authEnabled) {
   events.on('user-removed', ({ userId } = {}) => {
     for (const ws of socketsOf(userId)) refresh(ws, true);
   });
-  // A workspace that turns read-only (or back) applies to sockets that are already open.
-  events.on('limits-changed', () => {
-    for (const ws of allSockets()) refresh(ws, true);
+  // A workspace that turns read-only (or back) applies to sockets that are already open, and only a flip of that switch
+  // (not a banner, a seat limit or a repeated value) tells the clients, who then ask /api/me what is true. `send` skips
+  // a socket that is closing, such as one the refresh just denied.
+  let knownReadOnly = cloud?.limits().readOnly === true;
+  events.on('limits-changed', ({ readOnly } = {}) => {
+    const flipped = (readOnly === true) !== knownReadOnly;
+    knownReadOnly = readOnly === true;
+    const hint = flipped ? workspaceHint(knownReadOnly) : null;
+    for (const ws of allSockets()) {
+      refresh(ws, true);
+      if (hint) send(ws, hint);
+    }
   });
   setInterval(() => {
     for (const ws of allSockets()) refresh(ws, false);
@@ -510,6 +601,7 @@ function shutdown() {
   clearInterval(pinger);
   cloud?.close();
   for (const r of rooms.values()) r.save();
+  history.close();
   directory?.close();
   process.exit(0);
 }

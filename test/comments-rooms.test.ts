@@ -30,7 +30,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 8000);
+    setTimeout(() => reject(new Error('relay did not start')), 15_000);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -198,8 +198,8 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
     const a = client(`${board}${COMMENTS}`);
     await synced(a);
     a.doc.getMap('threads').set('t1', 1);
-    await sleep(SAVE_WINDOW_MS);
-    expect(fs.existsSync(path.join(dir, `${board}${COMMENTS}.yjs`))).toBe(true);
+    // Wait for the save rather than a fixed window: a slow Windows runner can take longer than the debounce.
+    await until(() => fs.existsSync(path.join(dir, `${board}${COMMENTS}.yjs`)));
     expect(fs.existsSync(path.join(dir, `${board}.yjs`))).toBe(false);
   });
 });

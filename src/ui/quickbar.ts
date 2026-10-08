@@ -10,6 +10,7 @@ import { DEFAULTS, styleOf } from '../markup';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { placeBar } from './quickbar-layout';
+import { reactionPicker } from './stickers';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -198,6 +199,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
       }));
     }
     groups.push(arrange);
+    groups.push([menu('stickers', 'React with a sticker', () => reactionPicker(app))]);
 
     lock = h('button', { class: 'icon-btn', onclick: () => app.toggleLock() });
     more = h('button', { class: 'icon-btn', title: 'More properties', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));

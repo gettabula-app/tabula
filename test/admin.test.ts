@@ -70,6 +70,10 @@ describe('auditSentence', () => {
     ['board.share to a team', entry('board.share', { boardId: 'b1', principalType: 'team', principalId: 't1', role: 'editor' }), 'ana@example.com shared “Roadmap” with “Design” as editor'],
     ['board.unshare from a team', entry('board.unshare', { boardId: 'b1', principalType: 'team', principalId: 't1' }), 'ana@example.com removed “Design” from “Roadmap”'],
     ['board.unshare from a person', entry('board.unshare', { boardId: 'b1', principalType: 'user', principalId: 'u2' }), 'ana@example.com removed bo@example.com from “Roadmap”'],
+    ['board.version.create', entry('board.version.create', { boardId: 'b1', versionId: 'v1', label: 'Before the workshop' }), 'ana@example.com saved the version “Before the workshop” of “Roadmap”'],
+    ['board.version.rename', entry('board.version.rename', { boardId: 'b1', versionId: 'v1', label: 'Final' }), 'ana@example.com named a version of “Roadmap” “Final”'],
+    ['board.version.delete', entry('board.version.delete', { boardId: 'b1', versionId: 'v1', kind: 'named' }), 'ana@example.com deleted a version of “Roadmap”'],
+    ['board.version.restore', entry('board.version.restore', { boardId: 'b1', versionId: 'v1', preRestoreId: 'v2' }), 'ana@example.com restored a version of “Roadmap”'],
     ['member.update role', entry('member.update', { userId: 'u2', role: 'admin' }), 'ana@example.com changed bo@example.com to admin'],
     ['member.update disabled', entry('member.update', { userId: 'u2', disabled: true }), 'ana@example.com disabled bo@example.com'],
     ['member.update enabled', entry('member.update', { userId: 'u2', disabled: false }), 'ana@example.com enabled bo@example.com'],
@@ -90,6 +94,8 @@ describe('auditSentence', () => {
     ['admin.sessions.revoke with an empty detail', entry('admin.sessions.revoke'), 'ana@example.com revoked all sessions of a member'],
     ['admin.session.revoke with an empty detail', entry('admin.session.revoke'), 'ana@example.com revoked a session of a member'],
     ['board.restore with an empty detail', entry('board.restore'), 'ana@example.com restored a board'],
+    ['board.version.create with an empty detail', entry('board.version.create'), 'ana@example.com saved a version of a board'],
+    ['board.version.rename with an empty detail', entry('board.version.rename'), 'ana@example.com renamed a version of a board'],
     ['member.remove with an empty detail', entry('member.remove'), 'ana@example.com removed a member'],
     ['team.member.role without a role', entry('team.member.role', { teamId: 't1', userId: 'u2' }), 'ana@example.com changed bo@example.com’s role in “Design” to a new role'],
   ])('tolerates a sparse detail: %s', (_name, e, sentence) => {
@@ -119,6 +125,7 @@ describe('auditSentence', () => {
       'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
       'invite.create', 'invite.revoke', 'invite.accept',
       'board.create', 'board.update', 'board.delete', 'board.share', 'board.unshare',
+      'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits',
     ];

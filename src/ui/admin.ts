@@ -5,6 +5,7 @@ import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logi
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { fmtAgo, toast } from './common';
 import { h, icon } from './dom';
+import { tokensAdminPanel } from './tokens';
 import {
   activeOwnerCount, auditActor, auditSentence, countLabel, disableVerdict, isKnownAuditAction, matchesQuery, removeVerdict,
   revokeVerdict, roleLock, roleOptions, roleVerdict, type Actor, type Lookup,
@@ -16,6 +17,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   teams: 'Teams',
   boards: 'Boards',
   sessions: 'Sessions',
+  tokens: 'Access tokens',
   audit: 'Audit log',
 };
 
@@ -561,6 +563,7 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   teams: () => teamsPanel(),
   boards: () => boardsPanel(),
   sessions: () => sessionsPanel(),
+  tokens: (me) => tokensAdminPanel(me, { head, loadList, change, armable, emptyLine }),
   audit: () => auditPanel(),
 };
 
