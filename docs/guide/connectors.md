@@ -51,6 +51,10 @@ Select a connector. A round handle appears on each end. Drag a handle onto anoth
 
 If you delete a shape, connectors attached to it stay on the board with that end left free where it was.
 
+## Several connectors on one side
+
+When more than one connector meets the same side of a shape, their ends spread out along that side, ordered by where each connector goes, instead of piling up at the middle. The ends sit evenly either side of the middle, no further than 28 units apart, on the shape's outline. A single connector stays at the middle. Shapes with a curved or irregular outline (heart, cloud, round speech bubble, document, delay and display) keep every connector at the middle. Exports and template thumbnails show the same layout.
+
 ## UML relationships
 
 The **UML** drawer lists relationships under **Relationships**: association, directed association, generalization, realization, dependency, aggregation, composition, sync message, async message, reply, include, extend and transition. Pick one, then drag from one element to another. Each sets the right arrowheads and line style.
