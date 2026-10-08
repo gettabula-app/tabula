@@ -39,17 +39,19 @@ function resultsList(tally: PollTally): HTMLElement {
       r.names.length ? h('div', { class: 'poll-names' }, r.names.join(', ')) : null))));
 }
 
-/** The answering card: options while open, the ranked list once revealed. */
+/** The answering card: options while open, the ranked list once revealed. Only the list scrolls. */
 function pollBody(app: BoardApp, poll: Poll): HTMLElement {
   const polls = app.flow.polls;
   const tally = polls.tally(poll.id);
   const mine = polls.mine(poll.id)?.optionIds ?? [];
   const open = polls.isOpen(poll.id);
   const canAnswer = open && !app.readOnly;
+  const canClear = canAnswer && mine.length > 0;
   const people = app.participants().length;
   const status = poll.revealed
     ? plural(tally.responses, 'response', 'responses')
     : `${tally.responses}${people > tally.responses ? ` of ${people}` : ''} answered`;
+  const questionId = `poll-q-${poll.id}`;
   const choices = poll.options.map((o) => {
     const input = h('input', { type: poll.multiple ? 'checkbox' : 'radio', name: `poll-${poll.id}`, checked: mine.includes(o.id), 'data-option': o.id });
     input.addEventListener('change', () => attempt(() => polls.choose(poll.id, o.id)));
@@ -60,11 +62,16 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
     : open ? 'View only. Only people who can edit the board can answer.' : 'This poll is closed.';
   return h('div', { class: 'poll-body' },
     h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'), h('span', { class: 'poll-label' }, status)),
-    h('fieldset', { class: 'poll-choices', disabled: !canAnswer }, h('legend', null, poll.question), ...choices),
+    h('h2', { class: 'poll-question', id: questionId }, poll.question),
+    h('div', { class: 'poll-scroll' },
+      h('fieldset', { class: 'poll-choices', disabled: !canAnswer, 'aria-labelledby': questionId }, ...choices),
+      poll.revealed ? resultsList(tally) : null),
     h('div', { class: 'poll-foot' },
       h('span', { class: 'poll-note' }, note),
-      canAnswer && mine.length ? h('button', { class: 'btn ghost poll-btn', onclick: () => attempt(() => polls.clearMine(poll.id)) }, 'Clear my answer') : null),
-    poll.revealed ? resultsList(tally) : null,
+      h('button', {
+        class: `btn ghost poll-btn poll-clear${canClear ? '' : ' is-reserved'}`, disabled: !canClear,
+        onclick: () => attempt(() => polls.clearMine(poll.id)),
+      }, 'Clear my answer')),
   );
 }
 
@@ -74,7 +81,7 @@ export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLEleme
   parent.appendChild(card);
   const place = () => {
     const inset = parseFloat(getComputedStyle(bar).bottom) || 12;
-    card.style.bottom = `${inset + bar.offsetHeight + 12}px`;
+    card.style.setProperty('--poll-dock', `${inset + bar.offsetHeight + 12}px`);
   };
   new ResizeObserver(place).observe(bar);
   const render = () => {
@@ -87,7 +94,12 @@ export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLEleme
       card.replaceChildren();
       return;
     }
+    // Every answer redraws the card; keep the list where the person had scrolled it.
+    const scrolled = card.dataset.poll === poll.id ? card.querySelector<HTMLElement>('.poll-scroll')?.scrollTop ?? 0 : 0;
+    card.dataset.poll = poll.id;
     card.replaceChildren(pollBody(app, poll));
+    const list = card.querySelector<HTMLElement>('.poll-scroll');
+    if (list) list.scrollTop = scrolled;
     // Redrawing would drop keyboard focus from the option being arrowed through.
     if (focused) card.querySelector<HTMLInputElement>(`input[data-option="${focused}"]`)?.focus();
     place();
@@ -153,7 +165,9 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
   const submit = () => attempt(() => onSubmit({ question: question.value, options: [...options], multiple: multiple.checked, anonymous: anonymous.checked }));
   const root = h('div', { class: 'poll-compose' },
     field('Question', question),
-    field('Options', h('div', { class: 'poll-compose-list' }, list, add)),
+    h('div', { class: 'field poll-options' },
+      h('div', { class: 'field-label' }, 'Options'),
+      h('div', { class: 'poll-compose-list' }, h('div', { class: 'poll-compose-scroll' }, list), add)),
     h('label', { class: 'poll-check' }, multiple, h('span', null, 'More than one answer')),
     h('label', { class: 'poll-check' }, anonymous, h('span', null, 'Anonymous (names stay hidden)')),
     h('div', { class: 'btn-row poll-compose-actions' },
