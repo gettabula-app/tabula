@@ -3,6 +3,7 @@ import { signOut, type AuthState } from '../auth';
 import type { Me } from '../api';
 import { aiToolsAvailable } from './tokens-logic';
 import { openTokensDialog } from './tokens';
+import { openIconCredits } from './icon-credits';
 
 export type TopbarPage = 'boards' | 'templates';
 
@@ -47,5 +48,5 @@ export function searchField(label: string, value: string, onInput: (query: strin
 }
 
 export function pageFooter(note: string): HTMLElement {
-  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icons by Iconify.');
+  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icon sets by their authors, see ', h('button', { class: 'link-btn', onclick: openIconCredits }, 'Icon credits'), '.');
 }

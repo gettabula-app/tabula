@@ -1,6 +1,6 @@
 # Tabula
 
-A local-first infinite whiteboard: sticky notes, shapes on a snapping grid, connectors that stay attached, UML, Fontshare typography, Iconify icons, and facilitated team exercises with timers, private writing and dot voting.
+A local-first infinite whiteboard: sticky notes, shapes on a snapping grid, connectors that stay attached, UML, Fontshare typography, self-hosted icon sets, and facilitated team exercises with timers, private writing and dot voting.
 
 Every board lives in your browser first (IndexedDB). A small relay syncs boards between people in real time when it is reachable; without it, everything still works and merges later.
 
@@ -125,7 +125,7 @@ In accounts mode, open **AI tool access** in the board menu, name a token, pick 
 | Connectors | Bound or free ends, straight/elbow/curved routing, 10 arrowheads incl. UML and crow's foot, labels, reverse; drag from a shape's blue dots, or click a dot to add a connected copy; deleting a shape keeps its lines; connectors meet a shape's visible outline, including triangles, stars, arrows and callouts |
 | UML | Class/interface/abstract/enum (edited as text: name, `--`, members), actor, use case, lifeline, state, initial/final, package, component, note; 13 relationship presets; Mermaid import (flowchart, classDiagram, stateDiagram-v2, sequenceDiagram) with auto-layout; copy selection as Mermaid |
 | Fontshare | Full catalogue (100 families), searchable picker with live previews, weights per family, board heading/body fonts, offline caching via the service worker |
-| Iconify | Search 200k+ icons, filter by set, licence notice for CC BY sets, failover to backup hosts; placed icons store their SVG (sanitised) and render offline |
+| Icon sets | Search 344k+ icons from 188 sets that Tabula serves itself (no third-party request), filter by set, licence and trademark notes, an Icon credits dialog; "Download for offline" stores a set on this device. Sets Tabula does not host are online only, loaded on request from Iconify with failover to its backup hosts; placed icons store their SVG (sanitised) and render offline |
 | Stickers | Fluent, Twemoji and Noto emoji in a Stickers drawer, drawn in full colour; placed stickers are stored in the board, so they work offline and export with it; a React button in the quick-action bar drops a reaction next to the selection |
 | Team exercises | 14 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem); session bar with steps, shared timer with chime, private writing + reveal, ask everyone to look at my view (a request each person can answer with Go to, Follow, Dismiss or Mute; it moves nobody), step editor, Markdown summary |
 | Dot voting | One-click dot vote from the toolbar on any board (no template needed); dots per person can be any number or unlimited, set per step or changed live for everyone mid-vote, with the number of people on the board and dots placed so far shown alongside; click to add a dot, shift-click to remove; totals hidden until reveal; many dots on one note collapse into a counted badge; results stay on the board after the vote until cleared, with ranked results to copy |
@@ -136,13 +136,22 @@ In accounts mode, open **AI tool access** in the board menu, name a token, pick 
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, downloadable offline icon sets, and peer-to-peer (WebRTC) sync.
+End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, and peer-to-peer (WebRTC) sync.
 
 ## Fonts and icons
 
 Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
 
-Iconify icon sets carry their own licences (MIT, Apache 2.0, CC BY 4.0, …). The icon picker shows each set's licence and flags sets that require attribution.
+Icon sets come from [Iconify's open data](https://github.com/iconify/icon-sets) (`@iconify/json`, a build-time dependency) and carry their own licences. The build hosts only sets under CC0, Unlicense, 0BSD, MIT, ISC, Apache-2.0, BSD, OFL-1.1 and CC BY 3.0/4.0; sets Iconify marks hidden, the unmaintained Font Awesome 6 sets and every other licence (NonCommercial, ShareAlike, GPL and the like) are left out. The picker shows each set's licence, flags sets that require attribution and notes that logos are trademarks of their owners. The credits dialog lists every set, and `dist/icons/LICENSES.txt` is the same list as text.
+
+`npm run build` writes the sets to `dist/icons/` after the app, and the relay and the Docker image serve them from there. Two sizes:
+
+| Build | Sets | Icons | Files | Image |
+| --- | --- | --- | --- | --- |
+| default (`npm run build`) | 188, every allowed, maintained set | 344,033 | 77.5 MB gzip | about 141 MB |
+| `ICON_SETS=curated npm run build` | 19, the popular, sticker and a few UI sets (`CURATED_SETS` in `scripts/build-icons.mjs`) | 74,686 | 18.5 MB gzip | about 86 MB |
+
+`docker build --build-arg ICON_SETS=curated -t tabula .` builds the small image. The build reads the installed `@iconify/json` (a pinned devDependency of about 104 MB), takes about 10 seconds the first time and is cached in `node_modules/.cache/tabula-icons`, so an unchanged rebuild is a copy. `npm test` does not build the sets. See [docs/icons-selfhost.md](docs/icons-selfhost.md).
 
 ## Tests and checks
 
@@ -158,15 +167,16 @@ Covers CRDT merging of concurrent and offline edits, undo scope, ordering, conne
 
 GitHub Actions (`.github/workflows/`):
 
-- **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the production build run on Linux, macOS and Windows with Node 22 and 24. The Docker image then builds with layer caching and is pushed to `ghcr.io/gettabula-app/tabula` on pushes to `main` and on tags. Use the `CI passed` job as the single required check for branch protection.
+- **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the app build run on Linux, macOS and Windows with Node 22 and 24; the icon sets are built once, in the Linux job that uploads the `dist` artifact, and in the Docker build. The Docker image then builds with layer caching and is pushed to `ghcr.io/gettabula-app/tabula` on pushes to `main` and on tags. Use the `CI passed` job as the single required check for branch protection.
 - **CodeQL** scans the code on pushes, PRs and weekly. **Dependency review** blocks PRs that add dependencies with high-severity advisories.
 - A newer push to the same branch or PR cancels the run in progress, so a burst of commits only builds the last one. Docs-only pushes to `main` skip CI.
-- Dependabot opens grouped weekly updates for npm, Actions and the Docker base image.
+- Dependabot opens grouped weekly updates for npm, Actions and the Docker base image. `@iconify/json` gets its own pull request, because a bump can rename icons.
 
 ## Project layout
 
 ```
-server/relay.mjs     sync relay + static server
+server/relay.mjs     sync relay + static server (serves dist/icons gzipped)
+scripts/build-icons.mjs  builds the icon sets into dist/icons (scripts/lib/icons-build.mjs: licence rule, packer, index)
 src/store.ts         Y.Doc wrapper: objects, meta, flow, votes, undo
 src/sync.ts          IndexedDB persistence, relay connection, identity, board list
 src/geometry.ts      bounds, hit-testing, anchors, connector routing
@@ -177,7 +187,8 @@ src/editor.ts        in-place text editing
 src/flow.ts          facilitation: steps, timer, private writing, voting
 src/polls.ts         polls: questions, answers, open and closed, reveal, results
 src/templates.ts     team exercise templates
-src/uml.ts, src/mermaid.ts, src/fonts.ts, src/icons.ts, src/exporters.ts
+src/uml.ts, src/mermaid.ts, src/fonts.ts, src/exporters.ts
+src/icons.ts         icon manifest, hosted and online sets, previews; icon-search.ts, icon-licences.ts, icon-offline.ts
 src/ui/              rail, library drawer, properties, font picker, session bar, home
-public/sw.js         offline cache for the app, Fontshare and Iconify
+public/sw.js         offline cache for the app, the icon sets, Fontshare and Iconify
 ```

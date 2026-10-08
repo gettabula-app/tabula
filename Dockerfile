@@ -3,13 +3,17 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# ICON_SETS=curated builds the small icon list (docker build --build-arg ICON_SETS=curated); the default hosts every allowed set.
+# The icons go to their own layer in the final stage, so an app-only change does not push them again.
+ARG ICON_SETS=all
+RUN --mount=type=cache,target=/app/node_modules/.cache/tabula-icons npm run build && mv dist/icons /icons
 
 FROM node:26-alpine
 WORKDIR /app
 ENV NODE_ENV=production PORT=8787 DATA_DIR=/data
 COPY package*.json ./
 RUN npm ci --omit=dev
+COPY --from=build /icons ./dist/icons
 COPY --from=build /app/dist ./dist
 COPY server ./server
 VOLUME /data

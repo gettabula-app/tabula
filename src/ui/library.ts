@@ -7,10 +7,12 @@ import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml
 import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import type { CustomTemplate } from '../custom-templates';
-import { POPULAR_SETS, iconData, iconLoader, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
+import { POPULAR_SETS, failureMessage, failureOf, iconData, iconLoader, iconSets, onlineIconSets, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
-import { gridView, placeSticker, stickersTab, type StickerDrag } from './stickers';
+import { gridView, placeSticker, previewFiller, stickersTab, withPreviews, type StickerDrag } from './stickers';
+import { openIconCredits } from './icon-credits';
+import { offlineRow } from './icon-offline';
 import { reopenSession } from './idle-bar';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
@@ -220,65 +222,137 @@ export function openMermaidImport(app: BoardApp) {
   ]);
 }
 
+const PAGE = 48;
+const put = (el: HTMLElement, ...kids: (string | Node | null)[]) => el.replaceChildren(...kids.filter((k): k is string | Node => k !== null));
+
 function iconsTab(app: BoardApp, signal: AbortSignal) {
-  const input = h('input', { type: 'search', class: 'input', placeholder: 'Search 200,000+ icons', 'aria-label': 'Search icons' });
+  const input = h('input', { type: 'search', class: 'input', placeholder: 'Search icons', 'aria-label': 'Search icons' });
   const setSel = h('select', { class: 'input', 'aria-label': 'Icon set' }, h('option', { value: '' }, 'All icon sets'));
+  const onlineBtn = h('button', {
+    class: 'btn wide', title: 'Sets Tabula does not host. Searching them sends your query to Iconify.',
+    onclick: () => void loadOnline(),
+  }, 'Online sets');
+  const onlineMsg = h('p', { class: 'muted small' });
   const grid = h('div', { class: 'icon-grid', role: 'list' });
+  const more = h('div', { class: 'icon-more' });
   const note = h('p', { class: 'muted small' });
+  const fill = previewFiller(signal);
+  const offline = offlineRow(() => {
+    const p = setSel.value;
+    if (!p) {
+      const prefixes = POPULAR_SETS.filter((x) => sets[x]);
+      return { label: `Popular icon sets (${prefixes.length})`, prefixes };
+    }
+    return sets[p]?.hosted ? { label: sets[p].name, prefixes: [p] } : null;
+  }, signal);
   let sets: Record<string, IconSet> = {};
   let setsState: 'idle' | 'loading' | 'ready' = 'idle';
+  let limit = PAGE;
 
   const show = (names: string[]) => {
     if (!names.length) {
       grid.replaceChildren(h('div', { class: 'empty' }, input.value ? `No icons match “${input.value}”. Try a broader word.` : 'Search for an icon.'));
+      more.replaceChildren();
       return;
     }
-    grid.replaceChildren(...names.map((n) => draggable(h('button', {
-      class: 'icon-tile', 'data-tip': `${n}. Click to add, or drag onto the board.`, 'aria-label': n, role: 'listitem',
-      onclick: () => dropItem(app, { kind: 'icon', name: n }),
-    }, h('img', { src: previewUrl(n), alt: '', loading: 'lazy', width: 28, height: 28 })), { kind: 'icon', name: n })));
-    const prefixes = [...new Set(names.map((n) => n.split(':')[0]))];
-    const attrib = prefixes.filter((p) => sets[p]?.attribution);
-    note.textContent = attrib.length
-      ? `Some results (${attrib.join(', ')}) are licensed CC BY and need attribution when you publish.`
-      : 'Icons are from open-source sets via Iconify. Placed icons are stored in the board and work offline.';
+    const imgs = new Map<string, HTMLImageElement>();
+    grid.replaceChildren(...names.map((n) => {
+      const img = h('img', { alt: '', loading: 'lazy', width: 28, height: 28 });
+      imgs.set(n, img);
+      return draggable(h('button', {
+        class: 'icon-tile', 'data-tip': `${n}. Click to add, or drag onto the board.`, 'aria-label': n, role: 'listitem',
+        onclick: () => dropItem(app, { kind: 'icon', name: n }),
+      }, img), { kind: 'icon', name: n });
+    }));
+    fill(imgs);
+    put(more, !setSel.value && input.value.trim() && names.length >= limit
+      ? h('button', { class: 'btn wide', onclick: () => { limit += PAGE; loader.reload(); } }, 'Show more')
+      : null);
+    const list = (keep: (s: IconSet) => boolean) => [...new Set(names.map((n) => n.split(':')[0]))].filter((p) => sets[p] && keep(sets[p])).join(', ');
+    const attrib = list((s) => s.attribution), logos = list((s) => !!s.logos), online = list((s) => !s.hosted);
+    put(note,
+      attrib ? `Some results (${attrib}) are licensed CC BY and need attribution when you publish.` : 'Icons are from open-source sets. Placed icons are stored in the board and work offline.',
+      logos ? ` Logos (${logos}) are trademarks of their owners.` : null,
+      online ? ` ${online} ${online.includes(',') ? 'are' : 'is'} online only, so searching ${online.includes(',') ? 'them' : 'it'} sends your query to Iconify.` : null,
+      ' ',
+      h('button', { class: 'link-btn', onclick: openIconCredits }, 'Licences'),
+    );
   };
 
   const loader = iconLoader((s) => {
     const q = input.value.trim();
     const prefix = setSel.value || undefined;
     loadSets();
-    return q ? searchIcons(q, prefix, 96, s) : prefix ? collectionIcons(prefix, 160, s) : searchIcons('arrow', 'lucide', 48, s);
+    let shown = false;
+    let better: string[] | null = null;
+    const names = q
+      ? searchIcons(q, prefix, prefix ? 96 : limit, s, (found) => {
+        if (s.aborted) return;
+        if (shown) show(found);
+        else better = found;
+      })
+      : prefix ? collectionIcons(prefix, 160, s) : searchIcons('arrow', 'lucide', PAGE, s);
+    return names.then((found) => withPreviews(found, s)).then((found) => {
+      shown = true;
+      return better ?? found;
+    });
   }, gridView(grid, show), signal);
 
+  const restart = () => {
+    limit = PAGE;
+    loader.reload();
+  };
   let t = 0;
   input.addEventListener('input', () => {
     clearTimeout(t);
-    t = window.setTimeout(loader.reload, 250);
+    t = window.setTimeout(restart, 250);
   });
   signal.addEventListener('abort', () => clearTimeout(t), { once: true });
-  setSel.addEventListener('change', loader.reload);
+  setSel.addEventListener('change', () => {
+    restart();
+    offline.update();
+  });
+  const optionsFor = (list: IconSet[]) => list.map((x) => h('option', { value: x.prefix }, `${x.name} (${x.license})`));
   const loadSets = () => {
     if (setsState !== 'idle') return;
     setsState = 'loading';
     iconSets(signal).then((s) => {
       if (signal.aborted) return;
       setsState = 'ready';
-      sets = s;
+      sets = { ...sets, ...s };
+      const total = Object.values(s).reduce((n, x) => n + x.total, 0);
+      input.placeholder = `Search ${(Math.floor(total / 1000) * 1000).toLocaleString('en')}+ icons`;
       const popular = POPULAR_SETS.filter((p) => s[p]);
       const others = Object.values(s).filter((x) => !popular.includes(x.prefix)).sort((a, b) => a.name.localeCompare(b.name));
       setSel.append(
-        h('optgroup', { label: 'Popular' }, ...popular.map((p) => h('option', { value: p }, `${s[p].name} (${s[p].license})`))),
-        h('optgroup', { label: 'All sets' }, ...others.map((x) => h('option', { value: x.prefix }, `${x.name} (${x.license})`))),
+        h('optgroup', { label: 'Popular' }, ...optionsFor(popular.map((p) => s[p]))),
+        h('optgroup', { label: 'Hosted sets' }, ...optionsFor(others)),
       );
+      offline.update();
     }).catch(() => {
       setsState = 'idle';
     });
   };
+  const loadOnline = async () => {
+    onlineBtn.disabled = true;
+    onlineMsg.textContent = '';
+    try {
+      const online = Object.values(await onlineIconSets(signal)).sort((a, b) => a.name.localeCompare(b.name));
+      if (signal.aborted) return;
+      for (const x of online) sets[x.prefix] = x;
+      setSel.append(h('optgroup', { label: 'Online only' }, ...optionsFor(online)));
+      onlineBtn.remove();
+      onlineMsg.textContent = `${online.length} more sets are online only. Searching them sends your query to Iconify.`;
+    } catch (e) {
+      if (signal.aborted) return;
+      onlineBtn.disabled = false;
+      onlineMsg.textContent = failureMessage(failureOf(e));
+    }
+  };
   loadSets();
   loader.reload();
   requestAnimationFrame(() => input.focus());
-  return h('div', { class: 'drawer-body' }, input, setSel, grid, note);
+  return h('div', { class: 'drawer-body' }, input, setSel, onlineBtn, onlineMsg, grid, more, offline.el, note);
 }
 
 function templatesTab(app: BoardApp, close: () => void) {
