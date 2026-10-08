@@ -36,15 +36,15 @@ export function icon(name: keyof typeof ICONS, size = 20): HTMLSpanElement {
 }
 
 export const ICONS = {
-  select: '<path d="M5 3.5l13 6.2-5.6 1.7-2.6 5.4z"/><path d="M12.6 11.6l5 5"/>',
-  hand: '<path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V13a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 14.2a1.6 1.6 0 012.4-2L8 14"/>',
+  select: '<path d="M5.5 5.35l13 6.2-5.6 1.7-2.6 5.4z"/><path d="M13.1 13.45l5 5"/>',
+  hand: '<g transform="translate(1.6 0.75)"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V13a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 14.2a1.6 1.6 0 012.4-2L8 14"/></g>',
   sticky: '<path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/>',
   text: '<path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/>',
   rect: '<rect x="4" y="5" width="16" height="14" rx="1.5"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="7"/>',
   diamond: '<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/>',
   connector: '<path d="M5 19L18 6"/><path d="M11 6h7v7"/>',
-  pen: '<path d="M4 20c3-1 4-4 6-7s5-6 8-7c1-.4 2 .6 1.6 1.6-1 3-4 6-7 8s-6 3-7 6"/>',
+  pen: '<g transform="translate(0.15 -1.75)"><path d="M4 20c3-1 4-4 6-7s5-6 8-7c1-.4 2 .6 1.6 1.6-1 3-4 6-7 8s-6 3-7 6"/></g>',
   frame: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18"/>',
   shapes: '<rect x="3.5" y="10" width="10" height="10" rx="1"/><circle cx="16" cy="8" r="5"/>',
   uml: '<rect x="4" y="3.5" width="16" height="17" rx="1"/><path d="M4 8.5h16M4 14h16M7 11.2h6M7 16.8h8"/>',
