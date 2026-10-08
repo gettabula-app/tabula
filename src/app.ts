@@ -9,6 +9,7 @@ import {
   rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
+import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { STICKY_COLORS, normalizeHex, parseHex } from './palette';
 
@@ -46,7 +47,7 @@ type Drag =
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
   | { mode: 'pen'; pts: Point[] };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing';
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
@@ -58,6 +59,8 @@ export class BoardApp {
   readonly editor: TextEditor;
   tool: Tool = { kind: 'select' };
   selection: Id[] = [];
+  /** Shows a short toast; the UI assigns it. */
+  notify: (msg: string) => void = () => {};
   /** Colour of the next sticky note; remembered on this device. */
   private _stickyColor = loadStickyColor();
   get stickyColor() {
@@ -88,6 +91,7 @@ export class BoardApp {
   }
   connectorDefaults: Partial<ConnectorObj> = { route: 'elbow', startHead: 'none', endHead: 'arrow' };
   private drag: Drag | null = null;
+  private longPress: { id: Id; x: number; y: number; timer: number; ring: HTMLElement } | null = null;
   private spaceDown = false;
   private listeners = new Map<Events, Set<() => void>>();
   private lastPointer: Point = { x: 0, y: 0 };
@@ -119,7 +123,7 @@ export class BoardApp {
     this.store.onChange((changed) => {
       // drop deleted objects from the selection
       const before = this.selection.length;
-      this.selection = this.selection.filter((id) => this.store.get(id));
+      this.selection = this.selection.filter((id) => { const o = this.store.get(id); return !!o && !o.locked; });
       if (this.selection.length !== before) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
@@ -170,7 +174,13 @@ export class BoardApp {
     return this.selection.map((id) => this.store.get(id)).filter(Boolean) as Obj[];
   }
 
+  get dragging(): boolean {
+    const d = this.drag;
+    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || (d.mode === 'move' && d.moved));
+  }
+
   setTool(t: Tool) {
+    this.cancelLongPress();
     this.tool = t;
     this.r.root.dataset.tool = t.kind;
     this.r.setOverlay({ anchorsFor: null, anchorHot: null });
@@ -199,11 +209,12 @@ export class BoardApp {
   }
 
   /** Topmost object under a world point. */
-  hit(p: Point, opts: { skip?: Set<Id>; connectors?: boolean; frames?: boolean } = {}): Obj | undefined {
+  hit(p: Point, opts: { skip?: Set<Id>; connectors?: boolean; frames?: boolean; locked?: boolean } = {}): Obj | undefined {
     const tol = 5 / this.zoom;
     const ord = this.store.ordered();
     for (let i = ord.length - 1; i >= 0; i--) {
       const o = ord[i];
+      if (o.locked && !opts.locked) continue;
       if (opts.skip?.has(o.id)) continue;
       const b = this.r.bounds(o);
       if (!b || p.x < b.x - tol * 3 || p.y < b.y - tol * 3 || p.x > b.x + b.w + tol * 3 || p.y > b.y + b.h + tol * 3) continue;
@@ -301,7 +312,7 @@ export class BoardApp {
     svg.addEventListener('dblclick', (e) => this.onDblClick(e));
     svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    svg.addEventListener('pointerleave', () => this.r.setOverlay({ hover: null }));
+    svg.addEventListener('pointerleave', () => this.r.setOverlay({ hover: null, lockedHover: null }));
 
     // Touch pinch-zoom (two pointers).
     const touches = new Map<number, Point>();
@@ -312,7 +323,9 @@ export class BoardApp {
       if (touches.size === 2) {
         const [a, b] = [...touches.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+        this.cancelLongPress();
         this.drag = null;
+        this.emit('drag');
         this.r.setOverlay({ marquee: null, preview: '' });
       }
     });
@@ -367,7 +380,41 @@ export class BoardApp {
     return null;
   }
 
+  private armLongPress(id: Id, e: PointerEvent) {
+    this.cancelLongPress();
+    const ring = document.createElement('div');
+    ring.className = 'lp-ring';
+    ring.setAttribute('aria-hidden', 'true');
+    ring.style.left = `${e.clientX}px`;
+    ring.style.top = `${e.clientY}px`;
+    ring.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(24,33,43,.18)" stroke-width="3"/><circle class="lp-arc" cx="14" cy="14" r="11" fill="none" stroke="#18212B" stroke-width="3" stroke-linecap="round" transform="rotate(-90 14 14)"/></svg>';
+    this.r.root.append(ring);
+    const timer = window.setTimeout(() => this.fireLongPress(), 600);
+    this.longPress = { id, x: e.clientX, y: e.clientY, timer, ring };
+  }
+
+  private cancelLongPress() {
+    const lp = this.longPress;
+    if (!lp) return;
+    clearTimeout(lp.timer);
+    lp.ring.remove();
+    this.longPress = null;
+  }
+
+  private fireLongPress() {
+    const lp = this.longPress;
+    if (!lp) return;
+    this.cancelLongPress();
+    this.drag = null;
+    this.r.setOverlay({ marquee: null });
+    this.store.undo.stopCapturing();
+    this.store.transact(() => this.store.update(lp.id, { locked: undefined }));
+    this.setSelection([lp.id]);
+    this.notify('Unlocked');
+  }
+
   private onDown(e: PointerEvent) {
+    this.cancelLongPress();
     if (this.editor.active) this.editor.commit();
     if (e.pointerType === 'touch' && this.isPinching()) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
@@ -391,6 +438,7 @@ export class BoardApp {
         const c = center(o);
         this.drag = { mode: 'rotate', id: o.id, c, a0: Math.atan2(p.y - c.y, p.x - c.x), r0: o.rotation || 0 };
       } else if (isBox(o)) this.drag = { mode: 'resize', id: o.id, handle: hh.h, o0: { ...o } };
+      this.emit('drag');
       return;
     }
 
@@ -404,13 +452,16 @@ export class BoardApp {
     const t = this.tool;
     switch (t.kind) {
       case 'select': {
-        const hit = this.hit(p);
-        if (hit && this.flow.handleClick(hit, e.shiftKey)) return;
+        const top = this.hit(p, { locked: true });
+        if (top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
+        const hit = top?.locked ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
           this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [] };
           if (!e.shiftKey) this.setSelection([]);
+          if (top?.locked) this.armLongPress(top.id, e);
           return;
         }
+        if (top?.locked) this.armLongPress(top.id, e);
         if (e.shiftKey) {
           const s = new Set(this.selection);
           if (s.has(hit.id)) s.delete(hit.id);
@@ -462,6 +513,8 @@ export class BoardApp {
   }
 
   private onMove(e: PointerEvent) {
+    const lp = this.longPress;
+    if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 5) this.cancelLongPress();
     const p = this.worldOf(e);
     this.lastPointer = p;
     this.broadcastCursor(p);
@@ -487,7 +540,7 @@ export class BoardApp {
         const m = rectOfPoints([d.start, p]);
         const inside = this.store.ordered().filter((o) => {
           const b = this.r.bounds(o);
-          return b && rectContains(m, b);
+          return !o.locked && b && rectContains(m, b);
         });
         this.r.setOverlay({ marquee: m });
         this.selection = [...new Set([...d.base, ...inside.map((o) => o.id)])];
@@ -555,8 +608,10 @@ export class BoardApp {
 
   private updateHover(p: Point) {
     const t = this.tool.kind;
-    const hit = t === 'select' || t === 'connector' ? this.hit(p) : undefined;
-    const anchorHost = CONNECTABLE(hit) && !hit.locked && !this.flow.isVoting() ? hit.id : null;
+    const top = t === 'select' || t === 'connector' ? this.hit(p, { locked: true }) : undefined;
+    const live = top?.locked ? this.hit(p) : top;
+    const lockedTop = !live && top?.locked ? top : undefined;
+    const anchorHost = CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
     // keep anchors visible while the pointer is on one of them
     const an = this.anchorAt(p);
     const anchorsFor = an ? an.id : anchorHost;
@@ -564,15 +619,18 @@ export class BoardApp {
     let cursor = '';
     if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
-    else if (hit && t === 'select') cursor = this.flow.isVoting() && (hit.type === 'sticky' || hit.type === 'shape') ? 'pointer' : 'move';
+    else if (live && t === 'select') cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
+    else if (lockedTop && t === 'select' && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
-    this.r.setOverlay({ hover: hit?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null });
+    this.r.setOverlay({ hover: live?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
   }
 
   private doMove(d: Extract<Drag, { mode: 'move' }>, p: Point, e: PointerEvent) {
     let dx = p.x - d.start.x, dy = p.y - d.start.y;
     if (!d.moved && Math.hypot(dx, dy) * this.zoom < 3) return;
+    const first = !d.moved;
     d.moved = true;
+    if (first) this.emit('drag');
     const guides: { x1: number; y1: number; x2: number; y2: number }[] = [];
     if (!e.altKey) {
       const b = d.bounds;
@@ -680,11 +738,13 @@ export class BoardApp {
   }
 
   private onUp(e: PointerEvent) {
+    this.cancelLongPress();
     const d = this.drag;
     this.drag = null;
     this.r.root.classList.remove('panning');
     if (!d) return;
     this.flushQueue();
+    this.emit('drag');
     const p = this.worldOf(e);
     switch (d.mode) {
       case 'move':
@@ -782,7 +842,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'frame': return { w: 960, h: 600 };
-      case 'shape': return t.shape === 'ellipse' || t.shape === 'diamond' || t.shape === 'star' ? { w: 144, h: 144 } : { w: 192, h: 96 };
+      case 'shape': return shapeDefaultSize(t.shape);
       case 'uml': return { w: t.def.w, h: t.def.h };
       default: return { w: 160, h: 100 };
     }
@@ -827,7 +887,7 @@ export class BoardApp {
     const fb = boxBounds(frame);
     this.store.transact(() => {
       for (const o of this.store.cache.values()) {
-        if (o.id === frame.id || o.type === 'frame' || isConnector(o)) continue;
+        if (o.id === frame.id || o.type === 'frame' || o.locked || isConnector(o)) continue;
         if (rectContains(fb, boxBounds(o))) this.store.update(o.id, { parent: frame.id });
       }
     });
@@ -848,6 +908,8 @@ export class BoardApp {
 
   private onDblClick(e: MouseEvent) {
     const p = this.worldOf(e);
+    const top = this.hit(p, { locked: true });
+    if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
     if (hit) {
       if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
@@ -906,7 +968,7 @@ export class BoardApp {
         return;
       }
       if (mod && k === 'y') { e.preventDefault(); this.store.undo.redo(); return; }
-      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.ordered().map((o) => o.id)); return; }
+      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.ordered().filter((o) => !o.locked).map((o) => o.id)); return; }
       if (mod && k === 'd') { e.preventDefault(); this.duplicate(); return; }
       if (mod && k === 'c') { this.copy(); return; }
       if (mod && k === 'x') { this.copy(); this.deleteSelection(); return; }
@@ -918,6 +980,7 @@ export class BoardApp {
       if (e.shiftKey && e.code === 'Digit0') return this.zoomTo(1);
       if (k === 'delete' || k === 'backspace') { e.preventDefault(); this.deleteSelection(); return; }
       if (k === 'escape') {
+        this.cancelLongPress();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         this.setSelection([]);
         this.setTool({ kind: 'select' });
@@ -947,6 +1010,7 @@ export class BoardApp {
         this.r.root.classList.remove('space');
       }
     }, { signal });
+    window.addEventListener('blur', () => this.cancelLongPress(), { signal });
     window.addEventListener('paste', (e) => {
       const tgt = e.target as HTMLElement;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;
@@ -990,7 +1054,7 @@ export class BoardApp {
           if (o.type === 'frame') {
             for (const id of this.gather([o.id]).map((x) => x.id)) {
               const c = this.store.get(id);
-              if (c && c.id !== o.id && isBox(c) && !this.selection.includes(c.id)) this.store.update(c.id, { x: c.x + dx, y: c.y + dy });
+              if (c && c.id !== o.id && isBox(c) && !c.locked && !this.selection.includes(c.id)) this.store.update(c.id, { x: c.x + dx, y: c.y + dy });
             }
           }
         }
@@ -1191,6 +1255,10 @@ export class BoardApp {
   toggleLock() {
     const lock = !this.selected().every((o) => o.locked);
     this.updateSelected({ locked: lock || undefined });
+    if (lock) {
+      this.setSelection([]);
+      this.notify('Locked. Long-press to unlock.');
+    }
   }
 
   // ---------------------------------------------------------------- presence
@@ -1263,6 +1331,7 @@ export class BoardApp {
   }
 
   destroy() {
+    this.cancelLongPress();
     this.lifetime.abort();
     this.disposers.forEach((f) => f());
     this.editor.commit();

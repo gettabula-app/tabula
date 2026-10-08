@@ -2,8 +2,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, Id } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
-import { styleOf, textHeight } from './markup';
-import { textBox } from './shapes';
+import { labelBox, layoutText, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
 import { classHeight, formatClass, parseClass } from './uml';
 
@@ -77,6 +76,7 @@ export class TextEditor {
       this.ta.focus();
       this.ta.select();
     });
+    this.app.emit('editing');
   }
 
   reposition() {
@@ -104,10 +104,10 @@ export class TextEditor {
       return;
     }
     const b = o as BaseObj;
+    const centred = b.type === 'shape' || b.type === 'sticky';
     let box = { x: 0, y: 0, w: b.w, h: b.h };
     let fontSize = st.fontSize;
-    if (b.type === 'shape') box = textBox(b.kind || 'rect', b.w, b.h);
-    if (b.type === 'sticky') box = { x: 14, y: 14, w: b.w - 28, h: b.h - 28 };
+    if (centred) box = labelBox(b);
     if (b.type === 'frame') {
       box = { x: 0, y: -34, w: Math.max(b.w, 200), h: 28 };
       fontSize = st.fontSize;
@@ -131,8 +131,13 @@ export class TextEditor {
     const c = center(b);
     const tl = rotate({ x: b.x + box.x, y: b.y + box.y }, c, b.rotation || 0);
     this.place(tl.x, tl.y, box.w, box.h, b.rotation || 0, z);
-    // vertically centre short text in shapes and stickies
-    if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && b.type !== 'frame') {
+    // same layout as the renderer, so the text stays where it is drawn
+    if (centred) {
+      const lay = layoutText(ta.value || ' ', box, st, { shrink: true, valign: st.valign });
+      ta.style.fontSize = `${lay.size}px`;
+      ta.style.lineHeight = `${lay.lineHeight}px`;
+      ta.style.paddingTop = `${Math.max(0, lay.top - box.y)}px`;
+    } else if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && b.type !== 'frame') {
       ta.style.paddingTop = '0px';
       const content = ta.scrollHeight;
       ta.style.paddingTop = `${Math.max(0, (box.h - content) / 2)}px`;
@@ -192,5 +197,6 @@ export class TextEditor {
     if (o && o.type === 'text' && !v.trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
     this.app.r.setEditing(null);
     this.app.store.undo.stopCapturing();
+    this.app.emit('editing');
   }
 }

@@ -4,6 +4,7 @@ import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
+import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
 import { openFontPicker } from './fontpicker';
@@ -21,6 +22,7 @@ type IconName = keyof typeof ICONS;
 export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }) {
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
+  app.notify = toast;
 
   // ---------------------------------------------------------------- top left
   const name = h('input', { class: 'board-name', value: app.store.getMeta().name, 'aria-label': 'Board name', spellcheck: 'false' });
@@ -84,12 +86,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  const drawerBtn = (label: string, ic: IconName, tab: 'shapes' | 'uml' | 'icons' | 'templates') => {
+  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'templates') => {
     const b = h('button', { class: 'rail-btn', title: label, 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
     return b;
   };
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
+  const shapesBtn = h('button', { class: 'rail-btn', title: 'Shapes', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const voteBtn = h('button', { class: 'rail-btn', title: 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
@@ -111,13 +114,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     h('hr'),
     stickyBtn,
     toolBtn('Text', 'text', { kind: 'text' }, 'T'),
-    toolBtn('Rectangle', 'rect', { kind: 'shape', shape: 'rect' }, 'R'),
-    toolBtn('Ellipse', 'ellipse', { kind: 'shape', shape: 'ellipse' }, 'O'),
+    shapesBtn,
     toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
     toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
     toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
     h('hr'),
-    drawerBtn('Shapes and sticky notes', 'shapes', 'shapes'),
     drawerBtn('UML', 'uml', 'uml'),
     drawerBtn('Icons', 'icons', 'icons'),
     drawerBtn('Templates and team exercises', 'templates', 'templates'),
@@ -129,17 +130,24 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
-      let on = b.dataset.tool === t.kind;
-      if (t.kind === 'shape') on = b.getAttribute('aria-label') === (t.shape === 'ellipse' ? 'Ellipse' : t.shape === 'rect' ? 'Rectangle' : '');
+      const on = b.dataset.tool === t.kind;
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', String(on));
     });
     stickyBtn.style.setProperty('--sticky', app.stickyColor);
   };
+  const syncShapesBtn = () => {
+    const on = library.tab === 'shapes' || app.tool.kind === 'shape';
+    shapesBtn.classList.toggle('on', on);
+    shapesBtn.setAttribute('aria-pressed', String(on));
+  };
   library.onChange((t) => rail.querySelectorAll<HTMLElement>('[data-drawer]').forEach((b) => b.classList.toggle('on', b.dataset.drawer === t)));
+  library.onChange(syncShapesBtn);
   app.on('tool', syncRail);
+  app.on('tool', syncShapesBtn);
   app.on('selection', syncRail);
   syncRail();
+  syncShapesBtn();
   syncVote();
 
   // Sticky colour tray appears while the sticky tool is active.
@@ -192,7 +200,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   renderStickyTray();
-  mountProps(app, chrome);
+  const props = mountProps(app, chrome);
+  mountQuickbar(app, chrome, props);
   mountFlowBar(app, chrome);
   firstRunHint(app, chrome);
 

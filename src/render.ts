@@ -20,6 +20,7 @@ export interface RemoteSel { ids: Id[]; color: string }
 export interface Overlay {
   selection: Id[];
   hover: Id | null;
+  lockedHover: Id | null;
   anchorsFor: Id | null;
   anchorHot: string | null;     // `${id}:${side}` under the pointer
   marquee: Rect | null;
@@ -31,7 +32,7 @@ export interface Overlay {
 }
 
 export const emptyOverlay = (): Overlay => ({
-  selection: [], hover: null, anchorsFor: null, anchorHot: null, marquee: null,
+  selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null,
 });
 
@@ -386,6 +387,11 @@ export class Renderer {
     if (ov.hover && !ov.selection.includes(ov.hover)) {
       const o = get(ov.hover);
       if (o) out += this.outline(o, px(1.5), 0.6);
+    }
+    if (ov.lockedHover) {
+      const lo = get(ov.lockedHover);
+      const lb = lo?.locked && this.bounds(lo);
+      if (lb) out += `<g transform="translate(${lb.x + lb.w} ${lb.y})"><circle r="${px(11)}" fill="#18212B" stroke="#fff" stroke-width="${px(1.5)}"/><g transform="translate(${-px(7)} ${-px(7)}) scale(${px(14) / 24})" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></g></g>`;
     }
 
     // selection

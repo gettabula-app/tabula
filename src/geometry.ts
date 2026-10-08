@@ -1,5 +1,6 @@
 import type { BaseObj, ConnectorObj, End, Obj, Point, Rect, Side } from './types';
 import { isBox, isConnector } from './types';
+import { shapeAnchor } from './shapes';
 
 export const EPS = 1e-6;
 
@@ -119,6 +120,10 @@ export function sideAnchor(o: BaseObj, side: Side): { p: Point; dir: Point } {
     top: { x: c.x, y: o.y }, right: { x: o.x + o.w, y: c.y },
     bottom: { x: c.x, y: o.y + o.h }, left: { x: o.x, y: c.y },
   };
+  if (o.type === 'shape') {
+    const lp = shapeAnchor(o.kind || 'rect', o.w, o.h, side);
+    local[side] = { x: o.x + lp.x, y: o.y + lp.y };
+  }
   const r = o.rotation || 0;
   return { p: rotate(local[side], c, r), dir: rotate(SIDE_DIR[side], { x: 0, y: 0 }, r) };
 }
