@@ -22,7 +22,7 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
     class: page === current ? 'topbar-link on' : 'topbar-link', href, 'aria-current': page === current ? 'page' : undefined,
   }, label);
   return h('header', { class: 'topbar' },
-    h('a', { class: 'topbar-mark', href: '#/' }, 'Mira'),
+    h('a', { class: 'topbar-mark', href: '#/' }, 'Tabula'),
     h('nav', { class: 'topbar-nav', 'aria-label': 'Main' },
       link('boards', 'Boards', '#/'),
       link('templates', 'Templates', '#/templates'),

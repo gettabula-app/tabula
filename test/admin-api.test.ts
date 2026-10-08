@@ -46,16 +46,16 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
         PORT: String(port),
         DATA_DIR: dir,
         HOST: '127.0.0.1',
-        MIRA_AUTH: 'on',
-        MIRA_OWNER_EMAIL: OWNER,
-        MIRA_MAIL: 'file',
-        MIRA_BASE_URL: `http://127.0.0.1:${port}`,
-        MIRA_TRUST_PROXY: '1',
+        TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER,
+        TABULA_MAIL: 'file',
+        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+        TABULA_TRUST_PROXY: '1',
         ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    p.stdout!.on('data', (d) => String(d).includes('Mira relay') && resolve(p));
+    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
     setTimeout(() => reject(new Error('relay did not start')), 8000);
@@ -72,7 +72,7 @@ const servers: Server[] = [];
 
 async function launch(env: Record<string, string> = {}): Promise<Server> {
   const port = BASE_PORT + servers.length;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-admin-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-admin-'));
   const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
   servers.push(server);
   return server;
@@ -104,7 +104,7 @@ function client(srv: Server) {
     const res = await fetch(srv.base + urlPath, {
       method,
       headers: {
-        'x-mira': '1',
+        'x-tabula': '1',
         ...(cookie ? { cookie } : {}),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...headers,
@@ -125,8 +125,8 @@ function client(srv: Server) {
     const token = decodeURIComponent(/token=([^\s&"\\]+)/.exec(JSON.parse(sent[0]).text)![1]);
     const verify = await api(undefined, 'POST', '/api/auth/verify', { token });
     if (verify.status !== 200) throw new Error(`verify failed with ${verify.status}`);
-    const session = /mira_session=([^;]+)/.exec(verify.headers.getSetCookie()[0])![1];
-    return { cookie: `mira_session=${session}`, token: session, user: verify.body.user, email };
+    const session = /tabula_session=([^;]+)/.exec(verify.headers.getSetCookie()[0])![1];
+    return { cookie: `tabula_session=${session}`, token: session, user: verify.body.user, email };
   }
 
   async function newTeam(cookie: string, name = unique('Team')) {
@@ -225,7 +225,7 @@ describe('admin API access', () => {
 
   it('answers 401 when signed out, with no cookie or an unknown one', async () => {
     for (const [method, url] of calls) {
-      for (const cookie of [undefined, 'mira_session=not-a-session']) {
+      for (const cookie of [undefined, 'tabula_session=not-a-session']) {
         const res = await c.api(cookie, method, url);
         expect([method, url, res.status, res.body.error]).toEqual([method, url, 401, 'unauthenticated']);
       }
@@ -256,7 +256,7 @@ describe('admin API access', () => {
 
   it('applies the CSRF rules to mutations', async () => {
     for (const [method, url] of [calls[2], calls[4], calls[6]]) {
-      const bare = await c.api(owner.cookie, method, url, undefined, { 'x-mira': '' });
+      const bare = await c.api(owner.cookie, method, url, undefined, { 'x-tabula': '' });
       expect([method, bare.status, bare.body.error]).toEqual([method, 403, 'csrf']);
       const foreign = await c.api(owner.cookie, method, url, undefined, { origin: 'http://evil.example' });
       expect([method, foreign.status, foreign.body.error]).toEqual([method, 403, 'csrf']);
@@ -271,7 +271,7 @@ describe('admin API access', () => {
   });
 
   it('answers 404 to every admin route in open mode', async () => {
-    const open = await launch({ MIRA_AUTH: 'off' });
+    const open = await launch({ TABULA_AUTH: 'off' });
     const oc = client(open);
     for (const [method, url] of calls) {
       const res = await oc.api(undefined, method, url);

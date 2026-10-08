@@ -1,6 +1,6 @@
 # Admin dashboard
 
-A workspace-level console for owners and admins of an accounts-mode instance (`MIRA_AUTH=on`). It answers: who is here, what do they have, who is signed in, and what changed. Route `#/admin`, reachable from the home screen and the board menu for workspace `owner` and `admin` only (members and guests never see the link, and the API refuses them).
+A workspace-level console for owners and admins of an accounts-mode instance (`TABULA_AUTH=on`). It answers: who is here, what do they have, who is signed in, and what changed. Route `#/admin`, reachable from the home screen and the board menu for workspace `owner` and `admin` only (members and guests never see the link, and the API refuses them).
 
 First slice. Not in it: usage analytics over time, billing, SSO, per-board activity feeds, bulk actions, CSV export.
 

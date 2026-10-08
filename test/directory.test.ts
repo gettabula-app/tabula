@@ -22,7 +22,7 @@ const open = (file = ':memory:') => {
   return d;
 };
 const tmp = () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-dir-'));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-dir-'));
   tmpDirs.push(d);
   return d;
 };

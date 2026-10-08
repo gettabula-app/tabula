@@ -26,7 +26,7 @@ const matches = (t: TemplateDef, query: string) =>
 
 /** Every template with a category filter and a search box. */
 export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState = { mode: 'open' }): void {
-  document.title = 'Templates - Mira';
+  document.title = 'Templates - Tabula';
   const me = accountMe(auth);
   const down = auth.mode === 'offline';
   let category: string | null = null;

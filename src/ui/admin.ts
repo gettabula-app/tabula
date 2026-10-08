@@ -566,7 +566,7 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
 
 /** The admin dashboard. The caller has checked that `me` is an owner or admin. */
 export function renderAdmin(root: HTMLElement, tab: AdminTab, me: Me): void {
-  document.title = 'Admin - Mira';
+  document.title = 'Admin - Tabula';
   root.replaceChildren(h('main', { class: 'admin' },
     h('header', { class: 'admin-top' },
       h('a', { class: 'icon-btn', href: '#/', title: 'Back to boards', 'aria-label': 'Back to boards' }, icon('prev')),

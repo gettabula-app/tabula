@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withLegacyEnv } from './env.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAIL_MODES = ['log', 'file', 'webhook', 'smtp'];
-const CLOUD_VARS = ['MIRA_CLOUD_TOKEN', 'MIRA_CLOUD_URL', 'MIRA_CLOUD_WORKSPACE_ID'];
+const CLOUD_VARS = ['TABULA_CLOUD_TOKEN', 'TABULA_CLOUD_URL', 'TABULA_CLOUD_WORKSPACE_ID'];
 const CLOUD_TOKEN_MIN = 32;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const WORKSPACE_ID_RE = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -27,67 +28,68 @@ function loadCloud(env, authEnabled) {
   const [token, rawUrl, workspaceId] = values;
 
   if (token.length < CLOUD_TOKEN_MIN || /\s/.test(token)) {
-    throw new Error(`MIRA_CLOUD_TOKEN must be at least ${CLOUD_TOKEN_MIN} characters without spaces`);
+    throw new Error(`TABULA_CLOUD_TOKEN must be at least ${CLOUD_TOKEN_MIN} characters without spaces`);
   }
   let url;
   try {
     url = new URL(rawUrl);
   } catch {
-    throw new Error('MIRA_CLOUD_URL is not a valid URL');
+    throw new Error('TABULA_CLOUD_URL is not a valid URL');
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname))) {
-    throw new Error('MIRA_CLOUD_URL must be an https:// URL (http:// is only allowed for localhost)');
+    throw new Error('TABULA_CLOUD_URL must be an https:// URL (http:// is only allowed for localhost)');
   }
   if (url.username || url.password || url.search || url.hash) {
-    throw new Error('MIRA_CLOUD_URL must not contain credentials, a query or a fragment');
+    throw new Error('TABULA_CLOUD_URL must not contain credentials, a query or a fragment');
   }
   if (!WORKSPACE_ID_RE.test(workspaceId)) {
-    throw new Error('MIRA_CLOUD_WORKSPACE_ID must be 1 to 128 letters, digits, . - or _');
+    throw new Error('TABULA_CLOUD_WORKSPACE_ID must be 1 to 128 letters, digits, . - or _');
   }
   if (!authEnabled) return null;
   return { token, url: `${url.origin}${url.pathname}`.replace(/\/+$/, ''), workspaceId };
 }
 
-export function loadConfig(env = process.env) {
-  const authEnabled = env.MIRA_AUTH === 'on';
+export function loadConfig(rawEnv = process.env, warn = console.warn) {
+  const env = withLegacyEnv(rawEnv, warn);
+  const authEnabled = env.TABULA_AUTH === 'on';
   const port = Number(env.PORT) || 8787;
   const dataDir = path.resolve(env.DATA_DIR || path.join(here, '..', 'data'));
 
-  const ownerRaw = (env.MIRA_OWNER_EMAIL || '').trim();
+  const ownerRaw = (env.TABULA_OWNER_EMAIL || '').trim();
   const ownerEmail = normaliseEmail(ownerRaw);
-  if (ownerRaw && !ownerEmail) throw new Error('MIRA_OWNER_EMAIL is not a valid email address');
-  if (authEnabled && !ownerEmail) throw new Error('MIRA_OWNER_EMAIL is required when MIRA_AUTH=on');
+  if (ownerRaw && !ownerEmail) throw new Error('TABULA_OWNER_EMAIL is not a valid email address');
+  if (authEnabled && !ownerEmail) throw new Error('TABULA_OWNER_EMAIL is required when TABULA_AUTH=on');
 
-  const baseUrl = (env.MIRA_BASE_URL || `http://localhost:${port}`).trim().replace(/\/+$/, '');
+  const baseUrl = (env.TABULA_BASE_URL || `http://localhost:${port}`).trim().replace(/\/+$/, '');
   let url;
   try {
     url = new URL(baseUrl);
   } catch {
-    throw new Error(`MIRA_BASE_URL is not a valid URL: ${baseUrl}`);
+    throw new Error(`TABULA_BASE_URL is not a valid URL: ${baseUrl}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('MIRA_BASE_URL must be an http:// or https:// URL');
+    throw new Error('TABULA_BASE_URL must be an http:// or https:// URL');
   }
   const origin = url.origin;
   const secureCookies = origin.startsWith('https:');
 
-  const days = Number(env.MIRA_SESSION_DAYS);
+  const days = Number(env.TABULA_SESSION_DAYS);
   const sessionMs = (days > 0 && Number.isFinite(days) ? days : 30) * DAY_MS;
 
-  const mode = (env.MIRA_MAIL || 'log').trim();
+  const mode = (env.TABULA_MAIL || 'log').trim();
   if (!MAIL_MODES.includes(mode)) {
-    throw new Error(`MIRA_MAIL must be one of ${MAIL_MODES.join(', ')} (got "${mode}")`);
+    throw new Error(`TABULA_MAIL must be one of ${MAIL_MODES.join(', ')} (got "${mode}")`);
   }
-  const webhookUrl = (env.MIRA_MAIL_WEBHOOK_URL || '').trim() || null;
+  const webhookUrl = (env.TABULA_MAIL_WEBHOOK_URL || '').trim() || null;
   if (mode === 'webhook' && !webhookUrl) {
-    throw new Error('MIRA_MAIL_WEBHOOK_URL is required when MIRA_MAIL=webhook');
+    throw new Error('TABULA_MAIL_WEBHOOK_URL is required when TABULA_MAIL=webhook');
   }
 
-  const webhookToken = (env.MIRA_MAIL_WEBHOOK_TOKEN || '').trim() || null;
-  const smtpUrl = (env.MIRA_SMTP_URL || '').trim() || null;
+  const webhookToken = (env.TABULA_MAIL_WEBHOOK_TOKEN || '').trim() || null;
+  const smtpUrl = (env.TABULA_SMTP_URL || '').trim() || null;
   if (mode === 'smtp') {
-    if (!smtpUrl) throw new Error('MIRA_SMTP_URL is required when MIRA_MAIL=smtp (for example smtps://user:password@smtp.example.com:465)');
-    if (!(env.MIRA_MAIL_FROM || '').trim()) throw new Error('MIRA_MAIL_FROM is required when MIRA_MAIL=smtp');
+    if (!smtpUrl) throw new Error('TABULA_SMTP_URL is required when TABULA_MAIL=smtp (for example smtps://user:password@smtp.example.com:465)');
+    if (!(env.TABULA_MAIL_FROM || '').trim()) throw new Error('TABULA_MAIL_FROM is required when TABULA_MAIL=smtp');
   }
 
   const cloud = loadCloud(env, authEnabled);
@@ -98,13 +100,13 @@ export function loadConfig(env = process.env) {
     baseUrl,
     origin,
     secureCookies,
-    trustProxy: env.MIRA_TRUST_PROXY === '1',
-    cookieName: secureCookies ? '__Host-mira_session' : 'mira_session',
+    trustProxy: env.TABULA_TRUST_PROXY === '1',
+    cookieName: secureCookies ? '__Host-tabula_session' : 'tabula_session',
     sessionMs,
     loginTokenMs: 15 * 60 * 1000,
     dataDir,
     port,
-    mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.MIRA_MAIL_FROM || 'Mira <no-reply@localhost>' },
+    mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
     ...(cloud ? { cloud } : {}),
   };
 }

@@ -36,7 +36,7 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
     renderAccountHome(root, nav, me, auth.mode === 'offline');
     return;
   }
-  document.title = 'Mira';
+  document.title = 'Tabula';
   const fileInput = boardFileInput(nav);
   const groups = h('div', { class: 'home-groups' });
   let query = '';
@@ -93,7 +93,7 @@ interface AccountView {
 }
 
 function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boolean) {
-  document.title = 'Mira';
+  document.title = 'Tabula';
   let seq = 0;
   let data: AccountData | null = null;
   let page: HTMLElement | null = null;

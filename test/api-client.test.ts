@@ -83,7 +83,7 @@ describe('api client requests', () => {
     expect(call.url).toBe('/api/teams');
     expect(call.init.method).toBe('POST');
     expect(call.init.credentials).toBe('same-origin');
-    expect(headersOf(call)).toMatchObject({ 'x-mira': '1', 'content-type': 'application/json', accept: 'application/json' });
+    expect(headersOf(call)).toMatchObject({ 'x-tabula': '1', 'content-type': 'application/json', accept: 'application/json' });
     expect(JSON.parse(String(call.init.body))).toEqual({ name: 'Ops' });
     expect(team.name).toBe('Ops');
   });
@@ -95,7 +95,7 @@ describe('api client requests', () => {
     expect(call.init.method).toBe('GET');
     expect(call.init.credentials).toBe('same-origin');
     expect(call.init.body).toBeUndefined();
-    expect(headersOf(call)['x-mira']).toBeUndefined();
+    expect(headersOf(call)['x-tabula']).toBeUndefined();
     expect(headersOf(call)['content-type']).toBeUndefined();
     expect(headersOf(call).accept).toBe('application/json');
   });
@@ -106,7 +106,7 @@ describe('api client requests', () => {
     const call = calls[0];
     expect(call.init.method).toBe('POST');
     expect(call.init.body).toBeUndefined();
-    expect(headersOf(call)['x-mira']).toBe('1');
+    expect(headersOf(call)['x-tabula']).toBe('1');
     expect(headersOf(call)['content-type']).toBeUndefined();
   });
 

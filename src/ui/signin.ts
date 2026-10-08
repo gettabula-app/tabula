@@ -14,7 +14,7 @@ const FAILED = 'Could not sign you in. Try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
 function card(...body: (Node | null)[]): HTMLElement {
-  return h('main', { class: 'signin' }, h('div', { class: 'signin-card' }, h('div', { class: 'wordmark' }, 'Mira'), ...body));
+  return h('main', { class: 'signin' }, h('div', { class: 'signin-card' }, h('div', { class: 'wordmark' }, 'Tabula'), ...body));
 }
 
 function describe(err: unknown): string {
@@ -26,8 +26,8 @@ function describe(err: unknown): string {
 
 export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void {
   const invite = opts.invite;
-  document.title = invite ? `Join ${invite.teamName} - Mira` : 'Sign in - Mira';
-  const heading = invite ? `Join ${invite.teamName}` : 'Sign in to Mira';
+  document.title = invite ? `Join ${invite.teamName} - Tabula` : 'Sign in - Tabula';
+  const heading = invite ? `Join ${invite.teamName}` : 'Sign in to Tabula';
 
   function showForm(notice?: string): void {
     const input = h('input', { class: 'input', type: 'email', name: 'email', autocomplete: 'email', required: true });
@@ -83,7 +83,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
 }
 
 export async function renderVerify(root: HTMLElement, token: string, done: (me: Me) => void): Promise<void> {
-  document.title = 'Signing in - Mira';
+  document.title = 'Signing in - Tabula';
   root.replaceChildren(card(h('p', { class: 'signin-lede', role: 'status' }, 'Signing you in…')));
   try {
     await api.verifyLogin(token);
@@ -106,7 +106,7 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
 }
 
 export async function renderInvite(root: HTMLElement, token: string, auth: AuthState, done: (me: Me) => void): Promise<void> {
-  document.title = 'Join team - Mira';
+  document.title = 'Join team - Tabula';
   root.replaceChildren(card(h('p', { class: 'signin-lede', role: 'status' }, 'Checking your invite…')));
 
   let preview: InvitePreview;

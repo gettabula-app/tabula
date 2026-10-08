@@ -1,4 +1,4 @@
-# Mira
+# Tabula
 
 A local-first infinite whiteboard: sticky notes, shapes on a snapping grid, connectors that stay attached, UML, Fontshare typography, Iconify icons, and facilitated team exercises with timers, private writing and dot voting.
 
@@ -25,9 +25,11 @@ npm run dev
 Docker:
 
 ```bash
-docker build -t mira .
-docker run -p 8787:8787 -v mira-data:/data mira
+docker build -t tabula .
+docker run -p 8787:8787 -v tabula-data:/data tabula
 ```
+
+If you ran the old `mira` image, keep mounting your existing volume (`-v mira-data:/data`) so your boards stay.
 
 ### Relay settings
 
@@ -43,30 +45,32 @@ The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boar
 
 ### Accounts and teams
 
-By default Mira is open: anyone who can reach the relay and knows a board link can edit it. Set `MIRA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
+By default Tabula is open: anyone who can reach the relay and knows a board link can edit it. Set `TABULA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
+
+Tabula was called Mira before: the old `MIRA_*` names of these variables still work, with a deprecation warning at startup, and the `TABULA_` name wins when both are set.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MIRA_AUTH` | `off` | `on` turns accounts mode on |
-| `MIRA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `MIRA_AUTH=on` |
-| `MIRA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
-| `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`MIRA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `MIRA_MAIL_WEBHOOK_URL` |
-| `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
-| `MIRA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
-| `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
-| `MIRA_SMTP_URL` | none | SMTP connection for `MIRA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
+| `TABULA_AUTH` | `off` | `on` turns accounts mode on |
+| `TABULA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `TABULA_AUTH=on` |
+| `TABULA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
+| `TABULA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL` |
+| `TABULA_MAIL_WEBHOOK_URL` | none | Target for `TABULA_MAIL=webhook` |
+| `TABULA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
+| `TABULA_MAIL_FROM` | `Tabula <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
+| `TABULA_SMTP_URL` | none | SMTP connection for `TABULA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
 | `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
-| `MIRA_SESSION_DAYS` | `30` | Session lifetime |
-| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
+| `TABULA_SESSION_DAYS` | `30` | Session lifetime |
+| `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 
 Try it locally:
 
 ```bash
 npm run build
-MIRA_AUTH=on MIRA_OWNER_EMAIL=you@example.com npm start
+TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start
 ```
 
-Open http://localhost:8787, enter that address, and open the sign-in link that the relay prints to its console. When serving the built app from another origin (for example Vite on :5173 in development), set `MIRA_BASE_URL` to that origin, otherwise sockets are refused.
+Open http://localhost:8787, enter that address, and open the sign-in link that the relay prints to its console. When serving the built app from another origin (for example Vite on :5173 in development), set `TABULA_BASE_URL` to that origin, otherwise sockets are refused.
 
 The full design (roles, the HTTP API, the relay rules and the SQLite schema) is in [docs/accounts.md](docs/accounts.md).
 
@@ -110,7 +114,7 @@ End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites
 
 ## Fonts and icons
 
-Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Mira therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
+Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
 
 Iconify icon sets carry their own licences (MIT, Apache 2.0, CC BY 4.0, …). The icon picker shows each set's licence and flags sets that require attribution.
 

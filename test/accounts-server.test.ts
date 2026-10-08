@@ -13,7 +13,7 @@ import WebSocket from 'ws';
 
 const PORT = 19000 + Math.floor(Math.random() * 900);
 const baseUrl = `http://127.0.0.1:${PORT}`;
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-accounts-'));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-'));
 const outbox = path.join(dataDir, 'outbox.jsonl');
 const OWNER = 'owner@example.com';
 
@@ -34,16 +34,16 @@ const startRelay = (port = PORT, dir = dataDir, env: Record<string, string> = {}
         PORT: String(port),
         DATA_DIR: dir,
         HOST: '127.0.0.1',
-        MIRA_AUTH: 'on',
-        MIRA_OWNER_EMAIL: OWNER,
-        MIRA_MAIL: 'file',
-        MIRA_BASE_URL: `http://127.0.0.1:${port}`,
-        MIRA_TRUST_PROXY: '1',
+        TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER,
+        TABULA_MAIL: 'file',
+        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+        TABULA_TRUST_PROXY: '1',
         ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    p.stdout!.on('data', (d) => String(d).includes('Mira relay') && resolve(p));
+    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
     setTimeout(() => reject(new Error('relay did not start')), 8000);
@@ -81,7 +81,7 @@ async function api(cookie: string | undefined, method: string, urlPath: string, 
   const res = await fetch(baseUrl + urlPath, {
     method,
     headers: {
-      'x-mira': '1',
+      'x-tabula': '1',
       ...(cookie ? { cookie } : {}),
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...headers,
@@ -110,7 +110,7 @@ async function signIn(email: string, invite?: string): Promise<Account & { setCo
   const verify = await api(undefined, 'POST', '/api/auth/verify', { token: tokenOf(mails[0]) });
   if (verify.status !== 200) throw new Error(`verify failed with ${verify.status}`);
   const setCookie = verify.headers.getSetCookie()[0];
-  return { cookie: /mira_session=[^;]+/.exec(setCookie)![0], user: verify.body.user, email, setCookie };
+  return { cookie: /tabula_session=[^;]+/.exec(setCookie)![0], user: verify.body.user, email, setCookie };
 }
 
 async function newTeam(cookie: string, name = unique('Team')) {
@@ -216,7 +216,7 @@ describe('accounts mode server', () => {
   });
 
   describe('sign-in', () => {
-    it('is public for config and health, and bootstraps the owner from MIRA_OWNER_EMAIL', async () => {
+    it('is public for config and health, and bootstraps the owner from TABULA_OWNER_EMAIL', async () => {
       expect((await api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: true });
       const health = await api(undefined, 'GET', '/api/health');
       expect(health.body.ok).toBe(true);
@@ -233,7 +233,7 @@ describe('accounts mode server', () => {
 
     it('sets a host-only, HttpOnly, SameSite=Lax session cookie', async () => {
       const { setCookie } = await joinTeam(owner.cookie, (await newTeam(owner.cookie)).id);
-      expect(setCookie).toMatch(/^mira_session=[A-Za-z0-9_-]+;/);
+      expect(setCookie).toMatch(/^tabula_session=[A-Za-z0-9_-]+;/);
       expect(setCookie).toContain('HttpOnly');
       expect(setCookie).toContain('SameSite=Lax');
       expect(setCookie).toContain('Path=/');
@@ -372,7 +372,7 @@ describe('accounts mode server', () => {
       expect(big.status).toBe(413);
 
       const raw = (body: string) =>
-        fetch(`${baseUrl}/api/teams`, { method: 'POST', headers: { 'x-mira': '1', cookie: owner.cookie, 'content-type': 'application/json' }, body });
+        fetch(`${baseUrl}/api/teams`, { method: 'POST', headers: { 'x-tabula': '1', cookie: owner.cookie, 'content-type': 'application/json' }, body });
       expect((await raw('{nope')).status).toBe(400);
       expect((await raw('[1,2]')).status).toBe(400);
       expect((await raw('null')).status).toBe(400);
@@ -855,7 +855,7 @@ describe('accounts mode server', () => {
       const board = await newBoard(member.cookie, { teamId: team.id });
 
       expect(await within(rawSocket(board).closed)).toBe(4401);
-      expect(await within(rawSocket(board, 'mira_session=not-a-session').closed)).toBe(4401);
+      expect(await within(rawSocket(board, 'tabula_session=not-a-session').closed)).toBe(4401);
       expect(await within(rawSocket(unique('ghost'), member.cookie).closed)).toBe(4404);
       expect(await within(rawSocket(unique('ghost'), owner.cookie).closed)).toBe(4404);
       expect(await within(rawSocket(board, outsider.cookie).closed)).toBe(4403);
@@ -1090,7 +1090,7 @@ describe('other server configurations', () => {
 
   async function launch(offset: number, env: Record<string, string>): Promise<Server> {
     const port = PORT + offset;
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mira-accounts-extra-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-extra-'));
     const proc = await startRelay(port, dir, env);
     const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
     servers.push(server);
@@ -1105,7 +1105,7 @@ describe('other server configurations', () => {
   });
 
   it('leaves open mode alone: config says so, other /api paths are 404 JSON, and sockets need no cookie', async () => {
-    const open = await launch(1, { MIRA_AUTH: 'off' });
+    const open = await launch(1, { TABULA_AUTH: 'off' });
     const config = await fetch(`${open.base}/api/config`);
     expect(await config.json()).toEqual({ authEnabled: false });
     expect(((await (await fetch(`${open.base}/api/health`)).json()) as Body).ok).toBe(true);
@@ -1116,7 +1116,7 @@ describe('other server configurations', () => {
       expect(res.headers.get('content-type')).toContain('application/json');
       expect(await res.json()).toEqual({ error: 'not_found' });
     }
-    const post = await fetch(`${open.base}/api/auth/request`, { method: 'POST', headers: { 'x-mira': '1' }, body: '{}' });
+    const post = await fetch(`${open.base}/api/auth/request`, { method: 'POST', headers: { 'x-tabula': '1' }, body: '{}' });
     expect(post.status).toBe(404);
 
     const bare = rawSocket(unique('open'), undefined, {}, open.port);
@@ -1125,17 +1125,17 @@ describe('other server configurations', () => {
     expect(fs.existsSync(path.join(open.dir, 'directory.sqlite'))).toBe(false);
   });
 
-  it('extends a session cookie as it slides, and ignores X-Forwarded-For unless MIRA_TRUST_PROXY=1', async () => {
-    const short = await launch(2, { MIRA_SESSION_DAYS: '0.00004', MIRA_TRUST_PROXY: '0' }); // about 3.5 seconds
+  it('extends a session cookie as it slides, and ignores X-Forwarded-For unless TABULA_TRUST_PROXY=1', async () => {
+    const short = await launch(2, { TABULA_SESSION_DAYS: '0.00004', TABULA_TRUST_PROXY: '0' }); // about 3.5 seconds
     const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
-      fetch(short.base + p, { method: 'POST', headers: { 'x-mira': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+      fetch(short.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
     expect((await post('/api/auth/request', { email: OWNER })).status).toBe(200);
     const mail = JSON.parse(fs.readFileSync(path.join(short.dir, 'outbox.jsonl'), 'utf8').trim().split('\n').pop()!) as Mail;
     const verify = await post('/api/auth/verify', { token: tokenOf(mail) });
     expect(verify.status).toBe(200);
     const issued = verify.headers.getSetCookie()[0];
-    const cookie = /mira_session=[^;]+/.exec(issued)![0];
+    const cookie = /tabula_session=[^;]+/.exec(issued)![0];
 
     const early = await fetch(`${short.base}/api/me`, { headers: { cookie } });
     expect(early.status).toBe(200);
