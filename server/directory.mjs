@@ -321,6 +321,10 @@ export function openDirectory(file) {
 
   const countOwners = () => Number(get("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'").n);
 
+  // Who a notice to the workspace owner goes to: owners who can still sign in.
+  const listOwnerEmails = () =>
+    all("SELECT email FROM users WHERE role = 'owner' AND disabled = 0 ORDER BY created_at, email").map((r) => r.email);
+
   function updateUser(id, patch) {
     if (!getUser(id)) throw new Error('user not found');
     const sets = [];
@@ -850,6 +854,7 @@ export function openDirectory(file) {
     adminStats,
     seatUsage,
     countOwners,
+    listOwnerEmails,
     updateUser,
     removeUser,
     createLoginToken,

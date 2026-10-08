@@ -256,7 +256,7 @@ function client(srv: Server) {
     await until(() => [...to.provider.awareness.getStates().values()].some((s) => s.user?.name === name));
   }
 
-  return { api, internal, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };
+  return { api, internal, mails, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };
 }
 
 // ---------------------------------------------------------------- configuration
@@ -362,6 +362,31 @@ describe('a hosted workspace', () => {
         detail: { seatLimit: 50, readOnly: false, banner: 'Welcome' },
       });
       await c.internal('PUT', '/api/internal/limits', { seatLimit: null, banner: null });
+    });
+  });
+
+  describe('trial-ending notice', () => {
+    it('mails the owner through the mail setting, once per date, and leaves an audit row without the address', async () => {
+      const notice = { template: 'trial-ending', date: '14 Nov 2026' };
+      expect((await c.internal('POST', '/api/internal/notify', notice, null)).status).toBe(401);
+      expect((await c.internal('POST', '/api/internal/notify', { ...notice, date: 'soon' })).status).toBe(400);
+
+      const before = c.mails().length;
+      const sent = await c.internal('POST', '/api/internal/notify', notice);
+      expect(sent).toMatchObject({ status: 200, body: { sent: 1 } });
+      const mails = c.mails().slice(before).map((line) => JSON.parse(line));
+      expect(mails).toHaveLength(1);
+      expect(mails[0]).toMatchObject({ to: OWNER, subject: 'Your Tabula trial ends on 14 Nov 2026' });
+      expect(mails[0].text.split('\n')).toContain(`${srv.base}/`);
+
+      const repeat = await c.internal('POST', '/api/internal/notify', notice);
+      expect(repeat).toMatchObject({ status: 200, body: { sent: 0, duplicate: true } });
+      expect(c.mails()).toHaveLength(before + 1);
+
+      const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.notify');
+      expect(audit.body.entries).toHaveLength(1);
+      expect(audit.body.entries[0]).toMatchObject({ action: 'cloud.notify', actorId: null, detail: { template: 'trial-ending', count: 1 } });
+      expect(JSON.stringify(audit.body.entries)).not.toContain('@');
     });
   });
 

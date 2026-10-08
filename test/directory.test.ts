@@ -177,6 +177,24 @@ describe('users', () => {
     expect(d.countOwners()).toBe(1);
   });
 
+  it('lists the addresses of owners who are not disabled', () => {
+    const d = open();
+    const emails = () => d.listOwnerEmails().sort();
+    expect(emails()).toEqual([]);
+    user(d, 'b@example.com', 'owner');
+    const off = user(d, 'off@example.com', 'owner');
+    user(d, 'admin@example.com', 'admin');
+    user(d, 'member@example.com', 'member');
+    user(d, 'guest@example.com', 'guest');
+    user(d, 'a@example.com', 'owner');
+    d.updateUser(off.id, { disabled: true });
+    expect(emails()).toEqual(['a@example.com', 'b@example.com']);
+    d.updateUser(off.id, { disabled: false });
+    expect(emails()).toEqual(['a@example.com', 'b@example.com', 'off@example.com']);
+    d.updateUser(off.id, { role: 'admin' });
+    expect(emails()).toEqual(['a@example.com', 'b@example.com']);
+  });
+
   it('removeUser cascades memberships, sessions, shares and keeps their boards', () => {
     const d = open();
     const admin = user(d, 'admin@example.com', 'admin');
