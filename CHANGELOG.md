@@ -33,6 +33,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - The default size of a new triangle is now square, like the other symmetric shapes.
 - Minimum Node version is now 22.12, which vitest 5 requires.
 - Rewrote ternary/short-circuit expression statements in `src/app.ts` as `if` statements and simplified small lint findings in `src/mermaid.ts`, `src/markup.ts` and `test/core.test.ts`, with no change in behaviour.
+- In accounts mode the name in Your name and colour is the account name and is saved to the server; the Share dialog explains who can open a board.
 
 ### Fixed
 - The highlighted option in segmented controls and colour swatches now follows your click. In Board settings the Grid control stayed on Dots after choosing Lines, Isometric or None; the same stale highlight affected the quick-action popovers.
