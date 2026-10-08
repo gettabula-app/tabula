@@ -1,10 +1,29 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id } from './types';
+import type { BaseObj, ConnectorObj, Id, Obj } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
 import { labelBox, layoutText, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
+import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
+
+type EditMode = 'text' | 'class' | 'frame' | 'label';
+
+/**
+ * Colours for the edit box. The class and label editors sit in a white box with dark ink
+ * (styles.css) unless the object has its own colours; an empty string keeps that default.
+ */
+export function editColours(o: Obj, mode: EditMode): { color: string; background: string } {
+  if (mode === 'text') return { color: styleOf(o).textColor, background: '' };
+  if (mode === 'frame') return { color: 'var(--ink)', background: '' };
+  if (mode === 'label') {
+    // the renderer draws a label in the connector's own colour
+    const stroke = (o as ConnectorObj).stroke;
+    return { color: stroke && stroke !== 'none' && stroke !== CANVAS_INK ? stroke : '', background: '' };
+  }
+  const b = o as BaseObj;
+  return { color: b.textColor ?? '', background: b.fill && b.fill !== 'none' ? b.fill : '' };
+}
 
 /**
  * In-place text editing: a textarea laid over the object in world space
@@ -14,7 +33,7 @@ import { classHeight, formatClass, parseClass } from './uml';
 export class TextEditor {
   private ta: HTMLTextAreaElement;
   private id: Id | null = null;
-  private mode: 'text' | 'class' | 'frame' | 'label' = 'text';
+  private mode: EditMode = 'text';
   private unsubCam: (() => void) | null = null;
   private original = '';
 
@@ -90,8 +109,9 @@ export class TextEditor {
     const st = styleOf(o);
     ta.style.fontFamily = fontFamily(st.font);
     ta.style.fontWeight = String(st.fontWeight);
-    // Class and label editors sit on white; the frame editor sits on the canvas.
-    ta.style.color = this.mode === 'text' ? st.textColor : this.mode === 'frame' ? 'var(--ink)' : '#18212B';
+    const colours = editColours(o, this.mode);
+    ta.style.color = colours.color;
+    ta.style.background = colours.background;
     ta.style.textAlign = st.align;
 
     if (isConnector(o)) {
