@@ -9,6 +9,7 @@ import { POPULAR_SETS, iconData, iconLoader, iconSets, previewUrl, searchIcons, 
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
 import { gridView, placeSticker, stickersTab, type StickerDrag } from './stickers';
+import { reopenSession } from './idle-bar';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
 
@@ -287,6 +288,7 @@ function templatesTab(app: BoardApp, close: () => void) {
       ...TEMPLATES.filter((t) => t.category === c).map((t) => h('button', {
         class: 'template-row',
         onclick: () => {
+          reopenSession(app.user.id, app.conn.id);
           insertTemplate(app, t);
           close();
           toast(`${t.name} added. Start the session from the bar at the bottom.`);

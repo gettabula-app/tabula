@@ -6,6 +6,7 @@ import { h, icon } from './dom';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
 import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
+import { NOTHING_HIDDEN, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
 
 const MODE_LABEL: Record<StepMode, string> = {
   write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
@@ -25,17 +26,30 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   let lastBeepKey = '';
   let warnedKey = '';
 
+  const hidden = () => loadIdleHidden(app.user.id, app.conn.id);
+  const update = (change: (cur: IdleHidden) => IdleHidden) => {
+    saveIdleHidden(app.user.id, app.conn.id, change(hidden()));
+    app.emit('flow');
+  };
+
   const render = () => {
     const f = app.flow.state();
     const ro = app.readOnly;
-    const resultsDots = f.active < 0 ? app.flow.resultsCount() : 0;
-    const pollResults = f.active < 0 ? app.flow.polls.latestClosed() : undefined;
-    bar.classList.toggle('show', f.steps.length > 0 || resultsDots > 0 || !!pollResults);
-    if (!f.steps.length && !resultsDots && !pollResults) {
+    const idle = f.active < 0;
+    // A session that is running has started, so Session ready shows again once it ends.
+    if (!idle && hidden().session) reopenSession(app.user.id, app.conn.id);
+    const resultsDots = idle ? app.flow.resultsCount() : 0;
+    const latest = idle ? app.flow.polls.latestClosed() : undefined;
+    const shown = idleShown(idle ? hidden() : NOTHING_HIDDEN, { hasSteps: f.steps.length > 0, latestClosedId: latest?.id ?? null });
+    const pollResults = shown.poll ? latest : undefined;
+    const sessionReady = idle && shown.session;
+    const anyIdle = resultsDots > 0 || !!pollResults || sessionReady;
+    bar.classList.toggle('show', !idle || anyIdle);
+    if (idle && !anyIdle) {
       bar.replaceChildren();
       return;
     }
-    if (f.active < 0) {
+    if (idle) {
       bar.classList.remove('running');
       const results = resultsDots
         ? h('div', { class: 'flow-results' },
@@ -44,12 +58,13 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('button', { class: 'btn ghost', onclick: () => copyResults(app, f.results!) }, 'Copy results'),
           h('button', { class: 'btn ghost', disabled: ro, onclick: () => { app.flow.clearResults(); toast('Dots cleared'); } }, 'Clear dots'))
         : null;
-      const poll = pollResults ? pollResultsBlock(app, pollResults) : null;
-      const session = f.steps.length
+      const poll = pollResults ? pollResultsBlock(app, pollResults, () => update((cur) => hidePoll(cur, pollResults.id))) : null;
+      const session = sessionReady
         ? h('div', { class: 'flow-idle' },
           h('div', null, h('div', { class: 'flow-title' }, 'Session ready'), h('div', { class: 'muted small' }, `${f.steps.length} ${f.steps.length === 1 ? 'step' : 'steps'}, about ${Math.round(f.steps.reduce((s, x) => s + (x.durationSec ?? 0), 0) / 60)} minutes`)),
           h('button', { class: 'btn ghost', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement) }, 'Edit steps'),
-          h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.start() }, icon('play', 16), 'Start session'))
+          h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.start() }, icon('play', 16), 'Start session'),
+          h('button', { class: 'icon-btn', title: 'Hide', 'aria-label': 'Hide', onclick: () => update(hideSession) }, icon('close', 18)))
         : null;
       const parts = [results, poll, session].filter(Boolean) as HTMLElement[];
       bar.replaceChildren(...parts.flatMap((p, i) => (i ? [h('span', { class: 'bar-sep' }), p] : [p])));
@@ -142,6 +157,20 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   });
   app.on('readonly', render);
   app.on('presence', () => refreshAnswered(app, bar));
+  // Esc hides the idle groups on screen. Not while typing, with a popover or dialog open, or during a session.
+  const onEscape = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || app.flow.state().active >= 0) return;
+    const a = document.activeElement as HTMLElement | null;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
+    if (document.querySelector('.popover, .modal-back')) return;
+    const f = app.flow.state();
+    const latest = app.flow.polls.latestClosed();
+    const shown = idleShown(hidden(), { hasSteps: f.steps.length > 0, latestClosedId: latest?.id ?? null });
+    if (!shown.session && !shown.poll) return;
+    update((cur) => hideShown(cur, shown, latest?.id ?? null));
+  };
+  window.addEventListener('keydown', onEscape);
+  app.onDestroy(() => window.removeEventListener('keydown', onEscape));
   // A timer that already ran out before this screen opened does not chime.
   const t0 = app.flow.state().timer;
   if (t0 && app.flow.remainingMs() === 0) lastBeepKey = `${t0.startedAt}:${t0.durationMs}`;
@@ -223,6 +252,7 @@ function openDotLimit(app: BoardApp, anchor: HTMLElement) {
 const DOT_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20];
 
 function openSteps(app: BoardApp, anchor: HTMLElement) {
+  reopenSession(app.user.id, app.conn.id);
   const list = h('ol', { class: 'step-list' });
   const draw = () => {
     const f = app.flow.state();

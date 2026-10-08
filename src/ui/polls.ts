@@ -3,6 +3,7 @@ import type { Id, Poll } from '../types';
 import { POLL_LIMITS, answeredLabel, countPeople, type PollInput, type PollTally } from '../polls';
 import { h, icon } from './dom';
 import { dialog, field, popover, toast } from './common';
+import { reopenPollResults } from './idle-bar';
 import './polls.css';
 
 /** "N of M answered" for the card and the bar alike. */
@@ -138,7 +139,7 @@ export function pollBarControls(app: BoardApp, pollId: Id): HTMLElement[] {
 }
 
 /** Session bar, idle state: the latest closed poll with its actions. */
-export function pollResultsBlock(app: BoardApp, poll: Poll): HTMLElement {
+export function pollResultsBlock(app: BoardApp, poll: Poll, onHide: () => void): HTMLElement {
   const polls = app.flow.polls;
   const responses = polls.tally(poll.id).responses;
   return h('div', { class: 'poll-summary' },
@@ -149,6 +150,7 @@ export function pollResultsBlock(app: BoardApp, poll: Poll): HTMLElement {
     h('button', { class: 'btn ghost poll-btn', disabled: !poll.revealed || app.readOnly, onclick: () => attempt(() => polls.addResultsSticky(poll.id), 'Results added to the board') }, 'Add results to board'),
     poll.revealed ? null : h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(poll.id)) }, icon('eye', 16), 'Reveal results'),
     h('button', { class: 'btn ghost poll-btn', disabled: app.readOnly, onclick: () => attempt(() => app.flow.clearPoll(poll.id), 'Poll cleared') }, icon('trash', 16), 'Clear poll'),
+    h('button', { class: 'icon-btn', title: 'Hide', 'aria-label': 'Hide', onclick: onHide }, icon('close', 18)),
   );
 }
 
@@ -200,6 +202,9 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
 
 /** Quick poll from the rail: a popover that starts the poll on save. */
 export function openQuickPoll(app: BoardApp, anchor: HTMLElement) {
+  // The poll tool brings back a hidden poll result, and starting a poll does too.
+  reopenPollResults(app.user.id, app.conn.id);
+  app.emit('flow');
   if (app.flow.pollOpen()) {
     toast('A poll is open. Finish it or move on first.');
     return;

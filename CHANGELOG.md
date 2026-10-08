@@ -93,6 +93,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - The session bar fits its content: the idle Poll results and Session ready groups wrap onto two rows when they do not fit, and stack at phone width, so Start session no longer sticks out past the bar. The bar has no drop shadow.
 - The poll composer keeps focus where you are working: Add option focuses the new option's field, and the question field is focused when the composer opens from the rail or the step editor, so typing does not trigger board tool shortcuts.
 - The poll "N of M answered" count counts each person on the board once, so a person with two tabs or a connection that has just dropped no longer inflates M; the session bar and the poll card now show the same wording, such as "2 of 3 answered".
+- The idle session bar can be hidden with its Hide button, or with Esc when focus is not in a field and no popover or dialog is open. Hiding changes nothing on the board and is remembered per person and board in this browser. Poll results come back when someone starts a poll or uses the poll tool, and when a newer poll closes; Session ready comes back when the steps are opened, a session template is added or a session starts. A running session cannot be hidden.
 
 ### Removed
 - `pnpm-lock.yaml`; npm (`package-lock.json`) is the single package manager, matching the Dockerfile.
