@@ -22,6 +22,7 @@ import { authState, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
+import { SHORTCUTS } from '../shortcuts';
 import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
@@ -565,13 +566,10 @@ function openSettings(app: BoardApp) {
 }
 
 function openShortcuts() {
-  const rows: [string, string][] = [
-    ['V', 'Select'], ['H or hold Space', 'Pan'], ['N', 'Sticky note'], ['T', 'Text'], ['R / O / D', 'Rectangle / ellipse / diamond'],
-    ['L', 'Connector'], ['P', 'Pen'], ['F', 'Frame'], ['Double-click', 'Edit text, or add text on empty canvas'],
-    ['Ctrl/Cmd + scroll, pinch', 'Zoom'], ['Shift+1 / Shift+2 / Shift+0', 'Fit board / fit selection / 100%'],
-    ['Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z', 'Undo, redo'], ['Ctrl/Cmd+C / V / D', 'Copy, paste, duplicate'],
-    ['Delete', 'Delete selection'], ['Arrows (Shift for grid steps)', 'Nudge'], ['[ and ]', 'Send back, bring forward'],
-    ['Alt while dragging', 'Ignore grid and guides'], ['Shift while resizing', 'Keep proportions'], ['Shift-click while voting', 'Remove a vote'],
-  ];
-  dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows.map(([k, v]) => h('tr', null, h('td', null, h('kbd', null, k)), h('td', null, v)))), [{ label: 'Close', primary: true }]);
+  const groups = [...new Set(SHORTCUTS.map((s) => s.group))];
+  const rows = groups.flatMap((group) => [
+    h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
+    ...SHORTCUTS.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+  ]);
+  dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }

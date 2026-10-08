@@ -68,6 +68,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- The Keyboard shortcuts dialog now lists every shortcut and is built from the same table as the key handler; it described [ and ] the wrong way round.
 - The Delete button in comment threads used the plain theme red on the dark comment panel, which was hard to read; it now uses the lighter tray red like other error text on toolbars and dialogs, and a test checks red text on trays reaches 4.5:1 in every theme.
 - Armed confirm buttons in the admin dashboard (red outline, red fill on hover) now reach 4.5:1 contrast at rest and hovered in every theme, following the theme red adjustments; the hovered pair is now checked in tests.
 - Connection dots stay visible while the pointer crosses a connector that already leaves that side, so a shape side can take a second connector. Clicking a connection dot connects to the shape already next to it on that side, if there is one, instead of always making a new shape. The quick-action bar moves below the selection when above it would cover one of its connectors.
