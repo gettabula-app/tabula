@@ -22,13 +22,42 @@
     .num { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; padding-top: 4px; }
     .name { font-weight: 700; }
     .desc { color: var(--muted); }
+
+    /* Status, driven by status.json (see the script at the end). Without JS the page is a plain list. */
+    .summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin: -24px 0 48px; padding: 12px 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); font-size: 13px; }
+    .summary[hidden] { display: none; }
+    .summary b { font-size: 20px; letter-spacing: -.02em; margin-right: 4px; }
+    .summary .when { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    .summary button { font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); background: none; border: 0; border-bottom: 1px solid var(--ink); padding: 0; cursor: pointer; }
+    .summary button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    a.st { grid-template-columns: 48px 1fr 168px; align-items: start; }
+    a.st.has-thumb { grid-template-columns: 48px 192px 1fr 168px; }
+    .thumb { display: block; width: 192px; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; border: 1px solid var(--rule); background: var(--rule); }
+    .state { justify-self: end; display: grid; justify-items: end; gap: 4px; padding-top: 2px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; line-height: 16px; border: 1px solid var(--ink); }
+    .badge.ready { background: var(--signal); border-color: var(--signal); color: var(--ink); }
+    .badge.progress { background: var(--ink); color: var(--bg); }
+    .badge.revising { border-style: dashed; color: var(--ink); }
+    .badge.queued { border-color: var(--rule); color: var(--muted); }
+    .time { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    .new { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+    a.st.is-new .name::after { content: "New"; margin-left: 8px; padding: 2px 6px; vertical-align: 2px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: var(--ink); color: var(--bg); }
+    a.st.queued .name { color: var(--muted); }
+    @media (max-width: 720px) {
+      a.st, a.st.has-thumb { grid-template-columns: 32px 1fr; }
+      a.st > :not(.num) { grid-column: 2; }
+      a.st .num { grid-row: 1; }
+      a.st .thumb { width: 100%; max-width: 360px; }
+      a.st .state { grid-column: 2; justify-self: start; justify-items: start; grid-auto-flow: column; align-items: center; gap: 8px; }
+    }
   </style>
 </head>
 <body>
   <main>
     <p class="kicker">TAB-72 · Exploration only</p>
     <h1>Tabula landing pages</h1>
-    <p class="lede">Three styles, two variants each, for the public landing page. Each is a complete static page: hero, how it works, templates, pricing teaser, call to action and footer. The app itself keeps its Swiss direction.</p>
+    <p class="lede">Proposals for the public landing page, one art style each. Each is a complete static page: hero, how it works, templates, pricing teaser, call to action and footer. The app itself keeps its Swiss direction. This page updates by itself as proposals are ready.</p>
+    <p class="summary" id="summary" hidden aria-live="polite"></p>
 
     <section>
       <h2>Contemporary Anti-Design</h2>
@@ -84,5 +113,101 @@
       </ul>
     </section>
   </main>
+  <script>
+  (() => {
+    const LABEL = { ready: 'Ready for review', progress: 'In progress', revising: 'Revising', queued: 'Queued' };
+    const SEEN_KEY = 'tab72:seen';
+    const links = [...document.querySelectorAll('main li > a')];
+    const summary = document.getElementById('summary');
+    let seen = {};
+    try { seen = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch { seen = {}; }
+    const saveSeen = () => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch {} };
+
+    const clock = (iso) => {
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + hm;
+    };
+    const folderOf = (a) => a.getAttribute('href').replace(/\/$/, '');
+
+    function render(data) {
+      const items = data.items || {};
+      const count = { ready: 0, progress: 0, revising: 0, queued: 0 };
+      let fresh = 0;
+      for (const a of links) {
+        const folder = folderOf(a);
+        const it = items[folder] || { status: 'queued' };
+        const status = LABEL[it.status] ? it.status : 'queued';
+        count[status]++;
+        a.classList.add('st');
+        a.classList.remove('ready', 'progress', 'revising', 'queued');
+        a.classList.add(status);
+
+        let thumb = a.querySelector('.thumb');
+        if (status === 'ready' && it.thumb) {
+          if (!thumb) {
+            thumb = document.createElement('img');
+            thumb.className = 'thumb';
+            thumb.alt = '';
+            thumb.loading = 'lazy';
+            thumb.decoding = 'async';
+            a.children[0].after(thumb);
+          }
+          const src = it.thumb + '?v=' + encodeURIComponent(it.ready || '');
+          if (thumb.getAttribute('src') !== src) thumb.setAttribute('src', src);
+        } else if (thumb) thumb.remove();
+        a.classList.toggle('has-thumb', !!a.querySelector('.thumb'));
+
+        let state = a.querySelector('.state');
+        if (!state) { state = document.createElement('span'); state.className = 'state'; a.append(state); }
+        const time = status === 'ready' ? (it.ready && 'Ready ' + clock(it.ready))
+          : (status === 'progress' || status === 'revising') ? (it.started && 'Started ' + clock(it.started)) : '';
+        state.innerHTML = '';
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + status;
+        badge.textContent = LABEL[status];
+        state.append(badge);
+        if (time) { const t = document.createElement('span'); t.className = 'time'; t.textContent = time; state.append(t); }
+
+        const isNew = status === 'ready' && seen[folder] !== it.ready;
+        a.classList.toggle('is-new', isNew);
+        a.dataset.ready = status === 'ready' ? (it.ready || '') : '';
+        if (isNew) fresh++;
+      }
+      const parts = [['ready', 'ready'], ['progress', 'in progress'], ['revising', 'revising'], ['queued', 'queued']]
+        .filter(([k]) => count[k] || k !== 'revising')
+        .map(([k, l]) => '<span><b>' + count[k] + '</b>' + l + '</span>');
+      summary.innerHTML = parts.join('') + (fresh ? '<span><b>' + fresh + '</b>new <button type="button" id="seen-all">Mark all seen</button></span>' : '')
+        + '<span class="when">Updated ' + clock(data.updated || new Date().toISOString()) + '</span>';
+      summary.hidden = false;
+      const btn = document.getElementById('seen-all');
+      if (btn) btn.addEventListener('click', () => {
+        for (const a of links) if (a.dataset.ready) seen[folderOf(a)] = a.dataset.ready;
+        saveSeen();
+        render(data);
+      });
+    }
+
+    for (const a of links) a.addEventListener('click', () => {
+      if (a.dataset.ready) { seen[folderOf(a)] = a.dataset.ready; saveSeen(); a.classList.remove('is-new'); }
+    });
+
+    let last = '';
+    async function poll() {
+      try {
+        const res = await fetch('status.json', { cache: 'no-store' });
+        if (!res.ok) return;
+        const text = await res.text();
+        if (text === last) return;
+        last = text;
+        render(JSON.parse(text));
+      } catch {}
+    }
+    poll();
+    setInterval(poll, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  })();
+  </script>
 </body>
 </html>

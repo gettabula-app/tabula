@@ -1,0 +1,116 @@
+{
+  "items": {
+    "anti-design-1": {
+      "status": "ready",
+      "ready": "2026-10-08T19:50:49Z",
+      "thumb": "_thumbs/anti-design-1.webp"
+    },
+    "anti-design-2": {
+      "status": "ready",
+      "ready": "2026-10-08T19:51:25Z",
+      "thumb": "_thumbs/anti-design-2.webp"
+    },
+    "bauhaus-1": {
+      "status": "ready",
+      "ready": "2026-10-08T20:02:47Z",
+      "thumb": "_thumbs/bauhaus-1.webp"
+    },
+    "bauhaus-2": {
+      "status": "ready",
+      "ready": "2026-10-08T20:02:12Z",
+      "thumb": "_thumbs/bauhaus-2.webp"
+    },
+    "memphis-1": {
+      "status": "ready",
+      "ready": "2026-10-08T20:53:25Z",
+      "thumb": "_thumbs/memphis-1.webp"
+    },
+    "memphis-2": {
+      "status": "ready",
+      "ready": "2026-10-08T20:51:49Z",
+      "thumb": "_thumbs/memphis-2.webp"
+    },
+    "swiss": {
+      "status": "ready",
+      "ready": "2026-10-08T20:42:50Z",
+      "thumb": "_thumbs/swiss.webp"
+    },
+    "sketchnote": {
+      "status": "ready",
+      "ready": "2026-10-08T20:34:55Z",
+      "thumb": "_thumbs/sketchnote.webp"
+    },
+    "isometric": {
+      "status": "ready",
+      "ready": "2026-10-08T20:41:22Z",
+      "thumb": "_thumbs/isometric.webp"
+    },
+    "risograph": {
+      "status": "ready",
+      "ready": "2026-10-08T20:40:50Z",
+      "thumb": "_thumbs/risograph.webp"
+    },
+    "art-deco": {
+      "status": "ready",
+      "ready": "2026-10-08T21:07:12Z",
+      "thumb": "_thumbs/art-deco.webp"
+    },
+    "frutiger-aero": {
+      "status": "ready",
+      "ready": "2026-10-08T20:54:27Z",
+      "thumb": "_thumbs/frutiger-aero.webp"
+    },
+    "global-village": {
+      "status": "ready",
+      "ready": "2026-10-08T20:45:42Z",
+      "thumb": "_thumbs/global-village.webp"
+    },
+    "pop-art": {
+      "status": "ready",
+      "ready": "2026-10-08T21:10:53Z",
+      "thumb": "_thumbs/pop-art.webp"
+    },
+    "japandi": {
+      "status": "progress",
+      "started": "2026-10-08T20:36:44Z"
+    },
+    "pointillism": {
+      "status": "progress",
+      "started": "2026-10-08T21:10:04Z"
+    },
+    "mixed-media": {
+      "status": "progress",
+      "started": "2026-10-08T21:11:58Z"
+    },
+    "wabi-sabi": {
+      "status": "progress",
+      "started": "2026-10-08T21:12:26.924Z"
+    },
+    "neo-brutalism": {
+      "status": "progress",
+      "started": "2026-10-08T21:12:26.957Z"
+    },
+    "line-work": {
+      "status": "queued"
+    },
+    "textured": {
+      "status": "queued"
+    },
+    "solarpunk": {
+      "status": "queued"
+    },
+    "cassette-futurism": {
+      "status": "queued"
+    },
+    "ligne-claire": {
+      "status": "queued"
+    },
+    "claymorphism": {
+      "status": "queued"
+    },
+    "googie": {
+      "status": "queued"
+    }
+  },
+  "updated": "2026-10-08T21:12:27.207Z"
+}
