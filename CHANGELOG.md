@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- User guide at `/docs/`: static pages built from `docs/guide/*.md` together with the app, readable without signing in, themed like the app and searchable in the browser (`/` focuses the search). Linked as Help in the top bar and as User guide in the board menu (new tab). The relay serves it from `dist/docs` only and answers unknown guide pages with a 404 guide page; the service worker leaves it alone.
 - Templates page (`#/templates`): every template on a solid card, with category filters and search. The home screen links to it from a short Start from a template row.
 - Desktop app spike (`desktop/`, `docs/desktop.md`): a Tauri 2 shell around the built web app, with a `.drift` file association and the Rust side of opening a file. `npm run desktop:dev` and `npm run desktop:build` need Rust and are not part of CI or any release. The page records what was verified on macOS, how storage, relays, updates and signing would work, and a phased plan. Nothing in the web app or the relay changes.
 - Tests for live role changes and session expiry on open sockets, and for running behind a reverse proxy; a "Behind a reverse proxy" section in the README.

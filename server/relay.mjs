@@ -369,10 +369,57 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+const DOCS = path.join(DIST, 'docs');
+
+function sendFile(res, file, status, cache) {
+  const ext = path.extname(file);
+  const headers = {
+    'content-type': MIME[ext] || 'application/octet-stream',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'cache-control': cache,
+  };
+  if (ext === '.html') headers['content-security-policy'] = CSP;
+  res.writeHead(status, headers);
+  fs.createReadStream(file).pipe(res);
+}
+
+// The user guide: files are resolved inside dist/docs only and never fall back to the app shell.
+function serveDocs(req, res, url) {
+  const decoded = decodeURIComponent(url.pathname);
+  const notFound = () => {
+    const page = path.join(DOCS, '404.html');
+    if (fs.existsSync(page)) sendFile(res, page, 404, 'no-cache');
+    else res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Not found');
+  };
+  if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some((seg) => seg === '..' || seg === '.')) {
+    res.writeHead(404).end();
+    return;
+  }
+  const rel = decoded.slice('/docs'.length).replace(/^\/+|\/+$/g, '');
+  const ext = path.extname(rel);
+  const file = path.resolve(DOCS, rel === '' ? 'index.html' : ext ? rel : path.join(rel, 'index.html'));
+  if (!file.startsWith(DOCS + path.sep)) {
+    res.writeHead(404).end();
+    return;
+  }
+  const isFile = fs.existsSync(file) && fs.statSync(file).isFile();
+  if (!isFile || file === path.join(DOCS, '404.html')) {
+    if (!ext || ext === '.html') notFound();
+    else res.writeHead(404).end();
+    return;
+  }
+  sendFile(res, file, 200, 'no-cache');
+}
+
 function serveStatic(req, res, url) {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('The app has not been built yet. Run `npm run build`, then restart the relay. (In development, open the Vite URL instead.)');
+    return;
+  }
+  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) {
+    serveDocs(req, res, url);
     return;
   }
   let rel = decodeURIComponent(url.pathname);

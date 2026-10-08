@@ -27,6 +27,8 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin === self.location.origin) {
     if (url.pathname.startsWith('/sync') || url.pathname.startsWith('/api/')) return;
+    // The user guide is static pages outside the app: the navigate handler below would cache every navigation as the app shell '/'.
+    if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) return;
     if (req.mode === 'navigate') {
       event.respondWith(
         fetch(req)
