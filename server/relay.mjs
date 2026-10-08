@@ -45,7 +45,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
-const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
 const SAVE_MAX_WAIT_MS = 30_000;
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
@@ -785,7 +785,7 @@ const pinger = setInterval(() => {
 // A backup run in progress is told to stop first and given a moment to let go of the database before it is closed;
 // the rooms are saved while it winds down, and the wait is short so a supervisor's kill timeout is never reached.
 const BACKUP_STOP_WAIT_MS = 2000;
-async function shutdown() {
+async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
   const stopping = backup?.stop();
@@ -795,8 +795,20 @@ async function shutdown() {
   directory?.close();
   process.exit(0);
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// Every way in shares one run, so a second signal while it winds down changes nothing.
+let shuttingDown = null;
+const shutdown = () => (shuttingDown ??= stopRelay());
+// SIGINT is what Ctrl+C and service wrappers send on Windows; SIGBREAK (Ctrl+Break) and SIGHUP (console closed)
+// are the others it can deliver. Windows cannot catch a kill, so those are the only graceful routes there.
+// SIGBREAK is never raised on other systems, and listening for it there does nothing.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP']) process.on(signal, shutdown);
+// A parent that started the relay with an IPC channel (the tests, a Node service wrapper) can ask for the same
+// shutdown on every system, because Node cannot send a console Ctrl event to a child on Windows.
+if (process.send) {
+  process.on('message', (message) => {
+    if (message?.type === 'shutdown') shutdown();
+  });
+}
 
 server.listen(PORT, HOST, () => {
   backup?.start();
