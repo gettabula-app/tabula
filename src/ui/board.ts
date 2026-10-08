@@ -29,6 +29,8 @@ import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
+import { mountSharePeople } from './share';
+import { canManageShares } from './share-logic';
 
 type IconName = keyof typeof ICONS;
 
@@ -479,15 +481,18 @@ function openShare(app: BoardApp) {
   const live = app.conn.status === 'live';
   const auth = authState();
   const accounts = auth.mode === 'signed-in' || (auth.mode === 'offline' && auth.me !== null);
+  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+  const manage = me !== null && canManageShares(app.role, accounts);
   dialog('Share this board', h('div', { class: 'stack' },
     h('p', null, accounts
-      ? 'Only people with access to this board can open this link: members of the board\'s team, and anyone it has been shared with. Add people from a team on the home screen, or share the board from there.'
+      ? `Only people with access to this board can open this link: members of the board's team, and anyone it has been shared with. ${manage ? 'Give people or teams access below.' : 'Add people from a team on the home screen, or share the board from there.'}`
       : live
         ? 'Anyone who opens this link while connected to the same relay can edit the board with you in real time. They do not need an account.'
         : relay
           ? 'The relay is not reachable right now, so this board is only on your device. Your changes are saved and will sync when the relay is back.'
           : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
     h('div', { class: 'copy-row' }, input, h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => { input.select(); }) }, icon('link', 16), 'Copy link')),
+    me && manage ? mountSharePeople(app.conn.id, me) : null,
     h('p', { class: 'muted small' }, relay ? `Relay: ${relay.replace(/^ws/, 'http')}` : 'Relay: off'),
   ), [{ label: 'Done', primary: true }]);
 }

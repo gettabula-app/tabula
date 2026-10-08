@@ -13,7 +13,19 @@ A **workspace with sign-in** is a shared space with members, teams and permissio
 Select **Share** at the top right of a board (or the sync status next to the board name). The dialog **Share this board** shows the board link with a **Copy link** button.
 
 - In open mode, the dialog says whether the board is syncing. If the server is not reachable, or sync is turned off, the board is only on your device until sync is back.
-- With sign-in, the dialog tells you that only people with access can open the link. Send the link to people who already have access. To give someone access, add them to the board's team (see below).
+- With sign-in, the dialog tells you that only people with access can open the link. Send the link to people who already have access.
+- If you own the board (workspace owners and admins count as owners of every board), the dialog also has a **People with access** list. See [Give a person or team a role](#give-a-person-or-team-a-role).
+
+### Give a person or team a role
+
+1. Open **Share** on the board.
+2. Under **People with access**, choose a person or team from **Add a person or team**. You can pick people from your teams (workspace owners and admins can pick anyone) and any of your teams.
+3. Choose **Editor**, **Commenter** or **Viewer**. The default is **Viewer**. A short line under the list says what each one can do.
+4. Select **Add**.
+
+Each row has a role menu that saves when you change it, and a **Remove** button (select it twice to confirm). Changes reach people who already have the board open at once. Someone whose access is removed sees a banner and keeps their copy on their own device.
+
+Adding a team gives every member of that team the role, unless they already have a higher one. To invite someone who is not in your workspace yet, send a team invite instead (see below).
 
 <!-- screenshot: the Share this board dialog in a workspace with sign-in -->
 

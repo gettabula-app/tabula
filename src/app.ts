@@ -1134,7 +1134,7 @@ export class BoardApp {
     const signal = this.lifetime.signal;
     window.addEventListener('keydown', (e) => {
       const tgt = e.target as HTMLElement;
-      const typing = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable);
+      const typing = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable);
       if (e.code === 'Space' && !typing) {
         if (!this.spaceDown) {
           this.spaceDown = true;

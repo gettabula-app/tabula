@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- Share dialog roles (accounts mode): the board owner and workspace admins give a person or a team Editor, Commenter or Viewer access from the Share dialog, change it, and remove it. Changes reach open boards at once.
 - AI tool access link in the top bar of the Boards and Templates pages, shown only when AI tool access is turned on for the server; it opens the same dialog as the board menu.
 - User guide at `/docs/`: static pages built from `docs/guide/*.md` together with the app, readable without signing in, themed like the app and searchable in the browser (`/` focuses the search). Linked as Help in the top bar and as User guide in the board menu (new tab). The relay serves it from `dist/docs` only and answers unknown guide pages with a 404 guide page; the service worker leaves it alone.
 - Custom templates (open mode): select objects or use the whole board and choose Save as template (quick-action bar or board menu) with a name, category and description. Saved templates appear under My templates on the Templates page, first in the Boards page strip, and in the board's Templates drawer; use one as a new board or insert it into the current board in one undo step. Stored in this browser and kept in sync across tabs. Every template card now shows a thumbnail drawn from its contents, in the current theme.
