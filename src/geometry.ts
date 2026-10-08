@@ -128,6 +128,47 @@ export function sideAnchor(o: BaseObj, side: Side): { p: Point; dir: Point } {
   return { p: rotate(local[side], c, r), dir: rotate(SIDE_DIR[side], { x: 0, y: 0 }, r) };
 }
 
+/** How far, in board units, a click on a connection dot looks for a shape to connect to before making a new one. */
+export const NEIGHBOR_REACH = 400;
+
+/**
+ * The shape a click on the connection dot on `side` of `src` connects to: the nearest candidate that lies beyond
+ * that side within `reach`, and overlaps the source across that direction (roughly aligned with it). Ties go to the
+ * better aligned one. Locked candidates are skipped, as they are when dragging a connector. Works on rotated shapes:
+ * every corner is measured along and across the side's outward direction.
+ */
+export function neighborInDirection(src: BaseObj, side: Side, candidates: BaseObj[], reach = NEIGHBOR_REACH): BaseObj | null {
+  const { dir } = sideAnchor(src, side);
+  const across = { x: -dir.y, y: dir.x };
+  const origin = center(src);
+  const extent = (o: BaseObj) => {
+    const c = center(o);
+    const corners = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]].map(([x, y]) =>
+      rotate({ x, y }, c, o.rotation || 0));
+    const along = corners.map((p) => (p.x - origin.x) * dir.x + (p.y - origin.y) * dir.y);
+    const side2 = corners.map((p) => (p.x - origin.x) * across.x + (p.y - origin.y) * across.y);
+    return { near: Math.min(...along), far: Math.max(...along), lo: Math.min(...side2), hi: Math.max(...side2) };
+  };
+  const s = extent(src);
+  let best: BaseObj | null = null;
+  let bestGap = Infinity;
+  let bestOffset = Infinity;
+  for (const o of candidates) {
+    if (o.id === src.id || o.locked) continue;
+    const e = extent(o);
+    const gap = e.near - s.far;
+    if (gap < 0 || gap > reach) continue; // overlapping or behind it is not "next to" it
+    if (e.hi <= s.lo || e.lo >= s.hi) continue; // not aligned with the source
+    const offset = Math.abs((e.lo + e.hi) / 2 - (s.lo + s.hi) / 2);
+    if (gap < bestGap || (gap === bestGap && offset < bestOffset)) {
+      best = o;
+      bestGap = gap;
+      bestOffset = offset;
+    }
+  }
+  return best;
+}
+
 /** Pick the side of `o` that faces `toward`. */
 export function autoSide(o: BaseObj, toward: Point): Side {
   const l = toLocal(o, toward);
