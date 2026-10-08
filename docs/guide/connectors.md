@@ -19,7 +19,7 @@ Connectors attach to shapes, sticky notes, text, icons and UML elements. They do
 Clicking a dot is a fast way to build a diagram.
 
 - If another shape sits next to this one in that direction, a connector is added to it. If they are already connected, that shape is only selected.
-- If there is nothing there, Tabula creates a copy of the shape on that side, connects it, and starts text editing so you can type its label.
+- If there is nothing there, Tabula creates a copy of the shape on that side, connects it, and starts text editing so you can type its label. The copy goes just beyond the shape. If other shapes are in that spot, it moves further along the same direction to the nearest free space instead of landing on top of them.
 
 Undo (`Ctrl+Z`, `Cmd+Z` on Mac) reverses it in one step.
 
