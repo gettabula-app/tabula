@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { editColours } from '../src/editor';
+import { LABEL_FONT, labelPill, objectMarkup } from '../src/markup';
 import { CANVAS_INK } from '../src/palette';
 import type { BaseObj, ConnectorObj } from '../src/types';
 
@@ -37,5 +38,24 @@ describe('edit box colours', () => {
     expect(editColours(connector(), 'label').color).toBe('');
     expect(editColours(connector({ stroke: CANVAS_INK }), 'label').color).toBe('');
     expect(editColours(connector({ stroke: 'none' }), 'label').color).toBe('');
+  });
+});
+
+describe('connector label pill', () => {
+  it('draws the label in a pill the editor can match exactly', () => {
+    const c = connector({ label: 'depends on' });
+    const pill = labelPill('depends on');
+    const svg = objectMarkup(c, { get: () => undefined });
+    expect(svg).toContain(`width="${Math.round(pill.w * 100) / 100}"`);
+    expect(pill.h).toBe(LABEL_FONT.line + 2 * LABEL_FONT.padY);
+  });
+
+  it('grows a line per wrapped line', () => {
+    const one = labelPill('short');
+    const many = labelPill('a much longer label that has to wrap over more than one line at this width');
+    expect(many.lines.length).toBeGreaterThan(1);
+    expect(many.h).toBe(many.lines.length * LABEL_FONT.line + 2 * LABEL_FONT.padY);
+    expect(many.w).toBeGreaterThan(one.w);
+    expect(many.w).toBeLessThanOrEqual(LABEL_FONT.wrap + 2 * LABEL_FONT.padX);
   });
 });

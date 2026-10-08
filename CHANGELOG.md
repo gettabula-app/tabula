@@ -49,6 +49,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Typing a connector label happens in the same small paper pill the label is drawn in, sized to the text, instead of a large white box with a blue border; the caret takes the label's colour.
 - Editing a UML class or a connector label keeps the object's own colours: the class editor uses its fill and text colour, a label its connector's colour, instead of always a white box with dark text.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).

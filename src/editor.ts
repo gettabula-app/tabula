@@ -2,7 +2,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, ConnectorObj, Id, Obj } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
-import { labelBox, layoutText, styleOf, textHeight } from './markup';
+import { LABEL_FONT, labelBox, labelPill, layoutText, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
@@ -113,15 +113,21 @@ export class TextEditor {
     ta.style.color = colours.color;
     ta.style.background = colours.background;
     ta.style.textAlign = st.align;
+    ta.style.padding = ''; // the label editor sets all four sides; the other modes set only the top
 
     if (isConnector(o)) {
+      // the same pill as the rendered label, sized to the text as it is typed (wide enough for the caret when empty)
       const g = connectorGeom((x) => this.app.store.get(x), o);
       if (!g) return;
-      const w = 220, h = 40;
+      const pill = labelPill(ta.value);
+      const w = Math.max(pill.w, 24) + 2, h = pill.h; // 2 units of slack so the textarea never wraps sooner than the label
       this.place(g.mid.x - w / 2, g.mid.y - h / 2, w, h, 0, z);
-      ta.style.fontSize = '13px';
+      ta.style.fontFamily = fontFamily('satoshi');
+      ta.style.fontWeight = String(LABEL_FONT.weight);
+      ta.style.fontSize = `${LABEL_FONT.size}px`;
+      ta.style.lineHeight = `${LABEL_FONT.line}px`;
+      ta.style.padding = `${LABEL_FONT.padY}px ${LABEL_FONT.padX}px`;
       ta.style.textAlign = 'center';
-      ta.style.paddingTop = '10px';
       return;
     }
     const b = o as BaseObj;
@@ -188,6 +194,7 @@ export class TextEditor {
       s.transact(() => s.update(o.id, { name: v }));
     } else if (this.mode === 'label') {
       s.transact(() => s.update(o.id, { label: v || undefined }));
+      this.reposition(); // the pill grows and wraps with the text
     }
     if (o.type === 'text') this.reposition();
     else if (this.mode === 'text') {

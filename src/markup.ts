@@ -269,16 +269,28 @@ function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
   let out = `<path d="${d}" fill="none" ${strokeAttrs(color, sw, c.dash)} stroke-linecap="round"/>` + sh.svg + eh.svg;
   const label = c.label || (c.relation ? RELATIONS[c.relation].text : '') || '';
   if (label && ctx.editingId !== c.id) {
-    const font = fontCss('satoshi', 13, 500);
-    const lines = wrap(label, font, 220);
-    const w = Math.max(...lines.map((l) => measure(l, font))) + 12;
-    const h = lines.length * 17 + 6;
+    const { lines, w, h } = labelPill(label);
     out += `<rect x="${n(g.mid.x - w / 2)}" y="${n(g.mid.y - h / 2)}" width="${n(w)}" height="${n(h)}" rx="4" fill="${PAPER}"/>`;
     out += `<text font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" font-weight="500" fill="${escapeXml(color === 'none' || color === CANVAS_INK ? INK : color)}" text-anchor="middle">` +
       lines.map((l, i) => `<tspan x="${n(g.mid.x)}" y="${n(g.mid.y - h / 2 + 3 + 17 * i + 13)}">${escapeXml(l)}</tspan>`).join('') + '</text>';
   }
   const op = c.opacity !== undefined && c.opacity < 1 ? ` opacity="${c.opacity}"` : '';
   return `<g${op}>${out}</g>`;
+}
+
+/** Text metrics of a connector label: 13px, 17px lines, wrapped at 220. */
+export const LABEL_FONT = { size: 13, weight: 500, line: 17, padX: 6, padY: 3, wrap: 220 } as const;
+
+/**
+ * The paper pill behind a connector label, sized to its text. The label editor uses the same size, so typing a
+ * label looks like the label it becomes.
+ */
+export function labelPill(label: string): { lines: string[]; w: number; h: number } {
+  const font = fontCss('satoshi', LABEL_FONT.size, LABEL_FONT.weight);
+  const lines = wrap(label, font, LABEL_FONT.wrap);
+  const w = Math.max(...lines.map((l) => measure(l, font))) + 2 * LABEL_FONT.padX;
+  const h = lines.length * LABEL_FONT.line + 2 * LABEL_FONT.padY;
+  return { lines, w, h };
 }
 
 // ---------------------------------------------------------------- UML
