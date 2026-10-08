@@ -209,9 +209,12 @@ Icon sets come from [Iconify's open data](https://github.com/iconify/icon-sets) 
 npm test             # vitest
 npm run lint         # oxlint
 npm run typecheck    # tsc --noEmit
+npm run test:repeat -- test/relay.test.ts --times 20   # flake gate: repeat files under CI=true
 ```
 
 Covers CRDT merging of concurrent and offline edits, undo scope, ordering, connector routing, rotated hit-testing, UML text round-trips, Mermaid import/export, markup escaping and XML validity, icon sanitising, the Fontshare catalogue format, and the relay end to end (two clients syncing, offline merge on reconnect, persistence across restarts, invalid room names).
+
+`npm run test:repeat -- [files] [--times 20] [--platform win32] [--bail]` runs test files again and again under `CI=true` (the CI settings of `vite.config.ts`) and reports which tests failed in which runs; without files it takes the test files changed versus `origin/main`. New test files should pass it 10 to 20 times before they are merged. `--platform win32` makes tests that branch on the platform take their Windows branch (`test/platform.ts`).
 
 ## CI/CD
 

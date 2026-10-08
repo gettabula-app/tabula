@@ -12,6 +12,7 @@ import { createCloud } from '../server/cloud.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { CREDS, KEY, MIN, T0, harness, type Harness } from './backup-harness';
+import { isWindows, simulatedWindows } from './platform';
 
 // docs/backups.md and docs/cloud.md. GET /api/internal/backup-status in process, and the relay as a child process with
 // backups configured, half configured, misconfigured and unreachable.
@@ -170,13 +171,14 @@ afterAll(async () => {
 });
 
 const stop = (r: Launched) => {
-  r.proc.kill('SIGTERM');
+  // With win32 forced on a system that has signals, SIGTERM would run the relay's handler and exit 0, which Windows does not do; SIGKILL has no handler, so the child ends without an exit code, as under TerminateProcess.
+  r.proc.kill(simulatedWindows ? 'SIGKILL' : 'SIGTERM');
   return r.exited;
 };
 // Windows has no signals: kill() is TerminateProcess, so the SIGTERM handler never runs and the child reports a signal instead of exit code 0.
 const expectCleanStop = async (r: Launched) => {
   const code = await stop(r);
-  if (process.platform === 'win32') {
+  if (isWindows) {
     expect(code).toBeNull();
     expect(r.proc.signalCode).not.toBeNull();
   } else {
