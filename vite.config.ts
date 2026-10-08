@@ -1,8 +1,10 @@
 import { configDefaults, defineConfig } from 'vitest/config';
+import docs from './scripts/vite-docs.mjs';
 
 // In dev, the relay runs on 8787 and Vite proxies the sync socket to it,
 // so the client always connects to same-origin /sync.
 export default defineConfig({
+  plugins: [docs()],
   server: {
     port: 5173,
     proxy: {
