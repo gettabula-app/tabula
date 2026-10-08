@@ -12,7 +12,7 @@ Click **Stickers** on the tool rail. The drawer opens on the side.
 
 ## Place a sticker
 
-- Click a sticker to add it at the centre of your view. Each further click steps the new sticker a little right and down from the last one, so they do not pile up.
+- Click a sticker to add it at the centre of your view. Each further click steps the new sticker a little right and down from the last one, so they do not pile up. The steps start again at the centre of the view after you move the view a step away, or after you move or delete the last sticker placed.
 - Or drag it onto the board where you want it.
 
 A sticker is larger than a normal icon so it reads at a glance. Select it to move, resize (it keeps its proportions), rotate, duplicate, lock or delete it, like any other object. You can also put one inside a frame.

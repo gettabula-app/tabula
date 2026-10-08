@@ -142,7 +142,7 @@ On Mac, use `Cmd` where the table says `Ctrl`. The board menu lists every shortc
 
 | Modifier | Effect |
 |---|---|
-| `Alt` | Ignore the grid |
+| `Alt` | Ignore the grid and smart guides |
 | `Shift` while resizing | Keep proportions |
 | `Shift` while rotating | Snap to 15 degrees |
 | `Shift`+click | Add to or remove from the selection; during a dot vote, remove a dot |

@@ -71,7 +71,7 @@ Board-wide heading and body fonts for new objects are set in **Board settings** 
 
 - **Pen** (`P`): drag to draw freehand. A tray shows colours and three widths while the pen is active.
 - **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it.
-- **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Change its colour with the properties panel.
+- **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Each click places the icon 24 pixels right and down from the previous click's icon, so they do not land on top of each other, and the steps start again at the centre of the view after you move the view a step away or move or delete the last icon placed. Change its colour with the properties panel.
 - **Offline icons**: with **All icon sets** selected, the row **Popular icon sets (N)** has **Download for offline**. With one set selected, the row shows that set's name instead. Downloaded sets search and preview without a connection; **Update** and **Remove** work as they do for stickers (see [Stickers](stickers.md#offline)). Icons already on the board stay there.
 - **Online sets**: this button in the Icons drawer loads more sets from Iconify. Those sets cannot be downloaded, need a connection, and each search sends your query to Iconify.
 - **UML**: the **UML** drawer holds classes, actors, lifelines and other UML elements, and the relationship connectors. See [Connectors](connectors.md#uml-relationships).
@@ -104,7 +104,8 @@ Select something and a small bar appears above it (below, if above would cover a
 - Click to select. `Shift`+click adds or removes an item. Drag on empty canvas to select with a box.
 - `Ctrl+A` selects everything that is not locked.
 - Drag to move. Arrow keys nudge by 1; with `Shift`, by one grid step.
-- Hold `Alt` while dragging to ignore the grid.
+- Hold `Alt` while dragging to ignore the grid and [smart guides](smart-guides.md).
+- Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.
 - Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
 
