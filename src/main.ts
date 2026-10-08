@@ -9,7 +9,9 @@ import { renderTemplates } from './ui/templates-page';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
-import { TEMPLATES, insertTemplate } from './templates';
+import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
+import { getTemplate } from './template-store';
+import type { CustomTemplate } from './custom-templates';
 import { answerKey } from './polls';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
@@ -29,7 +31,7 @@ const root = document.getElementById('app')!;
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
-let pending: { id: string; template?: string; imported?: ImportedBoard } | null = null;
+let pending: { id: string; template?: string; custom?: CustomTemplate; imported?: ImportedBoard } | null = null;
 let registering = false;
 let routeSeq = 0;
 
@@ -74,12 +76,20 @@ const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBo
 const nav: HomeNav = {
   open: async (id, opts = {}) => {
     if (registering) return;
+    let custom: CustomTemplate | undefined;
+    if (opts.template?.startsWith(CUSTOM_PREFIX)) {
+      custom = await getTemplate(opts.template.slice(CUSTOM_PREFIX.length));
+      if (!custom) {
+        toast('That template is no longer available.');
+        return;
+      }
+    }
     if (authState().mode === 'signed-in' && isNewBoard(id, opts)) {
       registering = true;
       try {
         await api.createBoard({
           id,
-          title: TEMPLATES.find((t) => t.id === opts.template)?.name ?? 'Untitled board',
+          title: custom?.name ?? TEMPLATES.find((t) => t.id === opts.template)?.name ?? 'Untitled board',
           teamId: opts.teamId,
         });
       } catch (err) {
@@ -90,7 +100,7 @@ const nav: HomeNav = {
       }
       refreshBoardCache();
     }
-    pending = { id, ...opts };
+    pending = { id, ...opts, custom };
     location.hash = `#/b/${id}`;
   },
 };
@@ -221,7 +231,12 @@ async function route() {
     });
   }
 
-  if (job?.template) {
+  const custom = job?.custom;
+  if (custom) {
+    const fonts = custom.content.fonts;
+    conn.store.setMeta({ name: custom.name, ...(fonts ? { headingFont: fonts.heading, bodyFont: fonts.body } : {}) });
+    requestAnimationFrame(() => insertCustomTemplate(app, custom));
+  } else if (job?.template) {
     const t = TEMPLATES.find((x) => x.id === job.template);
     if (t) {
       conn.store.setMeta({ name: t.name });

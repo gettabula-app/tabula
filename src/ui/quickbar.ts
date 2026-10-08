@@ -11,6 +11,7 @@ import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { placeBar } from './quickbar-layout';
 import { reactionPicker } from './stickers';
+import { openSaveTemplate } from './save-template';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -206,6 +207,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([
       lock,
       action('dup', 'Duplicate (Ctrl/Cmd+D)', () => app.duplicate()),
+      action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection])),
       action('trash', 'Delete (Del)', () => app.deleteSelection(), 'danger'),
     ]);
     groups.push([more]);

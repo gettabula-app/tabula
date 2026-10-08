@@ -25,6 +25,7 @@ import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openTokensDialog } from './tokens';
+import { openSaveTemplate } from './save-template';
 
 type IconName = keyof typeof ICONS;
 
@@ -428,6 +429,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: () => void) {
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app)),
+    writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('user', 'Your name and colour', () => openProfile(app)),
     showComments,

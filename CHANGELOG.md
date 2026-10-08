@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- Custom templates (open mode): select objects or use the whole board and choose Save as template (quick-action bar or board menu) with a name, category and description. Saved templates appear under My templates on the Templates page, first in the Boards page strip, and in the board's Templates drawer; use one as a new board or insert it into the current board in one undo step. Stored in this browser and kept in sync across tabs. Every template card now shows a thumbnail drawn from its contents, in the current theme.
 - Templates page (`#/templates`): every template on a solid card, with category filters and search. The home screen links to it from a short Start from a template row.
 - Polls: a facilitated question with 2–10 options, run as a session step (new `poll` step mode) or started from a quick poll button on the toolbar. One answer per person, changeable until the poll closes; results stay hidden until reveal, and ranked results copy as Markdown or go on the board as a sticky. Answers live in the board document, so they work offline, sync, and travel in `.drift` and JSON exports; the Markdown summary includes revealed polls. See `docs/polls.md`.
 - Stickers: a Stickers drawer (Fluent, Twemoji and Noto emoji from Iconify) places colour emoji on the board. They work offline and export with the board, and have no colour control. A React button in the quick-action bar drops a reaction next to the selection. See `docs/stickers.md`.

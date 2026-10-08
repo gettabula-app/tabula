@@ -10,8 +10,10 @@ import { cacheServerBoards, cachedServerBoards, setSignedOut, type AuthState } f
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
-import { featuredTemplates, useTemplate } from './templates-page';
+import { customRef, customThumbnail, featuredTemplates, useTemplate } from './templates-page';
 import { builtinThumbnail } from '../template-thumb';
+import { listTemplates, onTemplatesChange } from '../template-store';
+import type { CustomTemplate } from '../custom-templates';
 
 // Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
 const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
@@ -319,18 +321,40 @@ function confirmDeleteLocal(b: BoardEntry, done: () => void) {
   ]);
 }
 
-/** A short list of templates under the boards; the templates page has the rest. */
+const STRIP_SIZE = 4;
+
+/** A short list of templates under the boards: saved ones first, then built-in ones; the templates page has the rest. */
 function templateStrip(nav: HomeNav, down: boolean) {
+  const tile = (key: string, label: string, title: string, thumb: string) => h('li', null,
+    h('button', { class: 'tpl-tile', disabled: down, onclick: () => useTemplate(nav, key) },
+      h('span', { class: 'tpl-thumb', html: thumb }),
+      h('span', { class: 'tpl-label' }, label),
+      h('span', { class: 'tpl-title' }, title)));
+  const list = h('ul', { class: 'tpl-strip' });
+  const paint = (mine: CustomTemplate[]) => {
+    const own = mine.slice(0, STRIP_SIZE);
+    list.replaceChildren(
+      ...own.map((t) => tile(customRef(t), t.category, t.name, customThumbnail(t))),
+      ...featuredTemplates(STRIP_SIZE - own.length).map((t) => tile(t.id, t.category, t.name, builtinThumbnail(t))));
+  };
+  const load = () => {
+    void listTemplates().then((mine) => {
+      if (list.isConnected) paint(mine);
+    });
+  };
+  paint([]);
+  load();
+  // The page repaints with a new strip now and then; an old one stops listening when it leaves the document.
+  const off = onTemplatesChange(() => {
+    if (!list.isConnected) off();
+    else load();
+  });
   return h('section', { class: 'home-templates' },
     h('div', { class: 'group-head' },
       h('h2', null, 'Start from a template'),
       h('div', { class: 'group-actions' },
         h('a', { class: 'link-more', href: '#/templates' }, 'All templates', h('span', { 'aria-hidden': 'true' }, '→')))),
-    h('ul', { class: 'tpl-strip' }, ...featuredTemplates().map((t) => h('li', null,
-      h('button', { class: 'tpl-tile', disabled: down, onclick: () => useTemplate(nav, t.id) },
-        h('span', { class: 'tpl-thumb', html: builtinThumbnail(t) }),
-        h('span', { class: 'tpl-label' }, t.category),
-        h('span', { class: 'tpl-title' }, t.name))))));
+    list);
 }
 
 function boardFileInput(nav: HomeNav) {

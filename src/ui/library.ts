@@ -4,7 +4,9 @@ import { h, icon } from './dom';
 import { dialog, toast } from './common';
 import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
-import { TEMPLATES, insertTemplate } from '../templates';
+import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
+import { listTemplates, onTemplatesChange } from '../template-store';
+import type { CustomTemplate } from '../custom-templates';
 import { POPULAR_SETS, iconData, iconSets, previewUrl, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
@@ -274,8 +276,34 @@ function iconsTab(app: BoardApp) {
 
 function templatesTab(app: BoardApp, close: () => void) {
   const cats = [...new Set(TEMPLATES.map((t) => t.category))];
+  const mine = h('div', null);
+  const paintMine = (list: CustomTemplate[]) => {
+    mine.replaceChildren(
+      h('div', { class: 'list-label' }, 'My templates'),
+      ...(list.length ? list.map((t) => h('button', {
+        class: 'template-row',
+        onclick: () => {
+          insertCustomTemplate(app, t);
+          close();
+          toast(t.content.steps.length ? `${t.name} added. Start the session from the bar at the bottom.` : `${t.name} added.`);
+        },
+      }, h('span', { class: 'tpl-name' }, t.name), h('span', { class: 'tpl-desc' }, t.description || t.category)))
+        : [h('p', { class: 'muted small' }, 'Templates you save from a board appear here.')]));
+  };
+  const loadMine = () => {
+    void listTemplates().then((list) => {
+      if (mine.isConnected) paintMine(list);
+    });
+  };
+  loadMine();
+  // The drawer is rebuilt each time it opens; this one stops listening once it has left the page.
+  const off = onTemplatesChange(() => {
+    if (!mine.isConnected) off();
+    else loadMine();
+  });
   return h('div', { class: 'drawer-body' },
     h('p', { class: 'muted small' }, 'Each template adds frames and a facilitation flow with timed steps, private writing and dot voting.'),
+    mine,
     ...cats.flatMap((c) => [
       h('div', { class: 'list-label' }, c),
       ...TEMPLATES.filter((t) => t.category === c).map((t) => h('button', {

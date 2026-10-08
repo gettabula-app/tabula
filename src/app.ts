@@ -1245,7 +1245,7 @@ export class BoardApp {
   }
 
   /** Selected objects plus connectors between them, as a portable list. */
-  private gather(ids: Id[]): Obj[] {
+  gather(ids: Id[]): Obj[] {
     const set = new Set(ids);
     const stack = [...ids];
     while (stack.length) {
