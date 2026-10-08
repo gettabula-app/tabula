@@ -85,6 +85,11 @@ function usedFonts(objs: Obj[]): Map<string, Set<number>> {
   return m;
 }
 
+/** Exports are drawn on white, so theme variables are replaced by their fallbacks. */
+export function resolveCssVars(svg: string): string {
+  return svg.replace(/var\(--[\w-]+,\s*([^)]+)\)/g, (_, fallback: string) => fallback.trim());
+}
+
 export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; background?: boolean } = {}): { svg: string; w: number; h: number } {
   const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
   const b = app.r.contentBounds(objs.map((o) => o.id)) ?? { x: 0, y: 0, w: 100, h: 100 };
@@ -97,9 +102,9 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     style = [...usedFonts(objs)].map(([slug, ws]) => `@import url("${cssUrl(slug, [...ws])}");`).join('\n');
   }
   const bg = opts.background === false ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#FFFFFF"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
+  const svg = resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
 ${style.replace(/]]>/g, '')}
-]]></style></defs>${bg}${body}</svg>`;
+]]></style></defs>${bg}${body}</svg>`);
   return { svg, w, h };
 }
 

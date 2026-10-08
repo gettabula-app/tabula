@@ -89,8 +89,8 @@ export class TextEditor {
     const st = styleOf(o);
     ta.style.fontFamily = fontFamily(st.font);
     ta.style.fontWeight = String(st.fontWeight);
-    // Class, label and frame editors sit on their own light background.
-    ta.style.color = this.mode === 'text' ? st.textColor : '#18212B';
+    // Class and label editors sit on white; the frame editor sits on the canvas.
+    ta.style.color = this.mode === 'text' ? st.textColor : this.mode === 'frame' ? 'var(--ink)' : '#18212B';
     ta.style.textAlign = st.align;
 
     if (isConnector(o)) {
