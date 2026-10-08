@@ -101,13 +101,13 @@ In accounts mode, open **AI tool access** in the board menu, name a token, pick 
 
 | Shapes panel | Quick actions |
 | --- | --- |
-| ![Shapes panel with Basic, Arrows, Callouts and Flowchart groups](docs/images/shapes-panel.png) | ![Quick-action bar above a selected ellipse](docs/images/quick-actions.png) |
+| ![Shapes panel with Basic, Arrows, Callouts and Flowchart groups](docs/images/shapes-panel.png) | ![Quick-action bar next to a selected ellipse](docs/images/quick-actions.png) |
 | **Text options** | **Locked item** |
 | ![Text popover with horizontal and vertical alignment](docs/images/text-options.png) | ![Lock badge shown when hovering a locked item](docs/images/locked-badge.png) |
 | **Themes (Matrix, with the picker)** | **Ayu** |
 | ![Board menu with the theme picker, Matrix theme active](docs/images/themes-menu-matrix.png) | ![Ayu theme on a board](docs/images/theme-ayu.png) |
 | **Accounts: sign in** | **Accounts: home screen with teams** |
-| ![Sign-in screen](docs/images/signin.png) | ![Home screen with Personal, Shared with you and On this device](docs/images/teams-home.png) |
+| ![Sign-in screen](docs/images/signin.png) | ![Boards page with a team, personal boards and boards shared with you](docs/images/teams-home.png) |
 | **Accounts: access removed** | |
 | ![Banner shown when your access to a board is removed](docs/images/access-removed.png) | |
 
