@@ -272,6 +272,8 @@ export function deviceLabel(userAgent: string | null | undefined): string {
   if (browser && system) return `${browser} on ${system}`;
   if (browser || system) return (browser ?? system)!;
   return userAgent.trim().split(/[\s/;(]/)[0].slice(0, 40) || 'Unknown device';
+}
+
 /** A stat tile on the Overview: its label, its number and the line under it. */
 export interface OverviewTile { label: string; value: number; sub?: string }
 

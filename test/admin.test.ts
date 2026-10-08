@@ -375,6 +375,9 @@ describe('deviceLabel', () => {
     expect(deviceLabel('   ')).toBe('Unknown device');
     expect(deviceLabel('node')).toBe('node');
     expect(deviceLabel('curl/8.9.1')).toBe('curl');
+  });
+});
+
 describe('overviewTiles', () => {
   const overview: AdminOverview = {
     members: { total: 10, active: 8, disabled: 2, byRole: { owner: 1, admin: 1, member: 8, guest: 0 } },
