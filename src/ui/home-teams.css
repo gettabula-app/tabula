@@ -1,0 +1,9 @@
+/* Home screen in accounts mode: team sections, role badges, user bar. */
+
+.team-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.team-head h2 { margin: 0; }
+.role-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 99px; font-size: 12px; font-weight: 600; background: var(--rule); color: var(--ink); }
+.role-badge.view { background: var(--signal); color: var(--on-signal); }
+.home-userbar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.home .btn.ghost { background: transparent; box-shadow: none; }
+.home .btn.ghost:hover { background: var(--rule); }
