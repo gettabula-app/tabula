@@ -169,6 +169,36 @@ export function neighborInDirection(src: BaseObj, side: Side, candidates: BaseOb
   return best;
 }
 
+/** Space between a shape and the copy a click on its connection dot makes. */
+export const QUICK_GAP = 96;
+/** Clear space kept around the copy when it has to move past other shapes. */
+export const QUICK_CLEARANCE = 48;
+
+/**
+ * Where the copy a click on the connection dot on `side` of `src` goes: `gap` beyond that side, or, when that spot
+ * overlaps another shape, the nearest spot further along the same direction that does not. Returns the top left
+ * corner. Every shape in `obstacles` other than `src` counts, rotated ones by their outline's bounds.
+ */
+export function freeSpotInDirection(src: BaseObj, side: Side, obstacles: BaseObj[], gap = QUICK_GAP, clearance = QUICK_CLEARANCE): Point {
+  const r = { x: src.x, y: src.y, w: src.w, h: src.h };
+  if (side === 'right') r.x += src.w + gap;
+  else if (side === 'left') r.x -= src.w + gap;
+  else if (side === 'bottom') r.y += src.h + gap;
+  else r.y -= src.h + gap;
+  const bounds = obstacles.filter((o) => o.id !== src.id).map(boxBounds);
+  // Each pass moves past every shape in the way, so it ends after at most one pass per shape.
+  for (let pass = 0; pass <= bounds.length; pass++) {
+    const hits = bounds.filter((b) =>
+      b.x < r.x + r.w + clearance && b.x + b.w > r.x - clearance && b.y < r.y + r.h + clearance && b.y + b.h > r.y - clearance);
+    if (hits.length === 0) break;
+    if (side === 'right') r.x = Math.max(...hits.map((b) => b.x + b.w)) + clearance;
+    else if (side === 'left') r.x = Math.min(...hits.map((b) => b.x)) - clearance - r.w;
+    else if (side === 'bottom') r.y = Math.max(...hits.map((b) => b.y + b.h)) + clearance;
+    else r.y = Math.min(...hits.map((b) => b.y)) - clearance - r.h;
+  }
+  return { x: r.x, y: r.y };
+}
+
 /** Pick the side of `o` that faces `toward`. */
 export function autoSide(o: BaseObj, toward: Point): Side {
   const l = toLocal(o, toward);

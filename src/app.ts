@@ -10,7 +10,7 @@ import { newId } from './store';
 import { Renderer, handlesFor, type HandleId } from './render';
 import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, pointInRect, rectContains, rectOfPoints,
-  neighborInDirection, rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
+  freeSpotInDirection, neighborInDirection, rectsIntersect, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
 import { remapObjects } from './custom-templates';
@@ -979,10 +979,8 @@ export class BoardApp {
       this.setSelection([next.id]);
       return;
     }
-    const gap = 96;
-    const dx = side === 'right' ? src.w + gap : side === 'left' ? -(src.w + gap) : 0;
-    const dy = side === 'bottom' ? src.h + gap : side === 'top' ? -(src.h + gap) : 0;
-    const copy: BaseObj = { ...structuredClone(src), id: newId(), x: src.x + dx, y: src.y + dy, z: this.store.topZ(), createdBy: this.user.id, text: src.type === 'uml-class' ? 'NewClass' : '' };
+    const spot = freeSpotInDirection(src, side, candidates);
+    const copy: BaseObj = { ...structuredClone(src), id: newId(), x: spot.x, y: spot.y, z: this.store.topZ(), createdBy: this.user.id, text: src.type === 'uml-class' ? 'NewClass' : '' };
     if (copy.type === 'uml-class') { copy.attributes = []; copy.operations = []; copy.h = classHeight(copy); }
     delete copy.privateStep;
     const c = this.connectorFrom({ kind: 'bound', id: src.id, anchor: 'auto' }, { kind: 'bound', id: copy.id, anchor: 'auto' });
