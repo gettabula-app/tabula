@@ -5,7 +5,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 ## [Unreleased]
 
 ### Added
-- Mailgun email delivery for sign-in links (`MIRA_MAIL=mailgun` with `MAILGUN_API_KEY` and `MAILGUN_DOMAIN`, optional `MAILGUN_API_BASE` for EU), and the relay now reads a `.env` file at startup. `.env` files are gitignored.
+- Email through your own SMTP server (`MIRA_MAIL=smtp`, `MIRA_SMTP_URL`, `MIRA_MAIL_FROM`) for sign-in links; webhook and outbox payloads now also carry the kind of email (`template`, `params`). The relay reads a `.env` file at startup, and `.env` files are gitignored.
 - Comments: threaded comments pinned to a place or an object (C key or the speech-bubble tool), with reply, edit, delete, resolve/reopen, a Comments panel, a show/hide toggle in the board menu and a count badge. Pins follow their object through move, resize and rotate, are hidden for notes that private writing hides, and are left out of image exports. See `docs/comments.md`.
 - Commenter role for shared boards (accounts mode): can read and comment but not edit; viewers can read comments.
 - Comments data layer: each board has a sibling comments document (synced in its own room, persisted offline, included in .drift and JSON exports); the UI follows.

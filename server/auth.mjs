@@ -64,6 +64,8 @@ export function createAuth({ directory, config, mailer, now = Date.now }) {
     const minutes = Math.round(config.loginTokenMs / 60000);
     const message = {
       to: email,
+      template: 'sign-in',
+      params: { link, minutes },
       subject: 'Your Mira sign-in link',
       text: `Sign in to Mira with this link:\n\n${link}\n\nThe link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.\n`,
     };

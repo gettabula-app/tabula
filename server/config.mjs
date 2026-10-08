@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAIL_MODES = ['log', 'file', 'webhook', 'mailgun'];
+const MAIL_MODES = ['log', 'file', 'webhook', 'smtp'];
 
 export function normaliseEmail(value) {
   if (typeof value !== 'string') return null;
@@ -49,16 +49,11 @@ export function loadConfig(env = process.env) {
     throw new Error('MIRA_MAIL_WEBHOOK_URL is required when MIRA_MAIL=webhook');
   }
 
-  let mailgun;
-  if (mode === 'mailgun') {
-    const apiKey = (env.MAILGUN_API_KEY || '').trim();
-    const domain = (env.MAILGUN_DOMAIN || '').trim();
-    if (!apiKey || !domain) throw new Error('MAILGUN_API_KEY and MAILGUN_DOMAIN are required when MIRA_MAIL=mailgun');
-    // EU accounts use https://api.eu.mailgun.net
-    const apiBase = (env.MAILGUN_API_BASE || 'https://api.mailgun.net').trim().replace(/\/+$/, '');
-    mailgun = { apiKey, domain, apiBase };
+  const smtpUrl = (env.MIRA_SMTP_URL || '').trim() || null;
+  if (mode === 'smtp') {
+    if (!smtpUrl) throw new Error('MIRA_SMTP_URL is required when MIRA_MAIL=smtp (for example smtps://user:password@smtp.example.com:465)');
+    if (!(env.MIRA_MAIL_FROM || '').trim()) throw new Error('MIRA_MAIL_FROM is required when MIRA_MAIL=smtp');
   }
-  const defaultFrom = mailgun ? `Mira <postmaster@${mailgun.domain}>` : 'Mira <no-reply@localhost>';
 
   return {
     authEnabled,
@@ -72,6 +67,6 @@ export function loadConfig(env = process.env) {
     loginTokenMs: 15 * 60 * 1000,
     dataDir,
     port,
-    mail: { mode, webhookUrl, from: env.MIRA_MAIL_FROM || defaultFrom, mailgun },
+    mail: { mode, webhookUrl, smtpUrl, from: env.MIRA_MAIL_FROM || 'Mira <no-reply@localhost>' },
   };
 }

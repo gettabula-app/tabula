@@ -19,6 +19,7 @@
     "fflate": "^0.8.3",
     "fractional-indexing": "^4.0.0",
     "lib0": "^0.2.119",
+    "nodemailer": "^7.0.13",
     "ws": "^8.22.0",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
     "@types/ws": "^8.18.2",
     "@xmldom/xmldom": "^0.9.12",
     "oxlint": "^1.87.0",

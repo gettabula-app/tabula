@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import nodemailer from 'nodemailer';
 import { createMailer } from '../server/mailer.mjs';
 
 type Mail = { to: string; subject: string; text: string };
@@ -657,7 +658,7 @@ describe('loadConfig', () => {
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
-      mail: { mode: 'log', webhookUrl: null, from: 'Mira <no-reply@localhost>' },
+      mail: { mode: 'log', webhookUrl: null, smtpUrl: null, from: 'Mira <no-reply@localhost>' },
     });
   });
 
@@ -704,22 +705,26 @@ describe('loadConfig', () => {
     }
     expect(loadConfig({ DATA_DIR: '/var/lib/mira' }).dataDir).toBe(path.resolve('/var/lib/mira'));
 
-    expect(loadConfig({ MIRA_MAIL: 'file', MIRA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, from: 'Me <me@x.io>' });
+    expect(loadConfig({ MIRA_MAIL: 'file', MIRA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, smtpUrl: null, from: 'Me <me@x.io>' });
     expect(loadConfig({ MIRA_MAIL: 'webhook', MIRA_MAIL_WEBHOOK_URL: 'https://hooks.example.com/mail' }).mail).toMatchObject({
       mode: 'webhook',
       webhookUrl: 'https://hooks.example.com/mail',
     });
-    expect(() => loadConfig({ MIRA_MAIL: 'smtp' })).toThrow('MIRA_MAIL must be one of');
-    expect(() => loadConfig({ MIRA_MAIL: 'mailgun', MAILGUN_API_KEY: 'k' })).toThrow('MAILGUN_API_KEY and MAILGUN_DOMAIN are required');
-    const mg = loadConfig({ MIRA_MAIL: 'mailgun', MAILGUN_API_KEY: 'k', MAILGUN_DOMAIN: 'mg.example.org', MAILGUN_API_BASE: 'https://api.eu.mailgun.net/' }).mail;
-    expect(mg).toMatchObject({ mode: 'mailgun', from: 'Mira <postmaster@mg.example.org>', mailgun: { apiKey: 'k', domain: 'mg.example.org', apiBase: 'https://api.eu.mailgun.net' } });
+    expect(() => loadConfig({ MIRA_MAIL: 'carrier-pigeon' })).toThrow('MIRA_MAIL must be one of');
+    expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_MAIL_FROM: 'Mira <m@x.io>' })).toThrow('MIRA_SMTP_URL is required');
+    expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_SMTP_URL: 'smtps://u:p@smtp.x.io:465' })).toThrow('MIRA_MAIL_FROM is required');
+    expect(loadConfig({ MIRA_MAIL: 'smtp', MIRA_SMTP_URL: 'smtps://u:p@smtp.x.io:465', MIRA_MAIL_FROM: 'Mira <m@x.io>' }).mail).toMatchObject({
+      mode: 'smtp',
+      smtpUrl: 'smtps://u:p@smtp.x.io:465',
+      from: 'Mira <m@x.io>',
+    });
     expect(() => loadConfig({ MIRA_MAIL: 'webhook' })).toThrow('MIRA_MAIL_WEBHOOK_URL is required');
   });
 });
 
 describe('mailer', () => {
   const msg = { to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' };
-  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, from: 'Mira <no-reply@localhost>', ...mail } });
+  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, smtpUrl: null, from: 'Mira <no-reply@localhost>', ...mail } });
 
   it('logs a block to stdout in log mode', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -745,20 +750,16 @@ describe('mailer', () => {
     expect(JSON.parse(lines[1]).to).toBe('b@example.com');
   });
 
-  it('posts to the Mailgun API with basic auth and the configured sender', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const mailgun = { apiKey: 'key-123', domain: 'mg.example.org', apiBase: 'https://api.mailgun.net' };
-    await createMailer(configFor({ mode: 'mailgun', from: 'Mira <postmaster@mg.example.org>', mailgun })).send(msg);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://api.mailgun.net/v3/mg.example.org/messages');
-    expect((init.headers as Record<string, string>).authorization).toBe(`Basic ${Buffer.from('api:key-123').toString('base64')}`);
-    const form = init.body as URLSearchParams;
-    expect(Object.fromEntries(form)).toEqual({ from: 'Mira <postmaster@mg.example.org>', to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' });
-
-    fetchMock.mockResolvedValueOnce(new Response('nope', { status: 401 }));
-    await expect(createMailer(configFor({ mode: 'mailgun', mailgun })).send(msg)).rejects.toThrow('mailgun answered 401');
-    vi.unstubAllGlobals();
+  it('hands the message to the SMTP transport', async () => {
+    const sendMail = vi.fn<() => Promise<object>>(async () => ({}));
+    const createTransport = vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail } as unknown as ReturnType<typeof nodemailer.createTransport>);
+    const mailer = createMailer(configFor({ mode: 'smtp', smtpUrl: 'smtps://u:p@smtp.x.io:465', from: 'Mira <m@x.io>' }));
+    await mailer.send({ ...msg, template: 'sign-in', params: { link: 'x' } });
+    await mailer.send(msg);
+    expect(createTransport).toHaveBeenCalledTimes(1);
+    expect(createTransport).toHaveBeenCalledWith('smtps://u:p@smtp.x.io:465');
+    expect(sendMail).toHaveBeenCalledWith({ from: 'Mira <m@x.io>', to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' });
+    createTransport.mockRestore();
   });
 
   async function hook(status: number) {
