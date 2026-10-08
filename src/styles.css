@@ -29,6 +29,7 @@
   --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
   --radius: 12px;
   --panel-top: 72px;
+  --rail-clear: 76px;
   --shadow: 0 10px 28px rgba(16, 24, 32, 0.18), 0 2px 6px rgba(16, 24, 32, 0.12);
   /* ink of the white class and label editors; the same in every theme */
   --editor-fallback-ink: #18212B;
@@ -473,7 +474,7 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
   .top-right { top: 64px; }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
-  .flowbar { left: 76px; right: 12px; max-width: none; bottom: 60px; }
+  .flowbar { left: var(--rail-clear); right: 12px; max-width: none; bottom: 60px; }
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }

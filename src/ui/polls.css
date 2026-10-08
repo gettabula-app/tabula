@@ -6,7 +6,7 @@
 
 /* answering card, docked above the session bar: its top stays below the top bars, and only the list scrolls */
 .poll-card {
-  position: absolute; left: 16px; right: 16px; bottom: var(--poll-dock, 72px); margin: 0 auto; max-width: 560px; z-index: 11;
+  position: absolute; left: var(--rail-clear, 76px); right: 16px; bottom: var(--poll-dock, 72px); margin: 0 auto; max-width: 560px; z-index: 11;
   max-height: calc(100% - var(--panel-top) - var(--poll-dock, 72px) - 12px); overflow: hidden; box-sizing: border-box; padding: 16px; min-width: 0;
   display: flex; flex-direction: column; overflow-wrap: anywhere;
   background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-top: 2px solid var(--ink);
