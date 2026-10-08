@@ -5,6 +5,8 @@ import { newId } from '../store';
 import { h, icon } from './dom';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
+import { cooldownLabel } from '../focus-requests';
+import { focusFor } from './focus';
 import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
 import { NOTHING_HIDDEN, escapeHidesBar, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
 
@@ -106,7 +108,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('span', { class: 'step-instr' }, step.instructions)),
       ),
       timer, timerBtns, ...extras,
-      h('button', { class: 'icon-btn', title: 'Bring everyone to my view', 'aria-label': 'Bring everyone to my view', disabled: ro, onclick: () => { app.flow.summon(); toast('Everyone is now looking where you are'); } }, icon('focus', 18)),
+      askButton(app),
       f.active < f.steps.length - 1
         ? h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
         : h('button', { class: 'btn primary', disabled: ro, onclick: () => finish(app) }, 'Finish'),
@@ -194,6 +196,38 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   render();
   loop();
   app.onDestroy(() => clearInterval(tick));
+}
+
+const ASK_LABEL = 'Ask everyone to look here';
+
+/**
+ * Sends a request, not a command: it moves nobody. It is not tied to editing, so people with view-only access can ask too.
+ * After a request it waits 10 seconds, and the tooltip counts down. The bar is redrawn often, so the countdown lives in the
+ * focus controller and each button repaints itself once a second until it is replaced or ready.
+ */
+function askButton(app: BoardApp): HTMLElement {
+  const focus = focusFor(app);
+  const b = h('button', { class: 'icon-btn', 'aria-label': ASK_LABEL }, icon('focus', 18));
+  let timer = 0;
+  const paint = () => {
+    const left = focus?.cooldownLeft() ?? 0;
+    b.disabled = !focus || left > 0;
+    b.title = left > 0 ? cooldownLabel(left) : ASK_LABEL;
+    if (left <= 0 || !b.isConnected) clearInterval(timer);
+  };
+  const countdown = () => {
+    clearInterval(timer);
+    if ((focus?.cooldownLeft() ?? 0) > 0) timer = window.setInterval(paint, 1000);
+  };
+  b.addEventListener('click', () => {
+    if (!focus?.ask()) return;
+    toast('Asked everyone to look at your view');
+    paint();
+    countdown();
+  });
+  paint();
+  countdown();
+  return b;
 }
 
 function finish(app: BoardApp) {

@@ -1,5 +1,5 @@
 import type { BoardApp } from './app';
-import type { BaseObj, Id, Obj, Poll, Step, Vote } from './types';
+import type { BaseObj, Id, Obj, Poll, Rect, Step, Vote } from './types';
 import { isBox, isConnector } from './types';
 import { newId, type FlowState } from './store';
 import { boxBounds } from './geometry';
@@ -17,18 +17,21 @@ const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' 
  */
 export class Flow {
   private lastActive = -2;
-  private lastFocusTs = 0;
   readonly polls: Polls;
+  /**
+   * Called on the screen where someone moved the session to a step that has a frame, after this screen flew there.
+   * The focus prompts use it to tell the others; nothing here moves their view.
+   */
+  onLocalStep: ((step: Step, frame: Rect) => void) | null = null;
 
   constructor(private app: BoardApp) {
     const s = app.store;
     this.polls = new Polls(app);
-    s.flow.observe(() => this.onFlowChange());
+    s.flow.observe((_e, tx) => this.onFlowChange(tx.local));
     s.votes.observe(() => this.refreshVotes());
     // initial state
     queueMicrotask(() => {
       this.lastActive = s.getFlow().active;
-      this.lastFocusTs = s.getFlow().focus?.ts ?? 0;
       this.refreshVotes();
     });
   }
@@ -58,7 +61,8 @@ export class Flow {
     return !this.state().reveal;
   }
 
-  private onFlowChange() {
+  /** Only a change made on this screen moves this view. Other people's step changes arrive as a prompt they answer. */
+  private onFlowChange(local: boolean) {
     const f = this.state();
     this.app.r.invalidateAll();
     this.refreshVotes();
@@ -66,11 +70,11 @@ export class Flow {
       this.lastActive = f.active;
       const step = this.activeStep();
       const frame = step?.frameId ? this.app.store.get(step.frameId) : undefined;
-      if (isBox(frame)) this.app.r.flyTo(boxBounds(frame), 72, 1.2);
-    }
-    if (f.focus && f.focus.ts !== this.lastFocusTs) {
-      this.lastFocusTs = f.focus.ts;
-      if (f.focus.by !== this.app.user.id) this.app.r.flyToCenter({ x: f.focus.x, y: f.focus.y }, f.focus.zoom);
+      if (local && step && isBox(frame)) {
+        const bounds = boxBounds(frame);
+        this.app.r.flyTo(bounds, 72, 1.2);
+        this.onLocalStep?.(step, bounds);
+      }
     }
     this.app.emit('flow');
   }
@@ -378,12 +382,6 @@ export class Flow {
       for (const o of s.cache.values()) if ((o as BaseObj).privateStep) s.update(o.id, { privateStep: undefined });
     });
     s.setFlow({ reveal: true });
-  }
-
-  /** Bring everyone's view to mine. */
-  summon() {
-    const vp = this.app.r.viewport();
-    this.app.store.setFlow({ focus: { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2, zoom: this.app.zoom, ts: Date.now(), by: this.app.user.id } });
   }
 
   /** Markdown summary of the session: frames, their notes, votes. */
