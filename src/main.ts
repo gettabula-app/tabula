@@ -145,12 +145,17 @@ async function route() {
     conn.destroy();
     return;
   }
-  if (role === 'viewer') conn.store.setReadOnly(true);
+  if (role === 'viewer') {
+    conn.store.setReadOnly(true);
+    conn.comments.setReadOnly(true);
+  } else if (role === 'commenter') {
+    conn.store.setReadOnly(true);
+  }
   const job = pending?.id === id ? pending : null;
   pending = null;
 
   if (job?.imported) {
-    const { json, update } = job.imported;
+    const { json, update, comments } = job.imported;
     if (update) Y.applyUpdate(conn.doc, update);
     else {
       conn.doc.transact(() => {
@@ -159,6 +164,8 @@ async function route() {
         for (const [k, v] of Object.entries(json.flow || {})) conn.store.flow.set(k, v);
       });
     }
+    if (comments) Y.applyUpdate(conn.comments.doc, comments);
+    else if (json.comments) conn.comments.importThreads(json.comments);
   }
 
   root.replaceChildren();

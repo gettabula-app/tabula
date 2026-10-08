@@ -1,7 +1,7 @@
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';
-export type BoardRole = 'owner' | 'editor' | 'viewer';
-export type ShareRole = 'editor' | 'viewer';
+export type BoardRole = 'owner' | 'editor' | 'commenter' | 'viewer';
+export type ShareRole = 'editor' | 'commenter' | 'viewer';
 export type PrincipalType = 'user' | 'team';
 
 export interface ApiUser {
