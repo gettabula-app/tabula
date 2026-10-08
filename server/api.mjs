@@ -428,6 +428,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         return next;
       });
       if (patch.teamId !== undefined && patch.teamId !== board.teamId) emit('access-changed', { boardId: board.id });
+      if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
       return [200, boardView(updated, directory.boardRole(board.id, user.id))];
     }),
     compile('DELETE', 'boards/:id', {}, ({ user, params }) => {

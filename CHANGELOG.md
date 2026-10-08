@@ -49,6 +49,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 - nodemailer upgraded to 10 (fixes high-severity advisories); it ships its own types, so `@types/nodemailer` is removed.
 
 ### Fixed
+- Boards created with a title through `POST /api/boards` no longer open as "Untitled board" while the board list shows their name, and renaming a board through `PATCH /api/boards/:id` now renames the board itself instead of being undone at its next save.
 - Secondary grey text on panels in Ayu, and red error and delete text in Default, Kanagawa and Evergreen, were below WCAG AA contrast; the theme colours are adjusted slightly (same hue) so every text colour now reaches 4.5:1 on both the page and panel backgrounds, checked in tests.
 - Buttons and text that were hard to read on the dark themes (Ayu, Kanagawa, Matrix): the home screen's New board button (yellow on a pale background), hover colours, error and sync-status text, select arrows and the home dot grid now follow the theme. A test fails on any new hard-coded colour in the CSS, and the theme contrast test now also covers text on paper and paper on ink.
 - A directory database refused for a newer schema is now closed instead of left open, so its file can be removed (on Windows it stayed locked).

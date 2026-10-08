@@ -887,6 +887,43 @@ describe('accounts mode server', () => {
       expect(admin.ws.readyState).toBe(WebSocket.OPEN);
     });
 
+    it('names a board after its directory title when the board itself has no name', async () => {
+      const titled = await newBoard(owner.cookie, { title: 'Planning' });
+      const plain = await newBoard(owner.cookie);
+      const a = connect(titled, owner.cookie);
+      const b = connect(plain, owner.cookie);
+      await synced(a);
+      await synced(b);
+      await until(() => a.doc.getMap('meta').get('name') === 'Planning');
+      expect(b.doc.getMap('meta').has('name')).toBe(false); // an untitled board stays unnamed, as a new board in the app
+
+      // a board that already has a name keeps it, and saving copies it to the directory
+      a.doc.getMap('meta').set('name', 'Planning, week 2');
+      const titleOf = async () => ((await api(owner.cookie, 'GET', '/api/boards')).body as { id: string; title: string }[])
+        .find((x) => x.id === titled)?.title;
+      for (let i = 0; i < 100 && (await titleOf()) !== 'Planning, week 2'; i++) await sleep(50);
+      expect(await titleOf()).toBe('Planning, week 2');
+      const again = connect(titled, owner.cookie);
+      await synced(again);
+      expect(again.doc.getMap('meta').get('name')).toBe('Planning, week 2');
+    });
+
+    it('renames the board itself when its title changes through the API', async () => {
+      const board = await newBoard(owner.cookie, { title: 'Before' });
+      const open = connect(board, owner.cookie);
+      await synced(open);
+      await until(() => open.doc.getMap('meta').get('name') === 'Before');
+      expect((await api(owner.cookie, 'PATCH', `/api/boards/${board}`, { title: 'After' })).status).toBe(200);
+      await until(() => open.doc.getMap('meta').get('name') === 'After');
+
+      // with nobody connected the room is loaded, renamed and saved
+      const closed = await newBoard(owner.cookie, { title: 'Quiet' });
+      expect((await api(owner.cookie, 'PATCH', `/api/boards/${closed}`, { title: 'Renamed while closed' })).status).toBe(200);
+      const later = connect(closed, owner.cookie);
+      await synced(later);
+      await until(() => later.doc.getMap('meta').get('name') === 'Renamed while closed');
+    });
+
     it('never loads or creates a room for a connection it rejects', async () => {
       const team = await newTeam(owner.cookie);
       const other = await newTeam(owner.cookie);
