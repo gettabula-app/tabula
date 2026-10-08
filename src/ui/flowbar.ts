@@ -242,7 +242,7 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
       return h('li', { class: i === f.active ? 'current' : '' },
         h('button', { class: 'icon-btn', title: 'Go to this step', 'aria-label': `Go to step ${i + 1}`, onclick: () => app.flow.goto(i) }, String(i + 1)),
         title, mins, h('span', { class: 'muted small' }, 'min'), mode, dots,
-        h('button', { class: 'icon-btn', title: 'Remove step', 'aria-label': `Remove step ${i + 1}`, onclick: () => { app.flow.setSteps(app.flow.state().steps.filter((x) => x.id !== s.id)); draw(); } }, icon('trash', 16)),
+        h('button', { class: 'icon-btn', title: 'Remove step', 'aria-label': `Remove step ${i + 1}`, onclick: () => { app.flow.setSteps(app.flow.state().steps.filter((x) => x.id !== s.id)); draw(); } }, icon('trash', 18)),
       );
     }));
   };
