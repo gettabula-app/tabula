@@ -2,8 +2,10 @@ import './home.css';
 import type { BoardApp } from '../app';
 import type { Id, Obj } from '../types';
 import { isBox } from '../types';
-import { toTemplateContent, validateContent, type CustomTemplate, type TemplateContent } from '../custom-templates';
-import { putTemplate } from '../template-store';
+import { toTemplateContent, validateContent, type CustomTemplate, type TemplateContent, type TemplateScope } from '../custom-templates';
+import { authState } from '../auth';
+import { putTemplate, templatesShared } from '../template-store';
+import { choiceFor, choiceValue, saveBlocked, scopeLabel, shareChoices, shareHint } from '../template-share';
 import { thumbnailSvg } from '../template-thumb';
 import { CATEGORIES, CUSTOM_CATEGORY } from '../templates';
 import { newId } from '../store';
@@ -20,6 +22,9 @@ export interface TemplateDetails {
   category: string;
   description: string;
   includeSteps: boolean;
+  /** Accounts mode: who the template is shared with. */
+  scope: TemplateScope;
+  teamId: string | null;
 }
 
 /** The template content for some gathered objects, with the board's session steps and fonts. */
@@ -48,6 +53,8 @@ interface DialogSpec {
   objs: Obj[];
   /** Runs with a valid form. Throwing keeps the dialog open and shows the message. */
   onSubmit: (details: TemplateDetails, content: TemplateContent) => void | Promise<void>;
+  /** The dialog saves to the server itself, so it says why that is not possible (offline, a guest) and keeps Save off. */
+  saves?: boolean;
 }
 
 function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
@@ -60,6 +67,15 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
   const description = h('textarea', { class: 'input', rows: 3, maxlength: DESCRIPTION_MAX, 'aria-label': 'Description', placeholder: 'What is it for? (optional)' });
   description.value = spec.details.description;
   const include = h('input', { type: 'checkbox', checked: spec.details.includeSteps });
+  const auth = authState();
+  const choices = templatesShared() && (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me ? shareChoices(auth.me, spec.details) : [];
+  const share = h('select', { class: 'input', 'aria-label': 'Share with' }, ...choices.map((c) => h('option', { value: c.value }, c.label)));
+  share.value = choiceValue(spec.details);
+  const shareNote = h('p', { class: 'muted small' });
+  const showShare = () => {
+    if (choices.length) shareNote.textContent = shareHint(choiceFor(choices, share.value));
+  };
+  const blocked = spec.saves && choices.length ? saveBlocked(auth) : null;
   const error = h('div', { class: 'error', role: 'alert' });
   const preview = h('div', { class: 'tpl-thumb' });
   const summary = h('p', { class: 'muted small' });
@@ -69,9 +85,9 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
   const refresh = () => {
     content = boardTemplateContent(app, objs, include.checked);
     limit = contentProblem(content);
-    error.textContent = limit ?? '';
+    error.textContent = blocked ?? limit ?? '';
     const save = dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary');
-    if (save) save.disabled = limit !== null;
+    if (save) save.disabled = limit !== null || blocked !== null;
     const n = content.objects.length;
     summary.textContent = `${n} ${n === 1 ? 'object' : 'objects'}${content.steps.length ? `, ${content.steps.length} session ${content.steps.length === 1 ? 'step' : 'steps'}` : ''}`;
   };
@@ -82,6 +98,7 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
       field('Name', name),
       field('Category', category),
       field('Description', description),
+      choices.length ? field('Share with', h('div', null, share, shareNote)) : null,
       steps.length ? h('label', { class: 'check' }, include, 'Include session steps') : null,
       error),
     h('div', { class: 'save-tpl-preview' }, preview, summary),
@@ -97,10 +114,12 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
           return false;
         }
         refresh();
-        if (limit) return false;
+        if (limit || blocked) return false;
+        const where = choiceFor(choices, share.value);
         try {
           await spec.onSubmit({
             name: title, category: category.value, description: description.value.trim(), includeSteps: include.checked,
+            ...(choices.length ? { scope: where.scope, teamId: where.teamId } : { scope: spec.details.scope, teamId: spec.details.teamId }),
           }, content);
         } catch (e) {
           error.textContent = (e as Error).message;
@@ -110,6 +129,8 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
     },
   ]);
   include.addEventListener('change', refresh);
+  share.addEventListener('change', showShare);
+  showShare();
   name.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.isComposing) dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary')?.click();
   });
@@ -131,16 +152,20 @@ export function openSaveTemplate(app: BoardApp, source: Id[] | 'board'): void {
   openTemplateDialog(app, {
     title: 'Save as template',
     confirm: 'Save template',
-    details: { name: prefill, category: CUSTOM_CATEGORY, description: '', includeSteps: true },
+    details: { name: prefill, category: CUSTOM_CATEGORY, description: '', includeSteps: true, scope: 'personal', teamId: null },
     objs,
+    saves: true,
     onSubmit: async (d, content) => {
       const now = Date.now();
       const t: CustomTemplate = {
         id: newId(), version: 1, name: d.name, category: d.category, description: d.description,
         content, createdBy: app.user.id, createdAt: now, updatedAt: now,
+        ...(templatesShared() ? { scope: d.scope, teamId: d.teamId } : {}),
       };
-      await putTemplate(t);
-      toast(`Saved “${d.name}” to My templates.`);
+      const saved = await putTemplate(t);
+      toast(saved.scope && saved.scope !== 'personal'
+        ? `Saved “${d.name}” and shared it with ${scopeLabel(saved, null)}.`
+        : `Saved “${d.name}” to My templates.`);
     },
   });
 }

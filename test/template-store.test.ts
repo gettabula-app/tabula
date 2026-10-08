@@ -3,7 +3,7 @@ import type { BaseObj } from '../src/types';
 import { MAX_TEMPLATE_OBJECTS, type CustomTemplate } from '../src/custom-templates';
 import {
   createTemplateStore, getTemplate, indexedDbBackend, listTemplates, onTemplatesChange, putTemplate, removeTemplate,
-  validateTemplate, type TemplateBackend,
+  TemplateError, validateTemplate, type TemplateBackend,
 } from '../src/template-store';
 
 const sticky = (id: string): BaseObj => ({ id, type: 'sticky', x: 0, y: 0, w: 100, h: 80, rotation: 0, z: '1', text: id });
@@ -96,6 +96,39 @@ describe('template store', () => {
     const big = template('big', 100);
     big.content.objects = Array.from({ length: MAX_TEMPLATE_OBJECTS + 1 }, (_, i) => sticky(`o${i}`));
     await expect(store.put(big)).rejects.toThrow(String(MAX_TEMPLATE_OBJECTS));
+  });
+
+  it('answers a save with the template as kept, and uses the backend\'s own version when it gives one', async () => {
+    const { backend } = memory();
+    const store = createTemplateStore(backend);
+    expect(await store.put(template('a', 100))).toEqual(template('a', 100));
+    backend.put = async (t) => ({ ...t, id: 'server-id', scope: 'personal', teamId: null, canChange: true });
+    expect(await store.put(template('b', 100))).toMatchObject({ id: 'server-id', scope: 'personal', canChange: true });
+  });
+
+  it('keeps the sharing of a template and nothing for one kept in the browser', () => {
+    expect(createTemplateStore(null).shared).toBe(false);
+    expect(createTemplateStore({ ...memory().backend, shared: true }).shared).toBe(true);
+    expect(validateTemplate(template('a', 1, { scope: 'team', teamId: 't1', teamName: 'Design', canChange: false }))).toMatchObject({
+      scope: 'team', teamId: 't1', teamName: 'Design', canChange: false,
+    });
+    expect(validateTemplate(template('a', 1))).not.toHaveProperty('scope');
+  });
+
+  it('cannot duplicate where the backend has no way to', async () => {
+    const store = createTemplateStore(memory().backend);
+    await expect(store.duplicate('a')).rejects.toThrow('Templates cannot be saved here');
+  });
+
+  it('shows the message of a TemplateError as it is, and wraps any other failure', async () => {
+    const { backend } = memory();
+    const store = createTemplateStore(backend);
+    backend.put = () => Promise.reject(new TemplateError('You are offline.'));
+    backend.delete = () => Promise.reject(new TemplateError('Only admins can delete that.'));
+    await expect(store.put(template('a', 1))).rejects.toThrow(/^You are offline\.$/);
+    await expect(store.remove('a')).rejects.toThrow(/^Only admins can delete that\.$/);
+    backend.delete = () => Promise.reject(new Error('disk on fire'));
+    await expect(store.remove('a')).rejects.toThrow('Could not delete the template: disk on fire');
   });
 
   it('returns nothing, with a warning, when the database cannot be read', async () => {

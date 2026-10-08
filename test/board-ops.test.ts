@@ -543,7 +543,7 @@ describe('shared tables', () => {
 
 describe('files', () => {
   it('are never touched by the MCP modules: edits go through the relay\'s room documents', () => {
-    for (const file of ['mcp.mjs', 'board-ops.mjs', 'tokens.mjs']) {
+    for (const file of ['mcp.mjs', 'board-ops.mjs', 'tokens.mjs', 'templates.mjs']) {
       const source = readFileSync(new URL(`../server/${file}`, import.meta.url), 'utf8');
       expect(source).not.toMatch(/from\s+['"](node:)?fs(\/promises)?['"]|require\(\s*['"](node:)?fs/);
       expect(source).not.toMatch(/\.yjs|writeFile|appendFile|createWriteStream/);

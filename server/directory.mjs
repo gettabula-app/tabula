@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
+import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 
 export { normaliseEmail };
@@ -128,6 +129,8 @@ export const MIGRATIONS = [
   `
   ALTER TABLE sessions ADD COLUMN user_agent TEXT;
   `,
+  // Custom templates shared through the server (docs/custom-templates.md).
+  TEMPLATES_MIGRATION,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -898,6 +901,7 @@ export function openDirectory(file) {
     getSetting,
     setSetting,
     ...createTokenStore({ get, all, run, transaction }),
+    ...createTemplateStore({ get, all, run }),
     audit,
     listAudit,
     listAuditPage,

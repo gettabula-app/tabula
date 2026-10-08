@@ -17,6 +17,8 @@ export interface TemplateContent {
   fonts?: { heading: string; body: string };
 }
 
+export type TemplateScope = 'personal' | 'team' | 'workspace';
+
 export interface CustomTemplate {
   id: string;
   version: 1;
@@ -27,8 +29,13 @@ export interface CustomTemplate {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
-  scope?: 'personal' | 'team' | 'workspace';
+  /** Accounts mode only: who the template is shared with. Templates kept in the browser have none of these. */
+  scope?: TemplateScope;
   teamId?: string | null;
+  teamName?: string | null;
+  ownerName?: string | null;
+  /** Whether the person may rename, edit and delete it; absent means yes. */
+  canChange?: boolean;
 }
 
 /**

@@ -65,7 +65,7 @@ Layout (Swiss, symmetric padding, theme variables only, no new colours): a full-
 - **Teams**: all teams (name, members, archived badge) with archive/unarchive.
 - **Boards**: searchable table with a "Show deleted" toggle; open, delete (confirm), restore.
 - **Sessions**: table with revoke per row; the current session is marked and its revoke button is labelled "Sign out".
-- **Audit log**: newest first, action filter (All, Members, Teams, Boards, Invites, Sign-ins, Sessions: revoked sessions and sign-outs everywhere), "Load more" using `next`. Each entry reads as a sentence (for example "ana@example.com changed owner@… to admin") built from `action` and `detail`, with the raw action as a tooltip; unknown actions fall back to the raw action string.
+- **Audit log**: newest first, action filter (All, Members, Teams, Boards, Templates, Invites, Sign-ins, Sessions: revoked sessions and sign-outs everywhere), "Load more" using `next`. Each entry reads as a sentence (for example "ana@example.com changed owner@… to admin") built from `action` and `detail`, with the raw action as a tooltip; unknown actions fall back to the raw action string.
 
 All lists show an empty state and an error state with Retry. Mutations update the row in place and toast the outcome. Non-admins who open `#/admin` are sent home.
 

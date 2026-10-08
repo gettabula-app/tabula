@@ -87,6 +87,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'invite.create', 'invite.revoke', 'invite.accept',
   'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
   'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
+  'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
@@ -196,6 +197,14 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} deleted a version of ${boardLabel}`;
     case 'board.version.restore':
       return `${who} restored a version of ${boardLabel}`;
+    case 'template.create':
+    case 'template.update':
+    case 'template.delete': {
+      const verb = { 'template.create': 'saved', 'template.update': 'changed', 'template.delete': 'deleted' }[entry.action];
+      const name = text(d.name);
+      const scope = d.scope === 'team' ? ` shared with ${teamLabel}` : d.scope === 'workspace' ? ' shared with the workspace' : '';
+      return `${who} ${verb} the template${name ? ` ${quote(name)}` : ''}${scope}`;
+    }
     case 'member.update': {
       if (role) return `${who} changed ${member} to ${role}`;
       if (flag(d.disabled) === true) return `${who} disabled ${member}`;

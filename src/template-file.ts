@@ -14,6 +14,15 @@ const COPY_SUFFIX = ' (copy)';
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
+const SHARING = ['scope', 'teamId', 'teamName', 'ownerName', 'canChange'] as const;
+
+/** The template without who it is shared with: a file, a copy or an upload starts out as nobody's but its new owner's. */
+export function withoutSharing(t: CustomTemplate): CustomTemplate {
+  const plain = { ...t };
+  for (const key of SHARING) delete plain[key];
+  return plain;
+}
+
 /** "<name> (copy)", with the name cut short so the whole stays within the name limit. */
 export function copyName(name: string): string {
   return `${name.slice(0, NAME_MAX - COPY_SUFFIX.length).trimEnd()}${COPY_SUFFIX}`;
@@ -21,7 +30,7 @@ export function copyName(name: string): string {
 
 /** The text of a template file: `{ format: 'tabula-template', version: 1, template }`. */
 export function exportTemplateFile(t: CustomTemplate): string {
-  return JSON.stringify({ format: TEMPLATE_FILE_FORMAT, version: 1, template: validateTemplate(t) }, null, 2);
+  return JSON.stringify({ format: TEMPLATE_FILE_FORMAT, version: 1, template: withoutSharing(validateTemplate(t)) }, null, 2);
 }
 
 /**
@@ -56,14 +65,14 @@ export function parseTemplateFile(text: string, userId: string, now = Date.now()
     description: raw.description ?? '',
     ...(typeof raw.category === 'string' && !known ? { category: CUSTOM_CATEGORY } : {}),
   });
-  return { ...t, id: newId() };
+  return { ...withoutSharing(t), id: newId() };
 }
 
 /** A copy of a saved template for `userId`: same content, a new id, and "<name> (copy)". */
 export function duplicateTemplate(t: CustomTemplate, userId: string, now = Date.now()): CustomTemplate {
   const safe = validateTemplate(t);
   return {
-    ...safe, content: structuredClone(safe.content), id: newId(), name: copyName(safe.name), createdBy: userId, createdAt: now, updatedAt: now,
+    ...withoutSharing(safe), content: structuredClone(safe.content), id: newId(), name: copyName(safe.name), createdBy: userId, createdAt: now, updatedAt: now,
   };
 }
 

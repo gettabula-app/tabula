@@ -29,6 +29,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Members', prefix: 'member.' },
   { label: 'Teams', prefix: 'team.' },
   { label: 'Boards', prefix: 'board.' },
+  { label: 'Templates', prefix: 'template.' },
   { label: 'Invites', prefix: 'invite.' },
   { label: 'Sign-ins', prefix: 'auth.login' },
   { label: 'Sessions', prefix: 'admin.session' },

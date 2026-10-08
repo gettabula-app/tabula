@@ -114,10 +114,11 @@ GET    /api/members                     -> [{id,email,name,role,disabled,teams:[
 PATCH  /api/members/:id {role?, disabled?} -> member  (admins; only an owner may change an owner or grant owner; the last owner cannot be demoted or disabled: 409)
 DELETE /api/members/:id                 -> 204  (admins; same owner rules; revokes sessions and closes sockets)
 
+GET    /api/templates and the routes under it: custom templates shared with teams or the workspace, see docs/custom-templates.md ("Accounts mode: the server")
 GET    /api/boards/:id/versions   and the routes under it: version history of a board (owners and editors only), see docs/history.md
 ```
 
-Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`, `board.version.restore`).
+Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`, `board.version.restore`, `template.update`).
 
 ## Relay (WebSocket `/sync/<boardId>` and `/sync/<boardId>~comments`)
 

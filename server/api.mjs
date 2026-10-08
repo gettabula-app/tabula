@@ -7,10 +7,15 @@ import { BOARD_ID_RE } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
+import {
+  MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
+} from './templates.mjs';
 import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from './tokens.mjs';
 
 const MAX_BODY = 64 * 1024;
-const DRAIN_LIMIT = 1024 * 1024;
+// A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
+// every route's `maxBody`, and compile() refuses a route that breaks that.
+const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
@@ -76,7 +81,7 @@ function idField(value, field) {
   return value;
 }
 
-function readJson(req) {
+function readJson(req, limit) {
   return new Promise((resolve, reject) => {
     let size = 0;
     let settled = false;
@@ -95,11 +100,11 @@ function readJson(req) {
     }
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size <= MAX_BODY) chunks.push(chunk);
+      if (size <= limit) chunks.push(chunk);
       else if (size > DRAIN_LIMIT) done(reject, tooLarge());
     });
     req.on('end', () => {
-      if (size > MAX_BODY) return done(reject, tooLarge());
+      if (size > limit) return done(reject, tooLarge());
       const text = Buffer.concat(chunks).toString('utf8').trim();
       if (!text) return done(resolve, {});
       let data;
@@ -119,6 +124,7 @@ function readJson(req) {
 }
 
 function compile(method, pattern, options, handler) {
+  if (options.maxBody > DRAIN_LIMIT) throw new Error(`maxBody of ${method} ${pattern} is above DRAIN_LIMIT`);
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
@@ -221,6 +227,65 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // Hosted workspaces (docs/cloud.md): the message names the limit so an admin knows what to do about it.
   const seatLimited = (problem) =>
     conflict('seat_limit', `All ${cloud.limits().seatLimit} seats are in use, so ${problem}. Remove or disable someone, or ask the workspace owner to add seats under billing.`);
+
+  // A template the caller cannot see does not exist for them (404); one they can see but not change is 403.
+  function templateFor(user, id, { change = false } = {}) {
+    const template = directory.getTemplateFor(user, id);
+    if (!template) throw notFound('Template not found');
+    if (change && !template.canChange) {
+      throw forbidden(
+        template.scope === 'workspace'
+          ? 'Only workspace owners and admins can change a template shared with the workspace'
+          : template.scope === 'team'
+            ? 'Only the template owner, the team admins and workspace owners and admins can change a team template'
+            : 'Only the template owner can change it',
+      );
+    }
+    return template;
+  }
+
+  const templateView = (t, content) => ({
+    id: t.id,
+    version: 1,
+    name: t.name,
+    category: t.category,
+    description: t.description,
+    scope: t.scope,
+    teamId: t.teamId,
+    teamName: t.teamName,
+    createdBy: t.ownerId ?? '',
+    ownerName: t.ownerName,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    objectCount: t.objectCount,
+    stepCount: t.stepCount,
+    canChange: t.canChange,
+    ...(content === undefined ? {} : { content: JSON.parse(content) }),
+  });
+
+  // Where a template may be put: your own, your teams' (workspace owners and admins: any team) or, for them only, everyone's.
+  function checkPublish(user, scope, teamId) {
+    if (scope === 'team') {
+      if (directory.getTeamRole(teamId, user.id) === null && !isAdmin(user)) throw forbidden('You are not a member of that team');
+      if (!directory.getTeam(teamId)) throw notFound('Team not found');
+    } else if (scope === 'workspace' && !isAdmin(user)) {
+      throw forbidden('Only workspace owners and admins can share a template with the whole workspace');
+    }
+  }
+
+  function checkTemplateRoom(user) {
+    if (directory.countTemplatesOwnedBy(user.id) >= MAX_TEMPLATES_PER_OWNER) {
+      throw conflict('template_limit', `You can have at most ${MAX_TEMPLATES_PER_OWNER} templates. Delete one first.`);
+    }
+  }
+
+  const templateInput = (body, options) => {
+    try {
+      return parseTemplateBody(body, options);
+    } catch (err) {
+      throw err instanceof TemplateInputError ? badRequest(err.message) : err;
+    }
+  };
 
   // ------------------------------------------------------------ handlers
 
@@ -484,6 +549,79 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.unshare', { boardId: board.id, principalType, principalId: params.principalId });
       });
       emit('access-changed', { boardId: board.id });
+      return [204];
+    }),
+
+    // ---------------------------------------------------------- custom templates (docs/custom-templates.md)
+
+    compile('GET', 'templates', {}, ({ user }) => [200, directory.listTemplatesFor(user).map((t) => templateView(t))]),
+    compile('POST', 'templates', { body: true, maxBody: TEMPLATE_BODY_LIMIT }, ({ user, body }) => {
+      if (user.role === 'guest') throw forbidden('Guests cannot create templates');
+      const input = templateInput(body, { create: true });
+      checkPublish(user, input.scope, input.teamId);
+      checkTemplateRoom(user);
+      const created = directory.transaction(() => {
+        const id = directory.createTemplate({ ownerId: user.id, ...input });
+        audit(user, 'template.create', { templateId: id, name: input.name, scope: input.scope, ...(input.teamId ? { teamId: input.teamId } : {}) });
+        return id;
+      });
+      return [201, templateView(templateFor(user, created), input.validated.json)];
+    }),
+    compile('GET', 'templates/:id', {}, ({ user, params }) => {
+      const template = templateFor(user, params.id);
+      return [200, templateView(template, directory.getTemplateContent(template.id))];
+    }),
+    compile('PATCH', 'templates/:id', { body: true, maxBody: TEMPLATE_BODY_LIMIT }, ({ user, params, body }) => {
+      const template = templateFor(user, params.id, { change: true });
+      const patch = templateInput(body, { create: false });
+      if (patch.scope === undefined && patch.teamId !== undefined) {
+        if (template.scope !== 'team') throw badRequest('teamId only applies to a team template');
+        patch.scope = 'team';
+      }
+      if (patch.scope !== undefined && (patch.scope !== template.scope || (patch.teamId ?? null) !== template.teamId)) {
+        if (patch.scope === 'personal' && template.ownerId !== user.id) throw forbidden('Only the template owner can make it personal');
+        checkPublish(user, patch.scope, patch.teamId);
+      } else {
+        delete patch.scope;
+        delete patch.teamId;
+      }
+      if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+      const name = patch.name ?? template.name;
+      const scope = patch.scope ?? template.scope;
+      const teamId = scope === 'team' ? (patch.teamId ?? template.teamId) : null;
+      directory.transaction(() => {
+        directory.updateTemplate(template.id, patch);
+        audit(user, 'template.update', { templateId: template.id, name, scope, ...(teamId ? { teamId } : {}) });
+      });
+      const updated = templateFor(user, template.id);
+      return [200, templateView(updated, directory.getTemplateContent(template.id))];
+    }),
+    compile('POST', 'templates/:id/duplicate', {}, ({ user, params }) => {
+      const template = templateFor(user, params.id);
+      if (user.role === 'guest') throw forbidden('Guests cannot create templates');
+      checkTemplateRoom(user);
+      const content = directory.getTemplateContent(template.id);
+      const name = copyName(template.name);
+      const copy = directory.transaction(() => {
+        const id = directory.createTemplate({
+          ownerId: user.id,
+          scope: 'personal',
+          name,
+          category: template.category,
+          description: template.description,
+          validated: { json: content, objectCount: template.objectCount, stepCount: template.stepCount },
+        });
+        audit(user, 'template.create', { templateId: id, name, scope: 'personal', copiedFrom: template.id });
+        return id;
+      });
+      return [201, templateView(templateFor(user, copy), content)];
+    }),
+    compile('DELETE', 'templates/:id', {}, ({ user, params }) => {
+      const template = templateFor(user, params.id, { change: true });
+      directory.transaction(() => {
+        directory.deleteTemplate(template.id);
+        audit(user, 'template.delete', { templateId: template.id, name: template.name, scope: template.scope });
+      });
       return [204];
     }),
 
@@ -823,7 +961,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (cloud && !route.readOnlyOk && !READ_METHODS.has(method) && cloud.limits().readOnly) {
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
-    const body = route.body && BODY_METHODS.has(method) ? await readJson(req) : {};
+    const body = route.body && BODY_METHODS.has(method) ? await readJson(req, route.maxBody ?? MAX_BODY) : {};
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) session = signedIn();
 

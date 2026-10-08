@@ -468,8 +468,8 @@ describe('authorisation', () => {
       }
 
       const listed = (await h.call(token, 'tools/list')).body.result.tools.map((t: Body) => t.name).sort();
-      const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments']
-        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? ['create_objects', 'update_objects', 'delete_objects'] : [])
+      const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments', 'list_templates']
+        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? ['create_objects', 'update_objects', 'delete_objects', 'use_template'] : [])
         .sort();
       expect(listed).toEqual(expected);
     }

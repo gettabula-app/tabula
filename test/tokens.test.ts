@@ -190,7 +190,7 @@ describe('access tokens in the directory', () => {
     d.close();
 
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
+    raw.exec('DROP TABLE templates; DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
     raw.close();
 
     const again = openDirectory(file);
@@ -201,7 +201,7 @@ describe('access tokens in the directory', () => {
     expect(again.findAccessToken(made.token, T0)?.userId).toBe(u.id);
     again.close();
     const check = new DatabaseSync(file);
-    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(5);
+    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(MIGRATIONS.length);
     check.close();
   });
 

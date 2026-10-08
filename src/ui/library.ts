@@ -6,6 +6,8 @@ import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shap
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
 import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
+import { accountId, scopeLabel, splitMine } from '../template-share';
+import { authState } from '../auth';
 import type { CustomTemplate } from '../custom-templates';
 import { POPULAR_SETS, failureMessage, failureOf, iconData, iconLoader, iconSets, onlineIconSets, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
@@ -359,17 +361,24 @@ function templatesTab(app: BoardApp, close: () => void) {
   const cats = [...new Set(TEMPLATES.map((t) => t.category))];
   const mine = h('div', null);
   const paintMine = (list: CustomTemplate[]) => {
+    const userId = accountId(authState());
+    const { mine: own, shared } = splitMine(list, userId);
+    const row = (t: CustomTemplate, note: string) => h('button', {
+      class: 'template-row',
+      onclick: () => {
+        insertCustomTemplate(app, t);
+        close();
+        toast(t.content.steps.length ? `${t.name} added. Start the session from the bar at the bottom.` : `${t.name} added.`);
+      },
+    }, h('span', { class: 'tpl-name' }, t.name), h('span', { class: 'tpl-desc' }, note));
     mine.replaceChildren(
       h('div', { class: 'list-label' }, 'My templates'),
-      ...(list.length ? list.map((t) => h('button', {
-        class: 'template-row',
-        onclick: () => {
-          insertCustomTemplate(app, t);
-          close();
-          toast(t.content.steps.length ? `${t.name} added. Start the session from the bar at the bottom.` : `${t.name} added.`);
-        },
-      }, h('span', { class: 'tpl-name' }, t.name), h('span', { class: 'tpl-desc' }, t.description || t.category)))
-        : [h('p', { class: 'muted small' }, 'Templates you save from a board appear here.')]));
+      ...(own.length ? own.map((t) => row(t, t.description || t.category))
+        : [h('p', { class: 'muted small' }, 'Templates you save from a board appear here.')]),
+      ...(shared.length ? [
+        h('div', { class: 'list-label' }, 'Shared with me'),
+        ...shared.map((t) => row(t, `${scopeLabel(t, userId)}${t.ownerName ? ` · ${t.ownerName}` : ''}`)),
+      ] : []));
   };
   const loadMine = () => {
     void listTemplates().then((list) => {

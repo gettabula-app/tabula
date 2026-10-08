@@ -6,7 +6,8 @@ import { getUser } from '../sync';
 import { download, safeName } from '../exporters';
 import { CATEGORIES, CUSTOM_CATEGORY, CUSTOM_PREFIX, TEMPLATES, type TemplateDef } from '../templates';
 import { builtinThumbnail, thumbnailSvg } from '../template-thumb';
-import { getTemplate, listTemplates, onTemplatesChange, putTemplate, removeTemplate } from '../template-store';
+import { duplicateSavedTemplate, getTemplate, listTemplates, onTemplatesChange, putTemplate, removeTemplate, templatesShared } from '../template-store';
+import { accountId, mayChange, scopeLabel, splitMine } from '../template-share';
 import { NAME_MAX, builtinToCustom, duplicateTemplate, exportTemplateFile, parseTemplateFile } from '../template-file';
 import type { CustomTemplate } from '../custom-templates';
 import { storedWhere } from '../desktop-env';
@@ -46,8 +47,14 @@ const matches = (t: { name: string; category: string; description: string }, que
 
 const countLabel = (n: number) => `${n} ${n === 1 ? 'template' : 'templates'}`;
 
+const deleteNote = (t: CustomTemplate) => {
+  if (!templatesShared()) return `“${t.name}” will be removed from this browser. Boards made from it are not affected.`;
+  const who = t.scope === 'team' ? `everyone in ${t.teamName || 'the team'}` : t.scope === 'workspace' ? 'everyone in the workspace' : 'your account';
+  return `“${t.name}” will be deleted for ${who}. Boards made from it are not affected.`;
+};
+
 function confirmDelete(t: CustomTemplate) {
-  dialog('Delete this template?', h('p', null, `“${t.name}” will be removed from this browser. Boards made from it are not affected.`), [
+  dialog('Delete this template?', h('p', null, deleteNote(t)), [
     { label: 'Cancel' },
     {
       label: 'Delete template', primary: true,
@@ -99,8 +106,7 @@ function openRename(t: CustomTemplate) {
 
 async function duplicate(t: CustomTemplate) {
   try {
-    const copy = duplicateTemplate(t, getUser().id);
-    await putTemplate(copy);
+    const copy = templatesShared() ? await duplicateSavedTemplate(t.id) : await putTemplate(duplicateTemplate(t, getUser().id));
     toast(`Duplicated as “${copy.name}”.`);
   } catch (e) {
     toast((e as Error).message);
@@ -114,8 +120,7 @@ function exportFile(t: CustomTemplate) {
 /** A personal copy of a built-in template, opened for editing. */
 async function duplicateToEdit(def: TemplateDef) {
   try {
-    const copy = builtinToCustom(def, getUser().id);
-    await putTemplate(copy);
+    const copy = await putTemplate(builtinToCustom(def, getUser().id));
     location.hash = `#/t/${copy.id}/edit`;
   } catch (e) {
     toast((e as Error).message);
@@ -152,8 +157,7 @@ function templateFileInput(): HTMLInputElement {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const t = parseTemplateFile(await file.text(), getUser().id);
-      await putTemplate(t);
+      const t = await putTemplate(parseTemplateFile(await file.text(), getUser().id));
       toast(`Imported “${t.name}” into My templates.`);
     } catch (e) {
       toast(`Could not import ${file.name}: ${(e as Error).message}`, 6000);
@@ -173,13 +177,19 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
   let query = '';
   /** Null until the saved templates have been read. */
   let mine: CustomTemplate[] | null = null;
+  /** Accounts mode: team and workspace templates somebody else owns. */
+  let shared: CustomTemplate[] = [];
   let chipSet = '';
+  const userId = accountId(auth);
 
   const grid = h('ul', { class: 'tpl-grid', 'aria-label': 'Built-in templates' });
   const mineGrid = h('ul', { class: 'tpl-grid', 'aria-label': 'My templates' });
   const mineEmpty = h('p', { class: 'home-empty' }, 'Templates you save from a board appear here.');
   const mineSection = h('section', { class: 'tpl-section', 'aria-label': 'My templates' },
     h('h2', { class: 'tpl-section-title' }, 'My templates'), mineGrid, mineEmpty);
+  const sharedGrid = h('ul', { class: 'tpl-grid', 'aria-label': 'Shared with me' });
+  const sharedSection = h('section', { class: 'tpl-section', 'aria-label': 'Shared with me' },
+    h('h2', { class: 'tpl-section-title' }, 'Shared with me'), sharedGrid);
   const builtinSection = h('section', { class: 'tpl-section', 'aria-label': 'Built-in templates' },
     h('h2', { class: 'tpl-section-title' }, 'Built-in templates'), grid);
   const count = h('p', { class: 'tpl-count', 'aria-live': 'polite' });
@@ -187,21 +197,26 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
   const chips = h('div', { class: 'tpl-chips', role: 'group', 'aria-label': 'Filter by category' });
 
   const filters = (): (string | null)[] => [
-    null, ...CATEGORIES, ...(mine?.some((t) => t.category === CUSTOM_CATEGORY) ? [CUSTOM_CATEGORY] : []),
+    null, ...CATEGORIES, ...([...(mine ?? []), ...shared].some((t) => t.category === CUSTOM_CATEGORY) ? [CUSTOM_CATEGORY] : []),
   ];
 
   const customCard = (t: CustomTemplate) => {
+    const can = mayChange(t);
     const more = moreButton(t.name, [
-      { icon: 'pen', label: 'Edit', run: () => (location.hash = `#/t/${t.id}/edit`) },
-      { icon: 'text', label: 'Rename', run: () => openRename(t) },
+      ...(can ? [
+        { icon: 'pen' as const, label: 'Edit', run: () => (location.hash = `#/t/${t.id}/edit`) },
+        { icon: 'text' as const, label: 'Rename', run: () => openRename(t) },
+      ] : []),
       { icon: 'dup', label: 'Duplicate', run: () => void duplicate(t) },
       { icon: 'download', label: 'Export file', run: () => exportFile(t) },
-      { icon: 'trash', label: 'Delete', run: () => confirmDelete(t) },
+      ...(can ? [{ icon: 'trash' as const, label: 'Delete', run: () => confirmDelete(t) }] : []),
     ]);
+    const who = userId !== null && t.createdBy !== userId && t.ownerName ? ` · ${t.ownerName}` : '';
     return h('li', null,
       h('article', { class: 'tpl-card' },
         h('div', { class: 'tpl-thumb', html: customThumbnail(t) }),
         h('p', { class: 'tpl-label' }, t.category),
+        userId === null ? null : h('p', { class: 'tpl-scope' }, `${scopeLabel(t, userId)}${who}`),
         h('h2', { class: 'tpl-title' }, t.name),
         h('p', { class: 'tpl-text' }, t.description),
         h('div', { class: 'tpl-actions' },
@@ -218,6 +233,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     const show = (c: string) => category === null || c === category;
     const shown = TEMPLATES.filter((t) => show(t.category) && matches(t, q));
     const shownMine = (mine ?? []).filter((t) => show(t.category) && matches(t, q));
+    const shownShared = shared.filter((t) => show(t.category) && matches(t, q));
     // The buttons are rebuilt only when the set of categories changes, so a focused chip stays focused.
     if (available.join('|') !== chipSet) {
       chipSet = available.join('|');
@@ -229,7 +245,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
       }, c ?? 'All')));
     }
     available.forEach((c, i) => chips.children[i].setAttribute('aria-pressed', String(c === category)));
-    count.textContent = countLabel(shown.length + shownMine.length);
+    count.textContent = countLabel(shown.length + shownMine.length + shownShared.length);
     grid.replaceChildren(...shown.map((t) => h('li', null,
       h('article', { class: 'tpl-card' },
         h('div', { class: 'tpl-thumb', html: builtinThumbnail(t) }),
@@ -242,17 +258,19 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
           }, 'Use template'),
           moreButton(t.name, [{ icon: 'dup', label: 'Duplicate to edit', run: () => void duplicateToEdit(t) }]))))));
     mineGrid.replaceChildren(...shownMine.map(customCard));
+    sharedGrid.replaceChildren(...shownShared.map(customCard));
+    sharedSection.hidden = !shownShared.length;
     // Nothing saved yet is worth saying; saved templates that the filter hides are not.
     mineEmpty.hidden = mine === null || mine.length > 0;
     mineSection.hidden = mine === null || (mine.length > 0 && !shownMine.length);
     builtinSection.hidden = !shown.length;
-    empty.hidden = shown.length + shownMine.length > 0;
+    empty.hidden = shown.length + shownMine.length + shownShared.length > 0;
   };
 
   const load = () => {
     void listTemplates().then((list) => {
       if (!grid.isConnected) return;
-      mine = list;
+      ({ mine, shared } = splitMine(list, userId));
       paint();
     });
   };
@@ -276,7 +294,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
             query = value;
             paint();
           }))),
-      h('div', { class: 'tpl-results' }, count, mineSection, builtinSection, empty),
+      h('div', { class: 'tpl-results' }, count, mineSection, sharedSection, builtinSection, empty),
       pageFooter(me ? 'Boards sync through your workspace server when it is reachable.' : `Boards are stored ${storedWhere()}.`))));
   paint();
   load();

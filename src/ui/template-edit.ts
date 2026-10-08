@@ -2,7 +2,7 @@ import './template-edit.css';
 import type { BoardApp } from '../app';
 import type { Store } from '../store';
 import { instantiate, type CustomTemplate } from '../custom-templates';
-import { putTemplate } from '../template-store';
+import { putTemplate, templatesShared } from '../template-store';
 import { h } from './dom';
 import { dialog, toast } from './common';
 import { mountBoardUi } from './board';
@@ -45,7 +45,9 @@ export function templateLeaveGuard(): ((target: string) => boolean) | null {
 }
 
 export function mountTemplateEditor(app: BoardApp, root: HTMLElement, tpl: CustomTemplate): void {
-  let details: TemplateDetails = { name: tpl.name, category: tpl.category, description: tpl.description, includeSteps: true };
+  let details: TemplateDetails = {
+    name: tpl.name, category: tpl.category, description: tpl.description, includeSteps: true, scope: tpl.scope ?? 'personal', teamId: tpl.teamId ?? null,
+  };
   let dirty = false;
   let saving = false;
   app.conn.doc.on('update', () => {
@@ -104,6 +106,7 @@ export function mountTemplateEditor(app: BoardApp, root: HTMLElement, tpl: Custo
     try {
       await putTemplate({
         ...tpl, name: details.name, category: details.category, description: details.description, content, updatedAt: Date.now(),
+        ...(templatesShared() ? { scope: details.scope, teamId: details.teamId } : {}),
       });
     } catch (e) {
       toast((e as Error).message);
