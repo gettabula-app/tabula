@@ -8,6 +8,8 @@ import * as Y from 'yjs';
 export const AUTHZ_ORIGIN = 'authz';
 
 const SET_ONCE = ['id', 'createdAt', 'authorId', 'authorName', 'authorColor', 'anchor', 'imported', 'importedBy', 'legacy'];
+const AUTHOR = ['authorId', 'authorName', 'authorColor', 'imported', 'importedBy', 'legacy'];
+const OTHER_SET_ONCE = SET_ONCE.filter((k) => !AUTHOR.includes(k));
 const TEXT = ['text', 'editedAt'];
 const RESOLVE = ['resolved', 'resolvedBy', 'resolvedAt'];
 const THREAD_KEYS = new Set([...SET_ONCE, ...TEXT, ...RESOLVE, 'replies']);
@@ -19,11 +21,12 @@ const DEVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const jsonOf = (m) => (m instanceof Y.Map ? m.toJSON() : undefined);
+const clampName = (v) => (typeof v === 'string' ? v.slice(0, MAX_NAME) : '');
 
 /**
  * What one person may do to one comment (thread or reply). `actor` is { id, name, role } for the socket's user, with
  * the board role from the directory. Moderators (board role owner: the board owner, team admins and workspace admins)
- * delete anything but edit only their own words.
+ * delete anything but edit only their own words. Whoever may edit the board (owner or editor) may resolve.
  */
 export function commentRules(actor) {
   const moderator = actor.role === 'owner';
@@ -32,7 +35,7 @@ export function commentRules(actor) {
     moderator,
     canEdit: (c) => own(c),
     canDelete: (c) => moderator || own(c) || (c.imported === true && c.importedBy === actor.id),
-    canResolve: (c) => own(c) || actor.role === 'owner' || actor.role === 'editor',
+    canResolve: (c) => c.authorId === actor.id || moderator || actor.role === 'editor',
   };
 }
 
@@ -41,8 +44,8 @@ const stampName = (actor) => (typeof actor.name === 'string' && actor.name.trim(
 
 /**
  * Guards one comments document. `run(actor, fn)` applies a client's sync message (`fn`) and then corrects it; it
- * returns the kinds of change that were undone ('edit', 'delete', 'resolve'), for the notice the sender gets.
- * `isAccount(id)` says whether an author id is a current account, for the legacy marks.
+ * returns the kinds of change that were undone ('edit', 'delete', 'resolve', 'author', 'other'), for the notice the
+ * sender gets. `isAccount(id)` says whether an author id is a current account, for the legacy marks.
  */
 export function createCommentGuard(doc, { isAccount = () => true } = {}) {
   const threads = doc.getMap('threads');
@@ -70,7 +73,7 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
   // nobody edits them). Removed members keep their account-style id and are not marked.
   const isLegacy = (c) => !c.imported && !c.legacy && typeof c.authorId === 'string' && DEVICE_ID.test(c.authorId) && !isAccount(c.authorId);
   doc.transact(() => {
-    threads.forEach((m, id) => {
+    threads.forEach((m) => {
       if (!(m instanceof Y.Map)) return;
       const t = m.toJSON();
       if (isLegacy(t)) m.set('legacy', true);
@@ -92,18 +95,33 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
     return m;
   }
 
-  /** Checks one new comment (thread fields or a reply); returns the fields to rewrite. */
+  /**
+   * Checks one new comment (a thread or a reply); returns the fields to rewrite. A board owner's import keeps its
+   * authors and is marked imported. Files open as a new board the importer owns, so nobody else may import.
+   */
   function checkNew(c, actor) {
     const fix = {};
-    if (c.imported === true) {
+    if (c.imported === true && actor.role === 'owner') {
       if (c.importedBy !== actor.id) fix.importedBy = actor.id;
+      if (typeof c.authorId !== 'string') fix.authorId = '';
+      if (c.authorName !== clampName(c.authorName)) fix.authorName = clampName(c.authorName);
     } else {
       if (c.authorId !== actor.id) fix.authorId = actor.id;
       if (c.authorName !== stampName(actor)) fix.authorName = stampName(actor);
-      if (c.legacy !== undefined) fix.legacy = undefined;
+      if (c.imported !== undefined) fix.imported = undefined;
       if (c.importedBy !== undefined) fix.importedBy = undefined;
     }
+    if (c.legacy !== undefined) fix.legacy = undefined;
     return fix;
+  }
+
+  /** Applies the fields from checkNew to a map or a plain value, and says whether anything was rewritten. */
+  function applyFix(fix, set, del) {
+    for (const [k, v] of Object.entries(fix)) {
+      if (v === undefined) del(k);
+      else set(k, v);
+    }
+    return Object.keys(fix).length > 0;
   }
 
   function checkReplies(before, after, actor, rules, repliesMap, undone) {
@@ -118,23 +136,53 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
           undone.add('delete');
         }
       } else if (!was && now) {
-        if (!now || typeof now !== 'object' || Object.keys(now).some((k) => !REPLY_KEYS.has(k))) {
+        if (typeof now !== 'object' || Object.keys(now).some((k) => !REPLY_KEYS.has(k))) {
           repliesMap.delete(rid);
+          undone.add('other');
           continue;
         }
         const fix = checkNew(now, actor);
         if (Object.keys(fix).length) {
-          const next = { ...now, ...fix };
-          for (const [k, v] of Object.entries(fix)) if (v === undefined) delete next[k];
+          const next = { ...now };
+          for (const [k, v] of Object.entries(fix)) {
+            if (v === undefined) delete next[k];
+            else next[k] = v;
+          }
           repliesMap.set(rid, next);
+          undone.add('author');
         }
       } else if (was && now && !same(was, now)) {
         const onlyText = Object.keys({ ...was, ...now }).every((k) => TEXT.includes(k) || same(was[k], now[k]));
-        if (!onlyText || !rules.canEdit(was)) {
+        if (!onlyText) {
+          repliesMap.set(rid, was);
+          undone.add('other');
+        } else if (!rules.canEdit(was)) {
           repliesMap.set(rid, was);
           undone.add('edit');
         }
       }
+    }
+  }
+
+  /** A thread that did not exist before: its author fields are stamped and its replies checked one by one. */
+  function checkNewThread(entry, after, actor, rules, undone) {
+    for (const k of Object.keys(after)) {
+      if (!THREAD_KEYS.has(k)) {
+        entry.delete(k);
+        undone.add('other');
+      }
+    }
+    const keepsAuthors = after.imported === true && actor.role === 'owner';
+    if (applyFix(checkNew(after, actor), (k, v) => entry.set(k, v), (k) => entry.delete(k))) undone.add('author');
+    if (!keepsAuthors && after.resolved === true && after.resolvedBy !== actor.id) {
+      entry.set('resolvedBy', actor.id);
+      undone.add('author');
+    }
+    const replies = entry.get('replies');
+    if (replies instanceof Y.Map) checkReplies({}, after.replies, actor, rules, replies, undone);
+    else {
+      if (replies !== undefined) undone.add('other');
+      entry.set('replies', new Y.Map());
     }
   }
 
@@ -145,25 +193,14 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
       // not a thread at all: put back what was there, if anything
       if (before) threads.set(id, rebuild(before));
       else threads.delete(id);
+      undone.add('other');
       return;
     }
     const after = jsonOf(entry);
     if (!before && !after) return;
 
     if (!before) {
-      // a new thread
-      if (Object.keys(after).some((k) => !THREAD_KEYS.has(k))) {
-        for (const k of Object.keys(after)) if (!THREAD_KEYS.has(k)) entry.delete(k);
-      }
-      const fix = checkNew(after, actor);
-      for (const [k, v] of Object.entries(fix)) {
-        if (v === undefined) entry.delete(k);
-        else entry.set(k, v);
-      }
-      if (after.resolved === true && after.resolvedBy !== actor.id) entry.set('resolvedBy', actor.id);
-      const replies = entry.get('replies');
-      if (replies instanceof Y.Map) checkReplies({}, after.replies, actor, rules, replies, undone);
-      else entry.set('replies', new Y.Map());
+      checkNewThread(entry, after, actor, rules, undone);
       return;
     }
 
@@ -180,7 +217,10 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
 
     // an edited thread
     for (const k of Object.keys(after)) {
-      if (!THREAD_KEYS.has(k)) entry.delete(k);
+      if (!THREAD_KEYS.has(k)) {
+        entry.delete(k);
+        undone.add('other');
+      }
     }
     const changed = (keys) => keys.some((k) => !same(before[k], after[k]));
     const restore = (keys) => {
@@ -189,7 +229,14 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
         else entry.set(k, before[k]);
       }
     };
-    if (changed(SET_ONCE)) restore(SET_ONCE);
+    if (changed(AUTHOR)) {
+      restore(AUTHOR);
+      undone.add('author');
+    }
+    if (changed(OTHER_SET_ONCE)) {
+      restore(OTHER_SET_ONCE);
+      undone.add('other');
+    }
     if (changed(TEXT) && !rules.canEdit(before)) {
       restore(TEXT);
       undone.add('edit');
@@ -200,6 +247,7 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
         undone.add('resolve');
       } else if (after.resolved === true && after.resolvedBy !== actor.id) {
         entry.set('resolvedBy', actor.id);
+        undone.add('author');
       }
     }
     const replies = entry.get('replies');
@@ -216,7 +264,7 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
    * Clears anything outside `threads`: the comments document has no other top-level content. A top-level type that
    * only arrived in an update is still untyped here, so it is read as a map (keyed content) or an array (a sequence).
    */
-  function clearOthers() {
+  function clearOthers(undone) {
     for (const [name, type] of [...doc.share]) {
       if (name === 'threads') continue;
       let typed = type;
@@ -227,8 +275,14 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
           continue;
         }
       }
-      if (typed instanceof Y.Map) [...typed.keys()].forEach((k) => typed.delete(k));
-      if ((typed instanceof Y.Array || typed instanceof Y.Text || typed instanceof Y.XmlFragment) && typed.length) typed.delete(0, typed.length);
+      if (typed instanceof Y.Map && typed.size) {
+        [...typed.keys()].forEach((k) => typed.delete(k));
+        undone.add('other');
+      }
+      if ((typed instanceof Y.Array || typed instanceof Y.Text || typed instanceof Y.XmlFragment) && typed.length) {
+        typed.delete(0, typed.length);
+        undone.add('other');
+      }
     }
   }
 
@@ -248,7 +302,7 @@ export function createCommentGuard(doc, { isAccount = () => true } = {}) {
       const rules = commentRules(actor);
       doc.transact(() => {
         for (const id of ids) checkThread(id, actor, rules, undone);
-        clearOthers();
+        clearOthers(undone);
       }, AUTHZ_ORIGIN);
       ids.forEach(refresh);
       if (error) throw error;

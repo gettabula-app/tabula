@@ -311,7 +311,8 @@ class Room {
         const enc = encoding.createEncoder();
         encoding.writeVarUint(enc, MSG_SYNC);
         const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
-        if (this.guard && ws.userId) this.guarded(ws, apply);
+        // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
+        if (this.guard && ws.userId && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
         else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
