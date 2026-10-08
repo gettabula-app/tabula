@@ -13,6 +13,7 @@ import { TEMPLATES, insertTemplate } from './templates';
 import { answerKey } from './polls';
 import type { ImportedBoard } from './exporters';
 import { toast } from './ui/common';
+import { commentNoticeText } from './comments';
 import type { Obj } from './types';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, type ServerBoard } from './api';
@@ -207,8 +208,10 @@ async function route() {
         for (const a of json.pollAnswers ?? []) conn.store.pollAnswers.set(answerKey(a.pollId, a.userId), a);
       });
     }
-    if (comments) Y.applyUpdate(conn.comments.doc, comments);
-    else if (json.comments) conn.comments.importThreads(json.comments);
+    // The importer owns the new board, so the comments in the file are marked imported by the account (or device) that opens it.
+    const importer = auth.mode === 'signed-in' ? auth.me.user.id : user.id;
+    if (comments) conn.comments.importUpdate(comments, importer);
+    else if (json.comments) conn.comments.importThreads(json.comments, importer);
   }
 
   root.replaceChildren();
@@ -224,9 +227,12 @@ async function route() {
   const unsubscribe = onAuth(applyAccess);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
+  // The relay undid one of this person's changes to the comments: say so, once per notice.
+  const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   releaseWorkspace = () => {
     unsubscribe();
     unhint();
+    unnotice();
     banner.dispose();
   };
   if (accounts) {

@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import * as decoding from 'lib0/decoding';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
@@ -146,6 +147,30 @@ export function onWorkspaceHint(provider: HintTarget, callback: () => void): voi
   };
 }
 
+/**
+ * Comments rooms (docs/comment-authz.md): the relay tells the socket whose change it undid, with JSON { undone: [...] }
+ * (the kinds: edit, delete, resolve, author, other). Like the hint above, it is not a y-websocket type, the handler
+ * writes nothing back, and a malformed notice is ignored.
+ */
+export const MSG_COMMENT_NOTICE = 5;
+
+export function onCommentNotice(provider: HintTarget, callback: (undone: string[]) => void): void {
+  provider.messageHandlers[MSG_COMMENT_NOTICE] = (_encoder, decoder) => {
+    let undone: unknown;
+    try {
+      undone = (JSON.parse(decoding.readVarString(decoder)) as { undone?: unknown }).undone;
+    } catch {
+      return;
+    }
+    if (!Array.isArray(undone)) return;
+    try {
+      callback(undone.filter((k): k is string => typeof k === 'string'));
+    } catch {
+      /* a failing listener must not break the socket */
+    }
+  };
+}
+
 /** The part of a room provider that a resync restarts. */
 type Resyncable = { disconnect: () => void; connect: () => void };
 
@@ -184,6 +209,8 @@ export interface BoardConn {
   onDenied: (fn: (r: DeniedReason) => void) => () => void;
   /** The relay says a hosted workspace's read-only switch flipped (either room's socket; one flip arrives once per socket). */
   onWorkspaceHint: (fn: () => void) => () => void;
+  /** The relay undid changes this person made in the comments (accounts mode); `undone` lists the kinds. */
+  onCommentNotice: (fn: (undone: string[]) => void) => () => void;
   /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
   resync: () => void;
   destroy: () => void;
@@ -205,6 +232,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const statusListeners = new Set<(s: SyncStatus) => void>();
   const deniedListeners = new Set<(r: DeniedReason) => void>();
   const hintListeners = new Set<() => void>();
+  const noticeListeners = new Set<(undone: string[]) => void>();
   const conn: BoardConn = {
     id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
     onStatus: (fn) => {
@@ -219,6 +247,10 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     onWorkspaceHint: (fn) => {
       hintListeners.add(fn);
       return () => hintListeners.delete(fn);
+    },
+    onCommentNotice: (fn) => {
+      noticeListeners.add(fn);
+      return () => noticeListeners.delete(fn);
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
@@ -261,6 +293,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
     onWorkspaceHint(commentsProvider, hinted);
+    onCommentNotice(commentsProvider, (undone) => noticeListeners.forEach((l) => l(undone)));
   } else {
     awareness = new Awareness(doc);
   }

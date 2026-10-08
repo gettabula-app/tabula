@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { COMMENTS_ORIGIN, Comments, anchorFor, anchorPosition, threadVisible, type Anchor, type Author, type Thread } from '../src/comments';
+import { COMMENTS_ORIGIN, Comments, anchorFor, anchorPosition, commentNoticeText, mayDelete, threadVisible, type Anchor, type Author, type Thread } from '../src/comments';
 import { LOCAL } from '../src/store';
 import { denyOnce, type DeniedReason } from '../src/sync';
 import type { BaseObj, Obj } from '../src/types';
@@ -187,7 +187,7 @@ describe('read-only', () => {
     expect(b.setResolved(t, true, BOB)).toBe(false);
     expect(b.removeReply(t, r, OWNER)).toBe(false);
     expect(b.removeThread(t, OWNER)).toBe(false);
-    expect(b.importThreads(a.list())).toBe(0);
+    expect(b.importThreads(a.list(), 'importer')).toBe(0);
     expect(b.list()).toEqual(before);
     expect(Y.encodeStateVector(docs[1])).toEqual(state);
 
@@ -300,9 +300,9 @@ describe('importThreads', () => {
     const exported = JSON.parse(JSON.stringify(src.list())) as Thread[];
 
     const dst = new Comments(new Y.Doc());
-    expect(dst.importThreads(exported)).toBe(2);
+    expect(dst.importThreads(exported, 'importer')).toBe(2);
     expect(dst.editThread(kept, 'local edit')).toBe(true);
-    expect(dst.importThreads(exported)).toBe(0);
+    expect(dst.importThreads(exported, 'importer')).toBe(0);
     expect(dst.get(kept)?.text).toBe('local edit');
     expect(dst.get(kept)?.replies.map((r) => r.text)).toEqual(['exported reply']);
     expect(dst.get(fresh)).toMatchObject({ authorId: 'carol', text: 'new one' });
@@ -314,7 +314,7 @@ describe('importThreads', () => {
     src.addThread(ALICE, AT, 'ok');
     const [thread] = src.list();
     const dst = new Comments(new Y.Doc());
-    expect(dst.importThreads([{ ...thread, id: 'bad', anchor: { x: v as number, y: 0 } }])).toBe(0);
+    expect(dst.importThreads([{ ...thread, id: 'bad', anchor: { x: v as number, y: 0 } }], 'importer')).toBe(0);
     expect(dst.list()).toEqual([]);
   });
 
@@ -323,7 +323,7 @@ describe('importThreads', () => {
     src.addThread(ALICE, AT, 'ok');
     const [thread] = src.list();
     const dst = new Comments(new Y.Doc());
-    expect(dst.importThreads([{ ...thread, id: 'bad-fx', anchor: { x: 0, y: 0, obj: 'b', fx: v, fy: 0 } }])).toBe(0);
+    expect(dst.importThreads([{ ...thread, id: 'bad-fx', anchor: { x: 0, y: 0, obj: 'b', fx: v, fy: 0 } }], 'importer')).toBe(0);
     expect(dst.list()).toEqual([]);
   });
 
@@ -332,8 +332,8 @@ describe('importThreads', () => {
     const t = src.addThread(ALICE, AT, 'ok')!;
     const [thread] = src.list();
     const dst = new Comments(new Y.Doc());
-    expect(dst.importThreads([{ ...thread, id: 'blank', text: '   ' }])).toBe(0);
-    expect(dst.importThreads([{ ...thread, id: 'noanchor', anchor: {} as Anchor }])).toBe(0);
+    expect(dst.importThreads([{ ...thread, id: 'blank', text: '   ' }], 'importer')).toBe(0);
+    expect(dst.importThreads([{ ...thread, id: 'noanchor', anchor: {} as Anchor }], 'importer')).toBe(0);
     expect(dst.get(t)).toBeUndefined();
   });
 });
@@ -464,5 +464,66 @@ describe('denyOnce', () => {
     expect(board.disconnect).not.toHaveBeenCalled();
     expect(board.shouldConnect).toBe(true);
     expect(denied).not.toHaveBeenCalled();
+  });
+});
+
+describe('imported and legacy comments', () => {
+  it('marks imported threads and replies with the importer and keeps their authors', () => {
+    const src = new Comments(new Y.Doc());
+    const t = src.addThread(ALICE, AT, 'from the file')!;
+    src.reply(t, BOB, 'a reply');
+    const exported = JSON.parse(JSON.stringify(src.list())) as Thread[];
+
+    const dst = new Comments(new Y.Doc());
+    expect(dst.importThreads(exported, 'importer')).toBe(1);
+    expect(dst.get(t)).toMatchObject({ authorId: 'alice', imported: true, importedBy: 'importer' });
+    expect(dst.get(t)!.replies[0]).toMatchObject({ authorId: 'bob', imported: true, importedBy: 'importer' });
+  });
+
+  it('marks what a .drift comments document adds, and leaves threads that were already there alone', () => {
+    const src = new Comments(new Y.Doc());
+    const kept = src.addThread(ALICE, AT, 'exported')!;
+    src.reply(kept, BOB, 'exported reply');
+    const update = Y.encodeStateAsUpdate(src.doc);
+
+    const fresh = new Comments(new Y.Doc());
+    fresh.importUpdate(update, 'importer');
+    expect(fresh.get(kept)).toMatchObject({ authorId: 'alice', imported: true, importedBy: 'importer' });
+    expect(fresh.get(kept)!.replies[0]).toMatchObject({ authorId: 'bob', imported: true, importedBy: 'importer' });
+
+    const known = new Comments(new Y.Doc());
+    Y.applyUpdate(known.doc, update);
+    known.importUpdate(update, 'importer');
+    expect(known.get(kept)!.imported).toBeUndefined();
+  });
+
+  it('deletes by the rule the relay applies: a moderator anything, an author their own, an importer what they imported', () => {
+    const c = new Comments(new Y.Doc());
+    const mine = c.addThread(ALICE, AT, 'mine')!;
+    const old = c.addThread(ALICE, { x: 3, y: 3 }, 'old')!;
+    c.doc.transact(() => c.threads.get(old)!.set('legacy', true), LOCAL);
+    c.importThreads([{ id: 'imp', createdAt: 1, authorId: 'alice', authorName: 'Alice', authorColor: '#f00', text: 'from a file', anchor: AT, resolved: false, replies: [] } as Thread], 'bob');
+
+    expect(c.removeThread(mine, asUser(ALICE))).toBe(true);
+    expect(c.removeThread(old, asUser(ALICE))).toBe(false); // legacy: nobody but a moderator
+    expect(c.removeThread('imp', asUser(ALICE))).toBe(false); // imported: the author is not its owner here
+    expect(c.removeThread('imp', asUser(BOB))).toBe(true);
+    expect(c.removeThread(old, OWNER)).toBe(true);
+  });
+
+  it('applies the same delete rule to replies', () => {
+    expect(mayDelete({ authorId: 'alice', legacy: true }, asUser(ALICE))).toBe(false);
+    expect(mayDelete({ authorId: 'alice' }, asUser(ALICE))).toBe(true);
+    expect(mayDelete({ authorId: 'alice', imported: true, importedBy: 'bob' }, asUser(BOB))).toBe(true);
+    expect(mayDelete({ authorId: 'alice', imported: true, importedBy: 'bob' }, OWNER)).toBe(true);
+  });
+
+  it('says what the relay undid, once per kind', () => {
+    const edit = 'Only the author can edit a comment, so that edit was undone.';
+    expect(commentNoticeText(['edit'])).toBe(edit);
+    expect(commentNoticeText(['edit', 'edit'])).toBe(edit);
+    expect(commentNoticeText(['edit', 'author'])).toBe(`${edit} Comments are posted under your own account name, so that was corrected.`);
+    expect(commentNoticeText([])).toBe('A change to the comments was undone.');
+    expect(commentNoticeText(['unknown'])).toBe('A change to the comments was undone.');
   });
 });
