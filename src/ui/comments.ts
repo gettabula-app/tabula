@@ -15,10 +15,15 @@ const MARGIN = 12;
 /** A row's camera flight takes about 420ms; moves inside this window do not close the card it opens. */
 const FLIGHT_MS = 600;
 
-/** Writes are attributed to the account in accounts mode, otherwise to this device's user. */
+/**
+ * Writes are attributed to the account in accounts mode, otherwise to this device's user. The account's current name is
+ * read from the signed-in session, so a rename made in another tab is not undone by the relay.
+ */
 function authorOf(app: BoardApp): Author {
   const auth = authState();
-  return { id: auth.mode === 'signed-in' ? auth.me.user.id : app.user.id, name: app.user.name, color: app.user.color };
+  return auth.mode === 'signed-in'
+    ? { id: auth.me.user.id, name: auth.me.user.name, color: app.user.color }
+    : { id: app.user.id, name: app.user.name, color: app.user.color };
 }
 
 /** Only the board owner may delete other people's comments. */
