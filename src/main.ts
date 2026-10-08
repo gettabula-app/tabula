@@ -7,11 +7,13 @@ import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/temp
 import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
+import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
 import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
 import { getTemplate } from './template-store';
+import { mayChange } from './template-share';
 import type { CustomTemplate } from './custom-templates';
 import { answerKey } from './polls';
 import type { ImportedBoard } from './exporters';
@@ -138,6 +140,11 @@ async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
     location.replace('#/templates');
     return;
   }
+  if (!mayChange(tpl)) {
+    toast('You cannot change that template. Duplicate it to edit your own copy.', 6000);
+    location.replace('#/templates');
+    return;
+  }
   const user = boardUser(auth);
   const conn = scratchBoard(`template-${tpl.id}`, user);
   loadTemplate(conn.store, tpl, user.id);
@@ -218,6 +225,7 @@ async function route() {
     else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
     else if (r.name === 'templates') renderTemplates(view, nav, auth);
     else renderHome(view, nav, auth);
+    if (r.name === 'home' || r.name === 'templates') void offerTemplateUpload();
     return;
   }
 

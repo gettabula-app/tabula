@@ -12,6 +12,7 @@
 .board-head,
 .badge,
 .tpl-label,
+.tpl-scope,
 .tpl-count,
 .tpl-chip {
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
@@ -19,6 +20,7 @@
 .topbar-me,
 .board-head,
 .tpl-label,
+.tpl-scope,
 .tpl-count { color: var(--graphite); }
 
 /* Top bar: the same height and 1120px alignment as the admin bar. */
@@ -134,6 +136,7 @@
 .tpl-card:hover,
 .tpl-card:focus-within { border-color: var(--ink); }
 .tpl-card .tpl-label { margin: 0; }
+.tpl-card .tpl-scope { margin: 0; }
 .tpl-card .tpl-title { margin: 0; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tpl-card .tpl-text { flex: 1; margin: 0; color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
 .tpl-card .tpl-thumb { width: calc(100% + 48px); margin: -24px -24px 16px; }

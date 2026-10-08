@@ -1,3 +1,5 @@
+import type { TemplateContent, TemplateScope } from './custom-templates';
+
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';
 export type BoardRole = 'owner' | 'editor' | 'commenter' | 'viewer';
@@ -196,6 +198,41 @@ export interface Version {
   from: string | null;
 }
 
+/** A saved template as the server lists it: everything but the content (docs/custom-templates.md, "Accounts mode"). */
+export interface ServerTemplateInfo {
+  id: string;
+  version: 1;
+  name: string;
+  category: string;
+  description: string;
+  scope: TemplateScope;
+  teamId: string | null;
+  teamName: string | null;
+  /** The owner's account id; empty when the owner has been removed. */
+  createdBy: string;
+  ownerName: string | null;
+  createdAt: number;
+  updatedAt: number;
+  objectCount: number;
+  stepCount: number;
+  /** Whether this person may rename, edit and delete it. Everybody who can see a template may duplicate it. */
+  canChange: boolean;
+}
+
+/** A template with its content, as one template is fetched, created, changed or duplicated. */
+export interface ServerTemplate extends ServerTemplateInfo {
+  content: TemplateContent;
+}
+
+export interface TemplateInput {
+  name: string;
+  category: string;
+  description?: string;
+  scope?: TemplateScope;
+  teamId?: string;
+  content: TemplateContent;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -214,6 +251,8 @@ type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 const REQUEST_TIMEOUT_MS = 8000;
 /** A version's state can be a few hundred kilobytes on a slow link. */
 const BYTES_TIMEOUT_MS = 30000;
+/** A template can be a megabyte, and it travels in both directions. */
+const TEMPLATE_TIMEOUT_MS = 30000;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
@@ -245,11 +284,11 @@ async function readBody(res: Response): Promise<Body> {
 }
 
 export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
-  async function call<T>(method: Method, path: string, payload?: unknown): Promise<T> {
+  async function call<T>(method: Method, path: string, payload?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (method !== 'GET') headers['x-tabula'] = '1';
     const init: RequestInit = { method, credentials: 'same-origin', headers };
-    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(timeoutMs);
     if (payload !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(payload);
@@ -331,6 +370,14 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
       call<void>('POST', `/api/boards/${seg(boardId)}/shares`, grant),
     unshare: (boardId: string, principalType: PrincipalType, principalId: string) =>
       call<void>('DELETE', `/api/boards/${seg(boardId)}/shares/${seg(principalType)}/${seg(principalId)}`),
+
+    listTemplates: () => call<ServerTemplateInfo[]>('GET', '/api/templates', undefined, TEMPLATE_TIMEOUT_MS),
+    getTemplate: (id: string) => call<ServerTemplate>('GET', `/api/templates/${seg(id)}`, undefined, TEMPLATE_TIMEOUT_MS),
+    createTemplate: (input: TemplateInput) => call<ServerTemplate>('POST', '/api/templates', input, TEMPLATE_TIMEOUT_MS),
+    updateTemplate: (id: string, patch: Partial<TemplateInput> & { teamId?: string | null }) =>
+      call<ServerTemplate>('PATCH', `/api/templates/${seg(id)}`, patch, TEMPLATE_TIMEOUT_MS),
+    duplicateTemplate: (id: string) => call<ServerTemplate>('POST', `/api/templates/${seg(id)}/duplicate`, undefined, TEMPLATE_TIMEOUT_MS),
+    deleteTemplate: (id: string) => call<void>('DELETE', `/api/templates/${seg(id)}`),
 
     members: () => call<Member[]>('GET', '/api/members'),
     updateMember: (id: string, patch: { role?: UserRole; disabled?: boolean }) =>
