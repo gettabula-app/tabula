@@ -20,6 +20,7 @@ All notable changes to Mira are documented here, newest first. The format follow
 - `.gitattributes` normalising line endings to LF so Windows checkouts match.
 
 ### Changed
+- Swiss design pass: the Select, Hand and Pen icons are re-centred in their 24 px box; every button now has the same 9 px inset on all sides (22 px icons in the 40 px toolbar buttons, 18 px in 36 px buttons, 16 px in labelled buttons); padding is symmetric on the top-right tray, step list, steps popover, quick-action chip, tiles and the sticky colour tray; the close buttons line up with the title inset; drawers and tool trays keep the same gutter when the toolbar narrows on short screens; the running flow-bar step is 36 px high so its end buttons have even spacing.
 - The app is now called Mira (it was called Driftboard in the interface and documentation). Saved boards, settings and old .drift files keep working: only user-visible text changed.
 - Text, drawings, icons, connectors and frame titles drawn on the canvas now follow the theme's ink colour, and exports (SVG and PNG) always use the light default colours on white.
 - The properties panel is hidden until you press More in the quick-action bar, and has a close button. Its Shape list is grouped.
