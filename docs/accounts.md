@@ -18,6 +18,7 @@ Open mode must keep working unchanged, including every existing test.
 | `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
 | `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Included in webhook payloads as `from` |
 | `MIRA_SESSION_DAYS` | `30` | Session lifetime |
+| `MIRA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry and a request counts as https when `X-Forwarded-Proto` is `https`. Off by default, because anyone can forge those headers when there is no proxy |
 
 The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer).
 
@@ -88,6 +89,7 @@ POST   /api/teams/:id/invites {role?: 'member'|'admin', days?: 1..30} -> 201 {id
 GET    /api/teams/:id/invites           -> [{id,role,expiresAt,uses,maxUses}]
 DELETE /api/teams/:id/invites/:inviteId -> 204
 GET    /api/invites/:token              public  {team: {id,name}, role}  (404 when invalid/expired/revoked)
+POST   /api/invites/:token/accept       -> 200 {team: {id,name}, role}   (signed-in user joins the team; same validity rules as at sign-in; idempotent: joining a team you are already in changes nothing and uses no invite slot; promotes a member to admin only when the invite grants admin)
 
 GET    /api/boards                      -> [{id,title,teamId,role,createdAt,updatedAt}]   (every board the user can access)
 POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)

@@ -165,6 +165,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     revokeInvite: (teamId: string, inviteId: string) =>
       call<void>('DELETE', `/api/teams/${seg(teamId)}/invites/${seg(inviteId)}`),
     invitePreview: (token: string) => call<InvitePreview>('GET', `/api/invites/${seg(token)}`),
+    acceptInvite: (token: string) => call<InvitePreview>('POST', `/api/invites/${seg(token)}/accept`),
 
     boards: () => call<ServerBoard[]>('GET', '/api/boards'),
     createBoard: (board: { id: string; title?: string; teamId?: string }) =>
