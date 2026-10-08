@@ -6,6 +6,10 @@ const IP_LIMIT = 20;
 const SWEEP_MS = 60 * 1000;
 const MAX_LIMITER_KEYS = 50_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+/** The header every state-changing API request must carry; another site cannot add it without a CORS preflight the server never grants. */
+export const CSRF_HEADER = 'x-tabula';
+/** Accepted during the rename transition; clients built before it send this one. */
+const LEGACY_CSRF_HEADER = 'x-mira';
 const COOKIE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
 
 /** A new person would need a seat the workspace does not have (hosted workspaces, docs/cloud.md). */
@@ -49,6 +53,21 @@ function createLimiter(now) {
     remember(byIp, ipKey, [...ipHits, t]);
     return true;
   };
+}
+
+/** The CSRF rule of every state-changing request: the custom header, and an Origin (when sent) that matches the host. */
+export function csrfOk(req) {
+  if (SAFE_METHODS.has(String(req.method).toUpperCase())) return true;
+  if (req.headers[CSRF_HEADER] !== '1' && req.headers[LEGACY_CSRF_HEADER] !== '1') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  const host = req.headers.host;
+  if (typeof origin !== 'string' || typeof host !== 'string') return false;
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true }) {
@@ -156,20 +175,6 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       return { user: session.user, sessionId: session.id, expiresAt: session.expiresAt, setCookie };
     }
     return null;
-  }
-
-  function csrfOk(req) {
-    if (SAFE_METHODS.has(String(req.method).toUpperCase())) return true;
-    if (req.headers['x-tabula'] !== '1' && req.headers['x-mira'] !== '1') return false;
-    const origin = req.headers.origin;
-    if (origin === undefined) return true;
-    const host = req.headers.host;
-    if (typeof origin !== 'string' || typeof host !== 'string') return false;
-    try {
-      return new URL(origin).host.toLowerCase() === host.toLowerCase();
-    } catch {
-      return false;
-    }
   }
 
   return {

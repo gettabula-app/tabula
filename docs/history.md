@@ -2,7 +2,7 @@
 
 Browse earlier versions of a board, preview one read-only, and restore it. Versions are full-state snapshots kept by the relay next to the room file: taken automatically while people edit, and on demand as **named versions**. A restore is an ordinary edit: the client works out the difference between the live board and the snapshot and applies it in one transaction, so it syncs to everyone like any other change, shows up as a new version and undoes with Ctrl+Z.
 
-This page is a spec for review; nothing in it is implemented yet.
+Status: approved and implemented. The decisions taken on the open questions are at the end of this page.
 
 ## Where versions live
 
@@ -71,7 +71,7 @@ The first rule that applies wins: one save writes at most one version.
 
 "Differs" is a hash comparison, computed only when a write is otherwise due. It is not a comparison of Yjs state vectors: deleting an object leaves the state vector unchanged (measured), and deletions are exactly what a restore is for. A board that was only ever opened, never saved, gets no version. Existing boards get their first version at their first save after the upgrade.
 
-Known limit: `scheduleSave` is a pure debounce with no maximum wait, so a room that never goes quiet for a full second defers its saves, and so its snapshots. That is existing relay behaviour, not changed here (see open questions).
+Room saves have a maximum wait: `scheduleSave` was a pure debounce, so a room that never went quiet for a full second deferred its saves, and with them its snapshots. It now saves at least every 30 seconds of continuous editing (`saveDelay` in `server/save-delay.mjs`: the debounce delay, shortened so that the first unsaved change is never older than 30 seconds). This changes how often room files are written, not what is written.
 
 ## Retention
 
@@ -120,13 +120,13 @@ The state of a room is read through `boardState(boardId)` supplied by the relay:
 
 ### Authorisation
 
-**Accounts mode**: the routes go through `api.mjs` like the cloud routes, so session, CSRF (`x-mira: 1` on POST, PATCH and DELETE), error format and the `402 read_only` rule of hosted workspaces come for free (the routes do not set `readOnlyOk`: GETs keep working in a read-only workspace, mutations answer `402`). The board is resolved with the existing `boardFor`: no access, or a deleted board, is `404`. The caller's board role must be `owner` or `editor`, otherwise `403 forbidden` ("Only editors can see version history"). Further rules:
+**Accounts mode**: the routes go through `api.mjs` like the cloud routes, so session, CSRF (the API's custom header on POST, PATCH and DELETE), error format and the `402 read_only` rule of hosted workspaces come for free (the routes do not set `readOnlyOk`: GETs keep working in a read-only workspace, mutations answer `402`). The board is resolved with the existing `boardFor`: no access, or a deleted board, is `404`. The caller's board role must be `owner` or `editor`, otherwise `403 forbidden` ("Only editors can see version history"). Further rules:
 
 - Naming an unnamed version: any editor. Renaming a named one: its creator or the board owner.
 - Deleting: the board owner, any version; an editor, only a named version they created.
 - A version id that belongs to another board is `404`.
 
-**Open mode**: `/api/*` otherwise answers `404`, so `history.handleOpen(req, res)` is mounted in the relay's request handler for exactly these paths and nothing else. There is no session: everyone is an owner of every board. Mutating calls (`POST`, `PATCH`, `DELETE`) still require `x-mira: 1` and, when an `Origin` header is present, the same host as the request (`403 csrf`); reads need nothing, because anyone with the board link can already read the board. An unknown board answers `{ versions: [] }`. `by` is whatever name the client sends.
+**Open mode**: `/api/*` otherwise answers `404`, so `history.handleOpen(req, res)` is mounted in the relay's request handler for exactly these paths and nothing else. There is no session: everyone is an owner of every board. Mutating calls (`POST`, `PATCH`, `DELETE`) still pass the same CSRF check as the accounts API (the shared `csrfOk` of `server/auth.mjs`: the custom header, and when an `Origin` header is present, the same host as the request; `403 csrf` otherwise); reads need nothing, because anyone with the board link can already read the board. An unknown board answers `{ versions: [] }`. `by` is whatever name the client sends.
 
 ### Audit (accounts mode)
 
@@ -145,7 +145,7 @@ Pure logic in `src/history.ts`:
 
 ```ts
 planRestore(live: Store, snap: Store, opts: { isHidden: (o: Obj) => boolean }): RestorePlan   // { add, remove, change, meta, summary: {added, removed, changed} }
-applyRestore(live: Store, snapDoc: Y.Doc, plan: RestorePlan): void
+applyRestore(live: Store, plan: RestorePlan): void
 ```
 
 Rules (a prototype of the object and meta steps confirmed that the result equals the snapshot, that a second peer converges and that one `undo()` reverts it):
@@ -171,7 +171,7 @@ Not versioned in this slice, and not touched by a restore. It is a separate docu
 Read-only, and it never touches the live document, IndexedDB or the relay:
 
 - `openSnapshot(bytes)` builds a throwaway `Y.Doc` with `Y.applyUpdate`, wraps it in a `Store` with `setReadOnly(true)`, and has no provider and no persistence.
-- The UI mounts a second `Renderer` over that store in an overlay on the board surface, with `readOnly = true`, the snapshot's `gridType` and `gridSize`, the live camera copied at open, and a "Fit to content" button. It draws no comment pins, cursors or selection.
+- The UI mounts a second `Renderer` over that store in an overlay on the board surface, with `readOnly = true`, the snapshot's `gridType` and `gridSize`, opened fitted to the content (the preview's area differs from the board's, so the live camera would not line up), and a "Fit to content" button. Drag pans and the wheel zooms. It draws no comment pins, cursors or selection.
 - `Renderer` has no disposal today (a font listener and a `ResizeObserver`), so it gains `destroy()`; closing the preview calls it and `doc.destroy()`.
 - Hidden notes stay hidden: `isHiddenNow(o, userId, liveReveal)` is a small pure function over the **live** `flow.reveal` and the viewer's id, so history never shows more than the board does. It restates `Flow.isHidden` (which needs a `BoardApp`); a test pins its cases.
 - The live board stays mounted underneath, `inert`, and keeps receiving remote updates; the preview is a frozen picture.
@@ -179,9 +179,10 @@ Read-only, and it never touches the live document, IndexedDB or the relay:
 ## UI
 
 - **Board menu**: "Version history" in the Board group, below "Board settings". Shown for owners, editors and in open mode; absent for commenters and viewers.
-- **Panel** (right side, the width and look of the Comments panel; `src/ui/history.css`, theme variables only, no new colours): header "Version history" with **Save version** (asks for a name) and close; a segmented All / Named filter; versions grouped by day (Today, Yesterday, then dates). A row shows the time; the title (the label, or "Automatic version", "Before restore", "Restored a version"); "212 objects (-3)" computed from the neighbouring row (a sudden drop is easy to spot); and who, for named versions. Rows are buttons, arrow keys move between them, Enter opens the preview. A row menu offers Name or Rename and Delete (second click to confirm, as for comments) according to the roles table. The top row, "Current board", is selected by default.
+- **Panel** (right side, below the top bar like the Comments panel; `src/ui/history.css`): header "Version history" with **Save version** (asks for a name) and close; a segmented All / Named filter; versions grouped by day (Today, Yesterday, then dates). A row shows the time; the title (the label, or "Automatic version", "Before restore", "Restored a version"); "212 objects (-3)" computed from the neighbouring row (a sudden drop is easy to spot); and who, for named versions. Rows are buttons, arrow keys move between them, Enter opens the preview. The selected row shows Name or Rename and Delete (second click to confirm, as for comments) according to the roles table. The top row, "Current board", is selected by default.
 - **States**: loading; empty ("No earlier versions yet. Versions are saved automatically while people edit."); error with Retry; and "Version history is stored on the server and needs a connection." when the relay is off, set to another host (the API is same-origin like the rest of `src/api.ts`) or unreachable, with Save version disabled.
 - **Preview banner** over the board: "Viewing the version from {date, time}" and the label if any. Beside it the comparison with the live board, "Restoring adds 4, changes 7, removes 12 items" (recomputed shortly after the live board changes), and the buttons **Restore this version**, **Name this version** and **Back to current board** (Esc). Opening the overlay takes focus and stops key events, so shortcuts, Delete and nudging cannot reach the inert board underneath.
+- **Look**: Swiss minimalist, following `src/ui/admin.css`. Theme variables and `color-mix()` only, with the existing text and background pairs (`--tray-text` on `--tray`, `--ink` on `--canvas`, `--on-signal` on `--signal`); `--signal` only for the primary action and the selected version, never as text on `--ink`. Radius 0, no shadows, hairlines (`--rule`, `--tray-line`) and 2px ink rules; 11px uppercase labels; an 8px spacing grid. At phone width a 16px gutter, no horizontal scroll, and the list gives way to the preview while one is open.
 - **Restore dialog** (the existing `dialog()` helper): "Restore this version?", the counts, and "Everyone on the board will see it change. The board as it is now is saved first as a version, and you can undo this with Ctrl+Z." On success a toast, "Version restored. Press Ctrl+Z to undo."
 - In a read-only hosted workspace the panel and preview work; Save, Name, Delete and Restore are disabled with the workspace's read-only message.
 - Fetches go through `src/api.ts` (so the CSRF header name lives in one place). In open mode the client passes its presence name as `by`.
@@ -217,10 +218,10 @@ Decision: read-only roles do not get history in this slice. Snapshots contain co
 - Accounts: `401` signed out; `404` without access and for a deleted board; `403` for viewer and commenter; `200` for editor and owner; `403 csrf` without the header; a `402` for POST, PATCH, DELETE and `begin-restore` in a read-only hosted workspace while GETs work; a version id of another board is `404`; an editor cannot delete another editor's named version, the owner can.
 - A named version's `state` applied to a `Y.Doc` equals the room's state at that moment; `begin-restore` creates a `pre-restore` version equal to the earlier state, and after a client update over the socket the next save adds a `restore` version with `from`.
 - Audit rows for create, rename, delete and restore; none for automatic versions.
-- Open mode: the routes work without a cookie; a mutation without `x-mira`, or with a foreign `Origin`, is refused; an unknown board lists `[]`; every other `/api/*` path still answers `404`.
+- Open mode: the routes work without a cookie; a mutation without the CSRF header, or with a foreign `Origin`, is refused; an unknown board lists `[]`; every other `/api/*` path still answers `404`.
 - No `history/` directory for a board that was never saved; nothing written for comments rooms; the room file and the existing suites behave as before.
 
-`test/admin.test.ts` gains the four new audit actions in the known list and their sentences.
+`test/admin.test.ts` gains the four new audit actions in the known list and their sentences. `test/save-delay.test.ts` covers `saveDelay`: the plain debounce, the shortened delay once the first unsaved change is 29 seconds old, and a delay of zero beyond the maximum wait; `test/relay-save.test.ts` runs the relay and checks that a room edited without a pause is written within about 30 seconds. The exported `csrfOk` and `CSRF_HEADER` are covered in `test/history.test.ts` (the existing `createAuth` tests keep covering the rule itself).
 
 ## Not in this slice
 
@@ -237,30 +238,36 @@ Decision: read-only roles do not get history in this slice. Snapshots contain co
 New:
 
 - `server/history.mjs`: storage (index and version files), `createHistory`, snapshot rules and retention, `onSave`, the shared actions, `routes(ctx)` for the accounts API, `handleOpen` for open mode.
+- `server/save-delay.mjs`: `saveDelay`, the pure save-timing rule (debounce with a maximum wait).
 - `src/history.ts`: `Version` type, `planRestore`, `applyRestore`, `openSnapshot`, `isHiddenNow`, summaries, grouping by day, the snapshot cache.
 - `src/ui/history.ts`: `mountHistory(app, chrome)`: panel, preview overlay, restore dialog.
 - `src/ui/history.css`: panel and overlay styles.
-- `test/history.test.ts`, `test/history-server.test.ts`.
+- `test/history.test.ts`, `test/history-server.test.ts`, `test/save-delay.test.ts` (the timing rule) and `test/relay-save.test.ts` (the relay itself, with an update every 300 ms for about 30 seconds).
 
 Existing, registration-level lines only (`src/app.ts`, `src/sync.ts`, `src/store.ts`, `server/config.mjs`, `server/directory.mjs` are not touched, which keeps clear of the parallel rename):
 
-- `server/relay.mjs`: import and create `history` (both modes), `history?.onSave(this, bytes)` in `Room.save()`, a `boardState(id)` helper, the open-mode branch in `onRequest`, and `history` passed to `createApi`.
-- `server/api.mjs`: accept `history`, spread `...(history ? history.routes({ compile, boardFor, audit, errors, cleanText }) : [])` next to the cloud routes, and let `send()` write a `Buffer` with headers.
+- `server/relay.mjs`: import and create `history` (both modes), `history?.onSave(this, bytes)` in `Room.save()`, a `boardState(id)` helper, the open-mode branch in `onRequest`, `history` passed to `createApi`, and `saveDelay` in `scheduleSave` (the 30 second maximum wait).
+- `server/api.mjs`: accept `history`, spread `...(history ? history.routes({ compile, boardFor, audit, errors }) : [])` next to the cloud routes, and let `send()` write a `Buffer` with headers.
+- `server/auth.mjs`: `csrfOk` becomes a module-level export that `createAuth` returns unchanged, so open mode can run the same check without an `auth` object, and the header name becomes an exported constant (`CSRF_HEADER`) that tests use.
 - `src/api.ts`: the `Version` type and six methods (`versions`, `versionState`, `saveVersion`, `nameVersion`, `deleteVersion`, `beginRestore`). `versionState` fetches the bytes directly with the same headers and error mapping, because the shared `call()` parses every body as JSON.
-- `src/ui/board.ts`: import and mount `mountHistory` next to the comments, and one menu item.
+- `src/ui/board.ts`: import and mount `mountHistory` next to the comments, one menu item, and the `.drift` menu hint "Full history" becomes "Board with its sync data" (the file does not hold deleted content).
 - `src/render.ts`: `Renderer.destroy()`.
+- `src/ui/dom.ts`: a `history` icon.
 - `src/ui/admin-logic.ts`: the four audit actions and their sentences.
 - `test/admin.test.ts`: the audit actions.
 - `docs/accounts.md`: the open-mode `404` sentence points here, the audit action list, the new data directory.
-- `CHANGELOG.md`: an entry when this is implemented (not in the spec commit).
+- `README.md`: a Version history row in the feature table, the `.drift` description corrected, and "version history" removed from "Not built yet".
+- `CHANGELOG.md`: Added (version history) and Changed (the `.drift` hint, the room save maximum wait).
 
-## Open questions
+## Decisions
 
-1. **Open mode gets server history too** (a small handler for these paths, same behaviour, no audit), instead of accounts mode only. The spec assumes yes: open mode is the default and the main place a shared board gets wiped. It is the only place `/api/*` stops being all `404` in open mode.
-2. **Read-only roles see no history.** Should viewers or commenters get at least named versions?
-3. **The numbers**: 10 minute interval, 24 hour / 7 day / 30 day thinning, 64 MB budget, 100 named versions, the 10 objects / 70% large-deletion rule.
-4. **No environment variables**, so an operator cannot turn history off. An off switch would be one variable (current prefix, pending the rename) plus a flag in `/api/config` so the app can hide the menu item.
-5. **Files rather than a SQLite table**, to keep open mode on one code path. A table in `directory.sqlite` would make pruning and audit joins simpler but accounts-only.
-6. **The `.drift` hint "Full history"** in the board menu is misleading, since deleted content is not in the file. Reword it?
-7. **Restore refused while a session runs.** The alternative (allow it, relying on the hidden-notes rule) risks erasing a facilitator's visible work mid-exercise.
-8. **Room saves have no maximum wait** (`scheduleSave` is a pure debounce), which also defers snapshots during uninterrupted editing. A small relay change (save at least every 30 seconds) would be separate from this feature.
+Taken when the spec was reviewed:
+
+1. Open mode gets server history too, exactly as above (a small handler for these paths, same behaviour, no audit). It is the only place `/api/*` stops being all `404` in open mode.
+2. Read-only roles (viewers, commenters) see no history.
+3. The numbers stand: 10 minute interval, 24 hour / 7 day / 30 day thinning, 64 MB budget, 100 named versions, the 10 objects / 70% large-deletion rule.
+4. No environment variables, so there is no operator switch to turn history off.
+5. Files rather than a SQLite table, to keep open mode on one code path.
+6. The `.drift` menu hint "Full history" is reworded ("Board with its sync data"), since deleted content is not in the file. Noted in the changelog under Changed.
+7. Restore is refused while a session runs.
+8. Room saves get a maximum wait of 30 seconds (`scheduleSave`), so continuous editing no longer defers saves and snapshots. Noted in the changelog under Changed.

@@ -9,6 +9,8 @@ import { mountLibrary, openMermaidImport } from './library';
 import { mountFlowBar } from './flowbar';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
+import { mountHistory } from './history';
+import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
 import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
@@ -84,7 +86,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('presence', renderPeople);
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', title: 'Menu', 'aria-label': 'Menu' }, icon('dots', 18));
-  menuBtn.addEventListener('click', () => openMenu(app, menuBtn));
+  const history = mountHistory(app, chrome);
+  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history.open));
   const comments = mountComments(app, chrome);
   const topRight = h('div', { class: 'tray top-right' },
     people,
@@ -358,7 +361,7 @@ function minimap(app: BoardApp) {
 
 // ---------------------------------------------------------------- menus & dialogs
 
-function openMenu(app: BoardApp, anchor: HTMLElement) {
+function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: () => void) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
   // Items that change the board are disabled while it is view only.
@@ -423,6 +426,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app)),
+    canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('user', 'Your name and colour', () => openProfile(app)),
     showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
@@ -439,7 +443,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement) {
       }
     }),
     item('download', 'SVG vector', () => download(exportSvg(app, sel).svg, `${name()}.svg`, 'image/svg+xml')),
-    item('download', 'Board file (.drift)', () => download(toDrift(app), `${name()}.drift`, 'application/zip'), 'Full history'),
+    item('download', 'Board file (.drift)', () => download(toDrift(app), `${name()}.drift`, 'application/zip'), 'Board with its sync data'),
     item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),
     item('mermaid', 'Copy as Mermaid', () => {

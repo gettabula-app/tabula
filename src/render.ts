@@ -89,6 +89,9 @@ export class Renderer {
   private allDirty = true;
   private boundsCache = new Map<Id, Rect | null>();
   private frameQueued = false;
+  private destroyed = false;
+  private stopFonts: () => void = () => {};
+  private resizeObserver: ResizeObserver;
   private overlayDirty = true;
   private camDirty = true;
   private cameraListeners = new Set<() => void>();
@@ -126,14 +129,24 @@ export class Renderer {
       this.overlayDirty = true;
       this.schedule();
     });
-    onFontLoaded(() => {
+    this.stopFonts = onFontLoaded(() => {
       clearMeasureCache();
       this.invalidateAll();
     });
-    new ResizeObserver(() => {
+    this.resizeObserver = new ResizeObserver(() => {
       this.camDirty = true;
       this.schedule();
-    }).observe(this.root);
+    });
+    this.resizeObserver.observe(this.root);
+  }
+
+  /** For renderers that are not the board's own (the version preview): stop listening and leave the page. */
+  destroy() {
+    this.destroyed = true;
+    this.stopFonts();
+    this.resizeObserver.disconnect();
+    this.cameraListeners.clear();
+    this.root.remove();
   }
 
   markDirty(id: Id) {
@@ -285,11 +298,11 @@ export class Renderer {
   }
 
   schedule() {
-    if (this.frameQueued) return;
+    if (this.frameQueued || this.destroyed) return;
     this.frameQueued = true;
     requestAnimationFrame(() => {
       this.frameQueued = false;
-      this.flush();
+      if (!this.destroyed) this.flush();
     });
   }
 

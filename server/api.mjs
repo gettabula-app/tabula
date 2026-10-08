@@ -119,7 +119,7 @@ function compile(method, pattern, options, handler) {
   return { method, parts: pattern.split('/'), handler, ...options };
 }
 
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -618,6 +618,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       ];
     }),
 
+    // ---------------------------------------------------------- version history (docs/history.md)
+
+    ...(history ? history.routes({ compile, boardFor, audit, errors: { HttpError, forbidden } }) : []),
+
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 
     ...(cloud
@@ -645,10 +649,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   // ------------------------------------------------------------ dispatch
 
-  function send(res, status, body) {
+  function send(res, status, body, headers) {
     if (body === undefined) {
       res.writeHead(status);
       res.end();
+      return;
+    }
+    if (Buffer.isBuffer(body)) {
+      res.writeHead(status, { ...headers, 'content-length': body.length });
+      res.end(body);
       return;
     }
     const payload = JSON.stringify(body);
@@ -709,7 +718,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) session = signedIn();
 
-    const [status, payload] = await route.handler({
+    const [status, payload, headers] = await route.handler({
       req,
       res,
       params,
@@ -718,7 +727,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       user: session?.user,
       sessionId: session?.sessionId,
     });
-    send(res, status, payload);
+    send(res, status, payload, headers);
   }
 
   async function handle(req, res) {

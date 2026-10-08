@@ -25,6 +25,8 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
+import { createHistory } from './history.mjs';
+import { saveDelay } from './save-delay.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -37,6 +39,7 @@ const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_MAX_WAIT_MS = 30_000;
 const UNLOAD_AFTER_MS = 60_000;
 const PING_MS = 30_000;
 const ROLE_RECHECK_MS = 5_000;
@@ -73,6 +76,18 @@ function canWriteRoom(role, kind) {
 // Leftover comments mean the id was used before, so adopting such a board is as sensitive as adopting its board file.
 const roomExists = (id) => fs.existsSync(path.join(DATA_DIR, `${id}.yjs`)) || fs.existsSync(path.join(DATA_DIR, `${id}~comments.yjs`));
 
+// Version history (docs/history.md), in both modes. The state of a board room: the live room, else its file.
+function boardState(id) {
+  const room = rooms.get(id);
+  if (room) return Y.encodeStateAsUpdate(room.doc);
+  try {
+    return fs.readFileSync(path.join(DATA_DIR, `${id}.yjs`));
+  } catch {
+    return null;
+  }
+}
+const history = createHistory({ dataDir: DATA_DIR, boardState, log });
+
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
 let directory = null;
@@ -91,7 +106,7 @@ if (config.authEnabled) {
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud });
+  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history });
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
@@ -119,6 +134,7 @@ class Room {
     this.saveTimer = null;
     this.unloadTimer = null;
     this.dirty = false;
+    this.firstUnsavedAt = null;
 
     if (fs.existsSync(this.file)) {
       try {
@@ -155,16 +171,22 @@ class Room {
     for (const ws of this.conns.keys()) send(ws, msg);
   }
 
+  // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
   scheduleSave() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.save(), SAVE_DEBOUNCE_MS);
+    const now = Date.now();
+    this.firstUnsavedAt ??= now;
+    const delay = saveDelay({ now, firstUnsavedAt: this.firstUnsavedAt, debounceMs: SAVE_DEBOUNCE_MS, maxWaitMs: SAVE_MAX_WAIT_MS });
+    this.saveTimer = setTimeout(() => this.save(), delay);
   }
 
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
+    this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, Y.encodeStateAsUpdate(this.doc));
+    const bytes = Y.encodeStateAsUpdate(this.doc);
+    fs.writeFileSync(tmp, bytes);
     fs.renameSync(tmp, this.file);
     if (directory && this.kind === 'board' && this.dirty) {
       this.dirty = false;
@@ -175,6 +197,7 @@ class Room {
         log(`room ${this.name}: could not update the directory`, err?.message);
       }
     }
+    history.onSave(this, bytes);
   }
 
   join(ws) {
@@ -314,7 +337,7 @@ async function onRequest(req, res) {
         if (!(await api.handle(req, res))) sendJson(res, 404, { error: 'not_found' });
       } else if (url.pathname === '/api/config') {
         sendJson(res, 200, { authEnabled: false });
-      } else {
+      } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }
     } else {
@@ -510,6 +533,7 @@ function shutdown() {
   clearInterval(pinger);
   cloud?.close();
   for (const r of rooms.values()) r.save();
+  history.close();
   directory?.close();
   process.exit(0);
 }
