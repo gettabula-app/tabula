@@ -52,7 +52,7 @@ const MSG_AWARENESS = 1;
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
 const MSG_WORKSPACE = 4;
 // Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
-// (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve')[] }.
+// (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
 const MSG_COMMENT_NOTICE = 5;
 
 const CLOSE_UNAUTHENTICATED = 4401;

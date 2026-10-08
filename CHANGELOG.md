@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Added
+- Comment authorship enforced on the server (accounts mode): the relay checks every comment write against the author's role and undoes what the rules forbid, so moderators (board owners, workspace admins and team admins) may delete others' comments but not edit them, authors and names are stamped from the account, imported and pre-accounts comments are marked, and the person whose change was undone gets a short notice. Resolving is for the author and board editors. See `docs/comment-authz.md`.
 - Templates page (`#/templates`): every template on a solid card, with category filters and search. The home screen links to it from a short Start from a template row.
 - Tests for live role changes and session expiry on open sockets, and for running behind a reverse proxy; a "Behind a reverse proxy" section in the README.
 - Polls: a facilitated question with 2–10 options, run as a session step (new `poll` step mode) or started from a quick poll button on the toolbar. One answer per person, changeable until the poll closes; results stay hidden until reveal, and ranked results copy as Markdown or go on the board as a sticky. Answers live in the board document, so they work offline, sync, and travel in `.drift` and JSON exports; the Markdown summary includes revealed polls. See `docs/polls.md`.
