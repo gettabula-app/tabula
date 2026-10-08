@@ -157,6 +157,8 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
   const b = app.r.contentBounds(objs.map((o) => o.id)) ?? { x: 0, y: 0, w: 100, h: 100 };
   const pad = 40;
   const x = b.x - pad, y = b.y - pad - 10, w = b.w + pad * 2, h = b.h + pad * 2 + 10;
+  // The ctx carries the canvas's own connector layout, whole-board even when only some objects are exported, so a
+  // connector in the file ends where it does on the board, beside connectors that are not in it.
   const ctx = { ...app.r.ctx, editingId: null };
   const body = objs.map((o) => objectMarkup(o, ctx)).join('\n');
   let style = opts.fontCss ?? '';

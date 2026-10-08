@@ -70,7 +70,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const pad = 8;
     for (const id of ids) {
       const c = app.store.get(id);
-      const g = isConnector(c) ? connectorGeom(get, c) : null;
+      const g = isConnector(c) ? connectorGeom(get, c, app.r.connectorLayout()) : null;
       if (!g) continue;
       const pts = g.pts.map((p) => app.r.toScreen(p));
       for (let i = 1; i < pts.length; i++) {

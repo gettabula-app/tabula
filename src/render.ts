@@ -1,7 +1,7 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
 import type { Store } from './store';
-import { boxBounds, center, connectorGeom, objBounds, rectsIntersect, rotate, sideAnchor } from './geometry';
+import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
 import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
@@ -61,9 +61,9 @@ export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
 
 /** Handles for a single selected object, in world coordinates. */
-export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: number): Handle[] {
+export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: number, layout?: ConnectorLayout): Handle[] {
   if (isConnector(o)) {
-    const g = connectorGeom(get, o);
+    const g = connectorGeom(get, o, layout);
     return g ? [{ id: 'from', p: g.start }, { id: 'to', p: g.end }] : [];
   }
   if (o.locked || o.type === 'path') return [];
@@ -108,6 +108,8 @@ export class Renderer {
   private dirty = new Set<Id>();
   private allDirty = true;
   private boundsCache = new Map<Id, Rect | null>();
+  private layoutCache: ConnectorLayout | null = null;
+  private lastLayout: ConnectorLayout | null = null;
   private frameQueued = false;
   private destroyed = false;
   private stopFonts: () => void = () => {};
@@ -139,9 +141,11 @@ export class Renderer {
       get: (id) => this.store.get(id),
       isHidden: (o) => this.isHidden(o),
       editingId: null,
+      layout: () => this.connectorLayout(),
     };
 
     store.onChange((changed) => {
+      this.layoutCache = null;
       for (const id of changed) {
         this.markDirty(id);
         for (const c of store.connectorsOf(id)) this.markDirty(c.id);
@@ -176,6 +180,7 @@ export class Renderer {
 
   invalidateAll() {
     this.allDirty = true;
+    this.layoutCache = null;
     this.boundsCache.clear();
     this.overlayDirty = true;
     this.schedule();
@@ -296,9 +301,24 @@ export class Renderer {
     requestAnimationFrame(step);
   }
 
+  /**
+   * Where each connector end sits among the ends on the same side of its shape. Built on first use after a store change
+   * and reused until the next one, so drawing, hit-testing and handles all read the same layout.
+   */
+  connectorLayout(): ConnectorLayout {
+    if (!this.layoutCache) {
+      const next = buildConnectorLayout((id) => this.store.get(id), this.store.ordered().filter(isConnector));
+      // A connector that joins, leaves or reorders a side moves the others on it, even though they did not change.
+      if (this.lastLayout) for (const id of movedConnectors(this.lastLayout, next)) this.markDirty(id);
+      this.layoutCache = this.lastLayout = next;
+    }
+    return this.layoutCache;
+  }
+
   bounds(o: Obj): Rect | null {
+    this.connectorLayout(); // first, so connectors whose slot moved lose their cached bounds
     if (this.boundsCache.has(o.id)) return this.boundsCache.get(o.id)!;
-    const b = objBounds((id) => this.store.get(id), o);
+    const b = objBounds((id) => this.store.get(id), o, this.connectorLayout());
     this.boundsCache.set(o.id, b);
     return b;
   }
@@ -446,7 +466,7 @@ export class Renderer {
     }
     if (sel.length === 1 && sel[0].id !== this.editingId && !this.readOnly) {
       const o = sel[0];
-      const hs = handlesFor(o, get, z);
+      const hs = handlesFor(o, get, z, this.connectorLayout());
       const rot = hs.find((h) => h.id === 'rot');
       if (rot && isBox(o)) {
         const top = rotate({ x: o.x + o.w / 2, y: o.y }, center(o), o.rotation || 0);
@@ -539,7 +559,7 @@ export class Renderer {
 
   private outline(o: Obj, sw: number, opacity: number) {
     if (isConnector(o)) {
-      const g = connectorGeom((id) => this.store.get(id), o);
+      const g = connectorGeom((id) => this.store.get(id), o, this.connectorLayout());
       if (!g) return '';
       return `<path d="${g.d}" fill="none" stroke="${WIRE}" stroke-width="${sw * 2.5}" stroke-opacity="${0.25 * opacity}"/>`;
     }
