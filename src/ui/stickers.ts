@@ -1,5 +1,5 @@
 import type { BoardApp } from '../app';
-import { collectionIcons, iconData, iconSets, previewUrl, searchIcons, type IconSet } from '../icons';
+import { collectionIcons, failureMessage, iconData, iconLoader, iconSets, previewUrl, searchIcons, type IconLoadView, type IconSet } from '../icons';
 import { REACTION_SIZE, REACTIONS, STICKER_SETS, STICKER_SIZE, stickerSize } from '../stickers';
 import type { Point } from '../types';
 import { closePopover, segmented, toast } from './common';
@@ -23,13 +23,28 @@ export async function placeSticker(app: BoardApp, name: string, at?: Point, long
   }
 }
 
-export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: StickerDrag) => HTMLElement) {
+/** The grid's states for an Iconify query: a loading line while a fetch runs, the results, or a failure with a Retry button. */
+export function gridView(grid: HTMLElement, results: (names: string[]) => void): IconLoadView {
+  return {
+    loading: (on) => {
+      grid.classList.toggle('loading', on);
+      if (on) grid.replaceChildren(h('div', { class: 'icon-status', role: 'status' }, 'Loading…'));
+    },
+    results,
+    failed: (failure, retry, busy) => grid.replaceChildren(h('div', { class: 'icon-status', role: 'status' },
+      h('div', null, failureMessage(failure)),
+      h('button', { class: 'btn', disabled: busy, onclick: retry }, 'Retry'),
+    )),
+  };
+}
+
+export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: StickerDrag) => HTMLElement, signal: AbortSignal) {
   const input = h('input', { type: 'search', class: 'input', placeholder: 'Search stickers', 'aria-label': 'Search stickers' });
   const grid = h('div', { class: 'sticker-grid', role: 'list' });
   const note = h('p', { class: 'stickers-note' });
   let set = (STICKER_SETS.find((s) => s.default) ?? STICKER_SETS[0]).prefix;
   let sets: Record<string, IconSet> = {};
-  let seq = 0;
+  let setsState: 'idle' | 'loading' | 'ready' = 'idle';
 
   const updateNote = () => {
     const label = STICKER_SETS.find((s) => s.prefix === set)?.label ?? set;
@@ -51,37 +66,39 @@ export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: St
     grid.replaceChildren(...names.map(tile));
   };
 
-  const run = async () => {
-    const my = ++seq;
+  const loader = iconLoader((s) => {
     const q = input.value.trim();
-    grid.classList.add('loading');
-    try {
-      const names = q ? await searchIcons(q, set) : await collectionIcons(set);
-      if (my === seq) show(names, q);
-    } catch {
-      if (my === seq) grid.replaceChildren(h('div', { class: 'empty' }, 'Stickers need a connection the first time. Stickers already on your boards still work offline.'));
-    } finally {
-      if (my === seq) grid.classList.remove('loading');
-    }
-  };
+    loadSets();
+    return q ? searchIcons(q, set, 96, s) : collectionIcons(set, 160, s);
+  }, gridView(grid, (names) => show(names, input.value.trim())), signal);
 
   const chips = segmented(STICKER_SETS.map((s) => ({ value: s.prefix, label: s.label })), set, (v) => {
     set = v;
     updateNote();
-    run();
+    loader.reload();
   }, 'Sticker set');
 
   let t = 0;
   input.addEventListener('input', () => {
     clearTimeout(t);
-    t = window.setTimeout(run, 250);
+    t = window.setTimeout(loader.reload, 250);
   });
-  iconSets().then((s) => {
-    sets = s;
-    updateNote();
-  }).catch(() => undefined);
+  signal.addEventListener('abort', () => clearTimeout(t), { once: true });
+  const loadSets = () => {
+    if (setsState !== 'idle') return;
+    setsState = 'loading';
+    iconSets(signal).then((s) => {
+      if (signal.aborted) return;
+      setsState = 'ready';
+      sets = s;
+      updateNote();
+    }).catch(() => {
+      setsState = 'idle';
+    });
+  };
+  loadSets();
   updateNote();
-  run();
+  loader.reload();
   requestAnimationFrame(() => input.focus());
   return h('div', { class: 'drawer-body stickers' },
     input,
