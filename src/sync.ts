@@ -295,6 +295,8 @@ export function scratchBoard(id: string, user: User): BoardConn {
     id, doc, store, comments, awareness, provider: null, status: 'local', denied: null,
     onStatus: () => () => undefined,
     onDenied: () => () => undefined,
+    onWorkspaceHint: () => () => undefined,
+    resync: () => undefined,
     destroy: () => {
       awareness.destroy();
       doc.destroy();
