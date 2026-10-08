@@ -76,6 +76,10 @@ The full design (roles, the HTTP API, the relay rules and the SQLite schema) is 
 | ![Text popover with horizontal and vertical alignment](docs/images/text-options.png) | ![Lock badge shown when hovering a locked item](docs/images/locked-badge.png) |
 | **Themes (Matrix, with the picker)** | **Ayu** |
 | ![Board menu with the theme picker, Matrix theme active](docs/images/themes-menu-matrix.png) | ![Ayu theme on a board](docs/images/theme-ayu.png) |
+| **Accounts: sign in** | **Accounts: home screen with teams** |
+| ![Sign-in screen](docs/images/signin.png) | ![Home screen with Personal, Shared with you and On this device](docs/images/teams-home.png) |
+| **Accounts: access removed** | |
+| ![Banner shown when your access to a board is removed](docs/images/access-removed.png) | |
 
 ## What works today
 
