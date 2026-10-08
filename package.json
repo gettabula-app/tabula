@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "test": "vitest run",
+    "test:repeat": "node scripts/test-repeat.mjs",
     "desktop:dev": "cd desktop && tauri dev",
     "desktop:build": "cd desktop && tauri build"
   },

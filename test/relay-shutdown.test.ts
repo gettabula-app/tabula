@@ -6,6 +6,7 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { isWindows } from './platform';
 
 // A room is written a while after its last change (a second by default, SAVE_DEBOUNCE_MS here). A relay that is asked
 // to stop before then must write the room first. Windows cannot deliver SIGTERM (a kill ends the process at once), so
@@ -126,7 +127,7 @@ describe('relay shutdown', { timeout: 30_000 }, () => {
     expect(savedNote(relay, 'ignored-room')).toBe('still running');
   });
 
-  it.skipIf(process.platform === 'win32')('saves a room edited moments ago on SIGHUP, as when a terminal closes', async () => {
+  it.skipIf(isWindows)('saves a room edited moments ago on SIGHUP, as when a terminal closes', async () => {
     const relay = await startRelay();
     await editWithoutSaving(relay, 'hup-room', 'typed before the hangup');
     relay.child.kill('SIGHUP');
@@ -134,7 +135,7 @@ describe('relay shutdown', { timeout: 30_000 }, () => {
     expect(savedNote(relay, 'hup-room')).toBe('typed before the hangup');
   });
 
-  it.skipIf(process.platform === 'win32')('survives SIGTERM twice in a row and still saves the room', async () => {
+  it.skipIf(isWindows)('survives SIGTERM twice in a row and still saves the room', async () => {
     const relay = await startRelay();
     await editWithoutSaving(relay, 'twice-room', 'typed before two stops');
     relay.child.kill('SIGTERM');
