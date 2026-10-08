@@ -41,6 +41,14 @@ docker run -p 8787:8787 -v driftboard-data:/data driftboard
 
 The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boardId>`. In the app, **Menu → Board settings → Relay** accepts `auto` (the server that served the app), `off` (this device only), or any `wss://…/sync` URL.
 
+## Screenshots
+
+| Shapes panel | Quick actions |
+| --- | --- |
+| ![Shapes panel with Basic, Arrows, Callouts and Flowchart groups](docs/images/shapes-panel.png) | ![Quick-action bar above a selected ellipse](docs/images/quick-actions.png) |
+| **Text options** | **Locked item** |
+| ![Text popover with horizontal and vertical alignment](docs/images/text-options.png) | ![Lock badge shown when hovering a locked item](docs/images/locked-badge.png) |
+
 ## What works today
 
 | Spec area | Implemented |
