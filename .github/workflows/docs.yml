@@ -1,0 +1,38 @@
+name: User guide
+
+# A push to main that only touches docs (Markdown, docs/) skips ci.yml, so it cannot cancel a code run in progress.
+# When it changes the user guide, this builds and tests the guide instead. A push that touches code and docs/guide
+# runs both workflows, which is cheap. Pull requests are handled inside ci.yml (job "User guide build").
+# This does not build the Docker image, so ghcr.io/...:main can carry an older guide until the next code push.
+on:
+  push:
+    branches: [main]
+    paths: ['docs/guide/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Its own group, so it never cancels or waits for a CI run.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 1
+
+jobs:
+  docs:
+    name: User guide build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npx vitest run test/docs-markdown.test.ts test/docs-relay.test.ts test/sw-docs.test.ts
+      - run: npm run build:app

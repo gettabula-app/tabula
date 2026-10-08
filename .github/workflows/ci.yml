@@ -1,10 +1,14 @@
 name: CI
 
+# A push that only touches Markdown, docs/, licence files or dependabot.yml starts no run at all, so it cannot cancel a
+# code run in progress through the concurrency group below. A push that changes the user guide is built by docs.yml.
+# Pull requests have no paths filter on purpose: a workflow that never starts reports nothing, so "CI passed" could wait
+# forever as a required check. Every pull request starts a run and the "changes" job decides what it needs.
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore: ['**.md', 'LICENSE', '.github/dependabot.yml']
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
 
@@ -21,10 +25,55 @@ env:
   FORCE_COLOR: 1
 
 jobs:
+  # Sorts the change with scripts/ci-changes.mjs, the same ignore set as the push filter above. code: something outside
+  # it changed, so the full pipeline runs. guide: something under docs/guide/ changed. A pull request is compared with
+  # the point where it branched off its base, a push with the commit before it (and the push filter has normally kept
+  # the docs-only ones out already). Tags, manual runs, new branches, force pushes and any diff that fails count as
+  # code, so a doubt builds everything.
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+      guide: ${{ steps.classify.outputs.guide }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: classify
+        # bash with pipefail, so a failing script fails the job instead of leaving empty outputs that skip everything
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          FORCED: ${{ github.event.forced }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          range=
+          if [ "$EVENT" = pull_request ]; then
+            range="$BASE...$HEAD"
+          elif [ "$EVENT" = push ] && [ "$REF_TYPE" = branch ] && [ "$FORCED" != true ] && [ -n "${BEFORE//0/}" ]; then
+            range="$BEFORE..$AFTER"
+          fi
+          if [ -n "$range" ] && files=$(git -c core.quotepath=off diff --name-only --no-renames "$range"); then
+            echo "Changed in $range:"
+            echo "$files" | awk '{ print "  " $0 }'
+            printf '%s\n' "$files" | node scripts/ci-changes.mjs | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "No usable range to compare, so everything runs"
+            printf 'code=true\nguide=true\n' | tee -a "$GITHUB_OUTPUT"
+          fi
+
   quality:
     name: Lint, typecheck & audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -41,6 +90,8 @@ jobs:
     name: Test & build (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +121,8 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [quality, test]
+    needs: [changes, quality, test]
+    if: needs.changes.outputs.code == 'true'
     permissions:
       contents: read
       packages: write
@@ -102,11 +154,32 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # The guide is built into the app and the Docker image. When a pull request changes only the guide (no code), the jobs
+  # above are skipped and this builds and tests it on one runner. When code changed too, the full matrix already covers
+  # it. Pushes to main get the same check from docs.yml.
+  docs:
+    name: User guide build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.guide == 'true' && needs.changes.outputs.code != 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npx vitest run test/docs-markdown.test.ts test/docs-relay.test.ts test/sw-docs.test.ts
+      - run: npm run build:app
+
+  # The one check to require: skipped jobs count as passed, a failed or cancelled one does not.
   ci-ok:
     name: CI passed
     runs-on: ubuntu-latest
     if: always()
-    needs: [quality, test, docker]
+    needs: [changes, quality, test, docker, docs]
     steps:
       - name: Fail if a required job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
