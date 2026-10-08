@@ -26,7 +26,8 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
     h('nav', { class: 'topbar-nav', 'aria-label': 'Main' },
       link('boards', 'Boards', '#/'),
       link('templates', 'Templates', '#/templates'),
-      admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null),
+      admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
+      h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
       h('span', { class: 'topbar-me' }, me.user.name || me.user.email),
       h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out')) : null);

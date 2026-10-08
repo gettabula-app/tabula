@@ -1,0 +1,70 @@
+# Export and import
+
+You can save a board as an image, a file you can reopen, or text. You can also bring a saved board or a Mermaid diagram into Tabula.
+
+## Export
+
+Open the board menu (the three-dot **Menu** button at the top right). The **Export** section lists every format. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain only those items (plus anything inside selected frames, and connectors between exported items).
+
+| Item | What you get |
+|---|---|
+| **PNG image** | A 2x raster image on a white background. |
+| **SVG vector** | A scalable image on white. |
+| **Board file (.drift)** | The whole board with its history, for backup or moving it. |
+| **JSON snapshot** | A readable copy of the board. |
+| **Markdown summary** | Text notes grouped by frame, with votes and poll results. |
+| **Copy as Mermaid** | Mermaid text copied to your clipboard. |
+
+Files are named after the board.
+
+### PNG and SVG
+
+Images use the light default colours on white whatever theme you are using. Comment pins are left out. Fonts are embedded so text looks the same. If you are offline and a font was never loaded, the image falls back to a system font. Very large boards are scaled down to fit a maximum image size.
+
+### Board file (.drift)
+
+A `.drift` file holds the complete board, including comments, polls and votes, and the board's edit history. It is the most faithful copy. Use it to back up a board or hand it to someone else.
+
+### JSON snapshot
+
+A text file with the board's settings, objects, session steps, comments and polls. It does not include edit history. With a selection, it contains only the selected objects.
+
+### Markdown summary
+
+Lists each frame as a heading with its notes as bullets, sorted by votes (shown as "3 votes"), followed by revealed poll results. Only items with text inside frames are included. See [Polls](polls.md).
+
+### Copy as Mermaid
+
+Copies a diagram description to the clipboard: a class diagram if the board has UML classes, otherwise a flowchart. Only connectors joining two shapes are included. You can also use **Copy as Mermaid** in the properties panel for a selection of shapes or classes.
+
+## Import
+
+### Open a file as a new board
+
+On the home screen click **Import file** and choose a `.drift` or `.json` file. It opens as a new board, zoomed to fit, with the message "Board opened from file". A `.drift` file restores comments, polls and history. A JSON file restores objects, settings, session steps and polls, and comments if present.
+
+### Add a file to the current board
+
+In a board, choose **Import a board file into this board** in the board menu, or drag a `.drift` or `.json` file onto the board. The objects are added to the right of what is already there and the view moves to them. Comments, polls and settings from the file are not added. Imported items get new identities, so importing the same file twice makes two copies.
+
+You need edit access. If the file is not a Tabula board, or was made by a newer version of Tabula, you get a message and nothing changes.
+
+### Importing Mermaid
+
+Choose **Import Mermaid** in the board menu, in the **UML** drawer under **Text to diagram**, or on an empty board.
+
+1. Paste Mermaid text. A flowchart, `classDiagram`, `stateDiagram-v2` or `sequenceDiagram` is supported.
+2. Click **Add to board**.
+
+The diagram becomes editable shapes and connectors, placed to the right of existing content. If the text cannot be read, the dialog shows an error and you can fix it.
+
+### Paste text and objects
+
+Pasting plain text on the board creates one sticky note per line (up to 50). Pasting objects copied from another Tabula board (`Ctrl+C`, `Ctrl+V`) places them at your pointer.
+
+## Related
+
+- [Boards and the home screen](boards.md)
+- [Version history](version-history.md)
+- [Polls](polls.md)
+- [Comments](comments.md)
