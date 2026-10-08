@@ -87,6 +87,9 @@ describe('auditSentence', () => {
     ['admin.session.revoke', entry('admin.session.revoke', { sessionId: 's1', userId: 'u2' }), 'ana@example.com revoked a session of bo@example.com'],
     ['cloud.limits from the control plane', entry('cloud.limits', { seatLimit: 5, readOnly: true, banner: null }, { actorId: null, actorName: null, actorEmail: null }), 'System updated the workspace limits (5 seats, read-only)'],
     ['cloud.limits with one seat', entry('cloud.limits', { seatLimit: 1, readOnly: false }), 'ana@example.com updated the workspace limits (1 seat)'],
+    ['cloud.notify trial-ending', entry('cloud.notify', { template: 'trial-ending', count: 2 }, { actorId: null, actorName: null, actorEmail: null }), 'System sent the trial-ending notice to 2 workspace owners'],
+    ['cloud.notify to one owner', entry('cloud.notify', { template: 'trial-ending', count: 1 }, { actorId: null, actorName: null, actorEmail: null }), 'System sent the trial-ending notice to 1 workspace owner'],
+    ['cloud.notify without details', entry('cloud.notify', {}, { actorId: null, actorName: null, actorEmail: null }), 'System sent a notice to the workspace owners'],
     ['cloud.limits without limits', entry('cloud.limits', { seatLimit: null, readOnly: false, banner: 'Hi' }), 'ana@example.com updated the workspace limits'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
@@ -132,7 +135,7 @@ describe('auditSentence', () => {
       'board.create', 'board.update', 'board.delete', 'board.share', 'board.unshare',
       'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
       'member.update', 'member.remove',
-      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits',
+      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });
