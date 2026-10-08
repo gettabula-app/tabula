@@ -6,6 +6,7 @@ import { mountBoardUi } from './ui/board';
 import { mountAccessBanner } from './ui/access';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
+import { renderAdmin } from './ui/admin';
 import { loadCatalogue } from './fonts';
 import { TEMPLATES, insertTemplate } from './templates';
 import type { ImportedBoard } from './exporters';
@@ -116,6 +117,17 @@ async function route() {
   if (needsSignIn(r, auth.mode)) {
     saveReturn(location.hash);
     location.replace('#/signin');
+    return;
+  }
+
+  if (r.name === 'admin') {
+    const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+    if (!me || (me.user.role !== 'owner' && me.user.role !== 'admin')) {
+      location.replace('#/');
+      return;
+    }
+    root.className = 'admin-root';
+    renderAdmin(root, r.tab, me);
     return;
   }
 

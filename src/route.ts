@@ -1,13 +1,22 @@
 import type { AuthState } from './auth';
 
+export const ADMIN_TABS = ['overview', 'members', 'teams', 'boards', 'sessions', 'audit'] as const;
+export type AdminTab = (typeof ADMIN_TABS)[number];
+
 export type Route =
   | { name: 'home' }
   | { name: 'board'; id: string }
   | { name: 'signin' }
   | { name: 'verify'; token: string }
-  | { name: 'invite'; token: string };
+  | { name: 'invite'; token: string }
+  | { name: 'admin'; tab: AdminTab };
 
 const HOME: Route = { name: 'home' };
+
+/** An unknown or missing tab is the overview. */
+function adminTab(segment: string | undefined): AdminTab {
+  return ADMIN_TABS.find((t) => t === segment) ?? 'overview';
+}
 
 /** Sign-in, emailed-link and invite screens: reachable without a session. */
 function isAuthRoute(route: Route): boolean {
@@ -21,6 +30,8 @@ export function parseRoute(hash: string): Route {
   const invite = hash.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
   if (invite) return { name: 'invite', token: invite[1] };
   if (hash === '#/signin') return { name: 'signin' };
+  const admin = hash.match(/^#\/admin(?:\/([^/]*))?$/);
+  if (admin) return { name: 'admin', tab: adminTab(admin[1]) };
   const verify = hash.match(/^#\/signin\/verify(?:\?(.*))?$/);
   if (verify) {
     const token = new URLSearchParams(verify[1] ?? '').get('token');
@@ -32,7 +43,7 @@ export function parseRoute(hash: string): Route {
 /** The route to render: open mode has no accounts, so the account screens fall back to home like any unknown hash. */
 export function resolveRoute(hash: string, mode: AuthState['mode']): Route {
   const route = parseRoute(hash);
-  return mode === 'open' && isAuthRoute(route) ? HOME : route;
+  return mode === 'open' && (isAuthRoute(route) || route.name === 'admin') ? HOME : route;
 }
 
 /** Only a server that has accounts turned on and no signed-in user gates routes. */
