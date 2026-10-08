@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { openDirectory } from '../server/directory.mjs';
+import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 
 type Dir = ReturnType<typeof openDirectory>;
 type WsRole = 'owner' | 'admin' | 'member' | 'guest';
@@ -46,8 +46,62 @@ describe('migrations', () => {
     second.close();
 
     const raw = new DatabaseSync(file);
-    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
     expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'users'").get()).toEqual({ n: 1 });
+    raw.close();
+  });
+
+  it('migration 2 keeps the shares of a version 1 database and allows the commenter role', () => {
+    const file = path.join(tmp(), 'directory.sqlite');
+    const old = new DatabaseSync(file);
+    old.exec('PRAGMA foreign_keys = ON');
+    old.exec(MIGRATIONS[0]);
+    old.exec('PRAGMA user_version = 1');
+    const insert = (sql: string, ...params: (string | number)[]) => old.prepare(sql).run(...params);
+    insert("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ada', 'member', 0, 1)");
+    insert("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u2', 'b@example.com', 'Bob', 'member', 0, 1)");
+    insert("INSERT INTO teams (id, name, archived, created_at) VALUES ('t1', 'Crew', 0, 1)");
+    insert("INSERT INTO team_members (team_id, user_id, role) VALUES ('t1', 'u2', 'member')");
+    insert("INSERT INTO boards (id, title, owner_id, team_id, created_at, updated_at) VALUES ('b1', 'Board', 'u1', NULL, 1, 1)");
+    insert("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'user', 'u2', 'viewer')");
+    insert("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'team', 't1', 'editor')");
+    expect(() => insert("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'user', 'u1', 'commenter')")).toThrow(/CHECK/);
+    old.close();
+
+    const d = open(file);
+    expect(d.listShares('b1')).toEqual([
+      { principalType: 'team', principalId: 't1', name: 'Crew', role: 'editor' },
+      { principalType: 'user', principalId: 'u2', name: 'Bob', role: 'viewer' },
+    ]);
+    expect(d.boardRole('b1', 'u2')).toBe('editor');
+    d.unshareBoard('b1', 'team', 't1');
+    expect(d.boardRole('b1', 'u2')).toBe('viewer');
+    d.shareBoard('b1', { principalType: 'user', principalId: 'u2', role: 'commenter' });
+    expect(d.boardRole('b1', 'u2')).toBe('commenter');
+    expect(d.listBoardsFor(d.getUser('u2')!).map((b) => [b.id, b.role])).toEqual([['b1', 'commenter']]);
+    d.close();
+
+    const raw = new DatabaseSync(file);
+    raw.exec('PRAGMA foreign_keys = ON');
+    expect(raw.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
+    const run = (sql: string, ...params: string[]) => raw.prepare(sql).run(...params);
+    expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'user', 'u1', 'owner')")).toThrow(/CHECK/);
+    expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'group', 'u1', 'viewer')")).toThrow(/CHECK/);
+    expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('ghost', 'user', 'u1', 'viewer')")).toThrow(/FOREIGN KEY/);
+    expect(() => run("INSERT INTO board_shares (board_id, principal_type, principal_id, role) VALUES ('b1', 'user', 'u2', 'viewer')")).toThrow(/UNIQUE|PRIMARY/);
+
+    const columns = raw.prepare('PRAGMA table_info(board_shares)').all() as { name: string; pk: number; notnull: number }[];
+    expect(columns.filter((c) => c.pk > 0).sort((a, b) => a.pk - b.pk).map((c) => c.name)).toEqual(['board_id', 'principal_type', 'principal_id']);
+    expect(columns.every((c) => c.notnull === 1)).toBe(true);
+    const indexes = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'board_shares' AND name NOT LIKE 'sqlite_%'").all();
+    expect(indexes).toEqual([{ name: 'board_shares_principal' }]);
+    const keys = raw.prepare('PRAGMA foreign_key_list(board_shares)').all() as { table: string; from: string; to: string; on_delete: string }[];
+    expect(keys).toMatchObject([{ table: 'boards', from: 'board_id', to: 'id', on_delete: 'CASCADE' }]);
+    expect(raw.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'board_shares%'").get()).toEqual({ n: 2 });
+
+    run("DELETE FROM boards WHERE id = 'b1'");
+    expect(raw.prepare('SELECT COUNT(*) AS n FROM board_shares').get()).toEqual({ n: 0 });
     raw.close();
   });
 
@@ -592,13 +646,23 @@ const MATRIX = {
   teamMemberAndBoardTeamSharedViewer: ['owner', 'owner', 'editor', 'viewer'],
   sharedUserViewerAndSharedTeamEditor: ['owner', 'owner', 'editor', 'editor'],
   sharedUserEditorAndSharedTeamViewer: ['owner', 'owner', 'editor', 'editor'],
+  creatorAndSharedCommenter: ['owner', 'owner', 'owner', 'owner'],
+  sharedUserCommenter: ['owner', 'owner', 'commenter', 'commenter'],
+  sharedTeamCommenter: ['owner', 'owner', 'commenter', 'commenter'],
+  teamMemberAndSharedCommenter: ['owner', 'owner', 'editor', 'commenter'],
+  teamAdminAndSharedCommenter: ['owner', 'owner', 'owner', 'commenter'],
+  teamMemberAndBoardTeamSharedCommenter: ['owner', 'owner', 'editor', 'commenter'],
+  sharedUserViewerAndSharedTeamCommenter: ['owner', 'owner', 'commenter', 'commenter'],
+  sharedUserCommenterAndSharedTeamViewer: ['owner', 'owner', 'commenter', 'commenter'],
+  sharedUserCommenterAndSharedTeamEditor: ['owner', 'owner', 'editor', 'editor'],
+  sharedUserEditorAndSharedTeamCommenter: ['owner', 'owner', 'editor', 'editor'],
 } as const satisfies Record<string, Expected>;
 
 const WS_ROLES: WsRole[] = ['owner', 'admin', 'member', 'guest'];
 const scenarios = Object.keys(MATRIX) as Scenario[];
 
 type Ctx = { d: Dir; x: { id: string }; boardTeam: { id: string }; crew: { id: string } };
-type Level = 'editor' | 'viewer';
+type Level = 'editor' | 'commenter' | 'viewer';
 
 const shareUser = (c: Ctx, role: Level) => c.d.shareBoard('b', { principalType: 'user', principalId: c.x.id, role });
 const shareCrew = (c: Ctx, role: Level) => {
@@ -636,6 +700,37 @@ const SETUP: Record<Scenario, (c: Ctx) => void> = {
     shareUser(c, 'editor');
     shareCrew(c, 'viewer');
   },
+  creatorAndSharedCommenter: (c) => shareUser(c, 'commenter'),
+  sharedUserCommenter: (c) => shareUser(c, 'commenter'),
+  sharedTeamCommenter: (c) => shareCrew(c, 'commenter'),
+  teamMemberAndSharedCommenter: (c) => {
+    c.d.addTeamMember(c.boardTeam.id, c.x.id, 'member');
+    shareUser(c, 'commenter');
+  },
+  teamAdminAndSharedCommenter: (c) => {
+    c.d.addTeamMember(c.boardTeam.id, c.x.id, 'admin');
+    shareUser(c, 'commenter');
+  },
+  teamMemberAndBoardTeamSharedCommenter: (c) => {
+    c.d.addTeamMember(c.boardTeam.id, c.x.id, 'member');
+    c.d.shareBoard('b', { principalType: 'team', principalId: c.boardTeam.id, role: 'commenter' });
+  },
+  sharedUserViewerAndSharedTeamCommenter: (c) => {
+    shareUser(c, 'viewer');
+    shareCrew(c, 'commenter');
+  },
+  sharedUserCommenterAndSharedTeamViewer: (c) => {
+    shareUser(c, 'commenter');
+    shareCrew(c, 'viewer');
+  },
+  sharedUserCommenterAndSharedTeamEditor: (c) => {
+    shareUser(c, 'commenter');
+    shareCrew(c, 'editor');
+  },
+  sharedUserEditorAndSharedTeamCommenter: (c) => {
+    shareUser(c, 'editor');
+    shareCrew(c, 'commenter');
+  },
 };
 
 // Board 'b' belongs to the board team and is created by C (so C administers that team), unless the scenario makes X the creator.
@@ -645,7 +740,7 @@ function fixture(scenario: Scenario, wsRole: WsRole) {
   const c = user(d, 'c@example.com');
   const boardTeam = d.createTeam({ name: 'Board team', creatorId: c.id })!;
   const crew = d.createTeam({ name: 'Crew', creatorId: c.id })!;
-  const xCreates = scenario === 'creator' || scenario === 'creatorAndSharedViewer';
+  const xCreates = scenario === 'creator' || scenario === 'creatorAndSharedViewer' || scenario === 'creatorAndSharedCommenter';
   d.createBoard({ id: 'b', title: 'B', ownerId: xCreates ? x.id : c.id, teamId: boardTeam.id });
   SETUP[scenario]({ d, x, boardTeam, crew });
   return { d, x };
@@ -682,6 +777,24 @@ describe('boardRole matrix', () => {
     expect(d.boardRole('b', 'nope')).toBeNull();
     expect(d.boardRole(undefined as unknown as string, a.id)).toBeNull();
     expect(d.boardRole('b', undefined as unknown as string)).toBeNull();
+  });
+
+  it('ranks viewer below commenter below editor below owner, whichever way the shares are made', () => {
+    const d = open();
+    const c = user(d, 'c@example.com');
+    const x = user(d, 'x@example.com');
+    d.createBoard({ id: 'b', title: 'B', ownerId: c.id });
+    const roleAfter = (role: Level) => {
+      d.shareBoard('b', { principalType: 'user', principalId: x.id, role });
+      return d.boardRole('b', x.id);
+    };
+    expect(roleAfter('viewer')).toBe('viewer');
+    expect(roleAfter('commenter')).toBe('commenter');
+    expect(roleAfter('editor')).toBe('editor');
+    expect(roleAfter('commenter')).toBe('commenter');
+    expect(roleAfter('viewer')).toBe('viewer');
+    d.shareBoard('b', { principalType: 'user', principalId: c.id, role: 'viewer' });
+    expect(d.boardRole('b', c.id)).toBe('owner');
   });
 
   it('follows team changes immediately', () => {
@@ -744,6 +857,14 @@ describe('listBoardsFor', () => {
     d.shareBoard('t1-board', { principalType: 'user', principalId: bob.id, role: 'viewer' });
     d.shareBoard('deleted-shared', { principalType: 'user', principalId: alice.id, role: 'editor' });
     d.shareBoard('deleted-shared', { principalType: 'user', principalId: guest.id, role: 'editor' });
+    // commenter shares: above a viewer share (either way round), below an editor share or team membership, never reviving a deleted board
+    d.shareBoard('unrelated', { principalType: 'user', principalId: carol.id, role: 'commenter' });
+    d.shareBoard('bob-personal', { principalType: 'team', principalId: t3.id, role: 'commenter' });
+    d.shareBoard('t2-board', { principalType: 'user', principalId: alice.id, role: 'commenter' });
+    d.shareBoard('shared-to-team', { principalType: 'user', principalId: guest.id, role: 'commenter' });
+    d.shareBoard('t2-shared-to-t1', { principalType: 'user', principalId: carol.id, role: 'commenter' });
+    d.shareBoard('shared-editor', { principalType: 'team', principalId: t3.id, role: 'commenter' });
+    d.shareBoard('deleted-personal', { principalType: 'user', principalId: carol.id, role: 'commenter' });
     d.deleteBoard('deleted-personal');
     d.deleteBoard('deleted-team');
     d.deleteBoard('deleted-shared');
@@ -786,8 +907,11 @@ describe('listBoardsFor', () => {
       't1-board': 'editor',
       't1-by-carol': 'owner',
       't3-board': 'owner',
-      't2-shared-to-t1': 'viewer',
+      't2-shared-to-t1': 'commenter',
       'shared-to-team': 'viewer',
+      'unrelated': 'commenter',
+      'bob-personal': 'commenter',
+      'shared-editor': 'commenter',
     });
     expect(list('bob')).toEqual({
       'bob-personal': 'owner',
@@ -799,7 +923,12 @@ describe('listBoardsFor', () => {
       'shared-editor': 'owner',
       'unrelated': 'owner',
     });
-    expect(list('guest')).toEqual({ 'shared-to-guest': 'viewer', 'shared-editor': 'editor', 'shared-to-team': 'viewer' });
+    expect(list('guest')).toEqual({
+      'shared-to-guest': 'viewer',
+      'shared-editor': 'editor',
+      'shared-to-team': 'commenter',
+      'bob-personal': 'commenter',
+    });
     expect(list('guestMember')).toEqual({ 't2-shared-to-t1': 'viewer' });
     expect(list('nobody')).toEqual({});
     expect(list('disabled')).toEqual({});

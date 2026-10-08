@@ -26,7 +26,13 @@ The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqli
 
 - **Workspace** (one workspace per instance): `owner`, `admin`, `member`, `guest`. Guests only see boards shared with them and cannot create teams.
 - **Team**: `admin`, `member`. A team admin invites and removes people in that team and manages its boards.
-- **Board**: `owner`, `editor`, `viewer`.
+- **Board**: `owner`, `editor`, `commenter`, `viewer` (highest first).
+
+| Board role | Board room | Comments room |
+| --- | --- | --- |
+| `owner`, `editor` | read and write | read and write |
+| `commenter` | read only | read and write |
+| `viewer` | read only | read only |
 
 Effective board role for a user, highest wins:
 
@@ -36,11 +42,11 @@ Effective board role for a user, highest wins:
 4. An explicit share (`board_shares`) to the user, or to a team the user belongs to: the shared role.
 5. Otherwise: no access.
 
-`viewer` is read-only: the relay drops their document updates (awareness, i.e. cursors, still works). Deleted boards (`deleted_at` set) have no access for anyone except workspace admins.
+`viewer` is read-only: the relay drops their document updates (awareness, i.e. cursors, still works). `commenter` can read the board and write its comments room (see `docs/comments.md`), but not the board itself. Shares can grant `editor`, `commenter` or `viewer`; team members are `editor`s of their team's boards. Deleted boards (`deleted_at` set) have no access for anyone except workspace admins.
 
 ## Data model (SQLite)
 
-`PRAGMA foreign_keys = ON`, `PRAGMA journal_mode = WAL`, schema version in `PRAGMA user_version` with ordered migrations. All timestamps are integer milliseconds since the epoch. Ids are random URL-safe strings (16 bytes, base64url) except boards, whose id is the board's room id chosen by the client (`^[A-Za-z0-9_-]{1,64}$`).
+`PRAGMA foreign_keys = ON`, `PRAGMA journal_mode = WAL`, schema version in `PRAGMA user_version` with ordered migrations (migration 2 rebuilds `board_shares` to allow the `commenter` role, keeping existing shares). All timestamps are integer milliseconds since the epoch. Ids are random URL-safe strings (16 bytes, base64url) except boards, whose id is the board's room id chosen by the client (`^[A-Za-z0-9_-]{1,64}$`).
 
 ```
 users(id PK, email UNIQUE COLLATE NOCASE, name, role CHECK(owner|admin|member|guest), disabled INT DEFAULT 0, created_at)
@@ -50,7 +56,7 @@ teams(id PK, name, archived INT DEFAULT 0, created_at)
 team_members(team_id FK, user_id FK, role CHECK(admin|member), PRIMARY KEY(team_id,user_id))
 invites(id PK, token_hash UNIQUE, team_id FK, role CHECK(admin|member), created_by FK, expires_at, max_uses NULL, uses DEFAULT 0, revoked INT DEFAULT 0, created_at)
 boards(id PK, title, owner_id FK, team_id NULL FK, created_at, updated_at, deleted_at NULL)
-board_shares(board_id FK, principal_type CHECK(user|team), principal_id, role CHECK(editor|viewer), PRIMARY KEY(board_id,principal_type,principal_id))
+board_shares(board_id FK, principal_type CHECK(user|team), principal_id, role CHECK(editor|commenter|viewer), PRIMARY KEY(board_id,principal_type,principal_id))
 audit(id INTEGER PK AUTOINCREMENT, ts, actor_id NULL, action, detail JSON)
 ```
 
@@ -92,11 +98,11 @@ GET    /api/invites/:token              public  {team: {id,name}, role}  (404 wh
 POST   /api/invites/:token/accept       -> 200 {team: {id,name}, role}   (signed-in user joins the team; same validity rules as at sign-in; idempotent: joining a team you are already in changes nothing and uses no invite slot; promotes a member to admin only when the invite grants admin)
 
 GET    /api/boards                      -> [{id,title,teamId,ownerId,role,createdAt,updatedAt}]   (every board the user can access)
-POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)
+POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` (or `<id>~comments.yjs`) already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)
 PATCH  /api/boards/:id {title?, teamId?: string|null} -> board  (board owner or workspace admin; moving into a team requires membership of that team)
 DELETE /api/boards/:id                  -> 204  (soft delete; board owner or workspace admin)
 GET    /api/boards/:id/shares           -> [{principalType, principalId, name, role}]
-POST   /api/boards/:id/shares {principalType: 'user'|'team', principalId, role: 'editor'|'viewer'} -> 201
+POST   /api/boards/:id/shares {principalType: 'user'|'team', principalId, role: 'editor'|'commenter'|'viewer'} -> 201
 DELETE /api/boards/:id/shares/:principalType/:principalId -> 204
 
 GET    /api/members                     -> [{id,email,name,role,disabled,teams:[{id,name,role}]}]   (workspace admin)
@@ -106,7 +112,9 @@ DELETE /api/members/:id                 -> 204  (admins; same owner rules; revok
 
 Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`).
 
-## Relay (WebSocket `/sync/<boardId>`)
+## Relay (WebSocket `/sync/<boardId>` and `/sync/<boardId>~comments`)
+
+Every board has a sibling comments room, `<boardId>~comments` (room names match `^[A-Za-z0-9_-]{1,64}(~comments)?$`, anything else is a `400`; the room file is `<DATA_DIR>/<room name>.yjs`). Authorisation always runs on the **board** id, for both room kinds, with the same close codes; only the write rule differs (below).
 
 In accounts mode the relay decides **before it touches the room** (`getRoom()` must not run for an unauthorised connection: it would load or create the room file on disk). The HTTP upgrade still completes first so the browser can read a close code:
 
@@ -118,10 +126,10 @@ In accounts mode the relay decides **before it touches the room** (`getRoom()` m
 
 While connected:
 
-- Sync messages of type update / step 2 from a `viewer` are dropped (the viewer is also told nothing; their local edits stay local). Sync step 1 (state vector request) is always allowed. Awareness always works.
-- The role is re-resolved at most every 5 seconds per connection, and immediately after any access change, so a demoted editor becomes read-only without reconnecting and a member who lost access is disconnected with close code **`4410` (`access_removed`)**. `4410` is the only code the client may treat as "your access was taken away"; it is distinct from `4403` (no access at join time).
-- Revoking a session closes its sockets with `4401`. Disabling or removing a user, removing them from a team, unsharing a board or deleting a board closes the affected sockets with `4410`.
-- When a room is saved, the relay copies the board title from the document (`doc.getMap('meta').get('name')`) into `boards.title` and bumps `updated_at`.
+- Sync messages of type update / step 2 are dropped unless the connection may write that room: the board room needs `owner` or `editor`, the comments room `owner`, `editor` or `commenter`. Nobody is told; their local edits stay local. Sync step 1 (state vector request) is always allowed. Awareness always works.
+- The role is re-resolved at most every 5 seconds per connection, and immediately after any access change, so a demoted editor becomes read-only (or comment-only) without reconnecting and a member who lost access is disconnected with close code **`4410` (`access_removed`)**. `4410` is the only code the client may treat as "your access was taken away"; it is distinct from `4403` (no access at join time).
+- Revoking a session closes its sockets with `4401`. Disabling or removing a user, removing them from a team, unsharing a board or deleting a board closes the affected sockets with `4410`. A user's sockets for the board room and the comments room are treated alike.
+- When a board room is saved, the relay copies the board title from the document (`doc.getMap('meta').get('name')`) into `boards.title` and bumps `updated_at`.
 
 Open mode (`MIRA_AUTH=off`) skips all of this.
 
@@ -178,7 +186,7 @@ Directory {
   createBoard({id, title, ownerId, teamId?}): Board;  getBoard(id): Board | null   // includes soft-deleted rows
   listBoardsFor(user: User): BoardWithRole[]                                // honours the role rules; excludes soft-deleted
   updateBoard(id, {title?, teamId?}): Board;  deleteBoard(id): void;  touchBoard(id, {title?}): void
-  boardRole(boardId, userId): 'owner' | 'editor' | 'viewer' | null          // THE role-resolution function (rules in "Roles")
+  boardRole(boardId, userId): 'owner' | 'editor' | 'commenter' | 'viewer' | null          // THE role-resolution function (rules in "Roles")
   shareBoard(boardId, {principalType, principalId, role}): void;  unshareBoard(boardId, principalType, principalId): void
   listShares(boardId): Share[]
   // audit
@@ -200,7 +208,7 @@ export function createAuth({directory, config, mailer, now = Date.now}): {
 
 // server/api.mjs
 export function createApi({directory, auth, config, roomExists, events}): { handle(req, res): Promise<boolean> }
-//   roomExists(boardId): boolean   (is there a room file on disk)
+//   roomExists(boardId): boolean   (is there a room file on disk, for the board or its comments room)
 //   events: { emit(name, payload) } with names 'session-revoked' {userId, sessionId?}, 'access-changed' {userId?, boardId?}, 'user-removed' {userId}
 ```
 
