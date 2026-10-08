@@ -6,7 +6,7 @@ import { h, icon } from './dom';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
 import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
-import { NOTHING_HIDDEN, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
+import { NOTHING_HIDDEN, escapeHidesBar, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
 
 const MODE_LABEL: Record<StepMode, string> = {
   write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
@@ -157,20 +157,37 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   });
   app.on('readonly', render);
   app.on('presence', () => refreshAnswered(app, bar));
-  // Esc hides the idle groups on screen. Not while typing, with a popover or dialog open, or during a session.
+  // A press not yet released is a drag in progress, which the board handles.
+  let pressed = false;
+  const onPress = () => { pressed = true; };
+  const onRelease = () => { pressed = false; };
+  // Capture phase: this runs before the board's own Esc handler, so a key that hides the bar is not also acted on by the board.
   const onEscape = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || e.defaultPrevented || app.flow.state().active >= 0) return;
-    const a = document.activeElement as HTMLElement | null;
-    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
-    if (document.querySelector('.popover, .modal-back')) return;
     const f = app.flow.state();
     const latest = app.flow.polls.latestClosed();
     const shown = idleShown(hidden(), { hasSteps: f.steps.length > 0, latestClosedId: latest?.id ?? null });
     if (!shown.session && !shown.poll) return;
+    const a = document.activeElement as HTMLElement | null;
+    const typing = !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+    const free = escapeHidesBar({
+      selected: app.selection.length, tool: app.tool.kind, dragging: app.dragging || pressed, editing: app.editor.active,
+      threadOpen: app.openThreadId !== null, typing, dialogOpen: !!document.querySelector('[role="dialog"]'),
+    });
+    if (!free) return;
+    e.stopImmediatePropagation();
     update((cur) => hideShown(cur, shown, latest?.id ?? null));
   };
-  window.addEventListener('keydown', onEscape);
-  app.onDestroy(() => window.removeEventListener('keydown', onEscape));
+  window.addEventListener('pointerdown', onPress, true);
+  window.addEventListener('pointerup', onRelease, true);
+  window.addEventListener('pointercancel', onRelease, true);
+  window.addEventListener('keydown', onEscape, true);
+  app.onDestroy(() => {
+    window.removeEventListener('pointerdown', onPress, true);
+    window.removeEventListener('pointerup', onRelease, true);
+    window.removeEventListener('pointercancel', onRelease, true);
+    window.removeEventListener('keydown', onEscape, true);
+  });
   // A timer that already ran out before this screen opened does not chime.
   const t0 = app.flow.state().timer;
   if (t0 && app.flow.remainingMs() === 0) lastBeepKey = `${t0.startedAt}:${t0.durationMs}`;

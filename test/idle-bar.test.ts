@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   NOTHING_HIDDEN, hideSession, hideShown, hidePoll, idleHiddenKey, idleShown, loadIdleHidden, parseIdleHidden,
-  reopenPollResults, reopenSession, saveIdleHidden, showPoll, showSession,
+  escapeHidesBar, reopenPollResults, reopenSession, saveIdleHidden, showPoll, showSession, type EscapeContext,
 } from '../src/ui/idle-bar';
 
 function fakeStorage() {
@@ -88,6 +88,38 @@ describe('reopening', () => {
   it('hidePoll and hideSession set only their own group', () => {
     expect(hidePoll(NOTHING_HIDDEN, 'p9')).toEqual({ session: false, poll: 'p9' });
     expect(hideSession(NOTHING_HIDDEN)).toEqual({ session: true, poll: null });
+  });
+});
+
+describe('escapeHidesBar', () => {
+  const free: EscapeContext = {
+    selected: 0, tool: 'select', dragging: false, editing: false, threadOpen: false, typing: false, dialogOpen: false,
+  };
+
+  it('takes Esc when the board has nothing for it to do', () => {
+    expect(escapeHidesBar(free)).toBe(true);
+  });
+
+  it('leaves Esc to the board while objects are selected', () => {
+    expect(escapeHidesBar({ ...free, selected: 2 })).toBe(false);
+  });
+
+  it('leaves Esc to the board while a tool other than select is pending', () => {
+    expect(escapeHidesBar({ ...free, tool: 'pen' })).toBe(false);
+  });
+
+  it('leaves Esc to the board during a drag or a text edit', () => {
+    expect(escapeHidesBar({ ...free, dragging: true })).toBe(false);
+    expect(escapeHidesBar({ ...free, editing: true })).toBe(false);
+  });
+
+  it('leaves Esc to an open comment', () => {
+    expect(escapeHidesBar({ ...free, threadOpen: true })).toBe(false);
+  });
+
+  it('leaves Esc to a field or a dialog that has focus or is open', () => {
+    expect(escapeHidesBar({ ...free, typing: true })).toBe(false);
+    expect(escapeHidesBar({ ...free, dialogOpen: true })).toBe(false);
   });
 });
 

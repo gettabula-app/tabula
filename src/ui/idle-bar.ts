@@ -32,6 +32,22 @@ export function parseIdleHidden(raw: string | null): IdleHidden {
   }
 }
 
+/** What the board and the open panels would do with Esc. */
+export interface EscapeContext {
+  selected: number;
+  tool: string;
+  dragging: boolean;
+  editing: boolean;
+  threadOpen: boolean;
+  typing: boolean;
+  dialogOpen: boolean;
+}
+
+/** Esc hides the idle bar only when nothing else would take it: no selection, the select tool, no drag or text edit, no open comment, no field or dialog in focus. */
+export function escapeHidesBar(c: EscapeContext): boolean {
+  return c.selected === 0 && c.tool === 'select' && !c.dragging && !c.editing && !c.threadOpen && !c.typing && !c.dialogOpen;
+}
+
 /** The groups that show: Session ready when the board has steps, poll results when a closed poll is not hidden. */
 export function idleShown(hidden: IdleHidden, board: { hasSteps: boolean; latestClosedId: Id | null }): IdleShown {
   return {
