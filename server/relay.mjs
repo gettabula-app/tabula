@@ -782,12 +782,16 @@ const pinger = setInterval(() => {
   }
 }, PING_MS);
 
-function shutdown() {
+// A backup run in progress is told to stop first and given a moment to let go of the database before it is closed;
+// the rooms are saved while it winds down, and the wait is short so a supervisor's kill timeout is never reached.
+const BACKUP_STOP_WAIT_MS = 2000;
+async function shutdown() {
   clearInterval(pinger);
   cloud?.close();
-  backup?.stop();
+  const stopping = backup?.stop();
   for (const r of rooms.values()) r.save();
   history.close();
+  if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
   directory?.close();
   process.exit(0);
 }
