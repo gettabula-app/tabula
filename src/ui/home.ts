@@ -1,14 +1,16 @@
+import './home.css';
 import './home-teams.css';
 import { h, icon } from './dom';
 import { dialog, fmtAgo, popover, toast } from './common';
 import { deleteBoard, listBoards, relayUrl, touchBoard, type BoardEntry } from '../sync';
 import { newId } from '../store';
 import { readBoardFile, type ImportedBoard } from '../exporters';
-import { TEMPLATES } from '../templates';
-import { ApiError, api, type Me, type ServerBoard, type Team } from '../api';
-import { cacheServerBoards, cachedServerBoards, setSignedOut, signOut, type AuthState } from '../auth';
+import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
+import { cacheServerBoards, cachedServerBoards, setSignedOut, type AuthState } from '../auth';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
+import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
+import { featuredTemplates, useTemplate } from './templates-page';
 
 // Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
 const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
@@ -18,7 +20,14 @@ export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
 }
 
-const LEDE = 'An infinite whiteboard that lives on your device. Sketch, diagram and run workshops offline; sync with your team when you are online.';
+const LEDE = 'An infinite whiteboard that lives on your device and works offline.';
+const UNTITLED = 'Untitled board';
+const ACCESS: Record<BoardRole, string> = { owner: 'Owner', editor: 'Editor', commenter: 'Can comment', viewer: 'View only' };
+
+const emptyLine = (text: string) => h('p', { class: 'home-empty' }, text);
+const normalise = (query: string) => query.trim().toLowerCase();
+const matches = (title: string, query: string) => !query || title.toLowerCase().includes(query);
+const noMatch = (query: string) => emptyLine(`No boards match “${query.trim()}”.`);
 
 /** Board list: everything here lives in this browser; nothing is fetched. Accounts mode adds the workspace view. */
 export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { mode: 'open' }): void {
@@ -28,41 +37,42 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
     return;
   }
   document.title = 'Mira';
-  const boards = listBoards();
   const fileInput = boardFileInput(nav);
+  const groups = h('div', { class: 'home-groups' });
+  let query = '';
 
-  const list = boards.length
-    ? h('ul', { class: 'board-list', 'aria-label': 'Your boards' }, ...boards.map((b) => h('li', null,
-      h('a', { href: `#/b/${b.id}`, class: 'board-link' },
-        h('span', { class: 'board-title' }, b.name || 'Untitled board'),
-        h('span', { class: 'board-meta' }, `Edited ${fmtAgo(b.updatedAt)}`)),
-      h('button', {
-        class: 'icon-btn', title: 'Delete board from this device', 'aria-label': `Delete ${b.name}`,
-        onclick: () => confirmDeleteLocal(b, () => renderHome(root, nav)),
-      }, icon('trash', 18)),
-    )))
-    : h('div', { class: 'home-empty' }, h('p', null, 'No boards on this device yet. Create one, or open a link someone shared with you.'));
+  const paint = () => {
+    const q = normalise(query);
+    const all = listBoards();
+    const shown = all.filter((b) => matches(b.name || UNTITLED, q));
+    groups.replaceChildren(
+      !all.length ? emptyLine('No boards on this device yet. Create one, or open a link someone shared with you.')
+        : !shown.length ? noMatch(query)
+          : boardTable('Your boards', shown.map((b) => localRow(b, paint)), 'plain'));
+  };
 
   const relay = relayUrl();
-  root.replaceChildren(h('main', { class: 'home' },
-    h('header', { class: 'home-head' },
-      h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),
-      h('p', { class: 'home-lede' }, LEDE),
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn primary big', onclick: () => nav.open(newId()) }, icon('plus', 18), 'New board'),
-        h('button', { class: 'btn big', onclick: () => fileInput.click() }, icon('upload', 18), 'Open a board file'),
-        fileInput,
-      ),
-    ),
-    h('section', { class: 'home-col' },
-      h('h2', null, 'Your boards'),
-      list,
-    ),
-    templatesSection(nav),
-    h('footer', { class: 'home-foot muted small' },
-      relay ? `Boards are stored in this browser and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.` : 'Sync is off. Boards are stored in this browser only.',
-      ' Fonts by Fontshare. Icons by Iconify.'),
-  ));
+  root.replaceChildren(h('div', { class: 'home-page' },
+    createTopbar('boards', null),
+    h('main', { class: 'home' },
+      h('header', { class: 'home-head' },
+        h('div', { class: 'home-titlerow' },
+          h('h1', { class: 'home-title' }, 'Boards'),
+          h('div', { class: 'home-actions' },
+            h('button', { class: 'btn primary', onclick: () => nav.open(newId()) }, 'New board'),
+            h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Import file'),
+            fileInput)),
+        h('p', { class: 'home-lede' }, LEDE),
+        searchField('Search boards', query, (value) => {
+          query = value;
+          paint();
+        })),
+      groups,
+      templateStrip(nav, false),
+      pageFooter(relay
+        ? `Boards are stored in this browser and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.`
+        : 'Sync is off. Boards are stored in this browser only.'))));
+  paint();
 }
 
 interface AccountData {
@@ -78,11 +88,8 @@ interface AccountView {
   /** Creation and sharing actions that need the server are disabled. */
   down: boolean;
   refresh: () => void;
-}
-
-/** The signed-in user, when the home screen shows the workspace view. */
-function accountMe(auth: AuthState): Me | null {
-  return auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+  /** The search text outlives repaints, so a refresh does not clear it. */
+  query: { value: string };
 }
 
 function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boolean) {
@@ -90,11 +97,16 @@ function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boo
   let seq = 0;
   let data: AccountData | null = null;
   let page: HTMLElement | null = null;
+  const query = { value: '' };
   const banner = createWorkspaceBanner();
 
   const paint = () => {
-    page = accountPage({ nav, me, down: offline || data?.unreachable === true, refresh }, data);
+    const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'search' && root.contains(document.activeElement);
+    page = accountPage({ nav, me, down: offline || data?.unreachable === true, refresh, query }, data);
     root.replaceChildren(banner.el, page);
+    const input = typing ? page.querySelector<HTMLInputElement>('.home-search .input') : null;
+    input?.focus();
+    input?.setSelectionRange(input.value.length, input.value.length);
   };
   const refresh = () => {
     const mine = ++seq;
@@ -133,114 +145,133 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
   const { nav, me, down } = v;
   const admin = me.user.role === 'owner' || me.user.role === 'admin';
   const fileInput = boardFileInput(nav);
-  const boards = data?.boards ?? [];
+  const groups = h('div', { class: 'home-groups' });
+  const paintGroups = () => groups.replaceChildren(...accountGroups(v, data));
+  paintGroups();
 
-  const sections: HTMLElement[] = [];
-  if (data) {
-    const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
-    for (const team of teams) sections.push(teamSection(v, team, boards));
-    sections.push(personalSection(v, boards));
-    // Boards of teams not listed here (archived, or not a member) and personal boards of others would otherwise be invisible.
-    const listed = new Set(teams.map((t) => t.id));
-    const others = boards.filter((b) => (b.teamId === null ? !isMine(b, me.user.id) : !listed.has(b.teamId)));
-    if (others.length) sections.push(sharedSection(v, others, admin ? 'Other boards' : 'Shared with you'));
-    const serverIds = new Set(boards.map((b) => b.id));
-    const local = listBoards().filter((b) => !serverIds.has(b.id));
-    if (local.length) sections.push(deviceSection(v, local, data.teams.filter((t) => t.role !== null && !t.archived)));
-  } else {
-    sections.push(h('section', { class: 'home-col' }, h('p', { class: 'muted' }, 'Loading…')));
+  return h('div', { class: 'home-page' },
+    createTopbar('boards', me),
+    h('main', { class: 'home' },
+      h('header', { class: 'home-head' },
+        h('div', { class: 'home-titlerow' },
+          h('h1', { class: 'home-title' }, 'Boards'),
+          h('div', { class: 'home-actions' },
+            h('button', { class: 'btn primary', disabled: down, onclick: () => nav.open(newId()) }, 'New board'),
+            h('button', { class: 'btn', disabled: down, onclick: () => fileInput.click() }, 'Import file'),
+            me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
+            admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null,
+            fileInput)),
+        down ? h('p', { class: 'home-note', role: 'status' }, 'You are offline. Showing the last list from this device.') : null,
+        searchField('Search boards', v.query.value, (value) => {
+          v.query.value = value;
+          paintGroups();
+        })),
+      groups,
+      templateStrip(nav, down),
+      pageFooter('Boards sync through your workspace server when it is reachable.')));
+}
+
+function accountGroups(v: AccountView, data: AccountData | null): HTMLElement[] {
+  if (!data) return [h('p', { class: 'home-empty', role: 'status' }, 'Loading…')];
+  const q = normalise(v.query.value);
+  const boards = data.boards.filter((b) => matches(b.title || UNTITLED, q));
+  const groups: HTMLElement[] = [];
+
+  const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
+  for (const team of teams) {
+    const own = boards.filter((b) => b.teamId === team.id);
+    if (!q || own.length) groups.push(teamSection(v, team, own));
   }
+  const personal = boards.filter((b) => b.teamId === null && isMine(b, v.me.user.id));
+  if (!q || personal.length) groups.push(personalSection(v, personal));
+  // Boards of teams not listed here (archived, or not a member) and personal boards of others would otherwise be invisible.
+  const listed = new Set(teams.map((t) => t.id));
+  const others = boards.filter((b) => (b.teamId === null ? !isMine(b, v.me.user.id) : !listed.has(b.teamId)));
+  if (others.length) groups.push(sharedSection(v, others, v.me.user.role === 'owner' || v.me.user.role === 'admin' ? 'Other boards' : 'Shared with you'));
+  const serverIds = new Set(data.boards.map((b) => b.id));
+  const local = listBoards().filter((b) => !serverIds.has(b.id) && matches(b.name || UNTITLED, q));
+  if (local.length) groups.push(deviceSection(v, local, data.teams.filter((t) => t.role !== null && !t.archived)));
+  return groups.length ? groups : [noMatch(v.query.value)];
+}
 
-  return h('main', { class: 'home' },
-    h('header', { class: 'home-head' },
-      h('div', { class: 'home-userbar' },
-        h('span', { class: 'muted' }, me.user.name || me.user.email),
-        me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
-        admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null,
-        admin ? h('button', { class: 'btn', onclick: () => { location.hash = '#/admin'; } }, 'Admin') : null,
-        h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out'),
-      ),
-      h('div', { class: 'wordmark', 'aria-label': 'Mira' }, 'Mira'),
-      h('p', { class: 'home-lede' }, LEDE),
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn primary big', disabled: down, onclick: () => nav.open(newId()) }, icon('plus', 18), 'New board'),
-        h('button', { class: 'btn big', disabled: down, onclick: () => fileInput.click() }, icon('upload', 18), 'Open a board file'),
-        fileInput,
-      ),
-      down ? h('p', { class: 'muted' }, 'You are offline. Showing the last list from this device.') : null,
-    ),
-    ...sections,
-    templatesSection(nav, down),
-    h('footer', { class: 'home-foot muted small' },
-      'Boards sync through your workspace server when it is reachable.',
-      ' Fonts by Fontshare. Icons by Iconify.'),
-  );
+function group(heading: string, badge: string | null, actions: (HTMLElement | null)[], body: HTMLElement) {
+  return h('section', { class: 'board-group', 'aria-label': heading },
+    h('div', { class: 'group-head' },
+      h('h2', null, heading),
+      badge ? h('span', { class: 'badge' }, badge) : null,
+      actions.some(Boolean) ? h('div', { class: 'group-actions' }, ...actions) : null),
+    body);
 }
 
 function teamSection(v: AccountView, team: Team, boards: ServerBoard[]) {
-  return h('section', { class: 'home-col' },
-    h('div', { class: 'team-head' },
-      h('h2', null, team.name),
-      team.role ? h('span', { class: 'role-badge' }, team.role === 'admin' ? 'Admin' : 'Member') : null,
-      h('button', { class: 'btn', disabled: v.down, onclick: () => openTeamManager(team, v.me, v.refresh) }, 'Manage'),
-      team.role ? h('button', { class: 'btn', disabled: v.down, onclick: () => v.nav.open(newId(), { teamId: team.id }) }, 'New board') : null,
-    ),
-    serverBoardList(v, boards.filter((b) => b.teamId === team.id)),
-  );
+  return group(team.name, team.role ? (team.role === 'admin' ? 'Admin' : 'Member') : null, [
+    h('button', { class: 'btn sm', disabled: v.down, onclick: () => openTeamManager(team, v.me, v.refresh) }, 'Manage'),
+    team.role ? h('button', { class: 'btn sm', disabled: v.down, onclick: () => v.nav.open(newId(), { teamId: team.id }) }, 'New board') : null,
+  ], serverBoardList(v, boards, team.name));
 }
 
 function personalSection(v: AccountView, boards: ServerBoard[]) {
-  return h('section', { class: 'home-col' },
-    h('div', { class: 'team-head' },
-      h('h2', null, 'Personal'),
-      h('button', { class: 'btn', disabled: v.down, onclick: () => v.nav.open(newId()) }, 'New board'),
-    ),
-    serverBoardList(v, boards.filter((b) => b.teamId === null && isMine(b, v.me.user.id))),
-  );
+  return group('Personal', null, [
+    h('button', { class: 'btn sm', disabled: v.down, onclick: () => v.nav.open(newId()) }, 'New board'),
+  ], serverBoardList(v, boards, 'Personal'));
 }
 
 function sharedSection(v: AccountView, boards: ServerBoard[], heading: string) {
-  return h('section', { class: 'home-col' },
-    h('h2', null, heading),
-    serverBoardList(v, boards),
-  );
+  return group(heading, null, [], serverBoardList(v, boards, heading));
 }
 
-function serverBoardList(v: AccountView, boards: ServerBoard[]) {
-  if (!boards.length) return h('div', { class: 'home-empty' }, h('p', null, 'No boards yet. Create the first one.'));
-  return h('ul', { class: 'board-list', 'aria-label': 'Boards' }, ...[...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
-    const title = b.title || 'Untitled board';
-    return h('li', null,
-      h('a', { href: `#/b/${b.id}`, class: 'board-link' },
-        h('span', { class: 'board-title' }, title),
-        h('span', { class: 'board-meta' }, `Edited ${fmtAgo(b.updatedAt)}`)),
-      b.role === 'viewer' ? h('span', { class: 'role-badge view' }, 'View only') : null,
-      b.role === 'commenter' ? h('span', { class: 'role-badge view' }, 'Can comment') : null,
-      b.role === 'owner' ? h('button', {
-        class: 'icon-btn', title: 'Delete board', 'aria-label': `Delete ${title}`, disabled: v.down,
-        onclick: () => confirmDeleteBoard(v, b.id, title),
-      }, icon('trash', 18)) : null,
-    );
-  }));
+function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
+  if (!boards.length) return emptyLine('No boards yet. Create the first one.');
+  return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
+    const title = b.title || UNTITLED;
+    return {
+      id: b.id, title, updatedAt: b.updatedAt, role: b.role,
+      actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
+    };
+  }), 'access');
 }
 
 function deviceSection(v: AccountView, local: BoardEntry[], teams: Team[]) {
-  return h('section', { class: 'home-col' },
-    h('h2', null, 'On this device'),
-    h('ul', { class: 'board-list', 'aria-label': 'Boards on this device' }, ...local.map((b) => h('li', null,
-      h('a', { href: `#/b/${b.id}`, class: 'board-link' },
-        h('span', { class: 'board-title' }, b.name || 'Untitled board'),
-        h('span', { class: 'board-meta' }, `Edited ${fmtAgo(b.updatedAt)}`)),
-      h('button', {
-        class: 'btn', disabled: v.down,
-        onclick: (e: Event) => addToWorkspace(e.currentTarget as HTMLElement, b, v, teams),
-      }, 'Add to workspace'),
-      h('button', {
-        class: 'icon-btn', title: 'Delete board from this device', 'aria-label': `Delete ${b.name}`,
-        onclick: () => confirmDeleteLocal(b, v.refresh),
-      }, icon('trash', 18)),
-    ))),
-  );
+  return group('On this device', null, [], boardTable('On this device', local.map((b) => localRow(b, v.refresh, (anchor) => addToWorkspace(anchor, b, v, teams), v.down)), 'device'));
+}
+
+interface BoardRow {
+  id: string;
+  title: string;
+  updatedAt: number;
+  role?: BoardRole;
+  actions: (HTMLElement | null)[];
+}
+
+/** A board stored in this browser: delete, and in accounts mode also Add to workspace. */
+function localRow(b: BoardEntry, done: () => void, add?: (anchor: HTMLElement) => void, down = false): BoardRow {
+  return {
+    id: b.id, title: b.name || UNTITLED, updatedAt: b.updatedAt,
+    actions: [
+      add ? h('button', { class: 'btn sm', disabled: down, onclick: (e: Event) => add(e.currentTarget as HTMLElement) }, 'Add to workspace') : null,
+      deleteButton(`Delete ${b.name || UNTITLED}`, 'Delete board from this device', false, () => confirmDeleteLocal(b, done)),
+    ],
+  };
+}
+
+function deleteButton(label: string, title: string, disabled: boolean, onclick: () => void) {
+  return h('button', { class: 'icon-btn', title, 'aria-label': label, disabled, onclick }, icon('trash', 18));
+}
+
+/** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */
+function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
+  return h('div', { class: `board-table ${kind}` },
+    h('div', { class: 'board-head', 'aria-hidden': 'true' },
+      h('span', null, 'Name'),
+      h('span', null, 'Edited'),
+      kind === 'access' ? h('span', null, 'Access') : null,
+      h('span')),
+    h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => h('li', { class: 'board-row' },
+      h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title)),
+      h('span', { class: 'board-sub' },
+        h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
+        r.role ? h('span', { class: 'board-access' }, h('span', { class: 'badge' }, ACCESS[r.role])) : null),
+      h('span', { class: 'board-actions' }, ...r.actions)))));
 }
 
 function addToWorkspace(anchor: HTMLElement, b: BoardEntry, v: AccountView, teams: Team[]) {
@@ -286,22 +317,17 @@ function confirmDeleteLocal(b: BoardEntry, done: () => void) {
   ]);
 }
 
-async function signOutAndLeave() {
-  // The local session is cleared even when the server cannot be reached.
-  await signOut().catch(() => undefined);
-  location.hash = '#/signin';
-}
-
-function templatesSection(nav: HomeNav, disabled = false) {
-  return h('section', { class: 'home-col' },
-    h('h2', null, 'Run a team exercise'),
-    h('ul', { class: 'template-grid' }, ...TEMPLATES.map((t) => h('li', null,
-      h('button', { class: 'template-card', disabled, onclick: () => nav.open(newId(), { template: t.id }) },
-        h('span', { class: 'tpl-cat' }, t.category),
-        h('span', { class: 'tpl-name' }, t.name),
-        h('span', { class: 'tpl-desc' }, t.description)),
-    ))),
-  );
+/** A short list of templates under the boards; the templates page has the rest. */
+function templateStrip(nav: HomeNav, down: boolean) {
+  return h('section', { class: 'home-templates' },
+    h('div', { class: 'group-head' },
+      h('h2', null, 'Start from a template'),
+      h('div', { class: 'group-actions' },
+        h('a', { class: 'link-more', href: '#/templates' }, 'All templates', h('span', { 'aria-hidden': 'true' }, '→')))),
+    h('ul', { class: 'tpl-strip' }, ...featuredTemplates().map((t) => h('li', null,
+      h('button', { class: 'tpl-tile', disabled: down, onclick: () => useTemplate(nav, t.id) },
+        h('span', { class: 'tpl-label' }, t.category),
+        h('span', { class: 'tpl-title' }, t.name))))));
 }
 
 function boardFileInput(nav: HomeNav) {

@@ -5,6 +5,7 @@ import type { AuthState } from '../src/auth';
 type Mode = AuthState['mode'];
 
 const home: Route = { name: 'home' };
+const templates: Route = { name: 'templates' };
 const signin: Route = { name: 'signin' };
 const board = (id: string): Route => ({ name: 'board', id });
 const verify = (token: string): Route => ({ name: 'verify', token });
@@ -24,6 +25,11 @@ describe('parseRoute', () => {
     ['#/b/has space', home],
     ['#/b/abc/extra', home],
     ['#/signin', signin],
+    ['#/templates', templates],
+    ['#/templates/', home],
+    ['#/templates/extra', home],
+    ['#/templates?x=1', home],
+    ['#/template', home],
     ['#/admin', admin('overview')],
     ['#/admin/', admin('overview')],
     ['#/admin/overview', admin('overview')],
@@ -60,6 +66,7 @@ describe('resolveRoute', () => {
     ['#/admin', home],
     ['#/admin/members', home],
     ['#/b/abc', board('abc')],
+    ['#/templates', templates],
     ['#/', home],
   ])('open mode: %j', (hash, route) => {
     expect(resolveRoute(hash, 'open')).toEqual(route);
@@ -74,6 +81,9 @@ describe('resolveRoute', () => {
     ['signed-in', '#/signin/verify?token=abc', verify('abc')],
     ['signed-out', '#/invite/abc', invite('abc')],
     ['offline', '#/b/abc', board('abc')],
+    ['signed-in', '#/templates', templates],
+    ['signed-out', '#/templates', templates],
+    ['offline', '#/templates', templates],
   ])('%s: %j', (mode, hash, route) => {
     expect(resolveRoute(hash, mode)).toEqual(route);
   });
@@ -82,6 +92,7 @@ describe('resolveRoute', () => {
 describe('needsSignIn', () => {
   const routes: [string, Route][] = [
     ['home', home],
+    ['templates', templates],
     ['board', board('abc')],
     ['signin', signin],
     ['verify', verify('abc')],
@@ -93,7 +104,7 @@ describe('needsSignIn', () => {
     open: [],
     offline: [],
     'signed-in': [],
-    'signed-out': ['home', 'board', 'admin'],
+    'signed-out': ['home', 'templates', 'board', 'admin'],
   };
 
   it.each(Object.entries(gated).flatMap(([mode, names]) =>
@@ -110,6 +121,7 @@ describe('returnHash', () => {
     ['#/b/abc', '#/b/abc'],
     ['#/', null],
     ['', null],
+    ['#/templates', null],
     ['#/signin', null],
     ['#/signin/verify?token=abc', null],
     ['#/invite/abc', null],
