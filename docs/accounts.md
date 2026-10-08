@@ -16,6 +16,7 @@ Open mode must keep working unchanged, including every existing test.
 | `MIRA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
 | `MIRA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`MIRA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `MIRA_MAIL_WEBHOOK_URL` |
 | `MIRA_MAIL_WEBHOOK_URL` | none | Target for `MIRA_MAIL=webhook` |
+| `MIRA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
 | `MIRA_MAIL_FROM` | `Mira <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
 | `MIRA_SMTP_URL` | none | SMTP connection for `MIRA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
 | `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |

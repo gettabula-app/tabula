@@ -49,6 +49,7 @@ export function loadConfig(env = process.env) {
     throw new Error('MIRA_MAIL_WEBHOOK_URL is required when MIRA_MAIL=webhook');
   }
 
+  const webhookToken = (env.MIRA_MAIL_WEBHOOK_TOKEN || '').trim() || null;
   const smtpUrl = (env.MIRA_SMTP_URL || '').trim() || null;
   if (mode === 'smtp') {
     if (!smtpUrl) throw new Error('MIRA_SMTP_URL is required when MIRA_MAIL=smtp (for example smtps://user:password@smtp.example.com:465)');
@@ -67,6 +68,6 @@ export function loadConfig(env = process.env) {
     loginTokenMs: 15 * 60 * 1000,
     dataDir,
     port,
-    mail: { mode, webhookUrl, smtpUrl, from: env.MIRA_MAIL_FROM || 'Mira <no-reply@localhost>' },
+    mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.MIRA_MAIL_FROM || 'Mira <no-reply@localhost>' },
   };
 }

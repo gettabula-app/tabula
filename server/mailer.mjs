@@ -5,7 +5,7 @@ import nodemailer from 'nodemailer';
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
 export function createMailer(config) {
-  const { mode, webhookUrl, smtpUrl, from } = config.mail;
+  const { mode, webhookUrl, webhookToken, smtpUrl, from } = config.mail;
   let transport = null;
 
   /**
@@ -24,7 +24,7 @@ export function createMailer(config) {
       if (!webhookUrl) throw new Error('mail webhook URL is not configured');
       const res = await fetch(webhookUrl, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(webhookToken ? { authorization: `Bearer ${webhookToken}` } : {}) },
         body: JSON.stringify({ to, subject, text, from, template, params }),
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
       });

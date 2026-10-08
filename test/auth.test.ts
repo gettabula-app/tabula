@@ -658,7 +658,7 @@ describe('loadConfig', () => {
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
-      mail: { mode: 'log', webhookUrl: null, smtpUrl: null, from: 'Mira <no-reply@localhost>' },
+      mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Mira <no-reply@localhost>' },
     });
   });
 
@@ -705,11 +705,12 @@ describe('loadConfig', () => {
     }
     expect(loadConfig({ DATA_DIR: '/var/lib/mira' }).dataDir).toBe(path.resolve('/var/lib/mira'));
 
-    expect(loadConfig({ MIRA_MAIL: 'file', MIRA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, smtpUrl: null, from: 'Me <me@x.io>' });
+    expect(loadConfig({ MIRA_MAIL: 'file', MIRA_MAIL_FROM: 'Me <me@x.io>' }).mail).toEqual({ mode: 'file', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Me <me@x.io>' });
     expect(loadConfig({ MIRA_MAIL: 'webhook', MIRA_MAIL_WEBHOOK_URL: 'https://hooks.example.com/mail' }).mail).toMatchObject({
       mode: 'webhook',
       webhookUrl: 'https://hooks.example.com/mail',
     });
+    expect(loadConfig({ MIRA_MAIL: 'webhook', MIRA_MAIL_WEBHOOK_URL: 'https://h.example.com', MIRA_MAIL_WEBHOOK_TOKEN: ' tok ' }).mail.webhookToken).toBe('tok');
     expect(() => loadConfig({ MIRA_MAIL: 'carrier-pigeon' })).toThrow('MIRA_MAIL must be one of');
     expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_MAIL_FROM: 'Mira <m@x.io>' })).toThrow('MIRA_SMTP_URL is required');
     expect(() => loadConfig({ MIRA_MAIL: 'smtp', MIRA_SMTP_URL: 'smtps://u:p@smtp.x.io:465' })).toThrow('MIRA_MAIL_FROM is required');
@@ -724,7 +725,7 @@ describe('loadConfig', () => {
 
 describe('mailer', () => {
   const msg = { to: 'a@example.com', subject: 'Hello', text: 'Line one\nLine two' };
-  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, smtpUrl: null, from: 'Mira <no-reply@localhost>', ...mail } });
+  const configFor = (mail: Record<string, unknown>, dataDir = os.tmpdir()) => ({ dataDir, mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Mira <no-reply@localhost>', ...mail } });
 
   it('logs a block to stdout in log mode', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -762,13 +763,20 @@ describe('mailer', () => {
     createTransport.mockRestore();
   });
 
+  it('sends the webhook token as a bearer header, and no header without one', async () => {
+    const { received, url } = await hook(200);
+    await createMailer(configFor({ mode: 'webhook', webhookUrl: url, webhookToken: 'secret-token' })).send(msg);
+    await createMailer(configFor({ mode: 'webhook', webhookUrl: url })).send(msg);
+    expect(received.map((r) => r.auth)).toEqual(['Bearer secret-token', undefined]);
+  });
+
   async function hook(status: number) {
-    const received: { method?: string; type?: string; body: unknown }[] = [];
+    const received: { method?: string; type?: string; auth?: string; body: unknown }[] = [];
     const server = http.createServer((req, res) => {
       let raw = '';
       req.on('data', (chunk) => (raw += chunk));
       req.on('end', () => {
-        received.push({ method: req.method, type: req.headers['content-type'], body: JSON.parse(raw) });
+        received.push({ method: req.method, type: req.headers['content-type'], auth: req.headers.authorization, body: JSON.parse(raw) });
         res.statusCode = status;
         res.end('{}');
       });
