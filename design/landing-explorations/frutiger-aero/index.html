@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula: a whiteboard for teams that think together</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams: sticky notes, connectors, facilitated exercises and live cursors. Open source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
+<style>
+/* Palette (the same hex values are used in every image brief)
+   navy #0A3A5C  ocean #0E7FD0  sky #4FB8F2  aqua #22D3E0  pale #E4F5FD
+   grass #5BC236  leaf #2E8B1F  white #FFFFFF  charcoal #12263A */
+:root{
+  --navy:#0A3A5C; --ocean:#0E7FD0; --sky:#4FB8F2; --aqua:#22D3E0; --pale:#E4F5FD;
+  --grass:#5BC236; --leaf:#2E8B1F; --white:#FFFFFF; --charcoal:#12263A;
+  --ink:#0A3A5C; --ink-2:#2B5470;
+  --font:"Nunito Sans","Frutiger","Segoe UI",system-ui,sans-serif;
+  /* type scale 1.25 */
+  --t-sm:.875rem; --t-0:1.0625rem; --t-1:1.3125rem; --t-2:1.65rem; --t-3:2.05rem; --t-4:2.6rem; --t-5:3.4rem;
+  --r:20px; --gut:24px; --max:1120px;
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:400 var(--t-0)/1.6 var(--font);color:var(--ink);background:linear-gradient(180deg,#fff 0,var(--pale) 100%);-webkit-font-smoothing:antialiased}
+img{max-width:100%;height:auto;display:block}
+h1,h2,h3,p{margin:0}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--navy);outline-offset:3px;border-radius:10px}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 var(--gut)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* buttons: glossy pills */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 28px;border-radius:999px;font:800 var(--t-0)/1 var(--font);text-decoration:none;color:var(--navy);position:relative;overflow:hidden;transition:transform .2s var(--ease),box-shadow .2s var(--ease);white-space:nowrap;isolation:isolate}
+.btn::after{content:"";position:absolute;left:6%;right:6%;top:3px;height:46%;border-radius:999px 999px 60% 60%/999px 999px 100% 100%;background:linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,.12));pointer-events:none;z-index:-1}
+.btn-primary{background:linear-gradient(180deg,#9BEA78 0,var(--grass) 55%,#4DB02C 100%);border:1px solid #3E9A22;box-shadow:0 6px 16px rgba(46,139,31,.35),inset 0 -3px 6px rgba(46,139,31,.25)}
+.btn-secondary{background:linear-gradient(180deg,#fff 0,#D9F1FC 100%);border:1px solid #8CCBEF;box-shadow:0 6px 16px rgba(14,127,208,.22),inset 0 -3px 6px rgba(79,184,242,.25)}
+.btn:hover{transform:translateY(-2px)}
+.btn-sm{min-height:44px;padding:0 20px;font-size:var(--t-sm)}
+
+/* glass */
+.glass{background:rgba(255,255,255,.82);border:1px solid rgba(255,255,255,.95);border-radius:var(--r);box-shadow:0 10px 30px rgba(10,58,92,.14),inset 0 1px 0 #fff;position:relative}
+.glass.blur{backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
+
+/* nav */
+.nav{position:absolute;top:16px;left:0;right:0;z-index:5}
+.nav .glass{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 10px 8px 22px;border-radius:999px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:var(--t-1);text-decoration:none;letter-spacing:-.01em}
+.brand i{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#fff 0,#BDF4F8 18%,var(--aqua) 45%,var(--ocean) 100%);box-shadow:0 2px 6px rgba(14,127,208,.5),inset 0 -2px 4px rgba(10,58,92,.25)}
+.links{display:flex;align-items:center;gap:6px;list-style:none;margin:0;padding:0}
+.links a{display:block;padding:10px 16px;border-radius:999px;font-weight:700;font-size:var(--t-sm);text-decoration:none;transition:background .2s}
+.links a:hover{background:rgba(79,184,242,.22)}
+.links a.btn{display:inline-flex;margin-left:6px;padding:0 20px;font-size:var(--t-sm);font-weight:800;color:var(--navy)}.links a.btn:hover{background:linear-gradient(180deg,#9BEA78 0,var(--grass) 55%,#4DB02C 100%)}
+
+/* hero */
+.bgimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+.hero .bgimg{object-position:50% 0}.final .bgimg{object-position:50% 100%}
+.hero{position:relative;background:#BFE6FA;padding:128px 0 120px;overflow:hidden;isolation:isolate}
+.hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:130px;background:linear-gradient(180deg,rgba(228,245,253,0),var(--pale));z-index:-1}
+.hero-copy{max-width:760px;margin:0 auto;padding:36px 40px 40px;text-align:center}
+.eyebrow{display:inline-block;font-weight:800;font-size:var(--t-sm);letter-spacing:.08em;text-transform:uppercase;color:var(--navy);background:linear-gradient(180deg,#fff,#CFF1F6);border:1px solid #9AD9E4;border-radius:999px;padding:6px 14px;margin-bottom:20px}
+h1{font-size:var(--t-5);line-height:1.08;font-weight:800;letter-spacing:-.025em;text-wrap:balance}
+.lede{margin:20px auto 0;max-width:56ch;font-size:var(--t-1);line-height:1.5;color:var(--ink-2)}
+.cta-row{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:28px}
+.note-sm{margin-top:18px;font-size:var(--t-sm);color:var(--ink-2)}
+
+.stage{position:relative;margin:48px auto 0;max-width:1000px}
+.frame{padding:12px;border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.55));border:1px solid #fff;box-shadow:0 30px 60px rgba(10,58,92,.28),0 0 0 6px rgba(255,255,255,.28)}
+.frame::before{content:"";position:absolute;inset:12px 12px auto;height:34%;border-radius:16px 16px 60% 60%/16px 16px 22% 22%;background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0));pointer-events:none;z-index:2}
+.board{position:relative;border-radius:18px;overflow:hidden;line-height:0}
+.board img{width:100%;height:auto}
+.board svg.ov{position:absolute;inset:0;width:100%;height:100%}
+.conn{fill:none;stroke:var(--ocean);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.dot{fill:var(--ocean);stroke:#fff;stroke-width:2}
+.arrow{fill:var(--ocean)}
+.cursor{position:absolute;transform:translate(-4px,-4px);z-index:3;line-height:1}
+.cursor svg{width:40px;height:40px;display:block;filter:drop-shadow(0 2px 3px rgba(10,58,92,.4))}
+.cursor b{position:absolute;left:30px;top:30px;white-space:nowrap;font:800 13px/1 var(--font);padding:6px 11px;border-radius:999px;border:2px solid #fff;color:var(--navy);box-shadow:0 2px 6px rgba(10,58,92,.3)}
+.cur-a svg path{fill:var(--grass)} .cur-a b{background:#C9F2B3}
+.cur-b svg path{fill:var(--aqua)} .cur-b b{background:#B9F3F7}
+
+/* bubbles (hero only) */
+.bubble{position:absolute;border-radius:50%;z-index:-1;pointer-events:none;background:radial-gradient(circle at 30% 26%,rgba(255,255,255,.95) 0,rgba(255,255,255,.35) 14%,rgba(255,255,255,.06) 48%,rgba(255,255,255,.28) 100%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.65),inset -6px -8px 14px rgba(34,211,224,.25),0 4px 14px rgba(14,127,208,.18)}
+.b1{width:64px;height:64px;left:6%;top:52%;animation:float 11s ease-in-out infinite}
+.b2{width:38px;height:38px;right:8%;top:60%;animation:float 9s ease-in-out -3s infinite}
+.b3{width:92px;height:92px;right:3%;top:30%;animation:float 14s ease-in-out -6s infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-16px)}}
+
+/* hero reveal, once */
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes pop{from{opacity:0;transform:translate(-4px,-4px) scale(.7)}to{opacity:1;transform:translate(-4px,-4px)}}
+.hero-copy{animation:up .6s var(--ease) both}
+.stage{animation:up .7s var(--ease) .15s both}
+.conn{stroke-dasharray:1;stroke-dashoffset:0;animation:draw .8s var(--ease) 1s both}
+.c2{animation-delay:1.3s}
+.dot,.arrow{animation:up .3s ease 1s both}
+.cursor{animation:pop .4s var(--ease) 1.7s both}
+
+/* sections */
+section{padding:112px 0}
+.sec-head{max-width:640px;margin:0 auto 56px;text-align:center}
+.sec-head.left{margin-left:0;text-align:left}
+h2{font-size:var(--t-4);line-height:1.12;font-weight:800;letter-spacing:-.02em;text-wrap:balance}
+.sec-head p{margin-top:16px;color:var(--ink-2);font-size:var(--t-1);line-height:1.5}
+h3{font-size:var(--t-1);line-height:1.25;font-weight:800;letter-spacing:-.01em}
+.card p,.step p{margin-top:8px;color:var(--ink-2)}
+html.js-anim .reveal{opacity:0;transform:translateY(14px);transition:opacity .4s var(--ease),transform .4s var(--ease)}
+html.js-anim .reveal.in{opacity:1;transform:none}
+
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{padding:32px 28px}
+.card img{width:72px;height:72px;margin-bottom:20px}
+
+/* local-first */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
+.local{background:linear-gradient(180deg,#F4FBFE,#CDEBFA)}
+#features{background:linear-gradient(180deg,#E4F5FD,#F4FBFE)}
+#sessions{background:linear-gradient(180deg,#CDEBFA,#F4FBFE)}
+#pricing{background:linear-gradient(180deg,#CDEBFA,#E4F5FD)}
+.ticks{list-style:none;margin:0;padding:32px 32px;display:grid;gap:20px}
+.ticks li{display:grid;grid-template-columns:32px 1fr;gap:16px;align-items:start}
+.ticks svg{width:32px;height:32px}
+.ticks strong{display:block;font-weight:800;font-size:var(--t-0)}
+.ticks span{color:var(--ink-2)}
+.themes{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+.chip{display:inline-flex;align-items:center;min-height:40px;padding:0 18px;border-radius:999px;font-weight:700;font-size:var(--t-sm);color:var(--navy);background:linear-gradient(180deg,#fff,#E1F4FD);border:1px solid #A9DBF4;box-shadow:0 3px 8px rgba(14,127,208,.14),inset 0 -2px 4px rgba(79,184,242,.2)}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;counter-reset:s}
+.step{padding:32px 28px}
+.num{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:var(--t-1);color:var(--navy);background:radial-gradient(circle at 34% 24%,#fff 0,#C9F5F8 22%,var(--aqua) 70%,#19B7C7 100%);box-shadow:0 4px 10px rgba(14,127,208,.35),inset 0 -3px 6px rgba(14,127,208,.25);margin-bottom:20px}
+
+/* templates */
+.templates{background:linear-gradient(180deg,#F4FBFE,#CDEBFA)}
+.chips{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:900px;margin:0 auto}
+.chips .chip{min-height:48px;padding:0 24px;font-size:var(--t-0)}
+
+/* pricing */
+.price-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:860px;margin:0 auto}
+.price{padding:40px 36px;display:flex;flex-direction:column}
+.price.feat{background:linear-gradient(180deg,#fff,#E9FADF);border-color:#B9EBA0}
+.price .amt{font-size:var(--t-4);font-weight:800;letter-spacing:-.02em;line-height:1.1;margin:16px 0 4px}
+.price .amt small{font-size:var(--t-0);font-weight:600;color:var(--ink-2);letter-spacing:0}
+.price ul{list-style:none;padding:0;margin:20px 0 28px;display:grid;gap:10px;color:var(--ink-2)}
+.price li{padding-left:28px;position:relative}
+.price li::before{content:"";position:absolute;left:0;top:.45em;width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d6f7c4,var(--grass) 70%);box-shadow:0 1px 3px rgba(46,139,31,.5)}
+.price .btn{margin-top:auto;align-self:flex-start}
+.tag{display:inline-block;align-self:flex-start;font-weight:800;font-size:var(--t-sm);letter-spacing:.06em;text-transform:uppercase}
+
+/* final CTA */
+.final{position:relative;background:#6FC3F0;padding:120px 0 200px;text-align:center;isolation:isolate}
+.final::before{content:"";position:absolute;left:0;right:0;top:0;height:90px;background:linear-gradient(180deg,#E4F5FD,rgba(228,245,253,0));z-index:-1}
+.final .glass{max-width:720px;margin:0 auto;padding:48px 40px}
+.final h2{font-size:var(--t-4)}
+.final p{margin:16px auto 0;max-width:48ch;color:var(--ink-2);font-size:var(--t-1);line-height:1.5}
+.final .cta-row{margin-top:28px}
+
+footer{background:var(--charcoal);color:#fff;padding:48px 0}
+footer .wrap{display:flex;flex-wrap:wrap;gap:16px 32px;justify-content:space-between;align-items:center}
+footer a{color:#fff;text-decoration:underline;text-underline-offset:3px}
+footer .brand i{box-shadow:none}
+footer small{font-size:var(--t-sm);color:#C9DCE8}
+.flinks{display:flex;gap:24px;flex-wrap:wrap;font-size:var(--t-sm);font-weight:600}
+
+@media (max-width:900px){
+  section{padding:72px 0}
+  h1{font-size:var(--t-4)} h2{font-size:var(--t-3)}
+  .grid3,.steps{grid-template-columns:1fr 1fr}
+  .split{grid-template-columns:1fr;gap:32px}
+}
+@media (max-width:640px){
+  :root{--gut:16px;--t-5:2.35rem;--t-4:2rem;--t-3:1.7rem}
+  section{padding:64px 0}
+  .links li:not(:last-child){display:none}
+  .nav .glass{padding-left:16px}
+  .hero{padding:104px 0 72px}
+  .hero .bgimg{object-position:62% 0}
+  .hero-copy{padding:28px 20px}
+  .lede{font-size:var(--t-0)}
+  .cta-row .btn{width:100%}
+  .stage{margin-top:32px}
+  .frame{padding:6px;border-radius:20px}
+  .frame::before{inset:6px 6px auto}
+  .board{border-radius:14px}
+  .cursor svg{width:36px;height:36px}
+  .cursor b{left:26px;top:26px;font-size:12px}
+  .grid3,.steps,.price-grid{grid-template-columns:1fr}
+  .sec-head{margin-bottom:36px}
+  .card,.step{padding:24px 20px}
+  .price{padding:28px 22px}
+  .final{padding:72px 0 140px}
+  .final .glass{padding:32px 20px}
+  .b1,.b3{display:none}
+  .chips .chip{min-height:44px;padding:0 18px;font-size:var(--t-sm)}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  html.js-anim .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <nav class="glass blur" aria-label="Main">
+      <a class="brand" href="#top"><i aria-hidden="true"></i>Tabula</a>
+      <ul class="links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#sessions">Sessions</a></li>
+        <li><a href="#templates">Templates</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a class="btn btn-primary btn-sm" href="#start">Start a board</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <picture><source media="(max-width:640px)" srcset="img/sky-m.webp"><img class="bgimg" src="img/sky.webp" width="2000" height="1125" alt="" aria-hidden="true" decoding="async"></picture>
+  <span class="bubble b1" aria-hidden="true"></span>
+  <span class="bubble b2" aria-hidden="true"></span>
+  <span class="bubble b3" aria-hidden="true"></span>
+  <div class="wrap">
+    <div class="glass hero-copy">
+      <span class="eyebrow">Local-first whiteboard</span>
+      <h1>A clear sky for your team's best thinking</h1>
+      <p class="lede">Tabula is an infinite whiteboard with sticky notes, connectors that stay attached and facilitated exercises. Every board lives in your browser first, so it works offline and syncs live when your team is around.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#start">Start a board</a>
+        <a class="btn btn-secondary" href="#pricing">See pricing</a>
+      </div>
+      <p class="note-sm">Open source. Self-host free, or use hosted workspaces.</p>
+    </div>
+
+    <div class="stage">
+      <div class="frame">
+        <div class="board">
+          <img src="img/board.webp" width="1586" height="680" alt="The Tabula board: a dark toolbar on the left and three frames of sticky notes, linked by connectors, with two teammates' named cursors.">
+          <svg class="ov" viewBox="0 0 1586 680" aria-hidden="true" focusable="false">
+            <path class="conn c1" pathLength="1" d="M540 507 H617 V438 H683"/>
+            <circle class="dot" cx="540" cy="507" r="6"/>
+            <path class="arrow" d="M694 438 L678 430 V446 Z"/>
+            <path class="conn c2" pathLength="1" d="M994 510 H1071 V435 H1138"/>
+            <circle class="dot" cx="994" cy="510" r="6"/>
+            <path class="arrow" d="M1149 435 L1133 427 V443 Z"/>
+          </svg>
+          <div class="cursor cur-a" style="left:22.6%;top:68.5%">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8.5-7.2 2L9.6 20z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><b>Maya</b>
+          </div>
+          <div class="cursor cur-b" style="left:77.8%;top:63%">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2l17 8.5-7.2 2L9.6 20z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><b>Jon</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 class="reveal">Everything a workshop needs, nothing in the way</h2>
+      <p class="reveal">Draw, group and run exercises on one canvas, with your team right there.</p>
+    </div>
+    <div class="grid3">
+      <article class="glass card">
+        <img src="img/ic-note.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Sticky notes and shapes</h3>
+        <p>Notes, shapes on a snapping grid, flowchart and UML shapes, icons, and Mermaid import for diagrams you already have.</p>
+      </article>
+      <article class="glass card">
+        <img src="img/ic-link.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Connectors that stay put</h3>
+        <p>Link ideas and move them around. Connectors stay attached to their shapes, however much you rearrange.</p>
+      </article>
+      <article class="glass card">
+        <img src="img/ic-timer.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Facilitated sessions</h3>
+        <p>Guide the room through session steps with timers, and keep everyone on the same part of the board.</p>
+      </article>
+      <article class="glass card">
+        <img src="img/ic-sync.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Live and offline</h3>
+        <p>See cursors, selections and presence in real time. Lose your connection and keep working; changes merge later.</p>
+      </article>
+      <article class="glass card">
+        <img src="img/ic-private.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Private writing</h3>
+        <p>Everyone writes first with notes hidden, then you reveal together. Less anchoring, more honest answers.</p>
+      </article>
+      <article class="glass card">
+        <img src="img/ic-vote.webp" width="100" height="100" alt="" aria-hidden="true" loading="lazy" decoding="async">
+        <h3>Dot voting and polls</h3>
+        <p>Decide as a group with dot voting and quick polls, and keep the discussion in comment threads.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="local" id="local">
+  <div class="wrap split">
+    <div>
+      <div class="sec-head left" style="margin-bottom:0">
+        <h2 class="reveal">Your board, in your browser first</h2>
+        <p class="reveal">Tabula keeps every board on your device and uses a small relay to sync when it can. No spinner between you and your idea.</p>
+      </div>
+      <div class="themes" role="list" aria-label="Themes">
+        <span class="chip" role="listitem">Default</span><span class="chip" role="listitem">Ayu</span><span class="chip" role="listitem">Kanagawa</span><span class="chip" role="listitem">Matrix</span><span class="chip" role="listitem">Evergreen</span>
+      </div>
+    </div>
+    <ul class="glass ticks reveal">
+      <li><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#5BC236"/><path d="M9 16.5l5 5 9-10" fill="none" stroke="#0A3A5C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><strong>Works offline</strong><span>Boards open and edit without a connection.</span></div></li>
+      <li><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#5BC236"/><path d="M9 16.5l5 5 9-10" fill="none" stroke="#0A3A5C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><strong>Syncs live when reachable</strong><span>Cursors, selections and presence through a small relay.</span></div></li>
+      <li><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#5BC236"/><path d="M9 16.5l5 5 9-10" fill="none" stroke="#0A3A5C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><strong>Merges later</strong><span>Edits made offline come together when you reconnect.</span></div></li>
+      <li><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#5BC236"/><path d="M9 16.5l5 5 9-10" fill="none" stroke="#0A3A5C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><strong>Open source</strong><span>Read the code, self-host with Docker, own your data.</span></div></li>
+    </ul>
+  </div>
+</section>
+
+<section id="sessions">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 class="reveal">Run a session in three steps</h2>
+      <p class="reveal">From a blank frame to a decision, with the room moving together.</p>
+    </div>
+    <div class="steps">
+      <div class="glass step"><div class="num" aria-hidden="true">1</div><h3>Set the steps</h3><p>Lay out the session as steps with timers, then guide the group from one to the next.</p></div>
+      <div class="glass step"><div class="num" aria-hidden="true">2</div><h3>Write privately</h3><p>Everyone adds notes that stay hidden until you reveal them all at once.</p></div>
+      <div class="glass step"><div class="num" aria-hidden="true">3</div><h3>Vote and decide</h3><p>Cluster the ideas, dot vote, run a poll and leave comments on what comes next.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="templates" id="templates">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 class="reveal">Start from a template</h2>
+      <p class="reveal">Fourteen ready-made boards for retros, planning and discovery.</p>
+    </div>
+    <div class="chips">
+      <span class="chip">Start / Stop / Continue</span><span class="chip">4Ls</span><span class="chip">Mad / Sad / Glad</span><span class="chip">Sailboat</span><span class="chip">Crazy 8s</span><span class="chip">Brainstorm + affinity map</span><span class="chip">Lean Coffee</span><span class="chip">Impact / Effort matrix</span><span class="chip">MoSCoW</span><span class="chip">User story map</span><span class="chip">Customer journey map</span><span class="chip">Empathy map</span><span class="chip">SWOT</span><span class="chip">Pre-mortem</span>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 class="reveal">Simple pricing</h2>
+      <p class="reveal">Pay for hosting, or run it yourself for free.</p>
+    </div>
+    <div class="price-grid">
+      <div class="glass price feat">
+        <span class="tag">Hosted</span>
+        <div class="amt">€8 <small>per seat / month</small></div>
+        <p>or €80 per seat per year, two months free.</p>
+        <ul><li>Your workspace at &lt;slug&gt;.gettabula.app</li><li>Teams and roles: owner, admin, member, guest</li><li>Email sign-in links</li></ul>
+        <a class="btn btn-primary" href="#start">Start a board</a>
+      </div>
+      <div class="glass price">
+        <span class="tag">Self-hosted</span>
+        <div class="amt">Free <small>forever</small></div>
+        <p>Open source, run it on your own server.</p>
+        <ul><li>Deploy with Docker</li><li>Your data stays with you</li><li>Same board and sessions</li></ul>
+        <a class="btn btn-secondary" href="https://github.com/gettabula-app/tabula">View on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="start">
+  <img class="bgimg" src="img/sky.webp" width="2000" height="1125" alt="" aria-hidden="true" loading="lazy" decoding="async">
+  <div class="wrap">
+    <div class="glass">
+      <h2>Open a board and start thinking</h2>
+      <p>No setup. Your first board is ready in your browser, and your team can join when you share the link.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#top">Start a board</a>
+        <a class="btn btn-secondary" href="#pricing">See pricing</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div><a class="brand" href="#top" style="text-decoration:none"><i aria-hidden="true"></i>Tabula</a><br><small>gettabula.app</small></div>
+    <div class="flinks"><a href="https://github.com/gettabula-app/tabula">GitHub: gettabula-app/tabula</a><a href="#pricing">Pricing</a><a href="#templates">Templates</a></div>
+    <small>© 2026 Tabula</small>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var els=document.querySelectorAll('.reveal');
+  var reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce||!('IntersectionObserver' in window))return;
+  document.documentElement.classList.add('js-anim');
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.2});
+  els.forEach(function(el){io.observe(el)});
+})();
+</script>
+</body>
+</html>

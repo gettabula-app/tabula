@@ -8,87 +8,120 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.documentElement.classList.add("js-anim")</script>
 <style>
-:root{--ink:#1F1B3D;--ac:#4B3BFF;--ac-d:#3427D6;--li:#E7E1FF;--mi:#BFEBDB;--pe:#FFCDB8;--bu:#FFE69A;--sk:#CBE3FF;--pk:#FFC2D9;--bg:#F8F6FF;--mut:#4A4570}
+:root{
+ --ink:#1F1B3D;--ac:#4B3BFF;--ac-d:#3427D6;--li:#E7E1FF;--mi:#BFEBDB;--pe:#FFCDB8;--bu:#FFE69A;--sk:#CBE3FF;--pk:#FFC2D9;--co:#FF6B4A;--bg:#F8F6FF;--mut:#4A4570;
+ /* type scale 1.25 from 18px */
+ --t-sm:.8125rem;--t-0:1.125rem;--t-1:1.4rem;--t-2:1.75rem;--t-3:2.2rem;--t-4:2.75rem;--t-5:3.45rem;--t-6:4.3rem;
+ /* 8px spacing */
+ --s1:8px;--s2:16px;--s3:24px;--s4:32px;--s5:40px;--s6:48px;--s8:64px;--s12:96px;--s14:112px;
+ --sec:var(--s14);--ease:cubic-bezier(.2,.7,.2,1);
+}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;font-family:"Outfit",system-ui,sans-serif;color:var(--ink);background:var(--bg);font-size:18px;line-height:1.55;overflow-x:hidden}
-img,svg{display:block;max-width:100%}
+body{margin:0;font-family:"Outfit",system-ui,sans-serif;color:var(--ink);background:var(--bg);font-size:var(--t-0);line-height:1.6;overflow-x:hidden}
+img{display:block;max-width:100%;height:auto}
 a{color:inherit}
 :focus-visible{outline:3px solid var(--ac);outline-offset:3px;border-radius:6px}
-.wrap{width:min(1180px,100% - 40px);margin-inline:auto}
-header{position:sticky;top:0;z-index:10;background:rgba(248,246,255,.92);backdrop-filter:blur(8px)}
-.nav{display:flex;align-items:center;justify-content:space-between;padding:14px 0}
-.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:24px;text-decoration:none;letter-spacing:-.02em}
-.logo i{width:30px;height:30px;border-radius:50% 50% 50% 8px;background:var(--ac);display:block;position:relative}
-.logo i::after{content:"";position:absolute;right:-4px;top:-4px;width:12px;height:12px;border-radius:50%;background:#FF6B4A}
-.nav ul{display:flex;gap:26px;list-style:none;margin:0;padding:0}
+.wrap{width:min(1200px,100% - 48px);margin-inline:auto}
+h1,h2,h3{font-weight:800;margin:0;text-wrap:balance}
+h1{font-size:clamp(2.6rem,5.2vw,var(--t-6));line-height:1.04;letter-spacing:-.035em}
+h2{font-size:clamp(2rem,3.6vw,var(--t-4));line-height:1.1;letter-spacing:-.03em}
+h3{font-size:var(--t-2);line-height:1.18;letter-spacing:-.02em;font-weight:700}
+p{margin:0}
+.lede{font-size:var(--t-1);line-height:1.5;color:var(--mut);max-width:34ch}
+.sub{font-size:var(--t-0);color:var(--mut);max-width:56ch;margin-top:var(--s2)}
+.small{font-size:var(--t-sm);color:var(--mut)}
+/* header */
+header{position:sticky;top:0;z-index:10;background:rgba(248,246,255,.94)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:80px}
+.logo{display:flex;align-items:center;gap:var(--s1);font-weight:800;font-size:var(--t-2);text-decoration:none;letter-spacing:-.02em}
+.logo i{width:32px;height:32px;border-radius:50% 50% 50% 8px;background:var(--ac);display:block}
+.nav ul{display:flex;gap:var(--s4);list-style:none;margin:0;padding:0}
 .nav ul a{text-decoration:none;font-weight:500}
-.nav ul a:hover{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:5px;text-decoration-color:var(--ac)}
-.btn{display:inline-block;font:600 18px/1 "Outfit",sans-serif;padding:17px 28px;border-radius:999px;text-decoration:none;background:var(--ac);color:#fff;transition:transform .15s,background .15s;border:3px solid var(--ac)}
-.btn:hover{background:var(--ac-d);transform:translateY(-2px)}
+.nav ul a:hover{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:6px;text-decoration-color:var(--ac)}
+/* buttons: one primary, one secondary, one size */
+.btn{display:inline-flex;align-items:center;justify-content:center;font:600 var(--t-0)/1 "Outfit",sans-serif;height:56px;padding:0 var(--s4);border-radius:999px;text-decoration:none;background:var(--ac);color:#fff;border:2px solid var(--ac);transition:background .15s,color .15s,border-color .15s}
+.btn:hover{background:var(--ac-d);border-color:var(--ac-d)}
 .btn.alt{background:transparent;color:var(--ink);border-color:var(--ink)}
 .btn.alt:hover{background:var(--ink);color:#fff}
-.btn.sm{padding:11px 20px;font-size:16px}
-.hero{display:grid;grid-template-columns:1fr 1.25fr;gap:20px;align-items:center;padding:36px 0 70px}
-h1{font-size:clamp(42px,5.6vw,76px);line-height:1.02;letter-spacing:-.035em;margin:0 0 22px;font-weight:800}
-h1 span{display:inline-block;background:var(--bu);padding:0 .18em;border-radius:.25em;transform:rotate(-1.5deg)}
-.lede{font-size:21px;max-width:30ch;color:var(--mut);margin:0 0 32px}
-.ctas{display:flex;gap:14px;flex-wrap:wrap}
-.fine{font-size:15px;color:var(--mut);margin-top:18px}
-.hero-art{width:100%;height:auto}
-section{padding:70px 0}
-h2{font-size:clamp(32px,4vw,52px);line-height:1.08;letter-spacing:-.03em;margin:0 0 14px;font-weight:800}
-.sub{max-width:52ch;color:var(--mut);margin:0 0 44px}
-.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
-.card{border-radius:36px 36px 36px 8px;padding:24px 24px 32px;display:flex;flex-direction:column}
-.card:nth-child(2){border-radius:36px 36px 8px 36px}
-.card h3{font-size:26px;line-height:1.15;margin:8px 0 10px;letter-spacing:-.02em}
-.card p{margin:0;color:#34305A}
+.btn.sm{height:48px;padding:0 var(--s3);font-size:1rem}
+.ctas{display:flex;gap:var(--s2);flex-wrap:wrap}
+/* hero */
+.hero{display:grid;grid-template-columns:5fr 7fr;gap:var(--s6);align-items:center;padding:var(--s6) 0 var(--s12)}
+.hero h1{margin-bottom:var(--s3)}
+.hero .lede{margin-bottom:var(--s4)}
+.hero .small{margin-top:var(--s3)}
+.stage{position:relative;padding:var(--s4) 0 0}
+.stage::before{content:"";position:absolute;inset:0 -24px -24px 56px;background:var(--li);border-radius:64px 64px 64px 16px}
+.stage img{position:relative;width:100%}
+/* sections */
+section{padding:var(--sec) 0}
+.head{margin-bottom:var(--s8)}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4)}
+.card{border-radius:40px 40px 40px 8px;padding:var(--s3) var(--s3) var(--s5);display:flex;flex-direction:column}
+.card:nth-child(2){border-radius:40px 40px 8px 40px}
+.card figure{margin:0 0 var(--s3);aspect-ratio:3/2}
+.card figure img{width:100%;height:100%;object-fit:contain}
+.final figure img{margin-inline:auto;max-height:420px;width:auto}
+.card h3{margin-bottom:var(--s1)}
+.card p{color:#34305A}
 .card.a{background:var(--pe)}.card.b{background:var(--mi)}.card.c{background:var(--sk)}
-.vig{width:100%;height:auto}
-.toolbelt{display:flex;flex-wrap:wrap;gap:12px;margin-top:44px}
-.toolbelt span{background:#fff;border-radius:999px;padding:10px 20px;font-weight:500;box-shadow:0 3px 0 var(--ink)}
-.tpl{background:var(--ink);color:#fff;border-radius:60px 60px 0 0;padding:80px 0 90px}
+.toolbelt{display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s8) 0 0;padding:0;list-style:none}
+.toolbelt li{background:#fff;border-radius:999px;padding:var(--s1) var(--s3);font-weight:500;box-shadow:0 3px 0 var(--ink)}
+.tpl{background:var(--ink);color:#fff;border-radius:64px 64px 0 0}
 .tpl .sub{color:#D3CEF5}
-.chips{display:flex;flex-wrap:wrap;gap:14px;list-style:none;margin:0;padding:0}
-.chip{padding:14px 24px;border-radius:999px;font-weight:600;font-size:19px;color:var(--ink);transform:rotate(var(--r))}
-.chip:nth-child(3n){border-radius:18px 999px 999px 18px}
+.chips{display:flex;flex-wrap:wrap;gap:var(--s2);list-style:none;margin:0;padding:0}
+.chip{padding:var(--s2) var(--s3);border-radius:999px;font-weight:600;font-size:var(--t-0);line-height:1.2;color:var(--ink);rotate:var(--r)}
+.chip:nth-child(3n){border-radius:16px 999px 999px 16px}
 .c0{background:var(--li)}.c1{background:var(--mi)}.c2{background:var(--pe)}.c3{background:var(--bu)}.c4{background:var(--sk)}.c5{background:var(--pk)}
-.price{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}
-.pcard{background:#fff;border-radius:44px;padding:40px;box-shadow:10px 10px 0 var(--ac);border:3px solid var(--ink)}
-.pcard h3{margin:0;font-size:24px}
-.big{font-size:76px;font-weight:800;letter-spacing:-.04em;line-height:1;margin:10px 0 2px}
-.big small{font-size:22px;font-weight:500;letter-spacing:0;color:var(--mut)}
-.pcard ul{padding:0;margin:22px 0 30px;list-style:none}
-.pcard li{padding-left:34px;position:relative;margin:8px 0}
-.pcard li::before{content:"";position:absolute;left:0;top:7px;width:18px;height:18px;border-radius:50%;background:var(--mi)}
-.pcard li::after{content:"";position:absolute;left:6px;top:11px;width:5px;height:9px;border:solid var(--ink);border-width:0 2.5px 2.5px 0;transform:rotate(40deg) scale(.8)}
-.free{background:var(--li);border-radius:44px;padding:40px;display:flex;flex-direction:column;justify-content:center}
-.free h3{margin:0 0 8px;font-size:34px;letter-spacing:-.02em}
-.free p{margin:0 0 18px}
-.free code{background:#fff;padding:3px 10px;border-radius:8px;font-size:16px}
-.final{display:grid;grid-template-columns:1.1fr 1fr;align-items:center;gap:30px;background:var(--ac);color:#fff;border-radius:60px;padding:50px 56px}
-.final .cta-art{max-height:380px;margin-inline:auto}
-.final h2{color:#fff}
-.final p{max-width:40ch;margin:0 0 28px;color:#EEEBFF}
-.final .btn{background:var(--bu);color:var(--ink);border-color:var(--bu)}
-.final .btn.alt{background:transparent;color:#fff;border-color:#fff}
-.final .btn.alt:hover{background:#fff;color:var(--ac)}
-footer{padding:50px 0 40px;font-size:16px}
-.foot{display:flex;flex-wrap:wrap;gap:16px 40px;justify-content:space-between;align-items:center}
-.foot nav{display:flex;gap:24px;flex-wrap:wrap}
+.price{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);align-items:stretch}
+.pcard{background:#fff;border-radius:40px;padding:var(--s6);box-shadow:8px 8px 0 var(--ac);border:2px solid var(--ink)}
+.pcard h3,.free h3{margin-bottom:var(--s2)}
+.big{font-size:var(--t-6);font-weight:800;letter-spacing:-.04em;line-height:1}
+.big small{font-size:var(--t-1);font-weight:500;letter-spacing:0;color:var(--mut)}
+.pcard .big+p{margin-top:var(--s1);color:var(--mut)}
+.pcard ul{padding:0;margin:var(--s3) 0 var(--s4);list-style:none}
+.pcard li{padding-left:var(--s4);position:relative;margin:var(--s1) 0}
+.pcard li::before{content:"";position:absolute;left:0;top:6px;width:18px;height:18px;border-radius:50%;background:var(--mi)}
+.pcard li::after{content:"";position:absolute;left:6px;top:9px;width:5px;height:9px;border:solid var(--ink);border-width:0 2.5px 2.5px 0;transform:rotate(40deg) scale(.8)}
+.free{background:var(--li);border-radius:40px;padding:var(--s6);display:flex;flex-direction:column;justify-content:center;align-items:flex-start}
+.free p{margin-bottom:var(--s2);color:#34305A}
+.free code{background:#fff;padding:2px var(--s1);border-radius:8px;font-size:1rem;overflow-wrap:anywhere}
+.free .btn{margin-top:var(--s1)}
+.final{display:grid;grid-template-columns:1.1fr 1fr;align-items:center;gap:var(--s4);background:var(--bu);border-radius:64px;padding:var(--s8) var(--s8) var(--s8) var(--s8)}
+.final p{max-width:40ch;margin:var(--s2) 0 var(--s4);font-size:var(--t-1);line-height:1.5}
+.final .btn.alt:hover{background:var(--ink);color:#fff}
+.final figure{margin:0}
+footer{padding:var(--s6) 0 var(--s5);font-size:1rem}
+.foot{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s5);justify-content:space-between;align-items:center}
+.foot nav{display:flex;gap:var(--s3);flex-wrap:wrap}
+footer .logo{font-size:var(--t-1)}
+footer .logo i{width:24px;height:24px}
 @media (max-width:900px){
- .hero{grid-template-columns:1fr;padding-top:16px}
- .cards,.price,.final{grid-template-columns:1fr}
- .final{padding:36px 26px;border-radius:40px}
+ :root{--sec:var(--s8)}
+ .nav{height:64px}
  .nav ul{display:none}
- .lede{max-width:none}
+ .hero{grid-template-columns:1fr;gap:var(--s4);padding:var(--s3) 0 var(--s8)}
+ .stage::before{inset:0 -12px -12px 24px;border-radius:40px 40px 40px 12px}
+ .cards,.price,.final{grid-template-columns:1fr}
+ .head{margin-bottom:var(--s5)}
+ .final{padding:var(--s5) var(--s3);border-radius:40px}
  .tpl{border-radius:40px 40px 0 0}
- .pcard,.free{padding:28px}
- .big{font-size:60px}
+ .pcard,.free{padding:var(--s4) var(--s3)}
+ .big{font-size:var(--t-5)}
+ .btn{height:52px;padding:0 var(--s3)}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+/* motion: transform/opacity only, once; content visible without JS */
+@keyframes bob{0%,100%{translate:0 0}50%{translate:0 -8px}}
+@keyframes settle{0%{translate:0 0}40%{translate:0 -8px}100%{translate:0 0}}
+.js-anim .rv{opacity:0;translate:0 24px;transition:opacity .6s var(--ease) var(--d,0s),translate .6s var(--ease) var(--d,0s)}
+.js-anim .rv.in{opacity:1;translate:0 0}
+.js-anim .hero-img.in img{animation:bob 8s ease-in-out 1s infinite}
+.js-anim .card figure.in img{animation:settle 1.6s ease-in-out .5s 1}
+.js-anim .final figure.in img{animation:settle 1.6s ease-in-out .5s 1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
@@ -102,62 +135,72 @@ footer{padding:50px 0 40px;font-size:16px}
 <main id="top">
  <div class="wrap hero">
   <div>
-   <h1>Think together on <span>one endless</span> board.</h1>
-   <p class="lede">Tabula is a whiteboard for teams that run real sessions: write privately, reveal together, vote, decide. It lives in your browser and works offline.</p>
-   <div class="ctas"><a class="btn" href="https://gettabula.app">Start a board</a><a class="btn alt" href="#pricing">See pricing</a></div>
-   <p class="fine">Open source. Self-host for free or use a hosted workspace.</p>
+   <h1 class="rv">Think together on one endless board.</h1>
+   <p class="lede rv" style="--d:.08s">Tabula is a whiteboard for teams that run real sessions: write privately, reveal together, vote, decide. It lives in your browser and works offline.</p>
+   <div class="ctas rv" style="--d:.16s"><a class="btn" href="https://gettabula.app">Start a board</a><a class="btn alt" href="#pricing">See pricing</a></div>
+   <p class="small rv" style="--d:.24s">Open source. Self-host for free or use a hosted workspace.</p>
   </div>
-  <svg viewBox="0 0 900 560" class="hero-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="450" cy="300" r="270" fill="#E7E1FF"/><path transform="translate(120 90) rotate(-20)" d="M-46 0 A46 46 0 0 1 46 0 Z" fill="#FFCDB8"/><path transform="translate(800 110) rotate(25)" d="M-40 0 A40 40 0 0 1 40 0 Z" fill="#BFEBDB"/><path d="M40 300 q10 -9 20 0 q10 9 20 0 q10 -9 20 0 q10 9 20 0 q10 -9 20 0" fill="none" stroke="#4B3BFF" stroke-width="5" stroke-linecap="round"/><path d="M770 430 q10 -9 20 0 q10 9 20 0 q10 -9 20 0 q10 9 20 0" fill="none" stroke="#FF6B4A" stroke-width="5" stroke-linecap="round"/><path d="M829 250H851M840 239V261" stroke="#4B3BFF" stroke-width="5" stroke-linecap="round"/><path d="M60 70H80M70 60V80" stroke="#FF6B4A" stroke-width="5" stroke-linecap="round"/><circle cx="860" cy="60" r="12" fill="#FFE69A"/><circle cx="30" cy="430" r="9" fill="#4B3BFF"/><ellipse cx="450" cy="526" rx="420" ry="16" fill="#1F1B3D" fill-opacity=".10"/><defs><pattern id="hg" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.6" fill="#D9D3F5"/></pattern></defs><rect x="198" y="50" width="520" height="330" rx="22" fill="#2B2140" fill-opacity=".12"/><rect x="190" y="40" width="520" height="330" rx="22" fill="#fff"/><rect x="190" y="40" width="520" height="330" rx="22" fill="url(#hg)"/><g transform="translate(215 70) rotate(-3)"><rect width="92" height="92" rx="5" fill="#FFE69A"/><rect x="13.799999999999999" y="23.0" width="64.39999999999999" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="41.4" width="46.0" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="59.800000000000004" width="55.199999999999996" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(325 66) rotate(2)"><rect width="86" height="86" rx="5" fill="#FFC2D9"/><rect x="12.9" y="21.5" width="60.199999999999996" height="5.16" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.9" y="38.7" width="43.0" height="5.16" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.9" y="55.9" width="51.6" height="5.16" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(430 84) rotate(-2)"><rect width="92" height="92" rx="5" fill="#BFEBDB"/><rect x="13.799999999999999" y="23.0" width="64.39999999999999" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="41.4" width="46.0" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="59.800000000000004" width="55.199999999999996" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(545 72) rotate(3)"><rect width="90" height="90" rx="5" fill="#CBE3FF"/><rect x="13.5" y="22.5" width="62.99999999999999" height="5.3999999999999995" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.5" y="40.5" width="45.0" height="5.3999999999999995" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.5" y="58.5" width="54.0" height="5.3999999999999995" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(225 180) rotate(2)"><rect width="84" height="84" rx="5" fill="#BFEBDB"/><rect x="12.6" y="21.0" width="58.8" height="5.04" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.6" y="37.800000000000004" width="42.0" height="5.04" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.6" y="54.6" width="50.4" height="5.04" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(560 190) rotate(-2)"><rect width="92" height="92" rx="5" fill="#FFE69A"/><rect x="13.799999999999999" y="23.0" width="64.39999999999999" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="41.4" width="46.0" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="13.799999999999999" y="59.800000000000004" width="55.199999999999996" height="5.52" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(330 190) rotate(3)"><rect width="80" height="80" rx="5" fill="#FFCDB8"/><rect width="80" height="80" rx="5" fill="#FFCDB8"/><path d="M16.0 40.0 q12.0 -16.0 24.0 0 t24.0 0" fill="none" stroke="#2B2140" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></g><g transform="translate(425 200) rotate(-2)"><rect width="78" height="78" rx="5" fill="#FFCDB8"/><rect width="78" height="78" rx="5" fill="#FFCDB8"/><path d="M15.600000000000001 39.0 q11.7 -15.600000000000001 23.4 0 t23.4 0" fill="none" stroke="#2B2140" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></g><path d="M310 128 C 340 160 380 150 430 160" fill="none" stroke="#4B3BFF" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/><circle cx="500" cy="66" r="6" fill="#4B3BFF"/><circle cx="515" cy="66" r="6" fill="#4B3BFF"/><circle cx="530" cy="66" r="6" fill="#FF6B4A"/><circle cx="640" cy="66" r="6" fill="#4B3BFF"/><circle cx="655" cy="66" r="6" fill="#4B3BFF"/><circle cx="670" cy="66" r="6" fill="#4B3BFF"/><g transform="translate(195 205) rotate(-8)"><rect width="80" height="80" rx="5" fill="#FFE69A"/><rect x="12.0" y="20.0" width="56.0" height="4.8" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.0" y="36.0" width="40.0" height="4.8" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="12.0" y="52.0" width="48.0" height="4.8" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(95 391) scale(1.25 1.25)"><path d="M0 0 L-8 50 L-22 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-17" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L10 50 L30 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="35" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-30 -40" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M-30 -40 L-40 -8" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="-40" cy="-8" r="6" fill="#C98A5E"/><path d="M0 6 L0 -66" fill="none" stroke="#4B3BFF" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L40 -112" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M40 -112 L78 -152" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="78" cy="-152" r="6" fill="#C98A5E"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#C98A5E"/><circle cx="-5" cy="-110" r="7" fill="#2B2140"/><circle cx="0" cy="-95" r="13" fill="#2B2140"/><circle cx="1" cy="-94" r="11.5" fill="#C98A5E"/><path d="M-12 -97 Q-4 -108 12 -97 Q2 -101 -12 -97Z" fill="#2B2140"/></g><g transform="translate(805 391) scale(-1.25 1.25)"><path d="M0 0 L-8 50 L-12 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-7" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L10 50 L26 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="31" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-30 -40" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M-30 -40 L-34 -10" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="-34" cy="-10" r="6" fill="#F6CFB0"/><path d="M0 6 L0 -66" fill="none" stroke="#FF6B4A" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L38 -108" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M38 -108 L50 -150" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="-150" r="6" fill="#F6CFB0"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#F6CFB0"/><path d="M-13 -96 Q-12 -110 1 -109 Q14 -109 13 -96 Z" fill="#D9A441"/><circle cx="1" cy="-94" r="11.5" fill="#F6CFB0"/><path d="M-12 -97 Q-10 -108 2 -107 Q13 -107 12 -98 Q4 -102 -12 -97Z" fill="#D9A441"/></g><g transform="translate(736 186)"><rect x="-5" y="-39" width="10" height="8" rx="3" fill="#FF6B4A"/><circle r="30" fill="#FF6B4A"/><circle r="25" fill="#fff"/><path d="M0 0 V-19 M0 0 L12.0 6.0" stroke="#2B2140" stroke-width="3.5" stroke-linecap="round"/></g><g transform="translate(400 391) scale(1.2 1.2)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L10 50 L16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="21" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-26 -40" fill="none" stroke="#19B58A" stroke-width="11" stroke-linecap="round"/><path d="M-26 -40 L-34 -12" fill="none" stroke="#8D5A3B" stroke-width="9" stroke-linecap="round"/><circle cx="-34" cy="-12" r="6" fill="#8D5A3B"/><path d="M0 6 L0 -66" fill="none" stroke="#19B58A" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L24 -110" fill="none" stroke="#19B58A" stroke-width="11" stroke-linecap="round"/><path d="M24 -110 L40 -170" fill="none" stroke="#8D5A3B" stroke-width="9" stroke-linecap="round"/><circle cx="40" cy="-170" r="6" fill="#8D5A3B"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#8D5A3B"/><circle cx="-9" cy="-100" r="9" fill="#4A2C5E"/><circle cx="9" cy="-100" r="9" fill="#4A2C5E"/><circle cx="0" cy="-107" r="10" fill="#4A2C5E"/><circle cx="1" cy="-94" r="11.5" fill="#8D5A3B"/></g><g transform="translate(600 391) scale(1.2 1.2)"><path d="M0 0 L-8 50 L-14 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-9" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L12 50 L24 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="29" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -108" fill="none" stroke="#F4528C" stroke-width="11" stroke-linecap="round"/><path d="M-24 -108 L-44 -164" fill="none" stroke="#F2B28C" stroke-width="9" stroke-linecap="round"/><circle cx="-44" cy="-164" r="6" fill="#F2B28C"/><path d="M0 6 L0 -66" fill="none" stroke="#F4528C" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L26 -40" fill="none" stroke="#F4528C" stroke-width="11" stroke-linecap="round"/><path d="M26 -40 L34 -10" fill="none" stroke="#F2B28C" stroke-width="9" stroke-linecap="round"/><circle cx="34" cy="-10" r="6" fill="#F2B28C"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#F2B28C"/><path d="M-14 -92 Q-16 -112 0 -112 Q16 -112 14 -92 L15 -66 L-15 -66 Z" fill="#7A3E1D"/><circle cx="1" cy="-94" r="11.5" fill="#F2B28C"/></g><g transform="translate(430 196)"><path d="M0 0 L0 24 L7 18 L12 29 L17 27 L12 16 L21 16 Z" fill="#19B58A" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/><rect x="16" y="26" width="46" height="18" rx="9" fill="#19B58A"/><rect x="24" y="32" width="30" height="6" rx="3" fill="#fff" fill-opacity=".85"/></g><g transform="translate(535 214)"><path d="M0 0 L0 24 L7 18 L12 29 L17 27 L12 16 L21 16 Z" fill="#F4528C" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/><rect x="16" y="26" width="52" height="18" rx="9" fill="#F4528C"/><rect x="24" y="32" width="36" height="6" rx="3" fill="#fff" fill-opacity=".85"/></g></svg>
+  <div class="stage rv hero-img" style="--d:.12s"><img src="img/hero.webp" width="1400" height="988" alt="Three teammates at a large Tabula board: one reaching up to stick a note into a frame, one seated with a stack of notes, one pointing at a connector. Two remote cursors hover over the board." decoding="async"></div>
  </div>
 
  <section id="features">
   <div class="wrap">
-   <h2>Run the room, not just the canvas</h2>
-   <p class="sub">Sticky notes, shapes and connectors are all here. What sets Tabula apart is the facilitation built around them.</p>
-   <div class="cards">
-    <article class="card a"><svg viewBox="0 0 360 250" class="vig" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="180" cy="130" r="108" fill="#FFCDB8"/><path transform="translate(300 40) rotate(10)" d="M-26 0 A26 26 0 0 1 26 0 Z" fill="#E7E1FF"/><path d="M40 60 q10 -8 20 0 q10 8 20 0 q10 -8 20 0" fill="none" stroke="#4B3BFF" stroke-width="5" stroke-linecap="round"/><g transform="translate(200 110) rotate(0)"><rect width="56" height="56" rx="5" fill="#FFC2D9"/><rect width="56" height="56" rx="5" fill="#FFC2D9"/><path d="M11.200000000000001 28.0 q8.4 -11.200000000000001 16.8 0 t16.8 0" fill="none" stroke="#2B2140" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></g><g transform="translate(262 100) rotate(5)"><rect width="56" height="56" rx="5" fill="#FFE69A"/><rect width="56" height="56" rx="5" fill="#FFE69A"/><path d="M11.200000000000001 28.0 q8.4 -11.200000000000001 16.8 0 t16.8 0" fill="none" stroke="#2B2140" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></g><g transform="translate(230 172) rotate(-4)"><rect width="56" height="56" rx="5" fill="#BFEBDB"/><rect width="56" height="56" rx="5" fill="#BFEBDB"/><path d="M11.200000000000001 28.0 q8.4 -11.200000000000001 16.8 0 t16.8 0" fill="none" stroke="#2B2140" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></g><g transform="translate(130 70) rotate(-6)"><rect width="66" height="66" rx="5" fill="#CBE3FF"/><rect x="9.9" y="16.5" width="46.199999999999996" height="3.96" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="9.9" y="29.7" width="33.0" height="3.96" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="9.9" y="42.9" width="39.6" height="3.96" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(80 156) scale(0.9 0.9)"><path d="M0 0 L-8 50 L-14 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-9" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L10 50 L24 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="29" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#C98A5E"/><path d="M0 6 L0 -66" fill="none" stroke="#4B3BFF" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L30 -70" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M30 -70 L54 -94" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="54" cy="-94" r="6" fill="#C98A5E"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#C98A5E"/><path d="M-13 -96 Q-12 -110 1 -109 Q14 -109 13 -96 Z" fill="#1F1A2E"/><circle cx="1" cy="-94" r="11.5" fill="#C98A5E"/><path d="M-12 -97 Q-10 -108 2 -107 Q13 -107 12 -98 Q4 -102 -12 -97Z" fill="#1F1A2E"/></g><ellipse cx="200" cy="248" rx="140" ry="6" fill="#1F1B3D" fill-opacity=".1"/></svg><h3>Write privately, reveal together</h3><p>Everyone writes at once and notes stay hidden until you reveal them. Step through the session with timers so nobody anchors on the loudest voice.</p></article>
-    <article class="card b"><svg viewBox="0 0 360 250" class="vig" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="180" cy="130" r="108" fill="#BFEBDB"/><path transform="translate(60 40) rotate(-15)" d="M-24 0 A24 24 0 0 1 24 0 Z" fill="#FFE69A"/><path d="M301 60H319M310 51V69" stroke="#4B3BFF" stroke-width="5" stroke-linecap="round"/><g transform="translate(150 60) rotate(-2)"><rect width="120" height="120" rx="5" fill="#fff"/><rect x="18.0" y="30.0" width="84.0" height="7.199999999999999" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="18.0" y="54.0" width="60.0" height="7.199999999999999" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="18.0" y="78.0" width="72.0" height="7.199999999999999" rx="2" fill="#2B2140" fill-opacity=".55"/></g><circle cx="170" cy="168" r="9" fill="#4B3BFF"/><circle cx="194" cy="168" r="9" fill="#4B3BFF"/><circle cx="218" cy="168" r="9" fill="#4B3BFF"/><circle cx="236" cy="168" r="9" fill="none" stroke="#4B3BFF" stroke-width="3" stroke-dasharray="3 4"/><g transform="translate(300 158) scale(0.95 0.95)"><path d="M0 0 L-8 50 L-14 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-9" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L10 50 L20 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="25" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-34 -90" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M-34 -90 L-80 -116" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="-80" cy="-116" r="6" fill="#F6CFB0"/><path d="M0 6 L0 -66" fill="none" stroke="#FF6B4A" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L24 -40" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M24 -40 L30 -8" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="30" cy="-8" r="6" fill="#F6CFB0"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#F6CFB0"/><path d="M-14 -92 Q-16 -112 0 -112 Q16 -112 14 -92 L15 -66 L-15 -66 Z" fill="#2B2140"/><circle cx="1" cy="-94" r="11.5" fill="#F6CFB0"/></g><g transform="translate(80 158) scale(0.95 0.95)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L8 50 L18 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="23" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#8D5A3B" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#8D5A3B"/><path d="M0 6 L0 -66" fill="none" stroke="#4B3BFF" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L36 -60" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M36 -60 L60 -70" fill="none" stroke="#8D5A3B" stroke-width="9" stroke-linecap="round"/><circle cx="60" cy="-70" r="6" fill="#8D5A3B"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#8D5A3B"/><circle cx="-9" cy="-100" r="9" fill="#4A2C5E"/><circle cx="9" cy="-100" r="9" fill="#4A2C5E"/><circle cx="0" cy="-107" r="10" fill="#4A2C5E"/><circle cx="1" cy="-94" r="11.5" fill="#8D5A3B"/></g><ellipse cx="200" cy="248" rx="150" ry="6" fill="#1F1B3D" fill-opacity=".1"/></svg><h3>Vote with dots, ask with polls</h3><p>Hand out dot votes, run a quick poll and keep the discussion in comment threads right on the note it is about.</p></article>
-    <article class="card c"><svg viewBox="0 0 360 250" class="vig" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="180" cy="130" r="108" fill="#CBE3FF"/><path d="M40 50 q10 -8 20 0 q10 8 20 0 q10 -8 20 0" fill="none" stroke="#FF6B4A" stroke-width="5" stroke-linecap="round"/><path transform="translate(310 200) rotate(200)" d="M-22 0 A22 22 0 0 1 22 0 Z" fill="#FFC2D9"/><rect x="90" y="46" width="180" height="120" rx="14" fill="#fff"/><rect x="90" y="46" width="180" height="22" rx="14" fill="#E7E1FF"/><rect x="90" y="58" width="180" height="10" fill="#E7E1FF"/><circle cx="104" cy="57" r="3.5" fill="#FFCDB8"/><circle cx="116" cy="57" r="3.5" fill="#BFEBDB"/><g transform="translate(104 80) rotate(-3)"><rect width="40" height="40" rx="5" fill="#FFE69A"/><rect x="6.0" y="10.0" width="28.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="18.0" width="20.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="26.0" width="24.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(150 90) rotate(3)"><rect width="40" height="40" rx="5" fill="#BFEBDB"/><rect x="6.0" y="10.0" width="28.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="18.0" width="20.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="26.0" width="24.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(204 78) rotate(-2)"><rect width="40" height="40" rx="5" fill="#FFC2D9"/><rect x="6.0" y="10.0" width="28.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="18.0" width="20.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="6.0" y="26.0" width="24.0" height="3" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(172 126)"><path d="M0 0 L0 24 L7 18 L12 29 L17 27 L12 16 L21 16 Z" fill="#19B58A" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/><rect x="16" y="26" width="40" height="18" rx="9" fill="#19B58A"/><rect x="24" y="32" width="24" height="6" rx="3" fill="#fff" fill-opacity=".85"/></g><g transform="translate(212 138)"><path d="M0 0 L0 24 L7 18 L12 29 L17 27 L12 16 L21 16 Z" fill="#4B3BFF" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/><rect x="16" y="26" width="40" height="18" rx="9" fill="#4B3BFF"/><rect x="24" y="32" width="24" height="6" rx="3" fill="#fff" fill-opacity=".85"/></g><g transform="translate(60 160) scale(0.9 0.9)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L8 50 L18 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="23" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#19B58A" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#F2B28C" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#F2B28C"/><path d="M0 6 L0 -66" fill="none" stroke="#19B58A" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L26 -62" fill="none" stroke="#19B58A" stroke-width="11" stroke-linecap="round"/><path d="M26 -62 L50 -86" fill="none" stroke="#F2B28C" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="-86" r="6" fill="#F2B28C"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#F2B28C"/><circle cx="-5" cy="-110" r="7" fill="#7A3E1D"/><circle cx="0" cy="-95" r="13" fill="#7A3E1D"/><circle cx="1" cy="-94" r="11.5" fill="#F2B28C"/><path d="M-12 -97 Q-4 -108 12 -97 Q2 -101 -12 -97Z" fill="#7A3E1D"/></g><g transform="translate(310 160) scale(-0.9 0.9)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L8 50 L18 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="23" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#6B4228" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#6B4228"/><path d="M0 6 L0 -66" fill="none" stroke="#4B3BFF" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L26 -62" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M26 -62 L50 -86" fill="none" stroke="#6B4228" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="-86" r="6" fill="#6B4228"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#6B4228"/><path d="M-13 -96 Q-12 -110 1 -109 Q14 -109 13 -96 Z" fill="#1F1A2E"/><circle cx="1" cy="-94" r="11.5" fill="#6B4228"/><path d="M-12 -97 Q-10 -108 2 -107 Q13 -107 12 -98 Q4 -102 -12 -97Z" fill="#1F1A2E"/></g><ellipse cx="190" cy="248" rx="150" ry="6" fill="#1F1B3D" fill-opacity=".1"/></svg><h3>Local first, live when you can be</h3><p>Every board opens from your browser, even offline. When the relay is reachable, cursors, selections and presence sync live, and changes merge later.</p></article>
+   <div class="head rv">
+    <h2>Run the room, not just the canvas</h2>
+    <p class="sub">Sticky notes, shapes and connectors are all here. What sets Tabula apart is the facilitation built around them.</p>
    </div>
-   <div class="toolbelt" aria-label="More on the canvas"><span>Sticky notes</span><span>Shapes on a snapping grid</span><span>Connectors that stay attached</span><span>UML and flowchart shapes</span><span>Mermaid import</span><span>Icons</span><span>Five themes</span></div>
+   <div class="cards">
+    <article class="card a rv"><figure class="rv-i"><img src="img/write.webp" width="840" height="557" alt="" aria-hidden="true" loading="lazy" decoding="async"></figure><h3>Write privately, reveal together</h3><p>Everyone writes at once and notes stay hidden until you reveal them. Step through the session with timers so nobody anchors on the loudest voice.</p></article>
+    <article class="card b rv" style="--d:.08s"><figure class="rv-i"><img src="img/vote.webp" width="840" height="480" alt="" aria-hidden="true" loading="lazy" decoding="async"></figure><h3>Vote with dots, ask with polls</h3><p>Hand out dot votes, run a quick poll and keep the discussion in comment threads right on the note it is about.</p></article>
+    <article class="card c rv" style="--d:.16s"><figure class="rv-i"><img src="img/live.webp" width="840" height="466" alt="" aria-hidden="true" loading="lazy" decoding="async"></figure><h3>Local first, live when you can be</h3><p>Every board opens from your browser, even offline. When the relay is reachable, cursors, selections and presence sync live, and changes merge later.</p></article>
+   </div>
+   <ul class="toolbelt" aria-label="More on the canvas"><li class="rv">Sticky notes</li><li class="rv" style="--d:.05s">Shapes on a snapping grid</li><li class="rv" style="--d:.1s">Connectors that stay attached</li><li class="rv" style="--d:.15s">UML and flowchart shapes</li><li class="rv" style="--d:.2s">Mermaid import</li><li class="rv" style="--d:.25s">Icons</li><li class="rv" style="--d:.3s">Five themes</li></ul>
   </div>
  </section>
 
  <section id="templates" class="tpl">
   <div class="wrap">
-   <h2>Start from a template</h2>
-   <p class="sub">Fourteen ready-made boards for retros, workshops and planning. Open one and change anything.</p>
-   <ul class="chips"><li class="chip c0" style="--r:-2deg">Start / Stop / Continue</li><li class="chip c1" style="--r:1.5deg">4Ls</li><li class="chip c2" style="--r:-1deg">Mad / Sad / Glad</li><li class="chip c3" style="--r:2.5deg">Sailboat</li><li class="chip c4" style="--r:-1.5deg">Crazy 8s</li><li class="chip c5" style="--r:1deg">Brainstorm + affinity map</li><li class="chip c0" style="--r:-2deg">Lean Coffee</li><li class="chip c1" style="--r:1.5deg">Impact / Effort matrix</li><li class="chip c2" style="--r:-1deg">MoSCoW</li><li class="chip c3" style="--r:2.5deg">User story map</li><li class="chip c4" style="--r:-1.5deg">Customer journey map</li><li class="chip c5" style="--r:1deg">Empathy map</li><li class="chip c0" style="--r:-2deg">SWOT</li><li class="chip c1" style="--r:1.5deg">Pre-mortem</li></ul>
+   <div class="head rv">
+    <h2>Start from a template</h2>
+    <p class="sub">Fourteen ready-made boards for retros, workshops and planning. Open one and change anything.</p>
+   </div>
+   <ul class="chips"><li class="chip c0 rv" style="--r:-2deg">Start / Stop / Continue</li><li class="chip c1 rv" style="--r:1.5deg;--d:.04s">4Ls</li><li class="chip c2 rv" style="--r:-1deg;--d:.08s">Mad / Sad / Glad</li><li class="chip c3 rv" style="--r:2.5deg;--d:.12s">Sailboat</li><li class="chip c4 rv" style="--r:-1.5deg;--d:.16s">Crazy 8s</li><li class="chip c5 rv" style="--r:1deg;--d:.2s">Brainstorm + affinity map</li><li class="chip c0 rv" style="--r:-2deg;--d:.24s">Lean Coffee</li><li class="chip c1 rv" style="--r:1.5deg;--d:.28s">Impact / Effort matrix</li><li class="chip c2 rv" style="--r:-1deg;--d:.32s">MoSCoW</li><li class="chip c3 rv" style="--r:2.5deg;--d:.36s">User story map</li><li class="chip c4 rv" style="--r:-1.5deg;--d:.4s">Customer journey map</li><li class="chip c5 rv" style="--r:1deg;--d:.44s">Empathy map</li><li class="chip c0 rv" style="--r:-2deg;--d:.48s">SWOT</li><li class="chip c1 rv" style="--r:1.5deg;--d:.52s">Pre-mortem</li></ul>
   </div>
  </section>
 
  <section id="pricing">
   <div class="wrap">
-   <h2>Simple pricing</h2>
-   <p class="sub">Pay for hosted seats, or run it yourself.</p>
+   <div class="head rv">
+    <h2>Simple pricing</h2>
+    <p class="sub">Pay for hosted seats, or run it yourself.</p>
+   </div>
    <div class="price">
-    <div class="pcard">
+    <div class="pcard rv">
      <h3>Hosted workspace</h3>
      <p class="big">&euro;8 <small>per seat / month</small></p>
      <p>Or &euro;80 per seat per year. That is two months free.</p>
      <ul><li>Your own address at slug.gettabula.app</li><li>Teams and roles: owner, admin, member, guest</li><li>Board editor, commenter and viewer access</li><li>Email sign-in links</li></ul>
      <a class="btn" href="https://gettabula.app">Start a board</a>
     </div>
-    <div class="free">
+    <div class="free rv" style="--d:.1s">
      <h3>Self-host, free</h3>
      <p>Tabula is open source. Run it on your own server with Docker and keep every board in your hands.</p>
      <p><code>github.com/gettabula-app/tabula</code></p>
-     <div><a class="btn alt" href="https://github.com/gettabula-app/tabula">View on GitHub</a></div>
+     <a class="btn alt" href="https://github.com/gettabula-app/tabula">View on GitHub</a>
     </div>
    </div>
   </div>
  </section>
 
- <section>
+ <section style="padding-top:0">
   <div class="wrap">
    <div class="final">
-    <div><h2>Your next retro starts blank.</h2><p>Open a board, pick a template, and invite the team in under a minute.</p><div class="ctas"><a class="btn" href="https://gettabula.app">Start a board</a><a class="btn alt" href="#pricing">See pricing</a></div></div>
-    <svg viewBox="0 0 400 430" class="cta-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="200" cy="170" r="140" fill="#FFC2D9"/><path transform="translate(70 60) rotate(-10)" d="M-34 0 A34 34 0 0 1 34 0 Z" fill="#FFE69A"/><path d="M300 40 q10 -8 20 0 q10 8 20 0 q10 -8 20 0 q10 8 20 0" fill="none" stroke="#4B3BFF" stroke-width="5" stroke-linecap="round"/><path d="M330 170H350M340 160V180" stroke="#1F1B3D" stroke-width="5" stroke-linecap="round"/><defs><pattern id="cg" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.6" fill="#D9D3F5"/></pattern></defs><rect x="88" y="80" width="240" height="150" rx="16" fill="#2B2140" fill-opacity=".12"/><rect x="80" y="70" width="240" height="150" rx="16" fill="#fff"/><rect x="80" y="70" width="240" height="150" rx="16" fill="url(#cg)"/><g transform="translate(100 92) rotate(-3)"><rect width="56" height="56" rx="5" fill="#FFE69A"/><rect x="8.4" y="14.0" width="39.199999999999996" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="25.2" width="28.0" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="36.4" width="33.6" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(170 98) rotate(2)"><rect width="56" height="56" rx="5" fill="#BFEBDB"/><rect x="8.4" y="14.0" width="39.199999999999996" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="25.2" width="28.0" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="36.4" width="33.6" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/></g><g transform="translate(240 90) rotate(-2)"><rect width="56" height="56" rx="5" fill="#CBE3FF"/><rect x="8.4" y="14.0" width="39.199999999999996" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="25.2" width="28.0" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/><rect x="8.4" y="36.4" width="33.6" height="3.36" rx="2" fill="#2B2140" fill-opacity=".55"/></g><circle cx="110" cy="185" r="6" fill="#4B3BFF"/><circle cx="125" cy="185" r="6" fill="#4B3BFF"/><circle cx="140" cy="185" r="6" fill="#FF6B4A"/><g transform="translate(50 310) scale(1.0 1.0)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L8 50 L18 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="23" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#C98A5E"/><path d="M0 6 L0 -66" fill="none" stroke="#4B3BFF" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L30 -100" fill="none" stroke="#4B3BFF" stroke-width="11" stroke-linecap="round"/><path d="M30 -100 L66 -134" fill="none" stroke="#C98A5E" stroke-width="9" stroke-linecap="round"/><circle cx="66" cy="-134" r="6" fill="#C98A5E"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#C98A5E"/><circle cx="-9" cy="-100" r="9" fill="#2B2140"/><circle cx="9" cy="-100" r="9" fill="#2B2140"/><circle cx="0" cy="-107" r="10" fill="#2B2140"/><circle cx="1" cy="-94" r="11.5" fill="#C98A5E"/></g><g transform="translate(350 310) scale(-1.0 1.0)"><path d="M0 0 L-8 50 L-16 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="-11" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 0 L8 50 L18 100" fill="none" stroke="#1F1B3D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="23" cy="104" rx="12" ry="6" fill="#2B2140"/><path d="M0 -60 L-24 -40" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M-24 -40 L-30 -8" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="-30" cy="-8" r="6" fill="#F6CFB0"/><path d="M0 6 L0 -66" fill="none" stroke="#FF6B4A" stroke-width="30" stroke-linecap="round"/><path d="M0 -60 L30 -100" fill="none" stroke="#FF6B4A" stroke-width="11" stroke-linecap="round"/><path d="M30 -100 L62 -130" fill="none" stroke="#F6CFB0" stroke-width="9" stroke-linecap="round"/><circle cx="62" cy="-130" r="6" fill="#F6CFB0"/><rect x="-4.5" y="-84" width="9" height="16" rx="4" fill="#F6CFB0"/><circle cx="-5" cy="-110" r="7" fill="#D9A441"/><circle cx="0" cy="-95" r="13" fill="#D9A441"/><circle cx="1" cy="-94" r="11.5" fill="#F6CFB0"/><path d="M-12 -97 Q-4 -108 12 -97 Q2 -101 -12 -97Z" fill="#D9A441"/></g><ellipse cx="200" cy="414" rx="190" ry="8" fill="#1F1B3D" fill-opacity=".1"/></svg>
+    <div class="rv">
+     <h2>Your next retro starts blank.</h2>
+     <p>Open a board, pick a template, and invite the team in under a minute.</p>
+     <div class="ctas"><a class="btn" href="https://gettabula.app">Start a board</a><a class="btn alt" href="#pricing">See pricing</a></div>
+    </div>
+    <figure class="rv" style="--d:.1s"><img src="img/cta.webp" width="800" height="621" alt="" aria-hidden="true" loading="lazy" decoding="async"></figure>
    </div>
   </div>
  </section>
@@ -169,5 +212,13 @@ footer{padding:50px 0 40px;font-size:16px}
   <span>&copy; 2026 Tabula</span>
  </div>
 </footer>
+<script>
+(function(){
+ var els=[].slice.call(document.querySelectorAll(".rv,.rv-i"));
+ if(!document.documentElement.classList.contains("js-anim")||!("IntersectionObserver" in window)){return}
+ var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}})},{threshold:.2});
+ els.forEach(function(el){io.observe(el)});
+})();
+</script>
 </body>
 </html>
