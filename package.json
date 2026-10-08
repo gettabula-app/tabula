@@ -1,0 +1,36 @@
+{
+  "name": "driftboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first infinite whiteboard with grid, shapes, connectors, UML, Fontshare fonts, Iconify icons and facilitated team exercises.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/relay.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "fractional-indexing": "^4.0.0",
+    "lib0": "^0.2.119",
+    "ws": "^8.22.0",
+    "y-indexeddb": "^9.0.12",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.1.0",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
+    "@xmldom/xmldom": "^0.9.12",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  },
+  "license": "MIT"
+}

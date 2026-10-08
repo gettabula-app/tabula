@@ -1,0 +1,10 @@
+{
+  "name": "Driftboard",
+  "short_name": "Driftboard",
+  "description": "Local-first infinite whiteboard for diagrams, UML and team exercises.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EEF1F4",
+  "theme_color": "#18212B",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
