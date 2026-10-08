@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula: the board your team thinks on</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams. Sticky notes, connectors, facilitated sessions and templates. Works offline, syncs live.">
+<script>document.documentElement.classList.add('js-anim')</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F3F4F2; --ink:#18212B; --signal:#FFD23F; --grey:#5B6670; --rule:#C9CED3;
+  --gut:24px; --pad:clamp(16px,3.2vw,48px);
+  /* type scale 1.333 on 16px */
+  --t-s:.875rem; --t-0:1rem; --t-1:1.333rem; --t-2:1.777rem; --t-3:2.369rem; --t-4:3.157rem;
+  --t-5:clamp(3rem,9.6vw,9.5rem);
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--ink);font:400 var(--t-0)/1.5 "Inter Tight","Helvetica Neue",Helvetica,Arial,sans-serif;overflow-x:hidden;font-feature-settings:"ss01","tnum" 0}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.dark :focus-visible,.signal :focus-visible{outline-color:var(--paper)}
+.signal :focus-visible{outline-color:var(--ink)}
+.wrap{max-width:1440px;margin:0 auto;padding:0 var(--pad)}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut)}
+.grid>*{min-width:0}
+
+/* type */
+h1,h2,h3{font-weight:800;letter-spacing:-.035em;line-height:.95}
+h1{font-size:var(--t-5);letter-spacing:-.055em;line-height:.88}
+h2{font-size:clamp(2.25rem,5.2vw,var(--t-4)*1.35);letter-spacing:-.045em}
+h3{font-size:var(--t-1);letter-spacing:-.02em;line-height:1.15;font-weight:700}
+p{max-width:56ch}
+.lead{font-size:var(--t-1);line-height:1.3;letter-spacing:-.01em;font-weight:500}
+.small{font-size:var(--t-s);color:var(--grey);line-height:1.45}
+.dark .small{color:#AEB6BD}
+.mark{font-weight:800;letter-spacing:-.04em;font-size:1.5rem;text-decoration:none;line-height:1}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:space-between;gap:32px;min-height:56px;padding:0 20px;font:700 var(--t-0)/1 inherit;font-family:inherit;text-decoration:none;border:2px solid var(--ink);background:var(--ink);color:var(--paper);transition:background .2s,color .2s}
+.btn:hover{background:var(--signal);color:var(--ink)}
+.btn.alt{background:transparent;color:var(--ink)}
+.btn.alt:hover{background:var(--ink);color:var(--paper)}
+.btn svg{width:20px;height:20px;flex:none}
+.dark .btn{background:var(--signal);border-color:var(--signal);color:var(--ink)}
+.dark .btn:hover{background:var(--paper);border-color:var(--paper)}
+.dark .btn.alt{background:transparent;color:var(--paper);border-color:var(--paper)}
+.dark .btn.alt:hover{background:var(--paper);color:var(--ink)}
+.signal .btn:hover{background:var(--paper);border-color:var(--ink);color:var(--ink)}
+
+/* header */
+header.top{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:2px solid var(--ink)}
+header.top .grid{align-items:center;min-height:64px}
+header.top .mark{grid-column:1/4}
+header.top nav{grid-column:5/11;display:flex;gap:32px}
+header.top nav a{font-weight:500;text-decoration:none;font-size:var(--t-s);padding:8px 0;border-bottom:2px solid transparent}
+header.top nav a:hover{border-color:var(--ink)}
+header.top .go{grid-column:11/13;justify-self:end;font-weight:700;font-size:var(--t-s);text-decoration:none;background:var(--signal);padding:12px 16px;border:2px solid var(--ink)}
+header.top .go:hover{background:var(--ink);color:var(--paper)}
+
+/* visible modular grid */
+.show-grid{position:relative}
+.show-grid::before{content:"";position:absolute;inset:0 var(--pad);pointer-events:none;z-index:0;
+  background:repeating-linear-gradient(90deg,var(--rule) 0 1px,transparent 1px calc((100% - 11*var(--gut))/12 + var(--gut)));
+  opacity:.55}
+.show-grid>*{position:relative;z-index:1}
+
+/* hero */
+.hero{padding:clamp(40px,6vw,88px) 0 0;border-bottom:2px solid var(--ink)}
+.hero h1{grid-column:1/-1;margin-bottom:clamp(32px,5vw,72px)}
+.hero h1 span{display:block}
+.hero .lede{grid-column:1/6}
+.hero .lede .lead{margin-bottom:32px}
+.hero .cta{display:flex;gap:16px;flex-wrap:wrap}
+.hero .facts{grid-column:7/11;align-self:end;display:grid;grid-template-columns:1fr 1fr;gap:var(--gut)}
+.hero .facts div{border-top:2px solid var(--ink);padding-top:12px}
+.hero .facts b{display:block;font-size:var(--t-1);letter-spacing:-.03em;line-height:1.1}
+.stage{margin-top:clamp(40px,6vw,88px);position:relative}
+.stage .shot{grid-column:1/-1;border:2px solid var(--ink);border-bottom:0;background:var(--paper);overflow:hidden}
+.stage .block{position:absolute;right:0;top:0;width:calc((100% - 11*var(--gut))/12*2 + var(--gut));aspect-ratio:1;background:var(--signal);transform:translateY(-100%);border:2px solid var(--ink);border-bottom:0}
+
+/* sections */
+section{border-bottom:2px solid var(--ink)}
+.sec{padding:clamp(56px,8vw,128px) 0}
+.sec>.wrap>.grid>.h{grid-column:1/6}
+.sec .h h2{margin-bottom:24px}
+.dark{background:var(--ink);color:var(--paper)}
+.dark .rule{border-color:var(--paper)}
+.signal{background:var(--signal)}
+
+/* features: ruled rows */
+.rows{grid-column:1/-1;margin-top:clamp(40px,6vw,88px);border-top:6px solid var(--ink)}
+.row{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut);padding:24px 0 32px;border-bottom:1px solid var(--ink)}
+.row h3{grid-column:1/5}
+.row p{grid-column:5/9}
+.row .tag{grid-column:9/13;color:var(--grey);font-size:var(--t-s)}
+.split{align-items:end}
+.split figure{grid-column:7/13}
+.split-txt{grid-column:1/6}
+.photo{position:relative;overflow:hidden;background:#888}
+.photo img{width:100%;height:100%;object-fit:cover}
+.cap{margin-top:12px}
+
+/* offline */
+.off .copy{grid-column:1/6;grid-row:1}
+.off .copy h2{margin-bottom:32px}
+.off .copy p+p{margin-top:16px}
+.off figure.a{grid-column:7/13;grid-row:1/3}
+.off figure.a .photo{aspect-ratio:4/5}
+.off dl{grid-column:1/6;grid-row:2;align-self:end;margin-top:48px;display:grid;gap:0;border-top:2px solid var(--paper)}
+.off dl div{display:grid;grid-template-columns:1fr 2fr;gap:var(--gut);padding:12px 0;border-bottom:1px solid #4A5560}
+.off dt{font-weight:700}
+.off dd{color:#D5DADE}
+
+/* templates */
+.tpl{grid-column:1/-1;margin-top:clamp(40px,6vw,88px);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:6px solid var(--ink);border-left:1px solid var(--ink)}
+.tpl li{list-style:none;border-right:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:16px 16px 40px;min-height:144px;font-weight:700;font-size:var(--t-1);letter-spacing:-.025em;line-height:1.1;display:flex;flex-direction:column;justify-content:space-between;transition:background .2s}
+.tpl li:hover{background:var(--signal)}
+.tpl li small{font-weight:400;font-size:var(--t-s);color:var(--grey);letter-spacing:0}
+.tpl li:hover small{color:var(--ink)}
+.tpl li.fill{background:var(--ink);color:var(--paper)}
+.tpl li.fill small{color:#AEB6BD}
+.tpl li.fill:hover{background:var(--signal);color:var(--ink)}
+.tpl li.fill:hover small{color:var(--ink)}
+.tpl li.pic{padding:0;background:var(--signal);position:relative;min-height:144px}
+.tpl li.pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+
+/* pricing */
+.price{grid-column:1/-1;margin-top:clamp(40px,6vw,88px);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--gut)}
+.plan{border-top:6px solid var(--ink);padding-top:16px}
+.plan.p1{grid-column:1/5}
+.plan.p2{grid-column:5/9}
+.plan.p3{grid-column:9/13}
+.plan .fig{font-size:clamp(4rem,9vw,8.5rem);font-weight:800;letter-spacing:-.07em;line-height:.9;margin:24px 0 16px}
+.plan .fig sup{font-size:.35em;letter-spacing:-.02em;vertical-align:top;position:relative;top:.2em;margin-right:4px}
+.plan .fig small{font-size:var(--t-1);letter-spacing:-.02em;font-weight:500}
+.plan ul{list-style:none;padding:0;margin-top:24px}
+.plan li{padding:8px 0;border-top:1px solid var(--ink)}
+.plan .btn{margin-top:24px}
+
+/* final */
+.final{padding:0}
+.final .grid{align-items:stretch}
+.final .txt{grid-column:1/8;padding:clamp(56px,8vw,128px) 0}
+.final h2{font-size:clamp(2.75rem,8vw,7.5rem);letter-spacing:-.06em;line-height:.88;margin-bottom:40px}
+.final .art{grid-column:9/13;align-self:stretch;margin:0;position:relative}
+.final .art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+
+footer{padding:48px 0 32px}
+footer .grid{row-gap:24px}
+footer .mark{grid-column:1/5}
+footer .col{grid-column:span 3}
+footer .col a{display:block;text-decoration:none;padding:4px 0;font-weight:500}
+footer .col a:hover{text-decoration:underline;text-underline-offset:4px}
+footer .legal{grid-column:1/-1;border-top:2px solid var(--ink);padding-top:16px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+/* motion: once, restrained */
+.js-anim .rise{opacity:0;transform:translateY(16px);transition:opacity .45s var(--ease),transform .45s var(--ease)}
+.js-anim .rise.in{opacity:1;transform:none}
+.js-anim .hero h1 span{opacity:0;transform:translateY(24px);animation:up .7s var(--ease) forwards}
+.js-anim .hero h1 span:nth-child(2){animation-delay:.12s}
+.js-anim .hero h1 span:nth-child(3){animation-delay:.24s}
+.js-anim .stage .shot{clip-path:inset(0 100% 0 0);transition:clip-path .9s var(--ease) .3s}
+.js-anim .stage.in .shot{clip-path:inset(0 0 0 0)}
+.js-anim .stage .block{transform:translateY(0);transition:transform .6s var(--ease) .9s}
+.js-anim .stage.in .block{transform:translateY(-100%)}
+@keyframes up{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .js-anim .rise,.js-anim .hero h1 span,.js-anim .stage .shot,.js-anim .stage .block{opacity:1!important;transform:none!important;clip-path:none!important;animation:none!important;transition:none!important}
+  .js-anim .stage .block{transform:translateY(-100%)!important}
+}
+
+/* tablet */
+@media (max-width:960px){
+  header.top nav{display:none}
+  header.top .mark{grid-column:1/8}
+  header.top .go{grid-column:8/13}
+  .hero .lede{grid-column:1/-1}
+  .hero .facts{grid-column:1/-1;margin-top:40px}
+  .sec>.wrap>.grid>.h{grid-column:1/-1}
+  .row h3{grid-column:1/-1;margin-bottom:12px}
+  .row p{grid-column:1/-1}
+  .row .tag{grid-column:1/-1;margin-top:12px}
+  .split figure{grid-column:1/-1;margin-top:40px}
+  .off .copy,.off figure.a,.off dl{grid-column:1/-1;grid-row:auto}
+  .split-txt{grid-column:1/-1}
+  .off figure.a{margin-top:40px}
+  .tpl{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .plan.p1,.plan.p2,.plan.p3{grid-column:1/-1;margin-bottom:40px}
+  .final .txt{grid-column:1/-1;padding-bottom:40px}
+  .final .art{grid-column:1/-1;aspect-ratio:2/1;margin-bottom:0}
+  footer .mark{grid-column:1/-1}
+  footer .col{grid-column:span 6}
+  .stage .block{width:96px}
+}
+@media (max-width:560px){
+  :root{--gut:16px}
+  .hero .cta .btn{width:100%}
+  .hero .facts{grid-template-columns:1fr}
+  .off dl div{grid-template-columns:1fr}
+  .tpl li{min-height:112px;font-size:1.15rem}
+  .btn{width:100%}
+  header.top .go{padding:10px 12px}
+  .show-grid::before{background:repeating-linear-gradient(90deg,var(--rule) 0 1px,transparent 1px calc(25% - 3px))}
+  .stage .block{width:64px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap"><div class="grid">
+    <a class="mark" href="#top" aria-label="Tabula, home">Tabula</a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#offline">Offline</a>
+      <a href="#templates">Templates</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <a class="go" href="https://gettabula.app">Start a board</a>
+  </div></div>
+</header>
+
+<main id="top">
+<section class="hero show-grid">
+  <div class="wrap">
+    <div class="grid">
+      <h1><span>One board.</span><span>Every voice.</span><span>No lag.</span></h1>
+      <div class="lede rise">
+        <p class="lead">Tabula is an infinite whiteboard for teams. Sticky notes, connectors and facilitated sessions, kept in your browser first and synced live when you are online.</p>
+        <div class="cta">
+          <a class="btn" href="https://gettabula.app">Start a board <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 10h15M11 4l6 6-6 6"/></svg></a>
+          <a class="btn alt" href="#pricing">See pricing</a>
+        </div>
+      </div>
+      <dl class="facts rise">
+        <div><b>Offline first</b><span class="small">Every board lives in your browser.</span></div>
+        <div><b>Open source</b><span class="small">Self-host with Docker, free.</span></div>
+      </dl>
+    </div>
+    <div class="stage">
+      <div class="block" aria-hidden="true"></div>
+      <div class="grid"><figure class="shot">
+        <img src="img/board.webp" width="2000" height="1251" alt="The Tabula board: a dark toolbar on the left, three frames of sticky notes on a dotted canvas, connectors between notes and three live cursors.">
+      </figure></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="features">
+  <div class="wrap"><div class="grid">
+    <div class="h rise"><h2>Built for the room, not the file.</h2><p class="lead">Everything a workshop needs sits on the same canvas.</p></div>
+    <div class="rows">
+      <div class="row rise"><h3>Notes, shapes, connectors</h3><p>Sticky notes and shapes snap to a grid. Connectors stay attached when you move things. UML and flowchart shapes, icons, and Mermaid import for diagrams you already have.</p><span class="tag">Canvas</span></div>
+      <div class="row rise"><h3>Facilitated sessions</h3><p>Run a workshop in steps with timers. Write privately, with notes hidden until the reveal. Then dot vote, run a poll, and discuss in comment threads.</p><span class="tag">Sessions</span></div>
+      <div class="row rise"><h3>Live presence</h3><p>See cursors, selections and who is on the board. Changes merge cleanly when someone returns from a train tunnel.</p><span class="tag">Sync</span></div>
+      <div class="row rise"><h3>Teams and roles</h3><p>Workspaces with owners, admins, members and guests. Per board, people can edit, comment or view. Sign in with an email link.</p><span class="tag">Workspaces</span></div>
+      <div class="row rise"><h3>Five themes</h3><p>Default, Ayu, Kanagawa, Matrix and Evergreen. Pick the one you can stare at for a long retro.</p><span class="tag">Themes</span></div>
+    </div>
+  </div>
+  <div class="grid split" style="margin-top:clamp(40px,6vw,88px)">
+    <div class="rise split-txt"><h3 style="font-size:var(--t-3);letter-spacing:-.04em;margin-bottom:16px">Quiet first, loud later.</h3><p>Private writing means the loudest person does not set the agenda. Everyone adds notes alone, then the facilitator reveals them at once.</p></div>
+    <figure class="rise"><div class="photo" style="aspect-ratio:4/5;max-height:640px"><img src="img/hands.webp" width="1000" height="1250" loading="lazy" decoding="async" alt="Black and white photograph from above: four pairs of hands arrange square sticky notes in a strict grid. One note is yellow."></div></figure>
+  </div></div>
+</section>
+
+<section class="sec dark off" id="offline">
+  <div class="wrap"><div class="grid">
+    <div class="copy rise">
+      <h2>Your board opens before the network does.</h2>
+      <p class="lead">Every board lives in your browser first and works offline.</p>
+      <p>A small relay syncs cursors, selections and presence when it can be reached, and merges everything later when it cannot. No spinner between you and your thinking.</p>
+    </div>
+    <figure class="a rise"><div class="photo"><img src="img/wall.webp" width="1000" height="1250" loading="lazy" decoding="async" alt="Black and white photograph of four people from behind studying a wall of sticky notes in a grid. One note is yellow."></div></figure>
+    <dl class="rise">
+      <div><dt>Local first</dt><dd>Boards save to your browser.</dd></div>
+      <div><dt>Live relay</dt><dd>Cursors, selections and presence.</dd></div>
+      <div><dt>Merge later</dt><dd>Offline edits join when you reconnect.</dd></div>
+    </dl>
+  </div></div>
+</section>
+
+<section class="sec" id="templates">
+  <div class="wrap"><div class="grid">
+    <div class="h rise"><h2>Start from a format that works.</h2><p class="lead">Fourteen templates for retros, planning and discovery.</p></div>
+    <ul class="tpl rise" style="padding:0">
+      <li>Start / Stop / Continue<small>Retrospective</small></li>
+      <li class="fill">4Ls<small>Retrospective</small></li>
+      <li>Mad / Sad / Glad<small>Retrospective</small></li>
+      <li class="pic"><img src="img/grid.webp" width="1000" height="1000" loading="lazy" decoding="async" alt="" aria-hidden="true"></li>
+      <li>Sailboat<small>Retrospective</small></li>
+      <li>Crazy 8s<small>Ideation</small></li>
+      <li class="fill">Brainstorm + affinity map<small>Ideation</small></li>
+      <li>Lean Coffee<small>Discussion</small></li>
+      <li>Impact / Effort matrix<small>Prioritisation</small></li>
+      <li>MoSCoW<small>Prioritisation</small></li>
+      <li class="fill">User story map<small>Planning</small></li>
+      <li>Customer journey map<small>Discovery</small></li>
+      <li>Empathy map<small>Discovery</small></li>
+      <li>SWOT<small>Strategy</small></li>
+      <li class="fill">Pre-mortem<small>Risk</small></li>
+    </ul>
+  </div></div>
+</section>
+
+<section class="sec" id="pricing" style="background:var(--paper)">
+  <div class="wrap"><div class="grid">
+    <div class="h rise"><h2>Simple, per seat.</h2><p class="lead">Host it yourself for nothing, or let us run it.</p></div>
+    <div class="price">
+      <div class="plan p1 rise"><h3>Hosted, monthly</h3><div class="fig"><sup>€</sup>8<small> per seat</small></div><p class="small">Billed monthly. Your workspace at your-team.gettabula.app.</p></div>
+      <div class="plan p2 rise"><h3>Hosted, yearly</h3><div class="fig"><sup>€</sup>80<small> per seat</small></div><p class="small">Two months free compared with paying monthly.</p></div>
+      <div class="plan p3 rise"><h3>Self-hosted</h3><div class="fig">Free</div><p class="small">Open source. Run it with Docker on your own server.</p>
+        <a class="btn alt" href="https://github.com/gettabula-app/tabula">Read the code <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 10h15M11 4l6 6-6 6"/></svg></a></div>
+    </div>
+  </div></div>
+</section>
+
+<section class="final signal">
+  <div class="wrap"><div class="grid">
+    <div class="txt rise">
+      <h2>Put your team on one board.</h2>
+      <div class="cta" style="display:flex;gap:16px;flex-wrap:wrap">
+        <a class="btn" href="https://gettabula.app">Start a board <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 10h15M11 4l6 6-6 6"/></svg></a>
+        <a class="btn alt" href="#pricing">See pricing</a>
+      </div>
+    </div>
+    <figure class="art" aria-hidden="true"><img src="img/arcs.webp" width="1000" height="1000" loading="lazy" decoding="async" alt=""></figure>
+  </div></div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap"><div class="grid">
+    <a class="mark" href="#top">Tabula</a>
+    <div class="col"><a href="https://gettabula.app">gettabula.app</a><a href="https://github.com/gettabula-app/tabula">GitHub gettabula-app/tabula</a></div>
+    <div class="col"><a href="#features">Features</a><a href="#templates">Templates</a><a href="#pricing">Pricing</a></div>
+    <p class="legal small"><span>© 2026 Tabula</span><span>Open source. Local first.</span></p>
+  </div></div>
+</footer>
+
+<script>
+(function(){
+  var els=[].slice.call(document.querySelectorAll('.rise,.stage'));
+  if(!('IntersectionObserver' in window)||matchMedia('(prefers-reduced-motion: reduce)').matches){els.forEach(function(e){e.classList.add('in')});return}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.15});
+  els.forEach(function(e){io.observe(e)});
+})();
+</script>
+</body>
+</html>

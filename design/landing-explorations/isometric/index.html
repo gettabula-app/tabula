@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tabula – the whiteboard that works offline</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams. Sticky notes, connectors, facilitated sessions and live cursors, open source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F7FA; --panel:#FFFFFF; --ink:#1F2A37; --slate:#475569; --line:#D5DDE6; --tint:#E6EDF4;
+  --yellow:#FFD23F; --blue:#BFDBFE; --mint:#BBF7D0;
+  --shadow:0 1px 0 #fff inset,0 1px 2px rgba(31,42,55,.06),0 12px 28px -12px rgba(31,42,55,.18);
+  --s1:8px;--s2:16px;--s3:24px;--s4:32px;--s6:48px;--s8:64px;--s12:96px;--s16:128px;
+  --t-s:.875rem;--t-b:1.0625rem;--t-l:1.3rem;--t-h3:1.5rem;--t-h2:clamp(1.9rem,3.4vw,2.75rem);--t-h1:clamp(2.5rem,5.6vw,4.5rem);
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font:500 var(--t-b)/1.6 Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--ink);outline-offset:3px;border-radius:6px}
+.wrap{width:min(1200px,100% - 48px);margin-inline:auto}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:0 24px;align-items:center}
+h1,h2,h3{letter-spacing:-.025em;line-height:1.08;font-weight:800}
+h1{font-size:var(--t-h1)} h2{font-size:var(--t-h2)} h3{font-size:var(--t-h3);line-height:1.2;letter-spacing:-.015em}
+p{max-width:56ch;color:var(--slate)}
+.lead{font-size:var(--t-l);line-height:1.55}
+
+/* header */
+header{position:sticky;top:0;z-index:10;background:rgba(244,247,250,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+.logo{display:flex;align-items:center;gap:12px;font-weight:800;font-size:1.25rem;letter-spacing:-.02em;text-decoration:none}
+.mark{width:28px;height:28px;position:relative}
+.mark i{position:absolute;width:13px;height:13px;border-radius:3px;box-shadow:2px 3px 0 rgba(31,42,55,.18)}
+.mark i:nth-child(1){left:0;top:0;background:var(--yellow)}.mark i:nth-child(2){right:0;top:0;background:var(--blue)}.mark i:nth-child(3){left:0;bottom:0;background:var(--mint)}.mark i:nth-child(4){right:0;bottom:0;background:var(--ink)}
+nav{display:flex;align-items:center;gap:var(--s4)}
+nav a:not(.btn){text-decoration:none;font-weight:600;font-size:var(--t-s);color:var(--slate);padding:8px 2px;border-bottom:2px solid transparent;transition:color .2s,border-color .2s}
+nav a:not(.btn):hover{color:var(--ink);border-color:var(--yellow)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:52px;padding:0 28px;border-radius:12px;font:700 1rem/1 Manrope,sans-serif;text-decoration:none;transition:transform .2s var(--ease),box-shadow .2s var(--ease),background .2s;white-space:nowrap}
+.btn-p{background:var(--yellow);color:var(--ink);box-shadow:0 3px 0 #C9A21F,0 10px 20px -8px rgba(31,42,55,.3)}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 5px 0 #C9A21F,0 14px 24px -8px rgba(31,42,55,.3)}
+.btn-p:active{transform:translateY(2px);box-shadow:0 1px 0 #C9A21F}
+.btn-s{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.btn-s:hover{background:var(--ink);color:#fff}
+header .btn{height:44px;padding:0 20px;font-size:var(--t-s)}
+@media(max-width:760px){nav a:not(.btn){display:none}}
+
+section{padding:var(--s12) 0}
+.sec-head{margin-bottom:var(--s8);display:grid;gap:var(--s2);max-width:720px}
+
+/* hero */
+.hero{padding:var(--s8) 0 var(--s12);overflow:hidden}
+.hero .copy{grid-column:1/6;grid-row:1;align-self:center;display:grid;gap:var(--s3);justify-items:start;position:relative;z-index:2}
+.hero .art{grid-column:5/13;grid-row:1;align-self:center;margin-right:-96px}
+.hero .art img{width:100%;filter:drop-shadow(0 30px 40px rgba(31,42,55,.12))}
+.cta{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s1)}
+.note{font-size:var(--t-s);color:var(--slate)}
+@media(max-width:900px){.hero .copy,.hero .art{grid-column:1/-1;grid-row:auto}.hero .art{margin:var(--s4) -24px 0}}
+
+/* features */
+.feat{padding:var(--s8) 0;border-top:1px solid var(--line)}
+.feat .grid{row-gap:var(--s4)}
+.feat .txt{grid-column:1/6;display:grid;gap:var(--s2);justify-items:start}
+.feat .pic{grid-column:7/13}
+.feat.flip .txt{grid-column:8/13;grid-row:1}.feat.flip .pic{grid-column:1/7;grid-row:1}
+.feat .pic img{width:100%;max-width:640px;margin-inline:auto;margin-block:-40px}
+.feat ul{list-style:none;padding:0;display:grid;gap:12px;margin-top:var(--s1)}
+.feat li{display:flex;gap:12px;align-items:flex-start;font-weight:600;color:var(--ink);font-size:1rem;line-height:1.5}
+.feat li::before{content:"";flex:none;width:12px;height:12px;margin-top:6px;border-radius:3px;background:var(--yellow);box-shadow:2px 2px 0 rgba(31,42,55,.25)}
+@media(max-width:900px){.feat .txt,.feat.flip .txt{grid-column:1/-1;grid-row:2}.feat .pic,.feat.flip .pic{grid-column:1/-1;grid-row:1}}
+
+/* templates */
+.tpl{background:var(--tint)}
+.tiles{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
+.tiles li{background:var(--panel);border-radius:12px;padding:20px 20px 18px;font-weight:700;letter-spacing:-.01em;box-shadow:var(--shadow);border-top:4px solid var(--c,var(--yellow));transition:transform .2s var(--ease)}
+.tiles li:hover{transform:translateY(-3px)}
+.tiles li:nth-child(3n+2){--c:var(--blue)}.tiles li:nth-child(3n){--c:var(--mint)}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;max-width:860px}
+.plan{background:var(--panel);border-radius:20px;padding:var(--s4);box-shadow:var(--shadow);display:grid;gap:var(--s2);align-content:start}
+.plan.hot{background:var(--ink);color:#fff}.plan.hot p,.plan.hot li{color:#CBD5E1}
+.price{font-size:2.75rem;font-weight:800;letter-spacing:-.03em;line-height:1}
+.price small{font-size:1rem;font-weight:600;color:var(--slate);letter-spacing:0}
+.plan.hot .price small{color:#CBD5E1}
+.plan ul{list-style:none;padding:0;display:grid;gap:8px;font-size:1rem;color:var(--slate)}
+.plan .btn{margin-top:var(--s1)}
+.plan.hot .btn-s{background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px #fff}
+@media(max-width:700px){.plans{grid-template-columns:1fr}}
+
+/* final cta */
+.final{padding-top:0}
+.final .box{background:var(--ink);color:#fff;border-radius:28px;padding:var(--s12) var(--s4);display:grid;gap:var(--s3);justify-items:center;text-align:center;box-shadow:0 30px 60px -30px rgba(31,42,55,.6)}
+.final p{color:#CBD5E1}
+.final .btn-s{background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px #fff}
+.final .cta{justify-content:center}
+
+footer{border-top:1px solid var(--line);padding:var(--s6) 0;font-size:var(--t-s);color:var(--slate)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);justify-content:space-between;align-items:center}
+footer a{text-decoration:none;font-weight:600;border-bottom:2px solid var(--yellow)}
+footer .links{display:flex;gap:var(--s3);flex-wrap:wrap}
+
+/* motion: played once */
+html.js .rise{opacity:0;transform:translateY(16px);transition:opacity .45s var(--ease),transform .45s var(--ease)}
+html.js .rise.in{opacity:1;transform:none}
+html.js .hero .art img{opacity:0;transform:translateY(28px) scale(.97);transition:opacity .8s var(--ease),transform 1s var(--ease)}
+html.js .hero .art.in img{opacity:1;transform:none}
+html.js .pic img{opacity:0;transform:translateY(24px);transition:opacity .7s var(--ease),transform .8s var(--ease)}
+html.js .pic.in img{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){html.js .rise,html.js .hero .art img,html.js .pic img{opacity:1!important;transform:none!important;transition:none!important}html{scroll-behavior:auto}.btn,.tiles li{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="Tabula home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Tabula</a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a><a href="#templates">Templates</a><a href="#pricing">Pricing</a>
+      <a class="btn btn-p" href="#start">Start a board</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap grid">
+    <div class="copy">
+      <h1 class="rise">A whiteboard that works when the wifi doesn't.</h1>
+      <p class="lead rise">Tabula is an infinite board for teams. Every board lives in your browser first and syncs live when you are connected.</p>
+      <div class="cta rise"><a class="btn btn-p" href="#start">Start a board</a><a class="btn btn-s" href="#pricing">See pricing</a></div>
+      <p class="note rise">Open source. Self-host for free, or use hosted workspaces.</p>
+    </div>
+    <div class="art" data-reveal>
+      <img src="img/hero.webp" width="1500" height="1000" alt="Isometric illustration of a Tabula board with sticky notes in two frames, a timer, voting dots and two cursors.">
+    </div>
+  </div>
+</section>
+
+<section id="features" style="padding-top:var(--s8)">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="rise">Everything a working session needs, on one board.</h2></div>
+  </div>
+  <article class="feat">
+    <div class="wrap grid">
+      <div class="txt rise">
+        <h3>Notes, shapes and connectors that stay put</h3>
+        <p>Drop sticky notes into frames, snap shapes to a grid and link them with connectors that stay attached when you move things.</p>
+        <ul><li>UML and flowchart shapes</li><li>Mermaid import</li><li>Icons and comment threads</li></ul>
+      </div>
+      <div class="pic" data-reveal><img src="img/feature-1.webp" width="960" height="960" loading="lazy" decoding="async" alt="Isometric board with three sticky notes in a frame above a flowchart rounded rectangle and diamond on a dot grid."></div>
+    </div>
+  </article>
+  <article class="feat flip">
+    <div class="wrap grid">
+      <div class="txt rise">
+        <h3>Run the session, not just the board</h3>
+        <p>Step through an agenda with timers. Let everyone write in private, reveal together, then settle it with dot voting or a quick poll.</p>
+        <ul><li>Session steps with timers</li><li>Notes hidden until reveal</li><li>Dot voting and polls</li></ul>
+      </div>
+      <div class="pic" data-reveal><img src="img/feature-2.webp" width="960" height="960" loading="lazy" decoding="async" alt="Isometric board with a hidden note, a large timer and a row of voting dots."></div>
+    </div>
+  </article>
+  <article class="feat">
+    <div class="wrap grid">
+      <div class="txt rise">
+        <h3>Local first, live when you can be</h3>
+        <p>Your board opens instantly and keeps working offline. A small relay shares cursors, selections and presence, then merges everyone's changes later.</p>
+        <ul><li>Works offline in the browser</li><li>Live cursors and presence</li><li>Teams, roles and email sign-in links</li></ul>
+      </div>
+      <div class="pic" data-reveal><img src="img/feature-3.webp" width="960" height="960" loading="lazy" decoding="async" alt="Two isometric boards at different heights joined by a beam of light, with three cursors on the upper board."></div>
+    </div>
+  </article>
+</section>
+
+<section id="templates" class="tpl">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="rise">Start from a template.</h2><p class="rise">Fourteen ready-made boards for retros, planning and discovery. Change anything.</p></div>
+    <ul class="tiles">
+      <li>Start / Stop / Continue</li><li>4Ls</li><li>Mad / Sad / Glad</li><li>Sailboat</li><li>Crazy 8s</li><li>Brainstorm + affinity map</li><li>Lean Coffee</li><li>Impact / Effort matrix</li><li>MoSCoW</li><li>User story map</li><li>Customer journey map</li><li>Empathy map</li><li>SWOT</li><li>Pre-mortem</li>
+    </ul>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="rise">Simple pricing. Free if you host it.</h2><p class="rise">Same product either way. Five themes included: Default, Ayu, Kanagawa, Matrix and Evergreen.</p></div>
+    <div class="plans">
+      <div class="plan rise">
+        <h3>Self-hosted</h3>
+        <div class="price">Free</div>
+        <p>Run it yourself with Docker. Open source.</p>
+        <a class="btn btn-s" href="https://github.com/gettabula-app/tabula">View on GitHub</a>
+      </div>
+      <div class="plan hot rise">
+        <h3>Hosted</h3>
+        <div class="price">€8 <small>per seat / month</small></div>
+        <p>Or €80 per seat per year, two months free. Your workspace at your-team.gettabula.app.</p>
+        <a class="btn btn-p" href="#start">Start a board</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="final">
+  <div class="wrap"><div class="box rise">
+    <h2>Your next session starts on a blank board.</h2>
+    <p>No account needed to try it. Open a board and invite your team.</p>
+    <div class="cta"><a class="btn btn-p" href="#start">Start a board</a><a class="btn btn-s" href="#pricing">See pricing</a></div>
+  </div></div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><strong>Tabula</strong> &nbsp; &copy; 2026</span>
+    <div class="links"><a href="https://gettabula.app">gettabula.app</a><a href="https://github.com/gettabula-app/tabula">GitHub gettabula-app/tabula</a></div>
+  </div>
+</footer>
+
+<script>
+document.documentElement.classList.add('js');
+(function(){
+  var els=document.querySelectorAll('.rise,[data-reveal]');
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce||!('IntersectionObserver' in window)){els.forEach(function(e){e.classList.add('in')});return}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.15});
+  els.forEach(function(e){io.observe(e)});
+})();
+</script>
+</body>
+</html>

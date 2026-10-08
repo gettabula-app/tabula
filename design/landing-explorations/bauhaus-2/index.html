@@ -11,16 +11,19 @@
 :root{
   --red:#D0211A; --yellow:#FFD100; --blue:#0F4CC9; --ink:#0E0E0E; --paper:#F6F2E8; --white:#fff;
   --line:6px;
+  --s0:1.125rem;--s1:1.4rem;--s2:1.75rem;--s3:2.2rem; /* 1.25 scale from 18px */
+  --u:8px;
+  --ease:cubic-bezier(.2,.7,.2,1);
   --f:"Cabinet Grotesk","Helvetica Neue",Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0}
-body{font-family:var(--f);font-size:1.125rem;line-height:1.45;font-weight:500;background:var(--ink);color:var(--ink);overflow-x:hidden}
+body{font-family:var(--f);font-size:var(--s0);line-height:1.5;font-weight:500;background:var(--ink);color:var(--ink);overflow-x:hidden}
 a{color:inherit}
 :focus-visible{outline:5px solid var(--blue);outline-offset:-5px}
 .red :focus-visible,.blue :focus-visible,.black :focus-visible{outline-color:var(--yellow)}
 p{max-width:44ch}
 h1,h2,h3{font-weight:800;line-height:.92;letter-spacing:-.025em}
-h3{font-size:1.6rem;line-height:1;margin-bottom:10px}
+h3{font-size:var(--s2);line-height:1.05;margin-bottom:8px}
 
 /* tiles */
 .red{background:var(--red);color:var(--white)}
@@ -38,7 +41,7 @@ h3{font-size:1.6rem;line-height:1;margin-bottom:10px}
 .tiles{display:grid;gap:var(--line);background:var(--ink)}
 .c4{grid-template-columns:repeat(4,1fr)}
 .c6{grid-template-columns:repeat(6,1fr)}
-.tile{padding:28px;position:relative;overflow:hidden;min-width:0}
+.tile{padding:32px;position:relative;overflow:hidden;min-width:0}
 .tile svg.shape{display:block}
 .s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}.s6{grid-column:span 6}
 .r2{grid-row:span 2}
@@ -51,7 +54,7 @@ header .row{display:flex;justify-content:space-between;align-items:center;gap:16
 nav ul{list-style:none;padding:0;display:flex;gap:26px;align-items:center}
 nav a{text-decoration:none;font-weight:700}
 nav a:hover{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:4px}
-.btn{display:inline-block;font:800 1.1rem var(--f);padding:16px 26px;background:var(--ink);color:var(--white);text-decoration:none;border:0;transition:background .12s,color .12s}
+.btn{display:inline-block;font:800 1.1rem var(--f);padding:16px 24px;background:var(--ink);color:var(--white);text-decoration:none;border:0;transition:background .12s,color .12s}
 .btn:hover{background:var(--yellow);color:var(--ink)}
 .btn.o{background:transparent;color:inherit;box-shadow:inset 0 0 0 4px currentColor}
 .btn.o:hover{background:var(--ink);color:var(--white)}
@@ -63,51 +66,54 @@ nav .btn{padding:9px 16px}
 .btn.o.light:hover{background:var(--white);color:var(--ink)}
 
 /* hero */
-.hero .headtile{padding:36px 36px 40px;display:flex;flex-direction:column;justify-content:space-between;gap:36px;min-height:560px}
+.hero .headtile{padding:40px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;min-height:560px}
 .hero h1{font-size:clamp(3rem,7.4vw,7rem)}
-.hero .sub{font-size:1.3rem;max-width:34ch;margin-bottom:26px}
-.cta{display:flex;flex-wrap:wrap;gap:14px}
+.hero .sub{font-size:var(--s1);line-height:1.4;max-width:34ch;margin-bottom:24px}
+.cta{display:flex;flex-wrap:wrap;gap:16px}
 .vert{display:flex;align-items:center;justify-content:center}
 .vert span{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:800;font-size:clamp(2rem,4vw,3.4rem);line-height:1;letter-spacing:-.02em}
-.shape-fill{display:flex;align-items:center;justify-content:center;padding:0}
-.shape-fill{min-height:200px}
-.shape-fill svg{width:100%;height:100%;display:block}
+.shape-fill{padding:0;position:relative;background:var(--paper)}
+.shape-fill img{display:block;width:100%;height:auto}
+.shape-fill .sticky{position:absolute;left:48.4%;top:28.8%;width:5.4%;aspect-ratio:1;background:var(--yellow);border:2px solid var(--ink);transform:rotate(-4deg)}
+.shape-fill .conn{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.shape-fill .conn path{fill:none;stroke:var(--ink);stroke-width:1.3;stroke-linecap:butt;vector-effect:non-scaling-stroke}
 
 /* features */
-.feat{min-height:300px;display:flex;flex-direction:column;justify-content:space-between;gap:28px}
-.feat svg{width:84px;height:84px}
-.feat p{font-size:1.02rem}
+.feat{min-height:296px;display:flex;flex-direction:column;justify-content:space-between;gap:32px}
+.feat img{width:112px;height:112px;display:block;margin:-8px 0 0 -8px}
+.feat p{font-size:1rem;line-height:1.45}
 
 /* exercise strip */
 .ex{display:grid;grid-template-columns:1fr 1fr}
 .ex .tile{padding:40px}
 .ex h2{font-size:clamp(2.4rem,5vw,4.4rem);margin-bottom:22px}
 .flow{list-style:none;padding:0;display:grid;gap:0}
-.flow li{display:grid;grid-template-columns:48px 1fr;gap:16px;padding:18px 0;border-top:4px solid currentColor}
+.flow li{display:grid;grid-template-columns:64px 1fr;gap:24px;padding:24px 0;align-items:center;border-top:4px solid currentColor}
 .flow li:last-child{border-bottom:4px solid currentColor}
-.flow svg{width:48px;height:48px}
-.flow strong{display:block;font-size:1.35rem;font-weight:800;line-height:1.1;margin-bottom:2px}
+.flow img{width:64px;height:64px;display:block}
+.flow strong{display:block;font-size:var(--s1);font-weight:800;line-height:1.1;margin-bottom:2px}
 
 /* templates */
-.tpl{aspect-ratio:1;display:flex;flex-direction:column;justify-content:space-between;padding:20px;font-weight:800;font-size:1.3rem;line-height:1.05;letter-spacing:-.01em}
-.tpl svg{width:44%;max-width:84px;height:auto}
-.tplhead{grid-column:span 2;display:flex;flex-direction:column;justify-content:flex-end;padding:32px}
+.tpl{aspect-ratio:1;display:flex;flex-direction:column;justify-content:space-between;padding:24px;font-weight:800;font-size:1.25rem;line-height:1.05;letter-spacing:-.01em}
+.tpl img{width:44%;max-width:112px;height:auto;display:block}
+.tplhead{grid-column:span 2;display:flex;flex-direction:column;justify-content:flex-end;padding:40px}
 .tplhead h2{font-size:clamp(2.2rem,4.4vw,3.8rem)}
 
 /* pricing */
 .pt h2{font-size:clamp(2.6rem,6vw,5.4rem);margin-bottom:20px}
-.price{display:flex;flex-direction:column;justify-content:space-between;gap:30px;min-height:300px}
-.price b{font-size:clamp(4rem,8vw,6.5rem);font-weight:800;line-height:.9;letter-spacing:-.04em;display:block}
+.price{display:flex;flex-direction:column;justify-content:space-between;gap:32px;min-height:296px}
+.price b{font-variant-numeric:tabular-nums;font-size:clamp(4rem,8vw,6.5rem);font-weight:800;line-height:.9;letter-spacing:-.04em;display:block}
 .price span{font-size:1.15rem;font-weight:700;display:block}
+.price b .num{display:inline;font:inherit;letter-spacing:inherit}
 .price small{display:block;font-size:1rem;margin-top:6px}
 
 /* final */
-.final{padding:48px 36px 56px}
-.final h2{font-size:clamp(3.2rem,11vw,10rem);margin-bottom:34px}
+.final{padding:48px 40px 56px}
+.final h2{font-size:clamp(3.2rem,11vw,10rem);margin-bottom:32px}
 
 footer{display:grid;grid-template-columns:72px 1fr;background:var(--ink);color:var(--white)}
 footer .mark{border-right:var(--line) solid var(--yellow)}
-footer .row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:18px;padding:34px 24px}
+footer .row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:18px;padding:32px 24px}
 footer ul{list-style:none;padding:0;display:flex;gap:24px;flex-wrap:wrap}
 footer a{text-underline-offset:4px}
 
@@ -117,6 +123,9 @@ footer a{text-underline-offset:4px}
   .s2,.s3,.s4{grid-column:span 1}.s6{grid-column:span 2}
   .hero .headtile{grid-column:span 2!important;min-height:0}
   .tplhead{grid-column:span 2}
+  .hero .shape-fill,.hero .vert{grid-column:span 2!important}
+  .vert{min-height:120px}
+  .vert span{writing-mode:horizontal-tb;transform:none}
   .ex{grid-template-columns:1fr}
   .r2{grid-row:auto}
 }
@@ -126,18 +135,29 @@ footer a{text-underline-offset:4px}
   .rail{border-right:0;border-bottom:var(--line) solid var(--paper);padding:12px 20px;justify-content:flex-start}
   .rail span{writing-mode:horizontal-tb;transform:none;font-size:1.2rem}
   nav li:not(:last-child){display:none}
-  .tile{padding:22px}
+  .tile{padding:24px}
   .feat{min-height:0}
-  .tpl{font-size:1rem;padding:14px}
+  .tpl{font-size:1rem;padding:16px}
+  .tpl img{width:40%}
+  .feat img{width:72px;height:72px}
   .price{min-height:0}
   .c4.feats{grid-template-columns:1fr}
   .c4.feats .tile{grid-column:auto}
-  .hero .headtile{padding:26px 22px}
+  .hero .headtile{padding:32px 24px}
+  .ex .tile,.tplhead,.final{padding:32px 24px}
 }
-@media(prefers-reduced-motion:no-preference){
-  .spin{animation:spin 18s linear infinite;transform-origin:50% 50%}
-  @keyframes spin{to{transform:rotate(360deg)}}
-}
+/* motion: hero only (board wipe, sticky, connector), section titles fade once, prices count up.
+   Hidden states exist only when JS adds .js-anim and motion is allowed. */
+html.js-anim .hero .shape-fill::after{content:"";position:absolute;inset:0;background:var(--ink);transform-origin:50% 0;z-index:3;pointer-events:none}
+html.js-anim .hero .shape-fill.in::after{transform:scaleY(0);transition:transform .55s var(--ease) .1s}
+html.js-anim .sticky{opacity:0;transform:translateY(-40%) rotate(-12deg) scale(1.2)}
+html.js-anim .sticky.in{opacity:1;transform:rotate(-4deg);transition:opacity .2s linear .75s,transform .4s var(--ease) .75s}
+html.js-anim .conn path:not(.ah){stroke-dasharray:1;stroke-dashoffset:1}
+html.js-anim .conn.in path:not(.ah){stroke-dashoffset:0;transition:stroke-dashoffset .5s var(--ease) 1.15s}
+html.js-anim .conn .ah{opacity:0}
+html.js-anim .conn.in .ah{opacity:1;transition:opacity .1s linear 1.6s}
+html.js-anim .sect:not(.hero) h2{opacity:0;transform:translateY(12px)}
+html.js-anim .sect:not(.hero) h2.in{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .4s var(--ease)}
 @media(prefers-reduced-motion:reduce){.btn{transition:none}}
 </style>
 </head>
@@ -171,8 +191,10 @@ footer a{text-underline-offset:4px}
           </div>
         </div>
       </div>
-      <div class="tile red shape-fill s2" aria-hidden="true">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"><circle cx="50" cy="50" r="36" fill="#FFD100"/><circle cx="50" cy="50" r="14" fill="#0E0E0E"/><path d="M62 62l22 4-10 8z" fill="#0E0E0E" /></svg>
+      <div class="tile red shape-fill s2" role="img" aria-label="Tabula board: sticky notes grouped in frames, joined by connectors, with three teammates' cursors.">
+        <img src="img/hero.webp" width="1100" height="733" alt="" decoding="async" fetchpriority="high">
+        <span class="sticky"></span>
+        <svg class="conn" viewBox="0 0 1536 1024" preserveAspectRatio="none"><path pathLength="1" d="M784 379 V440 H738"/><path class="ah" d="M738 440 l14 -8 M738 440 l14 8"/></svg>
       </div>
       <div class="tile blue vert s2" role="img" aria-label="Works offline first. Syncs when reachable."><span aria-hidden="true">Offline first</span></div>
     </div>
@@ -184,35 +206,35 @@ footer a{text-underline-offset:4px}
   <div class="body">
     <div class="tiles c4 feats">
       <article class="tile yellow feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><rect x="6" y="6" width="72" height="72" fill="#D0211A" stroke="#0E0E0E" stroke-width="6"/></svg>
+        <img class="ic" src="img/f1.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Sticky notes</h3><p>Notes and shapes on a snapping grid. Drop, drag, tidy.</p></div>
       </article>
       <article class="tile white feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><rect x="2" y="2" width="26" height="26" fill="#0F4CC9"/><rect x="56" y="56" width="26" height="26" fill="#0F4CC9"/><path d="M24 24L60 60" stroke="#0E0E0E" stroke-width="8"/></svg>
+        <img class="ic" src="img/f2.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Attached connectors</h3><p>Lines follow the notes they join, however you rearrange.</p></div>
       </article>
       <article class="tile blue feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><path d="M42 6L80 76H4z" fill="#FFD100"/></svg>
+        <img class="ic" src="img/f3.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Diagrams</h3><p>UML and flowchart shapes, icons, and Mermaid import.</p></div>
       </article>
       <article class="tile paper feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="34" cy="34" r="28" fill="#0E0E0E"/><circle cx="58" cy="52" r="20" fill="#D0211A"/></svg>
+        <img class="ic" src="img/f4.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Live presence</h3><p>Cursors, selections and who is here, plus comment threads.</p></div>
       </article>
       <article class="tile red feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="#fff" stroke-width="8"/><path d="M42 20v22l14 8" stroke="#fff" stroke-width="8" fill="none"/></svg>
+        <img class="ic" src="img/f5.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Timed steps</h3><p>Build a session from steps with timers and run it for the room.</p></div>
       </article>
       <article class="tile white feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><path d="M4 80V50h26V80zM30 50V22h26v28zM56 22V4h24v18z" fill="#FFD100" stroke="#0E0E0E" stroke-width="5"/></svg>
+        <img class="ic" src="img/f6.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Workspaces and roles</h3><p>Teams, owners, admins, members and guests. Editor, commenter or viewer per board.</p></div>
       </article>
       <article class="tile yellow feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="#0E0E0E"/><circle cx="42" cy="42" r="14" fill="#FFD100"/></svg>
+        <img class="ic" src="img/f7.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Five themes</h3><p>Default, Ayu, Kanagawa, Matrix and Evergreen.</p></div>
       </article>
       <article class="tile blue feat">
-        <svg viewBox="0 0 84 84" aria-hidden="true"><rect x="6" y="6" width="72" height="72" fill="#fff"/><path d="M6 78L78 6" stroke="#0F4CC9" stroke-width="8"/></svg>
+        <img class="ic" src="img/f8.webp" width="96" height="96" alt="" loading="lazy" decoding="async">
         <div><h3>Open source</h3><p>Read the code, self-host with Docker, or use hosted workspaces.</p></div>
       </article>
     </div>
@@ -229,9 +251,9 @@ footer a{text-underline-offset:4px}
     </div>
     <div class="tile yellow">
       <ol class="flow">
-        <li><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="3" width="42" height="42" fill="#0E0E0E"/></svg><div><strong>Write in private</strong>Notes stay hidden until you reveal them.</div></li>
-        <li><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21" fill="#D0211A"/></svg><div><strong>Reveal together</strong>Everyone sees every note at the same moment.</div></li>
-        <li><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3L45 44H3z" fill="#0F4CC9"/></svg><div><strong>Vote</strong>Dot voting and polls rank what matters.</div></li>
+        <li><img class="ic" src="img/t15.webp" width="64" height="64" alt="" loading="lazy" decoding="async"><div><strong>Write in private</strong>Notes stay hidden until you reveal them.</div></li>
+        <li><img class="ic" src="img/t16.webp" width="64" height="64" alt="" loading="lazy" decoding="async"><div><strong>Reveal together</strong>Everyone sees every note at the same moment.</div></li>
+        <li><img class="ic" src="img/t17.webp" width="64" height="64" alt="" loading="lazy" decoding="async"><div><strong>Vote</strong>Dot voting and polls rank what matters.</div></li>
       </ol>
     </div>
   </div>
@@ -242,20 +264,20 @@ footer a{text-underline-offset:4px}
   <div class="body">
     <div class="tiles c4">
       <div class="tile tplhead paper s2"><h2 id="h-tpl">Fourteen ways to start</h2><p style="margin-top:14px">Open a template and change anything.</p></div>
-      <div class="tile tpl red"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" fill="#FFD100"/></svg>Start / Stop / Continue</div>
-      <div class="tile tpl yellow"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#0E0E0E"/></svg>4Ls</div>
-      <div class="tile tpl blue"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 0L40 40H0z" fill="#FFD100"/></svg>Mad / Sad / Glad</div>
-      <div class="tile tpl white"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 0L40 40H0z" fill="#D0211A"/></svg>Sailboat</div>
-      <div class="tile tpl paper"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" fill="#0F4CC9"/></svg>Crazy 8s</div>
-      <div class="tile tpl yellow"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#D0211A"/></svg>Brainstorm + affinity map</div>
-      <div class="tile tpl blue"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" fill="#fff"/></svg>Lean Coffee</div>
-      <div class="tile tpl red"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#fff"/></svg>Impact / Effort matrix</div>
-      <div class="tile tpl paper"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 0L40 40H0z" fill="#0E0E0E"/></svg>MoSCoW</div>
-      <div class="tile tpl white"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" fill="#D0211A"/></svg>User story map</div>
-      <div class="tile tpl blue"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#FFD100"/></svg>Customer journey map</div>
-      <div class="tile tpl yellow"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 0L40 40H0z" fill="#0F4CC9"/></svg>Empathy map</div>
-      <div class="tile tpl red"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" fill="#0E0E0E"/></svg>SWOT</div>
-      <div class="tile tpl paper"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#0F4CC9"/></svg>Pre-mortem</div>
+      <div class="tile tpl red"><img class="ic" src="img/t1.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Start / Stop / Continue</div>
+      <div class="tile tpl yellow"><img class="ic" src="img/t2.webp" width="88" height="88" alt="" loading="lazy" decoding="async">4Ls</div>
+      <div class="tile tpl blue"><img class="ic" src="img/t3.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Mad / Sad / Glad</div>
+      <div class="tile tpl white"><img class="ic" src="img/t4.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Sailboat</div>
+      <div class="tile tpl paper"><img class="ic" src="img/t5.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Crazy 8s</div>
+      <div class="tile tpl yellow"><img class="ic" src="img/t6.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Brainstorm + affinity map</div>
+      <div class="tile tpl blue"><img class="ic" src="img/t7.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Lean Coffee</div>
+      <div class="tile tpl red"><img class="ic" src="img/t8.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Impact / Effort matrix</div>
+      <div class="tile tpl paper"><img class="ic" src="img/t9.webp" width="88" height="88" alt="" loading="lazy" decoding="async">MoSCoW</div>
+      <div class="tile tpl white"><img class="ic" src="img/t10.webp" width="88" height="88" alt="" loading="lazy" decoding="async">User story map</div>
+      <div class="tile tpl blue"><img class="ic" src="img/t11.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Customer journey map</div>
+      <div class="tile tpl yellow"><img class="ic" src="img/t12.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Empathy map</div>
+      <div class="tile tpl red"><img class="ic" src="img/t13.webp" width="88" height="88" alt="" loading="lazy" decoding="async">SWOT</div>
+      <div class="tile tpl paper"><img class="ic" src="img/t14.webp" width="88" height="88" alt="" loading="lazy" decoding="async">Pre-mortem</div>
     </div>
   </div>
 </section>
@@ -268,9 +290,9 @@ footer a{text-underline-offset:4px}
         <h2 id="h-price">Pay per seat, or host it yourself.</h2>
         <p>Hosted workspaces live at your-team.gettabula.app with email sign-in links. Self-hosting with Docker is free.</p>
       </div>
-      <div class="tile price blue s2"><span>Hosted</span><div><b>&euro;8</b><small>per seat, per month</small></div></div>
-      <div class="tile price red s2"><span>Hosted, yearly</span><div><b>&euro;80</b><small>per seat, per year. Two months free.</small></div></div>
-      <div class="tile price yellow s2"><span>Self-hosted</span><div><b>&euro;0</b><small>Open source, runs on Docker.</small></div></div>
+      <div class="tile price blue s2"><span>Hosted</span><div><b>&euro;<span class="num" data-n="8">8</span></b><small>per seat, per month</small></div></div>
+      <div class="tile price red s2"><span>Hosted, yearly</span><div><b>&euro;<span class="num" data-n="80">80</span></b><small>per seat, per year. Two months free.</small></div></div>
+      <div class="tile price yellow s2"><span>Self-hosted</span><div><b>&euro;<span class="num" data-n="0">0</span></b><small>Open source, runs on Docker.</small></div></div>
     </div>
   </div>
 </section>
@@ -300,5 +322,24 @@ footer a{text-underline-offset:4px}
     <small>&copy; 2026 Tabula</small>
   </div>
 </footer>
+<script>
+(function(){
+  if(!('IntersectionObserver' in window)||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  document.documentElement.classList.add('js-anim');
+  function count(el){
+    var to=+el.dataset.n,t0=performance.now(),d=600;
+    (function f(t){var p=Math.min(1,(t-t0)/d);el.textContent=Math.round(to*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(f)})(t0);
+  }
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(!e.isIntersecting)return;
+      var el=e.target;io.unobserve(el);
+      if(el.classList.contains('num'))count(el);
+      el.classList.add('in');
+    });
+  },{threshold:.2});
+  document.querySelectorAll('.hero .shape-fill,.sticky,.conn,.num,.sect:not(.hero) h2').forEach(function(x){io.observe(x)});
+})();
+</script>
 </body>
 </html>

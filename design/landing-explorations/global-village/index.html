@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula - an infinite whiteboard for teams</title>
+<meta name="description" content="Tabula is a local-first infinite whiteboard for teams: notes, connectors, facilitated exercises and live sync. Open source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Della+Respira&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Palette (same hex values are used in every image brief) */
+:root{
+  --terracotta:#B5532F; --ochre:#D79A2B; --mustard:#E1B12C; --olive:#6B7036;
+  --coffee:#3B2416; --cream:#F3E6CC; --kraft:#C69C6D; --teal:#1F7A7A;
+  --paper:#FFF8EA;              /* lightest tint of cream, for text on dark/coloured fills */
+  --coffee-soft:#5A3A28;        /* secondary text on cream */
+  /* type scale 1.25, base 17px */
+  --s-1:.85rem; --s0:1.0625rem; --s1:1.33rem; --s2:1.66rem; --s3:2.08rem; --s4:2.6rem; --s5:3.25rem; --s6:4.06rem;
+  --u:8px; --ease:cubic-bezier(.2,.7,.2,1);
+  --display:"Della Respira","Cormorant Garamond",Georgia,serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --wrap:1200px;
+}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);font-size:var(--s0);line-height:1.55;color:var(--coffee);background:var(--cream);overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;background:url(img/kraft.webp) 0 0/512px 512px;opacity:.35;pointer-events:none;z-index:-1}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+p{max-width:60ch}
+h1,h2,h3{font-family:var(--display);font-weight:400;line-height:1.08;letter-spacing:.005em}
+h1{font-size:clamp(2.6rem,6.2vw,var(--s6))}
+h2{font-size:clamp(2.08rem,4.2vw,var(--s5))}
+h3{font-size:var(--s1);line-height:1.2;margin-bottom:6px}
+:focus-visible{outline:3px solid var(--teal);outline-offset:3px;border-radius:4px}
+.wrap{width:min(var(--wrap),100% - 48px);margin-inline:auto}
+.sect{padding:112px 0}
+.eyebrow{display:inline-block;font-weight:700;font-size:var(--s-1);letter-spacing:.16em;text-transform:uppercase;color:var(--coffee);border:2px solid var(--coffee);border-radius:999px;padding:4px 14px;margin-bottom:24px}
+.lede{font-size:var(--s1);line-height:1.45;max-width:36ch}
+
+/* buttons: one primary, one secondary */
+.cta{display:flex;flex-wrap:wrap;gap:16px;margin-top:32px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 28px;border-radius:999px;font-weight:700;font-size:var(--s0);text-decoration:none;border:2px solid var(--coffee);transition:transform .2s var(--ease),box-shadow .2s var(--ease),background .2s}
+.btn.p{background:var(--terracotta);color:var(--paper);box-shadow:3px 3px 0 var(--coffee)}
+.btn.p:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--coffee)}
+.btn.s{background:transparent;color:var(--coffee)}
+.btn.s:hover{background:var(--coffee);color:var(--paper)}
+.dark .btn.s{color:var(--paper);border-color:var(--paper)}
+.dark .btn.s:hover{background:var(--paper);color:var(--coffee)}
+
+/* header */
+header{position:sticky;top:0;z-index:20;background:var(--cream);border-bottom:2px solid var(--coffee)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;min-height:72px;gap:16px}
+.brand{font-family:var(--display);font-size:var(--s3);text-decoration:none;display:flex;align-items:center;gap:10px;line-height:1}
+.brand i{width:28px;height:28px;border-radius:50%;background:var(--terracotta);border:2px solid var(--coffee);position:relative;display:block;flex:none}
+.brand i::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--mustard);border:2px solid var(--coffee)}
+nav ul{display:flex;gap:8px;list-style:none;padding:0;align-items:center}
+nav a{display:block;padding:8px 14px;border-radius:999px;text-decoration:none;font-weight:600}
+nav a:hover{background:var(--coffee);color:var(--paper)}
+nav a.nav-cta{background:var(--terracotta);color:var(--paper);border:2px solid var(--coffee)}
+nav a.nav-cta:hover{background:var(--coffee)}
+
+/* hero */
+.hero{padding:72px 0 96px;overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:48px;align-items:center}
+.hero .lede{margin-top:24px}
+.hero small{display:block;margin-top:24px;font-size:var(--s-1);font-weight:600;letter-spacing:.04em;color:var(--coffee-soft)}
+.board{position:relative;aspect-ratio:3/2;width:100%}
+.board>img{position:absolute;inset:0;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent),linear-gradient(0deg,transparent,#000 6%,#000 94%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent),linear-gradient(0deg,transparent,#000 6%,#000 94%,transparent);mask-composite:intersect}
+.board svg.ov{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ov path.l{fill:none;stroke:var(--coffee);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.ov path.h{fill:var(--coffee)}
+.cur{position:absolute;display:flex;flex-direction:column;align-items:flex-start;pointer-events:none}
+.cur svg{width:38px;height:38px;overflow:visible;filter:drop-shadow(0 2px 2px rgba(59,36,22,.35))}
+.cur b{margin:-6px 0 0 24px;padding:3px 10px;border-radius:999px;border:2px solid var(--paper);color:var(--paper);font-size:.8rem;font-weight:700;letter-spacing:.02em;line-height:1.3}
+.cur.c1 svg path{fill:var(--terracotta)} .cur.c1 b{background:var(--terracotta)}
+.cur.c2 svg path{fill:var(--teal)} .cur.c2 b{background:var(--teal)}
+.cur.c3 svg path{fill:var(--olive)} .cur.c3 b{background:var(--olive)}
+.cur svg path{stroke:var(--paper);stroke-width:2;stroke-linejoin:round}
+
+/* features: luggage-tag cards */
+.head{max-width:720px;margin-bottom:56px}
+.head p{margin-top:16px;font-size:var(--s1);line-height:1.45}
+.feats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;list-style:none;padding:0}
+.feat{background:var(--paper);border:2px solid var(--coffee);border-radius:6px 6px 28px 6px;padding:24px;box-shadow:4px 4px 0 var(--kraft)}
+.feat img{width:96px;height:96px;margin-bottom:16px}
+.feat p{font-size:var(--s0);line-height:1.5}
+
+/* exercises: chalk-menu panel */
+.dark{background:var(--coffee);color:var(--paper)}
+.dark .eyebrow{color:var(--paper);border-color:var(--paper)}
+.ex{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:64px;align-items:center}
+.ex .art img,.final .art img{border-radius:8px;border:8px solid var(--paper);height:auto}
+.steps{list-style:none;padding:0;margin-top:40px;counter-reset:st}
+.steps li{display:grid;grid-template-columns:56px 1fr;gap:16px;padding:20px 0;border-top:2px dotted var(--kraft)}
+.steps li::before{counter-increment:st;content:counter(st);font-family:var(--display);font-size:var(--s2);width:48px;height:48px;border-radius:50%;background:var(--mustard);color:var(--coffee);display:grid;place-items:center;line-height:1}
+.steps strong{display:block;font-family:var(--display);font-weight:400;font-size:var(--s1)}
+.steps span{color:var(--paper)}
+
+/* templates: cafe menu board */
+.menu{background:var(--paper);border:2px solid var(--coffee);border-radius:10px;padding:56px;box-shadow:8px 8px 0 var(--kraft);position:relative}
+.menu::before{content:"";position:absolute;inset:10px;border:2px dotted var(--coffee);border-radius:6px;pointer-events:none;opacity:.55}
+.menu h2{text-align:center}
+.menu .sub{text-align:center;margin:12px auto 40px}
+.menu ul{list-style:none;padding:0;columns:2;column-gap:72px;position:relative}
+.menu li{display:flex;align-items:baseline;gap:8px;padding:9px 0;break-inside:avoid;font-size:var(--s1);font-family:var(--display)}
+.menu li::after{content:"";order:2;flex:1;border-bottom:2px dotted var(--kraft);transform:translateY(-4px)}
+.menu li span{order:1}
+.menu li em{order:3;font-family:var(--body);font-style:normal;font-size:var(--s-1);font-weight:700;letter-spacing:.1em;color:var(--terracotta);text-transform:uppercase}
+
+/* pricing: tickets */
+.tix{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;list-style:none;padding:0}
+.tix li{border:2px solid var(--coffee);border-radius:8px;padding:32px 28px;display:flex;flex-direction:column;gap:8px;min-height:260px;position:relative;box-shadow:4px 4px 0 var(--coffee)}
+.tix .t1{background:var(--paper)} .tix .t2{background:var(--mustard)} .tix .t3{background:var(--teal);color:var(--paper)}
+.tix .k{font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:var(--s-1)}
+.tix b{font-family:var(--display);font-weight:400;font-size:var(--s6);line-height:1}
+.tix small{font-size:var(--s0)}
+.pricenote{margin-top:32px}
+.pricenote a{font-weight:700;text-decoration-thickness:2px;text-underline-offset:4px;text-decoration-color:var(--teal)}
+
+/* final */
+.final{background:var(--terracotta);color:var(--paper)}
+.final .wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:center}
+.final .btn.p{background:var(--paper);color:var(--coffee);border-color:var(--coffee)}
+.final .btn.s{color:var(--paper);border-color:var(--paper)}
+.final .btn.s:hover{background:var(--paper);color:var(--coffee)}
+
+
+footer{background:var(--coffee);color:var(--paper);padding:48px 0}
+footer .wrap{display:flex;flex-wrap:wrap;gap:24px 48px;align-items:center;justify-content:space-between}
+footer .brand i{border-color:var(--paper)}
+footer ul{display:flex;flex-wrap:wrap;gap:8px 32px;list-style:none;padding:0}
+footer a{font-weight:600;text-underline-offset:4px;text-decoration-color:var(--mustard)}
+footer a:hover{color:var(--mustard)}
+footer small{font-size:var(--s-1)}
+
+/* motion: hero plays once, section titles fade up once; nothing else moves */
+html.js-anim .board>img{opacity:0;transform:translateY(16px)}
+html.js-anim .board.in>img{opacity:1;transform:none;transition:opacity .6s var(--ease),transform .6s var(--ease)}
+html.js-anim .ov path.l{stroke-dasharray:1;stroke-dashoffset:1}
+html.js-anim .board.in .ov path.l{stroke-dashoffset:0;transition:stroke-dashoffset .6s var(--ease) .7s}
+html.js-anim .ov path.h{opacity:0}
+html.js-anim .board.in .ov path.h{opacity:1;transition:opacity .2s linear 1.2s}
+html.js-anim .cur{opacity:0;transform:translate(-28px,-18px)}
+html.js-anim .board.in .cur{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .6s var(--ease)}
+html.js-anim .board.in .c1{transition-delay:.9s} html.js-anim .board.in .c2{transition-delay:1.05s} html.js-anim .board.in .c3{transition-delay:1.2s}
+html.js-anim .sect:not(.hero) h2{opacity:0;transform:translateY(12px)}
+html.js-anim .sect:not(.hero) h2.in{opacity:1;transform:none;transition:opacity .4s var(--ease),transform .4s var(--ease)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+
+@media (max-width:1000px){
+  .feats{grid-template-columns:repeat(2,1fr)}
+  .ex,.final .wrap{grid-template-columns:1fr;gap:40px}
+  .tix{grid-template-columns:1fr}
+  .tix li{min-height:0}
+  .hero .wrap{grid-template-columns:1fr}
+  .menu ul{columns:1}
+}
+@media (max-width:700px){
+  .sect{padding:64px 0}
+  .hero{padding:40px 0 64px}
+  .wrap{width:calc(100% - 32px)}
+  nav ul li:not(:last-child){display:none}
+  .head{margin-bottom:32px}
+  .feats{grid-template-columns:1fr}
+  .feat{display:grid;grid-template-columns:72px 1fr;gap:16px;align-items:start;padding:20px}
+  .feat img{width:72px;height:72px;margin:0}
+  .menu{padding:40px 24px}
+  .tix b{font-size:var(--s5)}
+  .cur svg{width:36px;height:36px}
+  .cur b{font-size:.72rem;padding:2px 8px;margin-left:20px}
+  .cta .btn{flex:1 1 100%}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="brand" href="#top"><i aria-hidden="true"></i>Tabula</a>
+    <nav aria-label="Main"><ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#exercises">Exercises</a></li>
+      <li><a href="#templates">Templates</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a class="nav-cta" href="#start">Start a board</a></li>
+    </ul></nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="sect hero" aria-labelledby="h1">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Local-first whiteboard</span>
+      <h1 id="h1">Pull up a chair. Pin up an idea.</h1>
+      <p class="lede">Tabula is an infinite whiteboard for teams. It works offline in your browser and syncs live when everyone is in the room.</p>
+      <div class="cta">
+        <a class="btn p" href="#start">Start a board</a>
+        <a class="btn s" href="#pricing">See pricing</a>
+      </div>
+      <small>Open source. Self-host for free, or use hosted workspaces.</small>
+    </div>
+    <div class="board" role="img" aria-label="The Tabula board: a dark toolbar on the left, three frames of sticky notes joined by connectors, and three teammates' named cursors.">
+      <img src="img/board.webp" width="1400" height="934" alt="" decoding="async" fetchpriority="high">
+      <svg class="ov" viewBox="0 0 1536 1024" preserveAspectRatio="none" aria-hidden="true">
+        <path class="l" pathLength="1" d="M578 482 H612"/>
+        <path class="h" d="M635 482 L609 470 L609 494 Z"/>
+        <path class="l" pathLength="1" d="M823 708 V790 H1261 V734"/>
+        <path class="h" d="M1261 708 L1249 735 L1273 735 Z"/>
+      </svg>
+      <div class="cur c1" style="left:17%;top:39%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Mara</b></div>
+      <div class="cur c2" style="left:60%;top:58%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Idris</b></div>
+      <div class="cur c3" style="left:80%;top:40%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></svg><b>Noor</b></div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="sect" aria-labelledby="h-feat">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">What is on the board</span>
+      <h2 id="h-feat">Everything a good workshop table needs</h2>
+      <p>Notes, shapes and lines that stay put, and a room that stays in sync.</p>
+    </div>
+    <ul class="feats">
+      <li class="feat"><img src="img/icon-1.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Sticky notes</h3><p>Notes and shapes on a snapping grid. Drop, drag, tidy.</p></div></li>
+      <li class="feat"><img src="img/icon-2.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Attached connectors</h3><p>Lines follow the notes they join, however you rearrange them.</p></div></li>
+      <li class="feat"><img src="img/icon-3.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Diagrams</h3><p>UML and flowchart shapes, icons, and Mermaid import.</p></div></li>
+      <li class="feat"><img src="img/icon-4.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Live presence</h3><p>Cursors, selections and who is here, plus comment threads.</p></div></li>
+      <li class="feat"><img src="img/icon-5.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Timed steps</h3><p>Build a session from steps with timers and run it for the room.</p></div></li>
+      <li class="feat"><img src="img/icon-6.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Workspaces and roles</h3><p>Owners, admins, members and guests. Editor, commenter or viewer per board.</p></div></li>
+      <li class="feat"><img src="img/icon-7.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Five themes</h3><p>Default, Ayu, Kanagawa, Matrix and Evergreen.</p></div></li>
+      <li class="feat"><img src="img/icon-8.webp" width="96" height="96" alt="" loading="lazy" decoding="async"><div><h3>Open source</h3><p>Read the code, self-host with Docker, or use hosted workspaces.</p></div></li>
+    </ul>
+  </div>
+</section>
+
+<section id="exercises" class="sect dark" aria-labelledby="h-ex">
+  <div class="wrap ex">
+    <div>
+      <span class="eyebrow">Facilitated exercises</span>
+      <h2 id="h-ex">Everyone gets a voice at the table</h2>
+      <ol class="steps">
+        <li><div><strong>Write in private</strong><span>Notes stay hidden until you reveal them.</span></div></li>
+        <li><div><strong>Reveal together</strong><span>Everyone sees every note at the same moment.</span></div></li>
+        <li><div><strong>Vote</strong><span>Dot voting and polls rank what matters, with a timer on each step.</span></div></li>
+      </ol>
+    </div>
+    <div class="art"><img src="img/decor.webp" width="1200" height="800" alt="A collage of a sun, a small globe, a compass, a coffee cup and a folded map." loading="lazy" decoding="async"></div>
+  </div>
+</section>
+
+<section id="templates" class="sect" aria-labelledby="h-tpl">
+  <div class="wrap">
+    <div class="menu">
+      <h2 id="h-tpl">Today's templates</h2>
+      <p class="sub lede" style="max-width:40ch;font-size:var(--s0)">Fourteen ways to start. Open one and change anything.</p>
+      <ul>
+        <li><span>Start / Stop / Continue</span></li>
+        <li><span>4Ls</span></li>
+        <li><span>Mad / Sad / Glad</span></li>
+        <li><span>Sailboat</span></li>
+        <li><span>Crazy 8s</span></li>
+        <li><span>Brainstorm + affinity map</span></li>
+        <li><span>Lean Coffee</span></li>
+        <li><span>Impact / Effort matrix</span></li>
+        <li><span>MoSCoW</span></li>
+        <li><span>User story map</span></li>
+        <li><span>Customer journey map</span></li>
+        <li><span>Empathy map</span></li>
+        <li><span>SWOT</span></li>
+        <li><span>Pre-mortem</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="sect" aria-labelledby="h-price">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Pricing</span>
+      <h2 id="h-price">Pay per seat, or host it yourself</h2>
+      <p>Hosted workspaces live at your-team.gettabula.app, with email sign-in links.</p>
+    </div>
+    <ul class="tix">
+      <li class="t1"><span class="k">Hosted, monthly</span><b>&euro;8</b><small>per seat, per month</small></li>
+      <li class="t2"><span class="k">Hosted, yearly</span><b>&euro;80</b><small>per seat, per year. Two months free.</small></li>
+      <li class="t3"><span class="k">Self-hosted</span><b>&euro;0</b><small>Open source. Runs on Docker.</small></li>
+    </ul>
+  </div>
+</section>
+
+<section id="start" class="sect final" aria-labelledby="h-final">
+  <div class="wrap">
+    <div>
+      <h2 id="h-final">Open a board. Bring your team.</h2>
+      <p class="lede" style="margin-top:16px">Your first board is one click away, and it works offline from the start.</p>
+      <div class="cta">
+        <a class="btn p" href="https://gettabula.app">Start a board</a>
+        <a class="btn s" href="https://github.com/gettabula-app/tabula">View on GitHub</a>
+      </div>
+    </div>
+    <div class="art"><img src="img/final.webp" width="1200" height="800" alt="" loading="lazy" decoding="async"></div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top"><i aria-hidden="true"></i>Tabula</a>
+    <ul>
+      <li><a href="https://gettabula.app">gettabula.app</a></li>
+      <li><a href="https://github.com/gettabula-app/tabula">GitHub gettabula-app/tabula</a></li>
+    </ul>
+    <small>&copy; 2026 Tabula</small>
+  </div>
+</footer>
+
+<script>
+(function(){
+  if(!('IntersectionObserver' in window)||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  document.documentElement.classList.add('js-anim');
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){if(!e.isIntersecting)return;io.unobserve(e.target);e.target.classList.add('in');});
+  },{threshold:.2});
+  document.querySelectorAll('.board,.sect:not(.hero) h2').forEach(function(x){io.observe(x)});
+})();
+</script>
+</body>
+</html>
