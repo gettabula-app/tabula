@@ -77,6 +77,8 @@ export class Renderer {
   overlay: Overlay = emptyOverlay();
   editingId: string | null = null;
   isHidden: (o: BaseObj) => boolean = () => false;
+  /** Read-only boards show the selection outline but no handles, since they cannot be dragged. */
+  readOnly = false;
   gridType: GridType = 'dots';
   gridSize = 24;
 
@@ -401,7 +403,7 @@ export class Renderer {
       const b = this.contentBounds(ov.selection);
       if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
     }
-    if (sel.length === 1 && sel[0].id !== this.editingId) {
+    if (sel.length === 1 && sel[0].id !== this.editingId && !this.readOnly) {
       const o = sel[0];
       const hs = handlesFor(o, get, z);
       const rot = hs.find((h) => h.id === 'rot');

@@ -47,7 +47,7 @@ type Drag =
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
   | { mode: 'pen'; pts: Point[] };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly';
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
@@ -105,6 +105,7 @@ export class BoardApp {
   constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement) {
     this.store = conn.store;
     this.r = new Renderer(this.store, parent);
+    this.r.readOnly = this.readOnly;
     this.flow = new Flow(this);
     this.editor = new TextEditor(this);
     this.r.isHidden = (o) => this.flow.isHidden(o);
@@ -130,6 +131,22 @@ export class BoardApp {
         if (o && 'font' in o && o.font) ensureFont(o.font, [o.fontWeight || 400, 700]);
       }
       this.emit('objects');
+    });
+
+    this.store.onReadOnly((v) => {
+      this.r.readOnly = v;
+      if (v) {
+        this.cancelLongPress();
+        this.editor.commit();
+        this.store.undo.clear();
+        if (this.drag && this.drag.mode !== 'pan') {
+          this.drag = null;
+          this.r.setOverlay({ marquee: null, preview: '', guides: [], dropTarget: null, anchorsFor: null });
+        }
+        this.setTool(this.tool);
+      }
+      this.emit('readonly');
+      this.emitSelection();
     });
 
     this.bindPointer();
@@ -179,10 +196,17 @@ export class BoardApp {
     return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || (d.mode === 'move' && d.moved));
   }
 
+  get readOnly(): boolean {
+    return this.store.readOnly;
+  }
+
+  /** On a read-only board only select and hand are allowed; anything else falls back to select. */
   setTool(t: Tool) {
+    const allowed = !this.readOnly || t.kind === 'select' || t.kind === 'hand';
+    const next: Tool = allowed ? t : { kind: 'select' };
     this.cancelLongPress();
-    this.tool = t;
-    this.r.root.dataset.tool = t.kind;
+    this.tool = next;
+    this.r.root.dataset.tool = next.kind;
     this.r.setOverlay({ anchorsFor: null, anchorHot: null });
     this.emit('tool');
   }
@@ -358,7 +382,7 @@ export class BoardApp {
   }
 
   private handleAt(p: Point): { id: Id; h: HandleId } | null {
-    if (this.selection.length !== 1) return null;
+    if (this.readOnly || this.selection.length !== 1) return null;
     const o = this.store.get(this.selection[0]);
     if (!o) return null;
     const tol = 8 / this.zoom;
@@ -369,6 +393,7 @@ export class BoardApp {
   }
 
   private anchorAt(p: Point): { id: Id; side: 'top' | 'right' | 'bottom' | 'left' } | null {
+    if (this.readOnly) return null;
     const id = this.r.overlay.anchorsFor;
     const o = id ? this.store.get(id) : undefined;
     if (!CONNECTABLE(o)) return null;
@@ -381,6 +406,7 @@ export class BoardApp {
   }
 
   private armLongPress(id: Id, e: PointerEvent) {
+    if (this.readOnly) return;
     this.cancelLongPress();
     const ring = document.createElement('div');
     ring.className = 'lp-ring';
@@ -453,7 +479,7 @@ export class BoardApp {
     switch (t.kind) {
       case 'select': {
         const top = this.hit(p, { locked: true });
-        if (top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
+        if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
         const hit = top?.locked ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
           this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [] };
@@ -470,7 +496,7 @@ export class BoardApp {
         } else if (!this.selection.includes(hit.id)) {
           this.setSelection([hit.id]);
         }
-        if (this.selection.includes(hit.id)) this.beginMove(p);
+        if (this.selection.includes(hit.id) && !this.readOnly) this.beginMove(p);
         return;
       }
       case 'connector': {
@@ -611,7 +637,7 @@ export class BoardApp {
     const top = t === 'select' || t === 'connector' ? this.hit(p, { locked: true }) : undefined;
     const live = top?.locked ? this.hit(p) : top;
     const lockedTop = !live && top?.locked ? top : undefined;
-    const anchorHost = CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
+    const anchorHost = !this.readOnly && CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
     // keep anchors visible while the pointer is on one of them
     const an = this.anchorAt(p);
     const anchorsFor = an ? an.id : anchorHost;
@@ -619,8 +645,8 @@ export class BoardApp {
     let cursor = '';
     if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
-    else if (live && t === 'select') cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
-    else if (lockedTop && t === 'select' && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
+    else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
+    else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
     this.r.setOverlay({ hover: live?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
   }
@@ -911,6 +937,10 @@ export class BoardApp {
     const top = this.hit(p, { locked: true });
     if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
+    if (this.readOnly) {
+      if (hit) this.setSelection([hit.id]);
+      return;
+    }
     if (hit) {
       if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
         if (hit.type === 'frame') this.editor.start(hit.id);
@@ -961,24 +991,26 @@ export class BoardApp {
       if (typing) return;
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
+      const ro = this.readOnly;
       if (mod && k === 'z') {
         e.preventDefault();
+        if (ro) return;
         if (e.shiftKey) this.store.undo.redo();
         else this.store.undo.undo();
         return;
       }
-      if (mod && k === 'y') { e.preventDefault(); this.store.undo.redo(); return; }
+      if (mod && k === 'y') { e.preventDefault(); if (!ro) this.store.undo.redo(); return; }
       if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.ordered().filter((o) => !o.locked).map((o) => o.id)); return; }
-      if (mod && k === 'd') { e.preventDefault(); this.duplicate(); return; }
+      if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
       if (mod && k === 'c') { this.copy(); return; }
-      if (mod && k === 'x') { this.copy(); this.deleteSelection(); return; }
+      if (mod && k === 'x') { if (!ro) { this.copy(); this.deleteSelection(); } return; }
       if (mod && (k === '=' || k === '+')) { e.preventDefault(); this.zoomBy(1.25); return; }
       if (mod && k === '-') { e.preventDefault(); this.zoomBy(0.8); return; }
       if (mod) return;
       if (e.shiftKey && e.code === 'Digit1') return this.zoomToFit();
       if (e.shiftKey && e.code === 'Digit2') return this.zoomToSelection();
       if (e.shiftKey && e.code === 'Digit0') return this.zoomTo(1);
-      if (k === 'delete' || k === 'backspace') { e.preventDefault(); this.deleteSelection(); return; }
+      if (k === 'delete' || k === 'backspace') { e.preventDefault(); if (!ro) this.deleteSelection(); return; }
       if (k === 'escape') {
         this.cancelLongPress();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
@@ -986,23 +1018,24 @@ export class BoardApp {
         this.setTool({ kind: 'select' });
         return;
       }
-      if (k === 'enter' && this.selection.length === 1) { e.preventDefault(); this.editor.start(this.selection[0]); return; }
+      if (k === 'enter' && this.selection.length === 1) { e.preventDefault(); if (!ro) this.editor.start(this.selection[0]); return; }
       if (k.startsWith('arrow') && this.selection.length) {
         e.preventDefault();
+        if (ro) return;
         const step = e.shiftKey ? this.grid() : 1;
         const dx = k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0;
         const dy = k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0;
         this.nudge(dx, dy);
         return;
       }
-      if (k === ']') return this.bringToFront();
-      if (k === '[') return this.sendToBack();
+      if (k === ']') { if (!ro) this.bringToFront(); return; }
+      if (k === '[') { if (!ro) this.sendToBack(); return; }
       const tools: Record<string, Tool> = {
         v: { kind: 'select' }, h: { kind: 'hand' }, n: { kind: 'sticky' }, s: { kind: 'sticky' }, t: { kind: 'text' },
         r: { kind: 'shape', shape: 'rect' }, o: { kind: 'shape', shape: 'ellipse' }, d: { kind: 'shape', shape: 'diamond' },
         l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' },
       };
-      if (tools[k]) this.setTool(tools[k]);
+      if (tools[k] && (!ro || k === 'v' || k === 'h')) this.setTool(tools[k]);
     }, { signal });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {
@@ -1156,6 +1189,7 @@ export class BoardApp {
   }
 
   pasteText(text: string) {
+    if (this.readOnly) return;
     try {
       const data = JSON.parse(text);
       if (data?.driftboard && Array.isArray(data.objects)) {
