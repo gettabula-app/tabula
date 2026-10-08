@@ -328,6 +328,100 @@ export function shapeAnchor(kind: ShapeKind, w: number, h: number, side: Side): 
   return { top: { x: w / 2, y: 0 }, right: { x: w, y: h / 2 }, bottom: { x: w / 2, y: h }, left: { x: 0, y: h / 2 } }[side];
 }
 
+/**
+ * One side of a shape, for spreading several connectors along it. `span` is the length of the stretch that can take
+ * connectors; `at(d)` is the local outline point `d` from the middle of the side, towards the right for a top or
+ * bottom side and downwards for a left or right one (|d| < span / 2), or null where there is no outline to meet.
+ */
+export interface SideCurve { span: number; at: (d: number) => Point | null }
+
+/** A straight stretch of a side of the box, leaving `inset` free at each end. */
+function boxSide(w: number, h: number, side: Side, inset = 0): SideCurve {
+  const along = side === 'top' || side === 'bottom' ? w : h;
+  return {
+    span: Math.max(0, along - 2 * inset),
+    at: (d) => {
+      const m = along / 2 + d;
+      return side === 'top' ? { x: m, y: 0 } : side === 'bottom' ? { x: m, y: h } : side === 'left' ? { x: 0, y: m } : { x: w, y: m };
+    },
+  };
+}
+
+/**
+ * A side that bulges as the arc of an ellipse whose centre lies at `centre` across the side (a y for a top or bottom
+ * side, an x for a left or right one) and which reaches `rd` across it and `ra` along it. The middle of the side is
+ * the tip of the arc.
+ */
+function arcSide(w: number, h: number, side: Side, centre: number, rd: number, ra: number): SideCurve {
+  const horizontal = side === 'top' || side === 'bottom';
+  const mid = (horizontal ? w : h) / 2;
+  const sign = side === 'top' || side === 'left' ? -1 : 1;
+  return {
+    span: 2 * ra,
+    at: (d) => {
+      const bulge = centre + sign * rd * Math.sqrt(Math.max(0, 1 - (d / ra) ** 2));
+      return horizontal ? { x: mid + d, y: bulge } : { x: bulge, y: mid + d };
+    },
+  };
+}
+
+/** A side of a polygon outline: where the line through the side's middle point, at `d` along, last crosses it. */
+function polygonSide(pts: [number, number][], w: number, h: number, side: Side): SideCurve {
+  const horizontal = side === 'top' || side === 'bottom';
+  return {
+    span: horizontal ? w : h,
+    at: (d) => {
+      // Edges are taken as (along, across) pairs, so one loop serves both orientations.
+      const line = (horizontal ? w : h) / 2 + d;
+      let best: number | null = null;
+      for (let i = 0; i < pts.length; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+        const a0 = horizontal ? ax : ay, a1 = horizontal ? bx : by;
+        const c0 = horizontal ? ay : ax, c1 = horizontal ? by : bx;
+        if (Math.abs(a1 - a0) < 1e-9 || line < Math.min(a0, a1) - 1e-9 || line > Math.max(a0, a1) + 1e-9) continue;
+        const across = c0 + ((line - a0) / (a1 - a0)) * (c1 - c0);
+        const outward = side === 'top' || side === 'left';
+        if (best === null || (outward ? across < best : across > best)) best = across;
+      }
+      if (best === null) return null;
+      return horizontal ? { x: line, y: best } : { x: best, y: line };
+    },
+  };
+}
+
+/**
+ * The side of a shape that several connectors fan out along, or null for kinds that keep every connector at the
+ * side's anchor. Rectangles, rounded rectangles and the flat sides of terminators and cylinders use the box edge,
+ * ellipses and the curved ends of terminators and cylinders their arcs, and polygon kinds their edges. Heart, cloud,
+ * round speech bubble, document, delay and display have no outline worked out here, so they have none.
+ */
+export function shapeSideCurve(kind: ShapeKind, w: number, h: number, side: Side): SideCurve | null {
+  const horizontal = side === 'top' || side === 'bottom';
+  switch (kind) {
+    case 'rect':
+    case 'predefined':
+      return boxSide(w, h, side);
+    case 'rounded':
+      return boxSide(w, h, side, Math.min(16, w / 4, h / 4));
+    case 'ellipse': {
+      const rx = w / 2, ry = h / 2;
+      return horizontal ? arcSide(w, h, side, ry, ry, rx) : arcSide(w, h, side, rx, rx, ry);
+    }
+    case 'terminator': {
+      const k = Math.min(h / 2, w / 2);
+      if (horizontal) return boxSide(w, h, side, k);
+      return arcSide(w, h, side, side === 'left' ? k : w - k, k, h / 2);
+    }
+    case 'cylinder': {
+      const k = Math.min(h * 0.15, 18);
+      if (!horizontal) return boxSide(w, h, side, k);
+      return arcSide(w, h, side, side === 'top' ? k : h - k, k, w / 2);
+    }
+  }
+  const pts = shapePolygon(kind, w, h);
+  return pts ? polygonSide(pts, w, h, side) : null;
+}
+
 /** Small icon of a shape kind, centred in a box, for palettes and menus. */
 export function shapePreviewSvg(kind: ShapeKind, box = { w: 52, h: 40 }, inset = 4): string {
   const size = defaultSize(kind);

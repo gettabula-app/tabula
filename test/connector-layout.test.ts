@@ -250,11 +250,15 @@ describe('connectorGeom with a layout', () => {
     expect(endSlot(layout, 'c9', 'from')!.count).toBeGreaterThan(1);
   });
 
-  it('returns the same geometry with and without it', () => {
-    for (const c of cs) {
+  const crowded = (c: ConnectorObj) => (['from', 'to'] as const).some((end) => (endSlot(layout, c.id, end)?.count ?? 0) > 1);
+
+  it('changes only connectors that share a side with another', () => {
+    for (const c of cs.filter((c) => !crowded(c))) {
       expect(connectorGeom(get, c, layout)).toEqual(connectorGeom(get, c));
       expect(objBounds(get, c, layout)).toEqual(objBounds(get, c));
     }
+    expect(cs.filter(crowded).some((c) => connectorGeom(get, c, layout)!.start.x !== connectorGeom(get, c)!.start.x
+      || connectorGeom(get, c, layout)!.start.y !== connectorGeom(get, c)!.start.y)).toBe(true);
   });
 
   it('returns the same geometry with an empty layout', () => {
@@ -262,8 +266,8 @@ describe('connectorGeom with a layout', () => {
     for (const c of cs) expect(connectorGeom(get, c, none)).toEqual(connectorGeom(get, c));
   });
 
-  it('draws the same markup with and without it', () => {
-    for (const c of cs) {
+  it('draws the same markup for connectors that share nothing', () => {
+    for (const c of cs.filter((c) => !crowded(c))) {
       expect(objectMarkup(c, { get, layout: () => layout })).toBe(objectMarkup(c, { get }));
     }
   });

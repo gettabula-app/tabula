@@ -1,7 +1,7 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
 import type { Store } from './store';
-import { boxBounds, buildConnectorLayout, center, connectorGeom, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
+import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
 import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
@@ -109,6 +109,7 @@ export class Renderer {
   private allDirty = true;
   private boundsCache = new Map<Id, Rect | null>();
   private layoutCache: ConnectorLayout | null = null;
+  private lastLayout: ConnectorLayout | null = null;
   private frameQueued = false;
   private destroyed = false;
   private stopFonts: () => void = () => {};
@@ -306,14 +307,18 @@ export class Renderer {
    */
   connectorLayout(): ConnectorLayout {
     if (!this.layoutCache) {
-      this.layoutCache = buildConnectorLayout((id) => this.store.get(id), this.store.ordered().filter(isConnector));
+      const next = buildConnectorLayout((id) => this.store.get(id), this.store.ordered().filter(isConnector));
+      // A connector that joins, leaves or reorders a side moves the others on it, even though they did not change.
+      if (this.lastLayout) for (const id of movedConnectors(this.lastLayout, next)) this.markDirty(id);
+      this.layoutCache = this.lastLayout = next;
     }
     return this.layoutCache;
   }
 
   bounds(o: Obj): Rect | null {
+    this.connectorLayout(); // first, so connectors whose slot moved lose their cached bounds
     if (this.boundsCache.has(o.id)) return this.boundsCache.get(o.id)!;
-    const b = objBounds((id) => this.store.get(id), o, isConnector(o) ? this.connectorLayout() : undefined);
+    const b = objBounds((id) => this.store.get(id), o, this.connectorLayout());
     this.boundsCache.set(o.id, b);
     return b;
   }

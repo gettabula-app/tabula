@@ -1,6 +1,6 @@
 import type { BaseObj, ConnectorObj, End, Id, Obj, Point, Rect, Side } from './types';
 import { isBox, isConnector } from './types';
-import { shapeAnchor } from './shapes';
+import { shapeAnchor, shapeSideCurve } from './shapes';
 
 export const EPS = 1e-6;
 
@@ -327,8 +327,8 @@ export type ConnectorLayout = ReadonlyMap<string, EndSlot>;
 
 const slotKey = (id: Id, end: EndName) => `${id}:${end}`;
 
-export const endSlot = (layout: ConnectorLayout | undefined, id: Id, end: EndName): EndSlot | undefined =>
-  layout?.get(slotKey(id, end));
+export const endSlot = (layout: ConnectorLayout | undefined, id: Id | undefined, end: EndName): EndSlot | undefined =>
+  id === undefined ? undefined : layout?.get(slotKey(id, end));
 
 /**
  * Groups the bound ends of `connectors` by shape and side, and numbers each group along the side's own axis (top to
@@ -362,18 +362,64 @@ export function buildConnectorLayout(get: (id: string) => Obj | undefined, conne
   return layout;
 }
 
+/** Ids of the connectors with an end whose slot is not the same in both layouts: added, removed or moved. */
+export function movedConnectors(prev: ConnectorLayout, next: ConnectorLayout): Id[] {
+  const out = new Set<Id>();
+  const idOf = (key: string) => key.slice(0, key.lastIndexOf(':'));
+  for (const [key, slot] of next) {
+    const was = prev.get(key);
+    if (!was || was.index !== slot.index || was.count !== slot.count) out.add(idOf(key));
+  }
+  for (const key of prev.keys()) if (!next.has(key)) out.add(idOf(key));
+  return [...out];
+}
+
 /**
- * The routed geometry of a connector. `layout` says where each end sits among the others on its shape's side; it is
- * accepted so that every caller can pass it, and is not applied yet: all ends still attach at the side's anchor.
+ * The most that neighbouring connector ends on one side are spread apart, in board units. A side that is shorter than
+ * this times the number of ends plus one packs them closer, evenly; a long side keeps them together around its middle
+ * instead of throwing them to its corners.
+ */
+export const FAN_GAP = 28;
+
+const ELLIPSE_TYPES = new Set(['uml-usecase', 'uml-initial', 'uml-final']);
+
+/**
+ * Where an end with `slot` attaches to `side` of `o`: spread evenly along the side, `FAN_GAP` apart at most, centred on
+ * its middle (so the middle one of an odd number is where a lone end would be) and on the outline of the shape.
+ * Null for kinds that have no outline to spread along; those keep the side's anchor.
+ */
+export function slotAnchor(o: BaseObj, side: Side, slot: EndSlot): Point | null {
+  const kind = o.type === 'shape' ? o.kind || 'rect' : ELLIPSE_TYPES.has(o.type) ? 'ellipse' : 'rect';
+  const curve = shapeSideCurve(kind, o.w, o.h, side);
+  if (!curve || curve.span <= 0) return null;
+  const gap = Math.min(curve.span / (slot.count + 1), FAN_GAP);
+  const local = curve.at((slot.index - (slot.count - 1) / 2) * gap);
+  if (!local) return null;
+  return rotate({ x: o.x + local.x, y: o.y + local.y }, center(o), o.rotation || 0);
+}
+
+/** The end with its attachment moved to its slot, when it shares its side with others; the direction stays the side's. */
+function spread(get: (id: string) => Obj | undefined, e: EndSide, slot: EndSlot | undefined): EndSide {
+  if (!slot || slot.count < 2 || e.id === null || !e.side) return e;
+  const o = get(e.id);
+  const p = isBox(o) ? slotAnchor(o, e.side, slot) : null;
+  return p ? { ...e, p } : e;
+}
+
+/**
+ * The routed geometry of a connector. With a `layout`, ends that share a side of a shape with other connectors attach
+ * at their own point along it instead of all at its anchor. A connector without an `id`, or one the layout does not
+ * know, keeps the anchor.
  */
 export function connectorGeom(
   get: (id: string) => Obj | undefined,
-  c: Pick<ConnectorObj, 'from' | 'to' | 'route'>,
-  _layout?: ConnectorLayout,
+  c: Pick<ConnectorObj, 'from' | 'to' | 'route'> & { id?: Id },
+  layout?: ConnectorLayout,
 ): ConnectorGeom | null {
   const sides = resolveSides(get, c);
   if (!sides) return null;
-  const a = sides.from, b = sides.to;
+  const a = spread(get, sides.from, endSlot(layout, c.id, 'from'));
+  const b = spread(get, sides.to, endSlot(layout, c.id, 'to'));
   const p1 = a.p, p2 = b.p;
   const travel = sub(p2, p1);
 
