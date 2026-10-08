@@ -5,6 +5,7 @@ All notable changes to Driftboard are documented here, newest first. The format 
 ## [Unreleased]
 
 ### Added
+- Toolbars and panels get a hairline outline on the non-default themes so they stay visible on dark canvases.
 - App themes: Default, Ayu, Kanagawa, Matrix and Evergreen. Pick one under Appearance in the board menu; the choice is remembered on this device and applied before the page paints. Every text and accent colour pair meets WCAG AA contrast (checked in tests).
 - One Shapes button on the left toolbar opens a shapes-only panel with search; click a shape to draw it or drag it onto the board. Sticky notes keep their own toolbar button (the Rectangle and Ellipse buttons are gone; the R, O and D shortcuts still work).
 - Quick-action bar above a selected item: colour, shape, fill, line, route, text, align, lock, duplicate and delete. More opens the full properties panel.
@@ -29,6 +30,7 @@ All notable changes to Driftboard are documented here, newest first. The format 
 - Rewrote ternary/short-circuit expression statements in `src/app.ts` as `if` statements and simplified small lint findings in `src/mermaid.ts`, `src/markup.ts` and `test/core.test.ts`, with no change in behaviour.
 
 ### Fixed
+- Labels in the board menu were right-aligned next to their icons; they are now left-aligned.
 - A locked item that overlaps an unlocked one can now be unlocked with a long press; double-clicking a locked item no longer creates a stray text box; arrow-key nudging a frame no longer moves its locked children; an item locked by a collaborator is dropped from your selection.
 - Text boxes in shapes and sticky notes no longer collapse to a negative size when resized very small, and quick-action popovers close when you zoom or pan instead of floating in place.
 - Quick-action popovers open away from the selected item instead of over it.

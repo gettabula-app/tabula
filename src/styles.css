@@ -332,7 +332,7 @@ select.input {
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
-.menu-item span:first-of-type { flex: 1; }
+.menu-item > span:not([class]) { flex: 1; }
 .menu-hint { color: var(--tray-muted); font-size: 12px; }
 
 .font-picker { width: 340px; display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; max-height: min(620px, calc(100vh - 32px)); }
@@ -453,3 +453,6 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
 .theme-preview::before { content: ''; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 8px; border-radius: 3px; background: var(--t); }
 .theme-preview::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--a); }
 .theme-item .theme-check { flex: none; width: 16px; height: 16px; display: grid; place-items: center; margin-left: auto; }
+
+/* tray outline on themed canvases */
+:root:not([data-theme='default']) .tray { box-shadow: var(--shadow), 0 0 0 1px var(--tray-line); }
