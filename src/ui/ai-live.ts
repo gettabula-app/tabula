@@ -164,6 +164,10 @@ export interface TakenReview {
   stale: number;
 }
 
+/** The label rows' own margins, as in `placeLabelRows` (src/ai-live-logic.ts): the board's edge, and the rail's. */
+const ROW_EDGE_PX = 8;
+const ROW_RAIL_PX = 4;
+
 /** The room a preview gets around it when it is brought into view, beyond the chrome's own insets: the label row above it. */
 const SHOW_PAD = 40;
 const SHOW_MAX_ZOOM = 1;
@@ -216,6 +220,8 @@ interface Row {
   wrap?: { w: number; h: number };
   /** Measured height of a row that is more than one line high (the short row of TAB-221); set with `w`. */
   h?: number;
+  /** The width the short row was measured for: it is capped to the room beside the rail, which changes with the board's width. */
+  room?: number;
   buttons: HTMLButtonElement[];
 }
 
@@ -428,6 +434,9 @@ export function mountAiLive(app: BoardApp): void {
 
     // the run under review has its own Add and Discard in the panel: its row would only peek out from behind it
     const reviewing = new Set([...document.querySelectorAll<HTMLElement>('.chrome > .aireview')].map((el) => el.dataset.run));
+    const railEl = document.querySelector('.chrome > .rail');
+    const railEdgeNow = railEl ? Math.max(0, railEl.getBoundingClientRect().right - origin.left) : 0;
+    const railEdge = railEdgeNow;
     const input: LabelRowIn[] = [];
     for (const run of ready) {
       const row = rows.get(run.id);
@@ -437,24 +446,35 @@ export function mountAiLive(app: BoardApp): void {
       // a preview that is off screen shows nothing: the avatar badge says someone has one
       row.el.hidden = reviewing.has(run.id) || !intersects(anchor, view);
       if (row.el.hidden) continue;
+      // the short row of a changed run (TAB-221) is never wider than the room right of the rail, and is measured again when that changes
+      const room = Math.max(120, view.w - ROW_EDGE_PX - Math.max(ROW_EDGE_PX, railEdgeNow + ROW_RAIL_PX));
+      if (row.room !== room) {
+        // the room changed (the board was resized): the row is measured again
+        row.room = room;
+        row.w = 0;
+        if (run.changed) row.el.style.maxWidth = `${room}px`;
+      }
       if (!row.w) {
-        // the row in one line, then with its buttons under the label, for a board too narrow for the first (TAB-215)
+        // the row in one line, then with its buttons under the label, for a board too narrow for the first (TAB-215); the
+        // stacked row is never wider than the room, and a label longer than that is cut with an ellipsis
         row.el.classList.remove('wrapped');
+        if (!run.changed) row.el.style.maxWidth = '';
         row.w = row.el.offsetWidth;
         row.el.classList.add('wrapped');
+        if (!run.changed) row.el.style.maxWidth = `${room}px`;
         row.wrap = { w: row.el.offsetWidth, h: row.el.offsetHeight || 2 * ROW_H };
         row.el.classList.remove('wrapped');
+        if (!run.changed) row.el.style.maxWidth = '';
         if (run.changed) row.h = row.el.offsetHeight || 2 * ROW_H;
       }
       // the short row of a changed run is its own form: it is not wrapped, and it is taller than a row of buttons
       input.push({ id: run.id, anchor, w: row.w, h: row.h ?? ROW_H, ...(row.wrap?.w && !run.changed ? { wrap: row.wrap } : {}) });
     }
-    // a row never goes left of the rail
-    const railEl = document.querySelector('.chrome > .rail');
-    const railEdge = railEl ? Math.max(0, railEl.getBoundingClientRect().right - origin.left) : 0;
+    // a row never goes left of the rail (its right edge is read first: the short row's width depends on it)
     for (const [id, at] of placeLabelRows(input, obstacles, { w: view.w, h: view.h }, railEdge)) {
       const el = rows.get(id)!.el;
       el.classList.toggle('wrapped', at.wrapped === true);
+      if (!ready.find((r) => r.id === id)?.changed) el.style.maxWidth = at.wrapped ? `${Math.max(120, view.w - ROW_EDGE_PX - Math.max(ROW_EDGE_PX, railEdge + ROW_RAIL_PX))}px` : '';
       el.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
     }
   }
