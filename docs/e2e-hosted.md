@@ -34,6 +34,10 @@ The site's form posts to `POST API/v1/signup` with `{email, workspaceName, slug,
 
 The v4 control plane that is live today still sells the **per-seat plan**: the signup API takes `{email, workspaceName, slug, region, interval?, seats?}` (interval `month` or `year`, default month; seats default 2, 2 to 500, adjustable in Checkout) and Checkout shows a quantity. The flat price (one plan, €29 per workspace per month or €290 per year, excluding VAT, no seats; an old page's `seats` is ignored) is not deployed yet and needs the new Stripe prices. Run the script with `--plan seats` (the default) now and `--plan flat` after tech lead says the flat deploy is out; only the price and seat-wording checks differ. The rest of this page describes the flat model, so read "seat" findings accordingly until then.
 
+## Findings of the first live run (2026-10-09, flat Checkout, Stripe test mode)
+
+Cancel stage (slug `e2e-1016-a`): all checks pass. Signup stage (`e2e-1016-c`): Checkout shows Stripe's Sandbox badge, `cs_test_` session, Tabula Standard €29.00 with the Founding price coupon (-€10.00 for 12 cycles), 7 days free, due today €0.00; the billing address has to be filled for the Start trial button to work; payment returns to `SITE/signup/success?slug=…`, the workspace answers 42 s after payment; the welcome mail ("Your Tabula workspace is ready") and the sign-in mail ("Your Tabula sign-in link", link good for 15 minutes, works once) both come from `no-reply@mg.gettabula.app` to the plus-address, the sign-in mail within 3 s of the request; sign-in opens the boards page and a new board; Admin > Manage billing opens the Stripe portal with Tabula Standard €19.00 per month, free trial ending Oct 16, no quantity. Found: TAB-265 (the signup page still sells the old per-seat plan) and TAB-266 (Admin says "add seats" and shows no trial).
+
 ## Run order, the mailbox and the report
 
 1. `--stage smoke,forms` (free, any time). Fix or file whatever fails before going on.

@@ -5,6 +5,7 @@
 //   smoke   the site's pages at 1280 and 390 px, no console errors, no CORS error on the live slug check, preflight answers
 //   forms   slug rules and invalid emails on the signup form (only invalid data is submitted; a 201 from the API fails the run)
 //   cancel  starts a Checkout (a customer and a pending workspace in Stripe test mode, no Fly app), goes back, checks the cancel page
+//   signin  on a workspace that already exists: asks for a new sign-in link, takes it, signs in, opens a board (--email, --slug)
 //   signup  the whole path: pays with the test card, waits for the workspace, signs in with the emailed link, opens a board
 //
 //   node scripts/e2e-hosted.mjs --stage smoke,forms [--out <folder>]
@@ -49,7 +50,7 @@ const OUT = path.resolve(args.out ?? path.join('tabula-review', 'e2e', new Date(
 fs.mkdirSync(OUT, { recursive: true });
 const SITE = args.site.replace(/\/$/, '');
 const API = args.api.replace(/\/$/, '');
-const CARD = { number: '4242 4242 4242 4242', expiry: '12 / 34', cvc: '123', name: 'E2E Tester', postal: '12345' };
+const CARD = { number: '4242 4242 4242 4242', expiry: '12 / 34', cvc: '123', name: 'E2E Tester', postal: '11122', line1: '1 Test Street', city: 'Stockholm' };
 const report = [];
 const check = (ok, name, detail = '') => {
   report.push({ ok, name, detail });
@@ -191,7 +192,12 @@ async function fillStripe(page) {
   (await find(['#cardExpiry', 'input[name=cardExpiry]', 'input[autocomplete=cc-exp]']))?.fill(CARD.expiry);
   (await find(['#cardCvc', 'input[name=cardCvc]', 'input[autocomplete=cc-csc]']))?.fill(CARD.cvc);
   (await find(['#billingName', 'input[name=billingName]']))?.fill(CARD.name);
-  (await find(['#billingPostalCode', 'input[name=billingPostalCode]']))?.fill(CARD.postal).catch(() => {});
+  // the billing address is required for tax: open the manual form when Checkout shows the autocomplete, then fill the lines
+  await page.getByText(/enter address manually/i).first().click({ timeout: 2000 }).catch(() => {});
+  (await find(['#billingAddressLine1', 'input[name=billingAddressLine1]']))?.fill(CARD.line1);
+  (await find(['#billingLocality', 'input[name=billingLocality]']))?.fill(CARD.city);
+  (await find(['#billingPostalCode', 'input[name=billingPostalCode]']))?.fill(CARD.postal);
+  await sleep(2500); // the tax line recalculates after the address
   return true;
 }
 
@@ -217,6 +223,60 @@ async function readLink() {
   return null;
 }
 
+/** On a ready workspace: asks for the sign-in link, takes it from --link / --link-file / the prompt, signs in and opens a new board. */
+async function signIn(ctx, base) {
+  const wp = await ctx.newPage();
+  await wp.goto(base, { waitUntil: 'networkidle' });
+  await shot(wp, 'workspace-signin');
+  const emailBox = wp.getByLabel(/email/i).first();
+  await emailBox.fill(args.email);
+  await wp.getByRole('button', { name: /email me|send|link|continue/i }).first().click();
+  const sentAt = Date.now();
+  note('sign-in link requested; waiting for the link (--link, --link-file or a prompt)');
+  const link = await readLink();
+  check(!!link, 'the sign-in link arrives', link ? `${Math.round((Date.now() - sentAt) / 1000)} s` : 'no link given within 3 minutes');
+  if (link) {
+    check(link.startsWith(base), 'the link points at the workspace', 'host checked only');
+    await wp.goto(link, { waitUntil: 'networkidle' });
+    await sleep(1500);
+    await shot(wp, 'boards-page');
+    const t = await wp.evaluate(() => document.body.innerText);
+    check(/boards/i.test(t) && !/sign in|check your email/i.test(t.slice(0, 200)), 'signed in: the boards page opens', wp.url().replace(/token=[^&]+/, 'token=…').slice(0, 80));
+    await wp.getByRole('button', { name: /new board/i }).first().click().catch(() => {});
+    await sleep(2500);
+    await shot(wp, 'new-board');
+    check(/#\/b\//.test(wp.url()), 'a new board opens', wp.url().replace(/token=[^&]+/, 'token=…').slice(0, 80));
+    // Admin: the owner sees the trial and Manage billing, which opens Stripe's portal (test mode) without a quantity for the flat plan
+    await wp.goto(`${base}/#/admin`, { waitUntil: 'networkidle' });
+    await sleep(1500);
+    await shot(wp, 'admin-overview');
+    const adminText = await wp.evaluate(() => document.body.innerText);
+    check(/trial/i.test(adminText), 'Admin shows the trial', (adminText.match(/.{0,40}trial.{0,60}/i) ?? [''])[0].replace(/\s+/g, ' '));
+    const billing = wp.getByRole('button', { name: /manage billing/i }).first();
+    if (await billing.count()) {
+      await billing.click();
+      const portal = await wp.waitForURL(/billing\.stripe\.com/, { timeout: 30_000 }).then(() => true).catch(() => false);
+      check(portal, 'Manage billing opens the Stripe portal', wp.url().slice(0, 60));
+      if (portal) {
+        await sleep(2500);
+        await shot(wp, 'billing-portal');
+        const pt = await wp.evaluate(() => document.body.innerText);
+        check(PLAN === 'flat' ? !/quantity|seats?\b/i.test(pt) : true, 'the portal shows no quantity or seats (flat plan)', (pt.match(/.{0,30}(quantity|seats?).{0,30}/i) ?? ['none'])[0].replace(/\s+/g, ' '));
+      }
+    } else check(false, 'Manage billing is offered to the owner');
+  }
+}
+
+async function signinOnly(browser) {
+  if (!args.email || !args.slug) {
+    check(false, 'signin stage needs --email and --slug of an existing workspace');
+    return;
+  }
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+  await signIn(ctx, `https://${args.slug}.${args['ws-suffix']}`);
+  await ctx.close();
+}
+
 async function signup(browser) {
   if (!args['allow-signup'] || !args.email || !args.slug) {
     check(false, 'signup stage needs --allow-signup, --email and --slug', 'skipped without those (a signup creates a Fly app and needs the manager\'s go)');
@@ -239,6 +299,12 @@ async function signup(browser) {
   }
   await shot(page, 'checkout-filled');
   await page.getByRole('button', { name: /start trial|subscribe|pay|confirm/i }).first().click();
+  await sleep(4000);
+  if (page.url().includes('checkout.stripe.com')) {
+    const problems = await page.evaluate(() => [...document.querySelectorAll('[role=alert], [class*=rror]')].map((e) => e.textContent.trim()).filter(Boolean).slice(0, 4));
+    if (problems.length) note(`Checkout shows: ${problems.join(' | ').slice(0, 200)}`);
+    await shot(page, 'checkout-after-submit');
+  }
   const back = await page.waitForURL(new RegExp(`${SITE.replace(/[.]/g, '\\.')}/signup/success`), { timeout: 90_000 }).then(() => true).catch(() => false);
   check(back && page.url().includes(`slug=${args.slug}`), 'Checkout returns to the success page for the slug', page.url().slice(0, 100));
   await shot(page, 'success-page');
@@ -251,28 +317,7 @@ async function signup(browser) {
   }
   check(ready, 'the workspace answers within 10 minutes', `${Math.round((Date.now() - paidAt) / 1000)} s after payment`);
   if (!ready) return void (await ctx.close());
-  const wp = await ctx.newPage();
-  await wp.goto(base, { waitUntil: 'networkidle' });
-  await shot(wp, 'workspace-signin');
-  const emailBox = wp.getByLabel(/email/i).first();
-  await emailBox.fill(args.email);
-  await wp.getByRole('button', { name: /email me|send|link|continue/i }).first().click();
-  const sentAt = Date.now();
-  note('sign-in link requested; waiting for the link (--link, --link-file or a prompt)');
-  const link = await readLink();
-  check(!!link, 'the sign-in link arrives', link ? `${Math.round((Date.now() - sentAt) / 1000)} s` : 'no link given within 3 minutes');
-  if (link) {
-    check(link.startsWith(base), 'the link points at the workspace', 'host checked only');
-    await wp.goto(link, { waitUntil: 'networkidle' });
-    await sleep(1500);
-    await shot(wp, 'boards-page');
-    const t = await wp.evaluate(() => document.body.innerText);
-    check(/boards/i.test(t) && !/sign in|check your email/i.test(t.slice(0, 200)), 'signed in: the boards page opens', wp.url().replace(/token=[^&]+/, 'token=…').slice(0, 80));
-    await wp.getByRole('button', { name: /new board/i }).first().click().catch(() => {});
-    await sleep(2500);
-    await shot(wp, 'new-board');
-    check(/#\/b\//.test(wp.url()), 'a new board opens', wp.url().replace(/token=[^&]+/, 'token=…').slice(0, 80));
-  }
+  await signIn(ctx, base, t0);
   note(`total ${Math.round((Date.now() - t0) / 1000)} s; tear down the workspace '${args.slug}' (Fly app tabula-ws-${args.slug}) afterwards`);
   await ctx.close();
 }
@@ -283,6 +328,7 @@ try {
   if (STAGES.includes('forms')) await forms(browser);
   if (STAGES.includes('cancel')) await cancel(browser);
   if (STAGES.includes('signup')) await signup(browser);
+  if (STAGES.includes('signin')) await signinOnly(browser);
 } finally {
   await browser.close();
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
