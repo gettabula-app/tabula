@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members` and `chat-object` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `vote-running-touch`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members` and `chat-object` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -46,6 +46,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
+| `vote-running-touch` | A running dot vote on the seeded board at phone widths: Remove dots is on, the instruction is collapsed, and the 600 px and wider shots are skipped |
 | `drawer-stickers` | The seeded board with the Stickers drawer open (the icon sets are only there after a full `npm run build`; `build:app` shows the drawer's "could not be loaded" state) |
 | `layers` | The seeded board with the Layers panel open (TAB-198): the Went well frame open, To improve closed, the Backlog rectangle selected |
 | `layers-hidden` | As `layers`, with a note and the diamond hidden: the "2 hidden" count in the header and the dimmed rows with the eye-off glyph |

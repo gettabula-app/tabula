@@ -391,6 +391,8 @@ select.input {
 .votes-left > span:not(.dot) { margin-left: 4px; }
 .votes-left.none { color: var(--signal); }
 .votes-left .ico { opacity: 0.7; }
+.vote-compact-count { display: none; }
+.remove-dots-toggle[aria-pressed='true'] { background: var(--signal); color: var(--on-signal); }
 .dots-pop { width: 300px; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .dots-pop .pop-head { padding: 12px 0 0; }
 .dots-pop p { margin: 0; }
@@ -570,9 +572,44 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 }
 
 @media (max-width: 500px) {
+  /* A vote stays in one row: the instruction opens below it, and the title, reveal, undo mode, count and finish stay in view. */
+  .flowbar.vote-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
+  .flowbar.vote-compact > .flow-previous, .flowbar.vote-compact > .timer, .flowbar.vote-compact > .flow-timer-buttons,
+  .flowbar.vote-compact > .flow-ask { display: none; }
+  .flowbar.vote-compact > .flow-step {
+    order: 0; flex: 0 1 54px; width: 54px; min-width: 44px; max-width: 54px; height: 38px; min-height: 38px; padding: 0 2px; gap: 0;
+  }
+  .flowbar.vote-compact .step-count, .flowbar.vote-compact .mode, .flowbar.vote-compact .step-instr { display: none; }
+  .flowbar.vote-compact .step-text { width: 100%; }
+  .flowbar.vote-compact .flow-title { gap: 0; font-size: 12px; }
+  .flowbar.vote-compact > .vote-reveal {
+    order: 1; width: 34px; min-width: 34px; height: 36px; padding: 0; gap: 0; overflow: hidden; font-size: 0;
+  }
+  .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 36px; padding: 0 4px; gap: 2px; font-size: 10.5px; }
+  .flowbar.vote-compact > .votes-left { order: 3; height: 36px; min-width: 28px; padding: 0 6px; gap: 0; }
+  .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
+  .flowbar.vote-compact > .votes-left > .ico { display: none; }
+  .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
+  .flowbar.vote-compact > .vote-finish { order: 4; height: 36px; padding: 0 7px; font-size: 12px; }
+  .flowbar.vote-compact > .vote-info { order: 5; width: 32px; min-width: 32px; height: 36px; padding: 0; font-size: 11px; font-weight: 600; }
+  .flowbar.vote-compact > .vote-instructions { order: 6; flex: 1 0 100%; padding: 4px 6px; color: var(--tray-muted); font-size: 12px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+  .flowbar.vote-compact > .vote-instructions[hidden] { display: none; }
+  @media (max-width: 380px) {
+    .flowbar.vote-compact > .flow-step { flex-basis: 48px; width: 48px; max-width: 48px; min-width: 46px; }
+    .flowbar.vote-compact .flow-title { font-size: 10.5px; }
+    .flowbar.vote-compact > .vote-reveal { width: 32px; min-width: 32px; }
+    .flowbar.vote-compact > .remove-dots-toggle { padding: 0 3px; gap: 1px; font-size: 10px; }
+    .flowbar.vote-compact > .votes-left { min-width: 24px; padding: 0 4px; }
+    .flowbar.vote-compact > .vote-finish { padding: 0 4px; }
+    .flowbar.vote-compact > .vote-info { width: 28px; min-width: 28px; }
+  }
   .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
   .demo-banner-wide-copy { display: none; }
   .demo-banner-short-copy { display: block; }
+}
+
+@media (pointer: coarse) {
+  .flowbar .remove-dots-toggle { min-height: 44px; height: 44px; }
 }
 
 /* quick actions */

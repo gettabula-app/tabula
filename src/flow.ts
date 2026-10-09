@@ -31,6 +31,8 @@ export function imageLine(o: BaseObj): string {
 
 export class Flow {
   private lastActive = -2;
+  private removeDotsStep: Id | null = null;
+  private removeDots = false;
   readonly polls: Polls;
   /**
    * Called on the screen where someone moved the session to a step that has a frame, after this screen flew there.
@@ -51,6 +53,7 @@ export class Flow {
     // initial state
     queueMicrotask(() => {
       this.lastActive = s.getFlow().active;
+      this.resetRemoveDotsForStep();
       this.refreshVotes();
     });
   }
@@ -68,6 +71,33 @@ export class Flow {
     return this.activeStep()?.mode === 'vote';
   }
 
+  /** Remove one of this person's dots on the next item tap or click. This stays local to this screen. */
+  isRemoveDotsMode(): boolean {
+    return this.removeDots;
+  }
+
+  setRemoveDotsMode(enabled: boolean): boolean {
+    this.resetRemoveDotsForStep();
+    if (!this.isVoting() || this.removeDots === enabled) return false;
+    this.removeDots = enabled;
+    this.app.emit('flow');
+    return true;
+  }
+
+  /** Shift-click remains supported; the bar toggle gives touch users the same remove argument. */
+  shouldRemoveDots(shiftKey: boolean): boolean {
+    return shiftKey || this.removeDots;
+  }
+
+  private resetRemoveDotsForStep() {
+    const step = this.activeStep();
+    const voteStepId = step?.mode === 'vote' ? step.id : null;
+    if (voteStepId !== this.removeDotsStep) {
+      this.removeDotsStep = voteStepId;
+      this.removeDots = false;
+    }
+  }
+
   /** True while a poll step is running and still open for answers. */
   pollOpen(): boolean {
     const pollId = this.activeStep()?.pollId;
@@ -83,6 +113,7 @@ export class Flow {
   /** Only a change made on this screen moves this view. Other people's step changes arrive as a prompt they answer. */
   private onFlowChange(local: boolean) {
     const f = this.state();
+    this.resetRemoveDotsForStep();
     this.app.store.invalidateGeometryVisibility();
     // a private step that starts (or a reveal that ends) changes which notes are hidden: what is selected is looked at again
     if (this.app.selection?.length) this.app.setSelection(this.app.selection);
