@@ -9,7 +9,7 @@
 //
 //   node scripts/e2e-hosted.mjs --stage smoke,forms [--out <folder>]
 //   node scripts/e2e-hosted.mjs --stage cancel --allow-checkout --email <address>
-//   node scripts/e2e-hosted.mjs --stage signup --allow-signup --email <address> --slug e2e-1016a [--link-file <path>]
+//   node scripts/e2e-hosted.mjs --stage signup --allow-signup --email <address> --slug e2e-1016a [--link-file <path>] [--link-wait <seconds>]
 //
 // Safety: `cancel` needs --allow-checkout and `signup` needs --allow-signup (each real signup creates a Fly app, so each needs a go from
 // the manager). Before it types a card the script checks that the Checkout page shows Stripe's test-mode badge and stops if it does not;
@@ -30,7 +30,7 @@ try {
       stage: { type: 'string', default: 'smoke,forms' }, out: { type: 'string' }, site: { type: 'string', default: 'https://gettabula.app' },
       api: { type: 'string', default: 'https://api.gettabula.app' }, 'ws-suffix': { type: 'string', default: 'thetabula.cloud' },
       email: { type: 'string' }, slug: { type: 'string' }, name: { type: 'string', default: 'E2E test workspace' },
-      link: { type: 'string' }, 'link-file': { type: 'string' }, 'allow-checkout': { type: 'boolean' }, 'allow-signup': { type: 'boolean' },
+      link: { type: 'string' }, 'link-file': { type: 'string' }, 'link-wait': { type: 'string', default: '180' }, 'allow-checkout': { type: 'boolean' }, 'allow-signup': { type: 'boolean' },
       plan: { type: 'string', default: 'seats' }, price: { type: 'string' }, help: { type: 'boolean' },
     },
   }).values;
@@ -152,9 +152,10 @@ async function startCheckout(browser, width = 1280) {
   return { ctx, page, reached };
 }
 
+/** Test mode: the session id in the address starts cs_test_ AND the page shows Stripe's badge ("Test mode", or "Sandbox" on a Stripe sandbox). */
 async function testModeBadge(page) {
   const text = await page.evaluate(() => document.body.innerText);
-  return /test mode/i.test(text);
+  return /\/cs_test_/.test(page.url()) && /test mode|sandbox/i.test(text);
 }
 
 async function cancel(browser) {
@@ -205,7 +206,7 @@ async function readLink() {
     rl.close();
     return v.startsWith('https://') ? v : null;
   }
-  const until = Date.now() + 180_000;
+  const until = Date.now() + Number(args['link-wait']) * 1000;
   while (Date.now() < until) {
     if (fs.existsSync(file)) {
       const v = fs.readFileSync(file, 'utf8').trim();
