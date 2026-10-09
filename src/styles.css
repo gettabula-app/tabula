@@ -313,7 +313,10 @@ select.input {
 .dash-sample { display: block; width: 24px; border-top: 2px solid currentColor; }
 .dash-sample.dashed { border-top-style: dashed; }
 .dash-sample.dotted { border-top-style: dotted; }
-.font-btn { display: flex; align-items: center; justify-content: space-between; text-align: left; font-size: 15px; }
+.font-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; font-size: 15px; }
+/* one line with an ellipsis, so a long family name never wraps into a field that is one line high */
+.font-btn .font-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-btn svg { flex: none; }
 .props .btn-row { margin-top: 6px; }
 .props-origin { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--tray-line); color: var(--tray-muted); font-size: 12px; }
 .props .arrange { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); }
@@ -467,7 +470,7 @@ select.input {
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .copy-row { display: flex; gap: 8px; }
 .error { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); min-height: 1em; }
-.check { display: flex; align-items: center; gap: 8px; height: 34px; color: var(--tray-text); }
+.check { display: flex; align-items: center; gap: 8px; min-height: 34px; color: var(--tray-text); }
 .check input { width: 18px; height: 18px; accent-color: var(--signal); }
 .shortcuts { width: 100%; border-collapse: collapse; }
 .shortcuts td { padding: 6px 0; border-bottom: 1px solid var(--tray-line); vertical-align: top; }
