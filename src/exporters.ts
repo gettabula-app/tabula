@@ -7,7 +7,8 @@ import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer } from './types';
 import { SCHEMA_VERSION, isBox } from './types';
 import type { FlowState, Store } from './store';
-import type { Comments, Thread } from './comments';
+import { threadVisible, type Comments, type Thread } from './comments';
+import { isWithheld, leaveOutWithheld, updateWithoutWithheld } from './private-select';
 import { answerKey } from './polls';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
@@ -27,9 +28,15 @@ export interface BoardJson {
   note?: string;
 }
 
-export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list()): BoardJson {
+/**
+ * `leaveOutWithheld` (a file someone hands on) leaves out the notes private writing hides from this person, with the threads
+ * and connectors that name them; the board's own backup keeps everything.
+ */
+export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list(), opts: { leaveOutWithheld?: boolean } = {}): BoardJson {
+  const all = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
   // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
-  const objs = (ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered()).map((o) => app.store.placed(o));
+  const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all).map((o) => app.store.placed(o));
+  if (opts.leaveOutWithheld) comments = threadsWithoutWithheld(app, comments);
   const json: BoardJson = {
     format: 'driftboard',
     schemaVersion: SCHEMA_VERSION,
@@ -49,14 +56,38 @@ export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.
   return json;
 }
 
+/** The threads that are not about a note private writing hides from this person. */
+function threadsWithoutWithheld(app: BoardApp, threads: Thread[]): Thread[] {
+  return threads.filter((t) => threadVisible(t, (id) => app.store.get(id), (o) => app.flow.isHidden(o)));
+}
+
+/** The comments document with only `keep`'s threads: a file that leaves notes out does not carry what was said about them. */
+function commentsWithout(app: BoardApp, keep: Thread[]): Uint8Array {
+  const copy = new Y.Doc();
+  try {
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(app.conn.comments.doc));
+    const kept = new Set(keep.map((t) => t.id));
+    const threads = copy.getMap('threads');
+    copy.transact(() => {
+      for (const id of Array.from(threads.keys())) if (!kept.has(id)) threads.delete(id);
+    });
+    return Y.encodeStateAsUpdate(copy);
+  } finally {
+    copy.destroy();
+  }
+}
+
 /** `.drift` = zip of a readable snapshot plus the full CRDT state (history preserved). */
-export async function toDrift(app: BoardApp): Promise<Uint8Array> {
+export async function toDrift(app: BoardApp, opts: { leaveOutWithheld?: boolean } = {}): Promise<Uint8Array> {
+  const leave = opts.leaveOutWithheld === true;
+  const withheld = leave ? [...app.store.cache.values()].filter((o) => isWithheld(o, app.flow)).map((o) => o.id) : [];
   const files: Zippable = {
     // Comments travel in comments.yjs, not in the readable snapshot.
-    'board.json': strToU8(JSON.stringify(toJson(app, undefined, []), null, 2)),
-    'doc.yjs': Y.encodeStateAsUpdate(app.store.doc),
+    'board.json': strToU8(JSON.stringify(toJson(app, undefined, [], { leaveOutWithheld: leave }), null, 2)),
+    'doc.yjs': updateWithoutWithheld(app.store.doc, withheld),
   };
-  if (app.conn.comments.list().length > 0) files['comments.yjs'] = Y.encodeStateAsUpdate(app.conn.comments.doc);
+  const threads = leave ? threadsWithoutWithheld(app, app.conn.comments.list()) : app.conn.comments.list();
+  if (threads.length > 0) files['comments.yjs'] = leave ? commentsWithout(app, threads) : Y.encodeStateAsUpdate(app.conn.comments.doc);
   // the pictures, beside the board (docs/images.md): the file is the one format that round-trips a board completely
   const mimes = new Map<string, string>();
   for (const o of app.store.cache.values()) {
