@@ -22,6 +22,10 @@ export interface Workspace {
   seatsUsed: number;
   /** False for a workspace that is provided free (education, internal): no subscription, no billing portal. Absent on older servers. */
   billing?: boolean;
+  /** Present only for owners and admins on cloud instances. */
+  trialEndsAt?: string | null;
+  /** Present only for owners and admins on cloud instances. Unknown lifecycle values are allowed. */
+  state?: string | null;
 }
 
 export interface Me {
@@ -281,6 +285,10 @@ export interface AdminOverview {
   signIns7d: number;
   live: { rooms: number; connections: number };
   instance: { authEnabled: true; baseUrl: string; mail: 'log' | 'file' | 'webhook' | 'smtp'; version: string };
+  /** Present only when a control plane runs this instance. */
+  trialEndsAt?: string | null;
+  /** Present only when a control plane runs this instance. */
+  state?: string | null;
 }
 
 export interface AdminMember {

@@ -364,7 +364,7 @@ describe('a hosted workspace', () => {
       expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome' } });
 
       const me = await c.api(owner.cookie, 'GET', '/api/me');
-      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true });
+      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
 
       const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.');
       expect(audit.body.entries[0]).toMatchObject({
@@ -742,7 +742,7 @@ describe('a hosted workspace', () => {
       const b = client(second);
       const again = await b.signIn(OWNER);
       expect(again.user.id).toBe(who.user.id);
-      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true });
+      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
       expect((await b.api(again.cookie, 'POST', '/api/teams', { name: 'x' })).status).toBe(402);
     });
   });

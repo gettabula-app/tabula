@@ -16,6 +16,7 @@ import {
   createUnlockWatcher,
   meChanged,
   portalTarget,
+  trialStatusText,
   workspaceOf,
   type MeRefreshDeps,
 } from '../src/cloud-logic';
@@ -130,6 +131,32 @@ describe('freeWorkspaceNote', () => {
 
   it('is also what the no_billing error reads', () => {
     expect(cloudErrorMessage(new ApiError(409, 'no_billing', 'no_billing'))).toBe(FREE_WORKSPACE_TEXT);
+  });
+});
+
+describe('trialStatusText', () => {
+  const date = '2026-11-07T15:00:00Z';
+  const localizedDate = new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+
+  it('formats a valid trial end date in the viewer locale', () => {
+    expect(trialStatusText('trialing', date)).toBe(`Free trial until ${localizedDate}`);
+  });
+
+  it('keeps a past date visible while the workspace is still trialing', () => {
+    expect(trialStatusText('trialing', '2020-01-02T00:00:00Z')).toBe(
+      `Free trial until ${new Date('2020-01-02T00:00:00Z').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`,
+    );
+  });
+
+  it.each<[string, unknown, unknown]>([
+    ['a bad date', 'trialing', 'not a date'],
+    ['an active workspace', 'active', date],
+    ['an unknown state', 'new_lifecycle', date],
+    ['a missing state', undefined, date],
+    ['a missing date', 'trialing', undefined],
+    ['a null date', 'trialing', null],
+  ])('shows nothing for %s', (_name, state, endsAt) => {
+    expect(trialStatusText(state, endsAt)).toBeNull();
   });
 });
 

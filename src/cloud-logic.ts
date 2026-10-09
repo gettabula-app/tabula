@@ -65,6 +65,23 @@ export function freeWorkspaceNote(me: Me | null | undefined): string | null {
   return me?.workspace?.billing === false && me.user.role === 'owner' ? FREE_WORKSPACE_TEXT : null;
 }
 
+const TRIAL_ENDS_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
+
+/** The trial date label for the billing panel; invalid dates, and states other than `trialing`, stay hidden. */
+export function trialStatusText(state: unknown, trialEndsAt: unknown): string | null {
+  if (state !== 'trialing' || typeof trialEndsAt !== 'string' || trialEndsAt.length > 40) return null;
+  const match = TRIAL_ENDS_AT_RE.exec(trialEndsAt);
+  if (!match) return null;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  if (year < 2000 || year > 2100) return null;
+  const timestamp = Date.parse(trialEndsAt);
+  if (Number.isNaN(timestamp)) return null;
+  const date = new Date(timestamp);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day
+    || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) return null;
+  return `Free trial until ${date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`;
+}
+
 /** A readable text for the errors that only hosted workspaces produce; null for any other error. */
 export function cloudErrorMessage(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
