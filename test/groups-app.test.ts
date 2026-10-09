@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
+import { objBounds } from '../src/geometry';
 import { Store } from '../src/store';
 import type { BaseObj, Id, Obj } from '../src/types';
 import { FakeElement, installFakeBrowser, type FakeBrowser } from './fake-dom';
@@ -9,8 +10,8 @@ type Harness = BoardApp & Record<string, unknown>;
 const note = (id: Id, z: string, x: number): BaseObj => ({
   id, type: 'sticky', x, y: 20, w: 30, h: 30, rotation: 0, z, text: id, fill: '#FFF3A3',
 });
-const group = (id: Id, z: string, members: Id[], parent?: Id): Obj[] => [
-  { id, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z, parent },
+const group = (id: Id, z: string, members: Id[], parent?: Id, locked = false): Obj[] => [
+  { id, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z, parent, ...(locked ? { locked: true } : {}) },
   ...members.map((member, i) => ({ ...note(member, `a${i + 1}`, i * 60), parent: id })),
 ];
 
@@ -23,6 +24,7 @@ beforeEach(() => {
   vi.stubGlobal('window', {
     addEventListener: (type: string, fn: (event: unknown) => void) => handlers.set(type, [...(handlers.get(type) ?? []), fn]),
     removeEventListener() {},
+    setTimeout: (fn: () => void, ms?: number) => globalThis.setTimeout(fn, ms),
     innerWidth: 1024,
     innerHeight: 768,
   });
@@ -31,7 +33,10 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', () => {});
 });
 
-afterEach(() => browser.uninstall());
+afterEach(() => {
+  vi.useRealTimers();
+  browser.uninstall();
+});
 
 function harness(store = new Store(new Y.Doc())) {
   const app = Object.create(BoardApp.prototype) as Harness;
@@ -59,6 +64,24 @@ function harness(store = new Store(new Y.Doc())) {
   });
   return { app, store, hit, flow };
 }
+
+function useRealHit(app: Harness, store: Store) {
+  app.hit = BoardApp.prototype.hit.bind(app);
+  Object.assign(app.r, {
+    bounds: (o: Obj) => objBounds((id) => store.getPlaced(id), store.getPlaced(o.id) ?? o),
+    contentBounds: (ids: Iterable<Id>) => {
+      const id = [...ids][0];
+      const o = id ? store.getPlaced(id) : undefined;
+      return o ? objBounds((parent) => store.getPlaced(parent), o) : null;
+    },
+    connectorLayout: () => new Map(),
+  });
+}
+
+const pointer = (x: number, y: number, pointerType: 'mouse' | 'touch' = 'mouse') => ({
+  clientX: x, clientY: y, pointerId: 1, pointerType, button: 0, shiftKey: false, altKey: false, preventDefault() {},
+});
+const longPressId = (app: Harness) => (app as unknown as { longPress?: { id: Id } | null }).longPress?.id;
 
 const call = (app: Harness, name: string, ...args: unknown[]) => (app[name] as (...xs: unknown[]) => unknown).apply(app, args);
 const key = (event: Partial<KeyboardEvent>) => ({
@@ -188,6 +211,128 @@ describe('group app commands and scope', () => {
     expect(app.canUngroupSelection()).toBe(false);
     expect(app.ungroupSelection()).toBe(false);
     expect(objects(store)).toEqual(before);
+  });
+
+  it.each(['mouse', 'touch'] as const)('%s passes through a locked group to an unlocked object beneath it', (pointerType) => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(note('under', 'a0', 10));
+      group('locked-group', 'a3', ['member'], undefined, true).forEach((o) => store.create(o));
+    });
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    const down = pointer(10, 25, pointerType);
+    call(app, 'onDown', down);
+    expect(app.selection).toEqual(['under']);
+    expect(longPressId(app)).toBe('locked-group');
+    call(app, 'onUp', down);
+    expect(store.get('locked-group')?.locked).toBe(true);
+  });
+
+  it.each(['mouse', 'touch'] as const)('%s passes through an individually locked group member', (pointerType) => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(note('under', 'a0', 10));
+      group('unlocked-group', 'a3', ['member']).forEach((o) => store.create(o));
+      store.update('member', { locked: true });
+    });
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    const down = pointer(10, 25, pointerType);
+    call(app, 'onDown', down);
+    expect(app.selection).toEqual(['under']);
+    expect(longPressId(app)).toBe('member');
+    call(app, 'onUp', down);
+    expect(store.get('member')?.locked).toBe(true);
+  });
+
+  it('marquee skips locked groups and locked members while still selecting an unlocked object underneath', () => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(note('under', 'a0', 10));
+      group('locked-group', 'a3', ['locked-child'], undefined, true).forEach((o) => store.create(o));
+      store.create({ id: 'open-group', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a4' });
+      store.create({ ...note('locked-member', 'a4', 120), parent: 'open-group', locked: true });
+      store.create({ ...note('outside', 'a5', 220), parent: 'open-group' });
+    });
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    const start = pointer(0, 0);
+    call(app, 'onDown', start);
+    call(app, 'onMove', pointer(160, 70));
+    expect(app.selection).toEqual(['under']);
+    call(app, 'onUp', pointer(160, 70));
+  });
+
+  it.each(['mouse', 'touch'] as const)('%s and marquee pass through a locked nested group under an unlocked group', (pointerType) => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(note('under', 'a0', 10));
+      store.create({ id: 'outer', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a4' });
+      store.create({ id: 'inner', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a3', parent: 'outer', locked: true });
+      store.create({ ...note('member', 'a2', 0), parent: 'inner' });
+    });
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    const down = pointer(10, 25, pointerType);
+    call(app, 'onDown', down);
+    expect(app.selection).toEqual(['under']);
+    expect(longPressId(app)).toBe('inner');
+    call(app, 'onUp', down);
+
+    call(app, 'onDown', pointer(0, 0));
+    call(app, 'onMove', pointer(160, 70));
+    expect(app.selection).toEqual(['under']);
+    call(app, 'onUp', pointer(160, 70));
+  });
+
+  it('a 600 ms long press unlocks the outermost locked group and preserves a nested lock', async () => {
+    vi.useFakeTimers();
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create({ id: 'outer', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1', locked: true });
+      store.create({ id: 'inner', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a2', parent: 'outer', locked: true });
+      store.create({ ...note('member', 'a3', 10), parent: 'inner' });
+    });
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    call(app, 'onDown', pointer(10, 25, 'touch'));
+    expect(longPressId(app)).toBe('outer');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(store.get('outer')?.locked).toBeUndefined();
+    expect(store.get('inner')?.locked).toBe(true);
+  });
+
+  it('a 600 ms long press still unlocks a member that has its own lock', async () => {
+    vi.useFakeTimers();
+    const store = new Store(new Y.Doc());
+    store.transact(() => store.create({ ...note('member', 'a1', 10), locked: true }));
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    call(app, 'onDown', pointer(10, 25, 'touch'));
+    expect(longPressId(app)).toBe('member');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(store.get('member')?.locked).toBeUndefined();
+  });
+
+  it('releasing before the long-press threshold leaves the lock in place', () => {
+    vi.useFakeTimers();
+    const store = new Store(new Y.Doc());
+    store.transact(() => store.create({ ...note('member', 'a1', 10), locked: true }));
+    const { app } = harness(store);
+    useRealHit(app, store);
+
+    const down = pointer(10, 25, 'touch');
+    call(app, 'onDown', down);
+    call(app, 'onUp', down);
+    vi.advanceTimersByTime(599);
+    expect(store.get('member')?.locked).toBe(true);
   });
 
   it('leaves to the nearest parent scope when selecting a sibling outside the entered group', () => {

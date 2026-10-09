@@ -49,7 +49,7 @@ import { ensureFont } from './fonts';
 import { Flow } from './flow';
 import { TextEditor } from './editor';
 import { StyleEdit } from './style-edit';
-import { ancestorsOf, descendantsOf, groupPlan, isGroup, liftToScope, pick, topLevelAncestors, ungroupPlan } from './groups';
+import { ancestorsOf, descendantsOf, effectiveLocked, groupPlan, isGroup, liftToScope, pick, topLevelAncestors, ungroupPlan } from './groups';
 
 export type Tool =
   | { kind: 'select' }
@@ -222,7 +222,10 @@ export class BoardApp {
       // drop deleted, locked and hidden objects from the selection (someone else may have hidden one)
       const before = this.selection.join('\0');
       const oldScope = this.scope;
-      this.selection = this.selectionAtScope(this.selection.filter((id) => !this.store.get(id)?.locked));
+      this.selection = this.selectionAtScope(this.selection.filter((id) => {
+        const o = this.store.get(id);
+        return !!o && !effectiveLocked(o, (parent) => this.store.get(parent));
+      }));
       if (this.selection.join('\0') !== before || this.scope !== oldScope) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
@@ -342,7 +345,8 @@ export class BoardApp {
       if (isGroup(o)) leaves.push(...descendantsOf(o.id, (id) => this.store.get(id), (id) => this.store.childrenOf(id)).filter((x) => !isGroup(x)).map((x) => x.id));
       else leaves.push(o.id);
     }
-    return selectableIds(this.store, this.flow, leaves).map((id) => this.store.get(id)).filter((o): o is Obj => !!o && !o.locked);
+    return selectableIds(this.store, this.flow, leaves).map((id) => this.store.get(id))
+      .filter((o): o is Obj => !!o && !effectiveLocked(o, (id) => this.store.get(id)));
   }
 
   /** Enters one group level and clears the selection until the caller selects a member. */
@@ -382,7 +386,7 @@ export class BoardApp {
   }
 
   private visibleAtMarquee(o: Obj, rect: Rect): boolean {
-    if (!this.store.isShown(o) || isWithheld(o, this.flow) || this.isDimmed(o)) return false;
+    if (effectiveLocked(o, (id) => this.store.get(id)) || !this.store.isShown(o) || isWithheld(o, this.flow) || this.isDimmed(o)) return false;
     const bounds = this.r.bounds(o);
     return !!bounds && rectsIntersect(rect, bounds);
   }
@@ -391,6 +395,16 @@ export class BoardApp {
     if (!isGroup(o)) return this.visibleAtMarquee(o, rect);
     return descendantsOf(o.id, (id) => this.store.get(id), (id) => this.store.childrenOf(id))
       .some((member) => !isGroup(member) && this.visibleAtMarquee(member, rect));
+  }
+
+  /** The object a long press unlocks: the outermost locked group, or the locked object itself. */
+  private lockedGroupTarget(o: Obj): Obj | undefined {
+    return [o, ...ancestorsOf(o, (id) => this.store.get(id))]
+      .filter((candidate) => isGroup(candidate) && candidate.locked).at(-1);
+  }
+
+  private lockedTarget(o: Obj): Obj | undefined {
+    return this.lockedGroupTarget(o) ?? (o.locked ? o : undefined);
   }
 
   private planGroupSelection(idSource: () => Id) {
@@ -596,7 +610,7 @@ export class BoardApp {
     for (let i = ord.length - 1; i >= 0; i--) {
       const o = ord[i];
       if (o.type === 'group') continue;
-      if (o.locked && !opts.locked) continue;
+      if (effectiveLocked(o, (id) => this.store.get(id)) && !opts.locked) continue;
       if (opts.skip?.has(o.id)) continue;
       const b = this.r.bounds(o);
       if (!b || p.x < b.x - tol * 3 || p.y < b.y - tol * 3 || p.x > b.x + b.w + tol * 3 || p.y > b.y + b.h + tol * 3) continue;
@@ -760,7 +774,7 @@ export class BoardApp {
   /** Whether `p` is on the shape `id` or in the ring around it where its connection dots are. */
   private nearAnchors(id: Id, p: Point): boolean {
     const o = this.store.getPlaced(id);
-    if (!CONNECTABLE(o) || o.locked) return false;
+    if (!CONNECTABLE(o) || effectiveLocked(o, (parent) => this.store.get(parent))) return false;
     const l = toLocal(o, p);
     const m = 26 / this.zoom; // the dots are 14px out with a 9px reach
     return l.x >= -m && l.x <= o.w + m && l.y >= -m && l.y <= o.h + m;
@@ -770,7 +784,7 @@ export class BoardApp {
     if (this.readOnly) return null;
     const id = this.r.overlay.anchorsFor;
     const o = id ? this.store.getPlaced(id) : undefined;
-    if (!CONNECTABLE(o)) return null;
+    if (!CONNECTABLE(o) || effectiveLocked(o, (parent) => this.store.get(parent))) return null;
     for (const side of ['top', 'right', 'bottom', 'left'] as const) {
       const a = sideAnchor(o, side);
       const q = { x: a.p.x + (a.dir.x * 14) / this.zoom, y: a.p.y + (a.dir.y * 14) / this.zoom };
@@ -869,9 +883,11 @@ export class BoardApp {
     switch (t.kind) {
       case 'select': {
         const top = this.hit(p, { locked: true });
+        const lockedTarget = top && this.lockedTarget(top);
+        const lockedGroup = top && this.lockedGroupTarget(top);
         // a kanban's Filter, its chips, its ⋯ and its +, and a lane's ⋯: a click, never a drag (locked kanbans included,
         // so their menu can unlock them; viewers and commenters get Filter and the chips only)
-        if (!e.shiftKey && top?.type === 'container') {
+        if (!lockedGroup && !e.shiftKey && top?.type === 'container') {
           const ctl = this.kanbanControlAt(top.id, p);
           if (ctl) {
             e.preventDefault();
@@ -880,21 +896,21 @@ export class BoardApp {
             return;
           }
         }
-        if (!e.shiftKey && !this.readOnly && top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') {
+        if (!lockedGroup && !e.shiftKey && !this.readOnly && top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') {
           e.preventDefault();
           this.setSelection([top.id]);
           this.openLaneMenu(top.id);
           return;
         }
         if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
-        const hit = top?.locked ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
+        const hit = lockedTarget ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
           this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [], moved: false };
           if (!e.shiftKey && !this.scope) this.setSelection([]);
-          if (top?.locked) this.armLongPress(top.id, e);
+          if (lockedTarget) this.armLongPress(lockedTarget.id, e);
           return;
         }
-        if (top?.locked) this.armLongPress(top.id, e);
+        if (lockedTarget) this.armLongPress(lockedTarget.id, e);
         // a lane's "+ Add card" row opens the inline input (editors only; viewers do not see the row)
         if (!this.readOnly && !e.shiftKey && hit.type === 'lane' && this.laneRegion(hit.id, p) === 'add') {
           // no mousedown after this pointerdown, so the browser does not move focus away from the input it opens
@@ -1689,7 +1705,7 @@ export class BoardApp {
         if (Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
         d.moved = true;
         const m = rectOfPoints([d.start, p]);
-        const inside = this.itemsAtScope().filter((o) => !o.locked && this.marqueeTouches(o, m));
+        const inside = this.itemsAtScope().filter((o) => !effectiveLocked(o, (id) => this.store.get(id)) && this.marqueeTouches(o, m));
         this.r.setOverlay({ marquee: m });
         this.selection = this.selectionAtScope([...d.base, ...inside.map((o) => o.id)]);
         this.r.setOverlay({ selection: this.selection });
@@ -1757,12 +1773,12 @@ export class BoardApp {
   private updateHover(p: Point) {
     const t = this.tool.kind;
     const top = t === 'select' || t === 'connector' ? this.hit(p, { locked: true }) : undefined;
-    const live = top?.locked ? this.hit(p) : top;
-    const lockedAncestor = top && !this.flow.isVoting()
-      ? [top, ...ancestorsOf(top, (id) => this.store.get(id))].filter((o) => isGroup(o) && o.locked).at(-1)
-      : undefined;
-    const lockedTop = lockedAncestor ?? (!live && top?.locked ? top : undefined);
-    const anchorHost = !lockedAncestor && !this.readOnly && CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
+    const voting = this.flow.isVoting();
+    const lockedTarget = top && this.lockedTarget(top);
+    const live = lockedTarget && !voting ? this.hit(p) : top;
+    const lockedAncestor = top && !voting ? this.lockedGroupTarget(top) : undefined;
+    const lockedTop = lockedAncestor ?? (!live && lockedTarget ? lockedTarget : undefined);
+    const anchorHost = !lockedAncestor && !this.readOnly && CONNECTABLE(live) && !effectiveLocked(live, (id) => this.store.get(id)) && !voting ? live.id : null;
     // Keep anchors visible while the pointer is on one of them, or still close to the shape that shows them. The
     // dots sit just outside the edge, often on a connector that already leaves that side; hovering that connector
     // on the way to the dot must not hide them, or a second connector could never start there.
@@ -1783,7 +1799,7 @@ export class BoardApp {
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
-    const hovered = lockedAncestor ? undefined : live && t === 'select' && !this.flow.isVoting() ? pick(live, this.scope, (id) => this.store.get(id)) : live;
+    const hovered = lockedAncestor ? undefined : live && t === 'select' && !voting ? pick(live, this.scope, (id) => this.store.get(id)) : live;
     this.r.setOverlay({ hover: hovered?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
   }
 
@@ -2133,11 +2149,12 @@ export class BoardApp {
     // a double click on a pin must not edit the object underneath or add a text box
     if ((this.tool.kind === 'select' || this.tool.kind === 'comment') && pinAt(this.r.pins, p, this.zoom)) return;
     const top = this.hit(p, { locked: true });
+    const lockedGroup = top && this.lockedGroupTarget(top);
     // a double click on a kanban's controls is two clicks on them, never a rename or a new card
-    if (top?.type === 'container' && this.kanbanControlAt(top.id, p)) return;
-    if (top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') return;
+    if (!lockedGroup && top?.type === 'container' && this.kanbanControlAt(top.id, p)) return;
+    if (!lockedGroup && top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') return;
     // at phone width a double tap on a kanban opens it as a list, on the lane tapped (docs/kanban.md, Phone and touch)
-    if (phoneWidth() && top && this.openSheet) {
+    if (!lockedGroup && phoneWidth() && top && this.openSheet) {
       const cid = containerOf(this.store, top) ?? (top.type === 'card' ? this.containerShowing(top.id) : null);
       if (cid) {
         const lane = top.type === 'lane' ? top.id : top.type === 'card' ? laneOf(this.store, top.id) ?? undefined : undefined;
@@ -2145,7 +2162,7 @@ export class BoardApp {
         return;
       }
     }
-    if (top?.locked && !this.hit(p)) return;
+    if (top && this.lockedTarget(top) && !this.hit(p)) return;
     const hit = this.hit(p);
     if (hit) {
       const selected = pick(hit, this.scope, (id) => this.store.get(id));
@@ -2240,7 +2257,11 @@ export class BoardApp {
         return;
       }
       if (mod && k === 'y') { e.preventDefault(); if (!ro) this.store.undo.redo(); return; }
-      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.itemsAtScope().filter((o) => !o.locked).map((o) => o.id)); return; }
+      if (mod && k === 'a') {
+        e.preventDefault();
+        this.setSelection(this.itemsAtScope().filter((o) => !effectiveLocked(o, (id) => this.store.get(id))).map((o) => o.id));
+        return;
+      }
       if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
       if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
