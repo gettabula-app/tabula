@@ -48,7 +48,8 @@ const without = (value, drop) => {
   return out;
 };
 const RASTER_DATA_RE = /^data:image\/(png|jpeg|gif|webp)[;,]/;
-const BLOCKED_ATTRIBUTES = new Set(['xml:base', 'srcdoc', 'formaction', 'action', 'poster', 'ping']);
+// Inside SVG title/desc the HTML parser reads <image> as <img>, where srcset can load outside the body.
+const BLOCKED_ATTRIBUTES = new Set(['xml:base', 'srcdoc', 'srcset', 'formaction', 'action', 'poster', 'ping']);
 
 const decodeBasic = (v) => v.replace(/&(amp|lt|gt|quot|apos);/g, (_m, name) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[name]);
 
@@ -75,7 +76,9 @@ function attributeProblem(element, name, rawValue) {
   if (lname === 'style' && /@import|expression|behavior|binding/.test(flat)) return 'has a style that loads or runs something';
   // mask, cursor and the like take CSS images, which can name an address without url()
   if (/(image-set|image|cross-fade|element|paint|src)\(/.test(flat)) return 'has a CSS image function that could load something from outside';
-  for (const m of flat.matchAll(/url\(([^)]*)\)/g)) {
+  for (const m of flat.matchAll(/url\(([^)]*)(\)|$)/g)) {
+    // CSS accepts the end of an attribute as the end of an unclosed url(), so it must not escape this check.
+    if (!m[2]) return 'has a url() that is not closed';
     if (!m[1].replace(/^['"]/, '').startsWith('#')) return 'has a url() that points outside the icon';
   }
   if (local === 'attributename' && !ANIMATABLE.has(flat)) return `animates ${value.slice(0, 30)}, which an icon may not change`;

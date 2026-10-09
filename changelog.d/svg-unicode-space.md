@@ -5,3 +5,6 @@ section: Security
   tag from the scan (`title=<no-break space>"x onclick=alert(1) y"` passed as one quoted title, while a browser reads an
   onclick handler). Such a body is now refused as a whole. The app's Content Security Policy already blocked the handler
   in the browser and the desktop app; exported SVG files carry no such policy.
+- The same policy rejects unclosed CSS `url()` values and `srcset` attributes, preventing remote image loads that the
+  browser can recover from incomplete CSS or from an image inside an SVG description or title. Plain descriptions,
+  titles and local `url(#id)` references remain supported.
