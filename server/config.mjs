@@ -230,8 +230,12 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const ai = loadAi(env, authEnabled, warn);
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);
+  // the release label of this build, set when the image is built (Dockerfile ARG TABULA_VERSION); null when it was not
+  const versionLabel = (env.TABULA_VERSION || '').trim();
+  if (versionLabel && !/^[A-Za-z0-9._-]{1,40}$/.test(versionLabel)) warn('TABULA_VERSION is ignored: use 1 to 40 letters, digits, dots, dashes or underscores');
 
   return {
+    version: /^[A-Za-z0-9._-]{1,40}$/.test(versionLabel) ? versionLabel : null,
     authEnabled,
     ownerEmail,
     baseUrl,

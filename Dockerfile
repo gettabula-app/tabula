@@ -10,7 +10,10 @@ RUN --mount=type=cache,target=/app/node_modules/.cache/tabula-icons npm run buil
 
 FROM node:26-alpine
 WORKDIR /app
-ENV NODE_ENV=production PORT=8787 DATA_DIR=/data
+# The release label of this build (docker build --build-arg TABULA_VERSION=2026.10.09-1, or fly deploy --build-arg ...). The server reports it
+# on GET /api/internal/version for a control plane that rolls images out (docs/migrations.md); empty when it was not given.
+ARG TABULA_VERSION=
+ENV NODE_ENV=production PORT=8787 DATA_DIR=/data TABULA_VERSION=$TABULA_VERSION
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /icons ./dist/icons

@@ -32,7 +32,8 @@ describe('the chat database', () => {
       expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(CHAT_MIGRATIONS.length);
       const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
       expect(tables).toEqual(expect.arrayContaining(['chat_messages', 'chat_mentions', 'chat_reactions', 'chat_reads']));
-      db.exec('PRAGMA user_version = 99');
+      // a newer build that made a breaking change: its generation and the lowest reader are both ahead of this build
+      db.exec("PRAGMA user_version = 99; UPDATE schema_meta SET value = '99' WHERE key = 'min_reader'");
     } finally {
       db.close();
     }

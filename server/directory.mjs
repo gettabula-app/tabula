@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
+import { describeSchema, migrate } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
@@ -196,30 +197,12 @@ const toInvite = (r) => ({
 const inviteActive = (invite, now) =>
   !invite.revoked && invite.expiresAt > now && (invite.maxUses == null || invite.uses < invite.maxUses);
 
-function migrate(db) {
-  const version = Number(db.prepare('PRAGMA user_version').get().user_version);
-  if (version > MIGRATIONS.length) {
-    throw new Error(`directory was written by a newer Tabula (schema ${version}, this build knows ${MIGRATIONS.length})`);
-  }
-  for (let i = version; i < MIGRATIONS.length; i++) {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      db.exec(MIGRATIONS[i]);
-      db.exec(`PRAGMA user_version = ${i + 1}`);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-  }
-}
-
 export function openDirectory(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
-    migrate(db);
+    migrate(db, MIGRATIONS, 'directory');
   } catch (err) {
     db.close();
     throw err;
@@ -893,6 +876,8 @@ export function openDirectory(file) {
       cache.clear();
       db.close();
     },
+    /** This build's schema and the one on disk, for GET /api/internal/version (docs/migrations.md). */
+    schemaReport: () => describeSchema(db, MIGRATIONS),
     transaction,
     createUser,
     getUser,
