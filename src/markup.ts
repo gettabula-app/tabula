@@ -10,7 +10,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, safeColor, validLabel, type ContainerLayout } from '../shared/containers';
+import { hasLayout, kanbanColor, validLabel, type ContainerLayout } from '../shared/containers';
 import type { Label } from './types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, localToday, lowDetail } from './ui/kanban-logic';
 
@@ -265,7 +265,7 @@ const K = {
  * value goes into a style attribute, where a stored string could otherwise add CSS of its own.
  */
 function swatch(key: string | undefined): string | undefined {
-  const c = safeColor(key);
+  const c = kanbanColor(key);
   if (!c) return undefined;
   const s = STICKY_COLORS.find((x) => x.name.toLowerCase() === c);
   return s ? `var(--s-${c}, ${s.fill})` : c;
@@ -472,7 +472,7 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       }
       let right = w - CARD.padX;
       if (o.ownerName || o.ownerId) {
-        const ring = safeColor(ctx.ownerColor?.(o), undefined);
+        const ring = kanbanColor(ctx.ownerColor?.(o)) ?? undefined;
         const x = right - 24;
         inner += `<g><title>${escapeXml(o.ownerName || 'Owner')}${ring ? '' : ' (no account)'}</title><rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
         inner += ring

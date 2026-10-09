@@ -605,7 +605,7 @@ const STATES = {
     await page.evaluate(() => window.__board.setSelection(['k-d2']));
     await page.keyboard.press('Alt+ArrowUp');
     await page.keyboard.press('Alt+ArrowDown');
-    await page.locator('.k-live').filter({ hasText: 'Moved to Doing' }).waitFor({ state: 'attached' });
+    await page.locator('[role="status"][aria-live="polite"]').filter({ hasText: 'Moved to Doing' }).waitFor({ state: 'attached' });
   },
   async 'kanban-adding'(env) {
     await openKanbanBoard(env);

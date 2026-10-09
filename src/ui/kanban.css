@@ -1,13 +1,10 @@
 /* Kanban on the canvas (docs/kanban.md, Visual design). Board objects are SVG drawn by src/markup.ts with inline
-   theme variables, so that exports carry them; this file is the DOM around them: the inline add-card input, the live
-   region, and the drag ghost's lift. Radius 0, no shadows. */
+   theme variables, so that exports carry them; this file is the DOM around them: the inline add-card input and the drag
+   ghost's lift. Radius 0, no shadows. */
 
 :root {
   --k-meta: color-mix(in srgb, var(--canvas-ink) 82%, var(--canvas));
 }
-
-/* the live region that announces moves ("Moved to Doing, position 2 of 5") */
-.k-live { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* + Add card, typed in place: a card with a 2px ink border, laid over the canvas and scaled with it */
 .k-input-wrap { position: absolute; left: 0; top: 0; z-index: 5; display: none; transform-origin: 0 0; }

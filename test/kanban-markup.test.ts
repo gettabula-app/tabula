@@ -6,6 +6,7 @@ import { addCard, newKanban } from '../src/containers';
 import type { BaseObj, Id } from '../src/types';
 import { USER_COLORS } from '../src/palette';
 import { resolveColorMix, resolveCssVars } from '../src/exporters';
+import { LABEL_COLORS, kanbanColor, validLabel } from '../shared/containers';
 
 // docs/kanban.md, slice 2 (Rendering and Visual design): what a container, a lane and a card draw.
 
@@ -222,8 +223,23 @@ describe('colours from the board', () => {
         store.update(ids[0], { fill: bad, labels: ['evil'] });
       });
       store.labels.set('evil', { id: 'evil', name: 'Evil', color: bad, order: 9 });
-      for (const id of [lanes[0], ids[0]]) expect(leaks(draw(store, id)), `${bad} in ${id}`).toBe(false);
-      expect(draw(store, ids[0])).not.toContain('>EVIL</text>');
+      for (const id of [lanes[0], ids[0]]) expect(leaks(draw(store, id))).toBe(false);
+      // the label stays, in the default colour
+      expect(draw(store, ids[0])).toContain('>EVIL</text>');
+      expect(draw(store, ids[0])).toContain('var(--s-grey, #E2E6EB)');
+    }
+  });
+
+  it('draws every palette key as its swatch, on a lane, a card and a label', () => {
+    const { store, lanes, ids } = board();
+    for (const key of LABEL_COLORS) {
+      store.transact(() => {
+        store.update(lanes[0], { fill: key });
+        store.update(ids[0], { fill: key, labels: ['k'] });
+      });
+      store.labels.set('k', { id: 'k', name: 'K', color: key, order: 0 });
+      expect(draw(store, lanes[0])).toContain(`height="4" style="fill:var(--s-${key}, `);
+      expect(draw(store, ids[0]).match(new RegExp(`var\\(--s-${key}, `, 'g'))!.length).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -249,5 +265,26 @@ describe('resolving color-mix for an export', () => {
     expect(resolveColorMix('style="fill:color-mix(in srgb, #000000 50%, #FFFFFF)"')).toBe('style="fill:#808080"');
     expect(resolveColorMix('style="fill:none;stroke:color-mix(in srgb, #18212B 28%, transparent)"')).toBe('style="fill:none;stroke:#18212B;stroke-opacity:0.28"');
     expect(resolveColorMix('style="fill:color-mix(in srgb, #A3D2FF 10%, color-mix(in srgb, #000 0%, #fff))"')).toBe('style="fill:#F6FBFF"');
+  });
+});
+
+describe('kanbanColor', () => {
+  it('takes palette keys in any case, and colours safeColor accepts, in canonical form', () => {
+    expect(kanbanColor('Teal')).toBe('teal');
+    expect(kanbanColor('#abc')).toBe('#AABBCC');
+    expect(kanbanColor('#a1b2c3d4')).toBe('#A1B2C3D4');
+  });
+
+  it('gives the fallback, never the value, for anything else', () => {
+    for (const bad of ['red;filter:url(//x)', 'url(x)', 'expression(1)', '#12345', 'var(--x)', 'red', 'none', 'transparent', '', 3, null, undefined]) {
+      expect(kanbanColor(bad)).toBeNull();
+      expect(kanbanColor(bad, 'grey')).toBe('grey');
+    }
+  });
+
+  it('keeps a label whose colour is bad, in the default colour, and drops one that is not a label', () => {
+    expect(validLabel({ id: 'a', name: 'A', color: 'url(//x)', order: 1 })).toEqual({ id: 'a', name: 'A', color: 'grey', order: 1 });
+    expect(validLabel({ id: 'a', name: 'x'.repeat(41), color: 'blue' })).toBeNull();
+    expect(validLabel('bug')).toBeNull();
   });
 });

@@ -89,7 +89,8 @@ export const LIMITS: {
 
 export const LABEL_COLORS: readonly ['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey'];
 
-export { safeColor } from './colors-shim';
+export function kanbanColor(value: unknown, fallback?: string | null): string | null;
+export const LABEL_DEFAULT_COLOR: 'grey';
 
 export function validLabel(value: unknown): { id: string; name: string; color: string; order: number } | null;
 

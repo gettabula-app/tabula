@@ -5,26 +5,8 @@ import { addCard, addRefusal } from '../containers';
 import { fontFamily } from '../fonts';
 import { addRow, laneCards } from './kanban-logic';
 
-// The DOM side of the kanban on the canvas (docs/kanban.md, slice 2): the inline "+ Add card" input and the live region
-// that announces moves. The board itself is SVG (src/markup.ts).
-
-/** A visually hidden polite live region on the board. */
-export class LiveRegion {
-  readonly el: HTMLDivElement;
-
-  constructor(parent: HTMLElement) {
-    this.el = document.createElement('div');
-    this.el.className = 'k-live';
-    this.el.setAttribute('role', 'status');
-    this.el.setAttribute('aria-live', 'polite');
-    parent.appendChild(this.el);
-  }
-
-  say(text: string) {
-    // the same sentence twice in a row is still announced
-    this.el.textContent = this.el.textContent === text ? `${text} ` : text;
-  }
-}
+// The DOM side of the kanban on the canvas (docs/kanban.md, slice 2): the inline "+ Add card" input. Moves are announced
+// through the board's announcer (BoardApp.announce, src/ui/announce.ts). The board itself is SVG (src/markup.ts).
 
 /**
  * Typing a card's title in place at the bottom of a lane: Enter adds the card and starts the next one, Esc stops

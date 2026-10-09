@@ -56,7 +56,7 @@ function harness() {
     user: { id: 'me', name: 'Me', color: '#326DD3' },
     conn: { awareness: { setLocalStateField() {}, getStates: () => new Map(), clientID: 1 } },
     cardInput: { start: startInput, stop() {} },
-    live: { say() {} },
+    announce: vi.fn<(msg: string) => void>(),
     editor: { active: false, commit() {}, start() {} },
     flow: { handleClick: () => false, isHidden: () => false, isVoting: () => false, activeStep: () => null },
     isPinching: () => false,
@@ -163,9 +163,9 @@ describe('what a click hits', () => {
     for (const zoom of [1, 0.6, 0.3, 0.1]) {
       r.setCamera({ zoom });
       const a = store.geometry(store.get(ids[0])!);
-      expect(app.hit({ x: a.x + 20, y: a.y + a.h - 0.5 })?.id, `zoom ${zoom}`).toBe(ids[0]);
+      expect(app.hit({ x: a.x + 20, y: a.y + a.h - 0.5 })?.id).toBe(ids[0]);
       // in the gap between two cards: the lane
-      expect(app.hit({ x: a.x + 20, y: a.y + a.h + KANBAN.cardGap / 2 })?.type, `zoom ${zoom}`).toBe('lane');
+      expect(app.hit({ x: a.x + 20, y: a.y + a.h + KANBAN.cardGap / 2 })?.type).toBe('lane');
     }
   });
 
