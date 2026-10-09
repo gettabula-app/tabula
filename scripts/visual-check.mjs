@@ -383,9 +383,9 @@ async function seedChat(relay, ownerCookie) {
   at(late, NOW - 2 * MINUTE);
   // two messages that point at objects: one on the board, one that was deleted from it
   const look = await say(ana, 'Look at the first sticky, it needs a better headline.', { objectId: 'seed-note-1' });
-  at(look, NOW - 9 * MINUTE);
+  at(look, NOW - 100_000); // after `late`: the tray lists by id, so the times must rise with it
   const gone = await say(ben, 'And the old backlog box I moved away.', { objectId: 'deleted-long-ago' });
-  at(gone, NOW - 8 * MINUTE);
+  at(gone, NOW - MINUTE);
 
   await apiJson(base, 'PATCH', `chat/messages/${flaky}`, { text: `Flaky tests are mine, I'll take the action point. @{${ids.owner}}` }, ana);
   await apiJson(base, 'DELETE', `chat/messages/${willDo}`, undefined, ben);
