@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -62,21 +62,75 @@ const noStrays = (dir: string) => {
   expect(listing(dir).filter((n) => n.startsWith('.restore-') || n.includes('.tmp-'))).toEqual([]);
 };
 
+/**
+ * The data directory at every boundary of ONE real swap, copied by the crash hook as the swap passes each boundary.
+ * A crash at a boundary leaves the directory exactly as it is at that moment (the swap is plain renames and file
+ * writes, and the database is closed before the first of them), so a copy taken there is what the next start finds
+ * after a crash there. Building a fixture, a backup and a restore for every boundary (about forty of them) was what made
+ * this test slow on Windows (TAB-209); a few real crashes below show that the two ways agree.
+ */
+async function walkTheSwap() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-boundaries-'));
+  const points: string[] = [];
+  const snapshots: string[] = [];
+  let live = '';
+  const f = await fixture((point) => {
+    const snapshot = path.join(root, String(points.length));
+    fs.cpSync(live, snapshot, { recursive: true });
+    points.push(point);
+    snapshots.push(snapshot);
+  });
+  live = f.h.dir;
+  try {
+    await restoreIt(f);
+    await f.exited;
+  } finally {
+    await f.h.close();
+  }
+  return { f, root, points, snapshots };
+}
+
+/** The same directory with the names that are random or timed made alike, to compare two runs. */
+const shape = (dir: string) =>
+  listing(dir).map((n) => n.replace(/^\.pre-restore-\d+$/, '.pre-restore-N').replace(/^\.restore-[0-9a-f]{16}$/, '.restore-X').replace(/\.tmp-[0-9a-f]+$/, '.tmp-X'));
+
+const journalOf = (dir: string) => (fs.existsSync(path.join(dir, 'restore.json')) ? JSON.parse(fs.readFileSync(path.join(dir, 'restore.json'), 'utf8')) : null);
+
+type Walked = Awaited<ReturnType<typeof walkTheSwap>>;
+let walking: Promise<Walked> | null = null;
+/** One real swap, walked once for the whole file, whichever test asks first. */
+const walked = () => (walking ??= walkTheSwap());
+const lastRename = (points: string[]) => points.map((p) => p.startsWith('moved-new-')).lastIndexOf(true);
+
+afterAll(async () => {
+  if (walking) fs.rmSync((await walking).root, { recursive: true, force: true });
+});
+
 describe('a crash at every boundary of the swap', () => {
-  let points: string[] = [];
-  let lastNewMove = 0;
+  /** What the next start must make of the directory a crash at boundary `i` left. Fails the test when it is neither wholly old nor wholly new. */
+  async function nextStart(dir: string, f: Fixture, points: string[], i: number) {
+    const result = recoverOnStart({ dataDir: dir });
+    const state = await whichState(dir, f);
+    // at or after the last rename into place the new data is committed; before it, nothing is
+    expect(state, `crash at ${i} ${points[i]}`).toBe(i >= lastRename(points) ? 'new' : 'old');
+    untouched(dir);
+    noStrays(dir);
+    const journal = journalOf(dir);
+    // new: the restore is completed and the journal gone; before the journal: nothing to undo; otherwise undone
+    const beforeJournal = i < points.indexOf('journal-swapping');
+    const outcome = state === 'new' ? 'completed' : beforeJournal ? 'none' : 'rolled-back';
+    expect(result.action, `${points[i]}`).toBe(outcome);
+    expect(journal?.phase ?? null).toBe(outcome === 'rolled-back' ? 'rolled-back' : null);
+    expect(journal?.error ?? null).toBe(outcome === 'rolled-back' ? 'interrupted' : null);
+    expect(listing(dir).filter((n) => n.startsWith('.pre-restore-'))).toHaveLength(state === 'new' ? 1 : 0);
+    // starting again changes nothing
+    expect(recoverOnStart({ dataDir: dir }).action).toBe(result.action === 'completed' ? 'none' : result.action);
+    expect(await whichState(dir, f)).toBe(state);
+    return state;
+  }
 
   it('has boundaries before the journal, after it, after each rename batch and at the end', async () => {
-    const plan = crashPlan(null);
-    const f = await fixture(plan.hook);
-    try {
-      await restoreIt(f);
-      await f.exited;
-    } finally {
-      await f.h.close();
-    }
-    points = plan.passed;
-    lastNewMove = points.map((p) => p.startsWith('moved-new-')).lastIndexOf(true);
+    const { points, snapshots } = await walked();
     expect(points[0]).toBe('before-journal');
     expect(points.filter((p) => p.startsWith('moved-old-')).length).toBeGreaterThanOrEqual(6);
     expect(points.filter((p) => p.startsWith('moved-new-')).length).toBeGreaterThanOrEqual(5);
@@ -84,13 +138,31 @@ describe('a crash at every boundary of the swap', () => {
       expect(points, `${needed}`).toContain(needed);
     }
     expect(points.length).toBeGreaterThan(20);
+    expect(snapshots).toHaveLength(points.length);
   });
 
-  // Temporary stopgap until TAB-209 slims it: this walk took up to 57 s on a Windows shard, near the 60 s default.
   it('leaves the data wholly old or wholly new, whichever boundary the server stops at', async () => {
-    expect(points.length).toBeGreaterThan(0);
+    const w = await walked();
+    const { root, points, snapshots } = w;
     const outcomes: string[] = [];
-    for (let i = 0; i < points.length; i++) {
+    // every boundary: the directory as a crash there leaves it, then the next start. The next start changes the directory
+    // (it removes staging directories and opens the database), so it works on a copy and the snapshot stays as the crash left it.
+    for (let i = 0; i < snapshots.length; i++) {
+      const copy = path.join(root, `start-${i}`);
+      fs.cpSync(snapshots[i], copy, { recursive: true });
+      outcomes.push(`${points[i]}:${await nextStart(copy, w.f, points, i)}`);
+    }
+    expect(outcomes.filter((o) => o.endsWith(':old')).length).toBeGreaterThan(10);
+    expect(outcomes.filter((o) => o.endsWith(':new')).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('does the same when the swap really stops there, and leaves the same directory as the copy of that boundary', async () => {
+    const w = await walked();
+    const { points, snapshots } = w;
+    const lastNewMove = lastRename(points);
+    // the first boundary, one in the middle of moving the old files out, the first and the last of moving the new ones in, the end
+    const real = [0, points.indexOf('moved-old-3'), points.indexOf('moved-new-0'), lastNewMove, points.length - 1];
+    for (const i of real) {
       const plan = crashPlan(i);
       const f = await fixture(plan.hook);
       try {
@@ -98,33 +170,15 @@ describe('a crash at every boundary of the swap', () => {
         // a crashed process never leaves by itself
         await new Promise((resolve) => setTimeout(resolve, 5));
         expect(f.exits, `point ${i} ${points[i]}`).toEqual([]);
-
-        // the next start
-        const result = recoverOnStart({ dataDir: f.h.dir });
-        const state = await whichState(f.h.dir, f);
-        outcomes.push(`${points[i]}:${state}`);
-        // at or after the last rename into place the new data is committed; before it, nothing is
-        expect(state, `crash at ${i} ${points[i]}`).toBe(i >= lastNewMove ? 'new' : 'old');
-        untouched(f.h.dir);
-        noStrays(f.h.dir);
-        const journal = fs.existsSync(path.join(f.h.dir, 'restore.json')) ? JSON.parse(fs.readFileSync(path.join(f.h.dir, 'restore.json'), 'utf8')) : null;
-        // new: the restore is completed and the journal gone; before the journal: nothing to undo; otherwise undone
-        const beforeJournal = i < points.indexOf('journal-swapping');
-        const outcome = state === 'new' ? 'completed' : beforeJournal ? 'none' : 'rolled-back';
-        expect(result.action, `${points[i]}`).toBe(outcome);
-        expect(journal?.phase ?? null).toBe(outcome === 'rolled-back' ? 'rolled-back' : null);
-        expect(journal?.error ?? null).toBe(outcome === 'rolled-back' ? 'interrupted' : null);
-        expect(listing(f.h.dir).filter((n) => n.startsWith('.pre-restore-'))).toHaveLength(state === 'new' ? 1 : 0);
-        // starting again changes nothing
-        expect(recoverOnStart({ dataDir: f.h.dir }).action).toBe(result.action === 'completed' ? 'none' : result.action);
-        expect(await whichState(f.h.dir, f)).toBe(state);
+        // the directory a real crash leaves has the shape of the copy taken at that boundary
+        expect(shape(f.h.dir), `crash at ${i} ${points[i]}`).toEqual(shape(snapshots[i]));
+        expect(journalOf(f.h.dir)?.phase ?? null, `${points[i]}`).toBe(journalOf(snapshots[i])?.phase ?? null);
+        await nextStart(f.h.dir, f, points, i);
       } finally {
         await f.h.close();
       }
     }
-    expect(outcomes.filter((o) => o.endsWith(':old')).length).toBeGreaterThan(10);
-    expect(outcomes.filter((o) => o.endsWith(':new')).length).toBeGreaterThanOrEqual(3);
-  }, 120_000);
+  });
 
   it('records an undone restore in the database and the audit log once the server is up again', async () => {
     const plan = crashPlan(null);
@@ -157,54 +211,45 @@ describe('a crash at every boundary of the swap', () => {
     } finally {
       await f.h.close();
     }
-  }, 120_000);
+  });
 });
 
 describe('a crash inside the recovery itself', () => {
   it('is recovered by the next start, from every state the first crash can leave', async () => {
     // the interesting first crashes: partway through moving the old files out, partway through moving the new ones in,
-    // and just after all of them are in place
+    // and just after all of them are in place. Each is the directory a crash there leaves (the copy of that boundary of
+    // the walked swap), so no further restore has to be made for them.
+    const w = await walked();
+    const { root, points, snapshots } = w;
     const firstPoints = ['moved-old-2', 'journal-moved-old', 'moved-new-0', 'moved-new-3', 'journal-moved-new'];
     let recoveryPoints = 0;
     for (const first of firstPoints) {
-      let seen = -1;
-      const probe = await fixture((point) => {
-        if (point === first) throw new SimulatedCrash(point);
-      });
-      try {
-        await expect(restoreIt(probe)).rejects.toBeInstanceOf(SimulatedCrash);
-        // how many boundaries a clean recovery passes
-        const measure = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-recovery-'));
-        fs.cpSync(probe.h.dir, measure, { recursive: true });
-        const counted = crashPlan(null);
-        recoverOnStart({ dataDir: measure, step: counted.hook });
-        fs.rmSync(measure, { recursive: true, force: true });
-        seen = counted.passed.length;
-        expect(seen, `${first}`).toBeGreaterThan(0);
-        recoveryPoints += seen;
+      const at = points.indexOf(first);
+      expect(at, `${first} is a boundary of the swap`).toBeGreaterThanOrEqual(0);
+      // how many boundaries a clean recovery passes
+      const measure = path.join(root, `measure-${first}`);
+      fs.cpSync(snapshots[at], measure, { recursive: true });
+      const counted = crashPlan(null);
+      recoverOnStart({ dataDir: measure, step: counted.hook });
+      const seen = counted.passed.length;
+      expect(seen, `${first}`).toBeGreaterThan(0);
+      recoveryPoints += seen;
 
-        for (let j = 0; j < seen; j++) {
-          const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-recovery-'));
-          try {
-            fs.cpSync(probe.h.dir, copy, { recursive: true });
-            const plan = crashPlan(j);
-            expect(() => recoverOnStart({ dataDir: copy, step: plan.hook }), `${first} then ${j}`).toThrow(SimulatedCrash);
-            // the server is started again, and again if that crashes too
-            recoverOnStart({ dataDir: copy });
-            const state = await whichState(copy, probe);
-            expect(state, `${first} then a crash at recovery step ${j}`).toBe(first === 'journal-moved-new' ? 'new' : 'old');
-            untouched(copy);
-            noStrays(copy);
-          } finally {
-            fs.rmSync(copy, { recursive: true, force: true });
-          }
-        }
-      } finally {
-        await probe.h.close();
+      for (let j = 0; j < seen; j++) {
+        const copy = path.join(root, `recovery-${first}-${j}`);
+        fs.cpSync(snapshots[at], copy, { recursive: true });
+        const plan = crashPlan(j);
+        expect(() => recoverOnStart({ dataDir: copy, step: plan.hook }), `${first} then ${j}`).toThrow(SimulatedCrash);
+        // the server is started again, and again if that crashes too
+        recoverOnStart({ dataDir: copy });
+        const state = await whichState(copy, w.f);
+        expect(state, `${first} then a crash at recovery step ${j}`).toBe(first === 'journal-moved-new' ? 'new' : 'old');
+        untouched(copy);
+        noStrays(copy);
       }
     }
     expect(recoveryPoints).toBeGreaterThan(20);
-  }, 120_000);
+  });
 });
 
 describe('recovery that cannot be trusted', () => {
