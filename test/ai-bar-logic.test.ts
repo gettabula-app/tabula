@@ -818,6 +818,10 @@ describe('dock and drag', () => {
     expect(clampPos({ left: 300.4, bottom: 120.6 }, size, area)).toEqual({ left: 300, bottom: 121 });
   });
 
+  it('keeps a dragged bar outside safe-area insets', () => {
+    expect(clampPos({ left: -50, bottom: -50 }, size, area, { top: 47, right: 44, bottom: 34, left: 44 })).toEqual({ left: 52, bottom: 42 });
+  });
+
   it('is clamped again on resize, and lets the left and bottom edges win on a board too small for the bar', () => {
     expect(clampPos({ left: 700, bottom: 700 }, size, { w: 800, h: 400 })).toEqual({ left: 152, bottom: 280 });
     expect(clampPos({ left: 100, bottom: 100 }, size, { w: 500, h: 100 })).toEqual({ left: 8, bottom: 8 });
@@ -856,6 +860,11 @@ describe('dock and drag', () => {
     expect(dockBottom({ narrow: false, boardBottom: 900, tops: [840, 700] })).toBe(208);
     expect(dockBottom({ narrow: true, boardBottom: 900, tops: [880] })).toBe(64);
     expect(dockBottom({ narrow: true, boardBottom: 900, tops: [800] })).toBe(108);
+  });
+
+  it('keeps the dock above the home indicator when there is no lower bar', () => {
+    expect(dockBottom({ narrow: false, boardBottom: 900, tops: [], safeBottom: 34 })).toBe(50);
+    expect(dockBottom({ narrow: true, boardBottom: 900, tops: [], safeBottom: 34 })).toBe(98);
   });
 
   it('sets --ai-top 8px above the bar\'s top edge', () => {

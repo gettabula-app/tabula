@@ -762,11 +762,14 @@ export const EDGE = 8;
 export const KEY_STEP = 8;
 export const KEY_STEP_BIG = 32;
 
-/** Keeps the bar inside the board, 8px from each edge. A board too small for it wins the left and bottom edges. */
-export function clampPos(p: Pos, size: { w: number; h: number }, area: { w: number; h: number }): Pos {
+/** Keeps the bar inside the board, 8px from each edge and outside any safe-area insets. */
+export function clampPos(
+  p: Pos, size: { w: number; h: number }, area: { w: number; h: number },
+  safe: { top?: number; right?: number; bottom?: number; left?: number } = {},
+): Pos {
   return {
-    left: Math.round(Math.max(EDGE, Math.min(area.w - size.w - EDGE, p.left))),
-    bottom: Math.round(Math.max(EDGE, Math.min(area.h - size.h - EDGE, p.bottom))),
+    left: Math.round(Math.max(EDGE + (safe.left ?? 0), Math.min(area.w - size.w - EDGE - (safe.right ?? 0), p.left))),
+    bottom: Math.round(Math.max(EDGE + (safe.bottom ?? 0), Math.min(area.h - size.h - EDGE - (safe.top ?? 0), p.bottom))),
   };
 }
 
@@ -794,11 +797,11 @@ export const PHONE_DOCK = 860;
 const STACK_GAP = 8;
 
 /**
- * The docked bar's bottom offset: 16px, or 64px at 1000px and below (above the zoom tray), and 8px above the highest
- * of the bars below it (the session bar, a poll card). `tops` are those bars' top edges, `boardBottom` the board's, in viewport px.
+ * The docked bar's bottom offset: 16px, or 64px at 1000px and below (above the zoom tray), plus the safe bottom inset,
+ * and 8px above the highest of the bars below it (the session bar, a poll card). `tops` are those bars' top edges, `boardBottom` the board's, in viewport px.
  */
-export function dockBottom(o: { narrow: boolean; boardBottom: number; tops: readonly number[] }): number {
-  let bottom = o.narrow ? 64 : 16;
+export function dockBottom(o: { narrow: boolean; boardBottom: number; tops: readonly number[]; safeBottom?: number }): number {
+  let bottom = (o.narrow ? 64 : 16) + (o.safeBottom ?? 0);
   for (const top of o.tops) bottom = Math.max(bottom, Math.round(o.boardBottom - top + STACK_GAP));
   return bottom;
 }

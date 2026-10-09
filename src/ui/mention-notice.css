@@ -1,7 +1,7 @@
 /* The card that says you were mentioned in a channel you are not looking at (docs/chat.md, Mentions). Like the focus
    request cards: it never takes focus and never blocks anything, and goes away on its own. */
 .mention-stack {
-  position: fixed; z-index: 80; top: 64px; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 32px));
+  position: fixed; z-index: 80; top: calc(64px + var(--safe-top)); left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 32px - var(--safe-left) - var(--safe-right)));
   display: flex; flex-direction: column; gap: 8px; pointer-events: none;
 }
 .mention-stack > * { pointer-events: auto; }
@@ -18,5 +18,5 @@
 
 /* on a phone the top bar is two rows tall: the card sits below it */
 @media (max-width: 860px) {
-  .mention-stack { top: 96px; }
+  .mention-stack { top: calc(96px + var(--safe-top)); }
 }

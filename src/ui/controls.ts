@@ -202,10 +202,16 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
     if (!list) return;
     const a = button.getBoundingClientRect();
     const r = list.getBoundingClientRect();
-    const below = a.bottom + 4 + r.height <= window.innerHeight - 8 || a.top - 4 - r.height < 8;
+    const safe = getComputedStyle(document.documentElement);
+    const left = 8 + (parseFloat(safe.getPropertyValue('--safe-left')) || 0);
+    const right = 8 + (parseFloat(safe.getPropertyValue('--safe-right')) || 0);
+    const top = 8 + (parseFloat(safe.getPropertyValue('--safe-top')) || 0);
+    const bottom = window.innerHeight - 8 - (parseFloat(safe.getPropertyValue('--safe-bottom')) || 0);
+    const below = a.bottom + 4 + r.height <= bottom || a.top - 4 - r.height < top;
     list.style.minWidth = `${a.width}px`;
-    list.style.left = `${Math.max(8, Math.min(window.innerWidth - r.width - 8, a.left))}px`;
-    list.style.top = `${below ? a.bottom + 4 : a.top - 4 - r.height}px`;
+    list.style.left = `${Math.max(left, Math.min(window.innerWidth - r.width - right, a.left))}px`;
+    const y = below ? a.bottom + 4 : a.top - 4 - r.height;
+    list.style.top = `${Math.max(top, Math.min(bottom - r.height, y))}px`;
   };
 
   const open = () => {

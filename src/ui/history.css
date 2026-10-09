@@ -2,13 +2,13 @@
    hairlines and 2px rules, no radius, no shadow, 11px uppercase labels, an 8px grid. Theme variables only. */
 
 .history-panel {
-  position: absolute; top: var(--panel-top); right: 12px; bottom: 72px; width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
+  position: absolute; top: var(--panel-top); right: calc(12px + var(--safe-right)); bottom: calc(72px + var(--safe-bottom)); width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
   box-sizing: border-box; background: var(--tray); color: var(--tray-text); color-scheme: dark;
   border: 1px solid var(--tray-line); border-radius: 0; box-shadow: none; outline: none;
 }
 .history-panel.show { display: flex; }
 .chrome.history-previewing > :not(.history-panel) { visibility: hidden; }
-.chrome.history-previewing > .history-panel { top: 12px; bottom: 12px; }
+.chrome.history-previewing > .history-panel { top: calc(12px + var(--safe-top)); bottom: calc(12px + var(--safe-bottom)); }
 
 .history-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 8px 8px 16px;
@@ -76,7 +76,7 @@
 /* The preview fills the board area next to the panel. It sits under the panel (inside the chrome) and above the live board. */
 .history-preview {
   position: absolute; inset: 0; z-index: 6; display: none; grid-template-rows: auto minmax(0, 1fr);
-  box-sizing: border-box; padding-right: 344px; background: var(--canvas); color: var(--ink); outline: none;
+  box-sizing: border-box; padding: var(--safe-top) calc(344px + var(--safe-right)) var(--safe-bottom) var(--safe-left); background: var(--canvas); color: var(--ink); outline: none;
 }
 .history-preview.show { display: grid; }
 /* the signal-yellow ring is faint on this pale surface */
@@ -107,9 +107,9 @@
 
 @media (max-width: 720px) {
   /* right of the rail and above the zoom tray, which both stay usable (TAB-133) */
-  .history-panel, .chrome.history-previewing > .history-panel { left: var(--rail-clear); right: 12px; top: var(--panel-top); bottom: 64px; width: auto; }
+  .history-panel, .chrome.history-previewing > .history-panel { left: var(--rail-clear); right: calc(12px + var(--safe-right)); top: var(--panel-top); bottom: calc(64px + var(--safe-bottom)); width: auto; }
   .chrome.history-previewing > .history-panel { display: none; }
-  .history-preview { padding-right: 0; }
+  .history-preview { padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
   .history-banner { padding: 16px; }
   .history-banner-actions { width: 100%; }
 }

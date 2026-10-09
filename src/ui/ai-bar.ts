@@ -997,7 +997,11 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     }
     const cr = chrome.getBoundingClientRect();
     const r = visibleEl().getBoundingClientRect();
-    const p = clampPos(pos, { w: r.width, h: r.height }, { w: cr.width, h: cr.height });
+    const safe = getComputedStyle(document.documentElement);
+    const inset = (edge: string) => parseFloat(safe.getPropertyValue(`--safe-${edge}`)) || 0;
+    const p = clampPos(pos, { w: r.width, h: r.height }, { w: cr.width, h: cr.height }, {
+      top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
+    });
     dock.classList.add('dragged');
     dock.style.left = `${p.left}px`;
     dock.style.bottom = `${p.bottom}px`;
@@ -1068,7 +1072,8 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       const r = el.getBoundingClientRect();
       if (r.height > 0) tops.push(r.top);
     }
-    chrome.style.setProperty('--ai-bottom', `${dockBottom({ narrow: cr.width <= NARROW_DOCK, boardBottom: cr.bottom, tops })}px`);
+    const safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
+    chrome.style.setProperty('--ai-bottom', `${dockBottom({ narrow: cr.width <= NARROW_DOCK, boardBottom: cr.bottom, tops, safeBottom })}px`);
     const placed = applyPos(st.pos);
     // a bar dragged elsewhere does not stack: it stays where it was put
     const top = placed ? 0 : aiTop(cr.bottom, visibleEl().getBoundingClientRect().top);

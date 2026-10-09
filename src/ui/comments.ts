@@ -67,11 +67,16 @@ function focusSoon(ta: HTMLTextAreaElement) {
 function placeCard(el: HTMLElement, p: Point) {
   const w = el.offsetWidth, hgt = el.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
+  const safe = getComputedStyle(document.documentElement);
+  const left = MARGIN + (parseFloat(safe.getPropertyValue('--safe-left')) || 0);
+  const right = MARGIN + (parseFloat(safe.getPropertyValue('--safe-right')) || 0);
+  const top = MARGIN + (parseFloat(safe.getPropertyValue('--safe-top')) || 0);
+  const bottom = MARGIN + (parseFloat(safe.getPropertyValue('--safe-bottom')) || 0);
   let x = p.x + GAP, y = p.y + GAP;
-  if (x + w > vw - MARGIN) x = p.x - GAP - w;
-  if (y + hgt > vh - MARGIN) y = p.y - GAP - hgt;
-  el.style.left = `${Math.max(MARGIN, Math.min(x, vw - w - MARGIN))}px`;
-  el.style.top = `${Math.max(MARGIN, Math.min(y, vh - hgt - MARGIN))}px`;
+  if (x + w > vw - right) x = p.x - GAP - w;
+  if (y + hgt > vh - bottom) y = p.y - GAP - hgt;
+  el.style.left = `${Math.max(left, Math.min(x, vw - w - right))}px`;
+  el.style.top = `${Math.max(top, Math.min(y, vh - hgt - bottom))}px`;
 }
 
 /** The comment tool's card, the comments panel (the Comments tab of the side tray) and its count badge. */

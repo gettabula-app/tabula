@@ -44,7 +44,11 @@ export function installTooltips(): void {
     keys.hidden = !content.keys;
     const box = el.getBoundingClientRect();
     const size = tip.getBoundingClientRect();
-    const at = placeTip(box, size, { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
+    const safe = getComputedStyle(document.documentElement);
+    const inset = (edge: string) => parseFloat(safe.getPropertyValue(`--safe-${edge}`)) || 0;
+    const at = placeTip(box, size, { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight }, undefined, undefined, {
+      top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
+    });
     tip.style.left = `${Math.round(at.left)}px`;
     tip.style.top = `${Math.round(at.top)}px`;
   }

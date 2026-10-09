@@ -262,6 +262,13 @@ describe('placeTip', () => {
     const p = placeTip(at(100, 200), tip, view, 2, 0);
     expect(p.top).toBe(200 - 2 - 24);
   });
+
+  it('keeps the tooltip outside safe-area insets', () => {
+    const p = placeTip(at(0, 60), tip, view, TIP_GAP, TIP_MARGIN, { top: 47, left: 44, right: 44, bottom: 34 });
+    expect(p.left).toBeGreaterThanOrEqual(TIP_MARGIN + 44);
+    expect(p.top).toBeGreaterThanOrEqual(TIP_MARGIN + 47);
+    expect(p.top + tip.height).toBeLessThanOrEqual(view.height - TIP_MARGIN - 34);
+  });
 });
 
 describe('tipContent', () => {

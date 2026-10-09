@@ -18,7 +18,7 @@
 .combo[aria-expanded='true'] .ico { transform: rotate(180deg); }
 
 .combo-list {
-  position: fixed; z-index: 80; margin: 0; padding: 4px 0; list-style: none; max-height: min(360px, 60vh); overflow-y: auto;
+  position: fixed; z-index: 80; margin: 0; padding: 4px 0; list-style: none; max-height: min(360px, 60vh, calc(100vh - 16px - var(--safe-top) - var(--safe-bottom))); overflow-y: auto;
   border-radius: 0; background: var(--tray); color: var(--tray-text); color-scheme: dark;
   box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
   font-size: 14px;

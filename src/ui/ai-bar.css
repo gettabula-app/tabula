@@ -3,7 +3,7 @@
 /* Centred on the page, not on the canvas beside the rail: equal insets keep the collapsed button and the open bar on the page's
    centre line and clear of the zoom tray (244px) on both sides. The button and the bar share one grid cell: one centre line, one bottom edge. */
 .chrome > .aibar-dock {
-  position: absolute; bottom: var(--ai-bottom, 16px); left: 244px; right: 244px; z-index: 11;
+  position: absolute; bottom: var(--ai-bottom, calc(16px + var(--safe-bottom))); left: 244px; right: 244px; z-index: 11;
   display: grid; justify-items: center; align-items: end; pointer-events: none;
 }
 .aibar-dock > * { grid-area: 1 / 1; pointer-events: auto; }
@@ -11,9 +11,9 @@
 /* dragged: left and bottom are set in px, and a collapsed button stays at the bar's left edge */
 .chrome > .aibar-dock.dragged { right: auto; justify-items: start; }
 /* the 488px of insets leave too little room: the bar rises above the zoom tray and keeps equal insets */
-@media (max-width: 1000px) { .chrome > .aibar-dock:not(.dragged) { left: calc(var(--rail-clear) + 12px); right: calc(var(--rail-clear) + 12px); } }
+@media (max-width: 1000px) { .chrome > .aibar-dock:not(.dragged) { left: calc(var(--rail-clear) + 12px); right: calc(88px + var(--safe-right)); } }
 /* the rail runs the full height on phones, so the bar starts right of it, as the session bar does */
-@media (max-width: 860px) { .chrome > .aibar-dock:not(.dragged) { left: var(--rail-clear); right: 12px; } }
+@media (max-width: 860px) { .chrome > .aibar-dock:not(.dragged) { left: var(--rail-clear); right: calc(12px + var(--safe-right)); } }
 
 .aibar-fab { width: 40px; height: 40px; border: 0; padding: 0; display: inline-grid; place-items: center; color: var(--tray-text); transition: opacity 160ms ease, transform 160ms ease; }
 .aibar-fab:hover { background: color-mix(in srgb, var(--tray) 85%, var(--tray-text)); }

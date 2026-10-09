@@ -69,9 +69,15 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const selectedGroup = sel.length === 1 && sel[0].type === 'group';
     const gap = selectedGroup ? GROUP_BAR_GAP : undefined;
     // on a phone the bar starts right of the rail, so it is placed (and checked against the chip) from there
-    const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a, top)], railClear);
-    bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
+    const style = getComputedStyle(bar);
+    const safeLeft = parseFloat(style.getPropertyValue('--safe-left')) || 0;
+    const safeRight = parseFloat(style.getPropertyValue('--safe-right')) || 0;
+    const safeBottom = parseFloat(style.getPropertyValue('--safe-bottom')) || 0;
+    const railClear = isPhone() ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
+    const right = 12 + safeRight;
+    const bottom = 12 + safeBottom;
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a, top)], railClear, right, bottom);
+    bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear, right)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
     cue();
   }

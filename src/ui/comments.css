@@ -1,6 +1,6 @@
 /* comment card (floating, next to a pin or a click) */
 .comment-card {
-  position: fixed; z-index: 40; width: 320px; max-width: min(340px, calc(100vw - 24px)); padding: 12px; box-sizing: border-box;
+  position: fixed; z-index: 40; width: 320px; max-width: min(340px, calc(100vw - 24px - var(--safe-left) - var(--safe-right))); padding: 12px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px;
 }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
@@ -42,12 +42,12 @@
 :root .chrome > .side-tray.tray,
 :root:not([data-theme='default']) .chrome > .side-tray.tray { border-radius: 0; box-shadow: none; }
 .side-tray {
-  position: absolute; right: 12px; top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px));
-  max-height: calc(100% - var(--panel-top) - 84px); display: none; flex-direction: column; box-sizing: border-box;
+  position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px - var(--safe-right)));
+  max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); display: none; flex-direction: column; box-sizing: border-box;
   border: 1px solid var(--tray-line);
 }
 .side-tray.show { display: flex; }
-.side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px); }
+.side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); }
 .side-tray-head {
   flex: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 16px;
   border-bottom: 2px solid var(--tray-text);
