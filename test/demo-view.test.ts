@@ -40,3 +40,18 @@ describe('demo initial camera', () => {
     expect(screenCenterY).toBeCloseTo(insets.top + PAD + (viewport.h - insets.top - insets.bottom - PAD * 2) / 2);
   });
 });
+
+describe('a small phone', () => {
+  it('goes below 50% (to 40% at most) so the whole intro stays above the vote bar', () => {
+    const viewport = { w: 360, h: 740 };
+    const insets = demoViewInsets(viewport);
+    const bounds = { x: 0, y: 0, w: 560, h: 700 };
+    const view = initialDemoView(viewport, bounds, insets);
+    expect(view.zoom).toBeLessThan(0.5);
+    expect(view.zoom).toBeGreaterThanOrEqual(0.4);
+    const bottom = (bounds.y + bounds.h - view.y) * view.zoom;
+    const top = (bounds.y - view.y) * view.zoom;
+    expect(bottom).toBeLessThanOrEqual(viewport.h - insets.bottom);
+    expect(top).toBeGreaterThanOrEqual(insets.top);
+  });
+});

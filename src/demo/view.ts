@@ -24,12 +24,14 @@ export interface DemoCamera {
 }
 
 const PAD = 12;
+/** The least zoom the intro may use: 50% where it fits, down to 40% on a small phone so the whole intro stays above the vote bar. */
+const MIN_ZOOM = 0.4;
 
 /** Returns a camera that fits the demo intro inside the viewport, clear of its bars and toolbars. */
 export function initialDemoView(viewport: ViewportSize, bounds: ViewRect, insets: ViewInsets): DemoCamera {
   const width = Math.max(1, viewport.w - insets.left - insets.right - PAD * 2);
   const height = Math.max(1, viewport.h - insets.top - insets.bottom - PAD * 2);
-  const zoom = Math.min(1, Math.max(0.5, Math.min(width / Math.max(1, bounds.w), height / Math.max(1, bounds.h))));
+  const zoom = Math.min(1, Math.max(MIN_ZOOM, Math.min(width / Math.max(1, bounds.w), height / Math.max(1, bounds.h))));
   const centerX = insets.left + PAD + width / 2;
   const centerY = insets.top + PAD + height / 2;
   return {
