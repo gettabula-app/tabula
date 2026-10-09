@@ -45,6 +45,8 @@ Click **Shapes** on the rail to open the Shapes panel. Shapes are grouped as **B
 
 `R`, `O` and `D` skip the panel and draw a rectangle, ellipse or diamond.
 
+Under **Boards** the panel also has **Kanban**, which places a board of lanes and cards. See [Kanban boards](kanban.md).
+
 To change the shape of an existing object, select it and use the **Shape** button in the quick-action bar.
 
 ## Text
