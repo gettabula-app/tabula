@@ -46,6 +46,7 @@ export const ICONS = {
   connector: '<path d="M5 19L18 6"/><path d="M11 6h7v7"/>',
   pen: '<g transform="translate(0.15 -1.75)"><path d="M4 20c3-1 4-4 6-7s5-6 8-7c1-.4 2 .6 1.6 1.6-1 3-4 6-7 8s-6 3-7 6"/></g>',
   frame: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="1"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17.5l5-4.5 3.5 3 3-2.5 4.5 4"/>',
   shapes: '<rect x="3.5" y="10" width="10" height="10" rx="1"/><circle cx="16" cy="8" r="5"/>',
   uml: '<rect x="4" y="3.5" width="16" height="17" rx="1"/><path d="M4 8.5h16M4 14h16M7 11.2h6M7 16.8h8"/>',
   icons: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 007 0"/><path d="M9 9.5h.01M15 9.5h.01" stroke-width="2.5"/>',

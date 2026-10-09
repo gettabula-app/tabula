@@ -1,3 +1,4 @@
+import type { ImageState } from './image-loader';
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
@@ -152,14 +153,31 @@ export function resolveCssVars(svg: string): string {
   return svg.replace(/var\(--[\w-]+,\s*([^)]+)\)/g, (_, fallback: string) => fallback.trim());
 }
 
-export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; background?: boolean } = {}): { svg: string; w: number; h: number } {
+/** The pictures of the image objects among `objs`, as data URLs by object id: what an export draws in place of a live link. */
+export async function imageDataUrls(app: BoardApp, objs: Obj[]): Promise<Map<Id, string>> {
+  const out = new Map<Id, string>();
+  for (const o of objs) {
+    if (o.type !== 'image') continue;
+    const url = await app.images.dataUrl(o as BaseObj);
+    if (url) out.set(o.id, url);
+  }
+  return out;
+}
+
+export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; background?: boolean; images?: Map<Id, string> } = {}): { svg: string; w: number; h: number } {
   const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
   const b = app.r.contentBounds(objs.map((o) => o.id)) ?? { x: 0, y: 0, w: 100, h: 100 };
   const pad = 40;
   const x = b.x - pad, y = b.y - pad - 10, w = b.w + pad * 2, h = b.h + pad * 2 + 10;
   // The ctx carries the canvas's own connector layout, whole-board even when only some objects are exported, so a
   // connector in the file ends where it does on the board, beside connectors that are not in it.
-  const ctx = { ...app.r.ctx, editingId: null };
+  const images = opts.images;
+  const ctx = {
+    ...app.r.ctx,
+    editingId: null,
+    // an image is its data URL here, or a placeholder when its bytes were not found: never a link that only works on screen
+    imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
+  };
   const body = objs.map((o) => objectMarkup(o, ctx)).join('\n');
   let style = opts.fontCss ?? '';
   if (!opts.fontCss) {
@@ -170,6 +188,12 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
 ${style.replace(/]]>/g, '')}
 ]]></style></defs>${bg}${body}</svg>`);
   return { svg, w, h };
+}
+
+/** The SVG of the board (or of `ids`) with its pictures inlined, so the file stands on its own. */
+export async function exportSvgFile(app: BoardApp, ids?: Id[]): Promise<string> {
+  const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
+  return exportSvg(app, ids, { images: await imageDataUrls(app, objs) }).svg;
 }
 
 function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
@@ -242,7 +266,7 @@ async function inlineFontCss(objs: Obj[]): Promise<string> {
 export async function exportPng(app: BoardApp, ids?: Id[], scale = 2): Promise<Blob> {
   const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
   const fontCss = await inlineFontCss(objs);
-  const { svg, w, h } = exportSvg(app, ids, { fontCss });
+  const { svg, w, h } = exportSvg(app, ids, { fontCss, images: await imageDataUrls(app, objs) });
   const max = 16000;
   const s = Math.min(scale, max / w, max / h);
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));

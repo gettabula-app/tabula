@@ -13,7 +13,8 @@ export const TEMPLATE_CATEGORIES = [
 ];
 export const TEMPLATE_SCOPES = ['personal', 'team', 'workspace'];
 // the object types of ObjType in src/types.ts (a test keeps them equal), and the relations of UmlRelation
-export const TEMPLATE_OBJ_TYPES = OBJ_TYPES;
+// not 'image': a template is copied to boards that cannot read another board's assets (docs/images.md, Templates)
+export const TEMPLATE_OBJ_TYPES = OBJ_TYPES.filter((t) => t !== 'image');
 export const TEMPLATE_RELATIONS = [
   'association', 'directed', 'generalization', 'realization', 'dependency', 'aggregation', 'composition', 'message',
   'async', 'reply', 'include', 'extend', 'transition',

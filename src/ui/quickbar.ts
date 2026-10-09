@@ -185,6 +185,33 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     }
     groups.push(style);
 
+    // Images (docs/images.md): back to the natural size, and a description for screen readers and the summary
+    const pictures = sel.filter((o): o is BaseObj => o.type === 'image');
+    const picture: HTMLElement[] = [];
+    if (pictures.length) {
+      picture.push(h('button', {
+        class: 'icon-btn qb-text', 'aria-label': 'Actual size', 'data-tip': 'Reset to the natural size',
+        onclick: () => app.store.transact(() => pictures.forEach((o) => {
+          if (o.nw && o.nh) app.store.update(o.id, { x: Math.round(o.x + o.w / 2 - o.nw / 2), y: Math.round(o.y + o.h / 2 - o.nh / 2), w: o.nw, h: o.nh });
+        })),
+      }, '100%'));
+      if (pictures.length === 1) {
+        picture.push(menu('text', 'Alt text', () => {
+          const input = h('input', { class: 'input', maxlength: 300, value: pictures[0].alt ?? '', 'aria-label': 'Alt text', placeholder: 'Describe the picture', autocomplete: 'off' });
+          const save = () => app.updateSelected({ alt: input.value.trim() || undefined }, (o) => o.type === 'image');
+          input.addEventListener('change', save);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+              save();
+              closePopover();
+            }
+          });
+          return field('Alt text', input);
+        }));
+      }
+    }
+    groups.push(picture);
+
     const text: HTMLElement[] = [];
     if (sel.some(HAS_TEXT)) {
       text.push(menu('text', 'Text', () => {

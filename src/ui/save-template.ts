@@ -2,7 +2,7 @@ import './home.css';
 import type { BoardApp } from '../app';
 import type { Id, Obj } from '../types';
 import { isBox } from '../types';
-import { toTemplateContent, validateContent, type CustomTemplate, type TemplateContent, type TemplateScope } from '../custom-templates';
+import { imagesLeftOut, toTemplateContent, validateContent, type CustomTemplate, type TemplateContent, type TemplateScope } from '../custom-templates';
 import { authState } from '../auth';
 import { putTemplate, templatesShared } from '../template-store';
 import { choiceFor, choiceValue, saveBlocked, scopeLabel, shareChoices, shareHint } from '../template-share';
@@ -89,7 +89,8 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
     const save = dlg.box.querySelector<HTMLButtonElement>('.modal-actions .btn.primary');
     if (save) save.disabled = limit !== null || blocked !== null;
     const n = content.objects.length;
-    summary.textContent = `${n} ${n === 1 ? 'object' : 'objects'}${content.steps.length ? `, ${content.steps.length} session ${content.steps.length === 1 ? 'step' : 'steps'}` : ''}`;
+    const left = imagesLeftOut(objs);
+    summary.textContent = `${n} ${n === 1 ? 'object' : 'objects'}${content.steps.length ? `, ${content.steps.length} session ${content.steps.length === 1 ? 'step' : 'steps'}` : ''}${left ? `. ${left} ${left === 1 ? 'image was' : 'images were'} left out: templates can't hold images yet.` : ''}`;
   };
   preview.innerHTML = thumbnailSvg(content.objects);
 

@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import { MAX_TEMPLATE_BYTES, MAX_TEMPLATE_OBJECTS, validateContent } from '../src/custom-templates';
 import { builtinToCustom } from '../src/template-file';
 import { CATEGORIES, CUSTOM_CATEGORY, TEMPLATES } from '../src/templates';
-import { LIMITS, OpsError, applyPlan, planUseTemplate } from '../server/board-ops.mjs';
+import { LIMITS, OBJ_TYPES, OpsError, applyPlan, planUseTemplate } from '../server/board-ops.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 import {
   MAX_SVG_BODY, MAX_TEMPLATE_BYTES as SERVER_MAX_BYTES, MAX_TEMPLATE_OBJECTS as SERVER_MAX_OBJECTS, TEMPLATE_CATEGORIES,
@@ -52,7 +52,10 @@ describe('constants that mirror the client', () => {
     const base = /export type ObjType = ([^;]+);/.exec(types)![1];
     const uml = /export type UmlType =([^;]+);/.exec(types)![1];
     const names = [...base.matchAll(/'([^']+)'/g), ...uml.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.sort());
+    // a template never holds an image: its assets belong to the board it came from (docs/images.md, Templates)
+    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.filter((n) => n !== 'image').sort());
+    expect(names).toContain('image');
+    expect(OBJ_TYPES).toContain('image');
   });
 
   it('lists the same relations as UmlRelation, and the step modes of StepMode but poll', () => {

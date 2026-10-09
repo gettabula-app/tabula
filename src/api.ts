@@ -27,9 +27,14 @@ export interface Me {
   workspace?: Workspace;
   /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
   mcp?: boolean;
+  /** Present (true) when this server stores images on boards (docs/images.md). */
+  images?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
   ai?: { personalKeys: true };
 }
+
+/** What the server stored for an upload. */
+export interface AssetInfo { hash: string; mime: string; bytes: number; width: number; height: number }
 
 export type AccessScope = 'read' | 'comment' | 'write';
 
@@ -332,6 +337,9 @@ async function readBody(res: Response): Promise<Body> {
   }
 }
 
+// A 10 MB image on a slow connection.
+const ASSET_TIMEOUT_MS = 120_000;
+
 export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
   async function call<T>(method: Method, path: string, payload?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
@@ -343,6 +351,22 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
       init.body = JSON.stringify(payload);
     }
 
+    let res: Response;
+    try {
+      res = await fetchFn(path, init);
+    } catch {
+      throw new ApiError(0, 'network', 'network');
+    }
+    const body = await readBody(res);
+    if (!res.ok) throw failure(res, body);
+    if (!body.valid) throw new ApiError(res.status, 'unknown', 'unknown');
+    return body.data as T;
+  }
+
+  /** Raw bytes in, JSON out (an image upload). The server decides the type from the bytes; `type` is only what we declare. */
+  async function sendBytes<T>(path: string, bytes: Blob, type: string, timeoutMs = ASSET_TIMEOUT_MS): Promise<T> {
+    const init: RequestInit = { method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'x-tabula': '1', 'content-type': type }, body: bytes };
+    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(timeoutMs);
     let res: Response;
     try {
       res = await fetchFn(path, init);
@@ -382,7 +406,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
   };
 
   return {
-    config: () => call<{ authEnabled: boolean }>('GET', '/api/config'),
+    config: () => call<{ authEnabled: boolean; images?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
     requestLogin: (email: string, invite?: string) =>
@@ -414,6 +438,10 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     updateBoard: (id: string, patch: { title?: string; teamId?: string | null }) =>
       call<ServerBoard>('PATCH', `/api/boards/${seg(id)}`, patch),
     deleteBoard: (id: string) => call<void>('DELETE', `/api/boards/${seg(id)}`),
+    /** Uploads an image for a board; answers with the stored hash and the type and size the server read from the bytes. */
+    uploadAsset: (boardId: string, bytes: Blob, type: string) => sendBytes<AssetInfo>(`/api/boards/${seg(boardId)}/assets`, bytes, type),
+    /** Asks for a file another board of the caller's already holds, without sending bytes. */
+    claimAsset: (boardId: string, hash: string) => call<AssetInfo>('POST', `/api/boards/${seg(boardId)}/assets/claim`, { hash }),
     shares: (boardId: string) => call<Share[]>('GET', `/api/boards/${seg(boardId)}/shares`),
     share: (boardId: string, grant: { principalType: PrincipalType; principalId: string; role: ShareRole }) =>
       call<void>('POST', `/api/boards/${seg(boardId)}/shares`, grant),

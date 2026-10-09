@@ -1,6 +1,7 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
 import type { Store } from './store';
+import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
 import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
@@ -99,6 +100,8 @@ export class Renderer {
   pins: PinView[] = [];
   editingId: string | null = null;
   isHidden: (o: BaseObj) => boolean = () => false;
+  /** What there is to draw for an image object (src/image-loader.ts); until set, an image shows its placeholder. */
+  imageState: (o: BaseObj) => ImageState = () => ({ kind: 'loading' });
   /** Read-only boards show the selection outline but no handles, since they cannot be dragged. */
   readOnly = false;
   gridType: GridType = 'dots';
@@ -140,6 +143,7 @@ export class Renderer {
     this.ctx = {
       get: (id) => this.store.get(id),
       isHidden: (o) => this.isHidden(o),
+      imageState: (o) => this.imageState(o),
       editingId: null,
       layout: () => this.connectorLayout(),
     };
@@ -176,6 +180,12 @@ export class Renderer {
   markDirty(id: Id) {
     this.dirty.add(id);
     this.boundsCache.delete(id);
+  }
+
+  /** Redraws these objects at the next frame (an image whose bytes arrived). */
+  invalidateObjects(ids: Iterable<Id>) {
+    for (const id of ids) this.markDirty(id);
+    this.schedule();
   }
 
   invalidateAll() {
