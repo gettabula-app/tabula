@@ -5,6 +5,7 @@ import { Store } from '../src/store';
 import { addCard, newKanban } from '../src/containers';
 import type { BaseObj, Id } from '../src/types';
 import { USER_COLORS } from '../src/palette';
+import { resolveCssVars } from '../src/exporters';
 
 // docs/kanban.md, slice 2 (Rendering and Visual design): what a container, a lane and a card draw.
 
@@ -187,5 +188,22 @@ describe('a card', () => {
     const long = { ...base, text: 'word '.repeat(200) };
     expect(cardContentHeight(long, 264)).toBe(8 + 3 * 18 + 8);
     expect(objectMarkup(long, { get: () => undefined }).match(/<tspan/g)).toHaveLength(3);
+  });
+});
+
+describe('in an export', () => {
+  it('leaves no theme variable behind once the variables are replaced by their fallbacks', () => {
+    const { store, container, lanes, ids } = board();
+    store.transact(() => {
+      store.update(lanes[1], { fill: 'blue', wip: 1 });
+      store.update(ids[0], { labels: ['bug', 'ui'], due: '2026-10-01', ownerName: 'Johan Saldes', ownerId: 'u1', fill: '#FFA3C4' });
+      store.update(ids[1], { parent: lanes[1], rank: `a0@${lanes[1]}` });
+    });
+    const ctx = { ownerColor: () => USER_COLORS[0], commentCount: () => 2, zoom: 1, editable: false };
+    for (const id of [container, ...lanes, ...ids]) {
+      const svg = resolveCssVars(draw(store, id, ctx));
+      expect(svg).not.toContain('var(');
+      expect(svg).not.toContain('Add card');
+    }
   });
 });

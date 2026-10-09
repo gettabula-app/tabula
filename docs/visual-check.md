@@ -51,7 +51,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
-| `kanban` | A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
+| `kanban` | (open mode only, as are the other `kanban` states) A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
 | `kanban-card` | The same with a card selected |
 | `kanban-drag` | A card held down and dragged into another lane: placeholder, ghost and drop line (the mouse stays down, so the shot is not parked) |
 | `kanban-drag-empty` | A card dragged over an empty lane: "Drop here" and the drop line at the top of its body |

@@ -1,6 +1,6 @@
 # Containers and kanban
 
-TAB-134. Status: spec for review. Nothing here is built yet.
+TAB-134. Status: slices 1 and 2 are built (see the notes at the end); the rest is the spec.
 
 A kanban board is a set of columns with cards in them, and the interesting part is not drawing columns. It is that the cards **belong** to a column, have an **order** inside it, and move between columns without anyone computing coordinates. Tabula has nothing like that today: every object has its own `x` and `y`, and the only grouping is a frame, which is a rectangle that happens to contain things. Three other planned features need the same missing piece: tables (TAB-121), grids (TAB-122) and swimlanes and timelines (TAB-142).
 
@@ -533,6 +533,7 @@ Slice 2 draws containers, lanes and cards, selects and moves them, and makes a k
 10. **Owner badges** take the person's colour only when the owner (`ownerId`) is in the room now; anyone else, and a free-text owner, gets the hairline ring. Remembering colours of people seen earlier is open.
 11. **Fonts.** Lane names, card text and labels use the board's body font and the container name its heading font (the mock uses the chrome font, Switzer). Label chips use `var(--s-<swatch>, <sticky colour>)`; the app defines no `--s-*` variables, so the sticky palette, the same in every theme as the design says, is what shows.
 12. **The tween** plays on the lane or card element (from where it was last drawn to its new place) after any change that moves it, local or remote, a drop and a keyboard move included; not on first draw, not when its container moved (a container dragged by anyone moves its contents without lag), and never with reduced motion. The ghost's lift is a CSS animation that reduced motion turns off.
-13. **Skipped**, as the brief allows: shared drag awareness (the optional ghost of other people's drags), and the long press to drag a card on touch (the phone route is slice 5's list sheet).
+13. **For the next slices.** A lane redraws when its cards change, but its cards do not redraw when the lane changes: slice 4, which edits `stage`, has to redraw the lane's cards (their due chips depend on it). A loose card has no resize or rotate handles, like everything of the three types (slice 1); the spec calls a loose card an ordinary box, so slice 3 may want them back for loose cards.
+14. **Skipped**, as the brief allows: shared drag awareness (the optional ghost of other people's drags), and the long press to drag a card on touch (the phone route is slice 5's list sheet).
 
 Open for Johan (each built the reversible way above): whether a card's title should be editable in place before the slice 3 dialog arrives (note 3), and whether an owner who is not in the room should keep a remembered colour (note 10).
