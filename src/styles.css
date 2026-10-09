@@ -372,6 +372,13 @@ select.input {
 .dots-pop { width: 300px; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .dots-pop .pop-head { padding: 12px 0 0; }
 .dots-pop p { margin: 0; }
+.vote-scope { display: flex; flex-direction: column; gap: 6px; }
+.vote-scope button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--tray-text) 28%, transparent); border-radius: 0; background: transparent; color: inherit; }
+.vote-scope button.on { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+.vote-scope button:hover:not(:disabled) { background: var(--tray-hover); }
+.vote-scope button:disabled { opacity: 0.55; }
+.vote-scope .vs-label { display: flex; justify-content: space-between; width: 100%; font-weight: 600; }
+.vote-scope .vs-count { font-weight: 500; opacity: 0.7; }
 .dot-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .dot-presets button { height: 34px; border: 0; border-radius: 0; background: color-mix(in srgb, var(--tray-text) 6%, transparent); font-weight: 600; }
 .dot-presets button:hover { background: var(--tray-hover); }

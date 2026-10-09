@@ -31,7 +31,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -746,6 +746,22 @@ const STATES = {
     await more.waitFor();
     await more.evaluate((el) => el.click());
     await env.page.locator('.props.show').waitFor();
+  },
+  // TAB-232: the step before a dot vote, with an item selected (so Selected items is the default) and then the vote running with its outlines
+  async 'vote-setup'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => window.__board.setSelection(['seed-rect']));
+    await env.page.getByRole('button', { name: 'Start a dot vote' }).click();
+    await env.page.getByRole('dialog', { name: 'Start a dot vote' }).waitFor();
+  },
+  async 'vote-running'(env) {
+    await openSeedBoard(env);
+    // the vote step lives in the seeded board, so a later width may find it already running
+    if (!(await env.page.evaluate(() => window.__board.flow.isVoting()))) {
+      await env.page.getByRole('button', { name: 'Start a dot vote' }).click();
+      await env.page.getByRole('button', { name: 'Start on everything' }).evaluate((el) => el.click());
+    }
+    await env.page.locator('.flow-bar, .flowbar').first().waitFor().catch(() => {});
   },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {

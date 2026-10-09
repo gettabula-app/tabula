@@ -162,6 +162,12 @@ export interface Step {
   mode: StepMode;
   /** Dots each person may place; 0 = unlimited. Defaults to 3. */
   votesPerPerson?: number;
+  /**
+   * What a dot vote may be placed on: `all` (every note, shape, card, text and image; the default when absent), `stickies`, or
+   * `selection` (exactly `voteItems`, which may include a frame). Only a vote step has it.
+   */
+  voteScope?: 'all' | 'stickies' | 'selection';
+  voteItems?: Id[];
   /** Added with the one-click dot vote; removed from the flow when the session ends. */
   quick?: boolean;
   /** Set iff mode is 'poll'; the poll lives in the `polls` map (see docs/polls.md). */

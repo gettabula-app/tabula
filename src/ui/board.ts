@@ -17,7 +17,7 @@ import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
 import { bindLayersKey } from './layers';
-import { mountFlowBar } from './flowbar';
+import { mountFlowBar, openVoteSetup, startVote } from './flowbar';
 import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
@@ -37,7 +37,6 @@ import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { SHORTCUTS } from '../shortcuts';
-import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
@@ -190,13 +189,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.openSheet = (id, lane) => void openContainerSheet(app, id, lane);
   app.lifetime.signal.addEventListener('abort', closeContainerSheet, { once: true });
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
-  voteBtn.addEventListener('click', () => {
+  voteBtn.addEventListener('click', (e) => {
     if (app.flow.isVoting()) {
       toast('A dot vote is running. Change dots per person or finish it from the bar at the bottom.');
       return;
     }
-    app.flow.quickVote(UNLIMITED);
-    toast('Dot vote started with no limit. Click any note to add a dot.');
+    // Shift-click starts at once on everything, as the button always did; otherwise the person first chooses what to vote on (TAB-232)
+    if (e.shiftKey) startVote(app, { kind: 'all' });
+    else openVoteSetup(app, voteBtn);
+  });
+  let lastSkip = 0;
+  app.on('vote-skip', () => {
+    if (Date.now() - lastSkip < 3000) return;
+    lastSkip = Date.now();
+    toast('Not part of this vote. Dots go on the items with a dashed outline.');
   });
   const syncVote = () => {
     const on = app.flow.isVoting();

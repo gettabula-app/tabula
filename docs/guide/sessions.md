@@ -7,7 +7,7 @@ A session is a facilitated sequence of timed steps that you run on the board, su
 You can begin a session in three ways:
 
 - Add a session template from **Templates and team exercises** in the toolbar. Retrospective, brainstorm, prioritisation and planning templates come with frames and a ready set of steps. See [Templates](templates.md).
-- Click **Start a dot vote** in the toolbar for a single voting step with no template.
+- Click **Start a dot vote** in the toolbar for a single voting step with no template. It first asks what can be voted on (see [Dot voting](#dot-voting)); `Shift`-click the button to start at once on everything.
 - Click **Start a quick poll** for a single poll step. See [Polls](polls.md).
 
 When a board has steps but no session is running, the bar at the bottom shows **Session ready**, with the number of steps and the total minutes. Click **Start session** to begin at step 1, or **Edit steps** to change them first.
@@ -68,9 +68,17 @@ Comment pins on hidden notes are hidden as well. See [Comments](comments.md).
 
 ## Dot voting
 
+**What can be voted on.** **Start a dot vote** opens a small panel with a choice and a count of the items:
+
+- **Selected items** is the default when something is selected. It is the only way to vote on a frame, and it takes exactly the items you selected.
+- **Everything** is every note, shape, card, text and image on the board. Frames, drawings, kanban columns and connectors are not included.
+- **Sticky notes only**.
+
+**Start vote** begins; **Start on everything** skips the choice. While the vote runs, the items that can take a dot have a faint dashed outline, and a click on anything else says it is not part of the vote.
+
 In a **Dot vote** step:
 
-1. Click a note or shape to add a dot. Click again to add more.
+1. Click an outlined item to add a dot. Click again to add more.
 2. Hold `Shift` and click to remove one of your dots.
 3. The bar shows how many dots you have left. Click it to set **Dots per person** (1, 2, 3, 5, 10, any number, or **No limit**). The change applies to everyone straight away, and dots already placed stay.
 4. Click **Reveal votes** to show the totals.

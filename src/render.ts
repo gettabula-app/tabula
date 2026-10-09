@@ -35,6 +35,7 @@ export interface Overlay {
   preview: string;              // world-space markup of an object being drawn
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
+  votable: Set<Id>;             // what a dot may go on in the running vote, ringed faintly for the people voting (TAB-232)
   dropTarget: Id | null;        // frame highlighted while dragging into it
   ai: string;                   // world-space markup of the AI previews on the board (ghosts), above the objects and below selections
   kanban: KanbanOverlay | null; // card drag and keyboard move marks (docs/kanban.md)
@@ -64,7 +65,7 @@ export interface KanbanDrawState {
 
 export const emptyOverlay = (): Overlay => ({
   selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
-  guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null, ai: '', kanban: null,
+  guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
 });
 
 const GUIDE = 'var(--guide, #D6247F)';
@@ -695,6 +696,14 @@ export class Renderer {
     if (ov.marquee) {
       const m = ov.marquee;
       out += `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" fill="${WIRE}" fill-opacity="0.06" stroke="${WIRE}" stroke-width="${px(1)}"/>`;
+    }
+
+    // what can be voted on, while a vote runs
+    for (const id of ov.votable) {
+      const o = get(id);
+      if (!isBox(o)) continue;
+      const b = boxBounds(o);
+      out += `<rect x="${b.x - px(3)}" y="${b.y - px(3)}" width="${b.w + px(6)}" height="${b.h + px(6)}" rx="${px(6)}" fill="none" stroke="${WIRE}" stroke-opacity="0.35" stroke-width="${px(1.5)}" stroke-dasharray="${px(4)} ${px(3)}" pointer-events="none"/>`;
     }
 
     // vote badges

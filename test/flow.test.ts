@@ -194,3 +194,60 @@ describe('pictures in the markdown summary', () => {
     expect(flow.summaryMarkdown()).not.toContain('loose');
   });
 });
+
+describe('dot vote scope (TAB-232)', () => {
+  const frame = (id: string): BaseObj => ({ id, type: 'frame', x: 0, y: 0, w: 400, h: 400, rotation: 0, z: 'a0', text: id });
+  const shape = (id: string): BaseObj => ({ id, type: 'shape', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: 'a1', text: id } as BaseObj);
+  const path = (id: string): BaseObj => ({ id, type: 'path', x: 0, y: 0, w: 50, h: 50, rotation: 0, z: 'a2' } as BaseObj);
+
+  function setup() {
+    const f = fakeApp();
+    f.store.transact(() => { for (const o of [note('n1'), note('n2'), shape('s1'), frame('f1'), path('p1')]) f.store.create(o); });
+    return f;
+  }
+
+  it("Everything keeps today's set: notes and shapes, not frames or drawings", () => {
+    const { store, flow } = setup();
+    flow.quickVote(UNLIMITED);
+    expect(flow.eligible({ kind: 'all' }).map((o) => o.id).sort()).toEqual(['n1', 'n2', 's1']);
+    for (const id of ['n1', 's1', 'f1', 'p1']) flow.handleClick(store.get(id)!, false);
+    expect(flow.myVoteCount()).toBe(2);
+  });
+
+  it('Stickies only counts and accepts stickies alone', () => {
+    const { store, flow } = setup();
+    flow.quickVote(UNLIMITED, { kind: 'stickies' });
+    expect(flow.eligible({ kind: 'stickies' }).map((o) => o.id).sort()).toEqual(['n1', 'n2']);
+    flow.handleClick(store.get('s1')!, false);
+    expect(flow.myVoteCount()).toBe(0);
+    flow.handleClick(store.get('n2')!, false);
+    expect(flow.myVoteCount()).toBe(1);
+  });
+
+  it('Selection takes exactly the chosen items, a frame included, and nothing else', () => {
+    const { store, flow } = setup();
+    flow.quickVote(UNLIMITED, { kind: 'selection', ids: ['f1', 'n1'] });
+    expect(flow.activeStep()).toMatchObject({ voteScope: 'selection', voteItems: ['f1', 'n1'] });
+    for (const id of ['f1', 'n1', 'n2', 's1']) flow.handleClick(store.get(id)!, false);
+    expect(flow.ranked(flow.activeStep()!.id).map((r) => r.item.id).sort()).toEqual(['f1', 'n1']);
+  });
+
+  it('says so when a click is not part of the vote, but not for a frame or for removing a dot', () => {
+    const { store, flow } = setup();
+    let skips = 0;
+    (flow as unknown as { app: { emit: (e: string) => void } }).app.emit = (e: string) => { if (e === 'vote-skip') skips++; };
+    flow.quickVote(UNLIMITED, { kind: 'stickies' });
+    flow.handleClick(store.get('s1')!, false);
+    expect(skips).toBe(1);
+    flow.handleClick(store.get('f1')!, false);
+    flow.handleClick(store.get('s1')!, true);
+    expect(skips).toBe(1);
+  });
+
+  it('an old vote step without a scope still means Everything', () => {
+    const { store, flow } = setup();
+    flow.quickVote(UNLIMITED);
+    expect(flow.activeStep()!.voteScope).toBeUndefined();
+    expect(flow.canVote(flow.activeStep(), store.get('s1'))).toBe(true);
+  });
+});
