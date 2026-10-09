@@ -109,14 +109,19 @@ export function parseRequest(body) {
   };
 }
 
-/** The body of POST /api/ai/runs/:id/resolve: `{ action: 'accept' | 'discard' }`. */
+/**
+ * The body of POST /api/ai/runs/:id/resolve: `{ action: 'accept' | 'discard', presence?: { name } }`. The name is used in
+ * open mode only, so the runner can be told who settled their run; in accounts mode the account's name is.
+ */
 export function parseResolve(body) {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new InputError('The request body must be a JSON object');
   for (const name of Object.keys(body)) {
-    if (name !== 'action') throw new InputError(`Unknown field: ${name.slice(0, 40)}`);
+    if (name !== 'action' && name !== 'presence') throw new InputError(`Unknown field: ${name.slice(0, 40)}`);
   }
   if (body.action !== 'accept' && body.action !== 'discard') throw new InputError('action must be accept or discard');
-  return body.action;
+  const presence = parsePresence(body.presence);
+  if (presence.color !== null || presence.outline !== true) throw new InputError('presence of a resolve takes only a name');
+  return { action: body.action, name: presence.name };
 }
 
 /**
@@ -316,18 +321,19 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
 
   /**
    * POST /api/ai/runs/:id/resolve. `viewerOf(boardId)` says who asks, on the run's board: `{ role, userId, canEdit }`,
-   * with a null role when they cannot open it. `who` is how they are shown. Returns the answer's body; for an accept it
+   * with a null role when they cannot open it. `who` is how they are shown, or a function of the name the request brings
+   * (open mode). Returns the answer's body; for an accept it
    * carries the proposal, which the person who asked writes into the board.
    */
   function resolveRun(id, body, viewerOf, who) {
-    const action = parseResolve(body);
+    const { action, name } = parseResolve(body);
     const run = typeof id === 'string' ? live.get(id) : null;
     const viewer = run ? viewerOf(run.boardId) : null;
     if (!run || !canSeeRun(viewer, run)) throw new HttpError(404, 'not_found', 'That AI run is gone');
     if (run.status === 'running') throw new HttpError(409, 'ai_run_running', 'That AI run is still going');
     if (run.status !== 'ready') throw settled(run);
     if (!canResolve(viewer, run, now())) throw new HttpError(403, 'forbidden', 'You cannot add or discard this AI run');
-    const done = live.resolve(id, action, who);
+    const done = live.resolve(id, action, typeof who === 'function' ? who(name) : who);
     if (!done.ok) throw settled(live.get(id) ?? run);
     return action === 'accept' ? { id, action, feature: run.feature, proposal: done.proposal, cut: done.cut } : { id, action, feature: run.feature };
   }
@@ -559,7 +565,8 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
         throw new OpenHttpError(403, 'ai_disabled', 'AI is not turned on');
       }
       const body = await readJsonBody(req);
-      const answer = runner.resolveRun(id, body, () => ({ role: 'owner', userId: null, canEdit: canWriteRoom('owner', 'board') }), { id: null, name: null });
+      // nobody has an account in open mode: the name is what the person calls themselves, as on a run
+      const answer = runner.resolveRun(id, body, () => ({ role: 'owner', userId: null, canEdit: canWriteRoom('owner', 'board') }), (name) => ({ id: null, name }));
       const text = JSON.stringify(answer);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       res.end(text);

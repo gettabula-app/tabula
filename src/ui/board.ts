@@ -30,7 +30,9 @@ import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
-import { aiBarShown, mountAiBar } from './ai-bar';
+import { aiBarFlag, aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
+import { liveRunsFor, mountAiLive } from './ai-live';
+import { avatarLine, badgeRun } from '../ai-live-logic';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
@@ -95,11 +97,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
-    people.replaceChildren(...ps.slice(0, 6).map((p) => h('button', {
-      class: 'avatar', style: `--c:${p.user.color}`, 'data-tip': p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`,
-      'aria-label': p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`,
-      onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)),
-    }, initials(p.user.name))), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
+    const runs = liveRunsFor(app)?.list() ?? [];
+    people.replaceChildren(...ps.slice(0, 6).map((p) => {
+      // someone with an AI run or preview on the board: the spark, and what they are doing as their name
+      const busy = p.isMe ? null : badgeRun(p.user, runs);
+      const tip = busy ? avatarLine(busy) : p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`;
+      return h('button', {
+        class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': tip,
+        onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)),
+      }, initials(p.user.name), busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null);
+    }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
   };
   app.on('presence', renderPeople);
   renderPeople();
@@ -205,16 +212,23 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     stickyTray.classList.toggle('show', show);
     if (!show) return;
     stickyTray.style.top = `${stickyBtn.getBoundingClientRect().top - 6}px`;
+    // the AI bar's Generate, with an empty board sending only the prompt; it opens the bar and runs nothing
+    const generate = aiBarFor(app) ? h('button', {
+      class: 'btn ailive-generate', type: 'button', 'data-tip': 'Generate sticky notes with AI',
+      onclick: () => aiBarFor(app)?.open({ arm: 'generate', context: app.store.cache.size ? undefined : 'none' }),
+    }, glyph('spark', 16), 'Generate') : null;
     stickyTray.replaceChildren(
       h('div', { class: 'tray-label' }, 'Note colour'),
       stickyColorField(app, app.stickyColor, (c) => {
         app.stickyColor = c;
         renderStickyTray();
       }, { label: 'Sticky note colour', size: 'lg' }),
+      ...(generate ? [generate] : []),
     );
   };
   app.on('tool', renderStickyTray);
   app.on('meta', renderStickyTray);
+  onAiBarChange(app, (why) => { if (why === 'mount') renderStickyTray(); });
 
   // Pen options appear while drawing.
   const penTray = h('div', { class: 'tray tool-tray pen-tray' });
@@ -253,6 +267,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   mountQuickbar(app, chrome, props);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
+  // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)
+  if (!scratch && aiBarFlag()) {
+    mountAiLive(app);
+    liveRunsFor(app)?.onChange(renderPeople);
+  }
   if (!scratch) mountAiBar(app, chrome);
   if (!scratch) firstRunHint(app, chrome);
 
@@ -314,15 +333,21 @@ const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0
 
 function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   if (app.store.cache.size || app.readOnly) return;
+  // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
+  const generate = aiBarFlag() ? h('button', {
+    class: 'btn ailive-generate', type: 'button', hidden: !aiBarFor(app), onclick: () => aiBarFor(app)?.open({ arm: 'generate', context: 'none' }),
+  }, glyph('spark', 16), 'Generate') : null;
   const hint = h('div', { class: 'empty-hint' },
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
     h('div', { class: 'btn-row' },
       h('button', { class: 'btn primary', onclick: () => (document.querySelector('[data-drawer="templates"]') as HTMLElement)?.click() }, 'Start from a template'),
       h('button', { class: 'btn', onclick: () => openMermaidImport(app) }, 'Import Mermaid'),
+      generate,
     ),
   );
   chrome.appendChild(hint);
+  if (generate) onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
   const off = app.on('objects', () => {
     if (app.store.cache.size) {
       hint.remove();
@@ -472,6 +497,11 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
+    aiBarFor(app) ? [
+      h('div', { class: 'list-label' }, 'AI'),
+      h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
+        glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
+    ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
     themeRows.map((r) => r.row),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
