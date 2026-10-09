@@ -11,7 +11,9 @@ import { RELAY_START_MS } from './relay-timing';
 // random ranges that overlapped between test files, so two of them could be given the same port.
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const sources = fs.readdirSync(here)
+// test/ and the restore drill in test/drill (`npm run drill:local`), which follows the same rules
+const sources = ['', 'drill']
+  .flatMap((sub) => fs.readdirSync(path.join(here, sub)).map((f) => (sub ? `${sub}/${f}` : f)))
   .filter((f) => f.endsWith('.ts') && f !== 'relay-timing.test.ts')
   .map((f) => ({ f, text: fs.readFileSync(path.join(here, f), 'utf8') }));
 

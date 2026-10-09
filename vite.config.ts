@@ -1,6 +1,9 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 import docs from './scripts/vite-docs.mjs';
 
+/** The restore drill's test files, which only `npm run drill:local` runs. */
+export const DRILL_PATTERN = '**/*.drill.test.ts';
+
 // In dev, the relay runs on 8787 and Vite proxies the sync socket to it,
 // so the client always connects to same-origin /sync (and /chat, the team chat socket).
 export default defineConfig({
@@ -16,8 +19,9 @@ export default defineConfig({
   },
   build: { target: 'es2022', sourcemap: true },
   test: {
-    // agent worktrees live under .claude/worktrees; never collect their tests
-    exclude: [...configDefaults.exclude, '.claude/**'],
+    // agent worktrees live under .claude/worktrees; never collect their tests. The restore drill (test/drill,
+    // `npm run drill:local`, vitest.drill.config.ts) is not part of `npm test` or CI: test/drill-config.test.ts checks it.
+    exclude: [...configDefaults.exclude, '.claude/**', DRILL_PATTERN],
     // Many test files spawn a relay process each. On the small CI runners (Windows and macOS above all) running
     // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so

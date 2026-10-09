@@ -15,6 +15,8 @@ export type FakeS3 = {
   log: { method: string; key: string }[];
   rules: Rule[];
   badSignatures: string[];
+  /** The Signature= value of the last requests it accepted (at most 50), for the secret searches of the drill. */
+  signatures: string[];
   count: (method: string, key?: RegExp) => number;
   keys: (re?: RegExp) => string[];
   put: (key: string, body: Buffer) => void;
@@ -88,6 +90,7 @@ export async function startFakeS3(options: { creds: Credentials; clock?: () => n
   const log: { method: string; key: string }[] = [];
   const rules: Rule[] = [];
   const badSignatures: string[] = [];
+  const signatures: string[] = [];
 
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -105,6 +108,8 @@ export async function startFakeS3(options: { creds: Credentials; clock?: () => n
           badSignatures.push(bad);
           return send(403, errorXml('SignatureDoesNotMatch'));
         }
+        const signed = /Signature=([0-9a-f]{64})$/.exec(String(req.headers.authorization ?? ''));
+        if (signed && signatures.length < 50) signatures.push(signed[1]);
         const url = new URL(req.url ?? '/', 'http://x');
         const parts = decodeURIComponent(url.pathname).split('/');
         if (parts[1] !== creds.bucket) return send(404, errorXml('NoSuchBucket'));
@@ -171,6 +176,7 @@ export async function startFakeS3(options: { creds: Credentials; clock?: () => n
     log,
     rules,
     badSignatures,
+    signatures,
     count: (method, key) => log.filter((l) => l.method === method && (!key || key.test(l.key))).length,
     keys: (re) => [...objects.keys()].filter((k) => !re || re.test(k)).sort(),
     put: (key, body) => void objects.set(key, { body, lastModified: clock() }),

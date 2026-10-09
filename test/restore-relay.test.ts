@@ -1,142 +1,34 @@
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
-import WebSocket from 'ws';
-import { WebsocketProvider } from 'y-websocket';
 import { SimulatedCrash } from '../server/restore.mjs';
 import { CREDS, HOUR, KEY, MIN, harness, type Harness } from './backup-harness';
 import { backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, seedA } from './restore-harness';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { createRelayKit, sleep, until } from './drill/drill-kit';
 
 // docs/backups.md, Restoring. The relay as a child process, exactly as `npm start` runs it, next to the fake S3: a whole
 // restore over HTTP, the maintenance window, the exit code, the start that follows, and recovery from a swap that was cut off.
 
 const CLOUD_TOKEN = 'q'.repeat(48);
 let h: Harness | undefined;
-const running: { proc: ChildProcess }[] = [];
-const sockets = new Set<WebSocket>();
-const providers = new Set<WebsocketProvider>();
-
-type Relay = { port: number; base: string; proc: ChildProcess; out: () => string; err: () => string; exited: Promise<number | null> };
-
-async function launch(dir: string, env: Record<string, string>, { waitForStart = true } = {}): Promise<Relay> {
-  const port = await freePort();
-  const proc = spawn(process.execPath, ['server/relay.mjs'], {
-    env: {
-      ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com',
-      TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`, TABULA_TRUST_PROXY: '1',
-      // a restore or its preview reads how full the disk is; the runner's own disk must not decide a test's outcome
-      TABULA_TEST_RESTORE_DISK_USED: '0.2',
-      ...env,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  running.push({ proc });
-  let out = '';
-  let err = '';
-  proc.stdout!.on('data', (d) => (out += d));
-  proc.stderr!.on('data', (d) => (err += d));
-  const exited = new Promise<number | null>((resolve) => proc.once('exit', (code) => resolve(code)));
-  const relay = { port, base: `http://127.0.0.1:${port}`, proc, out: () => out, err: () => err, exited };
-  if (!waitForStart) return Promise.resolve(relay);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${err}`)), RELAY_START_MS);
-    proc.stdout!.on('data', () => {
-      if (out.includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve(relay);
-      }
-    });
-    void exited.then((code) => reject(new Error(`relay exited with ${code}: ${err}`)));
-  });
-}
+// launch (server/relay.mjs as a child, started within RELAY_START_MS) and client live in test/drill/drill-kit.ts
+const kit = createRelayKit(CLOUD_TOKEN);
+const { launch, client } = kit;
 
 afterEach(async () => {
-  for (const ws of sockets) ws.terminate();
-  sockets.clear();
-  for (const p of providers) p.destroy();
-  providers.clear();
-  await Promise.all(running.splice(0).map(({ proc }) => new Promise<void>((resolve) => {
-    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-    proc.once('exit', () => resolve());
-    proc.kill('SIGKILL');
-  })));
+  kit.closeClients();
+  await kit.killAll();
   await h?.close();
   h = undefined;
 });
-afterAll(() => {
-  for (const { proc } of running) proc.kill('SIGKILL');
-});
+afterAll(() => kit.killAll());
 
 const backupEnv = (url: string) => ({
   TABULA_BACKUP_S3_ENDPOINT: url, TABULA_BACKUP_BUCKET: CREDS.bucket, TABULA_BACKUP_ACCESS_KEY: CREDS.accessKey,
   TABULA_BACKUP_SECRET_KEY: CREDS.secretKey, TABULA_BACKUP_KEY: KEY.toString('base64'),
   TABULA_CLOUD_TOKEN: CLOUD_TOKEN, TABULA_CLOUD_URL: 'http://127.0.0.1:1', TABULA_CLOUD_WORKSPACE_ID: 'ws_restore',
 });
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function until(fn: () => boolean, ms = 8000) {
-  const t0 = Date.now();
-  while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
-    await sleep(20);
-  }
-}
-
-function client(relay: Relay, dir: string) {
-  let ip = 0;
-  async function api(cookie: string | undefined, method: string, urlPath: string, body?: unknown, headers: Record<string, string> = {}) {
-    const res = await fetch(relay.base + urlPath, {
-      method,
-      headers: { ...(method === 'GET' ? {} : { 'x-tabula': '1' }), ...(cookie ? { cookie } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    return { status: res.status, body: text ? JSON.parse(text) : undefined, headers: res.headers };
-  }
-  async function signIn(email: string) {
-    const outbox = path.join(dir, 'outbox.jsonl');
-    const before = fs.existsSync(outbox) ? fs.readFileSync(outbox, 'utf8').split('\n').filter(Boolean).length : 0;
-    const res = await api(undefined, 'POST', '/api/auth/request', { email }, { 'x-forwarded-for': `10.0.0.${++ip}` });
-    expect(res.status).toBe(200);
-    const lines = fs.readFileSync(outbox, 'utf8').split('\n').filter(Boolean).slice(before);
-    const token = decodeURIComponent(/token=([^\s&"\\]+)/.exec(JSON.parse(lines[0]).text)![1]);
-    const verify = await api(undefined, 'POST', '/api/auth/verify', { token });
-    expect(verify.status).toBe(200);
-    return /tabula_session=[^;]+/.exec(verify.headers.getSetCookie()[0])![0];
-  }
-  const internal = (urlPath: string) => api(undefined, 'GET', urlPath, undefined, { authorization: `Bearer ${CLOUD_TOKEN}` });
-
-  /** A client of one room that records how its socket was closed. */
-  function connect(room: string, cookie: string) {
-    const closes: number[] = [];
-    const Socket = class extends WebSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols, { headers: { Origin: relay.base, Cookie: cookie } });
-        sockets.add(this);
-        this.on('close', (code) => closes.push(code));
-      }
-    };
-    const doc = new Y.Doc();
-    const provider = new WebsocketProvider(`ws://127.0.0.1:${relay.port}/sync`, room, doc, { WebSocketPolyfill: Socket as unknown as typeof globalThis.WebSocket, disableBc: true });
-    providers.add(provider);
-    return { doc, provider, closes };
-  }
-
-  /** A bare socket, to see what the relay does with a connection made during maintenance. */
-  function listen(room: string, cookie: string) {
-    const ws = new WebSocket(`ws://127.0.0.1:${relay.port}/sync/${room}`, { headers: { Origin: relay.base, Cookie: cookie } });
-    sockets.add(ws);
-    const closes: number[] = [];
-    ws.on('close', (code, reason) => closes.push(code, ...(reason.length ? [] : [])));
-    ws.on('error', () => {});
-    return closes;
-  }
-  return { api, signIn, internal, connect, listen };
-}
 
 /** State A is backed up and state B is on disk, with nothing running. The data directory is the relay's. */
 async function prepare() {
