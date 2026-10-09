@@ -1,5 +1,5 @@
 import type { TemplateContent, TemplateScope } from './custom-templates';
-import { isRestoringAnswer } from './ui/backups-logic';
+import { isRestoringAnswer } from './restoring-answer';
 
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';

@@ -1,4 +1,5 @@
 import type { AdminOverview, AuditEntry, UserRole } from '../api';
+import { errorReason, formatUtc, manifestTime } from './backups-logic';
 
 /** Pure rules and text for the admin dashboard: no DOM, so they can be unit tested. */
 
@@ -95,6 +96,8 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'chat.delete', 'chat.settings',
+  'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
+  'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -277,9 +280,58 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       else if (typeof d.retentionDays === 'number') changes.push(`keep messages ${countLabel(d.retentionDays, 'day', 'days')}`);
       return `${who} changed the chat settings${changes.length ? ` (${changes.join(', ')})` : ''}`;
     }
+    case 'backup.run': {
+      const files = typeof d.files === 'number' ? d.files : null;
+      const uploaded = typeof d.uploaded === 'number' ? d.uploaded : null;
+      const detail = [files === null ? null : countLabel(files, 'file', 'files'), uploaded === null ? null : `${uploaded} new`].filter(Boolean).join(', ');
+      return `${who} backed up the workspace${detail ? ` (${detail})` : ''}`;
+    }
+    case 'backup.failed': {
+      const reason = text(d.error);
+      return `A backup failed${reason ? `: ${reason.length > 120 ? `${reason.slice(0, 119)}…` : reason}` : ''}`;
+    }
+    case 'backup.list':
+      return `${who} looked at the list of backups`;
+    case 'backup.preview':
+      return `${who} looked at ${backupLabel(d.manifest)}`;
+    case 'backup.boards': {
+      const count = typeof d.count === 'number' ? ` (${countLabel(d.count, 'board', 'boards')})` : '';
+      return `${who} listed the boards of ${backupLabel(d.manifest)}${count}`;
+    }
+    case 'restore.started':
+      return d.kind === 'board'
+        ? `${who} started restoring a board as a copy from ${backupLabel(d.manifest)}`
+        : `${who} started restoring the whole workspace from ${backupLabel(d.manifest)}`;
+    case 'restore.done': {
+      if (d.kind === 'board') {
+        const where = d.fallback === 'personal' ? ' in their personal space' : '';
+        return `${who} restored ${boardLabel} as a copy from ${backupLabel(d.manifest)}${where}`;
+      }
+      const facts = [
+        typeof d.boards === 'number' ? countLabel(d.boards, 'board', 'boards') : null,
+        typeof d.users === 'number' ? countLabel(d.users, 'person', 'people') : null,
+        typeof d.sessionsRemoved === 'number' ? `${countLabel(d.sessionsRemoved, 'session', 'sessions')} ended` : null,
+      ].filter(Boolean);
+      return `${who} restored the whole workspace from ${backupLabel(d.manifest)}${facts.length ? ` (${facts.join(', ')})` : ''}`;
+    }
+    case 'restore.failed': {
+      const what = d.kind === 'board' ? 'a board copy' : 'the whole workspace';
+      const reason = text(d.error);
+      return `Restoring ${what} from ${backupLabel(d.manifest)} failed${reason ? `: ${errorReason(reason)}` : ''}`;
+    }
+    case 'restore.old_data_removed': {
+      const age = typeof d.ageDays === 'number' ? ` (${countLabel(d.ageDays, 'day', 'days')} old)` : '';
+      return `The old data of a restore was removed${age}`;
+    }
     default:
       return entry.action;
   }
+}
+
+/** "the backup of 2026-01-15 09:30 UTC": a manifest's name carries the time it was taken. */
+function backupLabel(manifest: unknown): string {
+  const at = manifestTime(typeof manifest === 'string' ? manifest : null);
+  return at === null ? 'a backup' : `the backup of ${formatUtc(at)}`;
 }
 
 /** A count with its noun: "1 owner", "2 owners", "0 owners". */

@@ -321,14 +321,6 @@ export function submitOutcome(status: number, code: string, restarting: boolean)
 
 // ---------------------------------------------------------------- the restoring screen
 
-/**
- * True for exactly one answer: HTTP 503 with a JSON body whose error is `restoring`. A 503 from anything else (the AI
- * routes, a gateway with an HTML page, another JSON error) is not a restore.
- */
-export function isRestoringAnswer(status: number, data: unknown): boolean {
-  return status === 503 && isRecord(data) && data.error === 'restoring';
-}
-
 export const POLL_START_MS = 2000;
 export const POLL_FACTOR = 1.5;
 export const POLL_CAP_MS = 15_000;

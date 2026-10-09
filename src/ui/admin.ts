@@ -39,6 +39,9 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Sessions', prefix: 'admin.session' },
   { label: 'AI', prefix: 'ai.' },
   { label: 'Images', prefix: 'asset.' },
+  // The audit filter is one literal prefix, so backups and restores each get a chip.
+  { label: 'Backups', prefix: 'backup.' },
+  { label: 'Restores', prefix: 'restore.' },
 ];
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
