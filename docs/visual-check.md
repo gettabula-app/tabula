@@ -67,6 +67,9 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `kanban-sheet-filter` | The list with a filter on and the Filter popover open from its header |
 | `kanban-sheet-adding` | The list's Add card bar with a title typed |
 | `kanban-sheet-full` | The list on a full block lane: the Add card bar refused, with the lock |
+| `ai-review` | (open mode) The review panel of someone else's AI proposal, with `?aibar` and a run handed to the board the way the relay does |
+| `ai-key-test` | (accounts mode) The account menu's "Your AI key" dialog after Test key answers "The key works." (the replies are mocked) |
+| `ai-key-test-error` | The same after the provider rejected the key: the status line in the danger colour |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |

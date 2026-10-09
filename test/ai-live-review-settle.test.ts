@@ -112,3 +112,30 @@ describe('adding a reviewed proposal', () => {
     a.destroy();
   });
 });
+
+describe('the label row of a run under review', () => {
+  it('is hidden while its review panel is open, and back when the panel goes', () => {
+    const a = rig();
+    a.send({ kind: 'snapshot', runs: [ready] } as AiRunsMessage);
+    runFrames();
+    const row = a.layer.querySelector('.ailive-row') as FakeElement;
+    expect(row.hidden).toBe(false);
+
+    const chrome = browser.document.createElement('div');
+    chrome.className = 'chrome';
+    const panel = browser.document.createElement('aside');
+    panel.className = 'aireview tray';
+    panel.dataset.run = 'run1';
+    chrome.appendChild(panel);
+    browser.mount().appendChild(chrome);
+    a.send({ kind: 'snapshot', runs: [ready] } as AiRunsMessage);
+    runFrames();
+    expect(row.hidden).toBe(true);
+
+    panel.remove();
+    a.send({ kind: 'snapshot', runs: [ready] } as AiRunsMessage);
+    runFrames();
+    expect((a.layer.querySelector('.ailive-row') as FakeElement).hidden).toBe(false);
+    a.destroy();
+  });
+});

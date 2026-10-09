@@ -64,7 +64,7 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
     actions.accept();
   } }, '');
   const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close the review', 'data-tip': 'Close', 'data-tip-key': 'escape', onclick: () => close() }, icon('close', 18));
-  const el = h('aside', { class: 'aireview tray', role: 'region', 'aria-label': 'Review the AI proposal' },
+  const el = h('aside', { class: 'aireview tray', role: 'region', 'aria-label': 'Review the AI proposal', 'data-run': runId },
     h('div', { class: 'aireview-head' },
       h('div', null,
         h('h2', null, 'Review'),
