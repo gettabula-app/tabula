@@ -24,7 +24,8 @@ import { remapObjects } from './custom-templates';
 import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
-import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex, personColor } from './palette';
+import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
+import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
@@ -103,6 +104,8 @@ export class BoardApp {
     return this._stickyColor;
   }
   set stickyColor(c: string) {
+    // it is drawn as an inline style on the sticky button; a picked colour can come from a stored object (TAB-203)
+    c = safeColor(c, STICKY_COLORS[0].fill);
     this._stickyColor = c;
     try {
       localStorage.setItem(STICKY_COLOR_KEY, c);
@@ -122,7 +125,8 @@ export class BoardApp {
   stickyPalette(): { name: string; value: string; custom?: boolean }[] {
     return [
       ...STICKY_COLORS.map((c) => ({ name: c.name, value: c.fill })),
-      ...this.store.getMeta().stickyColors.map((c) => ({ name: `Custom ${c}`, value: c, custom: true })),
+      // collaborators write this list; only plain hex colours are offered (they become inline styles, TAB-203)
+      ...customStickyColors(this.store.getMeta().stickyColors).map((c) => ({ name: `Custom ${c}`, value: c, custom: true })),
     ];
   }
   connectorDefaults: Partial<ConnectorObj> = { route: 'elbow', startHead: 'none', endHead: 'arrow' };

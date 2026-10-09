@@ -3,11 +3,16 @@ import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unknownFeatures, type ContainerLayout } from '../shared/containers';
 import type { BoardMeta, ConnectorObj, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
+import { cleanColor } from '../shared/colors';
+import { customStickyColors } from './palette';
 
 /** Transaction origin for edits made on this device; only these are undoable. */
 export const LOCAL = 'local';
 
 export type ChangeListener = (changed: Set<Id>) => void;
+
+/** Object fields that hold a colour: what is written to them is checked against shared/colors.mjs (TAB-203). */
+export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'textColor']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -282,7 +287,12 @@ export class Store {
   }
 
   create(o: Obj) {
-    const entries = Object.entries(o).filter(([, v]) => v !== undefined);
+    // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
+    // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
+    const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(o.type);
+    const entries = Object.entries(o)
+      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null))
+      .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
   }
@@ -290,11 +300,15 @@ export class Store {
   update(id: Id, patch: Partial<Obj> | Record<string, unknown>) {
     const m = this.objects.get(id);
     if (!m) return;
-    for (const [k, v] of Object.entries(patch)) {
-      if (v === undefined) {
+    for (const [k, raw] of Object.entries(patch)) {
+      if (raw === undefined) {
         if (m.has(k)) m.delete(k);
         continue;
       }
+      // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
+      const type = (patch as Record<string, unknown>).type ?? m.get('type');
+      const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
+      if (v === null) continue;
       const cur = m.get(k);
       if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) m.set(k, v);
     }
@@ -411,7 +425,7 @@ export class Store {
 
   setMeta(patch: Partial<BoardMeta>) {
     this.transact(() => {
-      for (const [k, v] of Object.entries(patch)) this.meta.set(k, v);
+      for (const [k, v] of Object.entries(patch)) this.meta.set(k, k === 'stickyColors' ? customStickyColors(v) : v);
     });
   }
 

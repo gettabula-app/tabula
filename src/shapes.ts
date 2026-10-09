@@ -1,4 +1,5 @@
 import type { Head, Point, Rect, ShapeKind, Side } from './types';
+import { safeColor } from '../shared/colors';
 
 export type ShapeGroup = 'basic' | 'arrows' | 'callouts' | 'flow';
 
@@ -441,6 +442,9 @@ export function shapePreviewSvg(kind: ShapeKind, box = { w: 52, h: 40 }, inset =
  */
 export function headMarkup(head: Head, tip: Point, dir: Point, color: string, sw: number): { svg: string; inset: number } {
   if (head === 'none') return { svg: '', inset: 0 };
+  // The caller passes a stored colour; it is checked here too, since this writes it into attributes (TAB-203).
+  color = safeColor(color, 'var(--canvas-ink, #18212B)');
+  if (typeof sw !== 'number' || !Number.isFinite(sw)) sw = 2;
   const s = 10 + sw * 2;                    // head length
   const wv = { x: -dir.y, y: dir.x };      // perpendicular
   const at = (along: number, across: number) => ({
@@ -460,17 +464,17 @@ export function headMarkup(head: Head, tip: Point, dir: Point, color: string, sw
     }
     case 'triangle': {
       const a = at(s * 1.2, s * 0.6), b = at(s * 1.2, -s * 0.6);
-      return { svg: `<path d="M${P(tip)}L${P(a)}L${P(b)}Z" fill="var(--paper, #fff)" ${strokeAttrs}/>`, inset: s * 1.2 };
+      return { svg: `<path d="M${P(tip)}L${P(a)}L${P(b)}Z" fill="var(--paper, #FFFFFF)" ${strokeAttrs}/>`, inset: s * 1.2 };
     }
     case 'diamond':
     case 'diamond-open': {
       const m1 = at(s * 0.8, s * 0.42), m2 = at(s * 0.8, -s * 0.42), back = at(s * 1.6, 0);
-      const fill = head === 'diamond' ? color : 'var(--paper, #fff)';
+      const fill = head === 'diamond' ? color : 'var(--paper, #FFFFFF)';
       return { svg: `<path d="M${P(tip)}L${P(m1)}L${P(back)}L${P(m2)}Z" fill="${fill}" ${strokeAttrs}/>`, inset: s * 1.6 };
     }
     case 'circle': {
       const c = at(s * 0.45, 0);
-      return { svg: `<circle cx="${r(c.x)}" cy="${r(c.y)}" r="${r(s * 0.45)}" fill="var(--paper, #fff)" ${strokeAttrs}/>`, inset: s * 0.9 };
+      return { svg: `<circle cx="${r(c.x)}" cy="${r(c.y)}" r="${r(s * 0.45)}" fill="var(--paper, #FFFFFF)" ${strokeAttrs}/>`, inset: s * 0.9 };
     }
     case 'bar': {
       const a = at(s * 0.4, s * 0.55), b = at(s * 0.4, -s * 0.55);

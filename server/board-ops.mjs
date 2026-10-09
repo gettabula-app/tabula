@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import * as Y from 'yjs';
 import { generateNKeysBetween } from 'fractional-indexing';
 import { layoutAll } from '../shared/containers.mjs';
+import { cleanColor } from '../shared/colors.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -63,7 +64,6 @@ export const AI_COLOR = 'var(--graphite, #5B6672)';
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_RE = /^[A-Za-z0-9_-]{1,32}$/;
-const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 // Character classes by code point, not by regular expression: control characters other than newline and tab,
 // Unicode tag characters (invisible text), and zero-width and bidirectional controls.
 const isControl = (cp) => cp <= 0x08 || (cp >= 0x0b && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f);
@@ -406,10 +406,13 @@ function choice(v, list, path) {
   return v;
 }
 
+// What a tool may write is the documented subset (#RRGGBB, `none` where nothing drawn is allowed) of the board's one
+// colour grammar, and it always passes through that grammar (shared/colors.mjs, TAB-203) on its way to the board.
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 function colour(v, path, { none = false, names = false } = {}) {
   if (typeof v === 'string') {
-    if (HEX_RE.test(v)) return v.toUpperCase();
-    if (none && v === 'none') return 'none';
+    const c = cleanColor(v);
+    if (c !== null && (HEX_RE.test(v) || (none && v === 'none'))) return c;
     if (names) {
       const hit = STICKY_COLORS.find((c) => c.name.toLowerCase() === v.toLowerCase());
       if (hit) return hit.fill;

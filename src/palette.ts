@@ -1,3 +1,5 @@
+import { cleanColor } from '../shared/colors';
+
 // Board colour palettes and per-type style defaults.
 
 export const INK = '#18212B';
@@ -63,8 +65,9 @@ const LEGACY_USER_COLORS = ['#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8
  * any other hex (an API client, an older build) takes the nearest of the eight. Not a colour at all gives the first.
  * Every place that draws a person colour goes through this, so nobody keeps a colour that fails contrast.
  */
-export function personColor(c: string | undefined | null): string {
-  const rgb = parseHex(c ?? undefined);
+export function personColor(c: unknown): string {
+  // a remote person's colour arrives in awareness state, which the other client controls: it may not even be a string
+  const rgb = parseHex(typeof c === 'string' ? c : undefined);
   if (!rgb) return USER_COLORS[0];
   const hex = toHex(rgb);
   if (USER_COLORS.includes(hex)) return hex;
@@ -79,11 +82,22 @@ export function personColor(c: string | undefined | null): string {
   return best;
 }
 
+/** The board's custom sticky colours that are plain #RRGGBB, canonical and without repeats. */
+export function customStickyColors(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  const out: string[] = [];
+  for (const v of list) {
+    const c = cleanColor(v);
+    if (c && /^#[0-9A-F]{6}$/.test(c) && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- colour maths
 
 /** `#RGB` or `#RRGGBB` to [r, g, b] (0–255), or null for anything else. */
 export function parseHex(c: string | undefined): [number, number, number] | null {
-  if (!c) return null;
+  if (!c || typeof c !== 'string') return null;
   const m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (!m) return null;
   const s = m[1].length === 3 ? m[1].split('').map((x) => x + x).join('') : m[1];

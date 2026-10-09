@@ -6,6 +6,10 @@ import { isBox, isConnector } from './types';
 import { boxBounds, center, rectOfPoints } from './geometry';
 import { sanitizeSvgBody } from './markup';
 import { newId } from './store';
+import { isSafeColor } from '../shared/colors';
+import { isContainerType } from '../shared/containers';
+import { STICKY_COLORS } from './palette';
+import { OBJ_ENUMS } from './safe-obj';
 
 export const MAX_TEMPLATE_OBJECTS = 2000;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
@@ -216,6 +220,17 @@ export function validateContent(c: unknown): TemplateContent {
     ids.add(o.id);
     if (typeof o.type !== 'string' || !TYPE_NAMES.has(o.type)) fail(`Object "${o.id}" has an unknown type.`);
     if (typeof o.z !== 'string') fail(`Object "${o.id}" has no z order.`);
+    // the board's one colour grammar (shared/colors.mjs, TAB-203), as the server checks it
+    for (const [key, values] of Object.entries(OBJ_ENUMS)) {
+      if (o[key] !== undefined && !(typeof o[key] === 'string' && values.has(o[key]))) fail(`Object "${o.id}" has an unknown ${key}.`);
+    }
+    // (a kanban container's, lane's or card's fill may also be a palette key such as `yellow`, docs/kanban.md)
+    for (const key of ['fill', 'stroke', 'textColor']) {
+      const v = o[key];
+      if (v === undefined || isSafeColor(v)) continue;
+      if (key === 'fill' && isContainerType(o.type) && typeof v === 'string' && STICKY_COLORS.some((c) => c.name.toLowerCase() === v.toLowerCase())) continue;
+      fail(`Object "${o.id}" has a ${key} that is not a colour the board can draw.`);
+    }
   }
 
   const known = (id: unknown) => typeof id === 'string' && ids.has(id);
@@ -235,6 +250,9 @@ export function validateContent(c: unknown): TemplateContent {
       return o;
     }
     if (!isNum(o.x) || !isNum(o.y) || !isNum(o.w) || !isNum(o.h)) fail(`Object "${o.id}" has an invalid position or size.`);
+    // what reaches SVG attributes is checked as the server checks it (TAB-203)
+    if (o.viewBox !== undefined && !(Array.isArray(o.viewBox) && o.viewBox.length === 4 && o.viewBox.every(isNum))) fail(`Object "${o.id}" has an invalid viewBox.`);
+    if (o.points !== undefined && !(Array.isArray(o.points) && o.points.length % 2 === 0 && o.points.every(isNum))) fail(`Object "${o.id}" has invalid points.`);
     if (o.parent !== undefined && !known(o.parent)) fail(`Object "${o.id}" has a parent that is not in the template.`);
     if (o.type === 'icon' && o.body !== undefined) {
       if (typeof o.body !== 'string') fail(`Icon "${o.id}" has an invalid body.`);

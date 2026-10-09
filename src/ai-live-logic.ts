@@ -5,6 +5,7 @@ import { fontFamily } from './fonts';
 import { labelBox, styleOf, textBlock } from './markup';
 import { CANVAS_INK, INK, USER_COLORS, luminance, mix } from './palette';
 import { escapeXml } from './text';
+import { cleanColor, safeColor } from '../shared/colors';
 import type { BaseObj } from './types';
 
 // What the board draws and says for the AI runs of the people on it (docs/ai-toolbar.md, "Multiplayer (TAB-141)"): the ghosts
@@ -44,7 +45,10 @@ function hash(s: string): number {
 
 /** A person's colour: the one they sent (their cursor colour), else one of the cursor colours picked from their id. */
 export function personColor(run: Pick<LiveRun, 'id' | 'by'>): string {
-  return run.by.color ?? USER_COLORS[hash(run.by.id ?? run.id) % USER_COLORS.length];
+  // the colour came over the wire: only a plain #RRGGBB is used (it is written into markup and inline styles, TAB-203)
+  const sent = cleanColor(run.by.color);
+  if (sent && /^#[0-9A-F]{6}$/.test(sent)) return sent;
+  return USER_COLORS[hash(run.by.id ?? run.id) % USER_COLORS.length];
 }
 
 // ---------------------------------------------------------------- label colours
@@ -61,6 +65,8 @@ const contrast = (a: string, b: string): number => {
  * the red `#D64545` becomes `color-mix(#D64545 90%, #18212B)`, 5.04:1 against white.
  */
 export function labelColors(color: string): { fill: string; ink: string } {
+  // the fill goes into an inline style: anything but a colour of the grammar is the first person colour (TAB-203)
+  color = safeColor(color, USER_COLORS[0]);
   const white = '#FFFFFF';
   const ink = contrast(color, white) >= contrast(color, INK) ? white : INK;
   const toward = ink === white ? INK : white;
@@ -105,7 +111,8 @@ interface Paint { color: string; opacity: number }
 interface Paints { area: Paint; wash: Paint; edge: Paint; rule: Paint; arrow: Paint }
 
 function paints(tone: GhostTone): Paints {
-  const c = tone.color ? escapeXml(tone.color) : null;
+  // someone else's colour, written into attributes and a color-mix(): only a colour of the grammar (TAB-203)
+  const c = tone.color ? safeColor(tone.color, null) : null;
   const mixed = c ? `color-mix(in srgb, ${c} 80%, ${CANVAS_INK})` : CANVAS_INK;
   return {
     area: c ? { color: c, opacity: 1 } : { color: CANVAS_INK, opacity: 0.55 },
@@ -135,7 +142,7 @@ function stickyText(text: string, fill: string, r: Rect, font: string | undefine
 
 /** A sticky on the board as its ghost copy shows it. Writing hidden from this viewer (not yet revealed) is never copied out. */
 export function ghostSource(o: { text?: string; fill?: string }, hidden: boolean, fallbackFill: string): { text: string; fill: string } {
-  return { text: hidden ? '' : o.text ?? '', fill: o.fill ?? fallbackFill };
+  return { text: hidden ? '' : o.text ?? '', fill: safeColor(o.fill, safeColor(fallbackFill, '#FFE16B')) };
 }
 
 /** Forget the laid-out text (the fonts finished loading, so the measurements changed). */
@@ -152,7 +159,8 @@ function areaMarkup(area: Rect, p: Paints, px: GhostEnv['px']): string {
 
 function stickyGhost(r: Rect, text: string, fill: string, p: Paints, env: GhostEnv): string {
   const e = env.px(1.5);
-  return `<g transform="translate(${n(r.x)} ${n(r.y)})"><rect width="${n(r.w)}" height="${n(r.h)}" fill="${escapeXml(fill)}"/>${stickyText(text, fill, r, env.bodyFont)}` +
+  fill = safeColor(fill, '#FFE16B');
+  return `<g transform="translate(${n(r.x)} ${n(r.y)})"><rect width="${n(r.w)}" height="${n(r.h)}" fill="${fill}"/>${stickyText(text, fill, r, env.bodyFont)}` +
     `<rect x="${n(e / 2)}" y="${n(e / 2)}" width="${n(r.w - e)}" height="${n(r.h - e)}" fill="none" ${dashed(p.edge, e, [env.px(4), env.px(3)])}/></g>`;
 }
 

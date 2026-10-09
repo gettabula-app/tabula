@@ -14,6 +14,7 @@ import { openFontPicker } from './fontpicker';
 import { closeOpenCombo, combo, numberField } from './controls';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
+import { safeColor } from '../../shared/colors';
 
 const TYPE_LABEL: Record<string, string> = {
   shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
@@ -125,11 +126,11 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
 
     // ---- fill & stroke
     if (sel.some(HAS_FILL)) {
-      blocks.push(field('Fill', swatches(FILLS, (first as BaseObj).fill ?? s.fill, (v) => up({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
+      blocks.push(field('Fill', swatches(FILLS, s.fill, (v) => up({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
     }
     if (sel.some(HAS_STROKE)) {
       const isIcon = same && first.type === 'icon';
-      blocks.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), isIcon ? (first as BaseObj).textColor ?? s.stroke : first.stroke ?? s.stroke, (v) => {
+      blocks.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), isIcon ? safeColor((first as BaseObj).textColor, s.stroke) : s.stroke, (v) => {
         if (isIcon) up({ textColor: v });
         else up({ stroke: v }, HAS_STROKE);
       }, { label: 'Line colour' })));

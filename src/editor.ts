@@ -7,6 +7,7 @@ import { fontFamily } from './fonts';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
 import { KANBAN } from '../shared/containers';
+import { safeColor } from '../shared/colors';
 
 type EditMode = 'text' | 'class' | 'frame' | 'label';
 
@@ -20,13 +21,15 @@ const NAMED = (type: string) => type === 'frame' || type === 'container' || type
 export function editColours(o: Obj, mode: EditMode): { color: string; background: string } {
   if (mode === 'text') return { color: styleOf(o).textColor, background: '' };
   if (mode === 'frame') return { color: 'var(--ink)', background: '' };
+  // stored colours become inline styles here (`background` would load a url()), so only the colour grammar (TAB-203)
   if (mode === 'label') {
     // the renderer draws a label in the connector's own colour
-    const stroke = (o as ConnectorObj).stroke;
+    const stroke = safeColor((o as ConnectorObj).stroke, null);
     return { color: stroke && stroke !== 'none' && stroke !== CANVAS_INK ? stroke : '', background: '' };
   }
   const b = o as BaseObj;
-  return { color: b.textColor ?? '', background: b.fill && b.fill !== 'none' ? b.fill : '' };
+  const fill = safeColor(b.fill, null);
+  return { color: safeColor(b.textColor, null) ?? '', background: fill && fill !== 'none' ? fill : '' };
 }
 
 /**

@@ -11,6 +11,7 @@ import type { Comments, Thread } from './comments';
 import { answerKey } from './polls';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
+import { customStickyColors } from './palette';
 
 export interface BoardJson {
   format: 'driftboard';
@@ -107,7 +108,7 @@ export function applyImported(target: { doc: Y.Doc; store: Store; comments: Comm
   if (update) Y.applyUpdate(target.doc, update);
   else {
     target.doc.transact(() => {
-      for (const [k, v] of Object.entries(json.meta || {})) target.store.meta.set(k, v);
+      for (const [k, v] of Object.entries(json.meta || {})) target.store.meta.set(k, k === 'stickyColors' ? customStickyColors(v) : v);
       for (const o of json.objects as Obj[]) target.store.create(o);
       for (const [k, v] of Object.entries(json.flow || {})) target.store.flow.set(k, v);
       for (const p of json.polls ?? []) target.store.polls.set(p.id, p);
