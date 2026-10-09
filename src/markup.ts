@@ -12,6 +12,8 @@ import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
 import { hasLayout, kanbanColor, validLabel, type ContainerLayout } from '../shared/containers';
 import type { Label } from './types';
+import { safeColor } from '../shared/colors';
+import { safeObj } from './safe-obj';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, localToday, lowDetail } from './ui/kanban-logic';
 
 export interface MarkupCtx {
@@ -69,20 +71,28 @@ export function defaultsFor(o: Obj) {
   return DEFAULTS.shape;
 }
 
-/** Fully resolved style for an object. */
+/** A stored number, or the default when what is stored is not a finite number (it is written into attributes). */
+const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/**
+ * Fully resolved style for an object. Every colour goes through safeColor (shared/colors.mjs, TAB-203) and every number
+ * is a finite number: what is stored can be written by any collaborator, template, import or tool, and all of it ends
+ * up in attributes, so a value outside the grammar is drawn as the type's default.
+ */
 export function styleOf(o: Obj) {
   const d = defaultsFor(o);
   const b = o as BaseObj;
+  const fill = safeColor(b.fill, d.fill);
   return {
-    fill: b.fill ?? d.fill,
-    stroke: o.stroke ?? d.stroke,
-    strokeWidth: o.strokeWidth ?? d.strokeWidth,
+    fill,
+    stroke: safeColor(o.stroke, d.stroke),
+    strokeWidth: num(o.strokeWidth, d.strokeWidth),
     dash: o.dash ?? 'solid',
-    opacity: o.opacity ?? 1,
+    opacity: num(o.opacity, 1),
     font: b.font ?? 'satoshi',
-    fontWeight: b.fontWeight ?? d.fontWeight,
-    fontSize: b.fontSize ?? d.fontSize,
-    textColor: b.textColor ?? (o.type === 'sticky' ? inkOn(b.fill ?? d.fill) : d.textColor),
+    fontWeight: num(b.fontWeight, d.fontWeight),
+    fontSize: num(b.fontSize, d.fontSize),
+    textColor: safeColor(b.textColor, o.type === 'sticky' ? inkOn(fill) : d.textColor),
     align: b.align ?? d.align,
     valign: b.valign ?? d.valign,
   };
@@ -539,8 +549,9 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
 
 function iconMarkup(o: BaseObj) {
   const s = styleOf(o);
-  const vb = o.viewBox || [0, 0, 24, 24];
-  const color = (o as BaseObj).textColor ?? s.stroke;
+  const vb = (o.viewBox || [0, 0, 24, 24]).map(n);
+  // The icon's colour lands in a style attribute as well, so only the colour grammar may reach it (TAB-203).
+  const color = safeColor((o as BaseObj).textColor ?? s.stroke, CANVAS_INK);
   const body = scopeSvgIds(sanitizeSvgBody(o.body || ''), o.id);
   return wrapG(
     o,
@@ -574,8 +585,8 @@ function pathMarkup(o: BaseObj) {
 function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
   const g = connectorGeom(ctx.get, c, ctx.layout?.());
   if (!g) return '';
-  const color = c.stroke ?? CANVAS_INK;
-  const sw = c.strokeWidth ?? 2;
+  const color = safeColor(c.stroke, CANVAS_INK);
+  const sw = num(c.strokeWidth, 2);
   const sh = headMarkup(c.startHead, g.start, g.startDir, color, sw);
   const eh = headMarkup(c.endHead, g.end, g.endDir, color, sw);
   // Pull the line back so it ends at each head's base.
@@ -600,7 +611,8 @@ function connectorMarkup(c: ConnectorObj, ctx: MarkupCtx): string {
     out += `<text font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" font-weight="500" fill="${escapeXml(color === 'none' || color === CANVAS_INK ? INK : color)}" text-anchor="middle">` +
       lines.map((l, i) => `<tspan x="${n(g.mid.x)}" y="${n(g.mid.y - h / 2 + 3 + 17 * i + 13)}">${escapeXml(l)}</tspan>`).join('') + '</text>';
   }
-  const op = c.opacity !== undefined && c.opacity < 1 ? ` opacity="${c.opacity}"` : '';
+  const opacity = num(c.opacity, 1);
+  const op = opacity < 1 ? ` opacity="${opacity}"` : '';
   return `<g${op}>${out}</g>`;
 }
 
@@ -713,8 +725,14 @@ function umlMarkup(o: BaseObj, ctx: MarkupCtx): string {
   return wrapG(o, inner, s.opacity);
 }
 
-/** SVG markup for one object in world coordinates. */
-export function objectMarkup(o: Obj, ctx: MarkupCtx): string {
+/**
+ * SVG markup for one object in world coordinates. The object, and every object a connector reads through `ctx.get`, is
+ * read through safeObj first (src/safe-obj.ts, TAB-203): stored data reaches attributes here, and an exported SVG
+ * opened on its own has no CSP to stop an attribute that broke out.
+ */
+export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
+  const o = safeObj(raw);
+  const ctx: MarkupCtx = { ...rawCtx, get: (id) => { const x = rawCtx.get(id); return x && safeObj(x); } };
   if (isConnector(o)) return connectorMarkup(o, ctx);
   switch (o.type) {
     case 'shape': return shapeMarkup(o, ctx);

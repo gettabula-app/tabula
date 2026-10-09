@@ -8,7 +8,9 @@ import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors
 import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
-import { WIRE } from './palette';
+import { USER_COLORS, WIRE } from './palette';
+import { safeColor } from '../shared/colors';
+import { safeObj } from './safe-obj';
 import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
 import type { GapMark, Guide } from './guides';
 
@@ -60,8 +62,12 @@ export const emptyOverlay = (): Overlay => ({
 
 const GUIDE = 'var(--guide, #D6247F)';
 
+/** A number for an attribute: guides and gaps are measured from stored geometry, which may not be numbers (TAB-203). */
+const fin = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
 /** Bracket over a gap: a line with an end tick on each side and the distance on a canvas-coloured pill. */
-function gapMarkup(g: GapMark, px: (v: number) => number): string {
+function gapMarkup(raw: GapMark, px: (v: number) => number): string {
+  const g = { ...raw, from: fin(raw.from), to: fin(raw.to), at: fin(raw.at), label: escapeXml(String(raw.label)) };
   const horizontal = g.axis === 'x';
   const mid = (g.from + g.to) / 2;
   const tick = px(4);
@@ -151,6 +157,11 @@ export class Renderer {
   private camDirty = true;
   private cameraListeners = new Set<() => void>();
   readonly ctx: MarkupCtx;
+  /** An object as drawn, read through safeObj (src/safe-obj.ts). */
+  private readonly safeGet = (id: string): Obj | undefined => {
+    const o = this.store.getPlaced(id);
+    return o && safeObj(o);
+  };
 
   constructor(private store: Store, parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -424,7 +435,7 @@ export class Renderer {
    */
   connectorLayout(): ConnectorLayout {
     if (!this.layoutCache) {
-      const next = buildConnectorLayout((id) => this.store.getPlaced(id), this.store.shown().filter(isConnector));
+      const next = buildConnectorLayout(this.safeGet, this.store.shown().filter(isConnector).map(safeObj));
       // A connector that joins, leaves or reorders a side moves the others on it, even though they did not change.
       if (this.lastLayout) for (const id of movedConnectors(this.lastLayout, next)) this.markDirty(id);
       this.layoutCache = this.lastLayout = next;
@@ -435,7 +446,7 @@ export class Renderer {
   bounds(o: Obj): Rect | null {
     this.connectorLayout(); // first, so connectors whose slot moved lose their cached bounds
     if (this.boundsCache.has(o.id)) return this.boundsCache.get(o.id)!;
-    const b = objBounds((id) => this.store.getPlaced(id), this.store.placed(o), this.connectorLayout());
+    const b = objBounds(this.safeGet, safeObj(this.store.placed(o)), this.connectorLayout());
     this.boundsCache.set(o.id, b);
     return b;
   }
@@ -485,7 +496,8 @@ export class Renderer {
       return;
     }
     this.gridRect.setAttribute('fill', 'url(#grid-pattern)');
-    let step = this.gridSize;
+    // the grid size is board data any collaborator writes: anything but a positive number would never leave the loops below
+    let step = typeof this.gridSize === 'number' && Number.isFinite(this.gridSize) && this.gridSize > 0 ? this.gridSize : 24;
     while (step * zoom < 10) step *= 5;
     while (step * zoom > 100 && step / 5 >= 1) step /= 5;
     const s = step * zoom;
@@ -576,7 +588,8 @@ export class Renderer {
     this.overlayDirty = false;
     const z = this.cam.zoom;
     const px = (v: number) => v / z;
-    const get = (id: string) => this.store.getPlaced(id);
+    // overlays write object geometry into attributes too: read objects through safeObj (src/safe-obj.ts, TAB-203)
+    const get = this.safeGet;
     const ov = this.overlay;
     let out = ov.ai;
 
@@ -585,7 +598,7 @@ export class Renderer {
       for (const id of r.ids) {
         const o = get(id);
         const b = o && this.bounds(o);
-        if (b) out += `<rect x="${b.x - px(3)}" y="${b.y - px(3)}" width="${b.w + px(6)}" height="${b.h + px(6)}" fill="none" stroke="${escapeXml(r.color)}" stroke-width="${px(1.5)}" stroke-dasharray="${px(4)} ${px(3)}" rx="${px(3)}"/>`;
+        if (b) out += `<rect x="${b.x - px(3)}" y="${b.y - px(3)}" width="${b.w + px(6)}" height="${b.h + px(6)}" fill="none" stroke="${safeColor(r.color, USER_COLORS[0])}" stroke-width="${px(1.5)}" stroke-dasharray="${px(4)} ${px(3)}" rx="${px(3)}"/>`;
       }
     }
 
@@ -642,7 +655,7 @@ export class Renderer {
     }
 
     // snap guides and equal-gap brackets
-    for (const g of ov.guides) out += g.kind === 'line' ? `<path d="M${g.x1} ${g.y1}L${g.x2} ${g.y2}" stroke="${GUIDE}" stroke-width="${px(1)}"/>` : gapMarkup(g, px);
+    for (const g of ov.guides) out += g.kind === 'line' ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>` : gapMarkup(g, px);
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;
@@ -715,7 +728,7 @@ export class Renderer {
   private pinMarkup(p: PinView, px: (v: number) => number) {
     const R = px(PIN_R);
     const c = pinCenter({ x: 0, y: 0 }, R);
-    const color = escapeXml(p.color);
+    const color = safeColor(p.color, USER_COLORS[0]);
     let body: string;
     if (p.draft) body = `<path d="${pinPath(R)}" fill="${color}" stroke="#18212B" stroke-width="${px(1.5)}" stroke-dasharray="${px(3)} ${px(2)}"/>`;
     else if (p.resolved) body = `<path d="${pinPath(R)}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${px(1.5)}"/>`;
@@ -729,12 +742,15 @@ export class Renderer {
       const bx = c.x + R * Math.SQRT1_2, by = c.y - R * Math.SQRT1_2;
       badge = `<circle cx="${bx}" cy="${by}" r="${px(7)}" fill="#18212B"/><text x="${bx}" y="${by + px(3.2)}" font-size="${px(9)}" font-weight="700" fill="#fff" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${p.count}</text>`;
     }
-    return `<g transform="translate(${p.x} ${p.y})">${ring}${body}${label}${badge}</g>`;
+    // a pin sits at a comment's anchor, which comes from the comments document (any commenter writes it)
+    const at = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    return `<g transform="translate(${at(p.x)} ${at(p.y)})">${ring}${body}${label}${badge}</g>`;
   }
 
-  private outline(o: Obj, sw: number, opacity: number) {
+  private outline(raw: Obj, sw: number, opacity: number) {
+    const o = safeObj(raw);
     if (isConnector(o)) {
-      const g = connectorGeom((id) => this.store.getPlaced(id), o, this.connectorLayout());
+      const g = connectorGeom(this.safeGet, safeObj(o), this.connectorLayout());
       if (!g) return '';
       return `<path d="${g.d}" fill="none" stroke="${WIRE}" stroke-width="${sw * 2.5}" stroke-opacity="${0.25 * opacity}"/>`;
     }

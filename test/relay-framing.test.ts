@@ -71,6 +71,28 @@ const headersOf = (port: number, rawPath: string) =>
 
 const directives = (csp: string | string[] | undefined) => String(csp).split(';').map((d) => d.trim());
 
+/**
+ * TAB-203: a stored value that reached CSS as `url(…)` (an image, a filter, a font) must not be able to fetch from any
+ * host. Every directive that governs such a fetch names its hosts one by one (no `*`, no bare `https:` or `http:`; `data:`
+ * and `blob:` are local), and the default is 'self'.
+ */
+function openFetchSources(csp: string[]): string[] {
+  const out: string[] = [];
+  const sources = (name: string) => csp.find((d) => d.split(/\s+/)[0] === name)?.split(/\s+/).slice(1);
+  if (sources('default-src')?.join(' ') !== "'self'") out.push(`default-src ${sources('default-src')?.join(' ')}`);
+  for (const name of ['img-src', 'style-src', 'font-src', 'connect-src', 'default-src']) {
+    const list = sources(name);
+    if (!list) out.push(`${name} missing`);
+    for (const src of list ?? []) {
+      const open = /^\*$|^https?:$|^https?:\/\/\*/.test(src);
+      // named https hosts, and the desktop app's own IPC origin
+      const named = !src.includes('://') || /^https:\/\/[a-z0-9.-]+\.[a-z]+$|^http:\/\/ipc\.localhost$/.test(src);
+      if (open || !named) out.push(`${name} ${src}`);
+    }
+  }
+  return out;
+}
+
 beforeAll(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-framing-'));
   fs.mkdirSync(path.join(root, 'dist'));
@@ -89,6 +111,21 @@ describe('relay: framing', () => {
     expect(directives(headers['content-security-policy'])).toContain("frame-ancestors 'none'");
     expect(headers['x-frame-options']).toBeUndefined();
     expect(relay.stderr()).not.toContain('TABULA_DEV_ALLOW_FRAMING');
+    expect(openFetchSources(directives(headers['content-security-policy']))).toEqual([]);
+  });
+
+  it('the fetch check itself finds an open source', () => {
+    const base = ["default-src 'self'", "style-src 'self'", "font-src 'self'", "connect-src 'self'"];
+    expect(openFetchSources([...base, "img-src 'self'"])).toEqual([]);
+    expect(openFetchSources([...base, "img-src 'self' https:"])).toEqual(['img-src https:']);
+    expect(openFetchSources([...base, 'img-src *'])).toEqual(['img-src *']);
+    expect(openFetchSources([...base, 'img-src https://*.evil.example'])).toEqual(['img-src https://*.evil.example']);
+    expect(openFetchSources(base)).toEqual(['img-src missing']);
+  });
+
+  it('the desktop app limits fetches the same way (its CSP lives in tauri.conf.json)', () => {
+    const conf = JSON.parse(fs.readFileSync(path.resolve('desktop/src-tauri/tauri.conf.json'), 'utf8'));
+    expect(openFetchSources(directives(conf.app.security.csp))).toEqual([]);
   });
 
   it('drops only frame-ancestors with TABULA_DEV_ALLOW_FRAMING=1, and says so on stderr', async () => {

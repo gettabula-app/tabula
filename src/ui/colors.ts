@@ -2,6 +2,7 @@ import { rovingRadios } from './focus-scope';
 import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { normalizeHex } from '../palette';
+import { safeColor } from '../../shared/colors';
 
 /**
  * Sticky colour chooser: the default colours, the board's custom colours, and a
@@ -9,7 +10,8 @@ import { normalizeHex } from '../palette';
  * the picker is open; `onPick` commits (and the colour joins the board palette).
  */
 export function stickyColorField(app: BoardApp, current: string | undefined, onPick: (c: string) => void, opts: { onLive?: (c: string) => void; label?: string; size?: 'sm' | 'lg' } = {}) {
-  const cur = current ? normalizeHex(current) : undefined;
+  // `current` is a stored sticky's fill and becomes an inline style below: only a colour of the grammar (TAB-203)
+  const cur = safeColor(current, null) ?? undefined;
   const row = h('div', { class: `swatches sticky-swatches${opts.size === 'lg' ? ' lg' : ''}`, role: 'radiogroup', 'aria-label': opts.label ?? 'Sticky colour' });
   const palette = app.stickyPalette();
   for (const c of palette) {

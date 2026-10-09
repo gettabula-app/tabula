@@ -117,8 +117,16 @@ describe('content that is accepted', () => {
   });
 
   it('accepts the colours the board writes', () => {
-    for (const fill of ['#FFE16B', '#fff', 'none', 'transparent', 'var(--canvas-ink, #18212B)', 'rgb(1, 2, 3)', 'color-mix(in srgb, red 50%, blue)']) {
+    for (const fill of ['#FFE16B', '#fff', '#11223344', 'none', 'transparent', 'var(--canvas-ink, #18212B)']) {
       expect(at(fill, problem(content([sticky('s1', { fill, textColor: fill, stroke: fill })])))).toEqual(at(fill, null));
+    }
+  });
+
+  // TAB-203: one colour grammar (shared/colors.mjs). The board never writes these, and the renderer would draw them as
+  // the default, so a template that holds them is refused rather than stored.
+  it('refuses colours outside the board grammar', () => {
+    for (const fill of ['rgb(1, 2, 3)', 'color-mix(in srgb, red 50%, blue)', 'red', 'var(--x)', 'var(--x, red)']) {
+      expect(at(fill, problem(content([sticky('s1', { fill })])))).toEqual(at(fill, expect.stringContaining('fill is not a colour')));
     }
   });
 });

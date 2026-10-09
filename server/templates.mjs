@@ -5,7 +5,8 @@
 // This file does not touch the file system (a test keeps it that way, like tokens.mjs and board-ops.mjs).
 
 import crypto from 'node:crypto';
-import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES } from './board-ops.mjs';
+import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } from './board-ops.mjs';
+import { cleanColor } from '../shared/colors.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
 export const TEMPLATE_CATEGORIES = [
@@ -169,9 +170,6 @@ export function svgProblem(body) {
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const FONT_RE = /^[A-Za-z0-9 _-]{1,64}$/;
-// colours as the board writes them: #hex, none, var(--x, #hex), rgb(), hsl() and the like; never url(), never markup
-const PAINT_RE = /^[A-Za-z0-9#%().,\s_/-]{1,100}$/;
-const PAINT_DENIED_RE = /url\s*\(|image\s*\(|image-set|cross-fade|element\s*\(|paint\s*\(|expression|javascript|;/i;
 const LINE_CONTROL_RE = /\p{Cc}/u;
 // control characters but tab, line feed and carriage return
 const hasTextControl = (v) => {
@@ -206,9 +204,11 @@ function oneOf(v, list, what) {
   return v;
 }
 
+// the board's one colour grammar (shared/colors.mjs, TAB-203), stored in its canonical form
 function paint(v, what) {
-  if (typeof v !== 'string' || !PAINT_RE.test(v) || PAINT_DENIED_RE.test(v)) fail(`${what} is not a colour the board can draw.`);
-  return v;
+  const c = cleanColor(v);
+  if (c === null) fail(`${what} is not a colour the board can draw.`);
+  return c;
 }
 
 function member(m, what) {
@@ -240,8 +240,16 @@ function end(e, side, label, ids) {
   return fail(`${label} has an invalid ${side} end.`);
 }
 
+// A kanban container's, lane's or card's fill may also be a palette key (`yellow`), drawn as that sticky colour
+// (docs/kanban.md); the keys are the sticky colour names, as LABEL_COLORS in shared/containers.mjs.
+const KANBAN_TYPES = new Set(['container', 'lane', 'card']);
+const PALETTE_KEYS = STICKY_COLORS.map((c) => c.name.toLowerCase());
+
 function style(o, what, out, withFill = true) {
-  if (withFill && o.fill !== undefined) out.fill = paint(o.fill, `${what} fill`);
+  if (withFill && o.fill !== undefined) {
+    const key = KANBAN_TYPES.has(o.type) && typeof o.fill === 'string' ? o.fill.toLowerCase() : null;
+    out.fill = key && PALETTE_KEYS.includes(key) ? key : paint(o.fill, `${what} fill`);
+  }
   if (o.stroke !== undefined) out.stroke = paint(o.stroke, `${what} stroke`);
   if (o.strokeWidth !== undefined) out.strokeWidth = number(o.strokeWidth, `${what} strokeWidth`, 0, 100);
   if (o.dash !== undefined) out.dash = oneOf(o.dash, DASHES, `${what} dash`);

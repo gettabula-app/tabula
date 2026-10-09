@@ -183,7 +183,9 @@ describe('ghost markup', () => {
     expect(create).toContain('>&quot;&gt;&lt;svg onload=alert(1)&gt;</text>');
     expect(group).toContain('&lt;img src=x');
     expect(group).toContain('onerror=alert(1)&gt;');
-    expect(group).toContain('fill="&quot;&gt;&lt;b&gt;"');
+    // a fill outside the colour grammar is not drawn at all, escaped or not: the ghost takes the default sticky colour (TAB-203)
+    expect(group).not.toContain('&quot;&gt;&lt;b&gt;');
+    expect(group).toContain('fill="#FFE16B"');
   });
 
   it('never copies writing that is hidden from the viewer', () => {

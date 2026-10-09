@@ -171,7 +171,7 @@ function umlTab(app: BoardApp) {
     return h('button', {
       class: 'rel-row', 'data-tip': `Draw a ${r.label.toLowerCase()} connector`,
       onclick: () => app.setTool({ kind: 'connector', relation: k }),
-      html: `<svg width="96" height="20" viewBox="0 0 96 20">${objectMarkup(c, { get: () => undefined }).replace(/var\(--paper, #fff\)/g, 'var(--tray)')}</svg><span>${r.label}</span>`,
+      html: `<svg width="96" height="20" viewBox="0 0 96 20">${objectMarkup(c, { get: () => undefined }).replace(/var\(--paper, #FFFFFF\)/g, 'var(--tray)')}</svg><span>${r.label}</span>`,
     });
   });
   return h('div', { class: 'drawer-body' },

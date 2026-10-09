@@ -7,6 +7,7 @@ import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
 import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
+import { safeColor } from '../../shared/colors';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
@@ -119,9 +120,10 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
   const styleValue = (key: 'fill' | 'stroke') => (): string => {
     const o = app.selected()[0];
-    return o ? ((o as BaseObj)[key] ?? styleOf(o)[key]) : 'none';
+    // styleOf resolves the stored colour through the colour grammar: it becomes a custom property below (TAB-203)
+    return o ? styleOf(o)[key] : 'none';
   };
-  const stickyFill = () => (app.selected()[0] as BaseObj | undefined)?.fill ?? DEFAULTS.sticky.fill;
+  const stickyFill = () => safeColor((app.selected()[0] as BaseObj | undefined)?.fill, DEFAULTS.sticky.fill);
 
   function swatch(label: string, current: () => string, content: () => HTMLElement) {
     const chip = h('span', { class: 'qb-chip' });
