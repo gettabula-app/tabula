@@ -109,6 +109,18 @@ For a person's own key, see [Your AI key](ai-keys.md).
 
 <!-- screenshot: AI tab with the settings, and the workspace key line showing the last four characters -->
 
+## Chat
+
+The **Chat** tab appears when your server has chat turned on. Each setting is saved as soon as you change it.
+
+- **Workspace channel**: whether everyone except guests has one workspace-wide chat. Turn it off and the channel disappears from the Chat page until you turn it back on. Nothing is deleted.
+- **Viewers**: whether people with view-only access to a board may post in its chat. They can always read it.
+- **Keep messages**: **1 year** (the default), **90 days**, **30 days** or **Forever**. Once a day, messages older than this are deleted, with their mentions and reactions. Backups keep deleted messages until the backups expire.
+
+The audit log has a **Chat** filter. It shows changes to these settings, messages that an owner or moderator removed, and the daily clean-up as one line with a count. It never shows what a message said.
+
+<!-- screenshot: Chat tab with the three settings -->
+
 ## Backups
 
 The **Backups** section is for the workspace owner. Backups are copies of everything in the workspace, stored away from the server and encrypted before they leave it. Here you see how they are going and bring back one board or the whole workspace.
@@ -210,7 +222,7 @@ Anyone with a board open sees **Restoring…** in the status chip and the board 
 
 A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Backups and restores read as sentences too, naming the backup by its date. Hover an entry to see the underlying action name.
 
-- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added or removed. **Backups** shows the automatic backup runs (and failures) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
+- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **Images**, **Chat**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added or removed. **Backups** shows the automatic backup runs (and failures) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
 
 Entries with no person are shown as the system, for example when a hosted workspace is locked or unlocked.

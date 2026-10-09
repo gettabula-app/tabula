@@ -1,10 +1,31 @@
-# Board chat
+# Chat
 
-Board chat is a running conversation for everyone who can open a board. It sits next to comments in the right-hand panel. It appears only if your workspace has sign-in and whoever runs your Tabula server has turned chat on. If you do not see a **Chat** button, it is not available for you.
+Chat is a running conversation. Each board has its own, each team has one, and the whole workspace can have one. It appears only if your workspace has sign-in and whoever runs your Tabula server has turned chat on. If you do not see a **Chat** button or link, it is not available for you.
 
-Comments are attached to a place on the board and are for discussing one thing. Chat belongs to the whole board and is for talking while you work.
+Comments are attached to a place on the board and are for discussing one thing. Chat belongs to the whole board, team or workspace and is for talking while you work.
 
-## Open and close the chat
+## Where to chat
+
+- **Board chat**: everyone who can open the board. It is in the right-hand panel on the board, next to comments.
+- **Team chat**: the members of a team, including guests who belong to it. Workspace owners and admins can read every team's chat and remove messages, but they can post only in teams they belong to. When a team is archived, its chat is read only.
+- **Workspace chat**: everyone in the workspace except guests. An admin can switch it off (see [Admin dashboard](admin.md#chat)).
+
+Team and workspace chat live on the **Chat page**. Board chat is also there while it is active.
+
+## The Chat page
+
+Select **Chat** in the top bar of the home screen, or open the address `#/chat`.
+
+- The list on the left has **Workspace**, **Teams**, **Other teams** (teams you may read as an admin without belonging to) and **Boards** (boards whose chat had a message in the last 14 days).
+- A badge on a row counts unread messages. It has a red outline if someone mentioned you.
+- Select a row to read it. The conversation on the right works the way it does on a board, and the address changes so you can come back to it.
+- When you open the page, it opens the channel where you were mentioned, or the one with the most unread messages.
+- On a phone the list is one screen and the conversation another. **All channels** (or the browser's Back button) returns to the list.
+- On a team or workspace channel you may be unable to post. The box then says why, for example when the team is archived or the workspace is read-only.
+
+The **Chat** link in the top bar shows how many messages you have not read in all your channels. On the **Boards** page, a number beside a board's name shows its unread chat messages.
+
+## Open and close board chat
 
 - Select **Chat** in the top bar, next to **Comments**, or press `M`.
 - The right-hand panel has two tabs, **Comments** and **Chat**. Switching between them does not change either.
@@ -57,8 +78,10 @@ Messages you send while offline wait in a queue, grey, with **Sending…**. They
 
 - Chat is not part of version history, and it is not in exports or board files. A board you export and open elsewhere comes without its conversation.
 - Chat is separate from comments, and neither shows in the other.
+- Messages are deleted after a time set by an admin: one year unless they choose otherwise.
 
 ## Related
 
 - [Comments](comments.md)
 - [Sharing, roles and teams](sharing.md)
+- [Admin dashboard](admin.md#chat)
