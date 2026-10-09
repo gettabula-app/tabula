@@ -16,6 +16,9 @@ import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
 import type { GapMark, Guide } from './guides';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
+const SELECTION_WIRE = 'var(--wire)';
+const SELECTION_HANDLE_FILL = 'var(--selection-handle-fill)';
+const SELECTION_HANDLE_STROKE = 'var(--selection-handle-stroke)';
 
 export interface Camera { x: number; y: number; zoom: number }
 
@@ -750,7 +753,7 @@ export class Renderer {
       for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
       if (sel.length > 1) {
         const b = this.contentBounds(ov.selection);
-        if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
+        if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
       }
     }
     if (!selectedGroup && sel.length === 1 && sel[0].id !== this.editingId && !this.readOnly) {
@@ -759,15 +762,15 @@ export class Renderer {
       const rot = hs.find((h) => h.id === 'rot');
       if (rot && isBox(o)) {
         const top = rotate({ x: o.x + o.w / 2, y: o.y }, center(o), o.rotation || 0);
-        out += `<path d="M${top.x} ${top.y}L${rot.p.x} ${rot.p.y}" stroke="${WIRE}" stroke-width="${px(1)}"/>`;
+        out += `<path d="M${top.x} ${top.y}L${rot.p.x} ${rot.p.y}" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}"/>`;
       }
       // on a touch screen the handles are drawn larger (a finger also reaches further to them: app.ts handleAt)
       const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
       const half = px(coarse ? 8 : 4.5);
       for (const h of hs) {
-        if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
-        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5.5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(2)}"/>`;
-        else out += `<rect x="${h.p.x - half}" y="${h.p.y - half}" width="${half * 2}" height="${half * 2}" rx="${px(2)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
+        if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
+        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5.5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(2)}"/>`;
+        else out += `<rect x="${h.p.x - half}" y="${h.p.y - half}" width="${half * 2}" height="${half * 2}" rx="${px(2)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
       }
     }
 
@@ -779,7 +782,7 @@ export class Renderer {
           const a = sideAnchor(o, side);
           const hot = ov.anchorHot === `${o.id}:${side}`;
           const p = { x: a.p.x + a.dir.x * px(14), y: a.p.y + a.dir.y * px(14) };
-          out += `<circle class="anchor" cx="${p.x}" cy="${p.y}" r="${px(hot ? 7 : 5)}" fill="${hot ? WIRE : '#fff'}" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
+          out += `<circle class="anchor" cx="${p.x}" cy="${p.y}" r="${px(hot ? 7 : 5)}" fill="${hot ? SELECTION_WIRE : SELECTION_HANDLE_FILL}" stroke="${SELECTION_WIRE}" stroke-width="${px(1.5)}"/>`;
         }
       }
     }
@@ -923,7 +926,7 @@ export class Renderer {
     return `<g transform="translate(${right} ${top})"><circle r="${px(11)}" fill="var(--group-chip-bg)" stroke="var(--group-chip-ink)" stroke-width="${px(1.5)}"/><g transform="translate(${-px(7)} ${-px(7)}) scale(${px(14) / 24})" fill="none" stroke="var(--group-chip-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></g></g>`;
   }
 
-  private outline(raw: Obj, sw: number, opacity: number, stroke = WIRE) {
+  private outline(raw: Obj, sw: number, opacity: number, stroke = SELECTION_WIRE) {
     const o = safeObj(raw);
     if (isConnector(o)) {
       const g = connectorGeom(this.safeGet, safeObj(o), this.connectorLayout());

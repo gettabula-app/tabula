@@ -122,4 +122,18 @@ describe('css colours', () => {
       expect(colorDistance(hover, wire), `${theme.id} hover differs from selection`).toBeGreaterThan(50);
     }
   });
+
+  it('keeps single-item selection outlines and handle strokes high-contrast across every theme', () => {
+    for (const theme of THEMES) {
+      const canvas = hexRgb(theme.vars['--canvas']);
+      const paper = hexRgb(theme.vars['--paper']);
+      const wire = hexRgb(theme.vars['--wire']);
+      const handleFill = hexRgb(theme.vars['--selection-handle-fill']);
+      const handleStroke = hexRgb(theme.vars['--selection-handle-stroke']);
+      expect(contrastRatio(wire, canvas), `${theme.id} selection outline`).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(handleStroke, canvas), `${theme.id} selection handles`).toBeGreaterThanOrEqual(3);
+      expect(handleStroke, `${theme.id} handle stroke follows selection colour`).toEqual(wire);
+      expect(handleFill, `${theme.id} handle fill follows group handle fill`).toEqual(paper);
+    }
+  });
 });

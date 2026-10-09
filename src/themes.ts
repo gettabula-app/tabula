@@ -1,4 +1,4 @@
-export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide'] as const;
+export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide'] as const;
 export type ThemeVar = (typeof THEME_VARS)[number];
 
 export interface Theme {
@@ -27,6 +27,8 @@ export const THEMES: Theme[] = [
       '--signal': '#FFD23F',
       '--on-signal': '#18212B',
       '--wire': '#2F6FED',
+      '--selection-handle-fill': '#FFFFFF',
+      '--selection-handle-stroke': '#2F6FED',
       '--danger': '#D41E24',
       '--tray': '#18212B',
       '--tray-2': '#222D39',
@@ -55,6 +57,8 @@ export const THEMES: Theme[] = [
       '--signal': '#FFCC66',
       '--on-signal': '#1F2430',
       '--wire': '#73D0FF',
+      '--selection-handle-fill': '#272D38',
+      '--selection-handle-stroke': '#73D0FF',
       '--danger': '#F28779',
       '--tray': '#171B24',
       '--tray-2': '#232834',
@@ -83,6 +87,8 @@ export const THEMES: Theme[] = [
       '--signal': '#E6C384',
       '--on-signal': '#1F1F28',
       '--wire': '#7E9CD8',
+      '--selection-handle-fill': '#2A2A37',
+      '--selection-handle-stroke': '#7E9CD8',
       '--danger': '#E56E7B',
       '--tray': '#16161D',
       '--tray-2': '#2A2A37',
@@ -111,6 +117,8 @@ export const THEMES: Theme[] = [
       '--signal': '#00FF41',
       '--on-signal': '#021004',
       '--wire': '#22D3EE',
+      '--selection-handle-fill': '#0B140C',
+      '--selection-handle-stroke': '#22D3EE',
       '--danger': '#FF4D4D',
       '--tray': '#0A120B',
       '--tray-2': '#102014',
@@ -139,6 +147,8 @@ export const THEMES: Theme[] = [
       '--signal': '#E0B040',
       '--on-signal': '#14301F',
       '--wire': '#1E6FD9',
+      '--selection-handle-fill': '#FFFFFF',
+      '--selection-handle-stroke': '#1E6FD9',
       '--danger': '#C14036',
       '--tray': '#0F2A1D',
       '--tray-2': '#1B3F2C',
