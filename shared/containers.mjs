@@ -365,9 +365,10 @@ export function layoutAll(objects) {
   const layouts = new Map();
   const rects = new Map();
   for (const container of containers) {
-    const lanes = (childrenOf.get(container.id) ?? []).filter((o) => o.type === 'lane');
-    const cards = lanes.flatMap((l) => (childrenOf.get(l.id) ?? []).filter((o) => o.type === 'card'));
-    if (container.id === home) cards.push(...strays);
+    // a hidden lane or card leaves the layout, as in the Store (TAB-198)
+    const lanes = (childrenOf.get(container.id) ?? []).filter((o) => o.type === 'lane' && o.hidden !== true);
+    const cards = lanes.flatMap((l) => (childrenOf.get(l.id) ?? []).filter((o) => o.type === 'card' && o.hidden !== true));
+    if (container.id === home) cards.push(...strays.filter((o) => o.hidden !== true));
     const layout = layoutContainer(container, lanes, cards);
     if (!layout) continue;
     layouts.set(container.id, layout);

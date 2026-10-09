@@ -124,6 +124,7 @@ export function toTemplateContent(
   const digits = String(objs.length).length;
   const objects = remapObjects(objs, idMap, { x: -b.x, y: -b.y }, resolveOutside).map((o, i) => {
     delete o.locked;
+    delete o.hidden;
     delete o.createdBy;
     delete o.updatedAt;
     if (o.parent === undefined) delete o.parent;

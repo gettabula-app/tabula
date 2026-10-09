@@ -68,6 +68,7 @@ export class Store {
   private _readOnly = false;
   private orderDirty = true;
   private orderCache: Obj[] = [];
+  private shownCache: Obj[] | null = null;
   private boundIndex = new Map<Id, Set<Id>>(); // shape id -> connector ids
   private childIndex = new Map<Id, Set<Id>>(); // parent id -> child ids
   private containerIds = new Set<Id>();
@@ -131,6 +132,7 @@ export class Store {
         for (const id of moved) changed.add(id);
       }
       this.orderDirty = true;
+      this.shownCache = null;
       this.listeners.forEach((l) => l(changed));
     });
 
@@ -198,6 +200,33 @@ export class Store {
       this.orderDirty = false;
     }
     return this.orderCache;
+  }
+
+  /**
+   * Whether an object is drawn (TAB-198): not hidden, not inside a hidden frame or container, and for a connector, neither
+   * bound end hidden, so no line is left pointing at nothing. Hidden is for everyone and is not private.
+   */
+  isShown(o: Obj): boolean {
+    if (o.hidden === true) return false;
+    const seen = new Set<Id>([o.id]);
+    for (let p = o.parent ? this.cache.get(o.parent) : undefined; p && !seen.has(p.id); p = p.parent ? this.cache.get(p.parent) : undefined) {
+      if (p.hidden === true) return false;
+      seen.add(p.id);
+    }
+    if (isConnector(o)) {
+      for (const end of [o.from, o.to]) {
+        if (end.kind !== 'bound') continue;
+        const at = this.cache.get(end.id);
+        if (at && at.type !== 'connector' && !this.isShown(at)) return false;
+      }
+    }
+    return true;
+  }
+
+  /** `ordered()` without what is hidden: what the canvas draws, hits, selects, snaps to and exports. */
+  shown(): Obj[] {
+    this.shownCache ??= this.ordered().filter((o) => this.isShown(o));
+    return this.shownCache;
   }
 
   topZ(): string {
@@ -305,9 +334,10 @@ export class Store {
     if (c?.type !== 'container') return null;
     let layout = this.layouts.get(id);
     if (layout === undefined) {
-      const lanes = this.childrenOf(id).filter((o) => o.type === 'lane');
-      const cards = lanes.flatMap((l) => this.childrenOf(l.id).filter((o) => o.type === 'card'));
-      if (this.orphanHome === id) for (const oid of this.orphanIds) cards.push(this.cache.get(oid)!);
+      // a hidden lane or card (TAB-198) leaves the layout, so the board closes up around it
+      const lanes = this.childrenOf(id).filter((o) => o.type === 'lane' && o.hidden !== true);
+      const cards = lanes.flatMap((l) => this.childrenOf(l.id).filter((o) => o.type === 'card' && o.hidden !== true));
+      if (this.orphanHome === id) for (const oid of this.orphanIds) if (this.cache.get(oid)!.hidden !== true) cards.push(this.cache.get(oid)!);
       layout = layoutContainer(c, lanes, cards);
       this.layouts.set(id, layout);
     }

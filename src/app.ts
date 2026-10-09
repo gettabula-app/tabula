@@ -175,9 +175,9 @@ export class BoardApp {
     });
 
     this.store.onChange((changed) => {
-      // drop deleted objects from the selection
+      // drop deleted, locked and hidden objects from the selection (someone else may have hidden one)
       const before = this.selection.length;
-      this.selection = this.selection.filter((id) => { const o = this.store.get(id); return !!o && !o.locked; });
+      this.selection = this.selection.filter((id) => { const o = this.store.get(id); return !!o && !o.locked && this.store.isShown(o); });
       if (this.selection.length !== before) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
@@ -325,7 +325,8 @@ export class BoardApp {
   /** Threads whose pin may be shown: not anchored to something private writing hides. */
   visibleThreads(): Thread[] {
     const get = (id: string) => this.store.getPlaced(id);
-    return this.comments.list().filter((t) => threadVisible(t, get, (o) => this.flow.isHidden(o)));
+    // a pin on a hidden object (TAB-198) goes with it, as on a private note
+    return this.comments.list().filter((t) => threadVisible(t, get, (o) => this.flow.isHidden(o) || !this.store.isShown(o)));
   }
 
   /** Shows a draft pin at `anchor` while its composer is open; null clears it. */
@@ -387,7 +388,8 @@ export class BoardApp {
   /** Topmost object under a world point. */
   hit(p: Point, opts: { skip?: Set<Id>; connectors?: boolean; frames?: boolean; locked?: boolean } = {}): Obj | undefined {
     const tol = 5 / this.zoom;
-    const ord = this.store.ordered();
+    // what is hidden (TAB-198) is not there to hit, select, snap to or drop into
+    const ord = this.store.shown();
     for (let i = ord.length - 1; i >= 0; i--) {
       const o = ord[i];
       if (o.locked && !opts.locked) continue;
@@ -410,7 +412,7 @@ export class BoardApp {
 
   /** Topmost frame whose body contains the point (for parenting). */
   frameAt(p: Point, skip?: Set<Id>): BaseObj | undefined {
-    const ord = this.store.ordered();
+    const ord = this.store.shown();
     for (let i = ord.length - 1; i >= 0; i--) {
       const o = ord[i];
       if (o.type === 'frame' && !skip?.has(o.id) && isBox(o) && pointInRect(p, boxBounds(o))) return o;
@@ -926,7 +928,7 @@ export class BoardApp {
       }
       case 'marquee': {
         const m = rectOfPoints([d.start, p]);
-        const inside = this.store.ordered().filter((o) => {
+        const inside = this.store.shown().filter((o) => {
           const b = this.r.bounds(o);
           return !o.locked && b && rectContains(m, b);
         });
@@ -1032,7 +1034,7 @@ export class BoardApp {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
         const movers = [...d.orig.values()].filter(isBox).map(boxBounds);
-        d.guides = startGuides(referenceRects(this.store.ordered().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
+        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
       }
       const sn = snapMove(d.guides, dx, dy, this.zoom);
       if (sn.dx !== null) dx += sn.dx;
@@ -1087,7 +1089,7 @@ export class BoardApp {
     if (!e.altKey && !o0.rotation && !keepAspect) {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
-        d.guides = startGuides(referenceRects(this.store.ordered().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
+        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
       }
       const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
       sx = sn.dx;
@@ -1201,7 +1203,7 @@ export class BoardApp {
   private quickConnect(id: Id, side: 'top' | 'right' | 'bottom' | 'left') {
     const src = this.store.get(id);
     if (!isBox(src)) return;
-    const candidates = this.store.ordered().filter((o): o is BaseObj => CONNECTABLE(o) && !this.flow.isHidden(o));
+    const candidates = this.store.shown().filter((o): o is BaseObj => CONNECTABLE(o) && !this.flow.isHidden(o));
     const next = neighborInDirection(src, side, candidates);
     if (next) {
       const linked = this.store.connectorsOf(src.id).some((c) =>
@@ -1407,7 +1409,7 @@ export class BoardApp {
         return;
       }
       if (mod && k === 'y') { e.preventDefault(); if (!ro) this.store.undo.redo(); return; }
-      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.ordered().filter((o) => !o.locked).map((o) => o.id)); return; }
+      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.shown().filter((o) => !o.locked).map((o) => o.id)); return; }
       if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
       if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
@@ -1745,6 +1747,39 @@ export class BoardApp {
       this.setSelection([]);
       this.notify('Locked. Long-press to unlock.');
     }
+  }
+
+  // ---------------------------------------------------------------- layers (TAB-198)
+
+  /** Hides or shows objects for everyone, as one undo step. A hidden object leaves the selection. */
+  setHidden(ids: Iterable<Id>, hidden: boolean) {
+    if (this.readOnly) return;
+    const list = [...ids].filter((id) => this.store.get(id));
+    if (!list.length) return;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => list.forEach((id) => this.store.update(id, { hidden: hidden || undefined })));
+    if (hidden) this.setSelection(this.selection.filter((id) => !list.includes(id)));
+  }
+
+  /** Locks or unlocks one object, as the panel's lock toggle does (the selection's own toggle is toggleLock). */
+  setLocked(id: Id, locked: boolean) {
+    if (this.readOnly || !this.store.get(id)) return;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => this.store.update(id, { locked: locked || undefined }));
+    if (locked) this.setSelection(this.selection.filter((s) => s !== id));
+  }
+
+  /** The name the layers panel shows (a frame's title); undefined clears it. */
+  rename(id: Id, name: string | undefined) {
+    if (this.readOnly || !this.store.get(id)) return;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => this.store.update(id, { name }));
+  }
+
+  /** Writes stacking keys from the layers panel as one undo step. */
+  restack(patches: { id: Id; z: string }[] | null): boolean {
+    this.store.undo.stopCapturing();
+    return this.store.restack(patches);
   }
 
   // ---------------------------------------------------------------- presence

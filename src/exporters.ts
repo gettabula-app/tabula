@@ -220,7 +220,7 @@ export async function imageDataUrls(app: BoardApp, objs: Obj[]): Promise<Map<Id,
 }
 
 export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; background?: boolean; images?: Map<Id, string> } = {}): { svg: string; w: number; h: number } {
-  const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
+  const objs = ids?.length ? gatherForExport(app, ids) : app.store.shown();
   const b = app.r.contentBounds(objs.map((o) => o.id)) ?? { x: 0, y: 0, w: 100, h: 100 };
   const pad = 40;
   const x = b.x - pad, y = b.y - pad - 10, w = b.w + pad * 2, h = b.h + pad * 2 + 10;
@@ -253,7 +253,7 @@ ${style.replace(/]]>/g, '')}
 
 /** The SVG of the board (or of `ids`) with its pictures inlined, so the file stands on its own. */
 export async function exportSvgFile(app: BoardApp, ids?: Id[]): Promise<string> {
-  const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
+  const objs = ids?.length ? gatherForExport(app, ids) : app.store.shown();
   return exportSvg(app, ids, { images: await imageDataUrls(app, objs) }).svg;
 }
 
@@ -273,7 +273,8 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
     const z = c.to.kind === 'free' || set.has(c.to.id);
     if (a && z && (c.from.kind === 'bound' || c.to.kind === 'bound')) set.add(o.id);
   }
-  return app.store.ordered().filter((o) => set.has(o.id));
+  // hidden objects (TAB-198) are left out of pictures, as on the canvas; JSON and .drift keep them
+  return app.store.shown().filter((o) => set.has(o.id));
 }
 
 /** fetch that gives up after `ms`, so an unreachable font never stalls an export. */
@@ -326,7 +327,7 @@ async function inlineFontCss(objs: Obj[]): Promise<string> {
 }
 
 export async function exportPng(app: BoardApp, ids?: Id[], scale = 2): Promise<Blob> {
-  const objs = ids?.length ? gatherForExport(app, ids) : app.store.ordered();
+  const objs = ids?.length ? gatherForExport(app, ids) : app.store.shown();
   const fontCss = await inlineFontCss(objs);
   const { svg, w, h } = exportSvg(app, ids, { fontCss, images: await imageDataUrls(app, objs) });
   const max = 16000;

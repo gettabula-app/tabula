@@ -10,6 +10,7 @@ import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountLibrary, openMermaidImport } from './library';
+import { bindLayersKey } from './layers';
 import { mountFlowBar } from './flowbar';
 import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
@@ -136,7 +137,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch ? null : mountHistory(app, chrome);
-  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch));
+  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch, () => library.open('layers')));
   // Comments and, where the server has chat (docs/chat.md), Chat share one right-hand tray
   const sideTray = mountSideTray(chrome);
   const comments = mountComments(app, chrome, sideTray);
@@ -151,16 +152,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- rail
   const library = mountLibrary(app, chrome);
+  bindLayersKey(app, library);
   const toolBtn = (label: string, ic: IconName, tool: Tool, key: string) => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, 'aria-keyshortcuts': key, 'data-tip-key': key.toLowerCase(), onclick: () => app.setTool(tool) }, icon(ic, 22));
     b.dataset.tool = tool.kind;
     return b;
   };
-  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates') => {
+  const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
     return b;
   };
+  const layersBtn = drawerBtn('Layers', 'layers', 'layers');
+  layersBtn.setAttribute('aria-keyshortcuts', 'Alt+L');
+  layersBtn.dataset.tipKey = 'alt+l';
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
@@ -204,6 +209,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     drawerBtn('Icons', 'icons', 'icons'),
     drawerBtn('Stickers', 'stickers', 'stickers'),
     drawerBtn('Templates and team exercises', 'templates', 'templates'),
+    layersBtn,
     voteBtn,
     pollBtn,
     h('hr'),
@@ -307,7 +313,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const syncReadOnly = () => {
     const ro = app.readOnly;
     rail.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
-      if (b === commentBtn) return;
+      if (b === commentBtn || b === layersBtn) return;
       b.disabled = ro && b.dataset.tool !== 'select' && b.dataset.tool !== 'hand';
     });
     // Commenters have a read-only board but may still comment, so the tool follows the comments document.
@@ -318,7 +324,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     name.readOnly = ro;
     badge.textContent = boardAccess(app.role, workspaceOf(authState()), app.deleted).badge ?? 'View only';
     badge.classList.toggle('show', ro);
-    if (ro && library.tab) library.open(null);
+    if (ro && library.tab && library.tab !== 'layers') library.open(null);
   };
   app.on('readonly', syncReadOnly);
   app.on('comments', syncReadOnly);
@@ -405,7 +411,8 @@ function minimap(app: BoardApp) {
     all.h = Math.max(cb.y + cb.h, vp.y + vp.h) - all.y;
     const s = Math.min((W - 16) / all.w, (H - 16) / all.h);
     tr = { s, ox: 8 - all.x * s + (W - 16 - all.w * s) / 2, oy: 8 - all.y * s + (H - 16 - all.h * s) / 2 };
-    for (const o of app.store.ordered()) {
+    // what is hidden (TAB-198) is not on the board's map either
+    for (const o of app.store.shown()) {
       if (!isBox(o)) continue;
       const b = boxBounds(app.store.placed(o));
       ctx.fillStyle = o.type === 'frame' ? 'rgba(255,255,255,.12)' : o.type === 'sticky' ? (o.fill ?? STICKY_COLORS[0].fill) : 'rgba(233,237,242,.55)';
@@ -451,7 +458,7 @@ function minimap(app: BoardApp) {
 
 // ---------------------------------------------------------------- menus & dialogs
 
-function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean) {
+function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, openLayers: () => void) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
   // Items that change the board are disabled while it is view only.
@@ -522,6 +529,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     writeItem('grid', 'Board settings', () => openSettings(app)),
     scratch ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    item('layers', 'Layers', openLayers, 'Alt+L'),
     item('user', 'Your name and colour', () => openProfile(app)),
     mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
     scratch ? null : showComments,

@@ -17,8 +17,9 @@ import { openIconCredits } from './icon-credits';
 import { offlineRow } from './icon-offline';
 import { reopenSession } from './idle-bar';
 import { placeClicked } from './place-click';
+import { layersTab } from './layers';
 
-export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates';
+export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates' | 'layers';
 
 const DND = 'application/x-driftboard';
 
@@ -36,10 +37,11 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     drawer.classList.toggle('show', !!tab);
     listeners.forEach((l) => l(tab));
     if (!tab) return drawer.replaceChildren();
-    const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', stickers: 'Stickers', templates: 'Templates' }[tab];
-    const body = tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app, stop.signal) : tab === 'stickers' ? stickersTab(app, draggable, stop.signal) : templatesTab(app, () => open(null));
+    const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', stickers: 'Stickers', templates: 'Templates', layers: 'Layers' }[tab];
+    const layers = tab === 'layers' ? layersTab(app, stop.signal) : null;
+    const body = layers ? layers.body : tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app, stop.signal) : tab === 'stickers' ? stickersTab(app, draggable, stop.signal) : templatesTab(app, () => open(null));
     drawer.replaceChildren(
-      h('div', { class: 'drawer-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
+      h('div', { class: 'drawer-head' }, h('h2', null, title, layers?.count), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
     );
   };

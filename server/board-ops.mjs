@@ -153,6 +153,27 @@ export const isRevealed = (doc) => doc.getMap('flow').get('reveal') === true;
 const isWithheld = (o, revealed) => !revealed && o.type === 'sticky' && Boolean(o.privateStep);
 
 /** Every readable box and connector, and the ids of the private notes that are withheld. */
+/**
+ * What the board hides from everyone (TAB-198): the boxes marked hidden or inside a hidden frame or container, and the
+ * connectors that are hidden or bound to one of them. The AI read leaves them out, as the canvas does; the MCP tools show
+ * them, marked `hidden: true`, since an editor may want to find and show them again.
+ */
+export function hiddenOf({ boxes, connectors }) {
+  const byId = new Map(boxes.map((o) => [o.id, o]));
+  const hidden = new Set();
+  const isHidden = (o) => {
+    const seen = new Set();
+    for (let p = o; p && !seen.has(p.id); p = typeof p.parent === 'string' ? byId.get(p.parent) : undefined) {
+      if (p.hidden === true) return true;
+      seen.add(p.id);
+    }
+    return false;
+  };
+  for (const o of boxes) if (isHidden(o)) hidden.add(o.id);
+  for (const c of connectors) if (c.hidden === true || [c.from, c.to].some((e) => e?.kind === 'bound' && hidden.has(e.id))) hidden.add(c.id);
+  return hidden;
+}
+
 export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];
@@ -239,6 +260,7 @@ export function summarise(o, textMax, detail = false) {
   if (typeof o.fill === 'string') out.fill = cleanForModel(o.fill, 64).text;
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
   if (o.locked === true) out.locked = true;
+  if (o.hidden === true) out.hidden = true;
   if (detail) {
     addDetail(out, o);
     if (typeof o.stereotype === 'string') out.stereotype = cleanForModel(o.stereotype, 100).text;

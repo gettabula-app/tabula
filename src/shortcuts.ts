@@ -55,6 +55,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'View', keys: 'Hold Space', action: 'Pan while held', ids: ['space'] },
   { group: 'View', keys: 'Ctrl/Cmd+K or /', action: 'Ask AI', ids: ['mod+k', '/'] },
   { group: 'View', keys: 'M', action: 'Open or close board chat', ids: ['m'] },
+  { group: 'View', keys: 'Alt+L', action: 'Layers panel', ids: ['alt+l'] },
   { group: 'While dragging', keys: 'Alt while dragging', action: 'Ignore grid and guides', ids: [] },
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
 ];

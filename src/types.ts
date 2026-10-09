@@ -72,12 +72,14 @@ export interface BaseObj extends Partial<StyleFields> {
   z: string;
   parent?: Id;
   locked?: boolean;
+  /** Hidden for everyone (TAB-198): not drawn, hit, selected or exported; listed dimmed in the layers panel. Not private. */
+  hidden?: boolean;
   createdBy?: string;
   updatedAt?: number;
   text?: string;
   // shape
   kind?: ShapeKind;
-  // frame
+  // a frame's title; for anything else the name the layers panel shows (TAB-198)
   name?: string;
   // icon
   ref?: string;
@@ -132,6 +134,8 @@ export interface ConnectorObj {
   updatedAt?: number;
   // unused geometry fields kept for uniform handling
   x?: number; y?: number; w?: number; h?: number; rotation?: number; parent?: Id; locked?: boolean;
+  hidden?: boolean;
+  name?: string;
 }
 
 export type Obj = BaseObj | ConnectorObj;
