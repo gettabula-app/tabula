@@ -156,27 +156,33 @@ describe('a crash at every boundary of the swap', () => {
     expect(outcomes.filter((o) => o.endsWith(':new')).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('does the same when the swap really stops there, and leaves the same directory as the copy of that boundary', async () => {
-    const w = await walked();
-    const { points, snapshots } = w;
-    const lastNewMove = lastRename(points);
-    // the first boundary, one in the middle of moving the old files out, the first and the last of moving the new ones in, the end
-    const real = [0, points.indexOf('moved-old-3'), points.indexOf('moved-new-0'), lastNewMove, points.length - 1];
-    for (const i of real) {
-      const plan = crashPlan(i);
-      const f = await fixture(plan.hook);
-      try {
-        await expect(restoreIt(f)).rejects.toBeInstanceOf(SimulatedCrash);
-        // a crashed process never leaves by itself
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        expect(f.exits, `point ${i} ${points[i]}`).toEqual([]);
-        // the directory a real crash leaves has the shape of the copy taken at that boundary
-        expect(shape(f.h.dir), `crash at ${i} ${points[i]}`).toEqual(shape(snapshots[i]));
-        expect(journalOf(f.h.dir)?.phase ?? null, `${points[i]}`).toBe(journalOf(snapshots[i])?.phase ?? null);
-        await nextStart(f.h.dir, f, points, i);
-      } finally {
-        await f.h.close();
-      }
+  // One test per real crash: each builds its own fixture (the slow part on Windows, TAB-209), so a slow runner spends its
+  // time over five tests of a few seconds each and not over one of them (33.7 s once, against 8 to 10 s as a rule).
+  // The first boundary, one in the middle of moving the old files out, the first and the last of moving the new ones in, the end.
+  const realCrashes: [string, (points: string[]) => number][] = [
+    ['the first boundary', () => 0],
+    ['the middle of moving the old files out', (points) => points.indexOf('moved-old-3')],
+    ['the first of moving the new files in', (points) => points.indexOf('moved-new-0')],
+    ['the last of moving the new files in', (points) => lastRename(points)],
+    ['the end', (points) => points.length - 1],
+  ];
+  it.each(realCrashes)('does the same when the swap really stops at %s, and leaves the same directory as the copy of that boundary', async (_name, boundary) => {
+    const { points, snapshots } = await walked();
+    const i = boundary(points);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const plan = crashPlan(i);
+    const f = await fixture(plan.hook);
+    try {
+      await expect(restoreIt(f)).rejects.toBeInstanceOf(SimulatedCrash);
+      // a crashed process never leaves by itself
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(f.exits, `point ${i} ${points[i]}`).toEqual([]);
+      // the directory a real crash leaves has the shape of the copy taken at that boundary
+      expect(shape(f.h.dir), `crash at ${i} ${points[i]}`).toEqual(shape(snapshots[i]));
+      expect(journalOf(f.h.dir)?.phase ?? null, `${points[i]}`).toBe(journalOf(snapshots[i])?.phase ?? null);
+      await nextStart(f.h.dir, f, points, i);
+    } finally {
+      await f.h.close();
     }
   });
 
