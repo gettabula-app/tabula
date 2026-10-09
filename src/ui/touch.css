@@ -1,0 +1,42 @@
+/* Touch sizing: keep the canvas scale intact while giving focused fields and controls usable targets. */
+@media (pointer: coarse) {
+  :root {
+    --touch-min-font-size: 16px;
+    --touch-target-size: 44px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='reset']):not([type='image']):not([type='color']):not([type='hidden']),
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable='false']) {
+    font-size: max(var(--touch-min-font-size), var(--touch-input-font-size, var(--touch-min-font-size))) !important;
+    min-width: var(--touch-target-size) !important;
+    min-height: var(--touch-target-size) !important;
+  }
+
+  :where(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), button, a[href], [role='button'], [role='menuitem'], [role='menuitemradio'], [role='option'], [role='radio'], [role='checkbox'], [role='tab'], [role='switch'], [role='combobox'], [role='spinbutton'], [tabindex]:not([tabindex='-1']), summary) {
+    min-width: var(--touch-target-size) !important;
+    min-height: var(--touch-target-size) !important;
+  }
+
+  /* Native checkboxes and radios stay visually small; their associated label is the finger target. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+
+  label:has(input[type='checkbox']),
+  label:has(input[type='radio']) {
+    display: inline-flex;
+    align-items: center;
+    min-width: var(--touch-target-size) !important;
+    min-height: var(--touch-target-size) !important;
+  }
+
+  /* This textarea is transformed with the board camera; its discrete target is the board object. */
+  .text-editor {
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+}
