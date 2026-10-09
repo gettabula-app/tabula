@@ -71,6 +71,18 @@ function loadAssets(env, authEnabled) {
   };
 }
 
+// Team chat (docs/chat.md). Off unless TABULA_CHAT=on, and only in accounts mode: chat needs an identity the server
+// trusts, which open mode does not have.
+function loadChat(env, authEnabled, warn) {
+  const mode = (env.TABULA_CHAT ?? '').trim() || 'off';
+  if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_CHAT must be on or off (got "${mode.slice(0, 20)}")`);
+  if (mode === 'on' && !authEnabled) {
+    warn('TABULA_CHAT=on is ignored: chat needs accounts mode (TABULA_AUTH=on)');
+    return false;
+  }
+  return mode === 'on';
+}
+
 // AI features (docs/ai.md). The secrets are not enumerable, so printing or serialising the config never shows them.
 // Open mode has no accounts to own a key, so it needs both the operator's key and the explicit TABULA_AI_OPEN=1: a key
 // alone never turns AI on, because anyone with a board link would then spend it.
@@ -186,6 +198,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const mcp = loadMcp(env, authEnabled, url);
   const ai = loadAi(env, authEnabled, warn);
   const assets = loadAssets(env, authEnabled);
+  const chat = loadChat(env, authEnabled, warn);
 
   return {
     authEnabled,
@@ -202,6 +215,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
     ai,
     assets,
+    ...(chat ? { chat: true } : {}),
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),
   };

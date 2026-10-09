@@ -94,6 +94,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.settings', 'ai.key.set', 'ai.key.delete',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
+  'chat.delete', 'chat.settings',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -262,6 +263,19 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'assets.gc': {
       const rows = typeof d.rows === 'number' ? d.rows : 0;
       return `${who} removed ${rows} unused image${rows === 1 ? '' : 's'}`;
+    }
+    case 'chat.delete': {
+      const author = named('user', d.authorId) ?? 'a former member';
+      const chatBoard = d.kind === 'board' ? named('board', d.ref) : undefined;
+      const where = d.kind === 'board' ? (chatBoard ? ` in ${quote(chatBoard)}` : ' in a board chat') : '';
+      return `${who} removed a message by ${author}${where}`;
+    }
+    case 'chat.settings': {
+      const changes: string[] = [];
+      if (flag(d.viewersMayPost) !== undefined) changes.push(d.viewersMayPost ? 'viewers may post' : 'viewers read only');
+      if (d.retentionDays === null) changes.push('keep messages forever');
+      else if (typeof d.retentionDays === 'number') changes.push(`keep messages ${countLabel(d.retentionDays, 'day', 'days')}`);
+      return `${who} changed the chat settings${changes.length ? ` (${changes.join(', ')})` : ''}`;
     }
     default:
       return entry.action;

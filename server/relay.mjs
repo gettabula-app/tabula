@@ -141,6 +141,10 @@ let auth = null;
 let api = null;
 let cloud = null;
 let buildApi = null;
+// Team chat (docs/chat.md), accounts mode with TABULA_CHAT=on only. chat.sqlite is opened on first use.
+let chat = null;
+let chatHub = null;
+let chatStore = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -154,6 +158,30 @@ if (config.authEnabled) {
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
+  if (config.chat) {
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }] = await Promise.all([
+      import('./chat.mjs'),
+      import('./chat-access.mjs'),
+      import('./chat-hub.mjs'),
+      import('./chat-routes.mjs'),
+    ]);
+    const store = () => {
+      if (maintenance) throw new Error('the workspace is being restored');
+      return (chatStore ??= openChat(path.join(DATA_DIR, 'chat.sqlite')));
+    };
+    const access = boundAccess({ directory, cloud, settings: () => readChatSettings(directory) });
+    chatHub = createChatHub({
+      auth,
+      directory,
+      access,
+      summary: (user) => unreadSummary({ directory, store, user }),
+      channelUnread: (userId, kind, ref) => store().channelUnread(userId, kind, ref),
+      events,
+      readOnly: cloud?.limits().readOnly === true,
+      log,
+    });
+    chat = { store, access, hub: chatHub };
+  }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
@@ -234,7 +262,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -263,6 +291,10 @@ async function enterMaintenance() {
     ws.denied = true; // the role check that runs every second leaves it alone
     ws.close(CLOSE_RESTORING, 'restoring');
   }
+  // Chat sockets go too, and chat.sqlite is closed so the restore can move it (Windows will not move an open file).
+  chatHub?.closeAll(CLOSE_RESTORING, 'restoring');
+  chatHub?.stop();
+  closeChat();
   saveAllRooms();
   roomsFrozen = true;
   for (const room of rooms.values()) {
@@ -760,6 +792,18 @@ async function onRequest(req, res) {
 
 const server = http.createServer(onRequest);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+// The /chat socket (docs/chat.md): small JSON frames only, so a much smaller limit than the Yjs rooms.
+const chatWss = chatHub ? new WebSocketServer({ noServer: true, maxPayload: (await import('./chat-hub.mjs')).MAX_CLIENT_FRAME }) : null;
+
+function closeChat() {
+  const store = chatStore;
+  chatStore = null;
+  try {
+    store?.close();
+  } catch (err) {
+    log('chat: could not close the database', err?.message);
+  }
+}
 
 // ---------------------------------------------------------------- accounts: who is connected
 
@@ -879,6 +923,32 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy();
     return;
   }
+  let pathname = null;
+  try {
+    pathname = new URL(req.url, 'http://x').pathname;
+  } catch {
+    pathname = null;
+  }
+  if (pathname === '/chat') {
+    if (!chatWss) {
+      socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    chatWss.handleUpgrade(req, socket, head, (ws) => {
+      if (maintenance) {
+        ws.close(CLOSE_RESTORING, 'restoring');
+        return;
+      }
+      try {
+        chatHub.connect(ws, req);
+      } catch (err) {
+        log('chat: could not open a socket', err?.message);
+        ws.close(1011, 'internal_error');
+      }
+    });
+    return;
+  }
   let name = null;
   try {
     const m = new URL(req.url, 'http://x').pathname.match(/^\/sync\/([^/]+)$/);
@@ -973,7 +1043,9 @@ async function stopRelay() {
   saveAllRooms();
   restore?.stop();
   history.close();
+  chatHub?.stop();
   if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+  closeChat();
   directory?.close();
   process.exit(0);
 }

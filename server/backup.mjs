@@ -62,7 +62,7 @@ const ROOM_FILE_RE = /^[A-Za-z0-9_-]{1,64}(?:~comments)?\.yjs$/;
 const BOARD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const VERSION_ID_RE = /^[A-Za-z0-9_-]{16}$/;
 const ASSET_PATH_RE = /^assets\/([0-9a-f]{2})\/([0-9a-f]{64})$/;
-const STALE_TEMP_RE = /^directory\.sqlite\.backup-[0-9a-f]{16}\.tmp(?:-journal|-wal|-shm)?$/;
+const STALE_TEMP_RE = /^(?:directory|chat)\.sqlite\.backup-[0-9a-f]{16}\.tmp(?:-journal|-wal|-shm)?$/;
 const S3_CODE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const ERRNO_RE = /^[A-Z0-9_]{2,40}$/;
 
@@ -374,13 +374,13 @@ export function assetHashOf(rel) {
 }
 
 /**
- * Whether `rel` is a path the engine itself writes: directory.sqlite, a top-level room file, an image file under
- * `assets/<aa>/`, or a board's history index or version file. Restore accepts nothing else from a manifest.
+ * Whether `rel` is a path the engine itself writes: directory.sqlite, chat.sqlite, a top-level room file, an image
+ * file under `assets/<aa>/`, or a board's history index or version file. Restore accepts nothing else from a manifest.
  * @param {unknown} rel
  */
 export function isBackupPath(rel) {
   if (typeof rel !== 'string') return false;
-  if (rel === 'directory.sqlite' || ROOM_FILE_RE.test(rel) || assetHashOf(rel) !== null) return true;
+  if (rel === 'directory.sqlite' || rel === 'chat.sqlite' || ROOM_FILE_RE.test(rel) || assetHashOf(rel) !== null) return true;
   const parts = rel.split('/');
   if (parts.length !== 3 || parts[0] !== 'history' || !BOARD_ID_RE.test(parts[1])) return false;
   if (parts[2] === 'index.json') return true;
@@ -1033,9 +1033,12 @@ export function createBackup({
     }
   }
 
-  /** A consistent copy of the directory database, taken while the server uses it. The engine's own rows are left out. */
-  async function copyDirectory(source) {
-    const tmp = path.join(dataDir, `directory.sqlite.backup-${crypto.randomBytes(8).toString('hex')}.tmp`);
+  /**
+   * A consistent copy of a database (directory.sqlite or chat.sqlite), taken while the server uses it. The directory's
+   * copy leaves out the engine's own rows; the chat database has none.
+   */
+  async function copyDatabase(source, rel) {
+    const tmp = path.join(dataDir, `${rel}.backup-${crypto.randomBytes(8).toString('hex')}.tmp`);
     tempFile = tmp;
     try {
       const { DatabaseSync } = await import('node:sqlite');
@@ -1061,7 +1064,7 @@ export function createBackup({
         copy.close();
       }
       const size = fs.statSync(tmp).size;
-      if (size > maxFileBytes) throw tooLarge('directory.sqlite', size, maxFileBytes);
+      if (size > maxFileBytes) throw tooLarge(rel, size, maxFileBytes);
       const data = await fs.promises.readFile(tmp);
       // The file change counter (and the copy of it SQLite keeps for validity) counts the writes made to this temporary
       // copy, which differ from run to run. SQLite recomputes it, so a fixed value keeps an unchanged database unchanged.
@@ -1096,7 +1099,10 @@ export function createBackup({
   /** One file at a time, so only one is in memory. `skipped` counts what was left out because it vanished or is damaged. */
   async function* snapshotFiles(counters) {
     const database = path.join(dataDir, 'directory.sqlite');
-    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDirectory(database) };
+    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDatabase(database, 'directory.sqlite') };
+    // Team chat (docs/chat.md) keeps its own database, copied the same way; it exists once chat was first used.
+    const chat = path.join(dataDir, 'chat.sqlite');
+    if (isFileSync(chat)) yield { path: 'chat.sqlite', data: await copyDatabase(chat, 'chat.sqlite') };
 
     const names = (await fs.promises.readdir(dataDir, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && ROOM_FILE_RE.test(entry.name))
