@@ -172,7 +172,7 @@ If something fails before the swap, nothing changes and the page says why in pla
 
 A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Hover an entry to see the underlying action name.
 
-- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions** or **AI**. The **AI** filter shows changes to the AI settings and when keys are added or removed.
+- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added or removed. **Backups** shows the automatic backup runs (and failures) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
 
 Entries with no person are shown as the system, for example when a hosted workspace is locked or unlocked.

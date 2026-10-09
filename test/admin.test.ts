@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, createApi, type AdminOverview, type AuditEntry } from '../src/api';
+import { errorReason } from '../src/ui/backups-logic';
 import {
   activeOwnerCount,
   auditActor,
@@ -118,6 +119,22 @@ describe('auditSentence', () => {
     ['chat.delete by a removed author on a board that is gone', entry('chat.delete', { kind: 'board', ref: 'gone', messageId: 7, authorId: null }), 'ana@example.com removed a message by a former member in a board chat'],
     ['chat.settings', entry('chat.settings', { viewersMayPost: true, retentionDays: 90 }), 'ana@example.com changed the chat settings (viewers may post, keep messages 90 days)'],
     ['chat.settings forever', entry('chat.settings', { viewersMayPost: false, retentionDays: null }), 'ana@example.com changed the chat settings (viewers read only, keep messages forever)'],
+    ['backup.run', entry('backup.run', { changed: true, files: 14, uploaded: 3 }, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace (14 files, 3 new)'],
+    ['backup.run with nothing known', entry('backup.run', {}, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace'],
+    ['backup.failed', entry('backup.failed', { error: 'S3 PUT failed (status 403, AccessDenied)' }, { actorId: null, actorName: null, actorEmail: null }), 'A backup failed: S3 PUT failed (status 403, AccessDenied)'],
+    ['backup.failed with a long reason', entry('backup.failed', { error: 'x'.repeat(300) }), `A backup failed: ${'x'.repeat(119)}…`],
+    ['backup.list', entry('backup.list'), 'ana@example.com looked at the list of backups'],
+    ['backup.preview', entry('backup.preview', { manifest: '20260115T093000Z.json.enc' }), 'ana@example.com looked at the backup of 2026-01-15 09:30 UTC'],
+    ['backup.preview with a bad name', entry('backup.preview', { manifest: '../x' }), 'ana@example.com looked at a backup'],
+    ['backup.boards', entry('backup.boards', { manifest: '20260115T093000Z.json.enc', count: 12 }), 'ana@example.com listed the boards of the backup of 2026-01-15 09:30 UTC (12 boards)'],
+    ['restore.started whole', entry('restore.started', { kind: 'workspace', manifest: '20260115T093000Z.json.enc' }), 'ana@example.com started restoring the whole workspace from the backup of 2026-01-15 09:30 UTC'],
+    ['restore.started board', entry('restore.started', { kind: 'board', manifest: '20260115T093000Z.json.enc' }), 'ana@example.com started restoring a board as a copy from the backup of 2026-01-15 09:30 UTC'],
+    ['restore.done whole', entry('restore.done', { kind: 'workspace', manifest: '20260115T093000Z.json.enc', boards: 9, users: 4, sessionsRemoved: 6 }), 'ana@example.com restored the whole workspace from the backup of 2026-01-15 09:30 UTC (9 boards, 4 people, 6 sessions ended)'],
+    ['restore.done board', entry('restore.done', { kind: 'board', manifest: '20260115T093000Z.json.enc', boardId: 'b1', fallback: 'team' }), 'ana@example.com restored “Roadmap” as a copy from the backup of 2026-01-15 09:30 UTC'],
+    ['restore.done board in the personal space', entry('restore.done', { kind: 'board', manifest: '20260115T093000Z.json.enc', boardId: 'b1', fallback: 'personal' }), 'ana@example.com restored “Roadmap” as a copy from the backup of 2026-01-15 09:30 UTC in their personal space'],
+    ['restore.failed whole', entry('restore.failed', { kind: 'workspace', manifest: '20260115T093000Z.json.enc', error: 'not_enough_space' }), 'Restoring the whole workspace from the backup of 2026-01-15 09:30 UTC failed: ' + errorReason('not_enough_space')],
+    ['restore.failed board without a reason', entry('restore.failed', { kind: 'board', manifest: '20260115T093000Z.json.enc' }), 'Restoring a board copy from the backup of 2026-01-15 09:30 UTC failed'],
+    ['restore.old_data_removed', entry('restore.old_data_removed', { ageDays: 7, mode: 'days' }, { actorId: null, actorName: null, actorEmail: null }), 'The old data of a restore was removed (7 days old)'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -169,6 +186,8 @@ describe('auditSentence', () => {
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
       'asset.upload', 'assets.gc',
       'chat.delete', 'chat.settings',
+      'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
+      'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });
