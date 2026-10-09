@@ -50,6 +50,8 @@ describe('group renderer overlays', () => {
       store.create(group('g', 'a1', 'outer'));
       store.create(sticky('a', 'a2', 'g', 10));
       store.create(sticky('b', 'a3', 'g', 120));
+      store.create(group('nested', 'a4', 'g'));
+      store.create(sticky('c', 'a5', 'nested', 230));
     });
     renderer = new Renderer(store, new FakeEl() as unknown as HTMLElement);
   });
@@ -82,7 +84,14 @@ describe('group renderer overlays', () => {
     expect(svg()).toContain('stroke-dasharray="6 4"');
     expect(dimPath().getAttribute('fill')).toBe('var(--group-dim)');
     expect(dimPath().getAttribute('class')).toBe('group-dim-wash active');
-    expect(`${svg()}${dimPath().getAttribute('fill')}`).not.toContain('#');
+    expect(dimPath().getAttribute('fill-rule')).toBe('evenodd');
+    const dimD = dimPath().getAttribute('d') ?? '';
+    expect(svg()).toContain('stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="3"');
+    expect(dimD).toContain('M10 20h80v60h-80z');
+    expect(dimD).toContain('M120 20h80v60h-80z');
+    expect(dimD).toContain('M230 20h80v60h-80z');
+    expect(dimD).not.toContain('M10 20h300v60h-300z');
+    expect(`${svg()}${dimPath().getAttribute('fill')}${dimD}`).not.toContain('#');
   });
 
   it('lifts a lock hover to the outermost locked group and uses the tray badge tokens', () => {

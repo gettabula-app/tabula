@@ -10,7 +10,14 @@ describe('group UI motion and touch targets', () => {
   });
 
   it('gives the touch Done chip and Group actions 44 px targets', () => {
-    expect(css).toMatch(/pointer:\s*coarse[\s\S]*?\.group-done\s*\{[^}]*height:\s*44px;[^}]*min-width:\s*44px;/);
+    expect(css).toMatch(/pointer:\s*coarse[\s\S]*?\.group-done\s*\{[^}]*height:\s*28px;[^}]*min-width:\s*44px;/);
+    expect(css).toMatch(/pointer:\s*coarse[\s\S]*?\.group-done::after\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/);
     expect(css).toMatch(/pointer:\s*coarse[\s\S]*?\.icon-btn\.qb-text\.group-action\s*\{[^}]*height:\s*44px;[^}]*min-width:\s*44px;/);
+  });
+
+  it('stacks group chips above the transformed canvas and lets the gap cover pins', () => {
+    expect(css).toMatch(/\.board-surface\s*\{\s*z-index:\s*0;\s*\}/);
+    expect(css).toMatch(/\.group-chip-bridge\s*\{[^}]*z-index:\s*20;[^}]*pointer-events:\s*none;[^}]*background:\s*var\(--group-chip-bg\);/);
+    expect(css).toMatch(/\.group-chip,\s*\.group-done\s*\{[^}]*z-index:\s*20;/);
   });
 });
