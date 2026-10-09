@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 // stub: `statfs` when they build it, TABULA_TEST_RESTORE_DISK_USED when they start a relay.
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const sources = fs.readdirSync(here)
+// test/ and the restore drill in test/drill (`npm run drill:local`), which follows the same rules
+const sources = ['', 'drill']
+  .flatMap((sub) => fs.readdirSync(path.join(here, sub)).map((f) => (sub ? `${sub}/${f}` : f)))
   .filter((f) => f.endsWith('.ts') && f !== 'no-real-disk.test.ts')
   .map((f) => ({ f, text: fs.readFileSync(path.join(here, f), 'utf8') }));
 

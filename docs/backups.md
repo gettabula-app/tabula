@@ -250,6 +250,33 @@ Errors are shown as plain sentences, never as codes: one table in `src/ui/backup
 - The app's boards that are open in a browser get close code `4503` and show **Restoring…** until the server is back (see [In the app](#in-the-app)); the page then reloads and everybody signs in again, because every session is gone. An older app that does not know `4503` keeps reconnecting and fails with "sign in again" (`4401`).
 - Not tested against a real S3 provider, a real Fly restart, or a data directory of production size.
 
+## Rehearsing a restore locally
+
+`npm run drill:local` rehearses, on your own machine, the restore drill of the ops runbook (section 8) as far as it can
+run without Fly: a relay started exactly as `npm start` starts it, backing up to the in-memory S3 of the backup tests,
+with a fake control plane for the hosted parts. It runs `test/drill/*.drill.test.ts` (never part of `npm test` or CI;
+`test/drill-config.test.ts` checks that) and prints a checklist of the runbook boxes, each passed, failed or not
+rehearsed with the reason and its duration, followed by a filled drill record (section 9). It exits with 1 when a box
+failed, and takes about half a minute.
+
+It seeds one workspace with every kind of data (an owner, a member and a workspace admin, a team, a board with objects
+and a comment, a board with a picture, a named version and a chat message) and then goes through these boxes:
+
+- 8.2: a backup runs by itself and its bucket keys say nothing about the workspace; an edit followed by a graceful stop
+  is in the bucket; a workspace admin who is not the owner is refused on every backup route; a board restored as a copy,
+  with its comment and picture, and the copy of a board whose team no longer exists; a whole restore (maintenance mode,
+  exit 75, the start that follows, everyone signed out, the safety backup protected); both ways the old data is kept;
+  a lost data directory restored from the bucket on an empty server; another key; a damaged object; a key rotation; a
+  missing object that the prune reports and the next run repairs; and a search of every log, the audit log and the status
+  for the key, the S3 secret and a request signature.
+- 8.1, local analogue: a copy of the data directory started with a new `TABULA_FLY_VOLUME_ID` is adopted as a restored
+  copy (see Volumes and restores).
+
+What it does not cover: Fly volume snapshots and mounts, the real bucket provider, Stripe and the control plane's own
+side, real recovery times and data loss (the times in the record are local only and not representative), the daily deep
+verify (it cannot be started early without a new hook), the Restoring… screen in a browser, and a swap that is cut off
+in the middle, which `test/restore-swap.test.ts` and `test/restore-relay.test.ts` cover.
+
 ## Volumes and restores
 
 The backups above restore data **into** a running server. A hosted workspace can also be brought back a level lower: an operator restores a Fly volume snapshot into a **new** volume and points the machine at it (the ops runbook's Tier 1 restore). The server then runs on a copy of an older disk, and it must notice: anything that was live on the disk when the snapshot was taken (sessions, a half-done backup run) belongs to the past, and a volume of **another** workspace, attached by mistake, must never be served.
