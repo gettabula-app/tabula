@@ -27,7 +27,10 @@ async function launch(dir: string, env: Record<string, string>, { waitForStart =
   const proc = spawn(process.execPath, ['server/relay.mjs'], {
     env: {
       ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com',
-      TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`, TABULA_TRUST_PROXY: '1', ...env,
+      TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`, TABULA_TRUST_PROXY: '1',
+      // a restore or its preview reads how full the disk is; the runner's own disk must not decide a test's outcome
+      TABULA_TEST_RESTORE_DISK_USED: '0.2',
+      ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
