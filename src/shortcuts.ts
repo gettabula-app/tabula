@@ -42,6 +42,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Delete, Backspace', action: 'Delete selection', ids: ['delete', 'backspace'] },
   { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item, open a card, or open a kanban as a list', ids: ['enter'] },
   { group: 'Edit', keys: 'Arrows (Shift for grid steps)', action: 'Nudge', ids: ['arrows'] },
+  { group: 'Edit', keys: 'Alt+Shift+Arrows on a text', action: 'Left and right change the width the text wraps at; up and down change its size', ids: [] },
   { group: 'Edit', keys: 'K', action: 'Turn sticky notes into cards, or cards into sticky notes', ids: ['k'] },
   { group: 'Edit', keys: 'Alt+Arrows on a kanban card', action: 'Move the card in its lane, or to the next lane', ids: [] },
   { group: 'Edit', keys: ']', action: 'Bring to front', ids: [']'] },

@@ -15,7 +15,8 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, kanbanHeaderControls, objectMarkup, textHeight } from './markup';
+import { cardBody, kanbanHeaderControls, objectMarkup, styleOf, textHeight } from './markup';
+import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
   KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
   cardsToStickies, containerOf, laneOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
@@ -583,11 +584,12 @@ export class BoardApp {
     return this.r.clientToWorld(e.clientX, e.clientY);
   }
 
-  private handleAt(p: Point): { id: Id; h: HandleId } | null {
+  private handleAt(p: Point, touch = false): { id: Id; h: HandleId } | null {
     if (this.readOnly || this.selection.length !== 1) return null;
     const o = this.store.getPlaced(this.selection[0]);
     if (!o) return null;
-    const tol = 8 / this.zoom;
+    // a finger needs a larger target than a pointer: handles are drawn larger on a touch screen too (render.ts)
+    const tol = (touch ? 22 : 8) / this.zoom;
     for (const h of handlesFor(o, (id) => this.store.getPlaced(id), this.zoom, this.r.connectorLayout())) {
       if (Math.abs(h.p.x - p.x) <= tol && Math.abs(h.p.y - p.y) <= tol) return { id: o.id, h: h.id };
     }
@@ -683,7 +685,7 @@ export class BoardApp {
     }
 
     // Handles of the current selection (the comment tool never starts a drag)
-    const hh = this.tool.kind === 'comment' ? undefined : this.handleAt(p);
+    const hh = this.tool.kind === 'comment' ? undefined : this.handleAt(p, e.pointerType === 'touch');
     if (hh) {
       const o = this.store.getPlaced(hh.id)!;
       if (hh.h === 'from' || hh.h === 'to') this.drag = { mode: 'endpoint', id: o.id, end: hh.h };
@@ -1666,7 +1668,20 @@ export class BoardApp {
     );
   }
 
+  /** A corner of a text: scales its type and its width together, the opposite corner staying where it is (src/text-resize.ts). */
+  private doTextScale(d: Extract<Drag, { mode: 'resize' }>, p: Point) {
+    const o0 = d.o0;
+    const corner = d.handle as Corner;
+    const { fontSize, w } = scaledText(o0, cornerFactor(o0, corner, toLocal(o0, p)));
+    const h = textHeight({ ...o0, fontSize, w });
+    const box = cornerBox(o0, corner, w, h);
+    const c = rotate({ x: o0.x + (box.l + box.r) / 2, y: o0.y + (box.t + box.b) / 2 }, center(o0), o0.rotation || 0);
+    this.r.setOverlay({ guides: [] });
+    this.queue(() => this.store.transact(() => this.store.update(d.id, { x: c.x - w / 2, y: c.y - h / 2, w, h, fontSize })));
+  }
+
   private doResize(d: Extract<Drag, { mode: 'resize' }>, p: Point, e: PointerEvent) {
+    if (d.o0.type === 'text' && isCorner(d.handle)) return this.doTextScale(d, p);
     const o0 = d.o0;
     const lp = toLocal(o0, p);
     let l = 0, t = 0, r = o0.w, b = o0.h;
@@ -2072,6 +2087,8 @@ export class BoardApp {
         if (ro) return;
         // Alt+arrows move a card in its lane or to the next lane (docs/kanban.md, Cards)
         if (e.altKey && this.keyboardCardMove(k.slice(5) as MoveKey)) return;
+        // Alt+Shift+arrows resize a selected text: left and right the wrap width, up and down the type (src/text-resize.ts)
+        if (e.altKey && e.shiftKey && this.resizeTextByKey(k.slice(5) as TextKey)) return;
         const step = e.shiftKey ? this.grid() : 1;
         const dx = k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0;
         const dy = k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0;
@@ -2142,6 +2159,20 @@ export class BoardApp {
   }
 
   // ---------------------------------------------------------------- commands
+
+  /** Alt+Shift+arrow on selected texts: one undo step, announced. False when the selection holds no text to resize. */
+  private resizeTextByKey(key: TextKey): boolean {
+    const texts = this.selected().filter((o): o is BaseObj => o.type === 'text' && !o.locked);
+    if (!texts.length || texts.length !== this.selection.length) return false;
+    const patches = texts.map((o) => ({ o, patch: keyResize(o, key) })).filter((x) => x.patch !== null);
+    if (!patches.length) return true;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => patches.forEach(({ o, patch }) => this.store.update(o.id, patch!)));
+    this.store.undo.stopCapturing();
+    const first = this.store.get(patches[0].o.id) as BaseObj;
+    this.announce(key === 'left' || key === 'right' ? `Text width ${Math.round(first.w)}` : `Text size ${styleOf(first).fontSize}`);
+    return true;
+  }
 
   nudge(dx: number, dy: number) {
     this.store.transact(() => {
