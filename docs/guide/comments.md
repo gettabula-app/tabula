@@ -88,6 +88,7 @@ Comments are separate from the board's undo history. `Ctrl+Z` (`Cmd+Z` on Mac) n
 
 ## Related
 
+- [Board chat](chat.md)
 - [Sharing, roles and teams](sharing.md)
 - [Version history](version-history.md)
 - [Export and import](export-import.md)

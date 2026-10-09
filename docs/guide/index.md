@@ -21,6 +21,7 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 ## Working together
 
 - [Comments](comments.md)
+- [Board chat](chat.md)
 - [Polls](polls.md)
 - [Sessions and focus requests](sessions.md)
 - [Sharing, roles and teams](sharing.md)
