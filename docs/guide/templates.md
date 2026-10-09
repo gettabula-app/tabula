@@ -124,6 +124,8 @@ Files that are not valid templates, or that were made by a newer version of Tabu
 | Strategy | SWOT, Business Model Canvas, Lean Canvas |
 | Risk | Pre-mortem |
 
+![The Business Model Canvas template added to a board, with the session bar ready at the bottom](images/template-business-model-canvas.png)
+
 Four of these are laid out as one-page canvases or agendas:
 
 - **Business Model Canvas** has the nine blocks (key partners, activities and resources, value propositions, customer relationships and channels, customer segments, cost structure and revenue streams), each with a question to answer.

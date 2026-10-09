@@ -158,8 +158,10 @@ A run needs the right to edit the board, reads it without private notes, comment
 | ![Board menu with the theme picker, Matrix theme active](docs/images/themes-menu-matrix.png) | ![Ayu theme on a board](docs/images/theme-ayu.png) |
 | **Accounts: sign in** | **Accounts: home screen with teams** |
 | ![Sign-in screen](docs/images/signin.png) | ![Boards page with a team, personal boards and boards shared with you](docs/images/teams-home.png) |
-| **Accounts: access removed** | |
-| ![Banner shown when your access to a board is removed](docs/images/access-removed.png) | |
+| **Accounts: access removed** | **Accounts: roles in the Share dialog** |
+| ![Banner shown when your access to a board is removed](docs/images/access-removed.png) | ![Share dialog listing a team as Editor and a person as Commenter, with the add row](docs/images/share-roles.png) |
+| **Built-in template (Business Model Canvas)** | |
+| ![The Business Model Canvas template on a board with the session bar ready](docs/images/template-business-model-canvas.png) | |
 
 ## What works today
 

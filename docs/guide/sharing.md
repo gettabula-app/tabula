@@ -27,9 +27,11 @@ Each row has a role menu that saves when you change it, and a **Remove** button 
 
 Adding a team gives every member of that team the role, unless they already have a higher one. To invite someone who is not in your workspace yet, send a team invite instead (see below).
 
-<!-- screenshot: the Share this board dialog in a workspace with sign-in -->
+![The Share this board dialog showing the team Design as Editor and Ana as Commenter, with the Add a person or team row below](images/share-roles.png)
 
 ## Signing in
+
+![The Tabula sign-in page with an email field and the Email me a link button](images/signin.png)
 
 1. Open your workspace address. The sign-in page asks for your email.
 2. Enter it and select **Email me a link**.
@@ -118,6 +120,8 @@ Anyone with the link who confirms their email can join the team. The invite page
 Owners and admins select **Members** on the home screen to change workspace roles, **Disable** or **Enable** a person, or remove them. A removed member is signed out everywhere and loses access immediately. Their local copies stay on their devices. The [admin dashboard](admin.md) has a fuller version of this list.
 
 ## When your access changes
+
+![The banner that says your access to the board was removed, with Remove from this device](images/access-removed.png)
 
 The server checks access while you work, so a change applies to a board that is already open.
 

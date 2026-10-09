@@ -7,7 +7,7 @@ name: User guide
 on:
   push:
     branches: [main]
-    paths: ['docs/guide/**']
+    paths: ['docs/guide/**', 'docs/images/**']
   workflow_dispatch:
 
 permissions:

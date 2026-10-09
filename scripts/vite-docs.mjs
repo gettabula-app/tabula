@@ -8,7 +8,8 @@ import { escapeHtml as esc, renderMarkdown } from './docs-markdown.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GUIDE = path.join(ROOT, 'docs', 'guide');
-const IMAGES = path.join(GUIDE, 'images');
+// One source of truth for screenshots: the README and the guide both use docs/images (written by npm run docs:images).
+const IMAGES = path.join(ROOT, 'docs', 'images');
 const ENTRY = path.join(ROOT, 'src', 'docs', 'docs.ts');
 const BASE = '/docs/';
 const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };

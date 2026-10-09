@@ -9,7 +9,7 @@ const run = (...paths: string[]) => classify(paths);
 describe('ci change classification', () => {
   it('builds only the guide when the change is under docs/guide', () => {
     expect(run('docs/guide/x.md')).toEqual({ code: false, guide: true });
-    expect(run('docs/guide/images/boards.png')).toEqual({ code: false, guide: true });
+    expect(run('docs/images/boards.png')).toEqual({ code: false, guide: true });
     expect(run('docs/guide/.last-documented', 'CHANGELOG.md')).toEqual({ code: false, guide: true });
   });
 
@@ -17,7 +17,6 @@ describe('ci change classification', () => {
     const none = { code: false, guide: false };
     expect(run('README.md')).toEqual(none);
     expect(run('docs/desktop.md')).toEqual(none);
-    expect(run('docs/images/signin.png')).toEqual(none);
     expect(run('design/ai-toolbar/index.html', 'design/ai-toolbar/shot.png')).toEqual(none);
     expect(run('desktop/README.md', 'server/notes.md', '.claude/agents/implementer.md')).toEqual(none);
     expect(run('LICENSE', 'LICENSE.txt', 'LICENSE-MIT')).toEqual(none);

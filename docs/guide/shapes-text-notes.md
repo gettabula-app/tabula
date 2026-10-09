@@ -59,6 +59,8 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 
 ### Alignment
 
+![The Text popover with Align, Vertical and Text colour](images/text-options.png)
+
 In the quick-action bar, **Text** sets horizontal alignment (left, centre, right) and text colour. For shapes and sticky notes it also sets **Vertical** alignment: top, middle or bottom.
 
 ### Fonts
@@ -82,6 +84,8 @@ For emoji, see [Stickers](stickers.md).
 ## The quick-action bar
 
 Select something and a small bar appears above it (below, if above would cover a connector). It shows only the controls that apply.
+
+![The quick-action bar above a selected ellipse](images/quick-actions.png)
 
 - **Colour**: sticky note colour.
 - **Shape**: change the shape kind.
@@ -117,6 +121,8 @@ Lock an item to stop it getting in the way.
 
 1. Select it and click **Lock** in the quick-action bar.
 2. The selection clears. A message says "Locked. Long-press to unlock."
+
+![The small lock badge on a locked ellipse](images/locked-badge.png)
 
 Locked items behave as background: clicks and box selection pass over them, **Select All** skips them, and you cannot edit them or attach connectors to them. Hovering one shows a small lock badge.
 

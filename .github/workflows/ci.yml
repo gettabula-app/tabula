@@ -27,7 +27,7 @@ env:
 
 jobs:
   # Sorts the change with scripts/ci-changes.mjs, the same ignore set as the push filter above. code: something outside
-  # it changed, so the full pipeline runs. guide: something under docs/guide/ changed. A pull request is compared with
+  # it changed, so the full pipeline runs. guide: something under docs/guide/ or docs/images/ changed. A pull request is compared with
   # the point where it branched off its base, a push with the commit before it (and the push filter has normally kept
   # the docs-only ones out already). Tags, manual runs, new branches, force pushes and any diff that fails count as
   # code, so a doubt builds everything.

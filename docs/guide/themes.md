@@ -21,7 +21,7 @@ Text and accent colours in every theme are chosen to stay readable.
 
 The change applies at once. Your theme choice applies to everything in the app, including the Boards and Templates pages.
 
-<!-- screenshot: the board menu with the Appearance section open, one dark theme active on the board -->
+![The board menu with the Appearance section open and the Matrix theme active](images/themes-menu-matrix.png)
 
 ## What gets themed
 
