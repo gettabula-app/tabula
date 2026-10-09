@@ -3,7 +3,7 @@ import { createApi, type AdminAi } from '../src/api';
 import { ADMIN_TABS } from '../src/route';
 import {
   DATA_NOTICE, FEATURE_OPTIONS, KEY_MAX, KEY_MIN, LIMIT_CAPS, MODEL_OPTIONS, PROVIDER, UNCONFIGURED_TEXT, draftOf, draftProblem, keyDates, keyLine, keyProblem,
-  limitProblem, modelLabel, patchOf, sourceLabel,
+  keyTestErrorMessage, limitProblem, modelLabel, patchOf, sourceLabel,
 } from '../src/ui/ai-logic';
 import { MODELS } from '../server/ai/anthropic.mjs';
 import { PROVIDERS } from '../server/ai/providers.mjs';
@@ -124,6 +124,15 @@ describe('what the screens say about a key', () => {
     expect(sourceLabel('workspace')).toBe('Runs use the workspace key.');
     expect(sourceLabel(null)).toContain('no key yet');
   });
+
+  it('maps stored-key check errors to short messages', () => {
+    expect(keyTestErrorMessage({ code: 'ai_key_invalid' })).toBe('The AI key was rejected.');
+    expect(keyTestErrorMessage({ code: 'ai_rate_limited', facts: { retryAfter: 12 } })).toBe('Too many checks. Try again in 12 s.');
+    expect(keyTestErrorMessage({ status: 429, facts: { retryAfter: 1.2 } })).toBe('Too many checks. Try again in 2 s.');
+    expect(keyTestErrorMessage({ code: 'ai_unavailable' })).toBe("Anthropic isn't responding. Try again in a moment.");
+    expect(keyTestErrorMessage({ code: 'ai_key_unreadable' })).toBe("The key can't be read. Enter it again.");
+    expect(keyTestErrorMessage({ code: 'forbidden' })).toBeNull();
+  });
 });
 
 describe('the API client', () => {
@@ -143,21 +152,27 @@ describe('the API client', () => {
     const { api, calls } = client((c) => (c.init.method === 'DELETE' ? new Response(null, { status: 204 }) : json({ ok: true })));
     await api.aiConfig();
     await api.saveMyAiKey({ provider: 'anthropic', apiKey: 'sk-ant-12345678' });
+    await api.testMyAiKey();
     await api.deleteMyAiKey();
     await api.adminAi();
     await api.updateAdminAi({ enabled: true, limits: { perPersonHour: 3 } });
+    await api.testAdminAiKey();
     await api.deleteAdminAiKey();
     expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
       'GET /api/ai/config',
       'PUT /api/ai/keys/me',
+      'POST /api/ai/keys/me/test',
       'DELETE /api/ai/keys/me',
       'GET /api/admin/ai',
       'PUT /api/admin/ai',
+      'POST /api/admin/ai/key/test',
       'DELETE /api/admin/ai/key',
     ]);
     expect(JSON.parse(calls[1].init.body as string)).toEqual({ provider: 'anthropic', apiKey: 'sk-ant-12345678' });
-    expect(JSON.parse(calls[4].init.body as string)).toEqual({ enabled: true, limits: { perPersonHour: 3 } });
-    expect(calls.map((c) => Object.values(c.init.headers as Record<string, string>).includes('1'))).toEqual([false, true, true, false, true, true]);
+    expect(JSON.parse(calls[2].init.body as string)).toEqual({});
+    expect(JSON.parse(calls[5].init.body as string)).toEqual({ enabled: true, limits: { perPersonHour: 3 } });
+    expect(JSON.parse(calls[6].init.body as string)).toEqual({});
+    expect(calls.map((c) => Object.values(c.init.headers as Record<string, string>).includes('1'))).toEqual([false, true, true, true, false, true, true, true]);
   });
 
   it('reports a rejected key with the server code', async () => {

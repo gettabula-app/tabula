@@ -92,7 +92,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
-  'ai.settings', 'ai.key.set', 'ai.key.delete',
+  'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
@@ -252,6 +252,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return d.scope === 'user' ? `${who} added their own AI key` : `${who} set the workspace AI key`;
     case 'ai.key.delete':
       return d.scope === 'user' ? `${who} removed their own AI key` : `${who} removed the workspace AI key`;
+    case 'ai.key.test': {
+      const key = d.scope === 'user' ? 'their own AI key' : 'the workspace AI key';
+      return `${who} tested ${key}${flag(d.ok) === false ? ' (did not work)' : ''}`;
+    }
     case 'ai.generate':
     case 'ai.summarise':
     case 'ai.cluster': {

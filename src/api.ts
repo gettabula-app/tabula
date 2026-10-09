@@ -129,6 +129,13 @@ export interface AiKeyInfo {
   lastUsedAt: number | null;
 }
 
+/** The result of checking a stored AI key with its provider. */
+export interface AiKeyTest {
+  ok: true;
+  provider: string;
+  checkedAt: number;
+}
+
 /** GET /api/ai/config (docs/ai.md): what AI is available to the person who asks. */
 export interface AiConfig {
   enabled: boolean;
@@ -687,9 +694,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
 
     aiConfig: () => call<AiConfig>('GET', '/api/ai/config'),
     saveMyAiKey: (input: { provider: string; apiKey: string }) => call<{ provider: string; hint: string }>('PUT', '/api/ai/keys/me', input),
+    testMyAiKey: () => call<AiKeyTest>('POST', '/api/ai/keys/me/test', {}),
     deleteMyAiKey: () => call<void>('DELETE', '/api/ai/keys/me'),
     adminAi: () => call<AdminAi>('GET', '/api/admin/ai'),
     updateAdminAi: (patch: AdminAiPatch) => call<AdminAi>('PUT', '/api/admin/ai', patch),
+    testAdminAiKey: () => call<AiKeyTest>('POST', '/api/admin/ai/key/test', {}),
     deleteAdminAiKey: () => call<void>('DELETE', '/api/admin/ai/key'),
 
     adminOverview: () => call<AdminOverview>('GET', '/api/admin/overview'),

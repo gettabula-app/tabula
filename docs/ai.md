@@ -104,8 +104,10 @@ Resolution for a run in accounts mode: the person's own key if they set one and 
 ```
 GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|'platform'|null, model, credits?: {...} }
 PUT    /api/ai/keys/me   { provider, apiKey, baseUrl? }   -> { provider, hint }      (when personal keys are allowed)
+POST   /api/ai/keys/me/test                              -> { ok: true, provider, checkedAt } (when personal keys are allowed)
 DELETE /api/ai/keys/me                                    -> 204
 PUT    /api/admin/ai     { enabled?, features?, model?, personalKeys?, apiKey?, provider?, baseUrl? }   (owner or admin) -> settings, key hint
+POST   /api/admin/ai/key/test                             -> { ok: true, provider, checkedAt } (owner or admin)
 DELETE /api/admin/ai/key                                  -> 204
 POST   /api/ai/run       { feature, boardId, input }      -> text/event-stream
 ```
@@ -166,7 +168,7 @@ Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of 
 - Board content sent per run: at most 400 objects and 60,000 characters of text, nearest the selection or frame first; the result says when content was cut.
 - Output: `max_tokens` 8,000 (cluster and summarise), 4,000 (generate).
 - One run per person at a time; up to three at once on a shared key (the workspace key, the operator's key in open mode) and one on each personal key (`SHARED_KEY_RUNS` in `server/ai/run.mjs`); 20 runs per person per hour and 200 per workspace per hour by default, adjustable by the admin. 429 `rate_limited` with `retry-after`. The counts live in memory and start again from zero when the relay restarts.
-- Saving a key makes an outbound call, so a person gets 10 saves an hour (personal and workspace key together) and one check at a time.
+- Saving or testing a key makes an outbound call, so a person gets 10 checks an hour (personal and workspace key together) and one check at a time.
 - A run is aborted after 120 seconds, and when the person closes the request.
 
 ## Privacy and admin controls
@@ -228,9 +230,10 @@ This is the first slice of phase 1 (TAB-97). The text above is the design; these
 - `GET /api/admin/ai` returns the settings, `hasSecret` and the workspace key as `{ provider, hint, createdAt, lastUsedAt, readable }`; `PUT /api/admin/ai` answers the same. `readable` is false for a key the current secrets cannot open.
 - `GET /api/me` carries `ai: { personalKeys: true }` only when this person may add a key, so the account menu can offer **Your AI key** without another request.
 - A key is verified with the provider (a `models.list` call with a 5 second timeout) before anything is stored. In `PUT /api/admin/ai` the settings and the key are one change: if the key is refused, the settings in that request are not applied either. The caller is checked again after the provider answers.
+- `POST /api/admin/ai/key/test` checks the workspace key for an owner or admin; `POST /api/ai/keys/me/test` checks the caller's key when personal keys are allowed. Both use the same check limit as saving a key, and read the stored key without changing it, re-sealing it or updating `last_used_at`. They work in a read-only hosted workspace. A success returns `{ ok, provider, checkedAt }`; a failure leaves the key and settings alone.
 - Errors: `ai_key_invalid` 400, `ai_rate_limited` 429 with `retry-after`, `ai_unavailable` 502, `ai_unconfigured` 409 (no secret on the server), `ai_key_unreadable` 409 (a stored key the secrets cannot open), anything else `internal` 500. Their messages are fixed text.
 - `DELETE /api/ai/keys/me` and `DELETE /api/admin/ai/key` answer 204 whether or not there was a key, and work while the workspace is read-only. A person can remove their key even after personal keys were switched off.
-- Audit rows: `ai.settings` (the changed settings only), `ai.key.set` and `ai.key.delete` (`{ scope, provider }` and `{ scope }`; never a key or its hint). The audit log has an AI filter.
+- Audit rows: `ai.settings` (the changed settings only), `ai.key.set`, `ai.key.delete` and `ai.key.test` (`{ scope, provider }`, `{ scope }` and `{ scope, provider, ok }`; never a key or its hint). The audit log has an AI filter.
 
 **Logging.** A raw provider error can carry the request headers, so every provider error is mapped to an `AiError` with a fixed message before it leaves `server/ai/anthropic.mjs`. The API's and the relay's error logs write an AI or provider error as its name, code and status only, and any other error as its stack with anything shaped like a key blanked.
 

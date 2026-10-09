@@ -73,7 +73,7 @@ export function createRunGate(caps = {}) {
 export const SAVE_LIMIT_PER_HOUR = 10;
 
 /**
- * Each key save makes an outbound verify call, so a person gets a few an hour and one at a time. `begin` returns a
+ * Each key save or test makes an outbound verify call, so a person gets a few an hour and one at a time. `begin` returns a
  * `{ wait }` (seconds, when refused) or a `{ done }` to call when the check has finished.
  * @param {{ now?: () => number, perHour?: number }} [options]
  */

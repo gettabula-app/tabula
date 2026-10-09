@@ -101,6 +101,8 @@ The provider checks the key before anything is stored. While it checks, the butt
 
 After saving, the tab shows only the last four characters, for example **Anthropic key ending …a1b2**, with when the key was added and last used. The full key is never shown again. To change it, paste a new one and select **Replace key**. To remove it, select **Remove**, then **Click again to remove**.
 
+Select **Test key** next to **Remove** to check whether the saved key still works. The check leaves the key and its “last used” date alone, and shows a short result below it.
+
 If the server can no longer read the stored key, the tab warns you. Enter the key again to fix it.
 
 If the tab says the server cannot store keys, you can still change the settings above, but no key can be saved until whoever runs your Tabula server fixes this. Ask them.

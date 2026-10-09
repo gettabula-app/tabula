@@ -360,7 +360,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       })
     : [];
 
-  const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, conflict }, cloud, ...ai });
+  const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
 
   // ------------------------------------------------------------ handlers
 
