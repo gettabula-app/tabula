@@ -176,6 +176,14 @@ async function openSeedBoard({ page, base }, query = '?debug') {
     // the relay keeps what an earlier shot hid (layers-hidden)
     const hidden = [...app.store.cache.values()].filter((o) => o.hidden).map((o) => o.id);
     if (hidden.length) app.setHidden(hidden, false);
+    // ...and so does a session, a vote or a poll an earlier shot left running, with its dots: each state starts from an idle bar, or
+    // vote-setup finds its button ending a vote instead of opening the panel, and a chat tray sits behind a bar it never started
+    const f = app.store.getFlow();
+    if (f.active >= 0 || f.steps.length || f.results) {
+      app.flow.end();
+      app.flow.clearResults();
+      app.store.setFlow({ active: -1, timer: null, reveal: false, results: null, steps: [] });
+    }
     app.setSelection([]);
     app.zoomToFit();
   });

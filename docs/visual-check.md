@@ -38,6 +38,8 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 
 ## States
 
+States share one relay and one seeded board, so the seeded board is put back to idle before each state: nothing hidden, no selection, and no session, vote, poll or dots left running by the state before (a state that needs a running vote starts it itself). The order of `--states` therefore does not change a shot.
+
 | State | What it shows |
 | --- | --- |
 | `home` | The boards list with three boards (Sprint retro, Roadmap 2026, Meeting notes) and the template strip |
