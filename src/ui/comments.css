@@ -42,6 +42,8 @@
   padding: 0 14px 14px; box-sizing: border-box; scrollbar-width: thin;
 }
 .comments-panel.show { display: block; }
+/* narrow windows: never under the rail, which runs the full height there (TAB-133) */
+@media (max-width: 860px) { .comments-panel { width: min(300px, calc(100% - var(--rail-clear) - 12px)); } }
 .comments-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 2px; }
 .comments-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
 .comments-head .icon-btn:last-child { margin-right: -13px; }

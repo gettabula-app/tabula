@@ -44,6 +44,11 @@ The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths)
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
+| `drawer-stickers` | The seeded board with the Stickers drawer open (the icon sets are only there after a full `npm run build`; `build:app` shows the drawer's "could not be loaded" state) |
+| `history` | Version history open from the board menu |
+| `comments` | The comments panel open |
+| `empty-templates`, `empty-share`, `empty-menu` | An empty board (the "An empty board" hint) under the Templates drawer, the Share dialog and the board menu |
+| `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |

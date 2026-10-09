@@ -145,6 +145,17 @@ async function seedComments(page, fresh) {
   await page.clock.setFixedTime(NOW);
 }
 
+const EMPTY_ID = 'visual-empty';
+/** The second person of the last empty-focus shot. */
+let focusSender = null;
+
+/** A board nobody writes to: the empty-board hint shows. */
+async function openEmptyBoard({ page, base }) {
+  await page.goto(`${base}/?debug#/b/${EMPTY_ID}`);
+  await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+  await page.locator('.empty-hint').waitFor();
+}
+
 async function openSeedBoard({ page, base }) {
   await page.goto(`${base}/?debug#/b/${BOARD_ID}`);
   await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
@@ -272,6 +283,61 @@ const STATES = {
     if (await fold.isVisible()) {
       await fold.click();
       await env.page.locator('.props.folded').waitFor();
+    }
+  },
+  // TAB-112 and TAB-133: panels and drawers on the right start below the top bars at every width
+  async 'drawer-stickers'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Stickers', exact: true }).click();
+    await env.page.locator('.drawer.show').waitFor();
+  },
+  async history(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.getByRole('button', { name: 'Version history' }).click();
+    await env.page.locator('.history.show, [aria-label="Version history"]').first().waitFor();
+  },
+  async comments(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comments-panel.show, .comments-panel.open, aside.comments-panel:not([hidden])').first().waitFor();
+  },
+  // TAB-124: the empty-board hint lies under every overlay
+  async 'empty-templates'(env) {
+    await openEmptyBoard(env);
+    await env.page.getByRole('button', { name: 'Start from a template' }).click();
+    await env.page.locator('.drawer.show').waitFor();
+  },
+  async 'empty-share'(env) {
+    await openEmptyBoard(env);
+    await env.page.getByRole('button', { name: 'Share', exact: true }).click();
+    await env.page.locator('[role="dialog"]').first().waitFor();
+  },
+  async 'empty-menu'(env) {
+    await openEmptyBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.getByRole('button', { name: 'Board settings' }).waitFor();
+  },
+  async 'empty-focus'(env) {
+    await openEmptyBoard(env);
+    // a second person on the same board asks everyone to look at their view
+    // it stays open until the next shot of this state (the card goes when its sender leaves), then it is closed
+    await focusSender?.close();
+    const other = await newPage(env.page.context().browser(), { width: 1024, theme: 'default', mode: 'open', base: env.base });
+    focusSender = other.context;
+    {
+      const tag = Math.random().toString(36).slice(2, 8);
+      await other.page.addInitScript((id) => localStorage.setItem('driftboard:user', JSON.stringify({ id, name: 'Ana', color: '#D64545' })), `visual-other-${tag}`);
+      await other.page.goto(`${env.base}/?debug#/b/${EMPTY_ID}`);
+      await other.page.waitForFunction(() => window.__board);
+      // the request focus.ts puts on its sender's awareness (src/focus-requests.ts buildRequest); the button lives in a running session
+      await other.page.evaluate(() => {
+        const app = window.__board;
+        const u = app.user;
+        app.conn.awareness.setLocalStateField('focusRequest', { id: `ask-${u.id}`, x: 0, y: 0, zoom: 1, ts: Date.now(), kind: 'view', from: { id: u.id, name: u.name, color: u.color } });
+      });
+      await env.page.locator('.focus-stack > *').first().waitFor({ timeout: 8000 });
+      await env.page.waitForTimeout(300);
     }
   },
   async templates({ page, base }) {
