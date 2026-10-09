@@ -7,6 +7,7 @@ import WebSocket from 'ws';
 import * as Y from 'yjs';
 import { createHarness, type Account, until } from './mcp-harness';
 import { makePng } from './image-fixtures';
+import { isWindows } from './platform';
 
 vi.setConfig({ testTimeout: 90_000, hookTimeout: 30_000 });
 
@@ -96,7 +97,8 @@ describe('join-code creation and storage', () => {
     expect(fs.existsSync(secretPath)).toBe(true);
     const secret = fs.readFileSync(secretPath);
     expect(secret).toHaveLength(32);
-    expect(fs.statSync(secretPath).mode & 0o777).toBe(0o600);
+    // POSIX permission bits do not exist on Windows (the file reports 0o666), so the owner-only mode can only be checked on POSIX systems
+    expect(isWindows ? 0o600 : fs.statSync(secretPath).mode & 0o777).toBe(0o600);
     const digest = crypto.createHmac('sha256', secret).update(made.body.code).digest('hex');
     const db = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
     try {
