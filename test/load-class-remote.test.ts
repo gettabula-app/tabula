@@ -1,0 +1,104 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createHarness } from './mcp-harness';
+
+function runRemoteLoad(env: Record<string, string>) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['scripts/load-class.mjs'], {
+      cwd: process.cwd(),
+      env: {
+        PATH: process.env.PATH ?? '',
+        TMPDIR: os.tmpdir(),
+        TEMP: os.tmpdir(),
+        ...env,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 75_000);
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
+describe('remote class load script', () => {
+  it('runs against a local accounts relay with a cookie and a one-time login token without printing either secret', async () => {
+    const harness = createHarness({ accounts: true, settings: { CHAT: 'off' } });
+    await harness.start();
+    try {
+      const owner = await harness.signInOwner();
+      const cookieOut = path.join(harness.dir, 'remote-cookie.json');
+      const cookieRun = await runRemoteLoad({
+        TARGET_URL: harness.base,
+        TARGET_CONFIRM: '127.0.0.1',
+        TARGET_COOKIES: owner.cookie,
+        USERS: '3',
+        SECONDS: '5',
+        CHAT: 'off',
+        OUT: cookieOut,
+      });
+      expect(cookieRun.code, `${cookieRun.stdout}\n${cookieRun.stderr}`).toBe(0);
+      expect(cookieRun.stdout).toContain('1 account(s) for 3 users');
+      expect(cookieRun.stdout).toContain('| n/a | n/a |');
+      expect(cookieRun.stdout).toContain('relay CPU and memory: read them from Fly (see docs/capacity.md)');
+      expect(cookieRun.stdout).toContain('3 users: OK');
+      expect(cookieRun.stdout).toContain('(includes network round trips)');
+      const cookieReportText = fs.readFileSync(cookieOut, 'utf8');
+      const cookieReport = JSON.parse(cookieReportText);
+      expect(cookieReport.target).toEqual({ host: '127.0.0.1', remote: true, accounts: 1, usersPerAccount: 3 });
+      expect(cookieReport.steps[0].connectedUsers).toBe(3);
+      expect(cookieReport.steps[0].verdict).toBe('OK');
+      expect(cookieReport.steps[0].relay).toEqual({
+        rssPeakBytes: null,
+        rssEndBytes: null,
+        cpuAveragePct: null,
+        cpuPeak5sPct: null,
+        samples: 0,
+      });
+      expect(`${cookieRun.stdout}\n${cookieRun.stderr}\n${cookieReportText}`).not.toContain(owner.cookie);
+      const boardsAfterCookieRun = await harness.api(owner.cookie, 'GET', '/api/boards');
+      expect(boardsAfterCookieRun.body.some((board: { id: string }) => board.id === cookieReport.steps[0].boardId)).toBe(false);
+
+      const beforeMail = harness.mails().length;
+      const requested = await harness.api(undefined, 'POST', '/api/auth/request', { email: owner.email }, { 'x-forwarded-for': harness.nextIp() });
+      expect(requested.status).toBe(200);
+      const freshMail = harness.mails().slice(beforeMail);
+      expect(freshMail).toHaveLength(1);
+      const tokenMatch = /token=([^\s&]+)/.exec(freshMail[0].text);
+      expect(tokenMatch).not.toBeNull();
+      const token = tokenMatch![1];
+      const tokenOut = path.join(harness.dir, 'remote-token.json');
+      const tokenRun = await runRemoteLoad({
+        TARGET_URL: harness.base,
+        TARGET_CONFIRM: '127.0.0.1',
+        TARGET_LOGIN_TOKENS: token,
+        USERS: '1',
+        SECONDS: '1',
+        CHAT: 'off',
+        OUT: tokenOut,
+      });
+      expect(tokenRun.code, `${tokenRun.stdout}\n${tokenRun.stderr}`).toBe(0);
+      expect(tokenRun.stdout).toContain('1 users: OK');
+      const tokenReportText = fs.readFileSync(tokenOut, 'utf8');
+      const tokenReport = JSON.parse(tokenReportText);
+      expect(tokenReport.target).toEqual({ host: '127.0.0.1', remote: true, accounts: 1, usersPerAccount: 1 });
+      expect(tokenReport.steps[0].verdict).toBe('OK');
+      expect(`${tokenRun.stdout}\n${tokenRun.stderr}\n${tokenReportText}`).not.toContain(owner.cookie);
+      expect(`${tokenRun.stdout}\n${tokenRun.stderr}\n${tokenReportText}`).not.toContain(token);
+    } finally {
+      await harness.cleanup();
+    }
+  }, 120_000);
+});
