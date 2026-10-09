@@ -7,11 +7,12 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { CSRF_HEADER } from '../server/auth.mjs';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/history.md. The relay runs as a child process exactly as `npm start` would: once in open mode,
 // once in accounts mode and once as a hosted workspace that can be made read-only.
 
-const BASE_PORT = 23000 + Math.floor(Math.random() * 800);
 const OWNER = 'owner@example.com';
 const TOKEN = 'h'.repeat(48);
 
@@ -31,7 +32,6 @@ async function until(fn: () => boolean | Promise<boolean>, ms = 8000) {
 }
 
 const servers: Server[] = [];
-let launched = 0;
 
 const startRelay = (port: number, dir: string, env: Record<string, string>) =>
   new Promise<ChildProcess>((resolve, reject) => {
@@ -42,7 +42,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -53,7 +53,7 @@ const stopRelay = (p: ChildProcess) =>
   });
 
 async function launch(env: Record<string, string> = {}): Promise<Server> {
-  const port = BASE_PORT + launched++;
+  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-relay-'));
   const accounts = env.TABULA_AUTH === 'on';
   const server = {
@@ -467,7 +467,7 @@ describe('version history in accounts mode', { timeout: 60_000 }, () => {
 
 // ---------------------------------------------------------------- a hosted workspace that turns read-only
 
-describe('version history in a read-only hosted workspace', { timeout: 40_000 }, () => {
+describe('version history in a read-only hosted workspace', { timeout: 60_000 }, () => {
   it('still lists and previews, and answers every change with 402', async () => {
     const s = await launch({
       TABULA_AUTH: 'on',

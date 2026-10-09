@@ -10,13 +10,14 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { loadConfig } from '../server/config.mjs';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // The relay in accounts mode behind a reverse proxy that terminates https (docs/accounts.md, TABULA_TRUST_PROXY). The
 // relay is a child process on plain http; a small Node proxy sits in front of it, adds X-Forwarded-For (appending the
 // client address it saw, like nginx's $proxy_add_x_forwarded_for) and X-Forwarded-Proto, and forwards WebSocket upgrades.
 // The test plays the browser: it talks to the proxy with the Host and Origin of the public https address.
 
-const BASE_PORT = 24000 + Math.floor(Math.random() * 900);
 const OWNER = 'owner@example.com';
 const HOST = 'tabula.example';
 const ORIGIN = `https://${HOST}`;
@@ -43,7 +44,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     const timer = setTimeout(() => {
       p.kill();
       reject(new Error('relay did not start'));
-    }, 8000);
+    }, RELAY_START_MS);
     p.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
         clearTimeout(timer);
@@ -291,8 +292,8 @@ type Stack = { port: number; dir: string; relay: ChildProcess; proxy: Proxy };
 const stacks: Stack[] = [];
 
 /** A relay with its own proxy in front; every relay has its own in-memory rate limits. */
-async function launch(offset: number, env: Record<string, string>, proxy: Partial<ProxyOptions> = {}): Promise<Stack> {
-  const port = BASE_PORT + offset;
+async function launch(env: Record<string, string>, proxy: Partial<ProxyOptions> = {}): Promise<Stack> {
+  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-proxy-'));
   const relay = await startRelay(port, dir, env);
   const front = await startProxy({ target: port, forwardedProto: 'https', preserveHost: true, ...proxy });
@@ -319,7 +320,7 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
   let viaProxy: Browser;
 
   beforeAll(async () => {
-    server = await launch(0, PROXIED);
+    server = await launch(PROXIED);
     viaProxy = browser(server.proxy.port, nextClient());
     owner = await signIn(viaProxy, server.dir);
   });
@@ -458,9 +459,9 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
   });
 });
 
-describe('behind the same proxy without TABULA_TRUST_PROXY', { timeout: 30_000 }, () => {
+describe('behind the same proxy without TABULA_TRUST_PROXY', { timeout: 60_000 }, () => {
   it('ignores X-Forwarded-For altogether: every client of the proxy shares the proxy address', async () => {
-    const server = await launch(1, { TABULA_BASE_URL: ORIGIN, TABULA_TRUST_PROXY: '0' });
+    const server = await launch({ TABULA_BASE_URL: ORIGIN, TABULA_TRUST_PROXY: '0' });
     const ask = (via: number, client: string | undefined, forged: string) =>
       browser(via, client)('POST', '/api/auth/request', { body: { email: nextEmail() }, headers: { 'x-forwarded-for': forged } });
 
@@ -481,10 +482,10 @@ describe('behind the same proxy without TABULA_TRUST_PROXY', { timeout: 30_000 }
   });
 });
 
-describe('a plain http base URL behind a proxy that says https', { timeout: 30_000 }, () => {
+describe('a plain http base URL behind a proxy that says https', { timeout: 60_000 }, () => {
   it('ignores X-Forwarded-Proto: the cookie is not Secure, and a WebSocket from the https page is refused', async () => {
     const plainOrigin = `http://${HOST}`;
-    const server = await launch(2, { TABULA_BASE_URL: plainOrigin, TABULA_TRUST_PROXY: '1' });
+    const server = await launch({ TABULA_BASE_URL: plainOrigin, TABULA_TRUST_PROXY: '1' });
     const b = browser(server.proxy.port, nextClient(), { host: HOST, origin: plainOrigin });
     const owner = await signIn(b, server.dir);
 

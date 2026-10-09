@@ -9,6 +9,8 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // Sockets that are already open when somebody's access changes (docs/accounts.md, "Relay"). The relay runs as a child
 // process in accounts mode. A "write" here is a real Yjs update sent over the member's own socket from a fresh document
@@ -16,8 +18,8 @@ import WebSocket from 'ws';
 // connection that watches the same room tells whether it arrived. Awareness travels behind it on the same socket: once
 // it has arrived, the update has too, if it was let through.
 
-const MAIN_PORT = 23000 + Math.floor(Math.random() * 450);
-const TIMED_PORT = 23500 + Math.floor(Math.random() * 450);
+const MAIN_PORT = await freePort();
+const TIMED_PORT = await freePort();
 const OWNER = 'owner@example.com';
 const COMMENTS = '~comments';
 const ROLE_RECHECK_MS = 5000; // server/relay.mjs
@@ -47,7 +49,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     const timer = setTimeout(() => {
       p.kill();
       reject(new Error('relay did not start'));
-    }, 8000);
+    }, RELAY_START_MS);
     p.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
         clearTimeout(timer);

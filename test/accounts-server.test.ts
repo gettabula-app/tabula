@@ -8,10 +8,12 @@ import * as encoding from 'lib0/encoding';
 import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // The relay runs as a child process in accounts mode, exactly as `npm start` would.
 
-const PORT = 19000 + Math.floor(Math.random() * 900);
+const PORT = await freePort();
 const baseUrl = `http://127.0.0.1:${PORT}`;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-'));
 const outbox = path.join(dataDir, 'outbox.jsonl');
@@ -46,7 +48,7 @@ const startRelay = (port = PORT, dir = dataDir, env: Record<string, string> = {}
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -1154,8 +1156,8 @@ describe('accounts mode server', () => {
 describe('other server configurations', () => {
   const servers: Server[] = [];
 
-  async function launch(offset: number, env: Record<string, string>): Promise<Server> {
-    const port = PORT + offset;
+  async function launch(env: Record<string, string>): Promise<Server> {
+    const port = await freePort();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-extra-'));
     const proc = await startRelay(port, dir, env);
     const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
@@ -1171,7 +1173,7 @@ describe('other server configurations', () => {
   });
 
   it('leaves open mode alone: config says so, other /api paths are 404 JSON, and sockets need no cookie', async () => {
-    const open = await launch(1, { TABULA_AUTH: 'off' });
+    const open = await launch({ TABULA_AUTH: 'off' });
     const config = await fetch(`${open.base}/api/config`);
     expect(await config.json()).toEqual({ authEnabled: false, images: true });
     expect(((await (await fetch(`${open.base}/api/health`)).json()) as Body).ok).toBe(true);
@@ -1192,7 +1194,7 @@ describe('other server configurations', () => {
   });
 
   it('extends a session cookie as it slides, and ignores X-Forwarded-For unless TABULA_TRUST_PROXY=1', async () => {
-    const short = await launch(2, { TABULA_SESSION_DAYS: '0.00004', TABULA_TRUST_PROXY: '0' }); // about 3.5 seconds
+    const short = await launch({ TABULA_SESSION_DAYS: '0.00004', TABULA_TRUST_PROXY: '0' }); // about 3.5 seconds
     const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
       fetch(short.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 

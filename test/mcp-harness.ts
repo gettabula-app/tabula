@@ -5,6 +5,8 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // Shared by the black-box MCP tests: a relay child process, the HTTP API as a signed-in person, raw JSON-RPC to /mcp.
 // Settings are passed under both the TABULA_ and the MIRA_ spelling and the CSRF header under both names, so the
@@ -37,13 +39,11 @@ export interface HarnessOptions {
   dir?: string;
 }
 
-let portSeq = 0;
-const freshPort = () => 21000 + Math.floor(Math.random() * 800) + (portSeq++ % 100);
-
 export function createHarness(options: HarnessOptions = {}) {
-  const port = options.port ?? freshPort();
+  // taken from the system when the relay first starts, and kept for the restarts of a test that stops and starts it
+  let port = options.port ?? 0;
   const dir = options.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-test-'));
-  const base = `http://127.0.0.1:${port}`;
+  let base = '';
   const outbox = path.join(dir, 'outbox.jsonl');
   const OWNER = 'owner@example.com';
   let proc: ChildProcess | null = null;
@@ -54,8 +54,10 @@ export function createHarness(options: HarnessOptions = {}) {
   const unique = (tag: string) => `${tag}${++seq}x${Math.random().toString(36).slice(2, 7)}`;
   const nextIp = () => `10.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}.9`;
 
-  const start = (extra: Record<string, string> = {}) =>
-    new Promise<void>((resolve, reject) => {
+  const start = async (extra: Record<string, string> = {}) => {
+    if (!port) port = await freePort();
+    base = `http://127.0.0.1:${port}`;
+    return new Promise<void>((resolve, reject) => {
       output = '';
       const settings = {
         ...(options.accounts ? { AUTH: 'on', OWNER_EMAIL: OWNER, MAIL: 'file', TRUST_PROXY: '1' } : {}),
@@ -82,8 +84,9 @@ export function createHarness(options: HarnessOptions = {}) {
       });
       p.on('error', (e) => done(() => reject(e)));
       p.on('close', (code) => done(() => reject(new Error(`relay exited with ${code}: ${output.slice(0, 1500)}`))));
-      setTimeout(() => done(() => reject(new Error(`relay did not start: ${output.slice(-400)}`))), 15_000);
+      setTimeout(() => done(() => reject(new Error(`relay did not start: ${output.slice(-400)}`))), RELAY_START_MS);
     });
+  };
 
   const stop = () =>
     new Promise<void>((resolve) => {
@@ -247,7 +250,7 @@ export function createHarness(options: HarnessOptions = {}) {
   };
 
   return {
-    port, dir, base, OWNER, start, stop, cleanup, output: () => output,
+    get port() { return port; }, dir, get base() { return base; }, OWNER, start, stop, cleanup, output: () => output,
     api, signIn, signInOwner, newTeam, joinTeam, newBoard, share, newToken, rpc, call, tool, payloadOf,
     roomFile, savedDoc, connect, closeProviders, unique, nextIp, mails,
   };

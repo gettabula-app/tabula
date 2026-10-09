@@ -9,12 +9,14 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // Every board has a sibling comments room (`<boardId>~comments`). The relay runs as a child process,
 // once in open mode and once in accounts mode, exactly as `npm start` would.
 
-const OPEN_PORT = 20000 + Math.floor(Math.random() * 450);
-const ACCOUNTS_PORT = 20500 + Math.floor(Math.random() * 450);
+const OPEN_PORT = await freePort();
+const ACCOUNTS_PORT = await freePort();
 const OWNER = 'owner@example.com';
 
 type Body = any;
@@ -30,7 +32,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>

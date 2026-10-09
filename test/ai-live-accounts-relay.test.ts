@@ -11,13 +11,15 @@ import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
 import { createKeyRing } from '../server/ai/keys.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/ai.md, "Live runs", in accounts mode: the relay shapes the AI-run messages (type 6) for each socket's person.
 // Viewers see runs without the prompt, a private run reaches its runner only, and a socket whose access is removed
 // hears nothing more. The provider is a local HTTP server that answers like the Messages API; every key is made up.
 
 const RELAY = fileURLToPath(new URL('../server/relay.mjs', import.meta.url));
-const PORT = 28900 + Math.floor(Math.random() * 900);
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 const SECRET = crypto.randomBytes(32).toString('base64');
 const newKey = () => `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
@@ -111,7 +113,7 @@ async function start() {
   });
   relay.stdout!.on('data', (d) => (out += d));
   relay.stderr!.on('data', (d) => (out += d));
-  await until(() => out.includes('Tabula relay'), 15_000).catch(() => {
+  await until(() => out.includes('Tabula relay'), RELAY_START_MS).catch(() => {
     throw new Error(`relay did not start: ${out}`);
   });
 }
@@ -181,5 +183,5 @@ describe('live AI runs through an accounts-mode relay', () => {
     await until(() => about(a, afterId).some((m) => m.run.status === 'ready'));
     expect(c.runs.length).toBe(heard);
     expect(about(a, hiddenId)).toEqual([]);
-  }, 30_000);
+  }, 60_000);
 });

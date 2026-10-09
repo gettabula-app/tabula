@@ -6,8 +6,10 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
-const PORT = 18000 + Math.floor(Math.random() * 1000);
+const PORT = await freePort();
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-relay-'));
 let relay: ChildProcess;
 
@@ -16,7 +18,7 @@ const startRelay = () =>
     const p = spawn(process.execPath, ['server/relay.mjs'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) => new Promise<void>((r) => { if (p.exitCode !== null || p.signalCode !== null) return r(); p.once('exit', () => r()); p.kill('SIGTERM'); });
@@ -27,7 +29,7 @@ const client = (room: string) => {
   return { doc, provider };
 };
 
-const until = async (fn: () => boolean, ms = 5000) => {
+const until = async (fn: () => boolean, ms = 15_000) => {
   const t0 = Date.now();
   while (!fn()) {
     if (Date.now() - t0 > ms) throw new Error('timed out');
@@ -74,7 +76,8 @@ describe('relay', () => {
     const a = client('room-c');
     await until(() => a.provider.wsconnected);
     a.doc.getMap('meta').set('name', 'Persisted');
-    await new Promise((r) => setTimeout(r, 1300)); // debounce window
+    // Windows cannot ask the relay to save on the way out, so the debounced save has to have happened before it stops.
+    await until(() => fs.existsSync(path.join(dataDir, 'room-c.yjs')));
     a.provider.destroy();
     await stopRelay(relay);
     expect(fs.existsSync(path.join(dataDir, 'room-c.yjs'))).toBe(true);

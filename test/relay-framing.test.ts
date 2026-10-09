@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import http from 'node:http';
-import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // The relay forbids framing with the CSP directive frame-ancestors 'none'. TABULA_DEV_ALLOW_FRAMING=1 is the opt-in for
 // scripts/visual-check.mjs --frameable (docs/visual-check.md): the directive goes, the rest of the policy stays.
@@ -18,16 +19,6 @@ interface Relay {
   stderr: () => string;
   stop: () => Promise<void>;
 }
-
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const probe = net.createServer();
-    probe.on('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address() as net.AddressInfo;
-      probe.close(() => resolve(port));
-    });
-  });
 
 async function startRelay(name: string, framing?: string): Promise<Relay> {
   const port = await freePort();
@@ -44,7 +35,7 @@ async function startRelay(name: string, framing?: string): Promise<Relay> {
   let stderr = '';
   child.stderr!.on('data', (d) => (stderr += String(d)));
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('relay did not start')), 8000);
+    const timer = setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
     child.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
         clearTimeout(timer);

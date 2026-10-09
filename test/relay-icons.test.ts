@@ -6,8 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { buildIcons } from '../scripts/build-icons.mjs';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
-const PORT = 19000 + Math.floor(Math.random() * 1000);
+const PORT = await freePort();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-relay-icons-'));
 const dist = path.join(root, 'dist');
 let relay: ChildProcess;
@@ -46,7 +48,7 @@ beforeAll(async () => {
     });
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 });
 

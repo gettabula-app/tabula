@@ -7,11 +7,13 @@ import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/comment-authz.md over real sockets, in accounts mode: the relay corrects what a person's rules forbid, tells
 // only that person (message type 5), and every client converges on the corrected threads.
 
-const ACCOUNTS_PORT = 25000 + Math.floor(Math.random() * 900);
+const ACCOUNTS_PORT = await freePort();
 const OWNER = 'owner@example.com';
 const COMMENTS = '~comments';
 const MSG_COMMENT_NOTICE = 5;
@@ -29,7 +31,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>
