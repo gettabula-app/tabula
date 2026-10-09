@@ -5,11 +5,12 @@
 //   smoke   the site's pages at 1280 and 390 px, no console errors, no CORS error on the live slug check, preflight answers
 //   forms   slug rules and invalid emails on the signup form (only invalid data is submitted; a 201 from the API fails the run)
 //   cancel  starts a Checkout (a customer and a pending workspace in Stripe test mode, no Fly app), goes back, checks the cancel page
+//   signin  on a workspace that already exists: asks for a new sign-in link, takes it, signs in, opens a board (--email, --slug)
 //   signup  the whole path: pays with the test card, waits for the workspace, signs in with the emailed link, opens a board
 //
 //   node scripts/e2e-hosted.mjs --stage smoke,forms [--out <folder>]
 //   node scripts/e2e-hosted.mjs --stage cancel --allow-checkout --email <address>
-//   node scripts/e2e-hosted.mjs --stage signup --allow-signup --email <address> --slug e2e-1016a [--link-file <path>]
+//   node scripts/e2e-hosted.mjs --stage signup --allow-signup --email <address> --slug e2e-1016a [--link-file <path>] [--link-wait <seconds>]
 //
 // Safety: `cancel` needs --allow-checkout and `signup` needs --allow-signup (each real signup creates a Fly app, so each needs a go from
 // the manager). Before it types a card the script checks that the Checkout page shows Stripe's test-mode badge and stops if it does not;
@@ -22,7 +23,7 @@ import { parseArgs } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
-const USAGE = 'Usage: node scripts/e2e-hosted.mjs --stage smoke,forms,cancel,signup [--out <dir>] [--site <url>] [--api <url>] [--ws-suffix <domain>] [--email <address>] [--slug <slug>] [--name <workspace name>] [--link <url>] [--link-file <path>] [--allow-checkout] [--allow-signup] [--price <text>]';
+const USAGE = 'Usage: node scripts/e2e-hosted.mjs --stage smoke,forms,cancel,signup [--out <dir>] [--site <url>] [--api <url>] [--ws-suffix <domain>] [--email <address>] [--slug <slug>] [--name <workspace name>] [--link <url>] [--link-file <path>] [--allow-checkout] [--allow-signup] [--plan seats|flat] [--price <text>]';
 let args;
 try {
   args = parseArgs({
@@ -30,8 +31,8 @@ try {
       stage: { type: 'string', default: 'smoke,forms' }, out: { type: 'string' }, site: { type: 'string', default: 'https://gettabula.app' },
       api: { type: 'string', default: 'https://api.gettabula.app' }, 'ws-suffix': { type: 'string', default: 'thetabula.cloud' },
       email: { type: 'string' }, slug: { type: 'string' }, name: { type: 'string', default: 'E2E test workspace' },
-      link: { type: 'string' }, 'link-file': { type: 'string' }, 'allow-checkout': { type: 'boolean' }, 'allow-signup': { type: 'boolean' },
-      price: { type: 'string', default: '29' }, help: { type: 'boolean' },
+      link: { type: 'string' }, 'link-file': { type: 'string' }, 'link-wait': { type: 'string', default: '180' }, 'allow-checkout': { type: 'boolean' }, 'allow-signup': { type: 'boolean' },
+      plan: { type: 'string', default: 'seats' }, price: { type: 'string' }, help: { type: 'boolean' },
     },
   }).values;
 } catch (err) {
@@ -42,12 +43,14 @@ if (args.help) {
   console.log(USAGE);
   process.exit(0);
 }
+const PLAN = args.plan === 'flat' ? 'flat' : 'seats';
+const PRICE = args.price ?? (PLAN === 'flat' ? '29' : '8');
 const STAGES = args.stage.split(',').map((s) => s.trim()).filter(Boolean);
 const OUT = path.resolve(args.out ?? path.join('tabula-review', 'e2e', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)));
 fs.mkdirSync(OUT, { recursive: true });
 const SITE = args.site.replace(/\/$/, '');
 const API = args.api.replace(/\/$/, '');
-const CARD = { number: '4242 4242 4242 4242', expiry: '12 / 34', cvc: '123', name: 'E2E Tester', postal: '12345' };
+const CARD = { number: '4242 4242 4242 4242', expiry: '12 / 34', cvc: '123', name: 'E2E Tester', postal: '11122', line1: '1 Test Street', city: 'Stockholm' };
 const report = [];
 const check = (ok, name, detail = '') => {
   report.push({ ok, name, detail });
@@ -107,8 +110,9 @@ async function openForm(browser, width = 1280) {
 async function forms(browser) {
   const { ctx, page, errs, posts } = await openForm(browser);
   const text = await page.evaluate(() => document.body.innerText);
-  check(new RegExp(args.price).test(text), 'signup page states the price', `looking for "${args.price}"`);
-  check(!/per seat|seats?\b/i.test(text), 'signup page has no seat wording (flat price)', (text.match(/.{0,30}seats?.{0,30}/i) ?? [''])[0].replace(/\s+/g, ' '));
+  check(new RegExp(PRICE).test(text), 'signup page states the price', `looking for "${PRICE}" (plan ${PLAN})`);
+  const seatWording = /per seat|seats?\b/i.test(text);
+  check(PLAN === 'flat' ? !seatWording : seatWording, PLAN === 'flat' ? 'signup page has no seat wording (flat price)' : 'signup page shows the per-seat plan', (text.match(/.{0,30}seats?.{0,30}/i) ?? [''])[0].replace(/\s+/g, ' '));
   const status = (page2) => page2.evaluate(() => (document.querySelector('[role=status], [aria-live]')?.textContent ?? '').trim());
   for (const [v, want] of [['www', /reserved/i], ['ab', /3 to 32/i], ['Bad_Slug', /3 to 32|lowercase/i], ['-lead', /hyphen/i]]) {
     await F.slug(page).fill(v);
@@ -149,9 +153,10 @@ async function startCheckout(browser, width = 1280) {
   return { ctx, page, reached };
 }
 
+/** Test mode: the session id in the address starts cs_test_ AND the page shows Stripe's badge ("Test mode", or "Sandbox" on a Stripe sandbox). */
 async function testModeBadge(page) {
   const text = await page.evaluate(() => document.body.innerText);
-  return /test mode/i.test(text);
+  return /\/cs_test_/.test(page.url()) && /test mode|sandbox/i.test(text);
 }
 
 async function cancel(browser) {
@@ -187,7 +192,12 @@ async function fillStripe(page) {
   (await find(['#cardExpiry', 'input[name=cardExpiry]', 'input[autocomplete=cc-exp]']))?.fill(CARD.expiry);
   (await find(['#cardCvc', 'input[name=cardCvc]', 'input[autocomplete=cc-csc]']))?.fill(CARD.cvc);
   (await find(['#billingName', 'input[name=billingName]']))?.fill(CARD.name);
-  (await find(['#billingPostalCode', 'input[name=billingPostalCode]']))?.fill(CARD.postal).catch(() => {});
+  // the billing address is required for tax: open the manual form when Checkout shows the autocomplete, then fill the lines
+  await page.getByText(/enter address manually/i).first().click({ timeout: 2000 }).catch(() => {});
+  (await find(['#billingAddressLine1', 'input[name=billingAddressLine1]']))?.fill(CARD.line1);
+  (await find(['#billingLocality', 'input[name=billingLocality]']))?.fill(CARD.city);
+  (await find(['#billingPostalCode', 'input[name=billingPostalCode]']))?.fill(CARD.postal);
+  await sleep(2500); // the tax line recalculates after the address
   return true;
 }
 
@@ -202,7 +212,7 @@ async function readLink() {
     rl.close();
     return v.startsWith('https://') ? v : null;
   }
-  const until = Date.now() + 180_000;
+  const until = Date.now() + Number(args['link-wait']) * 1000;
   while (Date.now() < until) {
     if (fs.existsSync(file)) {
       const v = fs.readFileSync(file, 'utf8').trim();
@@ -213,40 +223,8 @@ async function readLink() {
   return null;
 }
 
-async function signup(browser) {
-  if (!args['allow-signup'] || !args.email || !args.slug) {
-    check(false, 'signup stage needs --allow-signup, --email and --slug', 'skipped without those (a signup creates a Fly app and needs the manager\'s go)');
-    return;
-  }
-  const t0 = Date.now();
-  const { ctx, page, reached } = await startCheckout(browser);
-  if (!reached) return void (await ctx.close());
-  if (!(await testModeBadge(page))) {
-    check(false, 'Checkout shows the test-mode badge', 'NOT in test mode: stopped before typing any card');
-    return void (await ctx.close());
-  }
-  check(true, 'Checkout shows the test-mode badge');
-  const text = await page.evaluate(() => document.body.innerText);
-  check(new RegExp(args.price).test(text), 'Checkout shows the plan price', `looking for "${args.price}"`);
-  if (!(await fillStripe(page))) {
-    check(false, 'card fields found on the Checkout page', 'headless Stripe page changed or shows a bot check: pay by hand, then resume at the return URL');
-    await shot(page, 'checkout-stuck');
-    return void (await ctx.close());
-  }
-  await shot(page, 'checkout-filled');
-  await page.getByRole('button', { name: /start trial|subscribe|pay|confirm/i }).first().click();
-  const back = await page.waitForURL(new RegExp(`${SITE.replace(/[.]/g, '\\.')}/signup/success`), { timeout: 90_000 }).then(() => true).catch(() => false);
-  check(back && page.url().includes(`slug=${args.slug}`), 'Checkout returns to the success page for the slug', page.url().slice(0, 100));
-  await shot(page, 'success-page');
-  const paidAt = Date.now();
-  const base = `https://${args.slug}.${args['ws-suffix']}`;
-  let ready = false;
-  while (Date.now() - paidAt < 600_000 && !ready) {
-    ready = await fetch(`${base}/api/health`).then((r) => r.ok).catch(() => false);
-    if (!ready) await sleep(5000);
-  }
-  check(ready, 'the workspace answers within 10 minutes', `${Math.round((Date.now() - paidAt) / 1000)} s after payment`);
-  if (!ready) return void (await ctx.close());
+/** On a ready workspace: asks for the sign-in link, takes it from --link / --link-file / the prompt, signs in and opens a new board. */
+async function signIn(ctx, base) {
   const wp = await ctx.newPage();
   await wp.goto(base, { waitUntil: 'networkidle' });
   await shot(wp, 'workspace-signin');
@@ -268,7 +246,78 @@ async function signup(browser) {
     await sleep(2500);
     await shot(wp, 'new-board');
     check(/#\/b\//.test(wp.url()), 'a new board opens', wp.url().replace(/token=[^&]+/, 'token=…').slice(0, 80));
+    // Admin: the owner sees the trial and Manage billing, which opens Stripe's portal (test mode) without a quantity for the flat plan
+    await wp.goto(`${base}/#/admin`, { waitUntil: 'networkidle' });
+    await sleep(1500);
+    await shot(wp, 'admin-overview');
+    const adminText = await wp.evaluate(() => document.body.innerText);
+    check(/trial/i.test(adminText), 'Admin shows the trial', (adminText.match(/.{0,40}trial.{0,60}/i) ?? [''])[0].replace(/\s+/g, ' '));
+    const billing = wp.getByRole('button', { name: /manage billing/i }).first();
+    if (await billing.count()) {
+      await billing.click();
+      const portal = await wp.waitForURL(/billing\.stripe\.com/, { timeout: 30_000 }).then(() => true).catch(() => false);
+      check(portal, 'Manage billing opens the Stripe portal', wp.url().slice(0, 60));
+      if (portal) {
+        await sleep(2500);
+        await shot(wp, 'billing-portal');
+        const pt = await wp.evaluate(() => document.body.innerText);
+        check(PLAN === 'flat' ? !/quantity|seats?\b/i.test(pt) : true, 'the portal shows no quantity or seats (flat plan)', (pt.match(/.{0,30}(quantity|seats?).{0,30}/i) ?? ['none'])[0].replace(/\s+/g, ' '));
+      }
+    } else check(false, 'Manage billing is offered to the owner');
   }
+}
+
+async function signinOnly(browser) {
+  if (!args.email || !args.slug) {
+    check(false, 'signin stage needs --email and --slug of an existing workspace');
+    return;
+  }
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+  await signIn(ctx, `https://${args.slug}.${args['ws-suffix']}`);
+  await ctx.close();
+}
+
+async function signup(browser) {
+  if (!args['allow-signup'] || !args.email || !args.slug) {
+    check(false, 'signup stage needs --allow-signup, --email and --slug', 'skipped without those (a signup creates a Fly app and needs the manager\'s go)');
+    return;
+  }
+  const t0 = Date.now();
+  const { ctx, page, reached } = await startCheckout(browser);
+  if (!reached) return void (await ctx.close());
+  if (!(await testModeBadge(page))) {
+    check(false, 'Checkout shows the test-mode badge', 'NOT in test mode: stopped before typing any card');
+    return void (await ctx.close());
+  }
+  check(true, 'Checkout shows the test-mode badge');
+  const text = await page.evaluate(() => document.body.innerText);
+  check(new RegExp(PRICE).test(text), 'Checkout shows the plan price', `looking for "${PRICE}" (plan ${PLAN})`);
+  if (!(await fillStripe(page))) {
+    check(false, 'card fields found on the Checkout page', 'headless Stripe page changed or shows a bot check: pay by hand, then resume at the return URL');
+    await shot(page, 'checkout-stuck');
+    return void (await ctx.close());
+  }
+  await shot(page, 'checkout-filled');
+  await page.getByRole('button', { name: /start trial|subscribe|pay|confirm/i }).first().click();
+  await sleep(4000);
+  if (page.url().includes('checkout.stripe.com')) {
+    const problems = await page.evaluate(() => [...document.querySelectorAll('[role=alert], [class*=rror]')].map((e) => e.textContent.trim()).filter(Boolean).slice(0, 4));
+    if (problems.length) note(`Checkout shows: ${problems.join(' | ').slice(0, 200)}`);
+    await shot(page, 'checkout-after-submit');
+  }
+  const back = await page.waitForURL(new RegExp(`${SITE.replace(/[.]/g, '\\.')}/signup/success`), { timeout: 90_000 }).then(() => true).catch(() => false);
+  check(back && page.url().includes(`slug=${args.slug}`), 'Checkout returns to the success page for the slug', page.url().slice(0, 100));
+  await shot(page, 'success-page');
+  const paidAt = Date.now();
+  const base = `https://${args.slug}.${args['ws-suffix']}`;
+  let ready = false;
+  while (Date.now() - paidAt < 600_000 && !ready) {
+    ready = await fetch(`${base}/api/health`).then((r) => r.ok).catch(() => false);
+    if (!ready) await sleep(5000);
+  }
+  check(ready, 'the workspace answers within 10 minutes', `${Math.round((Date.now() - paidAt) / 1000)} s after payment`);
+  if (!ready) return void (await ctx.close());
+  await signIn(ctx, base, t0);
   note(`total ${Math.round((Date.now() - t0) / 1000)} s; tear down the workspace '${args.slug}' (Fly app tabula-ws-${args.slug}) afterwards`);
   await ctx.close();
 }
@@ -279,6 +328,7 @@ try {
   if (STAGES.includes('forms')) await forms(browser);
   if (STAGES.includes('cancel')) await cancel(browser);
   if (STAGES.includes('signup')) await signup(browser);
+  if (STAGES.includes('signin')) await signinOnly(browser);
 } finally {
   await browser.close();
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
