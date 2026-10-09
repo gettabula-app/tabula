@@ -3,14 +3,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SECTIONS, foldFragments, fragmentFiles, parseFragment } from './lib/changelog.mjs';
+import { SECTIONS, changelogProblems, foldFragments, fragmentFiles, parseFragment } from './lib/changelog.mjs';
 
 const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const USAGE = `Usage: node scripts/changelog.mjs <fold|check> [--dry-run] [--root <dir>]
+export const USAGE = `Usage: node scripts/changelog.mjs <fold|check> [--dry-run] [--release <version> [--date <YYYY-MM-DD>]] [--root <dir>]
 
   fold             fold changelog.d/*.md into CHANGELOG.md, then remove the fragments
   fold --dry-run   show the fold summary without changing files
-  check            validate every fragment and the CHANGELOG.md Unreleased heading
+  fold --release <version>
+                   fold, then cut the release: the entries end up under ## [<version>] - <date> (today, UTC, unless --date)
+                   and an empty ## [Unreleased] stays on top
+  check            validate every fragment (section, audience), the release headings and the audience markers of
+                   CHANGELOG.md, and its Unreleased heading
   --root <dir>     use a repository root other than this checkout`;
 
 /** @param {string[]} argv */
@@ -19,12 +23,20 @@ export function parseArgs(argv) {
   if (command !== 'fold' && command !== 'check') throw new Error(`unknown subcommand ${command ?? '(missing)'}`);
   let root = DEFAULT_ROOT;
   let dryRun = false;
+  let version = null;
+  let date = null;
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--root') {
       const value = argv[++i];
       if (!value || value.startsWith('--')) throw new Error('--root needs a directory');
       root = path.resolve(value);
+    } else if (arg === '--release' || arg === '--date') {
+      if (command !== 'fold') throw new Error(`${arg} is only valid with fold`);
+      const value = argv[++i];
+      if (!value || value.startsWith('--')) throw new Error(`${arg} needs a value`);
+      if (arg === '--release') version = value;
+      else date = value;
     } else if (arg === '--dry-run') {
       if (command !== 'fold') throw new Error('--dry-run is only valid with fold');
       dryRun = true;
@@ -32,7 +44,8 @@ export function parseArgs(argv) {
       throw new Error(`unknown option ${arg}`);
     }
   }
-  return { command, root, dryRun };
+  if (date && !version) throw new Error('--date needs --release');
+  return { command, root, dryRun, release: version ? { version, date: date ?? new Date().toISOString().slice(0, 10) } : null };
 }
 
 /** @param {string} root @param {string} relative */
@@ -60,7 +73,7 @@ function assertRoot(root) {
 
 /** @param {string} root @param {string[]} names */
 function readFragments(root, names) {
-  /** @type {{ name: string, section: string, bullets: string[] }[]} */
+  /** @type {{ name: string, section: string, audience: string, bullets: string[] }[]} */
   const fragments = [];
   /** @type {string[]} */
   const errors = [];
@@ -89,7 +102,7 @@ export function formatFoldSummary(folded, fragmentCount) {
   return lines.join('\n');
 }
 
-/** @param {{ command: string, root: string, dryRun: boolean }} opts */
+/** @param {{ command: string, root: string, dryRun: boolean, release: { version: string, date: string } | null }} opts */
 function run(opts) {
   const { fragmentsDir, changelog } = assertRoot(opts.root);
   const names = fragmentFiles(fragmentsDir);
@@ -105,6 +118,7 @@ function run(opts) {
     if (!changelogText.split(/\r?\n/).includes('## [Unreleased]')) {
       errors.push('CHANGELOG.md: missing ## [Unreleased] heading');
     }
+    errors.push(...changelogProblems(changelogText));
     for (const error of errors) console.error(error);
     if (errors.length) return 1;
     console.log(`${names.length} fragments OK`);
@@ -116,12 +130,12 @@ function run(opts) {
   const changelogText = fs.readFileSync(changelog, 'utf8');
   let result;
   try {
-    result = foldFragments(changelogText, fragments);
+    result = foldFragments(changelogText, fragments, opts.release ? { release: opts.release } : {});
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   }
-  if (!opts.dryRun && fragments.length) {
+  if (!opts.dryRun && (fragments.length || opts.release)) {
     // Do not remove any fragments until the changelog write has completed successfully.
     fs.writeFileSync(changelog, result.text, 'utf8');
     for (const name of names) fs.unlinkSync(inside(opts.root, `changelog.d/${name}`));

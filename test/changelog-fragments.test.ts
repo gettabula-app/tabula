@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ChangelogError, SECTIONS, foldFragments, fragmentFiles, parseFragment } from '../scripts/lib/changelog.mjs';
+import { ChangelogError, SECTIONS, changelogProblems, foldFragments, fragmentFiles, parseFragment } from '../scripts/lib/changelog.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const script = path.join(root, 'scripts', 'changelog.mjs');
@@ -24,7 +24,7 @@ describe('changelog fragments', () => {
   });
 
   it('parses a valid fragment and every allowed section', () => {
-    expect(fragment('section: Added\n\n- First bullet.\n')).toEqual({ section: 'Added', bullets: ['First bullet.'] });
+    expect(fragment('section: Added\n\n- First bullet.\n')).toEqual({ section: 'Added', audience: 'user', bullets: ['First bullet.'] });
     for (const section of SECTIONS) {
       expect(fragment(`section: ${section}\n\n- Entry.\n`).section).toBe(section);
     }
@@ -169,5 +169,69 @@ describe('changelog fragments', () => {
 
   it('uses ChangelogError for parser errors', () => {
     expect(() => parseFragment('bad.md', 'wrong\n')).toThrow(ChangelogError);
+  });
+});
+
+describe('audience and releases', () => {
+  const log = '# Changelog\n\n## [Unreleased]\n\n### Fixed\n- Old fix.\n\n## [1.0.0] - 2026-01-02\n\n### Added\n- First.\n';
+
+  it('reads an optional audience line and defaults to user', () => {
+    expect(fragment('section: Fixed\n\n- A.\n').audience).toBe('user');
+    expect(fragment('section: Fixed\naudience: dev\n\n- A.\n')).toEqual({ section: 'Fixed', audience: 'dev', bullets: ['A.'] });
+    expect(() => fragment('section: Fixed\naudience: staff\n\n- A.\n')).toThrow(/audience must be one of user, dev/);
+    expect(() => fragment('section: Fixed\naudience: dev\n- A.\n')).toThrow(/audience line must be followed by one blank line/);
+    expect(() => fragment('section: Fixed\n\n- A <!-- audience: dev -->\n')).toThrow(/reserved for the audience marker/);
+  });
+
+  it('marks dev bullets with a marker and leaves user bullets as they were', () => {
+    const { text } = foldFragments(log, [
+      { name: 'a.md', ...fragment('section: Fixed\naudience: dev\n\n- Internal.\n', 'a.md') },
+      { name: 'b.md', ...fragment('section: Fixed\n\n- Visible.\n', 'b.md') },
+    ]);
+    expect(text).toContain('### Fixed\n- Internal. <!-- audience: dev -->\n- Visible.\n- Old fix.');
+  });
+
+  it('cuts a release: fragments and the old Unreleased content go under the new heading, an empty Unreleased stays on top', () => {
+    const { text, folded } = foldFragments(log, [{ name: 'a.md', ...fragment('section: Added\n\n- New.\n', 'a.md') }], { release: { version: '1.1.0', date: '2026-10-09' } });
+    expect(folded).toHaveLength(1);
+    expect(text).toBe('# Changelog\n\n## [Unreleased]\n\n## [1.1.0] - 2026-10-09\n\n### Added\n- New.\n\n### Fixed\n- Old fix.\n\n## [1.0.0] - 2026-01-02\n\n### Added\n- First.\n');
+    expect(changelogProblems(text)).toEqual([]);
+  });
+
+  it('cuts a release with no fragments, and refuses a bad version, a bad date or a version that exists', () => {
+    expect(foldFragments(log, [], { release: { version: '1.1.0', date: '2026-10-09' } }).text).toContain('## [Unreleased]\n\n## [1.1.0] - 2026-10-09\n\n### Fixed');
+    const cut = (version: string, date = '2026-10-09') => () => foldFragments(log, [], { release: { version, date } });
+    expect(cut('v 1')).toThrow(/release version/);
+    expect(cut('Unreleased')).toThrow(/release version/);
+    expect(cut('1.1.0', '2026-13-40')).toThrow(/YYYY-MM-DD/);
+    expect(cut('1.0.0')).toThrow(/already has a heading/);
+  });
+
+  it('checks release headings, duplicate releases and audience markers in CHANGELOG.md', () => {
+    expect(changelogProblems(log)).toEqual([]);
+    expect(changelogProblems('## [Unreleased]\n- A <!-- audience: dev -->\n- B <!-- audience: user -->\n')).toEqual([]);
+    expect(changelogProblems('## [Unreleased]\n## 1.0 released\n').join()).toMatch(/release heading must read/);
+    expect(changelogProblems('## [1.0.0] - 2026-01-02\n## [1.0.0] - 2026-01-03\n').join()).toMatch(/appears twice/);
+    expect(changelogProblems('## [Unreleased]\n- A <!-- note -->\n').join()).toMatch(/single audience marker/);
+    expect(changelogProblems('## [Unreleased]\n- A <!-- audience: dev --> more\n').join()).toMatch(/single audience marker/);
+  });
+
+  it('runs fold --release and check through the command line', () => {
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'changelog-release-'));
+    temporaryRoots.push(fixtureRoot);
+    fs.mkdirSync(path.join(fixtureRoot, 'changelog.d'));
+    fs.writeFileSync(path.join(fixtureRoot, 'CHANGELOG.md'), log);
+    fs.writeFileSync(path.join(fixtureRoot, 'changelog.d', 'x.md'), 'section: Added\naudience: dev\n\n- Tooling.\n');
+    const run = (...args: string[]) => execFileSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+    expect(run('fold', '--release', '2.0.0', '--date', '2026-10-10', '--dry-run', '--root', fixtureRoot)).toContain('Folded 1 entries');
+    expect(fs.readFileSync(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8')).toBe(log);
+    run('fold', '--release', '2.0.0', '--date', '2026-10-10', '--root', fixtureRoot);
+    const after = fs.readFileSync(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8');
+    expect(after).toContain('## [Unreleased]\n\n## [2.0.0] - 2026-10-10\n\n### Added\n- Tooling. <!-- audience: dev -->');
+    expect(run('check', '--root', fixtureRoot)).toBe('0 fragments OK\n');
+    fs.writeFileSync(path.join(fixtureRoot, 'CHANGELOG.md'), after.replace('<!-- audience: dev -->', '<!-- audience: staff -->'));
+    expect(() => run('check', '--root', fixtureRoot)).toThrow(/Command failed/);
+    expect(() => run('fold', '--date', '2026-10-10', '--root', fixtureRoot)).toThrow(/--date needs --release/);
+    expect(() => run('check', '--release', '1', '--root', fixtureRoot)).toThrow(/only valid with fold/);
   });
 });
