@@ -37,14 +37,15 @@ export interface BoardAccess {
 /**
  * What the person may do on a board: their role, and nothing at all while the workspace is read-only or the board is
  * deleted (only workspace admins can open a deleted board, and the relay refuses its writes until it is restored).
+ * `newer` is a board that needs features this client lacks: nobody edits it from here, but comments still work.
  */
-export function boardAccess(role: BoardRole | null | undefined, workspace: Workspace | null | undefined, deleted = false): BoardAccess {
+export function boardAccess(role: BoardRole | null | undefined, workspace: Workspace | null | undefined, deleted = false, newer = false): BoardAccess {
   if (deleted) return { storeReadOnly: true, commentsReadOnly: true, badge: DELETED_BADGE };
   const locked = workspace?.readOnly === true;
   const viewer = role === 'viewer';
   const commenter = role === 'commenter';
   return {
-    storeReadOnly: locked || viewer || commenter,
+    storeReadOnly: newer || locked || viewer || commenter,
     commentsReadOnly: locked || viewer,
     badge: locked ? READ_ONLY_BADGE : commenter ? 'Can comment' : viewer ? 'View only' : null,
   };

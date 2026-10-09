@@ -85,6 +85,15 @@ describe('boardAccess', () => {
     expect(boardAccess('commenter', null)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: 'Can comment' });
   });
 
+  it('opens a board that needs features this client lacks read-only, and still allows comments', () => {
+    expect(boardAccess('owner', null, false, true)).toEqual({ storeReadOnly: true, commentsReadOnly: false, badge: null });
+    expect(boardAccess(null, null, false, true).storeReadOnly).toBe(true);
+    expect(boardAccess('viewer', null, false, true)).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });
+    expect(boardAccess('owner', workspace({ readOnly: true }), false, true).badge).toBe(READ_ONLY_BADGE);
+    expect(boardAccess('owner', null, true, true).badge).toBe(DELETED_BADGE);
+    expect(boardAccess('owner', null, false, false).storeReadOnly).toBe(false);
+  });
+
   it('lets a viewer stay a viewer once the workspace is writable again', () => {
     expect(boardAccess('viewer', workspace({ readOnly: true })).storeReadOnly).toBe(true);
     expect(boardAccess('viewer', workspace({ readOnly: false }))).toEqual({ storeReadOnly: true, commentsReadOnly: true, badge: 'View only' });

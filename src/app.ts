@@ -281,13 +281,13 @@ export class BoardApp {
 
   /** Threads whose pin may be shown: not anchored to something private writing hides. */
   visibleThreads(): Thread[] {
-    const get = (id: string) => this.store.get(id);
+    const get = (id: string) => this.store.getPlaced(id);
     return this.comments.list().filter((t) => threadVisible(t, get, (o) => this.flow.isHidden(o)));
   }
 
   /** Shows a draft pin at `anchor` while its composer is open; null clears it. */
   setDraftPin(anchor: Anchor | null) {
-    this.draftPoint = anchor ? anchorPosition(anchor, (id) => this.store.get(id)) : null;
+    this.draftPoint = anchor ? anchorPosition(anchor, (id) => this.store.getPlaced(id)) : null;
     this.refreshPins();
   }
 
@@ -295,13 +295,13 @@ export class BoardApp {
   flyToThread(id: string) {
     const t = this.visibleThreads().find((x) => x.id === id);
     if (!t) return;
-    this.r.flyToCenter(anchorPosition(t.anchor, (oid) => this.store.get(oid)), Math.max(1, this.zoom));
+    this.r.flyToCenter(anchorPosition(t.anchor, (oid) => this.store.getPlaced(oid)), Math.max(1, this.zoom));
   }
 
   private refreshPins() {
     this.r.setPins(pinViews({
       threads: this.visibleThreads(),
-      get: (id) => this.store.get(id),
+      get: (id) => this.store.getPlaced(id),
       openId: this.openThreadId,
       draft: this.draftPoint,
       visible: this.commentsVisible,
@@ -353,13 +353,13 @@ export class BoardApp {
       if (!b || p.x < b.x - tol * 3 || p.y < b.y - tol * 3 || p.x > b.x + b.w + tol * 3 || p.y > b.y + b.h + tol * 3) continue;
       if (isConnector(o)) {
         if (opts.connectors === false) continue;
-        const g = connectorGeom((id) => this.store.get(id), o, this.r.connectorLayout());
+        const g = connectorGeom((id) => this.store.getPlaced(id), o, this.r.connectorLayout());
         if (g && distToPolyline(p, g.pts) <= tol + 3 / this.zoom) return o;
         if (g && o.label && Math.hypot(p.x - g.mid.x, p.y - g.mid.y) < 16 / this.zoom) return o;
         continue;
       }
       if (o.type === 'frame' && opts.frames === false) continue;
-      if (hitBox(o, p, tol)) return o;
+      if (hitBox(this.store.placed(o), p, tol)) return o;
     }
     return undefined;
   }
@@ -492,10 +492,10 @@ export class BoardApp {
 
   private handleAt(p: Point): { id: Id; h: HandleId } | null {
     if (this.readOnly || this.selection.length !== 1) return null;
-    const o = this.store.get(this.selection[0]);
+    const o = this.store.getPlaced(this.selection[0]);
     if (!o) return null;
     const tol = 8 / this.zoom;
-    for (const h of handlesFor(o, (id) => this.store.get(id), this.zoom, this.r.connectorLayout())) {
+    for (const h of handlesFor(o, (id) => this.store.getPlaced(id), this.zoom, this.r.connectorLayout())) {
       if (Math.abs(h.p.x - p.x) <= tol && Math.abs(h.p.y - p.y) <= tol) return { id: o.id, h: h.id };
     }
     return null;
@@ -503,7 +503,7 @@ export class BoardApp {
 
   /** Whether `p` is on the shape `id` or in the ring around it where its connection dots are. */
   private nearAnchors(id: Id, p: Point): boolean {
-    const o = this.store.get(id);
+    const o = this.store.getPlaced(id);
     if (!CONNECTABLE(o) || o.locked) return false;
     const l = toLocal(o, p);
     const m = 26 / this.zoom; // the dots are 14px out with a 9px reach
@@ -513,7 +513,7 @@ export class BoardApp {
   private anchorAt(p: Point): { id: Id; side: 'top' | 'right' | 'bottom' | 'left' } | null {
     if (this.readOnly) return null;
     const id = this.r.overlay.anchorsFor;
-    const o = id ? this.store.get(id) : undefined;
+    const o = id ? this.store.getPlaced(id) : undefined;
     if (!CONNECTABLE(o)) return null;
     for (const side of ['top', 'right', 'bottom', 'left'] as const) {
       const a = sideAnchor(o, side);
@@ -587,7 +587,7 @@ export class BoardApp {
     // Handles of the current selection (the comment tool never starts a drag)
     const hh = this.tool.kind === 'comment' ? undefined : this.handleAt(p);
     if (hh) {
-      const o = this.store.get(hh.id)!;
+      const o = this.store.getPlaced(hh.id)!;
       if (hh.h === 'from' || hh.h === 'to') this.drag = { mode: 'endpoint', id: o.id, end: hh.h };
       else if (hh.h === 'rot' && isBox(o)) {
         const c = center(o);
@@ -638,7 +638,7 @@ export class BoardApp {
         if (this.comments.readOnly()) return;
         const obj = this.hit(p, { locked: true });
         // a hidden object would take its thread out of sight as soon as it was posted, so the pin stays free
-        const target = isBox(obj) && obj.type !== 'path' && !this.flow.isHidden(obj) ? obj : undefined;
+        const target = isBox(obj) && obj.type !== 'path' && !this.flow.isHidden(obj) ? this.store.placed(obj) : undefined;
         const anchor = anchorFor(p, target);
         this.closeThread();
         this.setDraftPin(anchor);
@@ -661,20 +661,21 @@ export class BoardApp {
   }
 
   private beginMove(p: Point) {
-    const ids = new Set(this.selection.filter((id) => !this.store.get(id)?.locked));
+    // what a container lays out moves with the container, never by its own x and y
+    const ids = new Set(this.selection.filter((id) => { const o = this.store.get(id); return !o?.locked && !(o && this.store.isLaidOut(o)); }));
     // frames carry their children (and nested frames theirs)
     const stack = [...ids];
     while (stack.length) {
       const id = stack.pop()!;
       if (this.store.get(id)?.type !== 'frame') continue;
       for (const c of this.store.childrenOf(id)) {
-        if (c.locked || ids.has(c.id)) continue;
+        if (c.locked || ids.has(c.id) || this.store.isLaidOut(c)) continue;
         ids.add(c.id);
         stack.push(c.id);
       }
     }
     const orig = new Map<Id, Obj>();
-    for (const id of ids) orig.set(id, structuredClone(this.store.get(id)!));
+    for (const id of ids) orig.set(id, structuredClone(this.store.getPlaced(id)!));
     const bounds = this.r.contentBounds(this.selection) ?? { x: p.x, y: p.y, w: 0, h: 0 };
     this.drag = { mode: 'move', start: p, ids: [...ids], orig, bounds, moved: false };
   }
@@ -810,7 +811,7 @@ export class BoardApp {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
         const movers = [...d.orig.values()].filter(isBox).map(boxBounds);
-        d.guides = startGuides(referenceRects(this.store.ordered(), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
+        d.guides = startGuides(referenceRects(this.store.ordered().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
       }
       const sn = snapMove(d.guides, dx, dy, this.zoom);
       if (sn.dx !== null) dx += sn.dx;
@@ -865,7 +866,7 @@ export class BoardApp {
     if (!e.altKey && !o0.rotation && !keepAspect) {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
-        d.guides = startGuides(referenceRects(this.store.ordered(), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
+        d.guides = startGuides(referenceRects(this.store.ordered().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
       }
       const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
       sx = sn.dx;
@@ -1070,8 +1071,8 @@ export class BoardApp {
     const fb = boxBounds(frame);
     this.store.transact(() => {
       for (const o of this.store.cache.values()) {
-        if (o.id === frame.id || o.type === 'frame' || o.locked || isConnector(o)) continue;
-        if (rectContains(fb, boxBounds(o))) this.store.update(o.id, { parent: frame.id });
+        if (o.id === frame.id || o.type === 'frame' || o.locked || isConnector(o) || this.store.isLaidOut(o)) continue;
+        if (rectContains(fb, boxBounds(this.store.placed(o)))) this.store.update(o.id, { parent: frame.id });
       }
     });
   }
@@ -1080,10 +1081,10 @@ export class BoardApp {
     this.store.transact(() => {
       for (const id of ids) {
         const o = this.store.get(id);
-        if (!isBox(o) || o.type === 'frame') continue;
+        if (!isBox(o) || o.type === 'frame' || this.store.isLaidOut(o)) continue;
         // children that moved together with their frame keep their parent
         if (o.parent && ids.includes(o.parent)) continue;
-        const f = this.frameAt(center(o), new Set([id]));
+        const f = this.frameAt(center(this.store.placed(o)), new Set([id]));
         if ((f?.id ?? undefined) !== o.parent) this.store.update(id, { parent: f?.id });
       }
     });
@@ -1239,7 +1240,7 @@ export class BoardApp {
   nudge(dx: number, dy: number) {
     this.store.transact(() => {
       for (const o of this.selected()) {
-        if (o.locked) continue;
+        if (o.locked || this.store.isLaidOut(o)) continue;
         if (isConnector(o)) {
           const patch: Partial<ConnectorObj> = {};
           if (o.from.kind === 'free') patch.from = { ...o.from, x: o.from.x + dx, y: o.from.y + dy };
@@ -1267,7 +1268,7 @@ export class BoardApp {
       for (const id of ids) {
         for (const c of this.store.connectorsOf(id)) {
           if (ids.has(c.id)) continue;
-          const g = connectorGeom((x) => this.store.get(x), c, this.r.connectorLayout());
+          const g = connectorGeom((x) => this.store.getPlaced(x), c, this.r.connectorLayout());
           if (!g) continue;
           const patch: Partial<ConnectorObj> = {};
           if (c.from.kind === 'bound' && ids.has(c.from.id)) patch.from = { kind: 'free', x: g.start.x, y: g.start.y };
@@ -1398,12 +1399,12 @@ export class BoardApp {
   }
 
   align(mode: 'left' | 'centerH' | 'right' | 'top' | 'middleV' | 'bottom') {
-    const boxes = this.selected().filter(isBox);
+    const boxes = this.selected().filter(isBox).filter((o) => !this.store.isLaidOut(o));
     if (boxes.length < 2) return;
     const b = this.r.contentBounds(boxes.map((o) => o.id))!;
     this.store.transact(() => {
       for (const o of boxes) {
-        const ob = boxBounds(o);
+        const ob = boxBounds(this.store.placed(o));
         let dx = 0, dy = 0;
         if (mode === 'left') dx = b.x - ob.x;
         if (mode === 'right') dx = b.x + b.w - (ob.x + ob.w);
@@ -1417,18 +1418,19 @@ export class BoardApp {
   }
 
   distribute(axis: 'h' | 'v') {
-    const boxes = this.selected().filter(isBox);
+    const boxes = this.selected().filter(isBox).filter((o) => !this.store.isLaidOut(o));
     if (boxes.length < 3) return;
     const key = axis === 'h' ? 'x' : 'y';
     const size = axis === 'h' ? 'w' : 'h';
-    const sorted = [...boxes].sort((a, b) => boxBounds(a)[key] - boxBounds(b)[key]);
-    const first = boxBounds(sorted[0]), last = boxBounds(sorted[sorted.length - 1]);
-    const total = sorted.reduce((s, o) => s + boxBounds(o)[size], 0);
+    const bounds = (o: BaseObj) => boxBounds(this.store.placed(o));
+    const sorted = [...boxes].sort((a, b) => bounds(a)[key] - bounds(b)[key]);
+    const first = bounds(sorted[0]), last = bounds(sorted[sorted.length - 1]);
+    const total = sorted.reduce((s, o) => s + bounds(o)[size], 0);
     const gap = (last[key] + last[size] - first[key] - total) / (sorted.length - 1);
     let cur = first[key];
     this.store.transact(() => {
       for (const o of sorted) {
-        const ob = boxBounds(o);
+        const ob = bounds(o);
         this.store.update(o.id, { [key]: o[key] + (cur - ob[key]) });
         cur += ob[size] + gap;
       }

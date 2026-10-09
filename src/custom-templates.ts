@@ -167,7 +167,7 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
 }
 
 const OBJ_TYPES: Record<ObjType, true> = {
-  shape: true, sticky: true, text: true, frame: true, icon: true, image: true, path: true, connector: true,
+  shape: true, sticky: true, text: true, frame: true, icon: true, image: true, path: true, connector: true, container: true, lane: true, card: true,
   'uml-class': true, 'uml-actor': true, 'uml-usecase': true, 'uml-lifeline': true, 'uml-note': true,
   'uml-package': true, 'uml-state': true, 'uml-initial': true, 'uml-final': true, 'uml-component': true,
 };

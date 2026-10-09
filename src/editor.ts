@@ -6,8 +6,12 @@ import { LABEL_FONT, labelBox, labelPill, layoutText, styleOf, textHeight } from
 import { fontFamily } from './fonts';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
+import { KANBAN } from '../shared/containers';
 
 type EditMode = 'text' | 'class' | 'frame' | 'label';
+
+/** Objects whose edited text is a name, not their text. */
+const NAMED = (type: string) => type === 'frame' || type === 'container' || type === 'lane';
 
 /**
  * Colours for the edit box. The class and label editors sit in a white box with dark ink
@@ -78,9 +82,9 @@ export class TextEditor {
     } else if (o.type === 'uml-class') {
       this.mode = 'class';
       this.original = formatClass(o);
-    } else if (o.type === 'frame') {
+    } else if (NAMED(o.type)) {
       this.mode = 'frame';
-      this.original = o.name ?? '';
+      this.original = (o as BaseObj).name ?? '';
     } else {
       this.mode = 'text';
       this.original = o.text ?? '';
@@ -101,7 +105,7 @@ export class TextEditor {
 
   reposition() {
     const id = this.id;
-    const o = id ? this.app.store.get(id) : undefined;
+    const o = this.app.store.getPlaced(id ?? undefined);
     if (!o) return;
     const r = this.app.r;
     const z = r.cam.zoom;
@@ -117,7 +121,7 @@ export class TextEditor {
 
     if (isConnector(o)) {
       // the same pill as the rendered label, sized to the text as it is typed (wide enough for the caret when empty)
-      const g = connectorGeom((x) => this.app.store.get(x), o, r.connectorLayout());
+      const g = connectorGeom((x) => this.app.store.getPlaced(x), o, r.connectorLayout());
       if (!g) return;
       const pill = labelPill(ta.value);
       const w = Math.max(pill.w, 24) + 2, h = pill.h; // 2 units of slack so the textarea never wraps sooner than the label
@@ -135,8 +139,11 @@ export class TextEditor {
     let box = { x: 0, y: 0, w: b.w, h: b.h };
     let fontSize = st.fontSize;
     if (centred) box = labelBox(b);
-    if (b.type === 'frame') {
-      box = { x: 0, y: -34, w: Math.max(b.w, 200), h: 28 };
+    if (NAMED(b.type)) {
+      // a frame's name sits above it; a container's and a lane's sit in their header band
+      box = b.type === 'lane' ? { x: KANBAN.lanePad, y: 8, w: b.w - KANBAN.lanePad * 2, h: 32 }
+        : b.type === 'container' ? { x: KANBAN.pad, y: 10, w: Math.max(200, b.w / 2), h: 28 }
+        : { x: 0, y: -34, w: Math.max(b.w, 200), h: 28 };
       fontSize = st.fontSize;
       ta.style.textAlign = 'left';
     }
@@ -164,7 +171,7 @@ export class TextEditor {
       ta.style.fontSize = `${lay.size}px`;
       ta.style.lineHeight = `${lay.lineHeight}px`;
       ta.style.paddingTop = `${Math.max(0, lay.top - box.y)}px`;
-    } else if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && b.type !== 'frame') {
+    } else if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && !NAMED(b.type)) {
       ta.style.paddingTop = '0px';
       const content = ta.scrollHeight;
       ta.style.paddingTop = `${Math.max(0, (box.h - content) / 2)}px`;

@@ -8,7 +8,7 @@ import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 /** `votesPerPerson` value meaning no limit. */
 export const UNLIMITED = 0;
 
-const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' && !isConnector(o);
+const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' && o.type !== 'container' && o.type !== 'lane' && !isConnector(o);
 
 /**
  * Facilitation: a scripted sequence of steps run on the board. All state lives

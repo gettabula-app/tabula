@@ -377,7 +377,7 @@ export function toMermaid(objs: Obj[]): string {
   }
   const lines = ['flowchart TD'];
   for (const o of boxes) {
-    if (o.type === 'frame' || o.type === 'path' || o.type === 'icon') continue;
+    if (o.type === 'frame' || o.type === 'path' || o.type === 'icon' || o.type === 'container' || o.type === 'lane' || o.type === 'card') continue;
     const [l, r] = (o.type === 'shape' && SHAPE_TO_MERMAID[o.kind || 'rect']) || ['(', ')'];
     lines.push(`  ${idOf.get(o.id)}${l}"${safe(o.text || '')}"${r}`);
   }
