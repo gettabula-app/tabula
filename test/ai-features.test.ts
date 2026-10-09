@@ -322,6 +322,18 @@ describe('the in-memory limits', () => {
     expect(counter.check('k', 1)).toBe(0);
   });
 
+  it('keeps a busy key when the map is full, and forgets the key idle longest', () => {
+    let t = 0;
+    const counter = createWindowCounter({ windowMs: 60_000, now: () => t });
+    counter.record('busy');
+    for (let i = 0; i < 49_999; i++) counter.record(`k${i}`);
+    t = 1000;
+    expect(counter.check('busy', 1)).toBeGreaterThan(0);
+    counter.record('fresh');
+    expect(counter.check('busy', 1)).toBeGreaterThan(0);
+    expect(counter.check('k0', 1)).toBe(0);
+  });
+
   it('holds keys all or nothing, and releases them once', () => {
     const gate = createRunGate();
     const release = gate.take(['person', 'key'])!;

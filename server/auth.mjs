@@ -27,7 +27,9 @@ function createLimiter(now) {
 
   const recent = (map, key, t) => (map.get(key) ?? []).filter((ts) => ts > t - HOUR_MS);
 
+  // a key in use goes to the back of the map, so the bound forgets the key idle longest, never one that is busy
   function remember(map, key, hits) {
+    map.delete(key);
     map.set(key, hits);
     if (map.size > MAX_LIMITER_KEYS) map.delete(map.keys().next().value);
   }
@@ -48,7 +50,11 @@ function createLimiter(now) {
     const ipKey = String(ip || 'unknown').slice(0, 64);
     const emailHits = recent(byEmail, email, t);
     const ipHits = recent(byIp, ipKey, t);
-    if (emailHits.length >= EMAIL_LIMIT || ipHits.length >= IP_LIMIT) return false;
+    if (emailHits.length >= EMAIL_LIMIT || ipHits.length >= IP_LIMIT) {
+      if (emailHits.length) remember(byEmail, email, emailHits);
+      if (ipHits.length) remember(byIp, ipKey, ipHits);
+      return false;
+    }
     remember(byEmail, email, [...emailHits, t]);
     remember(byIp, ipKey, [...ipHits, t]);
     return true;

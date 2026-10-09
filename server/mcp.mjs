@@ -61,7 +61,12 @@ function createWindowLimiter(max, now) {
     hit(key) {
       const t = now();
       const list = recent(key, t);
-      if (list.length >= max) return retryAfter(list, t);
+      // a key in use goes to the back of the map, so the bound below forgets the key idle longest, never one that is busy
+      hits.delete(key);
+      if (list.length >= max) {
+        hits.set(key, list);
+        return retryAfter(list, t);
+      }
       hits.set(key, [...list, t]);
       if (hits.size > MAX_LIMITER_KEYS) hits.delete(hits.keys().next().value);
       return 0;
