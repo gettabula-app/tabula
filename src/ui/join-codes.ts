@@ -122,6 +122,10 @@ export function mountJoinCodes(boardId: string): HTMLElement {
     create.disabled = false;
     create.textContent = 'Create code';
     render();
+    // the code is shown once: on a phone the modal scrolls, so bring it into view and put focus on Copy code
+    const created = section.querySelector<HTMLElement>('.join-code-created');
+    created?.scrollIntoView?.({ block: 'center' });
+    created?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
   });
 
   void load();

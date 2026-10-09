@@ -12,12 +12,17 @@ function page(...body: (Node | null)[]): HTMLElement {
     h('div', { class: 'signin-body' }, h('div', { class: 'signin-col' }, ...body)));
 }
 
+/** A join code as typed or pasted: no spaces, upper case, at most 8 characters. */
+export function cleanCode(value: string): string {
+  return value.replace(/\s+/g, '').toUpperCase().slice(0, 8);
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 404 || error.code === 'invalid_join_code') return INVALID;
     if (error.status === 429) return 'Too many attempts. Wait a minute and try again.';
     if (error.status === 0 || error.code === 'network') return NETWORK;
-    if (error.code === 'bad_request') return error.message;
+    if (error.code === 'bad_request') return 'Enter a name of 1 to 40 characters.';
   }
   return 'Could not join this board. Try again.';
 }
@@ -25,13 +30,18 @@ function errorMessage(error: unknown): string {
 export function renderJoin(root: HTMLElement, initialCode: string, done: (guest: GuestJoin) => void): void {
   document.title = 'Join a board - Tabula';
   const code = h('input', {
-    class: 'input join-code-input', name: 'code', type: 'text', value: initialCode.toUpperCase(), maxlength: '8',
+    class: 'input join-code-input', name: 'code', type: 'text', value: cleanCode(initialCode),
     minlength: '6', required: true, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false,
     'aria-label': 'Join code',
   });
+  // people write codes in groups ("ABCD EFGH") and paste them with spaces: drop the spaces before the length limit applies
+  code.addEventListener('input', () => {
+    const clean = cleanCode(code.value);
+    if (clean !== code.value) code.value = clean;
+  });
   const name = h('input', {
-    class: 'input', name: 'name', type: 'text', maxlength: '80', minlength: '1', required: true,
-    autocomplete: 'name', 'aria-label': 'Your name', 'aria-describedby': 'join-name-help',
+    class: 'input', name: 'name', type: 'text', maxlength: '40', minlength: '1', required: true,
+    autocomplete: 'name', 'aria-label': 'Display name', 'aria-describedby': 'join-name-help',
   });
   const submit = h('button', { type: 'submit', class: 'btn primary' }, 'Join board');
   const form = h('form', { class: 'signin-form join-form' },
@@ -49,7 +59,7 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
     submit.disabled = true;
     submit.textContent = 'Joining…';
     try {
-      const joined = await api.joinWithCode(code.value.trim().toUpperCase(), name.value);
+      const joined = await api.joinWithCode(cleanCode(code.value), name.value);
       setGuest(joined);
       done(joined);
     } catch (err) {

@@ -115,6 +115,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     return h('button', { class: 'comment-row', onclick: () => openRow(t) },
       avatar(t.authorName, t.authorColor),
       h('span', { class: 'comment-row-body' },
+        t.authorId.startsWith('guest_') ? h('span', { class: 'comment-row-author' }, t.authorName, ' ', guestMark('comment-badge comment-guest')) : null,
         h('span', { class: 'comment-row-text' }, t.text.trim().split('\n')[0]),
         h('span', { class: 'comment-row-meta' }, `${n} repl${n === 1 ? 'y' : 'ies'} · ${fmtAgo(t.createdAt)}`)));
   }
