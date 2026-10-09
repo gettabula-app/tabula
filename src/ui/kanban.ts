@@ -1,7 +1,7 @@
 import './kanban.css';
 import type { BoardApp } from '../app';
 import type { Id } from '../types';
-import { addCard, addRefusal } from '../containers';
+import { addCard, addCardRefusal } from '../containers';
 import { fontFamily } from '../fonts';
 import { addRow, laneCards } from './kanban-logic';
 
@@ -60,7 +60,7 @@ export class CardInput {
     const { app } = this;
     if (app.readOnly || app.store.get(laneId)?.type !== 'lane') return;
     if (this.lane) this.stop();
-    const refused = addRefusal(app.store, laneId);
+    const refused = addCardRefusal(app.store, laneId);
     if (refused) {
       app.notify(refused);
       return;
@@ -100,7 +100,7 @@ export class CardInput {
     const { app } = this;
     const id = addCard(app.store, lane, title, { createdBy: app.user.id, font: app.store.getMeta().bodyFont });
     if (!id) {
-      const refused = addRefusal(app.store, lane);
+      const refused = addCardRefusal(app.store, lane);
       if (refused) app.notify(refused);
       return;
     }

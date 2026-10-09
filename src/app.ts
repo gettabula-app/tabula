@@ -15,14 +15,19 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, objectMarkup, textHeight } from './markup';
+import { cardBody, kanbanHeaderControls, objectMarkup, textHeight } from './markup';
 import {
+  KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
   cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
   dropLine, keyboardMove, laneCards, lowDetail, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
+  EMPTY_FILTER, addRow, cardMatches, cleanFilter, filterChips, filterParts, filterStorageKey, inRect, localToday, wipFullLabel, withoutChip,
+  type FilterChip, type FilterViewer, type KanbanFilter,
 } from './ui/kanban-logic';
+import { listLabels } from './labels';
+import { KANBAN, wipCheck } from '../shared/containers';
 import { remapObjects } from './custom-templates';
 import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
@@ -73,8 +78,12 @@ type Drag =
 
 /** The field the card dialog starts on. */
 export type CardFocus = 'title' | 'owner' | 'due' | 'labels';
+/** The kanban menus (docs/kanban.md, slice 4): a lane's ⋯, the container's ⋯, and the Filter popover. */
+export type KanbanMenuKind = 'lane' | 'container' | 'filter';
+/** A control on a kanban's header, or its add-lane +. */
+type KanbanControl = { kind: 'menu' } | { kind: 'filter' } | { kind: 'chip'; key: string } | { kind: 'addLane' };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments' | 'filter';
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
@@ -156,6 +165,11 @@ export class BoardApp {
   openCard: ((id: Id, focus?: CardFocus) => void) | null = null;
   /** Set by the board UI: opens the Labels dialog (src/ui/labels-dialog.ts). */
   openLabels: (() => void) | null = null;
+  /**
+   * Set by the board UI: opens a kanban's lane menu, its container menu or its filter popover against a rectangle in
+   * page coordinates (src/ui/kanban-menus.ts).
+   */
+  openKanbanMenu: ((kind: KanbanMenuKind, id: Id, at: Rect) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
@@ -172,6 +186,9 @@ export class BoardApp {
       const p = o.ownerId ? this.participants().find((x) => x.user.id === o.ownerId) : undefined;
       return p ? personColor(p.user.color) : undefined;
     };
+    this.r.filterChips = (id) => this.filterChipsOf(id);
+    this.disposers.push(this.watchLabels());
+    this.r.dimmed = (o) => this.isDimmed(o);
     this.r.commentCount = (id) => this.comments.list().filter((t) => t.anchor.obj === id && !t.resolved).reduce((n, t) => n + 1 + t.replies.length, 0);
     this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
@@ -677,6 +694,23 @@ export class BoardApp {
     switch (t.kind) {
       case 'select': {
         const top = this.hit(p, { locked: true });
+        // a kanban's Filter, its chips, its ⋯ and its +, and a lane's ⋯: a click, never a drag (locked kanbans included,
+        // so their menu can unlock them; viewers and commenters get Filter and the chips only)
+        if (!e.shiftKey && top?.type === 'container') {
+          const ctl = this.kanbanControlAt(top.id, p);
+          if (ctl) {
+            e.preventDefault();
+            this.setSelection(ctl.kind === 'menu' ? [top.id] : this.selection);
+            this.runKanbanControl(top.id, ctl);
+            return;
+          }
+        }
+        if (!e.shiftKey && !this.readOnly && top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') {
+          e.preventDefault();
+          this.setSelection([top.id]);
+          this.openLaneMenu(top.id);
+          return;
+        }
         if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
         const hit = top?.locked ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
@@ -763,12 +797,12 @@ export class BoardApp {
   // ---------------------------------------------------------------- kanban (docs/kanban.md, slice 2)
 
 
-  /** Where in a lane a world point is: its header, its add-card row, or the rest of its body. */
-  private laneRegion(laneId: Id, p: Point): 'header' | 'add' | 'body' | null {
+  /** Where in a lane a world point is: its ⋯ (editors), its header, its add-card row, or the rest of its body. */
+  private laneRegion(laneId: Id, p: Point): 'menu' | 'header' | 'add' | 'body' | null {
     const lane = this.store.getPlaced(laneId);
     const layout = lane?.parent ? this.store.containerLayout(lane.parent) : null;
     if (!lane || !layout || !layout.rects.has(laneId)) return null;
-    const region = laneRegionAt(lane as BaseObj, laneCards(layout, laneId), p);
+    const region = laneRegionAt(lane as BaseObj, laneCards(layout, laneId), p, !this.readOnly && !lowDetail(this.zoom));
     // below zoom 0.4 the add-card row is not drawn, so it is not there to click either
     return region === 'add' && lowDetail(this.zoom) ? 'body' : region;
   }
@@ -797,6 +831,310 @@ export class BoardApp {
       return layout ? [{ id: o.id, layout }] : [];
     });
     return laneTargetAt(containers, p, moving);
+  }
+
+  // ---------------------------------------------------------------- lanes, menus and filters (docs/kanban.md, slice 4)
+
+  /**
+   * Which control of a kanban's header a world point is on (the drawing and this read the same rectangles,
+   * `kanbanHeaderControls`), or its add-lane +. None below zoom 0.4, where they are not drawn. Filter and the chips are
+   * for everyone (viewers filter too); the ⋯ and the + for editors only.
+   */
+  private kanbanControlAt(containerId: Id, p: Point): KanbanControl | null {
+    const o = this.store.getPlaced(containerId) as BaseObj | undefined;
+    if (o?.type !== 'container' || lowDetail(this.zoom)) return null;
+    const layout = this.store.containerLayout(containerId);
+    if (!this.readOnly && layout && inRect(layout.addLane, p)) return { kind: 'addLane' };
+    const local = { x: p.x - o.x, y: p.y - o.y };
+    if (local.y > KANBAN.containerHeader) return null;
+    const c = kanbanHeaderControls(o, this.filterChipsOf(containerId), !this.readOnly);
+    if (c.menu && inRect(c.menu, local)) return { kind: 'menu' };
+    if (c.filter && inRect(c.filter.rect, local)) return { kind: 'filter' };
+    const chip = c.chips.find((x) => inRect(x.remove, local));
+    return chip ? { kind: 'chip', key: chip.key } : null;
+  }
+
+  /** A rectangle of the board (world units) in page coordinates, for placing a menu against it. */
+  private pageRect(r: Rect): Rect {
+    const a = this.r.toScreen({ x: r.x, y: r.y });
+    const b = this.r.toScreen({ x: r.x + r.w, y: r.y + r.h });
+    const box = this.r.svg.getBoundingClientRect();
+    return { x: box.left + a.x, y: box.top + a.y, w: b.x - a.x, h: b.y - a.y };
+  }
+
+  /** Runs a header control or the add-lane +. */
+  private runKanbanControl(containerId: Id, ctl: KanbanControl) {
+    if (ctl.kind === 'addLane') {
+      this.addLaneTo(containerId);
+      return;
+    }
+    if (ctl.kind === 'chip') {
+      this.setKanbanFilter(containerId, withoutChip(this.kanbanFilter(containerId), ctl.key));
+      return;
+    }
+    const o = this.store.getPlaced(containerId) as BaseObj;
+    const c = kanbanHeaderControls(o, this.filterChipsOf(containerId), !this.readOnly);
+    const r = ctl.kind === 'menu' ? c.menu : c.filter?.rect;
+    if (r) this.openKanbanMenu?.(ctl.kind === 'menu' ? 'container' : 'filter', containerId, this.pageRect({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h }));
+  }
+
+  /** Opens a lane's ⋯ menu (editors only). */
+  openLaneMenu(laneId: Id) {
+    const lane = this.store.getPlaced(laneId);
+    if (this.readOnly || lane?.type !== 'lane') return;
+    const m = { x: lane.x + lane.w - 36, y: lane.y + 12, w: 28, h: 28 };
+    this.openKanbanMenu?.('lane', laneId, this.pageRect(m));
+  }
+
+  /** Opens a kanban's Filter popover or its ⋯ menu from outside its header (the quick-action bar). */
+  openContainerControl(containerId: Id, kind: 'menu' | 'filter') {
+    if (this.store.get(containerId)?.type !== 'container' || (kind === 'menu' && this.readOnly)) return;
+    const o = this.store.getPlaced(containerId) as BaseObj;
+    const c = kanbanHeaderControls(o, this.filterChipsOf(containerId), !this.readOnly);
+    const r = (kind === 'menu' ? c.menu : c.filter?.rect) ?? { x: o.w - 44, y: 8, w: 32, h: 32 };
+    this.openKanbanMenu?.(kind === 'menu' ? 'container' : 'filter', containerId, this.pageRect({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h }));
+  }
+
+  /** Draws a kanban control pressed while its menu or popover is open, and not when it closes. */
+  setKanbanMenuOpen(open: { id: Id; kind: 'menu' | 'filter' } | null) {
+    this.r.setKanbanState({ open });
+  }
+
+  /** Edits a lane from its menu: one undo step, or a message saying why not. */
+  editLaneFromMenu(laneId: Id, patch: LanePatch): boolean {
+    const refused = laneEditRefusal(this.store, laneId);
+    if (refused) {
+      this.notify(refused);
+      return false;
+    }
+    return editLane(this.store, laneId, patch);
+  }
+
+  /** Renames a lane or a kanban in place, with the name editor (as a double-click on its name does). */
+  renameKanbanPart(id: Id) {
+    const o = this.store.get(id);
+    if (this.readOnly || (o?.type !== 'lane' && o?.type !== 'container')) return;
+    if (o.locked) return this.notify(o.type === 'lane' ? 'This lane is locked. Unlock it to change it.' : 'This kanban is locked. Unlock it to rename it.');
+    this.setSelection([id]);
+    this.editor.start(id);
+  }
+
+  /** Move left or Move right from a lane's menu: one undo step, announced. */
+  moveLaneFromMenu(laneId: Id, dir: 'left' | 'right'): boolean {
+    const lane = this.store.get(laneId) as BaseObj | undefined;
+    if (lane?.type !== 'lane' || !lane.parent) return false;
+    const refused = moveLaneRefusal(this.store, laneId, dir);
+    if (refused) {
+      this.notify(refused);
+      return false;
+    }
+    if (!moveLane(this.store, laneId, dir)) return false;
+    const lanes = this.store.containerLayout(lane.parent)?.lanes ?? [];
+    this.announce(`Moved ${lane.name || 'lane'} to position ${lanes.indexOf(laneId) + 1} of ${lanes.length}`);
+    return true;
+  }
+
+  /** Adds a lane after the last one and opens its name for typing. One undo step for the lane. */
+  addLaneTo(containerId: Id): Id | null {
+    const refused = addLaneRefusal(this.store, containerId);
+    if (refused) {
+      this.notify(refused);
+      return null;
+    }
+    const id = addLane(this.store, containerId, { createdBy: this.user.id, font: this.store.getMeta().bodyFont });
+    if (!id) return null;
+    this.announce('Added a lane');
+    this.cardInput.stop();
+    this.setSelection([id]);
+    this.editor.start(id);
+    return id;
+  }
+
+  /**
+   * Deletes a lane from its menu: alone (its cards move to the lane on its left, or its right for the first lane, as the
+   * Delete key does) or with its cards. One undo step, or a message saying why not.
+   */
+  deleteLane(laneId: Id, withCards: boolean): boolean {
+    const r = laneDeleteIds(this.store, laneId, withCards);
+    if ('refused' in r) {
+      this.notify(r.refused);
+      return false;
+    }
+    return this.deleteObjects(r.ids);
+  }
+
+  /** Deletes a kanban with its lanes and cards from its menu. One undo step, or a message saying why not. */
+  deleteKanban(containerId: Id): boolean {
+    const refused = structureRefusal(this.store, containerId);
+    if (refused) {
+      this.notify(refused);
+      return false;
+    }
+    return this.deleteObjects([containerId]);
+  }
+
+  /** Locks or unlocks a kanban from its menu. */
+  toggleKanbanLock(containerId: Id) {
+    const o = this.store.get(containerId);
+    if (this.readOnly || o?.type !== 'container') return;
+    const was = !!o.locked;
+    this.setLocked(containerId, !was);
+    this.notify(was ? 'Unlocked.' : 'Locked. Its cards still move; its lanes stay as they are.');
+    this.r.invalidateKanban(containerId);
+  }
+
+  // Filters are this viewer's own: kept in memory and in this browser, never in the board (docs/kanban.md, Filters).
+  // `filters` holds each filter as it was set or read back; what is used is that filter without labels the board no
+  // longer has, worked out once per labels change (a board may have 2,000 cards, and each draw asks about each one).
+  private filterCache?: Map<Id, KanbanFilter>;
+  private get filters(): Map<Id, KanbanFilter> {
+    return (this.filterCache ??= new Map());
+  }
+  private filterUsed?: Map<Id, { version: number; raw: KanbanFilter; f: KanbanFilter }>;
+  private labelsVersion?: number;
+  private filterMemo?: { version: number; at: number; today: string; viewer: FilterViewer; known: Set<Id>; names: Map<Id, string> };
+
+  /** The board's labels, the viewer and today, for filtering: read once per labels change (and today once a minute). */
+  private filterContext() {
+    const version = this.labelsVersion ?? 0;
+    const now = Date.now();
+    const m = this.filterMemo;
+    if (m && m.version === version && now - m.at < 60_000) return m;
+    const labels = listLabels(this.store);
+    this.filterMemo = {
+      version, at: now, today: localToday(), viewer: this.filterViewer(),
+      known: new Set(labels.map((l) => l.id)), names: new Map(labels.map((l) => [l.id, l.name])),
+    };
+    return this.filterMemo;
+  }
+
+  /**
+   * Board labels changed (here, or from someone else, or by undo): filters that named a label that is gone drop it, in
+   * this browser's storage too, and every filtered kanban redraws its chips and dimming.
+   */
+  private onLabelsChanged() {
+    this.labelsVersion = (this.labelsVersion ?? 0) + 1;
+    const { known } = this.filterContext();
+    for (const [cid, raw] of this.filters) {
+      if (!filterParts(raw)) continue;
+      // a board still loading has no labels yet: nothing is dropped from storage until it has some
+      if (known.size && raw.labels.some((id) => !known.has(id))) this.saveFilter(cid, cleanFilter(raw, known));
+      this.r.invalidateKanban(cid);
+    }
+    this.emit('filter');
+  }
+
+  /** Starts following the board's labels for filters (the constructor calls it). */
+  watchLabels() {
+    const fn = () => this.onLabelsChanged();
+    this.store.labels.observe(fn);
+    return () => this.store.labels.unobserve(fn);
+  }
+
+  private filterKey(containerId: Id) {
+    return filterStorageKey(this.conn?.id ?? '', containerId);
+  }
+
+  private rawFilter(containerId: Id): KanbanFilter {
+    let f = this.filters.get(containerId);
+    if (!f) {
+      let raw: string | null = null;
+      try {
+        raw = localStorage.getItem(this.filterKey(containerId));
+      } catch { /* storage that cannot be read: no saved filter */ }
+      try {
+        f = raw ? cleanFilter(JSON.parse(raw)) : EMPTY_FILTER;
+      } catch {
+        f = EMPTY_FILTER;
+      }
+      this.filters.set(containerId, f);
+    }
+    return f;
+  }
+
+  /** This viewer's filter on a kanban (the empty filter when there is none), without labels the board does not have. */
+  kanbanFilter(containerId: Id): KanbanFilter {
+    const ctx = this.filterContext();
+    const used = (this.filterUsed ??= new Map());
+    const raw = this.rawFilter(containerId);
+    const hit = used.get(containerId);
+    if (hit && hit.version === ctx.version && hit.raw === raw) return hit.f;
+    const f = raw.labels.length ? cleanFilter(raw, ctx.known) : raw;
+    used.set(containerId, { version: ctx.version, raw, f });
+    return f;
+  }
+
+  private saveFilter(containerId: Id, f: KanbanFilter) {
+    this.filters.set(containerId, f);
+    try {
+      if (filterParts(f)) localStorage.setItem(this.filterKey(containerId), JSON.stringify(f));
+      else localStorage.removeItem(this.filterKey(containerId));
+    } catch { /* storage that cannot be written: the filter lasts until the page closes */ }
+  }
+
+  /** Sets this viewer's filter on a kanban and redraws it. Nothing is written to the board. */
+  setKanbanFilter(containerId: Id, f: KanbanFilter) {
+    this.saveFilter(containerId, cleanFilter(f, this.filterContext().known));
+    this.r.invalidateKanban(containerId);
+    this.emit('filter');
+  }
+
+  /** Who "Mine" means (docs/kanban.md, Owners). */
+  private filterViewer(): FilterViewer {
+    return { id: this.user.id, name: this.user.name, accounts: this.role !== null && this.role !== undefined };
+  }
+
+  /** The header's chips for this viewer's filter on a kanban. */
+  filterChipsOf(containerId: Id): FilterChip[] {
+    const f = this.kanbanFilter(containerId);
+    if (!filterParts(f)) return [];
+    const { names } = this.filterContext();
+    return filterChips(f, (id) => names.get(id));
+  }
+
+  /** Whether this viewer's filter on a card's kanban leaves it out (it is drawn at 35% and a marquee skips it). */
+  isDimmed(card: Obj): boolean {
+    if (card.type !== 'card' || !card.parent) return false;
+    const lane = this.store.get(card.parent) as BaseObj | undefined;
+    if (lane?.type !== 'lane' || !lane.parent) return false;
+    const f = this.kanbanFilter(lane.parent);
+    if (!filterParts(f)) return false;
+    const ctx = this.filterContext();
+    return !cardMatches(card as BaseObj, f, { viewer: ctx.viewer, today: ctx.today, done: lane.stage === 'done', known: ctx.known });
+  }
+
+  /** How many of a kanban's cards this viewer's filter matches, of how many ("2 of 9 match"). */
+  filterCounts(containerId: Id): { matching: number; total: number } {
+    const layout = this.store.containerLayout(containerId);
+    let matching = 0, total = 0;
+    for (const ids of layout?.cards.values() ?? []) {
+      for (const id of ids) {
+        total++;
+        const o = this.store.get(id);
+        if (o && !this.isDimmed(o)) matching++;
+      }
+    }
+    return { matching, total };
+  }
+
+  /**
+   * While cards are dragged over a block lane that would refuse them: its body outlined and "Full · n / n" under its
+   * last card (docs/kanban.md, Visual design, States). Null when the lane takes them.
+   */
+  private fullLaneMark(t: LaneTarget, ids: Id[]): { body: Rect; at: Point; text: string } | null {
+    if (!wipRefusal(this.store, ids, t.id)) return null;
+    const lane = this.store.get(t.id) as BaseObj;
+    const layout = this.store.containerLayout(t.container);
+    const r = layout?.rects.get(t.id);
+    if (!layout || !r) return null;
+    const shown = layout.cards.get(t.id) ?? [];
+    const v = wipCheck(lane, shown.map((id) => ({ id })), ids);
+    const row = addRow(r, laneCards(layout, t.id));
+    return {
+      body: { x: r.x, y: r.y + KANBAN.header, w: r.w, h: r.h - KANBAN.header },
+      at: { x: r.x + r.w / 2, y: row.y + row.h + 8 },
+      text: wipFullLabel(shown.length, v.limit ?? shown.length),
+    };
   }
 
   // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
@@ -928,16 +1266,19 @@ export class BoardApp {
 
   /** While stickies are moved over a lane: the drop line where they would land as cards. */
   private showStickyDrop(ids: Id[], p: Point): boolean {
-    const t = ids.some((id) => this.selection.includes(id) && this.convertible(id)) ? this.laneTarget(p) : null;
-    const was = this.r.overlay.kanban?.line;
+    const stickies = ids.filter((id) => this.selection.includes(id) && this.convertible(id));
+    const t = stickies.length ? this.laneTarget(p) : null;
+    const was = this.r.overlay.kanban?.line || this.r.overlay.kanban?.full;
     if (!t) {
       if (was) this.clearStickyDrop();
       return false;
     }
+    // a full block lane refuses them as cards: it says so, with no drop line (docs/kanban.md, WIP limits)
+    const full = this.fullLaneMark(t, stickies);
     const layout = this.store.containerLayout(t.container)!;
-    const line = dropLine(layout.rects.get(t.id)!, laneCards(layout, t.id), t.index);
-    this.r.setKanbanState({ dropLane: t.id });
-    this.r.setOverlay({ kanban: { ...this.r.overlay.kanban, line } });
+    const line = full ? null : dropLine(layout.rects.get(t.id)!, laneCards(layout, t.id), t.index);
+    this.r.setKanbanState({ dropLane: full ? null : t.id });
+    this.r.setOverlay({ kanban: { ...this.r.overlay.kanban, line, full } });
     return true;
   }
 
@@ -970,15 +1311,17 @@ export class BoardApp {
     const t = this.laneTarget(p, moving);
     d.target = t;
     let line = null;
-    if (t) {
+    // a block lane that would refuse them shows it is full, and no drop line (docs/kanban.md, WIP limits)
+    const full = t ? this.fullLaneMark(t, d.ids) : null;
+    if (t && !full) {
       const layout = this.store.containerLayout(t.container)!;
       line = dropLine(layout.rects.get(t.id)!, laneCards(layout, t.id, moving), t.index);
     }
     // off every kanban the cards would land loose, in the frame under them if any
     const lead = this.store.getPlaced(d.lead) as BaseObj;
     d.frame = t ? null : this.frameAt({ x: p.x - d.grab.x + lead.w / 2, y: p.y - d.grab.y + lead.h / 2 })?.id ?? null;
-    this.r.setKanbanState({ dropLane: t?.id ?? null });
-    this.r.setOverlay({ kanban: line ? { line } : null, dropTarget: d.frame });
+    this.r.setKanbanState({ dropLane: t && !full ? t.id : null });
+    this.r.setOverlay({ kanban: line || full ? { line, full } : null, dropTarget: d.frame });
   }
 
   private finishCardDrag(d: Extract<Drag, { mode: 'cards' }>, p: Point) {
@@ -1039,7 +1382,10 @@ export class BoardApp {
     const cid = containerOf(this.store, card) ?? this.containerShowing(card.id);
     const layout = cid ? this.store.containerLayout(cid) : null;
     const move = layout ? keyboardMove(layout, card.id, key) : null;
-    if (move && moveCards(this.store, [card.id], move.lane, move.index)) {
+    // a move within the lane is never refused; into a full block lane it is, with the same message as a drop
+    const refused = move ? moveRefusal(this.store, [card.id], move.lane) : null;
+    if (refused) this.notify(refused);
+    else if (move && moveCards(this.store, [card.id], move.lane, move.index)) {
       this.announce(moveAnnouncement((this.store.get(move.lane) as BaseObj | undefined)?.name ?? '', move.position, move.total));
     }
     this.showMoving(card.id);
@@ -1098,7 +1444,8 @@ export class BoardApp {
         const m = rectOfPoints([d.start, p]);
         const inside = this.store.shown().filter((o) => {
           const b = this.r.bounds(o);
-          return !o.locked && b && rectContains(m, b) && !isWithheld(o, this.flow);
+          // a card this viewer's filter dims is not picked up by a marquee (docs/kanban.md, Filters)
+          return !o.locked && b && rectContains(m, b) && !isWithheld(o, this.flow) && !this.isDimmed(o);
         });
         this.r.setOverlay({ marquee: m });
         this.selection = [...new Set([...d.base, ...inside.map((o) => o.id)])];
@@ -1183,6 +1530,8 @@ export class BoardApp {
     if (overPin) cursor = 'pointer';
     else if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
+    else if (t === 'select' && top?.type === 'container' && this.kanbanControlAt(top.id, p)) cursor = 'pointer';
+    else if (t === 'select' && top?.type === 'lane' && !this.readOnly && this.laneRegion(top.id, p) === 'menu') cursor = 'pointer';
     else if (live?.type === 'lane' && t === 'select' && !this.readOnly && this.laneRegion(live.id, p) === 'add') cursor = 'pointer';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
@@ -1509,6 +1858,9 @@ export class BoardApp {
     // a double click on a pin must not edit the object underneath or add a text box
     if ((this.tool.kind === 'select' || this.tool.kind === 'comment') && pinAt(this.r.pins, p, this.zoom)) return;
     const top = this.hit(p, { locked: true });
+    // a double click on a kanban's controls is two clicks on them, never a rename or a new card
+    if (top?.type === 'container' && this.kanbanControlAt(top.id, p)) return;
+    if (top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') return;
     if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
     if (this.readOnly) {
@@ -1715,12 +2067,23 @@ export class BoardApp {
   }
 
   deleteSelection() {
-    // a kanban goes with its lanes and cards, a lane's cards move to its neighbour; locks are respected (containers.ts)
-    const plan = planKanbanDelete(this.store, this.selection.filter((id) => !this.store.get(id)?.locked));
-    if ('refused' in plan) return this.notify(plan.refused);
+    if (this.deleteObjects(this.selection.filter((id) => !this.store.get(id)?.locked))) this.setSelection([]);
+  }
+
+  /**
+   * Deletes objects (unlocked ones; the caller leaves out locked ones) in one undo step. A kanban goes with its lanes and
+   * cards, a lane's cards move to its neighbour unless they are deleted too; locks inside kanbans are respected
+   * (containers.ts, planKanbanDelete). Returns whether anything was deleted.
+   */
+  deleteObjects(list: Id[]): boolean {
+    if (this.readOnly) return false;
+    const plan = planKanbanDelete(this.store, list);
+    if ('refused' in plan) {
+      this.notify(plan.refused);
+      return false;
+    }
     const { ids, relocate } = plan;
-    if (!ids.size) return;
-    this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
+    if (!ids.size) return false;
     const moved = new Set(relocate.map((r) => r.id));
     this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
     this.store.undo.stopCapturing();
@@ -1744,7 +2107,8 @@ export class BoardApp {
       this.store.remove(ids);
     });
     this.store.undo.stopCapturing();
-    this.setSelection([]);
+    this.setSelection(this.selection.filter((id) => !ids.has(id)));
+    return true;
   }
 
   /** Selected objects plus what travels with them, as a portable list; never a note private writing hides from this person. */
@@ -1769,7 +2133,7 @@ export class BoardApp {
     // while making kanbans is behind its flag, only copies of a kanban on this board come through (src/flags.ts)
     if (!kanbanFlag()) {
       const r = withoutNewKanbans(objs, (o) => this.store.get(o.id)?.type === o.type);
-      if (r.dropped) this.notify('Kanbans cannot be added to a board yet, so they were left out.');
+      if (r.dropped) this.notify(KANBANS_LEFT_OUT);
       objs = r.objs;
       if (!objs.length) return [];
     }

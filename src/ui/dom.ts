@@ -108,6 +108,7 @@ export const ICONS = {
   mermaid: '<path d="M4 5h6v4H4zM14 15h6v4h-6zM7 9v3h10v3"/>',
   user: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0115 0"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   dots: '<circle cx="5.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor"/>',
   map: '<path d="M3.5 6.5l5.5-2.5 6 2.5 5.5-2.5v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
   chat: '<path d="M4 5h16v11H10l-6 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
