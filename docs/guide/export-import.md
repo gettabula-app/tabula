@@ -23,7 +23,7 @@ Images use the light default colours on white whatever theme you are using. Comm
 
 ### Board file (.drift)
 
-A `.drift` file holds the complete board, including comments, polls and votes, and the board's edit history. It is the most faithful copy. Use it to back up a board or hand it to someone else.
+A `.drift` file holds the complete board, including comments, polls and votes, the board's edit history and its [pictures](images.md). It is the most faithful copy. Use it to back up a board or hand it to someone else.
 
 ### JSON snapshot
 
