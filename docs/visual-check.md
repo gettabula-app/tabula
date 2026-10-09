@@ -81,6 +81,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `ai-admin` | The admin dashboard's AI tab with no workspace key, scrolled to the key form |
 | `ai-admin-openai`, `ai-admin-openai-bad` | The workspace key form with OpenAI-compatible chosen: filled in, and with a local address and a bad model id |
 | `ai-admin-openai-saved`, `ai-admin-anthropic-saved` | The tab with a saved workspace key: for an OpenAI-compatible one the Model row is read-only ("From the key") |
+| `ai-key-me-keyboard`, `ai-admin-keyboard` | The key form without a pointer: Tab to the Provider select, type `O` to choose OpenAI-compatible, Tab through Base URL, Model and API key to Save key, and Shift+Tab back. The state fails (and the run exits 1) when the order is wrong, Save stays disabled, or the focused field shows no focus indicator |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |

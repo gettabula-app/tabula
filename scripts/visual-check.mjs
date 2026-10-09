@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -678,6 +678,58 @@ async function fillOpenAiKey({ page }, { baseUrl = NVIDIA.baseUrl, model = NVIDI
   await page.getByRole('button', { name: /^(Save key|Replace key)$/ }).scrollIntoViewIfNeeded();
 }
 
+/** What has the keyboard focus, in words a test can compare: the label, the placeholder or the text of the control. */
+const focusedName = (page) => page.evaluate(() => {
+  const el = document.activeElement;
+  return el ? el.getAttribute('aria-label') || el.getAttribute('placeholder') || (el.textContent || '').trim().slice(0, 40) || el.tagName : null;
+});
+
+/** Presses Tab until `name` has the focus (at most `max` times), and throws when it never does. */
+async function tabTo(page, name, max = 60) {
+  for (let i = 0; i < max; i++) {
+    if ((await focusedName(page)) === name) return;
+    await page.keyboard.press('Tab');
+  }
+  throw new Error(`Tab never reached "${name}" (the focus is on "${await focusedName(page)}")`);
+}
+
+/**
+ * The key form without a pointer (TAB-222): Tab to the Provider select, choose OpenAI-compatible by typing its first letter, and Tab through
+ * the new fields in reading order to the Save button, typing into each. Throws when the order or a field is wrong.
+ */
+async function walkKeyFormByKeyboard({ page }, { saveName }) {
+  await tabTo(page, 'Provider');
+  // typing the first letter chooses the option on a closed select (the arrow keys open its list on macOS) and fires change: the two
+  // fields appear without a click
+  await page.keyboard.type('O');
+  if ((await page.getByRole('combobox', { name: 'Provider' }).inputValue()) !== 'openai-compatible') throw new Error('typing O did not choose OpenAI-compatible');
+  const order = [];
+  for (const [text, field] of [['https://integrate.api.nvidia.com/v1', 'Base URL'], ['moonshotai/kimi-k3', 'Model'], ['sk-test-not-a-real-key-1234', 'API key']]) {
+    await page.keyboard.press('Tab');
+    order.push(field);
+    await page.keyboard.type(text);
+  }
+  await page.keyboard.press('Tab');
+  const reached = await focusedName(page);
+  if (reached !== saveName) throw new Error(`Tab after the key field reached "${reached}", not "${saveName}" (order: ${order.join(', ')})`);
+  if (await page.getByRole('button', { name: saveName }).isDisabled()) throw new Error(`"${saveName}" is still disabled after a valid form was typed`);
+  // and back the other way: Shift+Tab from Save returns to the key field, then the Model field
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  const back = await focusedName(page);
+  if (back !== 'moonshotai/kimi-k3' && back !== 'Model') throw new Error(`Shift+Tab twice from Save reached "${back}", not the Model field`);
+  // a keyboard user must see where they are: the focused field shows an outline, a shadow, or a border its unfocused neighbour lacks
+  const look = await page.evaluate(() => {
+    const el = document.activeElement;
+    const other = [...document.querySelectorAll('input.input')].find((i) => i !== el && i.getAttribute('placeholder') !== null);
+    const c = getComputedStyle(el);
+    const o = other ? getComputedStyle(other) : null;
+    return { visible: el.matches(':focus-visible'), outline: `${c.outlineStyle} ${c.outlineWidth}`, shadow: c.boxShadow, border: c.borderColor, otherBorder: o?.borderColor ?? null };
+  });
+  const ringed = look.visible && ((look.outline !== 'none 0px' && !look.outline.startsWith('none')) || look.shadow !== 'none' || look.border !== look.otherBorder);
+  if (!ringed) throw new Error(`the focused field shows no focus indicator: ${JSON.stringify(look)}`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -1197,6 +1249,15 @@ const STATES = {
     await openAdminAi(env, {});
     await fillOpenAiKey(env);
   },
+  // keyboard only: the focus order of the key form and the provider select
+  async 'ai-key-me-keyboard'(env) {
+    await openMyAiKey(env, {});
+    await walkKeyFormByKeyboard(env, { saveName: 'Save key' });
+  },
+  async 'ai-admin-keyboard'(env) {
+    await openAdminAi(env, {});
+    await walkKeyFormByKeyboard(env, { saveName: 'Save key' });
+  },
   async 'ai-admin-openai-bad'(env) {
     await openAdminAi(env, {});
     await fillOpenAiKey(env, { baseUrl: 'https://localhost/v1', model: '-x' });
@@ -1259,7 +1320,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
