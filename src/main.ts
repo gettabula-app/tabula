@@ -38,6 +38,7 @@ import type { Desktop } from './desktop';
 import { seedDemo } from './demo/seed';
 import { mountDemoBanner } from './ui/demo-banner';
 import type { User } from './types';
+import './ui/touch.css';
 
 // `demo.ts` is evaluated before these imports so its storage/network shims protect module initializers too.
 if (DEMO) installDemoGuards();

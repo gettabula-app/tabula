@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -43,6 +43,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
+  --touch            Emulate a touch device (useful for an iPad-sized viewport)
   --out <dir>        Parent folder, default tabula-review (shots go to <dir>/<id>/)
   --no-build         Reuse an existing dist/ instead of running npm run build:app
   --frameable        Start the throwaway relay with TABULA_DEV_ALLOW_FRAMING=1
@@ -795,6 +796,50 @@ async function waitForGroupStyles(page) {
   await page.waitForFunction(() => Boolean(getComputedStyle(document.documentElement).getPropertyValue('--group-line').trim()));
 }
 
+const TOUCH_TARGET_EXCEPTIONS = [
+  'native checkbox/radio: measure the associated label as the 44px hit area',
+  'canvas text editor (.text-editor): it follows board zoom; its focused font size is checked separately',
+  'board canvas: continuous pan/draw surface, not a discrete control',
+];
+
+async function assertTouchTargets(page, stage) {
+  const report = await page.evaluate(() => {
+    const textSelector = "input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='reset']):not([type='image']):not([type='color']):not([type='hidden']), textarea, select, [contenteditable]:not([contenteditable='false'])";
+    const targetSelector = "button, a[href], input:not([type='hidden']), textarea, select, [contenteditable]:not([contenteditable='false']), [role='button'], [role='menuitem'], [role='menuitemradio'], [role='option'], [role='radio'], [role='checkbox'], [role='tab'], [role='switch'], [role='combobox'], [role='spinbutton'], [role='link'], [tabindex]:not([tabindex='-1']), summary";
+    const visible = (el) => {
+      if (!(el instanceof HTMLElement) || el.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const label = (el) => el.getAttribute('aria-label') || el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 36) || el.className?.toString() || el.tagName.toLowerCase();
+    const smallFonts = [...document.querySelectorAll(textSelector)]
+      .filter((el) => visible(el))
+      .map((el) => ({ name: label(el), size: Number.parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((el) => !Number.isFinite(el.size) || el.size < 16);
+    const misses = [];
+    let measured = 0;
+    for (const el of document.querySelectorAll(targetSelector)) {
+      if (!visible(el) || el.matches(':disabled, [aria-disabled="true"]')) continue;
+      if (el.matches('.text-editor')) continue;
+      let target = el;
+      if (el.matches("input[type='checkbox'], input[type='radio']")) target = el.closest('label');
+      if (!target) {
+        misses.push(`${label(el)} has no associated label hit area`);
+        continue;
+      }
+      const rect = target.getBoundingClientRect();
+      measured++;
+      if (rect.width < 43.5 || rect.height < 43.5) misses.push(`${label(el)} ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
+    }
+    return { coarse: matchMedia('(pointer: coarse)').matches, measured, misses, smallFonts };
+  });
+  if (!report.coarse) throw new Error(`touch-target check at ${stage} did not get a coarse pointer`);
+  if (report.smallFonts.length) throw new Error(`touch font-size below 16px at ${stage}: ${JSON.stringify(report.smallFonts)}`);
+  if (report.misses.length) throw new Error(`touch targets below 44px at ${stage}: ${report.misses.join('; ')}`);
+  console.log(`touch-targets ${stage}: ${report.measured} targets at least 44×44px; text fields at least 16px`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -815,6 +860,49 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  async 'touch-targets'(env) {
+    const { page } = env;
+    await page.goto(`${env.base}/#/`);
+    await page.locator('.home-title').waitFor();
+    await page.waitForFunction((n) => document.querySelectorAll('.board-row').length >= n, OTHER_BOARDS.length + 1);
+    await assertTouchTargets(page, 'boards home and search');
+
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.setSelection(['seed-title']));
+    await page.locator('.quickbar.show').waitFor();
+    await assertTouchTargets(page, 'board and quick actions');
+
+    await page.getByRole('button', { name: 'More properties' }).click();
+    await page.locator('.props.show').waitFor();
+    await assertTouchTargets(page, 'properties panel');
+
+    await page.locator('.font-btn').click();
+    await page.locator('.font-picker').waitFor();
+    await page.locator('.font-picker .chip').first().waitFor();
+    await assertTouchTargets(page, 'font popover and chips');
+    await page.keyboard.press('Escape');
+    await page.locator('.font-picker').waitFor({ state: 'detached' });
+
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Board settings' }).click();
+    await page.getByRole('dialog', { name: 'Board settings' }).waitFor();
+    await assertTouchTargets(page, 'settings dialog and close button');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => document.querySelector('.props')?.classList.remove('show'));
+
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.r.flyTo(app.r.contentBounds(['seed-note-1']), 24, 0.9);
+    });
+    await page.waitForFunction(() => window.__board.r.cam.zoom >= 0.31);
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
+    const editorSize = await page.locator('.text-editor').evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+    if (editorSize < 16) throw new Error(`canvas text editor computed to ${editorSize}px on a coarse pointer`);
+    console.log(`touch-target exceptions: ${TOUCH_TARGET_EXCEPTIONS.join('; ')}`);
+    console.log(`touch-targets canvas text editor: ${editorSize}px computed font size at board zoom`);
+    return { keepFocus: true };
   },
   async 'board-selected'(env) {
     await openSeedBoard(env);
@@ -1254,6 +1342,7 @@ const STATES = {
     await field.click();
     await field.pressSequentially('Thanks @b');
     await env.page.locator('.chat-suggest .chat-option').first().waitFor();
+    if (await env.page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await assertTouchTargets(env.page, 'chat composer');
     // the typeahead closes when the field loses focus, so this shot keeps it
     return { keepFocus: true };
   },
@@ -1839,12 +1928,13 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
-async function newPage(browser, { width, theme, mode, base, session }) {
+async function newPage(browser, { width, theme, mode, base, session, touch = false }) {
+  const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
     deviceScaleFactor: 1,
-    isMobile: width <= 500,
-    hasTouch: width <= 500,
+    isMobile: emulateTouch,
+    hasTouch: emulateTouch,
     locale: 'en-US',
     timezoneId: 'UTC',
     reducedMotion: 'reduce',
@@ -1948,7 +2038,7 @@ function readOptions() {
       options: {
         id: { type: 'string' }, mode: { type: 'string', default: 'open' }, states: { type: 'string' }, widths: { type: 'string' },
         themes: { type: 'string' }, out: { type: 'string', default: 'tabula-review' }, 'no-build': { type: 'boolean' },
-        frameable: { type: 'boolean' }, dark: { type: 'boolean' }, light: { type: 'boolean' }, help: { type: 'boolean' },
+        frameable: { type: 'boolean' }, touch: { type: 'boolean' }, dark: { type: 'boolean' }, light: { type: 'boolean' }, help: { type: 'boolean' },
       },
       allowPositionals: false,
     }));
@@ -1980,7 +2070,7 @@ function readOptions() {
 
   return {
     id: values.id, mode: values.mode, states, widths: widths.map(Number), themes: finalThemes, noBuild: values['no-build'] === true,
-    frameable: values.frameable === true, outDir: path.resolve(values.out, values.id),
+    frameable: values.frameable === true, touch: values.touch === true, outDir: path.resolve(values.out, values.id),
   };
 }
 
@@ -2041,7 +2131,7 @@ async function main() {
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
     await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
-    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null };
+    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);
       shared.session = owner.session;

@@ -128,13 +128,13 @@ export class TextEditor {
       if (!g) return;
       const pill = labelPill(ta.value);
       const w = Math.max(pill.w, 24) + 2, h = pill.h; // 2 units of slack so the textarea never wraps sooner than the label
-      this.place(g.mid.x - w / 2, g.mid.y - h / 2, w, h, 0, z);
       ta.style.fontFamily = fontFamily('satoshi');
       ta.style.fontWeight = String(LABEL_FONT.weight);
-      ta.style.fontSize = `${LABEL_FONT.size}px`;
-      ta.style.lineHeight = `${LABEL_FONT.line}px`;
-      ta.style.padding = `${LABEL_FONT.padY}px ${LABEL_FONT.padX}px`;
+      const scale = this.setEditorFont(LABEL_FONT.size);
+      ta.style.lineHeight = `${LABEL_FONT.line / scale}px`;
+      ta.style.padding = `${LABEL_FONT.padY / scale}px ${LABEL_FONT.padX / scale}px`;
       ta.style.textAlign = 'center';
+      this.place(g.mid.x - w / 2, g.mid.y - h / 2, w, h, 0, z, scale);
       return;
     }
     const b = o as BaseObj;
@@ -163,30 +163,39 @@ export class TextEditor {
       box = { x: 4, y: 0, w: Math.max(160, b.w * 0.6), h: 24 };
       ta.style.textAlign = 'left';
     }
-    ta.style.fontSize = `${fontSize}px`;
-    ta.style.lineHeight = '1.3';
+    const centredLayout = centred ? layoutText(ta.value || ' ', box, st, { shrink: true, valign: st.valign }) : null;
+    if (centredLayout) fontSize = centredLayout.size;
+    const scale = this.setEditorFont(fontSize);
+    ta.style.lineHeight = centredLayout ? `${centredLayout.lineHeight / scale}px` : '1.3';
+    ta.style.paddingTop = centredLayout ? `${Math.max(0, centredLayout.top - box.y) / scale}px` : '0px';
+    ta.style.setProperty('--touch-editor-class-padding', `${8 / scale}px`);
     const c = center(b);
     const tl = rotate({ x: b.x + box.x, y: b.y + box.y }, c, b.rotation || 0);
-    this.place(tl.x, tl.y, box.w, box.h, b.rotation || 0, z);
+    this.place(tl.x, tl.y, box.w, box.h, b.rotation || 0, z, scale);
     // same layout as the renderer, so the text stays where it is drawn
-    if (centred) {
-      const lay = layoutText(ta.value || ' ', box, st, { shrink: true, valign: st.valign });
-      ta.style.fontSize = `${lay.size}px`;
-      ta.style.lineHeight = `${lay.lineHeight}px`;
-      ta.style.paddingTop = `${Math.max(0, lay.top - box.y)}px`;
-    } else if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && !NAMED(b.type)) {
-      ta.style.paddingTop = '0px';
-      const content = ta.scrollHeight;
-      ta.style.paddingTop = `${Math.max(0, (box.h - content) / 2)}px`;
-    } else ta.style.paddingTop = '0px';
+    if (!centred) {
+      if (b.type !== 'text' && b.type !== 'uml-class' && b.type !== 'uml-note' && !NAMED(b.type)) {
+        ta.style.paddingTop = '0px';
+        const content = ta.scrollHeight * scale;
+        ta.style.paddingTop = `${Math.max(0, (box.h - content) / 2) / scale}px`;
+      } else ta.style.paddingTop = '0px';
+    }
   }
 
-  private place(x: number, y: number, w: number, h: number, rot: number, z: number) {
+  /** The touch CSS enforces 16 CSS px; scale the overlay back to the board font's visual size. */
+  private setEditorFont(size: number) {
+    const scale = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? Math.min(1, size / 16) : 1;
+    this.ta.style.fontSize = `${size}px`;
+    this.ta.style.setProperty('--touch-input-font-size', `${size}px`);
+    return scale;
+  }
+
+  private place(x: number, y: number, w: number, h: number, rot: number, z: number, scale = 1) {
     const s = this.app.r.toScreen({ x, y });
     const ta = this.ta;
-    ta.style.width = `${w}px`;
-    ta.style.height = `${h}px`;
-    ta.style.transform = `translate(${s.x}px, ${s.y}px) rotate(${rot}rad) scale(${z})`;
+    ta.style.width = `${w / scale}px`;
+    ta.style.height = `${h / scale}px`;
+    ta.style.transform = `translate(${s.x}px, ${s.y}px) rotate(${rot}rad) scale(${z * scale})`;
   }
 
   private onInput() {

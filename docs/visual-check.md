@@ -17,6 +17,7 @@ npx playwright install chromium
 npm run visual -- --id TAB-123
 npm run visual -- --id TAB-123 --states board,settings --themes default,matrix --widths 390,1440
 npm run visual -- --id TAB-123 --mode accounts --states admin --themes default --widths 1024
+VISUAL_HEIGHT=1180 npm run visual -- --id TAB-123 --states touch-targets --themes default,matrix --widths 820 --touch
 ```
 
 `--id` is required and names the folder: the shots go to `tabula-review/<id>/<state>-<theme>-<width>.png`, next to an `index.html` contact sheet that shows every shot with its theme and width. Open it, or open single files. The last line says how many shots were taken, where and how long it took. The script exits with 1 when a shot failed (a `-FAILED.png` shows what the page looked like) and 2 for bad options. The contact sheet lists the shots of the last run only; files from earlier runs stay in the folder, so delete it for a clean one. `tabula-review/` is git-ignored.
@@ -29,6 +30,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
+| `--touch` | off | Emulate a touch device at any viewport, including an iPad-sized viewport |
 | `--out <dir>` | `tabula-review` | Parent folder of `<id>` |
 | `--no-build` | build first | Reuse `dist/` when it exists; otherwise `npm run build:app` runs. With `DIST_DIR` set, that folder is served and nothing is built |
 | `--frameable` | off | Starts the throwaway relay with `TABULA_DEV_ALLOW_FRAMING=1` (see below) |
@@ -57,6 +59,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
+| `touch-targets` | A coarse-pointer state that measures target boxes and text-field font sizes on the boards home, quick bar, properties, font popover, settings dialog and canvas editor. Exceptions: checkboxes and radios use their associated label as the hit area; the canvas editor follows board zoom; the board canvas is a continuous gesture surface. `chat-composer` measures the chat tray when its pointer is coarse. |
 | `kanban` | (open mode only, as are the other `kanban` states) A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
 | `kanban-card` | The same with a card selected |
 | `kanban-drag` | A card held down and dragged into another lane: placeholder, ghost and drop line (the mouse stays down, so the shot is not parked) |
