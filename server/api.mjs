@@ -1075,6 +1075,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           // Open while read-only: an owner whose workspace was locked for billing needs it to put that right.
           compile('POST', 'billing/portal', { readOnlyOk: true }, async ({ user }) => {
             if (user.role !== 'owner') throw forbidden('Only the workspace owner can manage billing');
+            // a workspace provided free has no subscription to manage: say so instead of asking the control plane (409, then a 502 here)
+            if (cloud.limits().billing === false) throw conflict('no_billing', 'This workspace is provided free. There is nothing to bill.');
             try {
               return [200, { url: await cloud.portalUrl() }];
             } catch (err) {

@@ -1,7 +1,7 @@
 import './backups.css';
 import { ApiError, api, type BackupBoard, type BackupList, type BackupPreview, type BackupSummary, type BoardCopy, type Me } from '../api';
 import { setSignedOut } from '../auth';
-import { portalTarget } from '../cloud-logic';
+import { freeWorkspaceNote, portalTarget } from '../cloud-logic';
 import { countLabel, matchesQuery } from './admin-logic';
 import {
   CONFIRM_WORD, LIST_CAP, errorSentence, formatSize, formatUtc, lastRestoreSentence, manifestTime, nextScreen, noteOf, relativeTime, restoreGate,
@@ -96,7 +96,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     return [
       h('h3', { class: 'admin-sub' }, 'Not set up'),
       h('p', { class: 'backups-lead' }, lead),
-      hosted ? addBackups() : h('a', { class: 'btn', href: BACKUP_DOCS }, 'How to turn on backups'),
+      hosted ? (freeWorkspaceNote(me) ? h('p', { class: 'muted' }, freeWorkspaceNote(me)) : addBackups()) : h('a', { class: 'btn', href: BACKUP_DOCS }, 'How to turn on backups'),
     ];
   }
 

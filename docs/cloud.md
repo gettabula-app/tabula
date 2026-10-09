@@ -58,11 +58,12 @@ Which data volume the instance runs on (`docs/backups.md`, Volumes and restores)
 The first deploy that sets `TABULA_FLY_VOLUME_ID` on an existing machine only records it and signs nobody out. Not verified: whether Fly exposes the volume id to the machine on its own (an environment variable or the metadata service); until that is known, the control plane must set the variable itself.
 
 ```
-PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banner?: string | null }
-  -> { seatLimit, readOnly, banner }      (what is stored now)
+PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banner?: string | null, billing?: boolean }
+  -> { seatLimit, readOnly, banner, billing }      (what is stored now)
 ```
 
 - Fields that are left out stay as they are; `null` clears `seatLimit` and `banner`. An empty body is `400 Nothing to change`.
+- `billing` (default `true`) is `false` for a workspace that is provided free (education, internal): it has no subscription, so `/api/me` says `workspace.billing: false`, the owner sees "This workspace is provided free (education or internal). There's nothing to bill." where Manage billing would be, and `POST /api/billing/portal` answers `409 no_billing` without calling the control plane.
 - `seatLimit` is a whole number from 1 to 100000. `banner` is at most 300 characters on a single line (no control characters), trimmed; an empty text means no banner. Unknown fields are refused with `400`, so a typo cannot silently do nothing.
 - The limits are stored in the `settings` table (`cloud.limits`, one JSON value; migration 3) and survive restarts. Each change writes an audit row `cloud.limits` with no actor (the dashboard shows "System") and tells the relay, which applies it to open sockets at once.
 - This endpoint stays reachable while the workspace is read-only (it is how the lock is lifted).

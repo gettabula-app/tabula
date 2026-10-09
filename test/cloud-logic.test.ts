@@ -8,7 +8,9 @@ import {
   bannerText,
   boardAccess,
   DELETED_BADGE,
+  FREE_WORKSPACE_TEXT,
   canManageBilling,
+  freeWorkspaceNote,
   cloudErrorMessage,
   createMeRefresher,
   createUnlockWatcher,
@@ -107,10 +109,27 @@ describe('canManageBilling', () => {
     ['a member of a hosted workspace', meWith('member', workspace()), false],
     ['a guest of a hosted workspace', meWith('guest', workspace()), false],
     ['the owner of a plain accounts server', meWith('owner'), false],
+    ['the owner of a workspace provided free', meWith('owner', workspace({ billing: false })), false],
+    ['the owner of a workspace that says billing is on', meWith('owner', workspace({ billing: true })), true],
     ['nobody', null, false],
     ['an unknown user', undefined, false],
   ])('%s', (_name, me, expected) => {
     expect(canManageBilling(me)).toBe(expected);
+  });
+});
+
+describe('freeWorkspaceNote', () => {
+  it('speaks to the owner of a workspace provided free, and to nobody else', () => {
+    const free = workspace({ billing: false });
+    expect(freeWorkspaceNote(meWith('owner', free))).toBe("This workspace is provided free (education or internal). There's nothing to bill.");
+    expect(freeWorkspaceNote(meWith('admin', free))).toBeNull();
+    expect(freeWorkspaceNote(meWith('owner', workspace()))).toBeNull();
+    expect(freeWorkspaceNote(meWith('owner'))).toBeNull();
+    expect(freeWorkspaceNote(null)).toBeNull();
+  });
+
+  it('is also what the no_billing error reads', () => {
+    expect(cloudErrorMessage(new ApiError(409, 'no_billing', 'no_billing'))).toBe(FREE_WORKSPACE_TEXT);
   });
 });
 

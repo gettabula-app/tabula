@@ -2,7 +2,7 @@ import './admin.css';
 import { rovingRadios } from './focus-scope';
 import { ApiError, api, type AdminBoard, type AdminMember, type AdminOverview, type AdminSession, type AuditEntry, type AuditPage, type Me, type Team, type UserRole } from '../api';
 import { setSignedOut, signOut } from '../auth';
-import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logic';
+import { canManageBilling, cloudErrorMessage, freeWorkspaceNote, portalTarget } from '../cloud-logic';
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { aiAdminPanel } from './ai';
 import { chatAdminPanel } from './chat-admin';
@@ -295,9 +295,15 @@ function billingBlock(): HTMLElement {
     button);
 }
 
+/** A workspace provided free has no billing portal: the owner reads why instead of a button that cannot work. */
+function freeNote(me: Me): HTMLElement[] {
+  const text = freeWorkspaceNote(me);
+  return text ? [h('div', null, h('h3', { class: 'admin-sub' }, 'Billing'), h('p', { class: 'muted' }, text))] : [];
+}
+
 function overviewPanel(me: Me): HTMLElement {
   const body = h('div', null);
-  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o), ...(canManageBilling(me) ? [billingBlock()] : [])));
+  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o), ...(canManageBilling(me) ? [billingBlock()] : freeNote(me))));
   return body;
 }
 
