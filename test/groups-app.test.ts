@@ -36,7 +36,7 @@ afterEach(() => browser.uninstall());
 function harness(store = new Store(new Y.Doc())) {
   const app = Object.create(BoardApp.prototype) as Harness;
   const hit = vi.fn<(...args: unknown[]) => Obj | undefined>(() => store.get('a'));
-  const flow = { handleClick: vi.fn<(o: Obj) => boolean>((_o) => false), isHidden: () => false, isVoting: () => false, activeStep: () => null };
+  const flow = { handleClick: vi.fn<(o: Obj) => boolean>((_o) => false), isHidden: () => false, isVoting: vi.fn<() => boolean>(() => false), activeStep: () => null };
   const svg = browser.document.createElement('svg') as FakeElement & { setPointerCapture: (id: number) => void };
   svg.setPointerCapture = vi.fn<(id: number) => void>();
   const overlay = { anchorsFor: null, selection: [], enteredGroup: null, kanban: null };
@@ -130,6 +130,24 @@ describe('group app commands and scope', () => {
     expect(app.selection).toEqual(['g']);
   });
 
+  it('leaves only the current group when empty canvas is clicked from a nested scope', () => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create({ id: 'outer', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1' });
+      store.create({ id: 'inner', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a2', parent: 'outer' });
+      store.create({ ...note('leaf', 'a1', 10), parent: 'inner' });
+    });
+    const { app, hit } = harness(store);
+    app.enterGroup('outer');
+    app.enterGroup('inner');
+    hit.mockReturnValue(undefined);
+    const emptyClick = { clientX: 400, clientY: 400, pointerId: 2, pointerType: 'mouse', button: 0, shiftKey: false, altKey: false, preventDefault() {} };
+    call(app, 'onDown', emptyClick);
+    call(app, 'onUp', emptyClick);
+    expect(app.scope).toBe('outer');
+    expect(app.selection).toEqual(['inner']);
+  });
+
   it('keeps dot-vote clicks on the hit member rather than lifting them to its group', () => {
     const store = new Store(new Y.Doc());
     store.transact(() => group('g', 'a1', ['a', 'b']).forEach((o) => store.create(o)));
@@ -139,6 +157,37 @@ describe('group app commands and scope', () => {
     call(app, 'onDown', { clientX: 10, clientY: 10, pointerId: 1, pointerType: 'mouse', button: 0, shiftKey: false, altKey: false, preventDefault() {} });
     expect(flow.handleClick.mock.calls[0][0]?.id).toBe('a');
     expect(app.selection).toEqual([]);
+  });
+
+  it('does not enter a group on the double-click event after vote clicks', () => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => group('g', 'a1', ['a', 'b']).forEach((o) => store.create(o)));
+    const { app, hit, flow } = harness(store);
+    hit.mockImplementation(() => store.get('a'));
+    flow.isVoting.mockReturnValue(true);
+    flow.handleClick.mockReturnValue(true);
+    const click = { clientX: 10, clientY: 10, pointerId: 1, pointerType: 'mouse', button: 0, shiftKey: false, altKey: false, preventDefault() {} };
+    call(app, 'onDown', click);
+    call(app, 'onDown', click);
+    call(app, 'onDblClick', { clientX: 10, clientY: 10 });
+    expect(flow.handleClick).toHaveBeenCalledTimes(2);
+    expect(flow.handleClick.mock.calls.map(([o]) => o.id)).toEqual(['a', 'a']);
+    expect(app.scope).toBeNull();
+    expect(app.selection).toEqual([]);
+  });
+
+  it('disables ungroup when a non-group is included in the selection', () => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      group('g', 'a1', ['a', 'b']).forEach((o) => store.create(o));
+      store.create(note('loose', 'a9', 240));
+    });
+    const { app } = harness(store);
+    app.selection = ['g', 'loose'];
+    const before = objects(store);
+    expect(app.canUngroupSelection()).toBe(false);
+    expect(app.ungroupSelection()).toBe(false);
+    expect(objects(store)).toEqual(before);
   });
 
   it('leaves to the nearest parent scope when selecting a sibling outside the entered group', () => {

@@ -63,7 +63,7 @@ describe('group renderer overlays', () => {
     renderer.setOverlay({ selection: ['g'] });
     drawOverlay();
     const out = svg();
-    expect(out).toContain('stroke="var(--group-line-soft)"');
+    expect(out).toContain('stroke="var(--group-member-line)"');
     expect(out).toContain('stroke="var(--group-line)"');
     expect(out).toContain('stroke-width="1.5"');
     expect(out).not.toContain('#');
@@ -83,6 +83,13 @@ describe('group renderer overlays', () => {
     expect(dimPath().getAttribute('fill')).toBe('var(--group-dim)');
     expect(dimPath().getAttribute('class')).toBe('group-dim-wash active');
     expect(`${svg()}${dimPath().getAttribute('fill')}`).not.toContain('#');
+  });
+
+  it('uses the same theme-aware hover color for a single item', () => {
+    renderer.setOverlay({ hover: 'a' });
+    drawOverlay();
+    expect(svg()).toContain('stroke="var(--group-hover)"');
+    expect(svg()).not.toContain('#');
   });
 
   it('lifts a lock hover to the outermost locked group and uses the tray badge tokens', () => {

@@ -1,7 +1,7 @@
 :root {
   --group-line: var(--wire);
-  --group-line-soft: color-mix(in srgb, var(--wire) 45%, transparent);
-  --group-hover: color-mix(in srgb, var(--wire) 70%, transparent);
+  --group-member-line: var(--graphite);
+  --group-hover: var(--guide);
   --group-handle: var(--paper);
   --group-dim: color-mix(in srgb, var(--canvas) 62%, transparent);
   --group-locked: var(--graphite);
