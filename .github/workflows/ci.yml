@@ -175,7 +175,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Keep the with: inputs here and in the retry step identical.
       - uses: docker/build-push-action@v7
+        id: build
+        continue-on-error: true
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
@@ -183,6 +186,24 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Wait before retrying the image build
+        if: steps.build.outcome == 'failure'
+        run: sleep 90
+      - uses: docker/build-push-action@v7
+        id: build-retry
+        if: steps.build.outcome == 'failure'
+        continue-on-error: true
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Fail the job if the image build has failed on both attempts.
+      - name: Fail if the image build retry failed
+        if: steps.build.outcome == 'failure' && steps.build-retry.outcome != 'success'
+        run: exit 1
 
   # The guide is built into the app and the Docker image. When a pull request changes only the guide (no code), the jobs
   # above are skipped and this builds and tests it on one runner. When code changed too, the full matrix already covers
