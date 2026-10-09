@@ -255,6 +255,11 @@ export class FakeElement extends FakeNode {
     const first = this.firstChild;
     for (const n of nodes) this.insertBefore(typeof n === 'string' ? new FakeText(n) : n, first);
   }
+  before(...nodes: (FakeNode | string)[]) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    for (const n of nodes) parent.insertBefore(typeof n === 'string' ? new FakeText(n) : n, this);
+  }
   replaceChildren(...nodes: (FakeNode | string)[]) {
     for (const old of this.childNodes) old.parentNode = null;
     this.childNodes = [];

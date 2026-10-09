@@ -733,6 +733,16 @@ describe('loadConfig', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('keeps join codes off by default and only enables them with accounts mode', () => {
+    expect(loadConfig({}).joinCodes).toBeUndefined();
+    expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_JOIN_CODES: 'on' }).joinCodes).toBe(true);
+    const warnings: string[] = [];
+    const open = loadConfig({ TABULA_JOIN_CODES: 'on' }, (warning) => warnings.push(warning));
+    expect(open.joinCodes).toBeUndefined();
+    expect(warnings).toContain('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
+    expect(() => loadConfig({ TABULA_JOIN_CODES: 'yes' })).toThrow('TABULA_JOIN_CODES must be on or off');
+  });
+
   it('names the TABULA_ variables in the half-set cloud error, also when they were set as MIRA_', () => {
     const warn = vi.fn<(message: string) => void>();
     expect(() => loadConfig({ MIRA_CLOUD_TOKEN: 'k'.repeat(40) }, warn)).toThrow(

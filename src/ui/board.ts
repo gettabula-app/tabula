@@ -49,7 +49,8 @@ import { avatarLine, badgeRun } from '../ai-live-logic';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
-import { canManageShares } from './share-logic';
+import { mountJoinCodes } from './join-codes';
+import { canManageJoinCodes, canManageShares } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
@@ -157,7 +158,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     scratch || demo ? null : people,
     scratch ? null : comments.button,
     chat?.button,
-    scratch || demo ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
 
@@ -627,6 +628,7 @@ function openShare(app: BoardApp) {
   const accounts = auth.mode === 'signed-in' || (auth.mode === 'offline' && auth.me !== null);
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   const manage = me !== null && canManageShares(app.role, accounts);
+  const canCreateJoinCode = canManageJoinCodes(me, app.role);
   dialog('Share this board', h('div', { class: 'stack' },
     h('p', null, accounts
       ? `Only people with access to this board can open this link: members of the board's team, and anyone it has been shared with. ${manage ? 'Give people or teams access below.' : 'Add people from a team on the home screen, or share the board from there.'}`
@@ -637,6 +639,7 @@ function openShare(app: BoardApp) {
           : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
     h('div', { class: 'copy-row' }, input, h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => { input.select(); }) }, icon('link', 16), 'Copy link')),
     me && manage ? mountSharePeople(app.conn.id, me) : null,
+    canCreateJoinCode ? mountJoinCodes(app.conn.id) : null,
     h('p', { class: 'muted small' }, relay ? `Relay: ${relay.replace(/^ws/, 'http')}` : 'Relay: off'),
   ), [{ label: 'Done', primary: true }]);
 }

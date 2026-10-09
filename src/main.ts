@@ -16,6 +16,7 @@ import { mountMentionNotices } from './ui/mention-notice';
 import { mountTitleBadge } from './ui/title-badge';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
+import { renderJoin } from './ui/join';
 import { renderAdmin } from './ui/admin';
 import { showRestoring } from './ui/restoring';
 import { loadCatalogue } from './fonts';
@@ -28,7 +29,7 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
@@ -134,6 +135,7 @@ const nav: HomeNav = {
 
 /** The user's role on a board in accounts mode; the last known list decides when the server cannot be reached. */
 async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role'] | undefined> {
+  if (auth.mode === 'guest') return auth.guest.boardId === id ? auth.guest.role : undefined;
   if (auth.mode !== 'signed-in' && auth.mode !== 'offline') return undefined;
   let list = cachedServerBoards();
   if (auth.mode === 'signed-in') {
@@ -149,6 +151,7 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
 
 /** The user as the board shows them: in accounts mode the account's name on this device's identity. */
 function boardUser(auth: AuthState) {
+  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name };
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   return me ? { ...getUser(), name: me.user.name } : getUser();
 }
@@ -234,7 +237,15 @@ async function route() {
   leavePage = null;
 
   const auth = authState();
-  const r = resolveRoute(location.hash, auth.mode);
+  const r = resolveRoute(location.hash, auth.mode, location.pathname, location.search);
+  if (auth.mode === 'guest' && (r.name !== 'board' || r.id !== auth.guest.boardId)) {
+    location.replace(`/#/b/${encodeURIComponent(auth.guest.boardId)}`);
+    return;
+  }
+  if (r.name === 'join' && !joinCodesAvailable()) {
+    location.replace('/');
+    return;
+  }
   if (needsSignIn(r, auth.mode)) {
     saveReturn(location.hash);
     location.replace('#/signin');
@@ -278,6 +289,10 @@ async function route() {
     if (r.name === 'signin') renderSignIn(view);
     else if (r.name === 'verify') renderVerify(view, r.token, finish);
     else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
+    else if (r.name === 'join') renderJoin(view, r.code, (guest) => {
+      history.replaceState(null, '', `/#/b/${encodeURIComponent(guest.boardId)}`);
+      void route();
+    });
     else if (r.name === 'templates') renderTemplates(view, nav, auth);
     else renderHome(view, nav, auth);
     if (r.name === 'home' || r.name === 'templates') void offerTemplateUpload();
@@ -421,6 +436,7 @@ async function boot() {
     }
   }
   window.addEventListener('hashchange', route);
+  window.addEventListener('popstate', route);
   route();
 }
 

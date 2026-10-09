@@ -345,8 +345,9 @@ describe('a key of a provider with no fixed model list (TAB-222)', () => {
 });
 
 describe('the ai_keys table', () => {
-  it('has a model column added by the last migration, empty for a key an older directory holds', () => {
-    expect(MIGRATIONS.at(-1)).toBe(AI_KEYS_MODEL_MIGRATION);
+  it('has a model column added by its migration, empty for a key an older directory holds', () => {
+    const modelMigration = MIGRATIONS.indexOf(AI_KEYS_MODEL_MIGRATION);
+    expect(modelMigration).toBeGreaterThanOrEqual(0);
     const file = path.join(tmp(), 'directory.sqlite');
     const d = openDirectory(file);
     const ring = createKeyRing({ secret: secret() });
@@ -354,7 +355,7 @@ describe('the ai_keys table', () => {
     d.close();
     const raw = new DatabaseSync(file);
     // an older directory has the table without the column
-    raw.exec('ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ' + String(MIGRATIONS.length - 1));
+    raw.exec(`DROP TABLE guest_sessions; DROP TABLE join_codes; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${modelMigration}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getAiKeyInfo('workspace')).toMatchObject({ provider: 'anthropic', model: null });
@@ -370,7 +371,7 @@ describe('the ai_keys table', () => {
     d.createBoard({ id: 'board1', title: 'Kept', ownerId: u.id });
     d.close();
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE ai_keys; PRAGMA user_version = 6');
+    raw.exec('DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE ai_keys; PRAGMA user_version = 6');
     raw.close();
 
     const again = openDirectory(file);

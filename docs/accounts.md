@@ -14,6 +14,7 @@ Tabula was called Mira before. The old `MIRA_<X>` variable names are deprecated 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TABULA_AUTH` | `off` | `on` turns accounts mode on |
+| `TABULA_JOIN_CODES` | `off` | `on` enables one-board guest join codes in accounts mode; see [join codes](join-codes.md) |
 | `TABULA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `TABULA_AUTH=on` |
 | `TABULA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
 | `TABULA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL` |
@@ -110,6 +111,10 @@ DELETE /api/boards/:id                  -> 204  (soft delete; board owner or wor
 GET    /api/boards/:id/shares           -> [{principalType, principalId, name, role}]
 POST   /api/boards/:id/shares {principalType: 'user'|'team', principalId, role: 'editor'|'commenter'|'viewer'} -> 201
 DELETE /api/boards/:id/shares/:principalType/:principalId -> 204
+POST   /api/boards/:id/join-codes {role: 'commenter'|'editor', expiresInHours?: 1..24, maxUses?: 1..1000} -> 201 {id, code, role, createdAt, expiresAt, maxUses, uses}   (board editor or owner; code shown once; requires TABULA_JOIN_CODES=on)
+GET    /api/boards/:id/join-codes       -> [{id,role,createdAt,expiresAt,maxUses,uses,revokedAt}]   (board editor or owner; never includes the code)
+DELETE /api/boards/:id/join-codes/:codeId -> 204   (board editor or owner)
+POST   /api/join {code, name}           -> 201 {boardId,role,name,guestId,expiresAt} + guest session cookie   (public only when TABULA_JOIN_CODES=on)
 
 GET    /api/members                     -> [{id,email,name,role,disabled,teams:[{id,name,role}]}]   (workspace admin)
 PATCH  /api/members/:id {role?, disabled?} -> member  (admins; only an owner may change an owner or grant owner; the last owner cannot be demoted or disabled: 409)

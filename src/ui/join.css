@@ -1,0 +1,12 @@
+/* The join screen shares the signed-out Swiss form grid and stays legible on narrow phones. */
+@import './signin.css';
+
+.join-page .join-form { gap: 20px; }
+.join-page .join-code-input { font-size: 20px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.join-page .join-code-input:focus { outline-offset: 3px; }
+.join-page .join-name-help { color: var(--graphite); font-size: 12px; font-weight: 400; letter-spacing: normal; text-transform: none; }
+
+@media (max-width: 400px) {
+  .join-page .signin-body { padding-right: 16px; padding-left: 16px; }
+  .join-page h1 { font-size: 34px; }
+}
