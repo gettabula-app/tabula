@@ -82,7 +82,7 @@ describe('demo board UI', () => {
         listeners.set(event, [...(listeners.get(event) ?? []), fn]);
         return () => undefined;
       },
-      r: { onCamera: () => () => undefined, contentBounds: () => null },
+      r: { onCamera: () => () => undefined, contentBounds: () => null, svg: { addEventListener: () => undefined, removeEventListener: () => undefined, contains: () => false } },
       flow: { isVoting: () => false },
       tool: { kind: 'select' },
       selection: [] as string[],
@@ -91,6 +91,7 @@ describe('demo board UI', () => {
       dragging: false,
       editor: { active: false },
       readOnly: false,
+      onDestroy: () => undefined,
       comments: { readOnly: () => false, onReadOnly: () => () => undefined },
       lifetime: { signal: new AbortController().signal },
       role: null,
