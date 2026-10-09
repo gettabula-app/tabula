@@ -8,4 +8,4 @@ Publish `dist-demo/` under `/demo/` and embed it with:
 <iframe src="/demo/" title="Try Tabula" sandbox="allow-scripts allow-same-origin allow-downloads"></iframe>
 ```
 
-The “Get Tabula” link navigates the iframe itself. Add `allow-top-navigation-by-user-activation` to the sandbox only if that link should navigate the top page.
+The “Get Tabula” link has `target="_top"` and `rel="noopener"`: it navigates the top page only when the iframe sandbox has `allow-top-navigation-by-user-activation` (a click is required). Without that token the browser blocks the navigation.

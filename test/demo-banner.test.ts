@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe('demo disclosure', () => {
-  it('shows the ephemeral notice and a same-frame Get Tabula link', () => {
+  it('shows the ephemeral notice and a Get Tabula link that goes to the top page', () => {
     browser = installFakeBrowser();
     const root = browser.mount();
     const banner = mountDemoBanner(root as unknown as HTMLElement);
@@ -19,7 +19,8 @@ describe('demo disclosure', () => {
     expect(banner.textContent).toContain('Demo: nothing is saved');
     expect(link?.textContent).toBe('Get Tabula');
     expect(link?.href).toBe('https://gettabula.app');
+    expect(link?.getAttribute('target')).toBe('_top'); // the iframe sandbox allows top navigation by user activation
+    expect(link?.getAttribute('rel')).toContain('noopener');
     expect(link?.getAttribute('rel')).toBe('noopener');
-    expect(link?.hasAttribute('target')).toBe(false);
   });
 });

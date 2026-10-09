@@ -4,7 +4,7 @@ import { h } from './dom';
 export function mountDemoBanner(root: HTMLElement): HTMLElement {
   const banner = h('aside', { class: 'demo-banner', role: 'note', 'data-demo-banner': '' },
     h('span', null, 'Demo: nothing is saved'),
-    h('a', { href: 'https://gettabula.app', rel: 'noopener' }, 'Get Tabula'));
+    h('a', { href: 'https://gettabula.app', target: '_top', rel: 'noopener' }, 'Get Tabula'));
   root.appendChild(banner);
   return banner;
 }
