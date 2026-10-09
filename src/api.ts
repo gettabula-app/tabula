@@ -125,6 +125,8 @@ export type AiFeature = 'generate' | 'summarise' | 'cluster';
 export interface AiKeyInfo {
   provider: string;
   hint: string;
+  baseUrl: string | null;
+  model: string | null;
   createdAt: number;
   lastUsedAt: number | null;
 }
@@ -141,6 +143,7 @@ export interface AiConfig {
   enabled: boolean;
   features: AiFeature[];
   keySource: 'user' | 'workspace' | null;
+  provider: string | null;
   model: string;
   /** Whether this person may add a key of their own. */
   personalKeys: boolean;
@@ -171,6 +174,9 @@ export interface AdminAiPatch {
   limits?: { perPersonHour?: number; perWorkspaceHour?: number };
   apiKey?: string;
   provider?: string;
+  baseUrl?: string;
+  /** The model of the key being saved (an OpenAI-compatible provider); `model` above is the workspace's Anthropic model. */
+  keyModel?: string;
 }
 
 export interface Team {
@@ -693,7 +699,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
 
     aiConfig: () => call<AiConfig>('GET', '/api/ai/config'),
-    saveMyAiKey: (input: { provider: string; apiKey: string }) => call<{ provider: string; hint: string }>('PUT', '/api/ai/keys/me', input),
+    saveMyAiKey: (input: { provider: string; apiKey: string; baseUrl?: string; model?: string }) =>
+      call<{ provider: string; hint: string; baseUrl: string | null; model: string | null }>('PUT', '/api/ai/keys/me', input),
     testMyAiKey: () => call<AiKeyTest>('POST', '/api/ai/keys/me/test', {}),
     deleteMyAiKey: () => call<void>('DELETE', '/api/ai/keys/me'),
     adminAi: () => call<AdminAi>('GET', '/api/admin/ai'),

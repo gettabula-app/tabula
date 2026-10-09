@@ -1,6 +1,6 @@
 # Your AI key
 
-**Your AI key** lets you save your own Anthropic API key in Tabula. Once AI features are available, they use your key instead of the workspace key.
+**Your AI key** lets you save your own API key in Tabula: an Anthropic key, or a key for any service that speaks the OpenAI API (NVIDIA's catalogue, OpenAI, OpenRouter, or a model server of your own). Once AI features are available, they use your key instead of the workspace key.
 
 > Adding a key does not change anything in the app yet. The AI features that use it are still being built, so you cannot run AI features today.
 
@@ -16,10 +16,12 @@ If the **Guests** setting is on, guests do not see it.
 ## Add a key
 
 1. Open the **Menu** and choose **Your AI key**.
-2. Paste your key into **API key**.
-3. Select **Save key**.
+2. Choose the **Provider**: **Anthropic**, or **OpenAI-compatible**.
+3. For OpenAI-compatible, fill in **Base URL** (where your provider's API lives, for example `https://integrate.api.nvidia.com/v1`) and **Model** (the model id your provider calls it, for example `moonshotai/kimi-k3`).
+4. Paste your key into **API key**.
+5. Select **Save key**.
 
-**Save key** stays disabled until the key looks valid (no spaces). The provider checks the key before anything is stored, and the button reads **Checking…** meanwhile. If the check fails, the message says why and nothing is saved. A successful save shows **Key saved**.
+**Save key** stays disabled until everything looks valid: no spaces in the key, a Base URL that starts with `https://` and is a public address (no user name or password, no `?` or `#`, not `localhost` or a private address), and a Model id. The provider checks the key before anything is stored, and the button reads **Checking…** meanwhile. For an OpenAI-compatible provider the check also asks the model for one word, so it can take up to half a minute with a slow model. If the check fails, the message says why (the key was refused, the model or the address is not known, or the model took too long) and nothing is saved. A successful save shows **Key saved**.
 
 ## What you see afterwards
 
@@ -27,13 +29,13 @@ The dialog shows the provider, the last four characters of the key, and when it 
 
 **Anthropic key ending …a1b2**
 
-A line below it says when the key was added and when it was last used.
+For an OpenAI-compatible key the line also shows the provider's host and the model, for example **OpenAI-compatible key ending …a1b2 · integrate.api.nvidia.com · moonshotai/kimi-k3**. A line below it says when the key was added and when it was last used.
 
 Your full key is never shown again, and the server never returns it. The line **Runs use your key.** tells you that your key is the one in use. If there is no key at all, the dialog says that AI features cannot run yet.
 
 ## Test a key
 
-When your key is saved, select **Test key** next to **Remove**. Tabula asks Anthropic whether the saved key still works. The test does not show or replace your key, and it does not change the “last used” date. The message says **The key works.** when it succeeds, or explains what went wrong.
+When your key is saved, select **Test key** next to **Remove**. Tabula asks the provider whether the saved key still works (and, for an OpenAI-compatible key, whether the model still answers). The test does not show or replace your key, and it does not change the “last used” date. The message says **The key works.** when it succeeds, or explains what went wrong.
 
 ## Replace a key
 
@@ -49,13 +51,17 @@ Removing a key shows **Key removed**. If you click somewhere else before the sec
 
 ## Models and provider
 
-Tabula supports Anthropic only. The workspace admin chooses the model for the workspace, from:
+Tabula supports **Anthropic** and **OpenAI-compatible** providers.
+
+With an Anthropic key, the workspace admin chooses the model for the workspace, from:
 
 - Claude Opus 5.5 (the default)
 - Claude Sonnet 5.5
 - Claude Haiku 5.5
 
 You do not choose the model yourself.
+
+With an OpenAI-compatible key, you choose the model: it is saved with your key and shown in the AI bar. Pick a model that follows instructions well, because Tabula asks for a JSON answer and uses it only when it is valid. When a model cannot do that, the AI bar says so, for example **This model did not answer in the required JSON format. Try a stronger instruction-following model.**, and nothing on the board changes. A model can also be slow (the AI bar then says it took too long) or missing from the provider's list (**The provider does not know this model or this address**). The AI bar shows a token estimate but no price for these models: Tabula does not know it, and your provider bills your key.
 
 > Board content is sent to the chosen provider and processed under its API terms. The dialog shows this notice.
 

@@ -83,7 +83,7 @@ The tab has these settings. The defaults are off, with every feature selected, n
 
 - **Allow AI features in this workspace**: turns AI on or off.
 - **Features**: **Generate stickies**, **Summarise** and **Cluster stickies**. Choose the ones people may use.
-- **Model**: **Claude Opus 5.5** (the default), **Claude Sonnet 5.5** or **Claude Haiku 5.5**. The provider is Anthropic.
+- **Model**: **Claude Opus 5.5** (the default), **Claude Sonnet 5.5** or **Claude Haiku 5.5**, for an Anthropic key. With an OpenAI-compatible key the model is part of the key (below), and this setting is replaced by a read-only **Model** line that says it comes from the key.
 - **Personal keys**: **People can add a key of their own, which they use instead of the workspace key**. When this is off, only the workspace key is used.
 - **Guests**: **Members only: guests cannot use AI features or add a key**. Turn this on to keep guests out.
 - **Runs per person per hour** and **Runs per workspace per hour**: whole numbers from 1 to 1,000 and from 1 to 10,000.
@@ -94,7 +94,7 @@ Select **Save settings** to save. The button is enabled only when something has 
 
 The workspace key is used by everyone who has no key of their own. Without one, only people with a personal key can run AI features.
 
-1. Paste an Anthropic API key into **Anthropic API key**. If a key is already stored, the field is **Replace with a new key**.
+1. Choose the **Provider**: **Anthropic**, or **OpenAI-compatible** (NVIDIA's catalogue, OpenAI, OpenRouter, a model server of your own). For OpenAI-compatible, also fill in **Base URL** (`https://…`, a public address) and **Model**. Then paste the API key. If a key is already stored, the field is **Replace with a new key**.
 2. Select **Save key**, or **Replace key** if a key is already stored.
 
 The provider checks the key before anything is stored. While it checks, the button reads **Checking…**. If the check fails, nothing is saved, the message explains why, and the key stays in the field so you can fix a typo. A successful save shows **Workspace key saved**.

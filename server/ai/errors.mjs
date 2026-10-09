@@ -13,6 +13,8 @@ export const AI_STATUS = {
   ai_timeout: 504,
   ai_refused: 422,
   ai_invalid_proposal: 502,
+  ai_model_invalid: 400,
+  ai_bad_output: 502,
   forbidden: 403,
   internal: 500,
 };
@@ -27,6 +29,8 @@ const MESSAGES = {
   ai_timeout: 'The AI took too long and was stopped. Nothing was changed.',
   ai_refused: 'The AI declined this request. Nothing was changed.',
   ai_invalid_proposal: 'The AI answer could not be used. Nothing was changed.',
+  ai_model_invalid: 'The provider does not know this model or this address. Check the base URL and the model.',
+  ai_bad_output: 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.',
   forbidden: 'You no longer have permission to do that',
   internal: 'Something went wrong',
 };

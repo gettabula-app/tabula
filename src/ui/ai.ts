@@ -5,14 +5,16 @@ import { dialog, fmtAgo, toast } from './common';
 import { h, icon } from './dom';
 import type { AdminKit } from './tokens';
 import {
-  DATA_NOTICE, FEATURE_OPTIONS, LIMIT_CAPS, LIMIT_LABELS, MODEL_OPTIONS, PROVIDER, UNCONFIGURED_TEXT, draftOf, draftProblem, keyDates, keyLine, keyProblem,
-  keyTestErrorMessage, patchOf, sourceLabel, type AdminDraft, type LimitName,
+  DATA_NOTICE, FEATURE_OPTIONS, LIMIT_CAPS, LIMIT_LABELS, MODEL_OPTIONS, OPENAI_COMPATIBLE_PROVIDER, PROVIDER, PROVIDER_OPTIONS, UNCONFIGURED_TEXT,
+  draftOf, draftProblem, keyDates, keyLine, keyProblem, keyTestErrorMessage, patchOf, sourceLabel, type AdminDraft, type LimitName,
 } from './ai-logic';
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
 function describe(e: unknown): string {
+  const keyMessage = keyTestErrorMessage(e);
+  if (keyMessage) return keyMessage;
   const hosted = cloudErrorMessage(e);
   if (hosted) return hosted;
   if (e instanceof ApiError) {
@@ -145,32 +147,75 @@ export function openAiKeyDialog(): void {
     const mine = config.myKey;
     const problem = h('p', { class: 'ai-problem', role: 'status' });
     const save = h('button', { class: 'btn primary', disabled: true }, 'Save key');
+    const savedProvider = mine && PROVIDER_OPTIONS.some((o) => o.value === mine.provider) ? mine.provider : PROVIDER;
+    const provider = h('select', { class: 'input', 'aria-label': 'Provider' }, PROVIDER_OPTIONS.map((o) => h('option', { value: o.value, selected: o.value === savedProvider }, o.label)));
+    provider.value = savedProvider;
+    const baseUrl = h('input', {
+      class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 201,
+      placeholder: 'https://integrate.api.nvidia.com/v1', value: mine?.baseUrl ?? '',
+      oninput: () => check(),
+    });
+    const model = h('input', {
+      class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 101,
+      placeholder: 'moonshotai/kimi-k3', value: mine?.model ?? '',
+      oninput: () => check(),
+    });
+    const providerFields = h('div', { class: 'ai-field' });
+    const baseUrlField = h('div', { class: 'ai-field' },
+      h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
+      h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
+    const modelField = h('div', { class: 'ai-field' },
+      h('label', { class: 'ai-label' }, 'Model', model),
+      h('div', { class: 'ai-meta' }, 'The model id your provider calls it'));
 
     const check = () => {
-      save.disabled = keyProblem(field.input.value) !== null;
+      const why = keyProblem(field.input.value, provider.value, baseUrl.value, model.value);
+      problem.classList.toggle('bad', why !== null);
+      problem.textContent = why ?? '';
+      save.disabled = why !== null;
+    };
+    const renderProviderFields = () => {
+      providerFields.replaceChildren(...(provider.value === OPENAI_COMPATIBLE_PROVIDER ? [baseUrlField, modelField] : []));
+      check();
     };
     const submit = async () => {
       const value = field.input.value;
-      if (keyProblem(value) !== null) return;
+      const why = keyProblem(value, provider.value, baseUrl.value, model.value);
+      if (why !== null) {
+        check();
+        return;
+      }
       save.disabled = true;
       save.textContent = 'Checking…';
       problem.classList.remove('bad');
       problem.textContent = 'Checking the key with the provider…';
       try {
-        await api.saveMyAiKey({ provider: PROVIDER, apiKey: value.trim() });
+        const input: { provider: string; apiKey: string; baseUrl?: string; model?: string } = { provider: provider.value, apiKey: value.trim() };
+        if (provider.value === OPENAI_COMPATIBLE_PROVIDER) {
+          input.baseUrl = baseUrl.value.trim();
+          input.model = model.value.trim();
+        }
+        await api.saveMyAiKey(input);
         field.clear();
         toast('Key saved');
         if (alive()) load();
       } catch (e) {
         if (!alive()) return;
+        const message = describe(e);
         problem.classList.add('bad');
-        problem.textContent = describe(e);
+        problem.textContent = message;
         save.textContent = 'Save key';
         check();
+        problem.classList.add('bad');
+        problem.textContent = message;
       }
     };
     const field = keyField('API key', check, () => void submit());
+    const keyFields = h('div', { class: 'ai-field' },
+      h('label', { class: 'ai-label' }, mine ? 'Replace with a new key' : 'API key', field.input));
+    provider.addEventListener('change', renderProviderFields);
     save.addEventListener('click', () => void submit());
+    renderProviderFields();
     const tested = mine ? keyTest(() => api.testMyAiKey()) : null;
 
     body.replaceChildren(...nodes(
@@ -186,7 +231,9 @@ export function openAiKeyDialog(): void {
         : null,
       config.hasSecret
         ? h('div', { class: 'ai-field' },
-          h('label', { class: 'ai-label' }, mine ? 'Replace with a new key' : 'API key', field.input),
+          h('label', { class: 'ai-label' }, 'Provider', provider),
+          providerFields,
+          keyFields,
           problem,
           h('div', { class: 'btn-row' }, save))
         : h('div', { class: 'ai-error', role: 'alert' }, h('span', null, UNCONFIGURED_TEXT)),
@@ -276,18 +323,61 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     // the workspace key
     const keyStatus = h('p', { class: 'ai-problem', role: 'status' });
     const saveKey = h('button', { class: 'btn primary', disabled: true }, state.key ? 'Replace key' : 'Save key');
+    const savedKeyProvider = state.key && PROVIDER_OPTIONS.some((o) => o.value === state.key?.provider) ? state.key.provider : PROVIDER;
+    const keyProvider = h('select', { class: 'input', 'aria-label': 'Provider' }, PROVIDER_OPTIONS.map((o) => h('option', { value: o.value, selected: o.value === savedKeyProvider }, o.label)));
+    keyProvider.value = savedKeyProvider;
+    const baseUrl = h('input', {
+      class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 201,
+      placeholder: 'https://integrate.api.nvidia.com/v1', value: state.key?.baseUrl ?? '', oninput: () => checkKey(),
+    });
+    const modelId = h('input', {
+      class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 101,
+      placeholder: 'moonshotai/kimi-k3', value: state.key?.model ?? '', oninput: () => checkKey(),
+    });
+    const providerFields = h('div', { class: 'ai-field' });
+    const baseUrlField = h('div', { class: 'ai-field' },
+      h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
+      h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
+    const modelField = h('div', { class: 'ai-field' },
+      h('label', { class: 'ai-label' }, 'Model', modelId),
+      h('div', { class: 'ai-meta' }, 'The model id your provider calls it'));
     const checkKey = () => {
-      saveKey.disabled = !state.hasSecret || keyProblem(keyInput.input.value) !== null;
+      const why = keyProblem(keyInput.input.value, keyProvider.value, baseUrl.value, modelId.value);
+      keyStatus.classList.toggle('bad', why !== null);
+      keyStatus.textContent = why ?? '';
+      saveKey.disabled = !state.hasSecret || why !== null;
+    };
+    const renderProviderFields = () => {
+      providerFields.replaceChildren(...(keyProvider.value === OPENAI_COMPATIBLE_PROVIDER ? [baseUrlField, modelField] : []));
+      checkKey();
+      updateKeyLabel();
     };
     const submitKey = async () => {
       const value = keyInput.input.value;
-      if (!state.hasSecret || keyProblem(value) !== null) return;
+      const why = keyProblem(value, keyProvider.value, baseUrl.value, modelId.value);
+      if (!state.hasSecret || why !== null) {
+        checkKey();
+        return;
+      }
       saveKey.disabled = true;
       saveKey.textContent = 'Checking…';
+      keyStatus.classList.remove('bad');
       keyStatus.textContent = 'Checking the key with the provider…';
       let next: AdminAi | undefined;
+      let keyError: unknown = null;
+      // the admin body already has `model` (the workspace's Anthropic model), so the key's own model is `keyModel`
+      const input: { apiKey: string; provider: string; baseUrl?: string; keyModel?: string } = { apiKey: value.trim(), provider: keyProvider.value };
+      if (keyProvider.value === OPENAI_COMPATIBLE_PROVIDER) {
+        input.baseUrl = baseUrl.value.trim();
+        input.keyModel = modelId.value.trim();
+      }
       const ok = await kit.change(async () => {
-        next = await api.updateAdminAi({ apiKey: value.trim(), provider: PROVIDER });
+        try {
+          next = await api.updateAdminAi(input);
+        } catch (e) {
+          keyError = e;
+          throw e;
+        }
       }, 'Workspace key saved');
       if (ok && next) {
         keyInput.clear();
@@ -295,13 +385,24 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
         render();
       } else {
         // what was typed stays, so a typo can be fixed
-        keyStatus.textContent = '';
         saveKey.textContent = state.key ? 'Replace key' : 'Save key';
         checkKey();
+        const message = keyTestErrorMessage(keyError);
+        if (message) {
+          keyStatus.classList.add('bad');
+          keyStatus.textContent = message;
+        }
       }
     };
     const keyInput = keyField('Workspace API key', checkKey, () => void submitKey());
+    const keyLabel = h('label', { class: 'ai-label' }, state.key ? 'Replace with a new key' : 'Anthropic API key', keyInput.input);
+    function updateKeyLabel() {
+      const label = state.key ? 'Replace with a new key' : keyProvider.value === PROVIDER ? 'Anthropic API key' : 'API key';
+      keyLabel.replaceChildren(label, keyInput.input);
+    }
+    keyProvider.addEventListener('change', renderProviderFields);
     saveKey.addEventListener('click', () => void submitKey());
+    renderProviderFields();
 
     const removeKey = async () => {
       if (await kit.change(() => api.deleteAdminAiKey(), 'Workspace key removed')) saved = { ...state, key: null };
@@ -310,6 +411,9 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
 
     const key = state.key;
     const tested = key ? keyTest(() => api.testAdminAiKey()) : null;
+    const modelSetting = key?.provider === OPENAI_COMPATIBLE_PROVIDER
+      ? h('div', null, h('div', null, key.model ?? ''), h('div', { class: 'ai-meta' }, 'From the key'))
+      : h('div', { class: 'admin-select ai-model' }, model, icon('chevron', 16));
     root.replaceChildren(...nodes(
       h('p', { class: 'ai-notice' }, DATA_NOTICE),
       h('dl', { class: 'admin-facts' },
@@ -318,7 +422,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
           checkbox(o.label, edit.features.includes(o.id), (on) => {
             edit.features = on ? [...edit.features.filter((f) => f !== o.id), o.id] : edit.features.filter((f) => f !== o.id);
           })))),
-        fact('Model', h('div', { class: 'admin-select ai-model' }, model, icon('chevron', 16))),
+        fact('Model', modelSetting),
         fact('Personal keys', checkbox('People can add a key of their own, which they use instead of the workspace key', edit.personalKeys, (on) => (edit.personalKeys = on))),
         fact('Guests', checkbox('Members only: guests cannot use AI features or add a key', edit.membersOnly, (on) => (edit.membersOnly = on))),
         fact('Limits', h('div', { class: 'ai-limits' }, limit('perPersonHour'), limit('perWorkspaceHour')))),
@@ -337,7 +441,9 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
         : kit.emptyLine('No workspace key yet. Without one, only people with a key of their own can run AI features.'),
       state.hasSecret
         ? h('div', { class: 'ai-field' },
-          h('label', { class: 'ai-label' }, key ? 'Replace with a new key' : 'Anthropic API key', keyInput.input),
+          h('label', { class: 'ai-label' }, 'Provider', keyProvider),
+          providerFields,
+          keyLabel,
           keyStatus,
           h('div', { class: 'btn-row' }, saveKey))
         : null));

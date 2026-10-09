@@ -6,7 +6,7 @@ import { inspect } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiError } from '../server/ai/errors.mjs';
-import { AI_KEYS_MIGRATION, createKeyRing, parseSecret } from '../server/ai/keys.mjs';
+import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createKeyRing, parseSecret } from '../server/ai/keys.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 
@@ -127,8 +127,35 @@ describe('the configuration', () => {
     expect(config.ai.previous.equals(previous)).toBe(true);
   });
 
+  it('takes an OpenAI-compatible provider, its address and its model from the operator environment, and trusts the address', () => {
+    const { config } = load({ TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_BASE_URL: 'http://127.0.0.1:11434/v1/', TABULA_AI_MODEL: 'moonshotai/kimi-k3', TABULA_AI_API_KEY: 'sk-test-12345678', TABULA_AI_OPEN: '1' });
+    expect(config.ai).toMatchObject({ provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'moonshotai/kimi-k3' });
+    expect(JSON.stringify(config.ai)).not.toContain('sk-test-12345678');
+  });
+
+  it('needs both an address and a model for it, and keeps the address strict', () => {
+    const env = { TABULA_AI_PROVIDER: 'openai-compatible' };
+    expect(() => loadConfig(env, () => {})).toThrow('TABULA_AI_BASE_URL is required');
+    expect(() => loadConfig({ ...env, TABULA_AI_BASE_URL: 'https://api.example.com/v1' }, () => {})).toThrow('TABULA_AI_MODEL is required');
+    for (const bad of ['ftp://api.example.com/v1', 'https://me:pw@api.example.com/v1', 'https://api.example.com/v1?key=1', 'https://api.example.com/v1#x', 'not a url']) {
+      expect(() => loadConfig({ ...env, TABULA_AI_BASE_URL: bad, TABULA_AI_MODEL: 'm-1' }, () => {})).toThrow('TABULA_AI_BASE_URL');
+    }
+    expect(() => loadConfig({ ...env, TABULA_AI_BASE_URL: 'https://api.example.com/v1', TABULA_AI_MODEL: 'a b' }, () => {})).toThrow('TABULA_AI_MODEL');
+  });
+
+  it('refuses an address for Anthropic, and ignores the OpenAI-compatible variables in accounts mode with a warning', () => {
+    expect(() => loadConfig({ TABULA_AI_BASE_URL: 'https://api.example.com/v1' }, () => {})).toThrow('applies to TABULA_AI_PROVIDER=openai-compatible only');
+    const warned: string[] = [];
+    const config = loadConfig(
+      { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'o@example.com', TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_BASE_URL: 'https://api.example.com/v1', TABULA_AI_MODEL: 'm-1' },
+      (m: string) => warned.push(m),
+    );
+    expect(config.ai.open).toBeNull();
+    expect(warned.join('\n')).toContain('ignored in accounts mode');
+  });
+
   it('checks the provider and the model', () => {
-    expect(() => loadConfig({ TABULA_AI_PROVIDER: 'openai-compatible' }, () => {})).toThrow('TABULA_AI_PROVIDER must be one of anthropic');
+    expect(() => loadConfig({ TABULA_AI_PROVIDER: 'azure' }, () => {})).toThrow('TABULA_AI_PROVIDER must be one of anthropic, openai-compatible');
     expect(() => loadConfig({ TABULA_AI_MODEL: 'claude-opus-5' }, () => {})).toThrow('TABULA_AI_MODEL must be one of');
     expect(load({ TABULA_AI_PROVIDER: 'anthropic', TABULA_AI_MODEL: 'claude-haiku-5-5' }).config.ai.model).toBe('claude-haiku-5-5');
     expect(() => loadConfig({ TABULA_AI_OPEN: 'yes' }, () => {})).toThrow('TABULA_AI_OPEN must be 1 or 0');
@@ -277,7 +304,56 @@ describe('the key ring', () => {
   });
 });
 
+describe('a key of a provider with no fixed model list (TAB-222)', () => {
+  const open = (file = ':memory:') => openDirectory(file);
+
+  it('keeps the base URL and the model next to the key, shows them back, and hands them to a run', () => {
+    const d = open();
+    const u = person(d);
+    const ring = createKeyRing({ secret: secret() });
+    const saved = d.saveAiKey({ ring, scope: 'workspace', provider: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3', apiKey: KEY, createdBy: u.id, now: 1000 });
+    expect(saved).toEqual({ provider: 'openai-compatible', hint: KEY.slice(-4), baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3' });
+    expect(d.getAiKeyInfo('workspace')).toMatchObject({ provider: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3' });
+    expect(d.useAiKey({ ring, scope: 'workspace', now: 2000 })).toEqual({ provider: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3', apiKey: KEY });
+    // replacing the key replaces the base URL and the model with it
+    d.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: `${KEY}-2`, createdBy: u.id, now: 3000 });
+    expect(d.getAiKeyInfo('workspace')).toMatchObject({ provider: 'anthropic', baseUrl: null, model: null });
+    d.close();
+  });
+
+  it('never writes the key, the base URL or the model in the clear into the row', () => {
+    const file = path.join(tmp(), 'directory.sqlite');
+    const d = openDirectory(file);
+    const ring = createKeyRing({ secret: secret() });
+    d.saveAiKey({ ring, scope: 'workspace', provider: 'openai-compatible', baseUrl: 'https://example.test/v1', model: 'm-1', apiKey: KEY });
+    d.close();
+    const raw = new DatabaseSync(file);
+    const row = raw.prepare('SELECT * FROM ai_keys').get() as Record<string, unknown>;
+    raw.close();
+    expect(JSON.stringify(row)).not.toContain(KEY);
+    expect(row.base_url).toBe('https://example.test/v1');
+    expect(row.model).toBe('m-1');
+  });
+});
+
 describe('the ai_keys table', () => {
+  it('has a model column added by the last migration, empty for a key an older directory holds', () => {
+    expect(MIGRATIONS.at(-1)).toBe(AI_KEYS_MODEL_MIGRATION);
+    const file = path.join(tmp(), 'directory.sqlite');
+    const d = openDirectory(file);
+    const ring = createKeyRing({ secret: secret() });
+    d.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: KEY });
+    d.close();
+    const raw = new DatabaseSync(file);
+    // an older directory has the table without the column
+    raw.exec('ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ' + String(MIGRATIONS.length - 1));
+    raw.close();
+    const again = openDirectory(file);
+    expect(again.getAiKeyInfo('workspace')).toMatchObject({ provider: 'anthropic', model: null });
+    expect(again.useAiKey({ ring, scope: 'workspace' })?.apiKey).toBe(KEY);
+    again.close();
+  });
+
   it('is migration 7 and keeps what an older directory holds', () => {
     expect(MIGRATIONS[6]).toBe(AI_KEYS_MIGRATION);
     const file = path.join(tmp(), 'directory.sqlite');
@@ -329,9 +405,9 @@ describe('storing keys', () => {
     const u = person(d);
     const ring = createKeyRing({ secret: secret() });
     expect(d.getAiKeyInfo('workspace')).toBeNull();
-    expect(d.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: KEY, createdBy: u.id, now: 1000 })).toEqual({ provider: 'anthropic', hint: KEY.slice(-4) });
+    expect(d.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: KEY, createdBy: u.id, now: 1000 })).toEqual({ provider: 'anthropic', hint: KEY.slice(-4), baseUrl: null, model: null });
     d.saveAiKey({ ring, scope: 'user', userId: u.id, provider: 'anthropic', apiKey: `${KEY}-mine`, createdBy: u.id, now: 2000 });
-    expect(d.getAiKeyInfo('workspace')).toEqual({ provider: 'anthropic', baseUrl: null, hint: KEY.slice(-4), createdAt: 1000, createdBy: u.id, lastUsedAt: null });
+    expect(d.getAiKeyInfo('workspace')).toEqual({ provider: 'anthropic', baseUrl: null, model: null, hint: KEY.slice(-4), createdAt: 1000, createdBy: u.id, lastUsedAt: null });
     expect(d.getAiKeyInfo('user', u.id)).toMatchObject({ hint: 'mine', createdAt: 2000 });
     expect(JSON.stringify([d.getAiKeyInfo('workspace'), d.getAiKeyInfo('user', u.id)])).not.toContain(KEY);
 
@@ -394,7 +470,7 @@ describe('storing keys', () => {
     const d = open();
     const ring = createKeyRing({ secret: secret() });
     d.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: KEY });
-    expect(d.useAiKey({ ring, scope: 'workspace', now: 5000 })).toEqual({ provider: 'anthropic', baseUrl: null, apiKey: KEY });
+    expect(d.useAiKey({ ring, scope: 'workspace', now: 5000 })).toEqual({ provider: 'anthropic', baseUrl: null, model: null, apiKey: KEY });
     expect(d.getAiKeyInfo('workspace')?.lastUsedAt).toBe(5000);
     d.close();
   });

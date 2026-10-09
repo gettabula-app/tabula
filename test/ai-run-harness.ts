@@ -93,6 +93,8 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
   };
   const calls: any[] = [];
   const made: { kind: string; apiKey: string }[] = [];
+  // everything createProvider was given: the base URL, the model and whether the address is trusted (TAB-222)
+  const madeWith: Record<string, unknown>[] = [];
   const logged: unknown[][] = [];
   const docs = new Map<string, Y.Doc>();
   const reads: string[] = [];
@@ -108,8 +110,10 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
     yield { type: 'progress' };
     yield { type: 'result', value: answerFor(req), usage: { model: req.model, inputTokens: 1200, outputTokens: 340, cacheReadTokens: 1000, cacheWriteTokens: 0 } };
   };
-  const createProvider = ({ kind, apiKey }: { kind: string; apiKey: string }) => {
+  const createProvider = (options: { kind: string; apiKey: string } & Record<string, unknown>) => {
+    const { kind, apiKey } = options;
     made.push({ kind, apiKey });
+    madeWith.push({ ...options });
     return {
       kind,
       models: () => [],
@@ -179,9 +183,9 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
     directory.shareBoard(boardId, { principalType: 'user', principalId: who.user.id, role });
 
   /** AI on, a workspace key stored. `extra` are ai.* settings (without the prefix). */
-  const enable = (extra: Record<string, string> = {}, key = KEY) => {
+  const enable = (extra: Record<string, string> = {}, key = KEY, stored: { provider?: string; baseUrl?: string | null; model?: string | null } = {}) => {
     directory.setSetting('ai.enabled', '1');
-    directory.saveAiKey({ ring, scope: 'workspace', provider: 'anthropic', apiKey: key });
+    directory.saveAiKey({ ring, scope: 'workspace', provider: stored.provider ?? 'anthropic', baseUrl: stored.baseUrl ?? null, model: stored.model ?? null, apiKey: key });
     for (const [name, value] of Object.entries(extra)) directory.setSetting(`ai.${name}`, value);
   };
 
@@ -212,7 +216,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
       (a) => a.action.startsWith('ai.') && !['ai.settings', 'ai.key.set', 'ai.key.delete'].includes(a.action),
     );
 
-  return { dir, config, directory, ring, live, state, calls, made, logged, docs, docOf, reads, person, board, share, enable, run, call, audits, base };
+  return { dir, config, directory, ring, live, state, calls, made, madeWith, logged, docs, docOf, reads, person, board, share, enable, run, call, audits, base };
 }
 
 export type World = Awaited<ReturnType<typeof setup>>;

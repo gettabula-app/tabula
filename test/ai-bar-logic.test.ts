@@ -4,7 +4,7 @@ import type { AiFeature } from '../src/api';
 import {
   CHIPS, HISTORY_MAX, NO_FACTS, SEND_MAX, addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos,
   contextAfterSelection, contextIds, contextLabel, contextMenu, createSseParser, disclosure, dockBottom, dragPos, errorPlain, errorView,
-  estimateFor, estimateTokens, formatExact, formatPos, formatTokens, formatWait, isAdminRole, modelChipText, modelShort, nearestIds,
+  estimateFor, estimateTokens, formatExact, formatPos, formatTokens, formatWait, isAdminRole, modelChipLabel, modelChipText, modelShort, nearestIds,
   parseAiEvent, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi,
   runTarget, runTip, runningText, sendsText, serializeHistory, settledMessage, showSetUpAi, stepHistory, thisRunText, toggleArmed, waitOf,
   type AiOutcome, type Facts, type SseMessage,
@@ -288,6 +288,9 @@ describe('the model chip', () => {
     expect(modelShort('claude-sonnet-5-5')).toBe('Sonnet 5.5');
     expect(modelShort('claude-haiku-5-5')).toBe('Haiku 5.5');
     expect(modelShort('claude-mystery-9')).toBe('claude-mystery-9');
+    expect(modelShort('moonshotai/kimi-k3')).toBe('kimi-k3');
+    expect(modelShort('provider/a-very-long-custom-model-id')).toBe('a-very-long-custom-model-id');
+    expect(modelShort('provider/')).toBe('provider/');
   });
 
   it('shows the model and the estimate', () => {
@@ -298,6 +301,10 @@ describe('the model chip', () => {
   it('names the action instead of the model when one is armed', () => {
     expect(modelChipText({ ...o, armed: 'summarise' })).toBe('Summarise · ~1.3k tokens');
     expect(modelChipText({ ...o, armed: 'generate', prompt: 'x'.repeat(400) })).toBe('Generate ideas · ~1.4k tokens');
+  });
+
+  it('labels the model chip with its token estimate details', () => {
+    expect(modelChipLabel('kimi-k3 · ~1.3k tokens')).toBe('kimi-k3 · ~1.3k tokens. Model and token estimate details');
   });
 });
 
@@ -616,6 +623,21 @@ describe('errors', () => {
     expect(view('ai_key_invalid').link).toBeNull();
   });
 
+  it('says the provider does not know its model or address, with a settings link when available', () => {
+    const text = 'The provider does not know this model or this address. Check the base URL and the model.';
+    expect(view('ai_model_invalid', { admin: true })).toMatchObject({ kind: 'invalid', text, retry: false, note: null, link: { target: 'admin-ai' } });
+    expect(view('ai_model_invalid', { keySource: 'user' })).toMatchObject({ kind: 'invalid', text, retry: false, link: { target: 'my-key' } });
+    expect(errorPlain(view('ai_model_invalid'))).toBe(`${text} Ask a workspace admin to check it.`);
+  });
+
+  it('says the model answer did not match the required JSON and offers Retry', () => {
+    expect(view('ai_bad_output')).toMatchObject({
+      kind: 'unusable',
+      text: 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.',
+      retry: true,
+    });
+  });
+
   it('counts down a rate limit from retry-after, 30 seconds when it is missing', () => {
     for (const code of ['rate_limited', 'ai_rate_limited']) {
       expect(view(code, { retryAfter: 40 })).toMatchObject({ kind: 'rate', text: 'Too many requests. Try again in 40 s.', retry: true, wait: 40 });
@@ -669,7 +691,7 @@ describe('errors', () => {
   });
 
   it('never shows a raw code, also for a code it does not know', () => {
-    const codes = ['ai_disabled', 'ai_key_invalid', 'rate_limited', 'ai_unavailable', 'ai_refused', 'read_only', 'network', 'ai_invalid_proposal', 'board_changed', 'forbidden', 'unauthenticated', 'weird_code_7'];
+    const codes = ['ai_disabled', 'ai_key_invalid', 'ai_model_invalid', 'ai_bad_output', 'rate_limited', 'ai_unavailable', 'ai_refused', 'read_only', 'network', 'ai_invalid_proposal', 'board_changed', 'forbidden', 'unauthenticated', 'weird_code_7'];
     for (const code of codes) {
       for (const admin of [true, false]) {
         const text = errorPlain(view(code, { admin }));

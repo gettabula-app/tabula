@@ -154,8 +154,9 @@ AI features run on the relay with an API key that the workspace or the person br
 | `TABULA_AI_SECRET_PREVIOUS` | none | The secret you are rotating away from, so keys written under it still open and are sealed again under the new one on next use. See "Rotating TABULA_AI_SECRET" in [docs/ai.md](docs/ai.md) |
 | `TABULA_AI_API_KEY` | none | Open mode: the operator's provider key |
 | `TABULA_AI_OPEN` | unset | Open mode: `1` lets the AI features use `TABULA_AI_API_KEY`. A key alone never turns AI on |
-| `TABULA_AI_PROVIDER` | `anthropic` | The provider (only `anthropic`) |
-| `TABULA_AI_MODEL` | `claude-opus-5-5` | The default model: `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5` |
+| `TABULA_AI_PROVIDER` | `anthropic` | The provider: `anthropic` or `openai-compatible` (open mode; in accounts mode each key names its own) |
+| `TABULA_AI_BASE_URL` | none | Open mode with `openai-compatible`: the API address, for example `https://integrate.api.nvidia.com/v1`; `http://` and a local address are allowed here, for a model server on the same machine |
+| `TABULA_AI_MODEL` | `claude-opus-5-5` | The default model: `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`; with `openai-compatible` it is required and is any model id the provider knows |
 
 In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
 

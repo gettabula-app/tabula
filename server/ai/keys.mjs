@@ -39,6 +39,12 @@ export const AI_KEYS_MIGRATION = `
   CREATE UNIQUE INDEX ai_keys_user ON ai_keys(user_id) WHERE user_id IS NOT NULL;
 `;
 
+// The model of a key whose provider has no fixed list of them (TAB-222). Null for a key of a provider that does: the
+// workspace's ai.model setting picks the model then.
+export const AI_KEYS_MODEL_MIGRATION = `
+  ALTER TABLE ai_keys ADD COLUMN model TEXT;
+`;
+
 /**
  * `null` when the variable is unset or blank. Throws, without ever printing the value, when it is set but is not
  * 32 bytes of standard base64.
@@ -115,6 +121,7 @@ function owner(scope, userId) {
 const toInfo = (r) => ({
   provider: r.provider,
   baseUrl: r.base_url ?? null,
+  model: r.model ?? null,
   hint: r.hint,
   createdAt: r.created_at,
   createdBy: r.created_by ?? null,
@@ -136,9 +143,9 @@ export function createAiKeyStore({ get, run, transaction }) {
 
   /**
    * Replaces the key of that owner. Returns only what may be shown again.
-   * @param {{ ring: any, scope: string, userId?: string | null, provider: string, baseUrl?: string | null, apiKey: string, createdBy?: string | null, now?: number }} key
+   * @param {{ ring: any, scope: string, userId?: string | null, provider: string, baseUrl?: string | null, model?: string | null, apiKey: string, createdBy?: string | null, now?: number }} key
    */
-  function saveAiKey({ ring, scope, userId = null, provider, baseUrl = null, apiKey, createdBy = null, now = Date.now() }) {
+  function saveAiKey({ ring, scope, userId = null, provider, baseUrl = null, model = null, apiKey, createdBy = null, now = Date.now() }) {
     if (!ring?.configured) throw new AiError('ai_unconfigured');
     const who = owner(scope, userId);
     if (typeof apiKey !== 'string' || apiKey.length === 0) throw new Error('invalid key');
@@ -148,13 +155,14 @@ export function createAiKeyStore({ get, run, transaction }) {
     transaction(() => {
       remove(scope, who);
       run(
-        `INSERT INTO ai_keys (id, scope, user_id, provider, base_url, ciphertext, nonce, key_version, hint, created_at, created_by, last_used_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        `INSERT INTO ai_keys (id, scope, user_id, provider, base_url, model, ciphertext, nonce, key_version, hint, created_at, created_by, last_used_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         newId(),
         scope,
         who,
         provider,
         baseUrl,
+        model,
         sealed.ciphertext,
         sealed.nonce,
         sealed.keyVersion,
@@ -163,7 +171,7 @@ export function createAiKeyStore({ get, run, transaction }) {
         createdBy,
       );
     });
-    return { provider, hint };
+    return { provider, hint, baseUrl, model };
   }
 
   /**
@@ -214,7 +222,7 @@ export function createAiKeyStore({ get, run, transaction }) {
       run('UPDATE ai_keys SET ciphertext = ?, nonce = ?, key_version = ? WHERE id = ? AND ciphertext = ?', sealed.ciphertext, sealed.nonce, sealed.keyVersion, row.id, row.ciphertext);
     }
     run('UPDATE ai_keys SET last_used_at = ? WHERE id = ?', now, row.id);
-    return { provider: row.provider, baseUrl: row.base_url ?? null, apiKey };
+    return { provider: row.provider, baseUrl: row.base_url ?? null, model: row.model ?? null, apiKey };
   }
 
   return { saveAiKey, getAiKeyInfo, deleteAiKey, aiKeyReadable, readAiKey, useAiKey };

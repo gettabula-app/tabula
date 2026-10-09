@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
-import { AI_KEYS_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
+import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
 export { normaliseEmail };
@@ -146,6 +146,8 @@ export const MIGRATIONS = [
     PRIMARY KEY (user_id, key)
   );
   `,
+  // The model of an AI key whose provider has no fixed list of them (docs/ai.md, OpenAI-compatible).
+  AI_KEYS_MODEL_MIGRATION,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

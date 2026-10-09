@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withLegacyEnv } from './env.mjs';
 import { DEFAULT_MODEL, MODELS } from './ai/anthropic.mjs';
+import { checkBaseUrl, checkModelId } from './ai/base-url.mjs';
 import { PROVIDERS } from './ai/providers.mjs';
 import { parseSecret } from './ai/keys.mjs';
 import { CLIENT_IP_HEADERS } from './client-ip.mjs';
@@ -97,8 +98,21 @@ function hide(object, names) {
 function loadAi(env, authEnabled, warn) {
   const provider = (env.TABULA_AI_PROVIDER || '').trim() || 'anthropic';
   if (!PROVIDERS.includes(provider)) throw new Error(`TABULA_AI_PROVIDER must be one of ${PROVIDERS.join(', ')} (got "${provider.slice(0, 20)}")`);
-  const model = (env.TABULA_AI_MODEL || '').trim() || DEFAULT_MODEL;
-  if (!MODELS.includes(model)) throw new Error(`TABULA_AI_MODEL must be one of ${MODELS.join(', ')} (got "${model.slice(0, 40)}")`);
+  // An OpenAI-compatible provider has no fixed list of models and no fixed address: the operator names both (docs/ai.md).
+  let model;
+  let baseUrl = null;
+  if (provider === 'openai-compatible') {
+    const url = checkBaseUrl(env.TABULA_AI_BASE_URL, { trusted: true });
+    if (url.error) throw new Error(`TABULA_AI_BASE_URL is required with TABULA_AI_PROVIDER=openai-compatible: ${url.error.replace(/^baseUrl /, '')}`);
+    baseUrl = url.baseUrl;
+    const id = checkModelId(env.TABULA_AI_MODEL);
+    if (id.error) throw new Error(`TABULA_AI_MODEL is required with TABULA_AI_PROVIDER=openai-compatible: ${id.error.replace(/^model /, '')}`);
+    model = id.model;
+  } else {
+    if ((env.TABULA_AI_BASE_URL || '').trim()) throw new Error('TABULA_AI_BASE_URL applies to TABULA_AI_PROVIDER=openai-compatible only');
+    model = (env.TABULA_AI_MODEL || '').trim() || DEFAULT_MODEL;
+    if (!MODELS.includes(model)) throw new Error(`TABULA_AI_MODEL must be one of ${MODELS.join(', ')} (got "${model.slice(0, 40)}")`);
+  }
 
   const secret = parseSecret(env.TABULA_AI_SECRET, 'TABULA_AI_SECRET');
   const previous = parseSecret(env.TABULA_AI_SECRET_PREVIOUS, 'TABULA_AI_SECRET_PREVIOUS');
@@ -119,7 +133,8 @@ function loadAi(env, authEnabled, warn) {
   } else if (flag === '1') {
     warn('TABULA_AI_OPEN=1 does nothing without TABULA_AI_API_KEY');
   }
-  return hide({ provider, model, secret, previous, open }, ['secret', 'previous', 'open']);
+  if (authEnabled && provider === 'openai-compatible') warn('TABULA_AI_PROVIDER, TABULA_AI_BASE_URL and TABULA_AI_MODEL are ignored in accounts mode: each key carries its own provider, address and model');
+  return hide({ provider, model, baseUrl, secret, previous, open }, ['secret', 'previous', 'open']);
 }
 
 // Hosted workspaces (docs/cloud.md). All three variables or none; the result is null unless accounts mode is on too.

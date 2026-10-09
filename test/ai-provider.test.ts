@@ -87,9 +87,12 @@ const failureOf = async (promise: Promise<unknown>): Promise<AiError> => {
 };
 
 describe('createProvider', () => {
-  it('knows anthropic only, and says so for anything else', () => {
-    expect(PROVIDERS).toEqual(['anthropic']);
-    expect(() => createProvider({ kind: 'openai-compatible', apiKey: KEY })).toThrow('Unknown AI provider');
+  it('knows anthropic and openai-compatible, and says so for anything else', () => {
+    expect(PROVIDERS).toEqual(['anthropic', 'openai-compatible']);
+    expect(() => createProvider({ kind: 'azure', apiKey: KEY })).toThrow('Unknown AI provider');
+    // an OpenAI-compatible provider has no default address: one without it cannot be made
+    expect(() => createProvider({ kind: 'openai-compatible', apiKey: KEY })).toThrow('Invalid baseUrl');
+    expect(createProvider({ kind: 'openai-compatible', apiKey: KEY, baseUrl: 'https://api.example.com/v1', model: 'm-1' }).kind).toBe('openai-compatible');
     expect(() => createProvider({ kind: '', apiKey: KEY })).toThrow('Unknown AI provider');
     expect(() => createProvider({ kind: 'anthropic', apiKey: '' })).toThrow('needs an API key');
   });

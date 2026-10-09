@@ -4,6 +4,7 @@
 
 import { FEATURES, aiEnabledFor, personalKeysFor, readAiSettings, validateAdminAi, validateKeyBody, writeAiSettings } from './settings.mjs';
 import { AiError, describeError } from './errors.mjs';
+import { hostOf } from './base-url.mjs';
 import { createKeyRing } from './keys.mjs';
 import { createSaveThrottle } from './limits.mjs';
 import { createProvider } from './providers.mjs';
@@ -14,7 +15,7 @@ const UNCONFIGURED = 'AI keys cannot be saved because the server has no TABULA_A
 /** The answer of GET /api/ai/config in open mode: on only with the operator's key and TABULA_AI_OPEN=1. */
 export function openAiConfig(config) {
   const on = config.ai.open !== null;
-  return { enabled: on, features: [...FEATURES], keySource: on ? 'workspace' : null, model: config.ai.model, personalKeys: false, hasSecret: false };
+  return { enabled: on, features: [...FEATURES], keySource: on ? 'workspace' : null, provider: on ? config.ai.provider : null, model: config.ai.model, personalKeys: false, hasSecret: false };
 }
 
 /**
@@ -43,14 +44,14 @@ export function createAiRoutes({
   }
 
   // Each save or test makes an outbound call, so a person gets a few an hour and one at a time.
-  async function verifyKey(res, user, { provider, apiKey }) {
+  async function verifyKey(res, user, { provider, apiKey, baseUrl = null, model = null }) {
     const turn = saves.begin(user.id);
     if (turn.wait) {
       res.setHeader('retry-after', String(turn.wait));
       throw new HttpError(429, 'rate_limited', 'Too many key checks. Try again later.');
     }
     try {
-      await makeProvider({ kind: provider, apiKey }).verify();
+      await makeProvider({ kind: provider, apiKey, baseUrl, model }).verify();
     } catch (err) {
       throw failure(res, err);
     } finally {
@@ -70,7 +71,7 @@ export function createAiRoutes({
     if (!found) throw notFound('AI key not found');
 
     try {
-      await verifyKey(res, user, { provider: found.row.provider, apiKey: found.apiKey });
+      await verifyKey(res, user, { provider: found.row.provider, apiKey: found.apiKey, baseUrl: found.row.base_url ?? null, model: found.row.model ?? null });
     } catch (err) {
       // A throttle refusal did not reach the provider, so it did not test the key.
       if (!(err instanceof HttpError && err.code === 'rate_limited')) {
@@ -89,7 +90,11 @@ export function createAiRoutes({
     return [200, { ok: true, provider: found.row.provider, checkedAt: now() }];
   }
 
-  const keyView = (info) => (info ? { provider: info.provider, hint: info.hint, createdAt: info.createdAt, lastUsedAt: info.lastUsedAt } : null);
+  const keyView = (info) => (info ? { provider: info.provider, baseUrl: info.baseUrl, model: info.model, hint: info.hint, createdAt: info.createdAt, lastUsedAt: info.lastUsedAt } : null);
+
+  // What an audit row says about a key: who it is for and which provider. For an OpenAI-compatible one also the host (not the
+  // whole address, which could carry a path the operator would rather not repeat) and the model id; never the key.
+  const keyAudit = (scope, key) => ({ scope, provider: key.provider, ...(key.baseUrl ? { host: hostOf(key.baseUrl), model: key.model } : {}) });
 
   function adminView() {
     const info = directory.getAiKeyInfo('workspace');
@@ -112,14 +117,18 @@ export function createAiRoutes({
       const settings = settingsNow();
       const personal = personalKeysFor(settings, user);
       const mine = personal ? directory.getAiKeyInfo('user', user.id) : null;
-      const keySource = !ring.configured ? null : mine ? 'user' : directory.getAiKeyInfo('workspace') ? 'workspace' : null;
+      const workspaceKey = directory.getAiKeyInfo('workspace');
+      const keySource = !ring.configured ? null : mine ? 'user' : workspaceKey ? 'workspace' : null;
+      const inUse = keySource === 'user' ? mine : keySource === 'workspace' ? workspaceKey : null;
       return [
         200,
         {
           enabled: aiEnabledFor(settings, user),
           features: settings.features,
           keySource,
-          model: settings.model,
+          provider: inUse?.provider ?? null,
+          // a key of a provider with no fixed list of models names its own
+          model: inUse?.model ?? settings.model,
           personalKeys: personal,
           hasSecret: ring.configured,
           myKey: keyView(mine),
@@ -132,13 +141,13 @@ export function createAiRoutes({
       const checked = validateKeyBody(body);
       if (checked.error) throw badRequest(checked.error);
       if (!ring.configured) throw conflict('ai_unconfigured', UNCONFIGURED);
-      const { apiKey, provider } = checked.key;
+      const { apiKey, provider, baseUrl, model } = checked.key;
       await verifyKey(res, user, checked.key);
       const fresh = stillThere(user);
       if (!personalKeysFor(settingsNow(), fresh)) throw forbidden('Personal AI keys are not allowed in this workspace');
       const saved = directory.transaction(() => {
-        const result = directory.saveAiKey({ ring, scope: 'user', userId: user.id, provider, apiKey, createdBy: user.id });
-        audit(user, 'ai.key.set', { scope: 'user', provider });
+        const result = directory.saveAiKey({ ring, scope: 'user', userId: user.id, provider, baseUrl, model, apiKey, createdBy: user.id });
+        audit(user, 'ai.key.set', keyAudit('user', checked.key));
         return result;
       });
       return [200, saved];
@@ -177,8 +186,8 @@ export function createAiRoutes({
           audit(user, 'ai.settings', patch);
         }
         if (key) {
-          directory.saveAiKey({ ring, scope: 'workspace', provider: key.provider, apiKey: key.apiKey, createdBy: user.id });
-          audit(user, 'ai.key.set', { scope: 'workspace', provider: key.provider });
+          directory.saveAiKey({ ring, scope: 'workspace', provider: key.provider, baseUrl: key.baseUrl, model: key.model, apiKey: key.apiKey, createdBy: user.id });
+          audit(user, 'ai.key.set', keyAudit('workspace', key));
         }
       });
       return [200, adminView()];
