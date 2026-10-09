@@ -1,11 +1,18 @@
 import { h, icon } from './dom';
+import { focusFirst, focusIsIn, inertPage, restoreFocus, trapTab } from './focus-scope';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; onClose?: () => void } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; label?: string; onClose?: () => void } = {}) {
   closePopover();
-  const el = h('div', { class: `popover tray ${opts.className ?? ''}`, role: 'dialog' }, content);
+  const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
+  const el = h('div', { class: `popover tray ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
+  const opener = anchor.tagName === 'BUTTON' ? anchor : null;
+  if (opener) {
+    if (!opener.hasAttribute('aria-haspopup')) opener.setAttribute('aria-haspopup', 'dialog');
+    opener.setAttribute('aria-expanded', 'true');
+  }
   document.body.appendChild(el);
   const place = () => {
     const a = anchor.getBoundingClientRect();
@@ -29,10 +36,13 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();
-    }
+    } else if (e.key === 'Tab' && focusIsIn(el)) trapTab(e, el);
   };
   const close = () => {
+    const giveBack = focusIsIn(el);
     el.remove();
+    opener?.setAttribute('aria-expanded', 'false');
+    if (giveBack) restoreFocus(anchor);
     window.removeEventListener('pointerdown', onDown, true);
     window.removeEventListener('keydown', onKey, true);
     if (openPop?.el === el) openPop = null;
@@ -41,6 +51,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   setTimeout(() => window.addEventListener('pointerdown', onDown, true));
   window.addEventListener('keydown', onKey, true);
   openPop = { el, close };
+  focusFirst(el);
   return { el, close, place };
 }
 
@@ -88,13 +99,15 @@ export function toast(msg: string, ms = 2600, action?: { label: string; onClick:
 
 /** Open dialogs, oldest first: Escape closes only the last one. */
 const openDialogs: object[] = [];
+let dialogSeq = 0;
 
 /** Modal dialog. Resolves when closed. */
 export function dialog(title: string, body: HTMLElement, actions: { label: string; primary?: boolean; onClick?: () => void | boolean | Promise<void | boolean> }[] = []) {
   const back = h('div', { class: 'modal-back' });
   const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close() }, icon('close', 18));
-  const box = h('div', { class: 'modal tray', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-    h('div', { class: 'modal-head' }, h('h2', null, title), closeBtn),
+  const titleId = `dialog-title-${++dialogSeq}`;
+  const box = h('div', { class: 'modal tray', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
+    h('div', { class: 'modal-head' }, h('h2', { id: titleId }, title), closeBtn),
     h('div', { class: 'modal-body' }, body),
     actions.length ? h('div', { class: 'modal-actions' }, ...actions.map((a) =>
       h('button', {
@@ -109,8 +122,12 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
   document.body.appendChild(back);
   const self = {};
   openDialogs.push(self);
+  const opener = document.activeElement as HTMLElement | null;
+  const releasePage = inertPage(back);
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && openDialogs[openDialogs.length - 1] === self) close();
+    if (openDialogs[openDialogs.length - 1] !== self) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === 'Tab' && !(document.activeElement as HTMLElement | null)?.closest?.('.popover')) trapTab(e, box);
   };
   window.addEventListener('keydown', onKey);
   back.addEventListener('pointerdown', (e) => {
@@ -121,8 +138,11 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
     const i = openDialogs.indexOf(self);
     if (i >= 0) openDialogs.splice(i, 1);
     back.remove();
+    releasePage();
+    restoreFocus(opener);
   }
-  requestAnimationFrame(() => (box.querySelector('input, textarea, button.primary') as HTMLElement | null)?.focus());
+  // the first field, or the main button; a dialog with neither (a notice) starts on its close button
+  requestAnimationFrame(() => focusFirst(box, (box.querySelector('input, textarea, button.primary') as HTMLElement | null) ?? closeBtn));
   return { close, box };
 }
 
