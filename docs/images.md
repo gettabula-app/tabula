@@ -227,6 +227,8 @@ The Tauri shell uses the same page and the same CSP (`img-src 'self' data: blob:
 
 ## MCP and the other AI tools
 
+**Built** in `summarise` (`server/board-ops.mjs`): `type`, position, size, `mime`, `nw`, `nh` and a cleaned `alt`; no asset hash, no URL; the Markdown summary lists a picture as `Image: <alt>` or `Image (<mime>, <w> x <h>)` (`imageLine` in `src/flow.ts`).
+
 - `get_board`, `get_objects` and `list_*` return image objects as metadata (`type: 'image'`, position, size, `alt`, `mime`) with **no bytes and no URL**. `alt` is returned fenced and escaped like all board text.
 - `create_objects` does **not** accept `image` in v1 (`CREATE_KEYS` stays: shape, sticky, text, frame, connector). `update_objects` can move, resize, lock and delete an image like any box but cannot change `asset`. `OBJ_TYPES` gains `'image'` so filters and validation keep working.
 - Images are never sent to the model by the server in this slice. Reading what an image shows is a future AI feature and would go through the provider settings that already exist (TAB-97), on its own spec.

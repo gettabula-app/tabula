@@ -187,6 +187,8 @@ function endOut(end) {
   return { kind: 'free', x: 0, y: 0 };
 }
 
+const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
 /** @param {boolean} [detail] the extra fields get_objects adds */
 export function summarise(o, textMax, detail = false) {
   if (o.type === 'connector') {
@@ -214,6 +216,20 @@ export function summarise(o, textMax, detail = false) {
     if (text.truncated) out.textTruncated = true;
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
+  if (o.type === 'image') {
+    // A picture is metadata only: its type, its natural size and the description its author gave it. Never its bytes, its
+    // hash or any URL to it (docs/images.md, MCP and the other AI tools); what is in it is not read.
+    if (IMAGE_MIMES.includes(o.mime)) out.mime = o.mime;
+    if (Number.isFinite(o.nw) && Number.isFinite(o.nh)) {
+      out.nw = r2(o.nw);
+      out.nh = r2(o.nh);
+    }
+    if (typeof o.alt === 'string' && o.alt) {
+      const alt = cleanForModel(o.alt, 300);
+      out.alt = alt.text;
+      if (alt.truncated) out.altTruncated = true;
+    }
+  }
   if (typeof o.fill === 'string') out.fill = cleanForModel(o.fill, 64).text;
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
   if (o.locked === true) out.locked = true;

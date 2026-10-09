@@ -165,3 +165,32 @@ describe('markdown summary and hidden content', () => {
     expect(flow.summaryMarkdown()).toContain('- alpha (1 vote)');
   });
 });
+
+describe('pictures in the markdown summary', () => {
+  const frame = { id: 'f', type: 'frame', x: 0, y: 0, w: 800, h: 600, rotation: 0, z: 'a0', name: 'Ideas' } as BaseObj;
+  const picture = (id: string, extra: Partial<BaseObj> = {}): BaseObj => ({ id, type: 'image', x: 10, y: 10, w: 200, h: 100, rotation: 0, z: 'a1', parent: 'f', asset: 'ab'.repeat(32), mime: 'image/png', nw: 640, nh: 480, ...extra }) as BaseObj;
+
+  it('lists a picture by its description, or by what it is when it has none', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => {
+      store.create(frame);
+      store.create(picture('a', { alt: '  A board   with\nthree columns ', y: 10 }));
+      store.create(picture('b', { y: 200 }));
+      store.create(picture('c', { mime: 'image/jpeg', nw: undefined, nh: undefined, y: 400 }));
+      store.create({ ...note('n'), parent: 'f', x: 10, y: 600 } as BaseObj);
+    });
+    const md = flow.summaryMarkdown();
+    expect(md).toContain('- Image: A board with three columns');
+    expect(md).toContain('- Image (image/png, 640 x 480)');
+    expect(md).toContain('- Image (image/jpeg, 200 x 100)');
+    expect(md).toContain('- n');
+    expect(md).not.toContain('undefined');
+    expect(md).not.toContain('ab'.repeat(32));
+  });
+
+  it('keeps a picture outside any frame out, as a note outside a frame is', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => store.create(picture('a', { parent: undefined, alt: 'loose' })));
+    expect(flow.summaryMarkdown()).not.toContain('loose');
+  });
+});
