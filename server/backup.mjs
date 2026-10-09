@@ -61,6 +61,7 @@ const MANIFEST_NAME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.json\.e
 const ROOM_FILE_RE = /^[A-Za-z0-9_-]{1,64}(?:~comments)?\.yjs$/;
 const BOARD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const VERSION_ID_RE = /^[A-Za-z0-9_-]{16}$/;
+const ASSET_PATH_RE = /^assets\/([0-9a-f]{2})\/([0-9a-f]{64})$/;
 const STALE_TEMP_RE = /^directory\.sqlite\.backup-[0-9a-f]{16}\.tmp(?:-journal|-wal|-shm)?$/;
 const S3_CODE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const ERRNO_RE = /^[A-Z0-9_]{2,40}$/;
@@ -363,13 +364,23 @@ export function validateRelPath(value) {
 }
 
 /**
- * Whether `rel` is a path the engine itself writes: directory.sqlite, a top-level room file, or a board's history index
- * or version file. Restore accepts nothing else from a manifest.
+ * The hash of an image file when `rel` is `assets/<aa>/<hash>` with the shard matching the hash, else null. Images are
+ * stored by the SHA-256 of their content (docs/images.md), so the name says what the bytes must be.
+ * @param {unknown} rel
+ */
+export function assetHashOf(rel) {
+  const m = typeof rel === 'string' ? ASSET_PATH_RE.exec(rel) : null;
+  return m && m[2].startsWith(m[1]) ? m[2] : null;
+}
+
+/**
+ * Whether `rel` is a path the engine itself writes: directory.sqlite, a top-level room file, an image file under
+ * `assets/<aa>/`, or a board's history index or version file. Restore accepts nothing else from a manifest.
  * @param {unknown} rel
  */
 export function isBackupPath(rel) {
   if (typeof rel !== 'string') return false;
-  if (rel === 'directory.sqlite' || ROOM_FILE_RE.test(rel)) return true;
+  if (rel === 'directory.sqlite' || ROOM_FILE_RE.test(rel) || assetHashOf(rel) !== null) return true;
   const parts = rel.split('/');
   if (parts.length !== 3 || parts[0] !== 'history' || !BOARD_ID_RE.test(parts[1])) return false;
   if (parts[2] === 'index.json') return true;
@@ -1106,6 +1117,40 @@ export function createBackup({
       data ??= await readIfThere(path.join(dataDir, file), file);
       if (data) yield { path: file, data };
       else counters.skipped++;
+    }
+
+    // Images: one file per distinct content, never changed once written, so after the first run an asset costs nothing again.
+    // The name is the SHA-256 of the bytes; a file that no longer matches its name is damaged and is left out, so a restore
+    // never meets it.
+    const assetsRoot = path.join(dataDir, 'assets');
+    let shards = [];
+    try {
+      shards = (await fs.promises.readdir(assetsRoot, { withFileTypes: true })).filter((e) => e.isDirectory() && /^[0-9a-f]{2}$/.test(e.name)).map((e) => e.name).sort();
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+    for (const shard of shards) {
+      let names = [];
+      try {
+        names = (await fs.promises.readdir(path.join(assetsRoot, shard), { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name).sort();
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
+      for (const name of names) {
+        const rel = `assets/${shard}/${name}`;
+        if (assetHashOf(rel) === null) continue;
+        const data = await readIfThere(path.join(assetsRoot, shard, name), rel);
+        if (!data) {
+          counters.skipped++;
+          continue;
+        }
+        if (crypto.createHash('sha256').update(data).digest('hex') !== name) {
+          say('an image file does not match its name; it is left out of the backup');
+          counters.skipped++;
+          continue;
+        }
+        yield { path: rel, data };
+      }
     }
 
     const root = path.join(dataDir, 'history');

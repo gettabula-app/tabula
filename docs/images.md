@@ -206,6 +206,7 @@ The backup engine copies the directory database, room files and history from `DA
 
 - `snapshotFiles` also walks `assets/<aa>/<hash>`, yielding each as a file named by its relative path. Content-addressing fits the engine well: its manifest is keyed by a keyed hash of the path and "a changed file is uploaded once", and an asset file never changes, so after the first run an asset costs nothing again.
 - The `assets` table is already in the database copy (`VACUUM INTO`).
+- **Built.** `snapshotFiles` walks `assets/<aa>/<hash>` (only names that are a 64-digit hash under the shard of their first two digits, and only files whose bytes hash to their name), restore accepts those paths and moves `assets/` like `history/`, verifies each file's hash while staging, and a board copy carries the board's pictures (files from the backup unless the live store has them, rows for the new board).
 - The 256 MB per-file ceiling is far above the 10 MB asset cap. The whole-file-in-memory read is bounded by the cap.
 - Retention and pruning work on manifests and unreferenced objects as they do for rooms: an asset is removed from the bucket after the last manifest naming it expires.
 - `docs/backups.md` ("What is backed up") and the status endpoint's counts are updated; the sentence saying uploads are embedded in `.yjs` files and there is no upload directory is replaced.
