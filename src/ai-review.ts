@@ -17,19 +17,19 @@ export type Review =
   | { kind: 'create'; items: CreateItem[]; frame: { keep: boolean; title: string } | null }
   | { kind: 'group'; groups: GroupItem[] };
 
-/** What a group member looked like when the proposal arrived: position, size, words and frame. */
-export interface Fingerprint { x: number; y: number; w: number; h: number; text: string; parent: string }
+/** What a group member looked like when the proposal arrived: position, size, words, frame, kind and lock. */
+export interface Fingerprint { x: number; y: number; w: number; h: number; text: string; parent: string; type: string; locked: boolean }
 
-export function fingerprintOf(o: { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string } | undefined): Fingerprint | null {
+export function fingerprintOf(o: { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string; type?: string; locked?: boolean } | undefined): Fingerprint | null {
   if (!o) return null;
-  return { x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0, text: o.text ?? '', parent: o.parent ?? '' };
+  return { x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0, text: o.text ?? '', parent: o.parent ?? '', type: o.type ?? '', locked: o.locked === true };
 }
 
-/** Whether a member changed since the proposal arrived (moved, resized, edited, put in another frame) or is gone. */
+/** Whether a member changed since the proposal arrived (moved, resized, edited, put in another frame, locked, turned into another kind) or is gone. */
 export function isStale(then: Fingerprint | null | undefined, now: Fingerprint | null): boolean {
   if (!now) return true;
   if (!then) return false;
-  return then.x !== now.x || then.y !== now.y || then.w !== now.w || then.h !== now.h || then.text !== now.text || then.parent !== now.parent;
+  return then.x !== now.x || then.y !== now.y || then.w !== now.w || then.h !== now.h || then.text !== now.text || then.parent !== now.parent || then.type !== now.type || then.locked !== now.locked;
 }
 
 /** A fresh review: everything kept, except group members that changed since the proposal arrived. */

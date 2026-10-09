@@ -312,7 +312,7 @@ Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray,
 
 **Edits are the reviewer's own.** A review lives in the reviewing app only (`src/ai-review.ts`, kept per run in `src/ui/ai-live.ts`) and is never sent to the relay or written to the document. The ghosts on that screen follow it, so what the person sees is what they add; everyone else keeps seeing the proposal as it came, until it is added or discarded. The relay still settles the run with the first Add or Discard, as in "Live runs", and the person who clicked writes their reviewed version.
 
-**Stale items.** When a group proposal arrives the app notes how each sticky it would move looked (position, size, text, frame). A sticky that has changed since, or is gone, is marked **Changed since**, unticked, and cannot be ticked: it is left where it is. This is judged on the reviewer's screen only.
+**Stale items.** When a group proposal arrives the app notes how each sticky it would move looked (position, size, text, frame, kind, lock). A sticky that has changed since, or is gone, is marked **Changed since**, unticked, and cannot be ticked: it is left where it is. This is judged on the reviewer's screen only.
 
 **One undo step.** Add writes the reviewed proposal with `applyProposal`, one `store.transact`, so one Ctrl+Z takes back the whole subset. The objects are `createdBy` the person who added them and carry `proposedBy`.
 
@@ -321,6 +321,7 @@ Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray,
 - `cleanProposedBy` (`src/safe-obj.ts`, run by `safeObj`) keeps the one shape: the feature must be one of the three, the id a plain id (`[A-Za-z0-9_-]`, 64 at most), the name one line of at most 40 visible characters with control, zero-width, bidirectional and tag characters removed. Anything else in the value is dropped, and a value that is not an object, or has another feature, is dropped whole.
 - The properties panel shows "Proposed by AI (Summarise) for Ana" from the cleaned value, set as text.
 - MCP (the object lists and `get_objects`) shows only `{ feature, name }`, the name cut to 40 characters like other names a model reads; the id is not shown. An unknown shape shows nothing. MCP cannot write it: `create_objects` takes no such field.
+- Copy, paste and duplicate (`remapObjects`) pass it through `cleanProposedBy` too, so a crafted clipboard or file cannot put another shape on a board. Exports (`toJson`) write what the board holds.
 - Templates never keep it: saving one removes it, and using one (in the app, `instantiate`, and on the server, `planUseTemplate`) drops it from content that has it.
 
 ### Deferred

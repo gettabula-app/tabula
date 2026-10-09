@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { proposedLine } from '../src/ai-review';
 import { cleanProposedBy } from '../src/safe-obj';
-import { instantiate, toTemplateContent } from '../src/custom-templates';
+import { instantiate, remapObjects, toTemplateContent } from '../src/custom-templates';
 import { applyPlan, planUseTemplate, summarise } from '../server/board-ops.mjs';
 import type { BaseObj } from '../src/types';
 
@@ -79,6 +79,13 @@ describe('templates', () => {
     const { objects } = instantiate(content, { x: 10, y: 10 }, 'u2');
     expect(objects[0]).not.toHaveProperty('proposedBy');
     expect(objects[0].createdBy).toBe('u2');
+  });
+
+  it('are not the only way in: a paste or a duplicate keeps only the clean shape', () => {
+    const hostile = (v: unknown) => ({ ...sticky({ id: 'h', proposedBy: v }) }) as unknown as BaseObj;
+    const run = (v: unknown) => remapObjects([hostile(v)], new Map([['h', 'n']]), { x: 0, y: 0 }, () => null)[0] as BaseObj;
+    expect(run({ feature: 'summarise', by: { id: 'u1', name: 'Ana\u202e', email: 'a@b.c' }, extra: 1 }).proposedBy).toEqual({ feature: 'summarise', by: { id: 'u1', name: 'Ana' } });
+    for (const v of HOSTILE) expect(run(v)).not.toHaveProperty('proposedBy');
   });
 
   it('do not carry it onto a board from the server either', () => {

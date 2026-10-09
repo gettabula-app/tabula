@@ -17,7 +17,7 @@ import { boxBounds } from '../geometry';
 import { isBox } from '../types';
 import { openAiKeyDialog } from './ai';
 import { modelLabel } from './ai-logic';
-import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, reviewedProposal, setOwnRun, setStarting } from './ai-live';
+import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, setOwnRun, setStarting, takeReview } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
 
@@ -725,7 +725,8 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const p = st.preview;
     if (st.ui !== 'preview' || !p || st.busy) return;
     // a review that kept nothing adds nothing: said before the relay settles the run for everyone
-    if (!reviewedProposal(app, p.runId, p.proposal)) return void toast('Nothing is selected to add.');
+    const chosen = takeReview(app, p.runId);
+    if (!chosen(p.proposal)) return void toast('Nothing is selected to add.');
     st.busy = true;
     paint();
     // taken before the answer: the stickies land where the ghosts are, whatever the board does meanwhile
@@ -740,7 +741,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     };
     switch (res.kind) {
       case 'ok': {
-        const proposal = res.proposal ? reviewedProposal(app, p.runId, res.proposal) : null;
+        const proposal = res.proposal ? chosen(res.proposal) : null;
         dropRun(app, p.runId);
         if (!proposal) return fail('internal');
         const applied = applyProposal(app, proposal, avoid, proposedBy);

@@ -83,6 +83,9 @@ describe('a group proposal', () => {
     for (const now of [{ x: 9 }, { y: 9 }, { w: 9 }, { h: 9 }, { text: 'b' }, { parent: 'g' }]) {
       expect(isStale(then, fingerprintOf({ x: 1, y: 2, w: 3, h: 4, text: 'a', parent: 'f', ...now }))).toBe(true);
     }
+    // a lock or a change of kind makes layoutProposal refuse the member, so it counts too
+    expect(isStale(then, fingerprintOf({ x: 1, y: 2, w: 3, h: 4, text: 'a', parent: 'f', locked: true }))).toBe(true);
+    expect(isStale(fingerprintOf({ x: 1, type: 'sticky' }), fingerprintOf({ x: 1, type: 'shape' }))).toBe(true);
     expect(isStale(then, null)).toBe(true);
     expect(isStale(undefined, fingerprintOf({ x: 0 }))).toBe(false);
   });

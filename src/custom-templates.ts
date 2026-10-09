@@ -9,7 +9,7 @@ import { newId } from './store';
 import { isSafeColor } from '../shared/colors';
 import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRank, templateKanbanFields, templateLabels } from '../shared/containers';
 import { STICKY_COLORS } from './palette';
-import { OBJ_ENUMS } from './safe-obj';
+import { OBJ_ENUMS, cleanProposedBy } from './safe-obj';
 
 export const MAX_TEMPLATE_OBJECTS = 2000;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
@@ -88,6 +88,10 @@ export function remapObjects(
         if (split && c.parent) c.rank = `${split.key}@${c.parent}`;
         else delete c.rank;
       }
+      // a copy, a paste or a template can come from a file or another board: proposedBy goes on only in its one clean shape (TAB-160)
+      const clean = cleanProposedBy(c.proposedBy);
+      if (clean) c.proposedBy = clean;
+      else delete c.proposedBy;
     }
     return c;
   });

@@ -5,6 +5,7 @@ import { FEATURE_LABEL } from '../ai-bar-logic';
 import { TEXT_MAX, TITLE_MAX, addLabel, reviewCounts, reviewed, startReview, type Review } from '../ai-review';
 import { STICKY_COLORS } from '../palette';
 import { liveRunsFor, onLiveChange, reviewFor, setReview, setReviewOpener, staleFor, type ReviewActions } from './ai-live';
+import { toast } from './common';
 import { h, icon } from './dom';
 
 // The review panel of an AI proposal (TAB-160, docs/ai.md "Reviewing a proposal"): every item with a box to keep it, the
@@ -59,7 +60,7 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
   const note = h('p', { class: 'aireview-note' }, 'Only you see these changes until you add them.');
   const discard = h('button', { class: 'btn ghost', type: 'button', onclick: () => actions.discard() }, 'Discard');
   const add = h('button', { class: 'btn primary', type: 'button', onclick: () => {
-    if (!reviewed(proposal, review())) return;
+    if (!reviewed(proposal, review())) return void toast('Nothing is selected to add.');
     actions.accept();
   } }, '');
   const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close the review', 'data-tip': 'Close', 'data-tip-key': 'escape', onclick: () => close() }, icon('close', 18));
@@ -89,7 +90,16 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
     const sig = r.kind === 'group' ? r.groups.map((g) => g.members.map((m) => `${m.id}${m.stale ? '!' : ''}`).join(',')).join('|') : `create:${r.items.length}`;
     if (sig === structure) return;
     structure = sig;
+    // the rebuild keeps keyboard focus (and the caret) on the same control
+    const was = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) ? document.activeElement : null;
+    const label = was?.getAttribute('aria-label');
+    const caret = was instanceof HTMLInputElement || was instanceof HTMLTextAreaElement ? [was.selectionStart, was.selectionEnd] as const : null;
     body.replaceChildren(r.kind === 'create' ? createList(r) : groupList(r));
+    if (label) {
+      const again = [...body.querySelectorAll<HTMLElement>('[aria-label]')].find((e) => e.getAttribute('aria-label') === label);
+      again?.focus();
+      if (caret && (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement)) again.setSelectionRange(caret[0], caret[1]);
+    }
   }
 
   function checkbox(label: string, checked: boolean, onChange: (v: boolean) => void, disabled = false): HTMLInputElement {
@@ -116,13 +126,24 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
       const swatches = h('div', { class: 'aireview-colors', role: 'radiogroup', 'aria-label': `Sticky ${i + 1} colour` },
         ...STICKY_COLORS.map((c) => {
           const on = (item.color ?? STICKY_COLORS[0].name).toLowerCase() === c.name.toLowerCase();
-          const b = h('button', { class: `swatch${on ? ' on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(on), 'aria-label': c.name, 'data-tip': c.name, style: `--c:${c.fill}` });
+          const b = h('button', { class: `swatch${on ? ' on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(on), 'aria-label': c.name, 'data-tip': c.name, tabindex: on ? '0' : '-1', style: `--c:${c.fill}` });
           b.addEventListener('click', () => {
             change((x) => (x.kind === 'create' ? ((x.items[i].color = c.name), x) : x));
             for (const s of swatches.children) {
               s.classList.toggle('on', s === b);
               s.setAttribute('aria-checked', String(s === b));
+              s.setAttribute('tabindex', s === b ? '0' : '-1');
             }
+          });
+          // a radio group is one tab stop; the arrow keys move and choose (the colour changes with the focus)
+          b.addEventListener('keydown', (e) => {
+            const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+            if (!step) return;
+            e.preventDefault();
+            const all = [...swatches.children] as HTMLElement[];
+            const next = all[(all.indexOf(b) + step + all.length) % all.length];
+            next.focus();
+            next.click();
           });
           return b;
         }));

@@ -115,7 +115,7 @@ function shownRuns(live: Live): LiveRun[] {
 /** Whether a member of a group proposal changed (or went) since the proposal arrived on this screen. */
 function staleIn(live: Live, app: BoardApp, runId: string): (id: string) => boolean {
   const then = live.seen.get(runId);
-  return (id) => isStale(then?.get(id), fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string } | undefined));
+  return (id) => isStale(then?.get(id), fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string; type?: string; locked?: boolean } | undefined));
 }
 
 export const reviewFor = (app: BoardApp, runId: string): Review | null => lives.get(app)?.reviews.get(runId) ?? null;
@@ -134,10 +134,14 @@ export const staleFor = (app: BoardApp, runId: string): ((id: string) => boolean
   return live ? staleIn(live, app, runId) : () => false;
 };
 
-/** The proposal an add of this run writes: the relay's, as this person reviewed it (null when they kept nothing). */
-export function reviewedProposal(app: BoardApp, runId: string, proposal: AiProposal): AiProposal | null {
+/**
+ * The person's review of a run as it is now, as a function from the relay's proposal to what they add. Taken before an add
+ * asks the relay: the run's patch can reach the app first and drop the review, and the add must still write what was ticked.
+ */
+export function takeReview(app: BoardApp, runId: string): (proposal: AiProposal) => AiProposal | null {
   const review = lives.get(app)?.reviews.get(runId);
-  return review ? reviewed(proposal, review) : proposal;
+  const kept = review ? structuredClone(review) : null;
+  return (proposal) => (kept ? reviewed(proposal, kept) : proposal);
 }
 
 /** What an add stamps on the objects it creates: the run's feature and who asked for it. */
@@ -222,7 +226,8 @@ export function mountAiLive(app: BoardApp): void {
   async function settle(run: LiveRun, action: ResolveAction) {
     if (busy.has(run.id) || app.readOnly || destroyed) return;
     // a review that kept nothing adds nothing: say so before the relay settles the run for everyone
-    if (action === 'accept' && run.proposal && !reviewedProposal(app, run.id, run.proposal)) return toast('Nothing is selected to add.');
+    const chosen = takeReview(app, run.id);
+    if (action === 'accept' && run.proposal && !chosen(run.proposal)) return toast('Nothing is selected to add.');
     const proposedBy = proposedByFor(app, run.id);
     busy.add(run.id);
     markBusy();
@@ -234,7 +239,7 @@ export function mountAiLive(app: BoardApp): void {
     markBusy();
     switch (res.kind) {
       case 'ok': {
-        const proposal = res.proposal ? reviewedProposal(app, run.id, res.proposal) : null;
+        const proposal = res.proposal ? chosen(res.proposal) : null;
         dropRun(app, run.id);
         if (action === 'discard') return toast(discardedMessage(nameOf(run)));
         if (!proposal) return say('error');
@@ -406,7 +411,7 @@ export function mountAiLive(app: BoardApp): void {
     for (const r of raw) {
       if (r.status === 'ready' && r.proposal?.kind === 'group' && !live.seen.has(r.id)) {
         const ids = r.proposal.groups.flatMap((g) => g.ids);
-        live.seen.set(r.id, new Map(ids.map((id) => [id, fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string } | undefined)])));
+        live.seen.set(r.id, new Map(ids.map((id) => [id, fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string; type?: string; locked?: boolean } | undefined)])));
       }
     }
     const open = new Set(raw.map((r) => r.id));
