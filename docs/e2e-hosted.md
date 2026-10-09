@@ -30,6 +30,10 @@ The checkout URLs go live after the next control-plane deploy. Until then Checko
 
 The site's form posts to `POST API/v1/signup` with `{email, workspaceName, slug, region}` (the flat-price plan has no seats and no interval; if the form still sends `seats` or `interval`, that is a finding) and asks `GET API/v1/slugs/<slug>` while you type. Its fields are workspace name, an editable slug, email and region (eu or us). There is one plan, a flat price (€29 per workspace, to be confirmed by tech lead's deploy), with no seat count and no billing-period choice. Confirm the exact labels with designer once the site is up. The sign-in mail goes to the owner email used at signup.
 
+## Which pricing model
+
+The v4 control plane that is live today still sells the **per-seat plan**: the signup API takes `{email, workspaceName, slug, region, interval?, seats?}` (interval `month` or `year`, default month; seats default 2, 2 to 500, adjustable in Checkout) and Checkout shows a quantity. The flat price (one plan, €29 per workspace per month or €290 per year, excluding VAT, no seats; an old page's `seats` is ignored) is not deployed yet and needs the new Stripe prices. Run the script with `--plan seats` (the default) now and `--plan flat` after tech lead says the flat deploy is out; only the price and seat-wording checks differ. The rest of this page describes the flat model, so read "seat" findings accordingly until then.
+
 ## Run order, the mailbox and the report
 
 1. `--stage smoke,forms` (free, any time). Fix or file whatever fails before going on.

@@ -22,7 +22,7 @@ import { parseArgs } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
-const USAGE = 'Usage: node scripts/e2e-hosted.mjs --stage smoke,forms,cancel,signup [--out <dir>] [--site <url>] [--api <url>] [--ws-suffix <domain>] [--email <address>] [--slug <slug>] [--name <workspace name>] [--link <url>] [--link-file <path>] [--allow-checkout] [--allow-signup] [--price <text>]';
+const USAGE = 'Usage: node scripts/e2e-hosted.mjs --stage smoke,forms,cancel,signup [--out <dir>] [--site <url>] [--api <url>] [--ws-suffix <domain>] [--email <address>] [--slug <slug>] [--name <workspace name>] [--link <url>] [--link-file <path>] [--allow-checkout] [--allow-signup] [--plan seats|flat] [--price <text>]';
 let args;
 try {
   args = parseArgs({
@@ -31,7 +31,7 @@ try {
       api: { type: 'string', default: 'https://api.gettabula.app' }, 'ws-suffix': { type: 'string', default: 'thetabula.cloud' },
       email: { type: 'string' }, slug: { type: 'string' }, name: { type: 'string', default: 'E2E test workspace' },
       link: { type: 'string' }, 'link-file': { type: 'string' }, 'allow-checkout': { type: 'boolean' }, 'allow-signup': { type: 'boolean' },
-      price: { type: 'string', default: '29' }, help: { type: 'boolean' },
+      plan: { type: 'string', default: 'seats' }, price: { type: 'string' }, help: { type: 'boolean' },
     },
   }).values;
 } catch (err) {
@@ -42,6 +42,8 @@ if (args.help) {
   console.log(USAGE);
   process.exit(0);
 }
+const PLAN = args.plan === 'flat' ? 'flat' : 'seats';
+const PRICE = args.price ?? (PLAN === 'flat' ? '29' : '8');
 const STAGES = args.stage.split(',').map((s) => s.trim()).filter(Boolean);
 const OUT = path.resolve(args.out ?? path.join('tabula-review', 'e2e', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)));
 fs.mkdirSync(OUT, { recursive: true });
@@ -107,8 +109,9 @@ async function openForm(browser, width = 1280) {
 async function forms(browser) {
   const { ctx, page, errs, posts } = await openForm(browser);
   const text = await page.evaluate(() => document.body.innerText);
-  check(new RegExp(args.price).test(text), 'signup page states the price', `looking for "${args.price}"`);
-  check(!/per seat|seats?\b/i.test(text), 'signup page has no seat wording (flat price)', (text.match(/.{0,30}seats?.{0,30}/i) ?? [''])[0].replace(/\s+/g, ' '));
+  check(new RegExp(PRICE).test(text), 'signup page states the price', `looking for "${PRICE}" (plan ${PLAN})`);
+  const seatWording = /per seat|seats?\b/i.test(text);
+  check(PLAN === 'flat' ? !seatWording : seatWording, PLAN === 'flat' ? 'signup page has no seat wording (flat price)' : 'signup page shows the per-seat plan', (text.match(/.{0,30}seats?.{0,30}/i) ?? [''])[0].replace(/\s+/g, ' '));
   const status = (page2) => page2.evaluate(() => (document.querySelector('[role=status], [aria-live]')?.textContent ?? '').trim());
   for (const [v, want] of [['www', /reserved/i], ['ab', /3 to 32/i], ['Bad_Slug', /3 to 32|lowercase/i], ['-lead', /hyphen/i]]) {
     await F.slug(page).fill(v);
@@ -227,7 +230,7 @@ async function signup(browser) {
   }
   check(true, 'Checkout shows the test-mode badge');
   const text = await page.evaluate(() => document.body.innerText);
-  check(new RegExp(args.price).test(text), 'Checkout shows the plan price', `looking for "${args.price}"`);
+  check(new RegExp(PRICE).test(text), 'Checkout shows the plan price', `looking for "${PRICE}" (plan ${PLAN})`);
   if (!(await fillStripe(page))) {
     check(false, 'card fields found on the Checkout page', 'headless Stripe page changed or shows a bot check: pay by hand, then resume at the return URL');
     await shot(page, 'checkout-stuck');
