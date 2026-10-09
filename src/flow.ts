@@ -420,7 +420,40 @@ export class Flow {
       }
       lines.push('');
     }
+    lines.push(...this.kanbanLines(totals));
     lines.push(...this.polls.markdownLines());
     return lines.join('\n');
+  }
+
+  /**
+   * The kanbans of the board for the summary (docs/kanban.md, Export and import): a heading per kanban, a lower heading per
+   * lane with its stage and limit, the cards as bullets in the order drawn, `(owner, due)` in parentheses, and the votes a
+   * card got. A hidden kanban, lane or card (TAB-198) and a card this person may not see are left out, as are the notes.
+   */
+  private kanbanLines(totals: Map<Id, number>): string[] {
+    const s = this.app.store;
+    const line = (t: string | undefined) => (t ?? '').replace(/\s+/g, ' ').trim();
+    const out: string[] = [];
+    for (const c of s.shown()) {
+      if (c.type !== 'container') continue;
+      const layout = s.containerLayout(c.id);
+      if (!layout) continue;
+      out.push(`## ${line((c as BaseObj).name) || 'Kanban'}`, '');
+      for (const laneId of layout.lanes) {
+        const lane = s.get(laneId) as BaseObj | undefined;
+        if (!lane) continue;
+        const cards = (layout.cards.get(laneId) ?? []).map((id) => s.get(id) as BaseObj | undefined).filter((k): k is BaseObj => !!k && k.type === 'card' && !this.isHidden(k));
+        const notes = [lane.stage, lane.wip ? `${cards.length} of ${lane.wip}${lane.wipMode === 'block' ? ', blocks' : ''}` : ''].filter(Boolean).join(', ');
+        out.push(`### ${line(lane.name) || 'Lane'}${notes ? ` (${notes})` : ''}`, '');
+        if (!cards.length) out.push('_No cards_');
+        for (const k of cards) {
+          const who = [line(k.ownerName), k.due].filter(Boolean).join(', ');
+          const n = totals.get(k.id);
+          out.push(`- ${line(k.text) || 'Untitled card'}${who ? ` (${who})` : ''}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+        }
+        out.push('');
+      }
+    }
+    return out;
   }
 }
