@@ -10,6 +10,7 @@ import { download } from '../exporters';
 import { backupsAdminPanel } from './backups';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
+import { centredScroll, trackMore } from './scroll-cue';
 import { tokensAdminPanel } from './tokens';
 import {
   activeOwnerCount, auditActor, auditSentence, countLabel, deviceLabel, disableVerdict, focusTarget, isKnownAuditAction, matchesQuery, overviewTiles, removeVerdict,
@@ -720,4 +721,11 @@ export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): voi
         h('p', { class: 'admin-kicker', 'aria-hidden': 'true' }, `${pad2(tabs.indexOf(tab) + 1)} / ${pad2(tabs.length)}`),
         h('h2', { class: 'admin-heading' }, TAB_LABELS[tab]),
         PANELS[tab](me)))));
+  // TAB-245: on a phone the row of sections scrolls; the current one is brought to the middle and the edge with more behind it fades
+  const nav = root.querySelector<HTMLElement>('.admin-tabs');
+  const on = nav?.querySelector<HTMLElement>('.admin-tab.on');
+  if (nav && on) {
+    nav.scrollLeft = centredScroll(on.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft, on.offsetWidth, nav.clientWidth, nav.scrollWidth);
+    trackMore(nav);
+  }
 }

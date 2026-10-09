@@ -11,6 +11,7 @@ import { safeColor } from '../../shared/colors';
 import { downloadCardsCsv } from '../exporters';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
+import { trackMore } from './scroll-cue';
 import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
 
 // the phone layout of styles.css, where the rail runs the full height
@@ -51,6 +52,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     position();
   }
 
+  /** Which edge of a bar that scrolls has more behind it (TAB-239): the CSS fades that edge out. */
+  const cue = trackMore(bar);
   function position() {
     const b = app.r.contentBounds(app.selection);
     if (!b) return;
@@ -66,6 +69,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
     bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
+    cue();
   }
 
   /** The AI bar (or its button) is one more thing the quick bar keeps off: it flips above the selection instead of landing under it. */

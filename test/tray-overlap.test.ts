@@ -20,12 +20,16 @@ function phoneBlock(): string {
 
 describe('quick bar and properties sheet beside an open tray (phone width)', () => {
   const block = phoneBlock();
-  const rule = block.split('\n').find((l) => /\.quickbar, \.props\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
+  const rule = block.split('\n').find((l) => /\.quickbar, \.props(?:, \.flowbar)?\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
   const hides = (opener: string) => new RegExp(`:has\\(>[^{]*${opener}[^{]*\\.show`).test(rule);
 
   it('are hidden while the Comments and Chat tray is open', () => {
     expect(block).toContain('.quickbar');
     expect(hides('\\.side-tray')).toBe(true);
+  });
+
+  it('and the session bar waits too, so it cannot sit over the chat composer (TAB-243)', () => {
+    expect(rule).toMatch(/\.flowbar/);
   });
 
   it('still wait for an open drawer', () => {
@@ -35,5 +39,22 @@ describe('quick bar and properties sheet beside an open tray (phone width)', () 
   it('are not hidden by the tray outside phone width', () => {
     const wide = css.slice(0, css.indexOf('@media (max-width: 860px)')) + css.slice(css.indexOf('@media (max-width: 860px)') + block.length);
     expect(wide).not.toMatch(/side-tray[^{]*\{[^}]*visibility:\s*hidden/);
+  });
+});
+
+// TAB-239: the base `.quickbar` rule comes after the phone block and set max-width to the window less 24px, so the bar
+// ran past the right edge at 360 px (placed right of the rail it was 76 to 412) and Delete and More properties were off screen.
+describe('quick bar width on a phone', () => {
+  const block = phoneBlock();
+  const capRule = block.split('\n').find((l) => /\.quickbar\s*\{[^}]*max-width:[^}]*--rail-clear/.test(l)) ?? '';
+
+  it('is capped to the room right of the rail by a rule that outranks the base rule', () => {
+    expect(capRule).toMatch(/\.chrome\s*>\s*\.quickbar/);
+    expect(capRule).toContain('calc(100% - var(--rail-clear) - 12px)');
+  });
+
+  it('scrolls sideways and fades the edge with more behind it', () => {
+    expect(css).toMatch(/\.quickbar\s*\{[^}]*overflow-x:\s*auto/);
+    for (const side of ['right', 'left', 'both']) expect(css).toContain(`.quickbar[data-more='${side}']`);
   });
 });

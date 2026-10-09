@@ -31,13 +31,13 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
                      kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -739,6 +739,18 @@ const STATES = {
   async board(env) {
     await openSeedBoard(env);
   },
+  // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
+  async 'quickbar-multi'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => window.__board.setSelection(['seed-note-1', 'seed-note-2', 'seed-note-3']));
+    await env.page.locator('.quickbar.show').waitFor();
+    await env.page.waitForTimeout(150);
+  },
+  async 'quickbar-multi-end'(env) {
+    await STATES['quickbar-multi'](env);
+    await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    await env.page.waitForTimeout(150);
+  },
   async 'board-selected'(env) {
     await openSeedBoard(env);
     await env.page.evaluate(() => window.__board.setSelection(['seed-rect']));
@@ -886,6 +898,49 @@ const STATES = {
   async 'chat-members'({ page, base }) {
     await page.goto(`${base}/#/admin/members`);
     await page.getByRole('button', { name: 'Erase chat messages' }).first().waitFor();
+  },
+  // TAB-243: the chat tray open while a dot vote runs: the session bar waits, so the message box is on screen and can be typed in
+  // TAB-240, TAB-241 and TAB-242: the session bar in a write step, in a poll step, and the Steps list from it, at phone widths
+  async 'flow-write'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vc-write', title: 'Brainstorm on sticky notes', mode: 'write', instructions: 'Add one idea per note. Quantity over quality, nobody comments yet.', durationSec: 300 }]);
+      f.start();
+    });
+    await env.page.locator('.flowbar.show .flow-step').waitFor();
+  },
+  async 'flow-poll'(env) {
+    await openSeedBoard(env);
+    // the poll lives in the seeded board, so a later width may find it already open
+    await env.page.evaluate(() => {
+      if (window.__board.flow.pollOpen()) return;
+      window.__board.flow.quickPoll({ question: 'Which day should we ship the next release of the mobile app to everyone?', options: ['Monday', 'Wednesday', 'Friday'], multiple: false, anonymous: true });
+    });
+    await env.page.locator('.flowbar.show').waitFor();
+  },
+  async 'flow-steps'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([
+        { id: 'vc-a', title: 'Brainstorm on sticky notes', mode: 'private-write', instructions: 'Write alone first.', durationSec: 300 },
+        { id: 'vc-b', title: 'Dot vote', mode: 'vote', instructions: 'Vote for the ideas you like.', durationSec: 180, votesPerPerson: 3 },
+      ]);
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+  },
+  async 'chat-session'(env) {
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    if (!(await env.page.evaluate(() => window.__board.flow.isVoting()))) {
+      await env.page.getByRole('button', { name: 'Start a dot vote' }).click();
+      await env.page.getByRole('button', { name: 'Start on everything' }).evaluate((el) => el.click());
+    }
+    await env.page.locator('.chat-toggle').click();
+    await env.page.getByRole('combobox', { name: 'Message' }).click({ timeout: 5000 });
   },
   async 'chat-object'(env) {
     await openSeedChat(env);
@@ -1354,7 +1409,7 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
