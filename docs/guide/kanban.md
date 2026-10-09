@@ -70,6 +70,8 @@ Editors have a **⋯** button on each lane. It offers:
 - **Move left** and **Move right**.
 - **Delete lane** moves its cards to the lane on its left, or on its right for the first lane. **Delete lane and its cards** deletes both.
 
+To reorder lanes by hand, press and hold a lane by its header and drop it in the gap where it should go. A line shows the drop place while you move. This works with a mouse or a pen; on a touch screen use **Move left** and **Move right**, or the list. A lane hidden in the Layers panel is not moved.
+
 To add a lane, select the **+** to the right of the last lane. It opens with its name ready to type. Each of these is one step in Undo. A locked lane or kanban says so instead of changing.
 
 ### Limits on work in progress
@@ -123,9 +125,9 @@ Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's 
 
 A board that contains a kanban opens read only in a Tabula version that does not know kanban boards yet, with a banner that says so. Reload the page to get the current version.
 
-## Not yet
+## In the Markdown summary
 
-A Markdown summary of a kanban, and dragging lane headers to reorder lanes, are coming. Until then use **Move left** and **Move right** in the lane menu.
+The board's [Markdown summary](export-import.md#markdown-summary) lists each kanban as a heading, each lane under it as a smaller heading with its stage and limit (for example "doing, 3 of 3, blocks"), and its cards as bullets in the order drawn, with the owner and due date in parentheses and any votes. Kanbans, lanes and cards hidden in the Layers panel are left out.
 
 ## Related
 
