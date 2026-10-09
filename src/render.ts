@@ -128,6 +128,8 @@ export class Renderer {
   constructor(private store: Store, parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'board-surface';
+    // the board's main landmark (the canvas is its only content; there is no skip link until the canvas has tab stops of its own)
+    this.root.setAttribute('role', 'main');
     this.svg = document.createElementNS(SVGNS, 'svg') as SVGSVGElement;
     this.svg.classList.add('canvas');
     this.svg.setAttribute('role', 'application');
