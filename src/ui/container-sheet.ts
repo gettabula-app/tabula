@@ -144,6 +144,8 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
   };
 
   let moveTo: { close: () => void } | null = null;
+  /** The card Move to… is open for: its row is marked while it is. */
+  let moving: Id | null = null;
   const openMoveTo = (cardId: Id) => {
     moveTo?.close();
     const card = obj(cardId);
@@ -225,9 +227,13 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
       wrap.remove();
       release();
       moveTo = null;
+      moving = null;
+      render();
       restoreFocus(back);
     }
     moveTo = { close };
+    moving = cardId;
+    render();
     // the chosen lane (rovingRadios-style: the checked radio is the Tab stop)
     for (const r of radios) r.setAttribute('tabindex', r.getAttribute('aria-checked') === 'true' ? '0' : '-1');
     group.addEventListener('keydown', (e) => {
@@ -286,7 +292,7 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
     const more = r.edit
       ? h('button', { class: 'ks-btn icon ks-more-btn', type: 'button', 'aria-label': `Actions for ${title}`, 'aria-haspopup': 'menu', 'data-focus': `more:${card.id}`, onclick: (e: Event) => rowMenu(card.id, e.currentTarget as HTMLElement) }, icon('dots', 20))
       : h('span', { class: 'ks-more-gap', 'aria-hidden': 'true' });
-    const li = h('li', { class: `ks-row${dim ? ' dim' : ''}${card.locked ? ' locked' : ''}`, 'data-id': card.id }, grip,
+    const li = h('li', { class: `ks-row${dim ? ' dim' : ''}${card.locked ? ' locked' : ''}${moving === card.id ? ' sel' : ''}`, 'data-id': card.id }, grip,
       h('div', { class: 'ks-row-body' }, head, chipsOf(card, names), metaOf(card, done, today), dim ? h('span', { class: 'sr-only' }, 'Does not match the filter') : null),
       more);
     const accent = kanbanSwatch(card.fill);
@@ -320,7 +326,7 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
       const on = t.id === lane;
       return h('button', {
         class: `ks-tab${on ? ' on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(on), 'aria-controls': panel.id,
-        id: `ks-tab-${t.id}`, tabindex: on ? '0' : '-1', 'data-focus': `tab:${t.id}`, 'aria-label': t.label, 'data-tip': t.count.title,
+        id: `ks-tab-${t.id}`, tabindex: on ? '0' : '-1', 'data-focus': `tab:${t.id}`, 'aria-label': t.label,
         onclick: () => {
           lane = t.id;
           adding = false;

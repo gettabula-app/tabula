@@ -47,6 +47,7 @@
 .ks-row[style*='--fc'] { box-shadow: inset 4px 0 0 var(--fc); }
 .ks-row.dim { opacity: 0.35; }
 .ks-row.dragging { opacity: 0.5; }
+.ks-row.sel { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
 .ks-grip { display: grid; place-items: center; height: 40px; color: var(--graphite); touch-action: none; cursor: grab; }
 .ks-grip.off { cursor: default; }
 .ks-row-body { min-width: 0; }
@@ -100,8 +101,10 @@ div.ks-row-title { cursor: default; }
   position: absolute; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;
   background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); font-family: var(--ui);
 }
+/* wider than a phone the sheet is a panel at the right, over the board, and Move to… rises inside it */
 @media (min-width: 861px) {
-  .ks-bsheet { left: 50%; width: 480px; transform: translateX(-50%); }
+  .ks-sheet { left: auto; width: 480px; border-left: 1px solid var(--ink); }
+  .ks-bsheet { left: auto; width: 480px; }
 }
 .ks-bs-head { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px 0 16px; }
 .ks-bs-head h2 { margin: 0; font: 700 20px/24px var(--display); letter-spacing: -0.02em; }
@@ -134,9 +137,6 @@ div.ks-row-title { cursor: default; }
 .ks-bsheet { animation: ks-up 120ms ease-out; }
 @keyframes ks-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ks-up { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
-@media (min-width: 861px) {
-  .ks-bsheet { animation-name: ks-in; }
-}
 @media (prefers-reduced-motion: reduce) {
   .ks-sheet, .ks-bsheet { animation: none; }
 }
