@@ -70,8 +70,8 @@ const INTERACTIVE = `button, a[href], input:not([type=hidden]), select, textarea
 
 /** Interactive elements without a real accessible name, wrong roles, and click handlers on plain elements. */
 async function probeNames(page) {
-  return page.evaluate(({ INTERACTIVE, nameOf, visible, describe }) => {
-    const nameFn = eval(nameOf), vis = eval(visible), desc = eval(describe);
+  return page.evaluate(({ INTERACTIVE }) => {
+    const nameFn = window.__a11y.nameOf, vis = window.__a11y.visible, desc = window.__a11y.describe;
     const out = { unnamed: [], weakName: [], duplicateNames: [], inputsWithoutLabel: [], imgsWithoutAlt: [], landmarks: {}, headings: [], title: document.title, lang: document.documentElement.lang, viewport: document.querySelector('meta[name=viewport]')?.content ?? null };
     const seen = new Map();
     for (const el of document.querySelectorAll(INTERACTIVE)) {
@@ -94,7 +94,7 @@ async function probeNames(page) {
     out.clickOnPlain = [...document.querySelectorAll('div,span,li,svg,p')].filter((e) => e.onclick && vis(e) && !e.closest('button,a,[role=button]') && !e.getAttribute('role') && e.tabIndex < 0).map(desc).slice(0, 20);
     out.liveRegions = [...document.querySelectorAll('[aria-live],[role=status],[role=alert],[role=log]')].map((e) => `${desc(e)} live=${e.getAttribute('aria-live') ?? e.getAttribute('role')}`);
     return out;
-  }, { INTERACTIVE, ...PAGE });
+  }, { INTERACTIVE });
 }
 
 /** Tab through the page: the order, what has no visible focus change (pixel comparison), what is never reached. */
@@ -106,13 +106,13 @@ async function probeKeyboard(page, { max = 140, pixelCheck = true } = {}) {
   let previous = null;
   for (let i = 0; i < max; i++) {
     await page.keyboard.press('Tab');
-    const info = await page.evaluate(({ nameOf, describe }) => {
+    const info = await page.evaluate(() => {
       const el = document.activeElement;
       if (!el || el === document.body) return null;
       const r = el.getBoundingClientRect();
-      const nm = eval(nameOf)(el);
-      return { el: eval(describe)(el), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: nm.name, rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)], inView: r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth, id: el.id || null };
-    }, PAGE);
+      const nm = window.__a11y.nameOf(el);
+      return { el: window.__a11y.describe(el), role: el.getAttribute('role') || el.tagName.toLowerCase(), name: nm.name, rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)], inView: r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth, id: el.id || null };
+    });
     if (!info) { reached.push(null); if (reached.slice(-3).every((x) => x === null) && reached.length > 5) break; continue; }
     const key = `${info.el}|${info.name}|${info.rect.join(',')}`;
     if (key === previous) { stuck++; if (stuck > 2) { reached.push({ ...info, trap: true }); break; } } else stuck = 0;
@@ -126,7 +126,6 @@ async function probeKeyboard(page, { max = 140, pixelCheck = true } = {}) {
         const withFocus = await page.screenshot({ clip, animations: 'disabled' }).catch(() => null);
         await page.evaluate(() => document.activeElement?.blur?.());
         const without = await page.screenshot({ clip, animations: 'disabled' }).catch(() => null);
-        await page.evaluate((id) => { const els = [...document.querySelectorAll('*')]; void els; }, null);
         if (withFocus && without && withFocus.equals(without)) noFocusRing.push({ el: info.el, name: info.name });
         // put the focus back where it was by tabbing from the element before it
         await page.keyboard.press('Shift+Tab');
@@ -136,18 +135,18 @@ async function probeKeyboard(page, { max = 140, pixelCheck = true } = {}) {
   }
   // interactive elements that are visible and never got focus
   const reachedKeys = new Set(reached.filter(Boolean).map((r) => `${r.el}|${r.rect.join(',')}`));
-  const all = await page.evaluate(({ INTERACTIVE, nameOf, visible, describe }) => {
-    const nameFn = eval(nameOf), vis = eval(visible), desc = eval(describe);
+  const all = await page.evaluate(({ INTERACTIVE }) => {
+    const nameFn = window.__a11y.nameOf, vis = window.__a11y.visible, desc = window.__a11y.describe;
     return [...document.querySelectorAll(INTERACTIVE)].filter((e) => vis(e) && !e.disabled && e.tabIndex >= 0 && !e.closest('[aria-hidden="true"]') && !e.closest('[inert]')).map((e) => { const r = e.getBoundingClientRect(); return { el: desc(e), name: nameFn(e).name, rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] }; });
-  }, { INTERACTIVE, ...PAGE });
+  }, { INTERACTIVE });
   const missed = all.filter((a) => !reachedKeys.has(`${a.el}|${a.rect.join(',')}`));
   return { tabStops: reached.filter(Boolean).length, trap: reached.find((r) => r?.trap) ?? null, noFocusRing, missed: missed.slice(0, 40), missedCount: missed.length, sequence: reached.filter(Boolean).slice(0, 80).map((r) => `${r.role}:${r.name || '(no name)'}`) };
 }
 
 /** Computed text contrast of every visible text leaf against its effective background. */
 async function probeContrast(page) {
-  return page.evaluate(({ describe, visible }) => {
-    const desc = eval(describe), vis = eval(visible);
+  return page.evaluate(() => {
+    const desc = window.__a11y.describe, vis = window.__a11y.visible;
     const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }; };
     const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
     const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
@@ -183,7 +182,7 @@ async function probeContrast(page) {
       if (ratio < need) out.push({ el: desc(el), text: text.slice(0, 40), ratio: Math.round(ratio * 100) / 100, need, size: Math.round(size), image });
     }
     return out;
-  }, PAGE);
+  });
 }
 
 /** axe-core (injected from a file outside the project) on the current page. */
@@ -203,8 +202,8 @@ async function probeMotion(page) {
 
 /** Layout at a zoomed-in viewport: horizontal overflow, controls outside the window, overlapping chrome. */
 async function probeZoom(page) {
-  return page.evaluate(({ describe, visible }) => {
-    const desc = eval(describe), vis = eval(visible);
+  return page.evaluate(() => {
+    const desc = window.__a11y.describe, vis = window.__a11y.visible;
     const iw = innerWidth, ih = innerHeight;
     const overflowX = document.documentElement.scrollWidth - iw;
     const offscreen = [];
@@ -225,7 +224,7 @@ async function probeZoom(page) {
     }
     const clipped = [...document.querySelectorAll('button, a, label, h1, h2, h3, .tab')].filter((e) => vis(e) && e.scrollWidth > e.clientWidth + 2 && getComputedStyle(e).overflow !== 'visible' && getComputedStyle(e).textOverflow !== 'ellipsis').map(desc).slice(0, 10);
     return { overflowX, offscreen: offscreen.slice(0, 20), offscreenCount: offscreen.length, overlaps, clipped, innerWidth: iw, innerHeight: ih };
-  }, PAGE);
+  });
 }
 
 // ---------------------------------------------------------------- screens
@@ -269,6 +268,8 @@ const SCREENS = [
 async function open(browser, base, screen, { theme = 'default', width = 1280, height = 800, reduced = false, touch = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, locale: 'en-US', serviceWorkers: 'block', bypassCSP: Boolean(opts.axe), reducedMotion: reduced ? 'reduce' : 'no-preference', ...(touch ? { hasTouch: true, isMobile: true } : {}) });
   await ctx.route((u) => /^https?:$/.test(u.protocol) && u.hostname !== '127.0.0.1', (r) => r.abort());
+  // the helpers every probe calls inside the page, defined once per page instead of passed as source text and evaluated
+  await ctx.addInitScript({ content: `window.__a11y = { nameOf: ${PAGE.nameOf}, visible: ${PAGE.visible}, describe: ${PAGE.describe} };` });
   await ctx.addInitScript(({ themeId }) => { try { localStorage.setItem('driftboard:theme', themeId); localStorage.setItem('driftboard:user', JSON.stringify({ id: 'a11y-user', name: 'Audit', color: '#2F6FED' })); } catch { /* none */ } }, { themeId: theme });
   const page = await ctx.newPage();
   await page.goto(`${base}/${screen.board ? '?debug' : ''}${screen.hash}`);
@@ -282,9 +283,9 @@ async function open(browser, base, screen, { theme = 'default', width = 1280, he
 // dialogs and popovers: role, modality, where focus goes, trap, Escape, focus return
 const DIALOGS = [
   { id: 'share', opener: (p) => p.getByRole('button', { name: 'Share', exact: true }), kind: 'dialog' },
-  { id: 'board-settings', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), then: (p) => p.getByRole('button', { name: 'Board settings' }), kind: 'dialog' },
-  { id: 'keyboard-shortcuts', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), then: (p) => p.getByRole('button', { name: 'Keyboard shortcuts' }), kind: 'dialog' },
-  { id: 'save-as-template', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), then: (p) => p.getByRole('button', { name: 'Save board as template' }), kind: 'dialog' },
+  { id: 'board-settings', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), choose: (p) => p.getByRole('button', { name: 'Board settings' }), kind: 'dialog' },
+  { id: 'keyboard-shortcuts', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), choose: (p) => p.getByRole('button', { name: 'Keyboard shortcuts' }), kind: 'dialog' },
+  { id: 'save-as-template', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), choose: (p) => p.getByRole('button', { name: 'Save board as template' }), kind: 'dialog' },
   { id: 'board-menu', opener: (p) => p.getByRole('button', { name: 'Menu', exact: true }), kind: 'popover' },
   { id: 'dot-vote-poll', opener: (p) => p.getByRole('button', { name: 'Start a quick poll' }), kind: 'popover' },
 ];
@@ -293,7 +294,7 @@ async function probeDialog(page, d) {
   const opener = d.opener(page);
   await opener.focus();
   await opener.click();
-  if (d.then) await d.then(page).click();
+  if (d.choose) await d.choose(page).click();
   await page.waitForTimeout(400);
   const state = await page.evaluate(() => {
     const dlg = document.querySelector('[role=dialog], .modal, .popover, .menu');
