@@ -211,16 +211,40 @@ describe('validateLimits', () => {
     ['a banner with a newline', { banner: 'two\nlines' }, 'single line'],
     ['a banner with a tab', { banner: 'a\tb' }, 'single line'],
     ['a banner with a line separator', { banner: 'a b' }, 'single line'],
-    ['a malformed trial end date', { trialEndsAt: 'not a date' }, 'trialEndsAt'],
-    ['a trial end date with a timezone offset', { trialEndsAt: '2026-11-07T15:00:00+01:00' }, 'trialEndsAt'],
-    ['an invalid calendar date', { trialEndsAt: '2026-02-30T15:00:00Z' }, 'trialEndsAt'],
-    ['a trial end date outside the allowed year range', { trialEndsAt: '2101-11-07T15:00:00Z' }, 'trialEndsAt'],
-    ['a long trial end date', { trialEndsAt: `${'2'.repeat(41)}Z` }, 'trialEndsAt'],
-    ['a state with uppercase letters', { state: 'Past_Due' }, 'state'],
-    ['a state over 32 characters', { state: 'a'.repeat(33) }, 'state'],
   ])('refuses %s', (_name, body, message) => {
     const result = validateLimits(body);
     expect(result).toEqual({ error: expect.stringContaining(message) });
+  });
+});
+
+describe('validateLimits: the cosmetic trialEndsAt and state', () => {
+  it.each<[string, Record<string, unknown>]>([
+    ['a malformed trial end date', { trialEndsAt: 'not a date' }],
+    ['a trial end date with a timezone offset', { trialEndsAt: '2026-11-07T15:00:00+01:00' }],
+    ['an invalid calendar date', { trialEndsAt: '2026-02-30T15:00:00Z' }],
+    ['a trial end date outside the allowed year range', { trialEndsAt: '2101-11-07T15:00:00Z' }],
+    ['a long trial end date', { trialEndsAt: `${'2'.repeat(41)}Z` }],
+    ['a numeric trial end date', { trialEndsAt: 20261107 }],
+    ['a state with uppercase letters', { state: 'Past_Due' }],
+    ['a state over 32 characters', { state: 'a'.repeat(33) }],
+    ['a numeric state', { state: 7 }],
+  ])('reads %s as null and warns, without an error', (_name, body) => {
+    const field = 'trialEndsAt' in body ? 'trialEndsAt' : 'state';
+    const result = validateLimits(body) as { patch: Record<string, unknown>; warnings: string[] };
+    expect(result.patch).toEqual({ [field]: null });
+    expect(result.warnings).toEqual([expect.stringContaining(field)]);
+  });
+
+  it('keeps the other fields of the same push, strict and applied', () => {
+    expect(validateLimits({ readOnly: true, seatLimit: 4, trialEndsAt: 'nope', state: 'Bad State' })).toEqual({
+      patch: { readOnly: true, seatLimit: 4, trialEndsAt: null, state: null },
+      warnings: [expect.stringContaining('trialEndsAt'), expect.stringContaining('state')],
+    });
+    expect(validateLimits({ seatLimit: 0, trialEndsAt: 'nope' })).toEqual({ error: expect.stringContaining('seatLimit') });
+  });
+
+  it('has no warnings for good values', () => {
+    expect(validateLimits({ trialEndsAt: '2026-11-07T15:00:00Z', state: 'trialing' })).toEqual({ patch: { trialEndsAt: '2026-11-07T15:00:00Z', state: 'trialing' } });
   });
 });
 
@@ -929,11 +953,6 @@ describe('API in cloud mode', () => {
       ['a long banner', { banner: 'b'.repeat(301) }],
       ['a multi-line banner', { banner: 'a\nb' }],
       ['a numeric banner', { banner: 1 }],
-      ['an invalid trial end date', { trialEndsAt: 'not a date' }],
-      ['a non-UTC trial end date', { trialEndsAt: '2026-11-07T15:00:00+01:00' }],
-      ['an out-of-range trial end year', { trialEndsAt: '2101-11-07T15:00:00Z' }],
-      ['an invalid state', { state: 'Past Due' }],
-      ['a long state', { state: 'a'.repeat(33) }],
     ])('refuse %s and change nothing', async (_name, body) => {
       const s = await serve();
       await s.put({ seatLimit: 4, banner: 'Keep' });
@@ -943,6 +962,22 @@ describe('API in cloud mode', () => {
       expect(res.body).toMatchObject({ error: 'bad_request' });
       expect(s.cloud!.limits()).toEqual({ seatLimit: 4, readOnly: false, banner: 'Keep', billing: true, trialEndsAt: null, state: null });
       expect(s.directory.listAudit()).toHaveLength(before);
+    });
+
+    it('a bad trialEndsAt or state still applies readOnly and the seat limit, reads as null, and logs a warning', async () => {
+      const s = await serve();
+      await s.put({ trialEndsAt: '2026-11-07T15:00:00Z', state: 'trialing' });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const res = await s.put({ readOnly: true, seatLimit: 7, trialEndsAt: 'not a date', state: 'Past Due' });
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({ readOnly: true, seatLimit: 7, trialEndsAt: null, state: null });
+        expect(s.cloud!.limits()).toMatchObject({ readOnly: true, seatLimit: 7, trialEndsAt: null, state: null });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('trialEndsAt'));
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('state'));
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('refuse a body that is not a JSON object', async () => {

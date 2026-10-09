@@ -54,6 +54,9 @@ const sha256 = (value) => crypto.createHash('sha256').update(value).digest();
 
 function checkLimits(body) {
   const patch = {};
+  // trialEndsAt and state are cosmetic (a label in Admin): a bad value must never block a seat limit or read-only change, so it is read as null
+  // and reported in `warnings` for the caller to log, while the other fields stay strict
+  const warnings = [];
   for (const key of Object.keys(body)) {
     if (!LIMIT_FIELDS.includes(key)) return { error: `Unknown field: ${key.slice(0, 40)}` };
   }
@@ -91,21 +94,27 @@ function checkLimits(body) {
       if (!match || year < TRIAL_YEAR_MIN || year > TRIAL_YEAR_MAX || !date
         || date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day
         || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) {
-        return { error: `trialEndsAt must be a valid ISO 8601 UTC date or null` };
+        warnings.push('limits: trialEndsAt is not a valid ISO 8601 UTC date or null; treated as null');
+        patch.trialEndsAt = null;
+      } else {
+        patch.trialEndsAt = value;
       }
+    } else {
+      patch.trialEndsAt = null;
     }
-    patch.trialEndsAt = value;
   }
   if (body.state !== undefined) {
     if (body.state !== null && (typeof body.state !== 'string' || !STATE_RE.test(body.state))) {
-      return { error: 'state must be a string of at most 32 lowercase letters, digits, underscores or hyphens, or null' };
+      warnings.push('limits: state is not a string of at most 32 lowercase letters, digits, underscores or hyphens or null; treated as null');
+      patch.state = null;
+    } else {
+      patch.state = body.state;
     }
-    patch.state = body.state;
   }
-  return { patch };
+  return warnings.length ? { patch, warnings } : { patch };
 }
 
-/** Strict check of a PUT /api/internal/limits body: `{ patch }` (only the fields that were sent) or `{ error }`. */
+/** Check of a PUT /api/internal/limits body: `{ patch, warnings }` (only the fields that were sent) or `{ error }`. The existing fields are strict; the cosmetic trialEndsAt and state turn into null with a warning. */
 export function validateLimits(body) {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return { error: 'The request body must be a JSON object' };
   const checked = checkLimits(body);
