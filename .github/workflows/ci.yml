@@ -116,10 +116,21 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm test
+      # vitest also writes a JSON report, so every job ends with its slowest test files and keeps the times (TAB-201)
+      - run: npm test -- --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ !matrix.shard }}
-      - run: npm test -- --shard=${{ matrix.shard }}
+      - run: npm test -- --shard=${{ matrix.shard }} --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ matrix.shard }}
+      - name: Slowest test files
+        if: ${{ !cancelled() }}
+        run: node scripts/test-timings.mjs test-results.json --top 15
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: test-times-${{ matrix.os }}-node${{ matrix.node }}-${{ strategy.job-index }}
+          path: test-results.json
+          if-no-files-found: ignore
+          retention-days: 14
       - run: npm run build:app
         if: ${{ matrix.shard != '2/2' }}
       # the icon sets are built once, where the dist artifact is made, and again in the Docker build
