@@ -279,3 +279,7 @@ src/icons.ts         icon manifest, hosted and online sets, previews; icon-searc
 src/ui/              rail, library drawer, properties, font picker, session bar, home
 public/sw.js         offline cache for the app, the icon sets, Fontshare and Iconify
 ```
+
+## Licence
+
+Tabula is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You may use, change and self-host it. If you run a changed version as a service for other people, you must offer them its source code. Third-party icon sets and fonts keep their own licences (see above).
