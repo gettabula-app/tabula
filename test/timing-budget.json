@@ -1,0 +1,18 @@
+{
+  "about": "Per-test time limit on the Windows CI shards (TAB-201), checked by scripts/test-timings.mjs --budget. The test timeout is 60 s; a test slower than half of it fails the job by name, so it is made cheaper before it becomes a flaky timeout. Set from five main runs (15 Windows samples per test, 2026-10-09): every test but the two exempted ones stayed under 23 s. An exemption needs its own limit and a reason; remove it once the test is fast.",
+  "maxTestSeconds": 30,
+  "exempt": [
+    {
+      "file": "restore-swap.test.ts",
+      "test": "a crash at every boundary of the swap leaves the data wholly old or wholly new",
+      "maxSeconds": 50,
+      "reason": "Walks every crash boundary of the swap: median 20.5 s, worst 44.6 s on Windows. To be slimmed by the restore owner; then this exemption goes."
+    },
+    {
+      "file": "relay-save.test.ts",
+      "test": "writes the room file within about 30 seconds",
+      "maxSeconds": 40,
+      "reason": "Waits for the relay's 30 s maximum save delay by design (30.3 s on Windows)."
+    }
+  ]
+}
