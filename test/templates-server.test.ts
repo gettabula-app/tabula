@@ -117,13 +117,24 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
   });
 
-  it('checks the group depth of a deep frame chain quickly (a lookup per step, not a scan of every object)', () => {
+  it('checks the group depth of a deep frame chain in time that grows with the groups, not with groups times objects', () => {
     const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
-    const groups = Array.from({ length: 500 }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
-    const started = performance.now();
-    expect(validateTemplateContent(content([...frames, ...groups])).objectCount).toBe(2000);
-    // about a tenth of a second; scanning the objects at every step took well over a second
-    expect(performance.now() - started).toBeLessThan(700);
+    const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
+    // the fastest of a few runs, and a ratio to the same chain with one group, so a busy machine slows both alike
+    const fastest = (n: number) => {
+      const c = content([...frames, ...groups(n)]);
+      let best = Infinity;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(validateTemplateContent(c).objectCount).toBe(1500 + n);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    const one = fastest(1);
+    const many = fastest(500);
+    // about 1.5 times as long; scanning every object at each step up the chain made it twenty times as long and more
+    expect(many / one).toBeLessThan(6);
   });
 
   it('accepts the colours the board writes', () => {
