@@ -518,7 +518,10 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .props.folded > :not(.props-head) { display: none; }
   .props-fold { display: inline-grid; }
   .quickbar { max-width: calc(100% - var(--rail-clear) - 12px); }
-  .flowbar { left: var(--rail-clear); right: 12px; max-width: none; bottom: 60px; }
+  .flowbar { left: var(--rail-clear); right: 12px; width: auto; max-width: none; bottom: 60px; }
+  /* TAB-237: the bar is the space between the rail and the edge, never wider: the step takes a row of its own, its instruction wraps, and the buttons wrap under it */
+  .flowbar .flow-step { flex: 1 1 100%; max-width: none; min-width: 0; height: auto; min-height: 36px; padding: 4px 10px 4px 6px; }
+  .flowbar .step-instr { white-space: normal; overflow-wrap: anywhere; }
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }
