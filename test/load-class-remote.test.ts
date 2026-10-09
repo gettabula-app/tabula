@@ -14,6 +14,7 @@ function runRemoteLoad(env: Record<string, string>) {
         TMPDIR: os.tmpdir(),
         TEMP: os.tmpdir(),
         ...env,
+        LOAD_CLASS_ALLOW_BUSY: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -63,6 +64,8 @@ describe('remote class load script', () => {
       const cookieReportText = fs.readFileSync(cookieOut, 'utf8');
       const cookieReport = JSON.parse(cookieReportText);
       expect(cookieReport.target).toEqual({ host: '127.0.0.1', remote: true, accounts: 1, usersPerAccount: 3 });
+      expect(cookieReport.host).toEqual(expect.objectContaining({ loadStart: expect.any(Number), loadEnd: expect.any(Number), cpus: expect.any(Number), level: expect.any(String) }));
+      expect(cookieReport.trustworthy).toBeTypeOf('boolean');
       expect(cookieReport.steps[0].connectedUsers).toBe(3);
       expect(cookieReport.steps[0].verdict).toBe('OK');
       expect(cookieReport.steps[0].joinBurstSeconds).toBe(0.5);
