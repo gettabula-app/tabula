@@ -131,6 +131,10 @@
   .aibar-field { order: -1; flex: 1 1 100%; }
   .aibar-ctx { flex: 0 1 auto; min-width: 0; }
   .aibar-main > .aibar-actions { margin-left: auto; }
+  /* the three chips share the row, a little tighter, and wrap rather than scroll out of sight (at 360 "Generate ideas" was
+     cut off by the bar's edge); a large text size wraps them too */
+  .aibar-chips { flex-wrap: wrap; gap: 4px; overflow-x: visible; }
+  .aibar-chips .chip { flex: 1 1 auto; padding: 0 8px; font-size: 12px; }
   .aibar[data-ui='error'] .aibar-actions { padding-left: 30px; }
   .aibar[data-ui='error'] .aibar-actions:not(:has(.btn)) { order: 3; flex: none; padding: 0; }
   .aibar[data-ui='running'] .aibar-ctx { display: none; }
