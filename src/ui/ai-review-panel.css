@@ -1,0 +1,39 @@
+/* The review panel of an AI proposal (TAB-160). A right-hand panel like comments, square and hairline-ruled like the
+   other trays (TAB-48); on phones a sheet above the zoom tray, right of the rail. Theme variables only. */
+.chrome > .aireview {
+  position: absolute; right: 12px; top: var(--panel-top); width: 360px; max-height: calc(100% - var(--panel-top) - 84px);
+  display: flex; flex-direction: column; z-index: 14; box-sizing: border-box;
+}
+.aireview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 14px 8px 10px 16px; border-bottom: 2px solid var(--tray-text); }
+.aireview-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
+.aireview-sub { margin: 2px 0 0; color: var(--tray-muted); font-size: 12px; }
+.aireview-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 16px; scrollbar-width: thin; }
+.aireview-list, .aireview-members { list-style: none; margin: 0; padding: 0; }
+.aireview-list > li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--tray-line); }
+.aireview-list > li:last-child { border-bottom: 0; }
+.aireview-list input[type='checkbox'] { flex: none; width: 16px; height: 16px; margin: 9px 0 0; accent-color: var(--signal); }
+.aireview-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.aireview .input { width: 100%; box-sizing: border-box; border-radius: 0; font: 13px/1.35 var(--ui); }
+.aireview textarea.input { resize: vertical; min-height: 52px; padding: 7px 10px; }
+.aireview-frame { align-items: center !important; }
+.aireview-frame input[type='checkbox'] { margin-top: 0; }
+.aireview-kind { flex: none; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.aireview-colors { display: flex; flex-wrap: wrap; gap: 5px; }
+.aireview-colors .swatch { width: 18px; height: 18px; }
+.aireview-group { flex-direction: column; gap: 6px !important; }
+.aireview-group-head { display: flex; align-items: center; gap: 10px; width: 100%; }
+.aireview-group-head input[type='checkbox'] { margin-top: 0; }
+.aireview-members { width: 100%; padding-left: 26px !important; box-sizing: border-box; }
+.aireview-member { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.aireview-member input[type='checkbox'] { margin: 0; }
+.aireview-member-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aireview-member.stale .aireview-member-text { color: var(--tray-muted); text-decoration: line-through; }
+.aireview-tag { flex: none; padding: 1px 6px; border: 1px solid var(--tray-line); color: var(--tray-muted); font-size: 11px; font-weight: 600; }
+.aireview-foot { border-top: 1px solid var(--tray-line); padding: 10px 16px 14px; }
+.aireview-note { margin: 0 0 10px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; }
+.aireview-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.aireview-actions .btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+
+@media (max-width: 860px) {
+  .chrome > .aireview { top: auto; bottom: 64px; left: var(--rail-clear); right: 12px; width: auto; max-height: 60vh; }
+}

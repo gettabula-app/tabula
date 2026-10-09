@@ -1,5 +1,6 @@
 import type { AiProposal } from './ai-apply';
 import { STICKY_COLORS } from './palette';
+import type { ProposedBy } from './types';
 
 // Reviewing an AI proposal item by item before it is added (TAB-160, docs/ai.md "Reviewing a proposal"). A review is the
 // reviewer's own: which items stay, and the words and colours they changed. `reviewed()` turns the proposal and the
@@ -114,4 +115,12 @@ export function addLabel(p: AiProposal, r: Review): string {
   const { kept, total } = reviewCounts(r);
   const verb = p.kind === 'group' ? 'Move' : 'Add';
   return kept === total ? `${verb} all (${total})` : `${verb} selected (${kept})`;
+}
+
+const PROPOSED_FEATURE: Record<ProposedBy['feature'], string> = { generate: 'Generate ideas', summarise: 'Summarise', cluster: 'Cluster' };
+
+/** The properties panel's line for an object an AI run proposed (already through cleanProposedBy): "Proposed by AI (Summarise) for Ana". */
+export function proposedLine(p: ProposedBy | undefined): string | null {
+  if (!p) return null;
+  return `Proposed by AI (${PROPOSED_FEATURE[p.feature]})${p.by.name ? ` for ${p.by.name}` : ''}`;
 }

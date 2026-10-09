@@ -165,6 +165,7 @@ export function toTemplateContent(
   const objects = remapObjects(objs, idMap, { x: -b.x, y: -b.y }, resolveOutside).map((o, i) => {
     delete o.locked;
     delete o.hidden;
+    delete o.proposedBy;
     delete o.createdBy;
     delete o.updatedAt;
     // a shared template names no people and no dates (docs/kanban.md, Templates); labels stay, renumbered

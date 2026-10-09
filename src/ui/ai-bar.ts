@@ -17,7 +17,7 @@ import { boxBounds } from '../geometry';
 import { isBox } from '../types';
 import { openAiKeyDialog } from './ai';
 import { modelLabel } from './ai-logic';
-import { avoidForRun, barMoved, dropRun, linkBar, setOwnRun, setStarting } from './ai-live';
+import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, reviewedProposal, setOwnRun, setStarting } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
 
@@ -363,7 +363,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   // ------------------------------------------------------------ painting
 
   let actionsSig = '';
-  const btns: Partial<Record<'run' | 'stop' | 'discard' | 'retry' | 'add' | 'edit' | 'dismiss', HTMLButtonElement>> = {};
+  const btns: Partial<Record<'run' | 'stop' | 'discard' | 'retry' | 'review' | 'add' | 'edit' | 'dismiss', HTMLButtonElement>> = {};
   let waitNum: HTMLElement | null = null;
   let errKey: ErrorView | null = null;
   let collapseIcon = '';
@@ -487,6 +487,11 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
         list.push(
           (btns.discard = button('btn ghost', 'Discard', 'Discard', 'escape', discard)),
           (btns.retry = button('btn', 'Retry', 'Run it again', null, retryPreview)),
+          // item by item, edited before it is added (TAB-160): the panel's Add and Discard are this bar's
+          (btns.review = button('btn', 'Review', 'Choose what to add and edit it first', null, () => {
+            const p = st.preview;
+            if (p) openReview(app, p.runId, { accept: () => void add(false), discard });
+          })),
           // a click with no pointer (detail 0) is the keyboard: the focus then goes back to the prompt
           (btns.add = button('btn primary', 'Add to board', 'Add to board', 'enter', (e) => void add(e.detail === 0))),
         );
@@ -502,7 +507,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       setDisabled(btns.run, !target);
       setTip(btns.run, runTip(target), target ? 'enter' : null);
     }
-    if (preview) for (const b of [btns.discard, btns.retry, btns.add]) if (b) setDisabled(b, st.busy);
+    if (preview) for (const b of [btns.discard, btns.retry, btns.review, btns.add]) if (b) setDisabled(b, st.busy);
     if (failed && btns.retry) {
       const waiting = st.wait > 0;
       setDisabled(btns.retry, waiting);
@@ -719,10 +724,13 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   async function add(byKeyboard: boolean) {
     const p = st.preview;
     if (st.ui !== 'preview' || !p || st.busy) return;
+    // a review that kept nothing adds nothing: said before the relay settles the run for everyone
+    if (!reviewedProposal(app, p.runId, p.proposal)) return void toast('Nothing is selected to add.');
     st.busy = true;
     paint();
     // taken before the answer: the stickies land where the ghosts are, whatever the board does meanwhile
     const avoid = avoidForRun(app, p.runId);
+    const proposedBy = proposedByFor(app, p.runId);
     const res = await resolveAiRun(fetchFn, p.runId, 'accept', resolveSignal(), app.user.name);
     st.busy = false;
     if (destroyed || st.preview !== p) return;
@@ -732,10 +740,10 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     };
     switch (res.kind) {
       case 'ok': {
+        const proposal = res.proposal ? reviewedProposal(app, p.runId, res.proposal) : null;
         dropRun(app, p.runId);
-        const proposal = res.proposal;
         if (!proposal) return fail('internal');
-        const applied = applyProposal(app, proposal, avoid);
+        const applied = applyProposal(app, proposal, avoid, proposedBy);
         if (!applied.ok) return fail(applied.reason === 'read_only' ? 'read_only' : 'board_changed');
         leave();
         st.prompt = '';
