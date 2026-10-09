@@ -43,15 +43,26 @@ const sourceFiles = [fileURLToPath(import.meta.url), path.join(here, 'lib', 'ico
 
 const readJson = async (file) => JSON.parse(await fs.promises.readFile(file, 'utf8'));
 
-async function runPool(items, size, task) {
+/**
+ * Runs `task` over `items`, `size` at a time. After a failure no new item starts, and the pool settles only once the
+ * tasks already running have finished, then throws the first error: a failed build must not leave writes going on in
+ * `out` behind its caller's back (a caller that cleans up after the error would race them).
+ */
+export async function runPool(items, size, task) {
   const out = Array.from({ length: items.length });
   let next = 0;
+  let failure = null;
   await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) {
+    while (failure === null && next < items.length) {
       const i = next++;
-      out[i] = await task(items[i], i);
+      try {
+        out[i] = await task(items[i], i);
+      } catch (e) {
+        failure ??= { error: e };
+      }
     }
   }));
+  if (failure) throw failure.error;
   return out;
 }
 

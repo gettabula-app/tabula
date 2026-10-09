@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { buildSet, browseOrder, canonicalJson, checkSet, gateBody, gzip, licenceTier, licensesText, packShards } from '../scripts/lib/icons-build.mjs';
-import { CURATED_SETS, EXCLUDED_SETS, buildIcons } from '../scripts/build-icons.mjs';
+import { CURATED_SETS, EXCLUDED_SETS, buildIcons, runPool } from '../scripts/build-icons.mjs';
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -321,7 +321,6 @@ describe('build over a fixture', () => {
     const source = makeSource({ evil: { prefix: 'evil', info: info(), icons: { bad: { body: '<script/>' } } } });
     const out = path.join(tmp(), 'icons');
     await expect(buildIcons({ source, out, pinned: [] })).rejects.toThrow('evil:bad matches <script');
-    // not the same out: the failed build above may still be writing the other sets into it, and the next one clears it first
     await expect(buildIcons({ source, out: path.join(tmp(), 'icons'), sets: ['nope'], pinned: [] })).rejects.toThrow('nope: not in');
   });
 
@@ -344,5 +343,41 @@ describe('build over a fixture', () => {
   it('keeps the curated list free of the excluded sets', () => {
     expect(CURATED_SETS.filter((p: string) => EXCLUDED_SETS.includes(p))).toEqual([]);
     expect(new Set(CURATED_SETS).size).toBe(CURATED_SETS.length);
+  });
+});
+
+// A failed build used to reject while the other sets were still being written (CI on 1efc844: ENOTEMPTY when the
+// caller cleaned up). The pool now settles only after every running task has finished.
+describe('the build pool', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  it('rejects only after the tasks already running have finished, and starts no new one after a failure', async () => {
+    const finished: number[] = [];
+    const started: number[] = [];
+    let settledWhileRunning = false;
+    let running = 0;
+    const p = runPool([0, 1, 2, 3, 4, 5, 6, 7], 3, async (n: number) => {
+      started.push(n);
+      running++;
+      try {
+        if (n === 0) throw new Error('first set is bad');
+        for (let i = 0; i < 4; i++) await tick();
+        finished.push(n);
+        return n;
+      } finally {
+        running--;
+      }
+    });
+    p.catch(() => { settledWhileRunning = running > 0; });
+    await expect(p).rejects.toThrow('first set is bad');
+    expect(settledWhileRunning).toBe(false);
+    expect(running).toBe(0);
+    // 1 and 2 were already running when 0 failed, so they finished; nothing after them was started
+    expect(finished.sort()).toEqual([1, 2]);
+    expect(started.sort()).toEqual([0, 1, 2]);
+  });
+
+  it('keeps results in order when nothing fails', async () => {
+    expect(await runPool([3, 1, 2], 2, async (n: number) => { await tick(); return n * 10; })).toEqual([30, 10, 20]);
   });
 });
