@@ -1,5 +1,6 @@
 // The desktop app's side of the page (docs/desktop.md). `main.ts` imports this only when `isDesktop()` is true, so
 // browsers never load it, and it loads `@tauri-apps/api` only here, with dynamic imports.
+import { cacheImportedAssets } from './board-images';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
 import { applyImported, importedBoardName, readBoardFile, setNativeSave, toDrift } from './exporters';
@@ -66,6 +67,7 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
       store: async (id, imported) => {
         // The board's own copy: its comments keep their authors rather than being marked imported.
         await writeLocalBoard(id, (target) => applyImported(target, imported, null));
+        await cacheImportedAssets(imported.assets);
         const savedAt = Date.parse(imported.json.exportedAt);
         touchBoard(id, { name: importedBoardName(imported, id), ...(Number.isFinite(savedAt) ? { createdAt: savedAt, updatedAt: savedAt } : {}) });
       },
@@ -85,6 +87,7 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
       const auth = authState();
       const importer = auth.mode === 'signed-in' ? auth.me.user.id : getUser().id;
       await writeLocalBoard(id, (target) => applyImported(target, imported, importer));
+      await cacheImportedAssets(imported.assets);
       touchBoard(id, { name: importedBoardName(imported, file.name) });
     },
     onError: (e, path) => toast(path ? `Could not open ${fileNameOf(path)}: ${messageOf(e)}` : `Could not open the file: ${messageOf(e)}`),
@@ -99,9 +102,10 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
       await mergeBackup(conn.id, {
         readBackup,
         parse: parseBackup,
-        apply: ({ update, comments }) => {
+        apply: ({ update, comments, assets }) => {
           if (update) Y.applyUpdate(conn.doc, update);
           if (comments) Y.applyUpdate(conn.comments.doc, comments);
+          void cacheImportedAssets(assets);
         },
         onError: (e, id) => console.warn(`could not merge the backup of board ${id}`, e),
       });
@@ -117,7 +121,7 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
         },
       });
       const backup = () => {
-        if (worthBackingUp(app.store.cache.size, listBoards().some((b) => b.id === app.conn.id))) writer.write(toDrift(app));
+        if (worthBackingUp(app.store.cache.size, listBoards().some((b) => b.id === app.conn.id))) void toDrift(app).then((bytes) => writer.write(bytes), (e) => console.warn('board backup failed', e));
       };
       const pending = createDebouncer(backup, BACKUP_WAIT_MS, BACKUP_MAX_WAIT_MS);
       const poke = () => pending.poke();

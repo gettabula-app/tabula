@@ -50,7 +50,7 @@ describe('a backup is a .drift file that restores the board', () => {
     const { app, comments } = fakeBoard([box('a', 'first'), box('b', 'second')], 'Sprint retro');
     comments.addThread({ id: 'u1', name: 'Ann', color: '#112233' }, { x: 5, y: 6 }, 'Check this');
 
-    const bytes = toDrift(app);
+    const bytes = await toDrift(app);
     const imported = await readBoardFile(new File([bytes as BlobPart], 'abc.drift'));
     expect(imported.update).toBeDefined();
 
@@ -68,7 +68,7 @@ describe('a backup is a .drift file that restores the board', () => {
   it('marks the comments of an imported file as imported by the person who opens it', async () => {
     const { app, comments } = fakeBoard([box('a', 'first')], 'Shared file');
     comments.addThread({ id: 'u1', name: 'Ann', color: '#112233' }, { x: 5, y: 6 }, 'Check this');
-    const imported = await readBoardFile(new File([toDrift(app) as BlobPart], 'shared.drift'));
+    const imported = await readBoardFile(new File([await toDrift(app) as BlobPart], 'shared.drift'));
     const target = freshTarget();
     applyImported(target, imported, 'bob');
     expect(target.comments.list()[0]).toMatchObject({ authorId: 'u1', imported: true, importedBy: 'bob' });
@@ -89,7 +89,7 @@ describe('a backup is a .drift file that restores the board', () => {
 describe('merging a backup into a board that lost its storage', () => {
   const backupOf = async (objects: BaseObj[]) => {
     const { app } = fakeBoard(objects);
-    return readBoardFile(new File([toDrift(app) as BlobPart], 'a.drift'));
+    return readBoardFile(new File([await toDrift(app) as BlobPart], 'a.drift'));
   };
 
   it('brings the content back into the empty board that was opened in its place', async () => {
@@ -141,7 +141,7 @@ describe('writing a board into local storage without opening it', () => {
 
   it('hands the fill step documents that take the import', async () => {
     const { app } = fakeBoard([box('a', 'kept')]);
-    const imported = await readBoardFile(new File([toDrift(app) as BlobPart], 'a.drift'));
+    const imported = await readBoardFile(new File([await toDrift(app) as BlobPart], 'a.drift'));
     let seen: string[] = [];
     await writeLocalBoard('abc123', (target) => {
       applyImported(target, imported, null);

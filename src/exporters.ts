@@ -1,5 +1,7 @@
+import { packAssets, unpackAssets, type PackedAsset } from './drift-assets';
+import { sha256Hex, type ImportedAsset } from './images';
 import type { ImageState } from './image-loader';
-import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
+import { strToU8, strFromU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer } from './types';
@@ -20,6 +22,8 @@ export interface BoardJson {
   comments?: Thread[];
   polls?: Poll[];
   pollAnswers?: PollAnswer[];
+  /** Says what this file leaves out, when it leaves something out. */
+  note?: string;
 }
 
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list()): BoardJson {
@@ -33,6 +37,8 @@ export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.
     flow: app.store.getFlow(),
   };
   if (comments.length && !ids) json.comments = comments;
+  // the readable snapshot names pictures by hash and does not carry them: a .drift file does (docs/images.md)
+  if (objs.some((o) => o.type === 'image')) json.note = 'Images are referenced by their asset hash and their bytes are not included in this file. Export a .drift file to keep them.';
   if (!ids) {
     const { polls, answers } = app.flow.polls.snapshot();
     if (polls.length) json.polls = polls;
@@ -42,28 +48,44 @@ export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.
 }
 
 /** `.drift` = zip of a readable snapshot plus the full CRDT state (history preserved). */
-export function toDrift(app: BoardApp): Uint8Array {
-  const files: Record<string, Uint8Array> = {
+export async function toDrift(app: BoardApp): Promise<Uint8Array> {
+  const files: Zippable = {
     // Comments travel in comments.yjs, not in the readable snapshot.
     'board.json': strToU8(JSON.stringify(toJson(app, undefined, []), null, 2)),
     'doc.yjs': Y.encodeStateAsUpdate(app.store.doc),
   };
   if (app.conn.comments.list().length > 0) files['comments.yjs'] = Y.encodeStateAsUpdate(app.conn.comments.doc);
+  // the pictures, beside the board (docs/images.md): the file is the one format that round-trips a board completely
+  const mimes = new Map<string, string>();
+  for (const o of app.store.cache.values()) {
+    const b = o as BaseObj;
+    if (b.type === 'image' && typeof b.asset === 'string') mimes.set(b.asset, b.mime ?? 'image/png');
+  }
+  const packed: PackedAsset[] = [];
+  for (const [key, mime] of mimes) {
+    const blob = await app.images.blobOf(key);
+    if (!blob) continue;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    packed.push({ key, mime, bytes, sha: await sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer) });
+  }
+  for (const [name, data] of Object.entries(packAssets(packed) ?? {})) files[name] = name.startsWith('assets/') ? [data, { level: 0 }] : data;
   return zipSync(files, { level: 6 });
 }
 
-export interface ImportedBoard { json: BoardJson; update?: Uint8Array; comments?: Uint8Array }
+export interface ImportedBoard { json: BoardJson; update?: Uint8Array; comments?: Uint8Array; /** The pictures of the file by the `asset` reference they stand for. */ assets?: Record<string, ImportedAsset> }
 
 export async function readBoardFile(file: File): Promise<ImportedBoard> {
   const buf = new Uint8Array(await file.arrayBuffer());
   // zip magic: PK\x03\x04
   if (buf[0] === 0x50 && buf[1] === 0x4b) {
     const files = unzipSync(buf);
+    const assets = unpackAssets(files);
     if (!files['board.json']) throw new Error('This file is not a Tabula board (board.json is missing).');
     return {
       json: validate(JSON.parse(strFromU8(files['board.json']))),
       update: files['doc.yjs'],
       comments: files['comments.yjs'],
+      ...(Object.keys(assets).length ? { assets } : {}),
     };
   }
   return { json: validate(JSON.parse(strFromU8(buf))) };
@@ -290,7 +312,7 @@ export async function exportPng(app: BoardApp, ids?: Id[], scale = 2): Promise<B
 }
 
 /** Objects from an imported board, re-inserted into the current board with fresh ids. */
-export function insertImported(app: BoardApp, json: BoardJson) {
+export function insertImported(app: BoardApp, json: BoardJson, assets?: Record<string, ImportedAsset>) {
   const objs = json.objects.filter((o) => o && typeof o.id === 'string' && typeof o.type === 'string');
   const boxes = objs.filter(isBox);
   if (!objs.length) return;
@@ -298,6 +320,7 @@ export function insertImported(app: BoardApp, json: BoardJson) {
   const content = app.r.contentBounds();
   const target = content ? { x: content.x + content.w + 200, y: content.y } : app.r.viewport();
   const inserted = app.insertObjects(objs, { x: target.x - (isFinite(minX) ? minX : 0), y: target.y - (isFinite(minY) ? minY : 0) });
+  if (assets && Object.keys(assets).length) void app.images.adopt(assets, new Set(inserted.map((o) => o.id)));
   const b = app.r.contentBounds(inserted.map((o) => o.id));
   if (b) app.r.flyTo(b);
 }

@@ -7,7 +7,7 @@
 import { IMAGE_TYPES, MAX_PIXELS, MAX_SIDE, gifFrames, readImageInfo, sizeOk, sniffType } from '../server/image-header.mjs';
 import type { BaseObj, Rect } from './types';
 
-export { MAX_PIXELS, MAX_SIDE, gifFrames, readImageInfo, sizeOk, sniffType };
+export { IMAGE_TYPES, MAX_PIXELS, MAX_SIDE, gifFrames, readImageInfo, sizeOk, sniffType };
 
 /** Longest side of a stored image. A larger one is scaled down before it is uploaded. */
 export const MAX_STORED_SIDE = 2560;
@@ -20,6 +20,9 @@ export const LARGE_PNG_BYTES = 300 * 1024;
 
 export type StoredType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 export type FileKind = StoredType | 'image/svg+xml';
+
+/** A picture that came with an opened board file: the bytes and what the header says about them. */
+export interface ImportedAsset { bytes: Uint8Array; mime: string; width: number; height: number }
 
 export const SUPPORTED_LABEL = 'PNG, JPEG, GIF, WebP and SVG';
 

@@ -300,8 +300,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
 async function importInto(app: BoardApp, file: File) {
   try {
-    const { json } = await readBoardFile(file);
-    insertImported(app, json);
+    const { json, assets } = await readBoardFile(file);
+    insertImported(app, json, assets);
     toast(`Imported ${json.objects.length} objects from ${file.name}`);
   } catch (e) {
     toast((e as Error).message);
@@ -482,7 +482,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       }
     }),
     item('download', 'SVG vector', async () => download(await exportSvgFile(app, sel), `${name()}.svg`, 'image/svg+xml')),
-    item('download', 'Board file (.drift)', () => download(toDrift(app), `${name()}.drift`, 'application/zip'), 'Board with its sync data'),
+    item('download', 'Board file (.drift)', async () => download(await toDrift(app), `${name()}.drift`, 'application/zip'), 'Board with its sync data and pictures'),
     item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),
     item('mermaid', 'Copy as Mermaid', () => {
