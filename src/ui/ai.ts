@@ -160,7 +160,7 @@ export function openAiKeyDialog(): void {
       placeholder: 'moonshotai/kimi-k3', value: mine?.model ?? '',
       oninput: () => check(),
     });
-    const providerFields = h('div', { class: 'ai-field' });
+    const providerFields = h('div', { class: 'ai-fields' });
     const baseUrlField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
       h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
@@ -334,7 +334,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
       class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 101,
       placeholder: 'moonshotai/kimi-k3', value: state.key?.model ?? '', oninput: () => checkKey(),
     });
-    const providerFields = h('div', { class: 'ai-field' });
+    const providerFields = h('div', { class: 'ai-fields' });
     const baseUrlField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
       h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
@@ -441,7 +441,8 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
         : kit.emptyLine('No workspace key yet. Without one, only people with a key of their own can run AI features.'),
       state.hasSecret
         ? h('div', { class: 'ai-field' },
-          h('label', { class: 'ai-label' }, 'Provider', keyProvider),
+          // the same select with its chevron as the Model above: a bare select in this tab reads as a text box
+          h('label', { class: 'ai-label' }, 'Provider', h('div', { class: 'admin-select' }, keyProvider, icon('chevron', 16))),
           providerFields,
           keyLabel,
           keyStatus,
