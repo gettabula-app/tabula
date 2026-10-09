@@ -15,6 +15,15 @@ const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' 
  * in the shared doc (timer as start time + duration), so every participant's
  * screen agrees and counts down locally, even offline.
  */
+/** How a picture reads in the Markdown summary: its description, else what it is (docs/images.md). */
+export function imageLine(o: BaseObj): string {
+  const alt = typeof o.alt === 'string' ? o.alt.replace(/\s+/g, ' ').trim() : '';
+  if (alt) return `Image: ${alt}`;
+  const w = Math.round(o.nw ?? o.w);
+  const h = Math.round(o.nh ?? o.h);
+  return `Image (${o.mime ?? 'image'}, ${w} x ${h})`;
+}
+
 export class Flow {
   private lastActive = -2;
   readonly polls: Polls;
@@ -398,13 +407,13 @@ export class Flow {
     if (running?.mode === 'vote' && !f.reveal) voteSteps.delete(running.id);
     for (const id of voteSteps) for (const v of this.votesForStep(id)) totals.set(v.itemId, (totals.get(v.itemId) ?? 0) + 1);
     for (const fr of frames) {
-      const kids = s.childrenOf(fr.id).filter((o) => (o as BaseObj).text && !isConnector(o) && !this.isHidden(o as BaseObj)) as BaseObj[];
+      const kids = s.childrenOf(fr.id).filter((o) => ((o as BaseObj).text || o.type === 'image') && !isConnector(o) && !this.isHidden(o as BaseObj)) as BaseObj[];
       if (!kids.length) continue;
       lines.push(`## ${fr.name || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
       for (const k of kids) {
         const n = totals.get(k.id);
-        lines.push(`- ${k.text!.replace(/\n+/g, ' ')}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+        lines.push(`- ${k.type === 'image' ? imageLine(k) : k.text!.replace(/\n+/g, ' ')}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
       }
       lines.push('');
     }
