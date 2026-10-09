@@ -13,6 +13,8 @@ export type ChangeListener = (changed: Set<Id>) => void;
 
 /** Object fields that hold a colour: what is written to them is checked against shared/colors.mjs (TAB-203). */
 export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'textColor']);
+/** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
+const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -290,8 +292,9 @@ export class Store {
     // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
     // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(o.type);
+    // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(o)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null))
+      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean'))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
@@ -309,6 +312,7 @@ export class Store {
       const type = (patch as Record<string, unknown>).type ?? m.get('type');
       const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
+      if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
       const cur = m.get(k);
       if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) m.set(k, v);
     }

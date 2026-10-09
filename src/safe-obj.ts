@@ -91,6 +91,6 @@ export function safeObj<T extends Obj>(o: T): T {
   if ('attributes' in out) out.attributes = members(out.attributes);
   if ('operations' in out) out.operations = members(out.operations);
   if ('labels' in out && !(Array.isArray(out.labels) && out.labels.every((l) => typeof l === 'string'))) delete out.labels;
-  for (const k of ['locked', 'sticker']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  for (const k of ['locked', 'sticker', 'hidden']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
   return out as unknown as T;
 }
