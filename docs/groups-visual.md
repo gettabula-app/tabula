@@ -32,7 +32,7 @@ Defined once, on the board's root (`.chrome` or `:root`, wherever `--guide` is r
 
 Contrast of the lines against each theme's canvas (non-text UI needs 3:1; WCAG 1.4.11): `--wire` default 4.0, ayu 9.0, kanagawa 5.9, matrix 11.0, evergreen 4.3; `--graphite` 5.2, 5.2, 6.7, 6.4, 5.2. The chips use the tray pair (10.5 to 15.4:1). The soft member outline (45%) is decoration, not information, and is not held to 3:1.
 
-**One thing slice 2 must change.** `render.ts` draws every selection, handle and hover with the constant `WIRE = '#2F6FED'` and white handles, in every theme. On Matrix and Ayu that is a blue unrelated to the theme. The group overlay reads `var(--wire)` and `var(--group-handle)`; keeping the single-item selection on the old constant would put two blues on one board, so move `outline()` and the handles to the same variables in the same slice (`WIRE` becomes `'var(--wire, #2F6FED)'`; the SVG attribute accepts it). It is a visible change to single items in the dark themes, which is the point.
+**Not in slice 2: the single-item selection.** `render.ts` draws every selection, handle and hover with the constant `WIRE = '#2F6FED'` and white handles, in every theme. `--wire` is defined in all five themes and equals `#2F6FED` in default, so the group overlay reads `var(--wire)` and `var(--group-handle)` and looks the same as a single item there; in Ayu, Kanagawa, Matrix and Evergreen it follows the theme while single items keep the old blue until the follow-up below. That interim difference is accepted: copying the constant into the group tokens would bake the Matrix problem (a fixed blue on a green board) into the new feature.
 
 ## 1. Selected: item, several items, group
 
@@ -102,4 +102,6 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 
 1. **Name chip at rest on selection** adds a second mark to a selection that otherwise shows only lines. If it feels busy on boards with many groups, show it only when the group has a name, and rely on the solid box alone otherwise.
 2. **Dim strength** (62%) is the one value to judge on a real board: on Matrix the outside items almost vanish (which is probably right), on the light themes they stay readable.
-3. **Single-item selection in the dark themes** will change colour with the variable move above; it is intended, and worth a glance from Johan before slice 2 merges.
+## Follow-up (own change, own review, own changelog fragment)
+
+**Move single-item selection to the theme variables.** In `render.ts`, `WIRE` becomes `'var(--wire, #2F6FED)'` for `outline()`, the hover outline, handles, the rotate stem and the connection anchors, and the handle fill `#fff` becomes `var(--group-handle, #fff)`. Single items then follow the theme like groups do; in default nothing changes, and in the dark themes the selection turns from `#2F6FED` to the theme's `--wire` (contrast against the canvas goes up: 9.0 in Ayu, 11.0 in Matrix). Needs the five-theme visual check of `board-selected`, and a glance from Johan, since it is a visible change unrelated to groups.
