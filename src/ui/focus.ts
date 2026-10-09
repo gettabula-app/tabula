@@ -49,7 +49,8 @@ export function mountFocus(app: BoardApp, parent: HTMLElement) {
   const place = () => {
     const bar = parent.querySelector('.flowbar.show');
     const above = bar ? parent.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8 + TOAST_ROOM : 0;
-    stack.style.setProperty('--focus-bottom', `${Math.max(STACK_MIN_BOTTOM, Math.round(above))}px`);
+    // the AI bar publishes --ai-top (how far it reaches up from the bottom); the stack keeps clear of it, and of the toast above it
+    stack.style.setProperty('--focus-bottom', `max(${Math.max(STACK_MIN_BOTTOM, Math.round(above))}px, calc(var(--ai-top, 0px) + ${TOAST_ROOM}px))`);
   };
   const placeLater = () => requestAnimationFrame(place);
   window.addEventListener('resize', placeLater);

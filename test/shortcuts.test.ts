@@ -50,8 +50,9 @@ describe('keyboard shortcuts dialog', () => {
 
   it('finds every documented key in the keydown handler', () => {
     const handled = handledKeys();
-    // Paste is a paste event, not a keydown; tool letters are handled through TOOL_KEYS.
-    const unhandled = [...documented].filter((id) => !toolLetters.has(id) && id !== 'mod+v' && !handled.has(id));
+    // Paste is a paste event, not a keydown; tool letters are handled through TOOL_KEYS; the AI bar's keys by its own listener (src/ui/ai-bar.ts).
+    const elsewhere = new Set(['mod+v', 'mod+k', '/']);
+    const unhandled = [...documented].filter((id) => !toolLetters.has(id) && !elsewhere.has(id) && !handled.has(id));
     expect(unhandled).toEqual([]);
   });
 

@@ -1,0 +1,132 @@
+/* The AI bar (docs/ai-toolbar.md): a dark tray docked at the bottom of the board. Theme variables and color-mix() only. */
+
+/* Centred on the page, not on the canvas beside the rail: equal insets keep the collapsed button and the open bar on the page's
+   centre line and clear of the zoom tray (244px) on both sides. The button and the bar share one grid cell: one centre line, one bottom edge. */
+.chrome > .aibar-dock {
+  position: absolute; bottom: var(--ai-bottom, 16px); left: 244px; right: 244px; z-index: 11;
+  display: grid; justify-items: center; align-items: end; pointer-events: none;
+}
+.aibar-dock > * { grid-area: 1 / 1; pointer-events: auto; }
+.aibar-dock [hidden] { display: none !important; }
+/* dragged: left and bottom are set in px, and a collapsed button stays at the bar's left edge */
+.chrome > .aibar-dock.dragged { right: auto; justify-items: start; }
+/* the 488px of insets leave too little room: the bar rises above the zoom tray and keeps equal insets */
+@media (max-width: 1000px) { .chrome > .aibar-dock:not(.dragged) { left: calc(var(--rail-clear) + 12px); right: calc(var(--rail-clear) + 12px); } }
+@media (max-width: 860px) { .chrome > .aibar-dock:not(.dragged) { left: 12px; right: 12px; } }
+
+.aibar-fab { width: 40px; height: 40px; border: 0; padding: 0; display: inline-grid; place-items: center; color: var(--tray-text); transition: opacity 160ms ease, transform 160ms ease; }
+.aibar-fab:hover { background: color-mix(in srgb, var(--tray) 85%, var(--tray-text)); }
+.aibar-fab[data-open='false'] { opacity: 0; transform: translateY(8px); pointer-events: none; }
+
+.aibar { position: relative; width: min(640px, 100%); display: flex; flex-direction: column; overflow: hidden; font-size: 13px; transition: opacity 160ms ease, transform 160ms ease; }
+.aibar-dock.dragged .aibar { width: min(640px, calc(100vw - 24px)); }
+.aibar[data-open='false'] { opacity: 0; transform: translateY(8px); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .aibar, .aibar-fab { transition: none; } }
+
+/* DOM order is the tab order (row 2, then the chips); the visual order is set here. */
+.aibar-chips { order: 1; display: flex; gap: 6px; padding: 8px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.aibar-chips::-webkit-scrollbar { display: none; }
+.aibar-main { order: 2; display: flex; align-items: center; gap: 8px; padding: 8px; min-height: 52px; }
+.aibar-disclosure { order: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 6px 12px 8px; border-top: 1px solid var(--tray-line); font-size: 11px; line-height: 16px; color: var(--tray-muted); }
+.aibar-disclosure .sep::before { content: '\00B7'; margin-right: 8px; }
+
+.aibar-chips .chip { flex: none; height: 28px; padding: 0 12px; font-size: 12.5px; white-space: nowrap; }
+.aibar-chips .chip[aria-disabled='true']:hover { background: color-mix(in srgb, var(--tray-text) 6%, transparent); }
+.aibar-chips .chip.on, .aibar-chips .chip.on:hover { background: var(--tray-text); color: var(--tray); }
+/* disabled controls are drawn at 40% like everywhere in the app; they stay focusable so the tooltip can say why */
+.aibar [aria-disabled='true'] { opacity: 0.4; cursor: default; }
+
+.aibar-grip {
+  order: -1; flex: none; width: 20px; height: 36px; margin-right: -4px; padding: 0; border: 0; border-radius: 6px; background: transparent;
+  color: var(--tray-muted); display: grid; place-items: center; cursor: grab; touch-action: none;
+}
+.aibar-grip:hover { color: var(--tray-text); background: var(--tray-hover); }
+.aibar.dragging .aibar-grip { cursor: grabbing; }
+
+.aibar-ctx {
+  flex: none; height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border: 1px solid var(--tray-line); border-radius: 8px;
+  background: transparent; font-weight: 600; font-size: 12.5px; white-space: nowrap;
+}
+.aibar-ctx:hover { background: var(--tray-hover); }
+.aibar-field { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
+.aibar-input {
+  width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: 8px; border: 1px solid var(--tray-line);
+  background: color-mix(in srgb, var(--tray-text) 6%, transparent); color: var(--tray-text); outline: none; font-size: 13px;
+}
+.aibar-input:focus { border-color: var(--signal); }
+.aibar-input::placeholder { color: var(--tray-muted); opacity: 1; }
+.aibar-hist { position: absolute; right: 2px; top: 2px; width: 32px; height: 32px; }
+
+.aibar-status { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px; font-weight: 500; }
+.aibar-status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aibar-summary { flex: 1 1 0; min-width: 0; padding: 0 4px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.aibar-error {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 0 4px; line-height: 1.35; font-weight: 500;
+  color: color-mix(in srgb, var(--danger) 54%, var(--tray-text));
+}
+.aibar-error .ico { margin-top: 1px; }
+.aibar-error span { min-width: 0; overflow-wrap: anywhere; }
+.aibar-error .link { color: inherit; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.aibar-error .note { color: var(--tray-text); font-weight: 400; }
+/* the status and the error stay in the page for screen readers while empty */
+.aibar-off { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.aibar-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.aibar-model { flex: none; height: 36px; display: inline-flex; align-items: center; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tray-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.aibar-model:hover { background: var(--tray-hover); color: var(--tray-text); }
+.aibar-model.armed { color: var(--tray-text); font-weight: 600; }
+.aibar-disclosure > .aibar-model-wrap { display: none; }
+.aibar-model-line { display: inline-flex; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.aibar-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+.aibar .btn { height: 36px; }
+
+/* chips and the context stay in place, dimmed, while running and previewing: the bar does not change height */
+.aibar[data-ui='running'] .aibar-chips, .aibar[data-ui='preview'] .aibar-chips { opacity: 0.4; pointer-events: none; }
+.aibar[data-ui='running'] .aibar-ctx { opacity: 0.4; pointer-events: none; }
+
+.aibar-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; display: none; }
+.aibar[data-ui='running'] .aibar-progress { display: block; }
+.aibar-progress::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: var(--signal); animation: aibar-slide 1.4s linear infinite; }
+@keyframes aibar-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .aibar-progress::before { animation: none; width: 100%; } }
+
+/* popovers of the bar: the context menu, the history list and the model details */
+.aibar-pop {
+  position: absolute; z-index: 20; min-width: 240px; max-width: 320px; padding: 4px; border-radius: 0; font-size: 13px;
+  box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
+}
+:root:not([data-theme='default']) .aibar-pop.tray { box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); }
+.aibar-pop .menu-item { width: 100%; font-size: 13px; color: var(--tray-text); }
+.aibar-pop .menu-item span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aibar-pop .menu-hint { margin-left: auto; flex: none; }
+.aibar-pop:focus { outline: none; }
+.aibar-note { padding: 8px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; }
+.aibar-note b { color: var(--tray-text); font-weight: 600; }
+.aibar-note a, .aibar-note .link { color: inherit; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.aibar-label { padding: 8px 8px 4px; color: var(--tray-muted); font: 600 11px/16px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; }
+.aibar-switch { display: flex; gap: 10px; align-items: flex-start; padding: 8px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; cursor: pointer; }
+.aibar-switch b { color: var(--tray-text); font-weight: 600; }
+.aibar-switch input { flex: none; margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--signal); }
+
+/* the toast with a button (common.ts): it takes clicks, and it sits above the bar through --ai-top */
+.toast.has-action { display: flex; align-items: center; gap: 16px; max-width: calc(100% - 24px); }
+.toast.has-action.show { pointer-events: auto; }
+.toast-action { border: 0; background: transparent; padding: 0; font: 600 13px var(--ui); color: var(--signal); text-decoration: underline; text-underline-offset: 3px; }
+
+/* phones and narrow screens: always docked, no grip, the model chip moves into the disclosure line */
+@media (max-width: 860px) {
+  .aibar, .aibar-dock.dragged .aibar { width: min(640px, 100%); }
+  .aibar-main { flex-wrap: wrap; }
+  .aibar-grip { display: none; }
+  .aibar[data-ui='preview'] .aibar-actions, .aibar[data-ui='error'] .aibar-actions { order: 5; flex: 1 1 100%; }
+  .aibar[data-ui='preview'] .aibar-actions .btn { flex: 1 1 0; }
+  .aibar[data-ui='error'] .aibar-actions { padding-left: 30px; }
+  .aibar[data-ui='error'] .aibar-actions:not(:has(.btn)) { order: 3; flex: none; padding: 0; }
+  .aibar[data-ui='running'] .aibar-ctx { display: none; }
+  .aibar[data-ui='preview'] .aibar-collapse, .aibar[data-ui='error'] .aibar-collapse { order: 4; }
+  .aibar-ctx { padding: 0 6px 0 8px; }
+  .aibar-model { display: none; }
+  .aibar-disclosure > .aibar-model-wrap { display: inline; }
+  .aibar-disclosure > span:first-child { flex: 1 1 100%; }
+  .aibar-disclosure > span:nth-child(2)::before { content: none; margin: 0; }
+}
