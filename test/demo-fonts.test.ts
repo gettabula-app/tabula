@@ -94,9 +94,9 @@ describe('demo Fontshare allowlist', () => {
   });
 
   it('does not import or fetch a non-allowlisted font while exporting an SVG', async () => {
-    const { nativeFetch } = await setup(true);
+    const { demoModule, nativeFetch } = await setup(true);
     const { Store } = await import('../src/store');
-    const { exportSvg } = await import('../src/exporters');
+    const { exportSvgFile } = await import('../src/exporters');
     const store = new Store(new (await import('yjs')).Doc());
     store.create({
       id: 'unlisted-font', type: 'text', x: 0, y: 0, w: 320, h: 48, rotation: 0, z: 'a',
@@ -107,11 +107,13 @@ describe('demo Fontshare allowlist', () => {
       r: { contentBounds: () => ({ x: 0, y: 0, w: 320, h: 48 }), ctx: { get: (id: string) => store.getPlaced(id) } },
     } as unknown as import('../src/app').BoardApp;
 
-    const { svg } = exportSvg(app);
-    expect(svg).toContain('@import');
+    const svg = await exportSvgFile(app);
+    expect(svg).not.toContain('@import');
     expect(svg).not.toContain('not-allowlisted');
     expect(svg).not.toContain('font-family="Not-allowlisted"');
-    expect(nativeFetch).not.toHaveBeenCalled();
+    expect(nativeFetch).toHaveBeenCalledTimes(1);
+    expect(nativeFetch).not.toHaveBeenCalledWith(expect.stringContaining('not-allowlisted'), expect.anything());
+    expect(demoModule.demoGuardReport()).toEqual({ blocked: 0, attempts: [] });
   });
 
   it('rejects oversized demo board files before reading or inflating them', async () => {
