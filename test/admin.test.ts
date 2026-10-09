@@ -98,6 +98,9 @@ describe('auditSentence', () => {
     ['cloud.notify trial-ending', entry('cloud.notify', { template: 'trial-ending', count: 2 }, { actorId: null, actorName: null, actorEmail: null }), 'System sent the trial-ending notice to 2 workspace owners'],
     ['cloud.notify to one owner', entry('cloud.notify', { template: 'trial-ending', count: 1 }, { actorId: null, actorName: null, actorEmail: null }), 'System sent the trial-ending notice to 1 workspace owner'],
     ['cloud.notify without details', entry('cloud.notify', {}, { actorId: null, actorName: null, actorEmail: null }), 'System sent a notice to the workspace owners'],
+    ['updates.auto off', entry('updates.auto', { from: true, to: false }), 'ana@example.com turned automatic updates off'],
+    ['updates.auto on', entry('updates.auto', { from: false, to: true }), 'ana@example.com turned automatic updates on'],
+    ['updates.auto with a name', entry('updates.auto', { from: true, to: false }, { actorEmail: null }), 'Ana turned automatic updates off'],
     ['cloud.limits without limits', entry('cloud.limits', { seatLimit: null, readOnly: false, banner: 'Hi' }), 'ana@example.com updated the workspace limits'],
     ['ai.settings turned on with a model', entry('ai.settings', { enabled: true, model: 'claude-sonnet-5-5' }), 'ana@example.com changed the AI settings (turned on, model claude-sonnet-5-5)'],
     ['ai.settings turned off', entry('ai.settings', { enabled: false }), 'ana@example.com changed the AI settings (turned off)'],
@@ -200,7 +203,7 @@ describe('auditSentence', () => {
       'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
-      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
+      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify', 'updates.auto',
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
       'asset.upload', 'assets.gc',
       'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
@@ -377,6 +380,8 @@ describe('admin API client', () => {
     ['boards', (a) => a.adminBoards(), 'GET', '/api/admin/boards'],
     ['boards including deleted', (a) => a.adminBoards(true), 'GET', '/api/admin/boards?deleted=1'],
     ['restore a board', (a) => a.restoreBoard('b1'), 'POST', '/api/admin/boards/b1/restore'],
+    ['automatic updates', (a) => a.adminUpdates(), 'GET', '/api/admin/updates'],
+    ['save automatic updates', (a) => a.setAdminUpdates(false), 'PUT', '/api/admin/updates'],
     ['audit first page', (a) => a.adminAudit(), 'GET', '/api/admin/audit'],
     ['audit with every option', (a) => a.adminAudit({ limit: 50, before: 7, action: 'board.' }), 'GET', '/api/admin/audit?limit=50&before=7&action=board.'],
     ['teams go through the existing route', (a) => a.teams(), 'GET', '/api/teams'],
@@ -384,6 +389,12 @@ describe('admin API client', () => {
     const { fetchFn, calls } = recorder({});
     await call(createApi(fetchFn));
     expect(calls.map((c) => [c.init.method, c.url])).toEqual([[method, url]]);
+  });
+
+  it('sends only the automatic update choice', async () => {
+    const { fetchFn, calls } = recorder({ auto: false, synced: true, securityAlwaysApplied: true });
+    await createApi(fetchFn).setAdminUpdates(false);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ auto: false });
   });
 
   it.each<[string, (api: ReturnType<typeof createApi>) => Promise<unknown>]>([
@@ -508,16 +519,23 @@ describe('visibleAdminTabs', () => {
   });
 
   it('shows Access tokens only when AI tool access is on', () => {
-    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true)).toEqual([...ADMIN_TABS]);
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true, true)).toEqual([...ADMIN_TABS]);
     expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner', true)).not.toContain('tokens');
-    expect(visibleAdminTabs(ADMIN_TABS, false, 'owner', true)).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
+    expect(visibleAdminTabs(ADMIN_TABS, false, 'owner', true, true)).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
   });
 
   it('shows Backups to owners only', () => {
-    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true)).toContain('backups');
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true, true)).toContain('backups');
     for (const role of ['admin', 'member', 'guest', undefined] as const) {
-      expect(visibleAdminTabs(ADMIN_TABS, true, role, true), `${role}`).not.toContain('backups');
-      expect(visibleAdminTabs(ADMIN_TABS, true, role, true)).toEqual(ADMIN_TABS.filter((t) => t !== 'backups'));
+      expect(visibleAdminTabs(ADMIN_TABS, true, role, true, true), `${role}`).not.toContain('backups');
+      expect(visibleAdminTabs(ADMIN_TABS, true, role, true, true)).toEqual(ADMIN_TABS.filter((t) => t !== 'backups'));
+    }
+  });
+
+  it('shows Settings only on hosted workspaces, to owners and admins', () => {
+    expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner', false)).not.toContain('settings');
+    for (const role of ['owner', 'admin'] as const) {
+      expect(visibleAdminTabs(ADMIN_TABS, undefined, role, false, true)).toContain('settings');
     }
   });
 });

@@ -87,6 +87,13 @@ export interface ChatSettings {
   workspaceChannel: boolean;
 }
 
+/** GET and PUT /api/admin/updates (hosted workspaces only). */
+export interface AdminUpdates {
+  auto: boolean;
+  synced: boolean;
+  securityAlwaysApplied: true;
+}
+
 export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
 
 /** What the server stored for an upload. */
@@ -735,6 +742,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),
     adminChat: () => call<ChatSettings>('GET', '/api/admin/chat'),
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),
+    adminUpdates: () => call<AdminUpdates>('GET', '/api/admin/updates'),
+    setAdminUpdates: (auto: boolean) => call<AdminUpdates>('PUT', '/api/admin/updates', { auto }),
 
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),

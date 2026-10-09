@@ -92,6 +92,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
+  'updates.auto',
   'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
@@ -238,6 +239,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const notice = d.template === 'trial-ending' ? 'the trial-ending notice' : 'a notice';
       return `${who} sent ${notice} to ${count === null ? 'the workspace owners' : countLabel(count, 'workspace owner', 'workspace owners')}`;
     }
+    case 'updates.auto':
+      return `${who} turned automatic updates ${flag(d.to) === false ? 'off' : 'on'}`;
     case 'ai.settings': {
       const changes: string[] = [];
       if (flag(d.enabled) !== undefined) changes.push(d.enabled ? 'turned on' : 'turned off');
@@ -469,9 +472,9 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
 }
 
 /**
- * Admin sections to show: Access tokens only when AI tool access is on for this server, and Backups only to owners (the
- * routes behind it refuse admins). Backups is listed for every owner, also when backups are off: the tab then says so.
+ * Admin sections to show: Access tokens only when AI tool access is on for this server, Backups only to owners, and
+ * Settings only on a hosted workspace.
  */
-export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined, chat?: boolean): T[] {
-  return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner') && (t !== 'chat' || chat === true));
+export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined, chat?: boolean, hosted = false): T[] {
+  return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner') && (t !== 'chat' || chat === true) && (t !== 'settings' || hosted));
 }

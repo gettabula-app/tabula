@@ -125,6 +125,7 @@ describe('GET /api/internal/version', () => {
         minReader: { directory: maxReaderOf(MIGRATIONS), chat: maxReaderOf(CHAT_MIGRATIONS) },
         legacy: { directory: false, chat: false },
       },
+      updates: { auto: true },
     });
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain(TOKEN);

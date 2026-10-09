@@ -5,7 +5,10 @@
 import crypto from 'node:crypto';
 
 const LIMITS_KEY = 'cloud.limits';
+const AUTO_UPDATES_KEY = 'updates.auto';
 const USAGE_DEBOUNCE_MS = 30_000;
+const AUTO_UPDATES_BOOT_DELAY_MS = 5_000;
+const AUTO_UPDATES_RETRY_MS = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000];
 const CALL_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_CHARS = 64 * 1024;
 const SEAT_LIMIT_MAX = 100_000;
@@ -109,6 +112,18 @@ function describe(err) {
   return String(err?.message ?? err).slice(0, 200);
 }
 
+function validAutoUpgradeReply(data, value) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+  const fields = Object.keys(data);
+  return fields.length === 2
+    && fields.includes('autoUpgrade')
+    && fields.includes('securityAlwaysApplied')
+    && typeof data.autoUpgrade === 'boolean'
+    && data.autoUpgrade === value
+    && typeof data.securityAlwaysApplied === 'boolean'
+    && data.securityAlwaysApplied;
+}
+
 /**
  * `config` is `config.cloud`. `fetch`, the timer functions and `log` are injectable for tests.
  * Emits `limits-changed` on `events` after the limits change (the relay re-evaluates open sockets on it) and
@@ -141,6 +156,25 @@ export function createCloud({
   }
 
   let limits = loadLimits();
+
+  const storedAutoUpgrade = () => directory.getSetting(AUTO_UPDATES_KEY);
+  const autoUpgrade = () => storedAutoUpgrade() !== '0';
+  const hasExplicitAutoUpgrade = () => storedAutoUpgrade() !== null;
+  let autoUpgradeRevision = 0;
+  let autoUpgradeSyncedRevision = -1;
+  let autoUpgradeSynced = false;
+  let autoUpgradeRetryTimer = null;
+  let autoUpgradeRetryIndex = 0;
+  let closed = false;
+
+  function updates() {
+    const explicit = hasExplicitAutoUpgrade();
+    return {
+      auto: autoUpgrade(),
+      synced: !explicit || (autoUpgradeSyncedRevision === autoUpgradeRevision && autoUpgradeSynced),
+      securityAlwaysApplied: true,
+    };
+  }
 
   // Both sides are hashed first so the comparison takes the same time whatever length the caller sent.
   function tokenOk(header) {
@@ -191,6 +225,66 @@ export function createCloud({
     } finally {
       clearTimer(timer);
     }
+  }
+
+  function scheduleAutoUpgradeSync(delay, revision, value) {
+    if (closed) return;
+    if (autoUpgradeRetryTimer !== null) clearTimer(autoUpgradeRetryTimer);
+    autoUpgradeRetryTimer = setTimer(() => {
+      autoUpgradeRetryTimer = null;
+      void pushAutoUpgrade(revision, value);
+    }, delay);
+    autoUpgradeRetryTimer?.unref?.();
+  }
+
+  async function pushAutoUpgrade(revision, value) {
+    try {
+      const reply = await post('settings', { autoUpgrade: value });
+      if (reply.status !== 200) throw new Error(`answered ${reply.status}`);
+      if (reply.text.length > MAX_RESPONSE_CHARS) throw new Error('response too large');
+      const data = JSON.parse(reply.text);
+      if (!validAutoUpgradeReply(data, value)) throw new Error('invalid answer');
+      if (!closed && revision === autoUpgradeRevision && hasExplicitAutoUpgrade() && autoUpgrade() === value) {
+        autoUpgradeSyncedRevision = revision;
+        autoUpgradeSynced = true;
+        autoUpgradeRetryIndex = 0;
+      }
+    } catch (err) {
+      log(`cloud: could not sync automatic updates: ${describe(err)}`);
+      if (!closed && revision === autoUpgradeRevision && hasExplicitAutoUpgrade() && autoUpgrade() === value) {
+        autoUpgradeSyncedRevision = revision;
+        autoUpgradeSynced = false;
+        const delay = AUTO_UPDATES_RETRY_MS[Math.min(autoUpgradeRetryIndex, AUTO_UPDATES_RETRY_MS.length - 1)];
+        autoUpgradeRetryIndex = Math.min(autoUpgradeRetryIndex + 1, AUTO_UPDATES_RETRY_MS.length - 1);
+        scheduleAutoUpgradeSync(delay, revision, value);
+      }
+    }
+  }
+
+  async function setAutoUpgrade(value, actor) {
+    const previous = storedAutoUpgrade();
+    const nextStored = value ? '1' : '0';
+    if (previous === nextStored) return updates();
+
+    const from = previous !== '0';
+    const revision = autoUpgradeRevision + 1;
+    directory.transaction(() => {
+      directory.setSetting(AUTO_UPDATES_KEY, nextStored);
+      directory.audit(actor.id, 'updates.auto', { from, to: value });
+    });
+    if (autoUpgradeRetryTimer !== null) clearTimer(autoUpgradeRetryTimer);
+    autoUpgradeRetryTimer = null;
+    autoUpgradeRevision = revision;
+    autoUpgradeSyncedRevision = revision;
+    autoUpgradeSynced = false;
+    autoUpgradeRetryIndex = 0;
+    try {
+      events.emit('usage-changed');
+    } catch (err) {
+      log(`cloud: a listener for usage-changed failed: ${describe(err)}`);
+    }
+    await pushAutoUpgrade(revision, value);
+    return updates();
   }
 
   async function portalUrl() {
@@ -267,10 +361,13 @@ export function createCloud({
   async function pushUsage() {
     try {
       const { seats, guests } = seatUsage();
-      if (pushed && pushed.seats === seats && pushed.guests === guests) return;
-      const reply = await post('usage', { seats, guests });
+      const explicit = hasExplicitAutoUpgrade();
+      const value = autoUpgrade();
+      if (pushed && pushed.seats === seats && pushed.guests === guests && pushed.hasAutoUpgrade === explicit && (!explicit || pushed.autoUpgrade === value)) return;
+      const payload = { seats, guests, ...(explicit ? { autoUpgrade: value } : {}) };
+      const reply = await post('usage', payload);
       if (!reply.ok) throw new Error(`answered ${reply.status}`);
-      pushed = { seats, guests };
+      pushed = { seats, guests, hasAutoUpgrade: explicit, ...(explicit ? { autoUpgrade: value } : {}) };
     } catch (err) {
       log(`cloud: could not push usage: ${describe(err)}`);
     }
@@ -288,6 +385,8 @@ export function createCloud({
 
   events.on('usage-changed', scheduleUsagePush);
 
+  if (hasExplicitAutoUpgrade()) scheduleAutoUpgradeSync(AUTO_UPDATES_BOOT_DELAY_MS, autoUpgradeRevision, autoUpgrade());
+
   return {
     tokenOk,
     limits: () => ({ ...limits }),
@@ -295,12 +394,18 @@ export function createCloud({
     seatUsage,
     seatsAvailable,
     workspaceView,
+    autoUpgrade,
+    updates,
+    setAutoUpgrade,
     portalUrl,
     notify,
     scheduleUsagePush,
     close() {
+      closed = true;
       if (usageTimer !== null) clearTimer(usageTimer);
       usageTimer = null;
+      if (autoUpgradeRetryTimer !== null) clearTimer(autoUpgradeRetryTimer);
+      autoUpgradeRetryTimer = null;
       events.off('usage-changed', scheduleUsagePush);
     },
   };
