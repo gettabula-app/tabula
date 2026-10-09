@@ -30,7 +30,7 @@ const isVAligned = (o: Obj) => o.type === 'shape' || o.type === 'sticky';
 const NO_ROTATE = ['frame', 'uml-lifeline', 'uml-package', 'path'];
 
 /** Floating quick actions above the selection. Rebuilds only on selection and meta changes, so open pickers survive. */
-export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnType<typeof mountProps>) {
+export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnType<typeof mountProps>, opts: { demo?: boolean } = {}) {
   const bar = h('div', { class: 'tray quickbar', role: 'region', 'aria-label': 'Quick actions' });
   parent.appendChild(bar);
   let below = false;
@@ -377,7 +377,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([
       lock,
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
-      action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection])),
+      ...(opts.demo ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
       action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ]);
     groups.push([more]);

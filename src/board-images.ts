@@ -5,9 +5,10 @@ import type { BaseObj } from './types';
 import { assetUrl, isHash, type ImportedAsset } from './images';
 import { newId } from './store';
 import { api } from './api';
-import { createBlobCache, createUploadQueue, idbBackend, type UploadQueue, type UploadRecord, type UploadResult } from './asset-store';
+import { createBlobCache, createUploadQueue, idbBackend, memoryBackend, type UploadQueue, type UploadRecord, type UploadResult } from './asset-store';
 import { ImageLoader } from './image-loader';
 import { toast } from './ui/common';
+import { DEMO } from './demo';
 
 /** One cache for the whole page: the bytes are the person's, not the board's. */
 export const assetCache = createBlobCache(idbBackend());
@@ -36,18 +37,21 @@ export class BoardImages {
   readonly loader: ImageLoader;
   readonly queue: UploadQueue;
   private timer = 0;
+  private cache = assetCache;
 
   constructor(private app: BoardApp) {
     const boardId = app.conn.id;
+    this.cache = DEMO ? createBlobCache(memoryBackend()) : assetCache;
     this.loader = new ImageLoader({
       boardId,
-      cache: assetCache,
+      cache: this.cache,
       changed: (ids) => app.r.invalidateObjects(ids),
     });
     app.r.imageState = (o) => this.loader.state(o);
     this.queue = createUploadQueue({
-      cache: assetCache,
+      cache: this.cache,
       upload: async (id, blob, mime): Promise<UploadResult> => {
+        if (DEMO) throw new Error('Images are unavailable in the demo.');
         const info = await api.uploadAsset(id, blob, mime);
         return { hash: info.hash, mime: info.mime, width: info.width, height: info.height };
       },
@@ -78,8 +82,9 @@ export class BoardImages {
 
   /** The bytes of a picture by its `asset` reference: this device's copy, else the relay's. Null when neither has them. */
   async blobOf(asset: string): Promise<Blob | null> {
-    const local = (await assetCache.get(asset))?.blob;
+    const local = (await this.cache.get(asset))?.blob;
     if (local) return local;
+    if (DEMO) return null;
     if (!isHash(asset)) return null;
     try {
       const res = await fetch(assetUrl(this.app.conn.id, asset), { credentials: 'same-origin' });
@@ -103,10 +108,18 @@ export class BoardImages {
       const key = (o as BaseObj).asset;
       if (typeof key === 'string' && assets[key]) byKey.set(key, [...(byKey.get(key) ?? []), o.id]);
     }
+    if (DEMO) {
+      for (const [key, ids] of byKey) {
+        const a = assets[key];
+        await this.cache.put({ key, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: false });
+        this.app.r.invalidateObjects(ids);
+      }
+      return;
+    }
     for (const [key, ids] of byKey) {
       const a = assets[key];
       const pending = `pending:${newId()}`;
-      await assetCache.put({ key: pending, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: true });
+      await this.cache.put({ key: pending, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: true });
       store.transactAs(() => ids.forEach((id) => store.update(id, { asset: pending, mime: a.mime, nw: a.width, nh: a.height })), 'assets');
       await this.queue.enqueue({ id: pending, boardId, objectId: ids[0], hash: key });
       this.app.r.invalidateObjects(ids);

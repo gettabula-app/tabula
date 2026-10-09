@@ -1,3 +1,4 @@
+import { DEMO, installDemoGuards } from './demo';
 import './styles.css';
 import { BoardApp } from './app';
 import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
@@ -26,18 +27,23 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
 import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
 import { isDesktop } from './desktop-env';
 import type { Desktop } from './desktop';
+import { seedDemo } from './demo/seed';
+import { mountDemoBanner } from './ui/demo-banner';
+import type { User } from './types';
 
+// `demo.ts` is evaluated before these imports so its storage/network shims protect module initializers too.
+if (DEMO) installDemoGuards();
 applyTheme(getStoredTheme());
 installTooltips();
 // Any answer of the server that says a restore is running (503 restoring) puts the restoring screen up.
-onRestoring(() => showRestoring());
+if (!DEMO) onRestoring(() => showRestoring());
 
 const RETURN_KEY = 'driftboard:return';
 
@@ -51,6 +57,9 @@ let desktop: Desktop | null = null;
 let routeSeq = 0;
 /** What to call when the page on screen is left (the Chat page closes its conversation and its listeners). */
 let leavePage: (() => void) | null = null;
+let demoOpened = false;
+
+const demoUser: User = { id: 'tabula-demo', name: 'Demo user', color: '#2F6FED' };
 
 function saveReturn(hash: string) {
   const target = returnHash(hash);
@@ -187,6 +196,26 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
 }
 
 async function route() {
+  if (DEMO) {
+    if (location.hash !== '#/b/demo') {
+      history.replaceState(null, '', `${location.pathname}${location.search}#/b/demo`);
+    }
+    if (demoOpened) return;
+    demoOpened = true;
+    root.className = 'board-root demo-board';
+    root.replaceChildren();
+    const conn = scratchBoard('demo', demoUser, false);
+    const app = new BoardApp(conn, demoUser, root);
+    current = app;
+    seedDemo(app);
+    app.store.undo.clear();
+    app.store.undo.stopCapturing();
+    mountBoardUi(app, root, { home: () => undefined }, { demo: true });
+    mountDemoBanner(root);
+    if (location.search.includes('debug')) Object.assign(window, { __board: app });
+    return;
+  }
+
   // Leaving the template editor with unsaved changes: put the editor's address back and let it ask first.
   const leaving = templateLeaveGuard();
   if (leaving && location.hash !== shownHash && !leaving(location.hash)) {
@@ -356,6 +385,12 @@ async function route() {
 }
 
 async function boot() {
+  if (DEMO) {
+    setDemoMode();
+    window.addEventListener('hashchange', route);
+    route();
+    return;
+  }
   // Open mode (no accounts, or no server to ask) resolves at once and routes exactly as before.
   await initAuth();
   startMeRefresh();
@@ -389,9 +424,9 @@ async function boot() {
   route();
 }
 
-loadCatalogue();
+if (!DEMO) loadCatalogue();
 boot();
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
+if (!DEMO && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);
 }

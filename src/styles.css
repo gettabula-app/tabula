@@ -64,6 +64,15 @@ hr { border: 0; }
 /* ------------------------------------------------------------- board */
 
 .board-root { position: fixed; inset: 0; overflow: hidden; background: var(--canvas); }
+.demo-banner {
+  position: fixed; z-index: 30; top: 0; left: 0; right: 0; min-height: 36px;
+  display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 12px;
+  background: var(--tray); color: var(--tray-text); font-size: 12px; font-weight: 600; line-height: 1.25;
+}
+.demo-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.demo-board > .chrome .top-left { top: 46px; }
+.demo-board > .chrome .top-right { top: 46px; }
+.demo-board > .chrome .rail { top: 108px; max-height: calc(100% - 132px); }
 /* only the canvas takes touch gestures itself; elsewhere the browser's pinch zoom stays available */
 .board-surface, .canvas { touch-action: none; }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--graphite); }
@@ -531,6 +540,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   :root { --panel-top: 120px; } /* a fallback: board.ts measures the bars (src/ui/panel-top.ts) */
   .top-left { max-width: calc(100% - 24px); }
   .top-right { top: 64px; }
+  .demo-board > .chrome .top-right { top: 100px; }
+  .demo-board > .chrome .rail { top: 144px; max-height: calc(100% - 168px); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
   /* folded to its title row, so the board shows above the selection while it stays selected */

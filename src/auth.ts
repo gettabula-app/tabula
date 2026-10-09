@@ -72,6 +72,12 @@ function forgetCaches() {
 /** What the server said about images (docs/images.md): true, false, or null while it has not answered (then adding one stays possible, on this device). */
 let serverImages: boolean | null = null;
 
+/** Open, image-free mode for the ephemeral landing-page demo. It makes no API request and writes no identity cache. */
+export function setDemoMode(): AuthState {
+  serverImages = false;
+  return commit({ mode: 'open' });
+}
+
 /**
  * Whether the **Image** button should show. A server that answered and does not list `images` (off, or older than this
  * feature) hides it; a server that has not answered, or a board kept only on this device, keeps it.
