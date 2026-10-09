@@ -176,6 +176,38 @@ export function resolveCssVars(svg: string): string {
   return svg.replace(/var\(--[\w-]+,\s*([^)]+)\)/g, (_, fallback: string) => fallback.trim());
 }
 
+const HEX6 = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const rgbOf = (c: string): [number, number, number] | null => {
+  if (!HEX6.test(c)) return null;
+  const h = c.length === 4 ? c.slice(1).split('').map((x) => x + x).join('') : c.slice(1);
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+};
+const hexOf = (rgb: number[]) => '#' + rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+
+/**
+ * Replaces `color-mix(in srgb, A p%, B)` by a plain colour, for the editors and renderers that do not know color-mix
+ * (Inkscape, Illustrator, librsvg draw it black). Run after resolveCssVars, when A and B are hex colours or
+ * `transparent`. Mixed with `transparent` gives A at p% opacity: as `fill-opacity` or `stroke-opacity` where the mix is
+ * a fill or a stroke in a style, else A alone. Nested mixes are resolved from the inside out.
+ */
+export function resolveColorMix(svg: string): string {
+  const MIX = /color-mix\(in srgb,\s*(#[0-9a-f]{3,6}|transparent)\s+(\d+(?:\.\d+)?)%,\s*(#[0-9a-f]{3,6}|transparent)\s*\)/gi;
+  let out = svg;
+  for (let i = 0; i < 8 && /color-mix\(/i.test(out); i++) {
+    out = out.replace(MIX, (all, a: string, pct: string, b: string) => {
+      const p = Math.min(100, Math.max(0, Number(pct))) / 100;
+      const ca = rgbOf(a), cb = rgbOf(b);
+      if (ca && cb) return hexOf(ca.map((v, k) => v * p + cb[k] * (1 - p)));
+      if (ca && b.toLowerCase() === 'transparent') return `${hexOf(ca)}@${Math.round(p * 1000) / 1000}`;
+      if (cb && a.toLowerCase() === 'transparent') return `${hexOf(cb)}@${Math.round((1 - p) * 1000) / 1000}`;
+      return all;
+    });
+  }
+  return out
+    .replace(/(fill|stroke):(#[0-9A-F]{6})@([\d.]+)/g, '$1:$2;$1-opacity:$3')
+    .replace(/(#[0-9A-F]{6})@[\d.]+/g, '$1');
+}
+
 /** The pictures of the image objects among `objs`, as data URLs by object id: what an export draws in place of a live link. */
 export async function imageDataUrls(app: BoardApp, objs: Obj[]): Promise<Map<Id, string>> {
   const out = new Map<Id, string>();
@@ -213,9 +245,9 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     style = [...usedFonts(objs)].map(([slug, ws]) => `@import url("${cssUrl(slug, [...ws])}");`).join('\n');
   }
   const bg = opts.background === false ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#FFFFFF"/>`;
-  const svg = resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
+  const svg = resolveColorMix(resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
 ${style.replace(/]]>/g, '')}
-]]></style></defs>${bg}${body}</svg>`);
+]]></style></defs>${bg}${body}</svg>`));
   return { svg, w, h };
 }
 

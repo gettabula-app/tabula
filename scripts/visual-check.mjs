@@ -426,8 +426,8 @@ function seedKanban({ at }) {
   return true;
 }
 
-async function openKanbanBoard({ page, base }, { fit = true } = {}) {
-  await page.goto(`${base}/?debug#/b/${KANBAN_ID}`);
+async function openKanbanBoard({ page, base }, { fit = true, board = KANBAN_ID } = {}) {
+  await page.goto(`${base}/?debug#/b/${board}`);
   await page.waitForFunction(() => window.__board && window.__kanban, null, { timeout: 15_000 });
   await page.waitForFunction(() => {
     const provider = window.__board.conn.provider;
@@ -616,7 +616,8 @@ const STATES = {
     return { noPark: true };
   },
   async 'kanban-wip'(env) {
-    await openKanbanBoard(env);
+    // its own board: the extra card would otherwise stay in the shared one and change every later kanban shot
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-wip` });
     await env.page.evaluate(() => {
       const app = window.__board;
       if (!app.store.get('k-d4')) {

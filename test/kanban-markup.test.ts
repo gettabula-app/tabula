@@ -5,7 +5,7 @@ import { Store } from '../src/store';
 import { addCard, newKanban } from '../src/containers';
 import type { BaseObj, Id } from '../src/types';
 import { USER_COLORS } from '../src/palette';
-import { resolveCssVars } from '../src/exporters';
+import { resolveColorMix, resolveCssVars } from '../src/exporters';
 
 // docs/kanban.md, slice 2 (Rendering and Visual design): what a container, a lane and a card draw.
 
@@ -201,9 +201,53 @@ describe('in an export', () => {
     });
     const ctx = { ownerColor: () => USER_COLORS[0], commentCount: () => 2, zoom: 1, editable: false };
     for (const id of [container, ...lanes, ...ids]) {
-      const svg = resolveCssVars(draw(store, id, ctx));
+      const svg = resolveColorMix(resolveCssVars(draw(store, id, ctx)));
       expect(svg).not.toContain('var(');
+      // editors and renderers that do not know color-mix draw it black
+      expect(svg).not.toContain('color-mix(');
       expect(svg).not.toContain('Add card');
     }
+  });
+});
+
+describe('colours from the board', () => {
+  const EVIL = ['red;transform:scale(50);filter:url(//evil/x)', 'url(//evil/x)', 'expression(alert(1))', 'var(--x)', '#12345'];
+  const leaks = (svg: string) => /scale\(50\)|url\(|expression\(|evil|var\(--x\)|#12345/.test(svg);
+
+  it('draws no CSS from a lane fill, a card fill or a label colour that is not a palette key or a hex colour', () => {
+    const { store, lanes, ids } = board();
+    for (const bad of EVIL) {
+      store.transact(() => {
+        store.update(lanes[0], { fill: bad });
+        store.update(ids[0], { fill: bad, labels: ['evil'] });
+      });
+      store.labels.set('evil', { id: 'evil', name: 'Evil', color: bad, order: 9 });
+      for (const id of [lanes[0], ids[0]]) expect(leaks(draw(store, id)), `${bad} in ${id}`).toBe(false);
+      expect(draw(store, ids[0])).not.toContain('>EVIL</text>');
+    }
+  });
+
+  it('still draws palette keys and hex colours', () => {
+    const { store, lanes, ids } = board();
+    store.transact(() => {
+      store.update(lanes[0], { fill: '#336699' });
+      store.update(ids[0], { fill: 'Teal', labels: ['bug'] });
+    });
+    expect(draw(store, lanes[0])).toContain('style="fill:#336699"');
+    expect(draw(store, ids[0]).toUpperCase()).toContain('#8FE3CA');
+  });
+
+  it('does not ring an owner badge in a colour that is not one', () => {
+    const { store, ids } = board();
+    store.transact(() => store.update(ids[0], { ownerName: 'A B', ownerId: 'u' }));
+    expect(leaks(draw(store, ids[0], { ownerColor: () => 'red;filter:url(//evil/x)' }))).toBe(false);
+  });
+});
+
+describe('resolving color-mix for an export', () => {
+  it('mixes two colours, and gives a mix with transparent as an opacity on fills and strokes', () => {
+    expect(resolveColorMix('style="fill:color-mix(in srgb, #000000 50%, #FFFFFF)"')).toBe('style="fill:#808080"');
+    expect(resolveColorMix('style="fill:none;stroke:color-mix(in srgb, #18212B 28%, transparent)"')).toBe('style="fill:none;stroke:#18212B;stroke-opacity:0.28"');
+    expect(resolveColorMix('style="fill:color-mix(in srgb, #A3D2FF 10%, color-mix(in srgb, #000 0%, #fff))"')).toBe('style="fill:#F6FBFF"');
   });
 });

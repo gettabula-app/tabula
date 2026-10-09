@@ -10,7 +10,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, type ContainerLayout } from '../shared/containers';
+import { hasLayout, safeColor, validLabel, type ContainerLayout } from '../shared/containers';
 import type { Label } from './types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, localToday, lowDetail } from './ui/kanban-logic';
 
@@ -260,11 +260,15 @@ const K = {
   dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
 };
 
-/** A sticky swatch by its palette key (`blue`), the same in every theme; anything else is taken as a colour. */
+/**
+ * A sticky swatch by its palette key (`blue`), the same in every theme, or a hex colour. Anything else is not drawn: the
+ * value goes into a style attribute, where a stored string could otherwise add CSS of its own.
+ */
 function swatch(key: string | undefined): string | undefined {
-  if (!key) return undefined;
-  const s = STICKY_COLORS.find((c) => c.name.toLowerCase() === key);
-  return s ? `var(--s-${key}, ${s.fill})` : key;
+  const c = safeColor(key);
+  if (!c) return undefined;
+  const s = STICKY_COLORS.find((x) => x.name.toLowerCase() === c);
+  return s ? `var(--s-${c}, ${s.fill})` : c;
 }
 
 const fillStyle = (c: string) => `style="fill:${escapeXml(c)}"`;
@@ -436,7 +440,7 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   // labels: at most three chips, then +n; names are never clipped
   if (o.labels?.length) {
     y += CARD.rowGap;
-    const known = o.labels.map((id) => ctx.label?.(id)).filter((l): l is Label => !!l);
+    const known = o.labels.map((id) => validLabel(ctx.label?.(id))).filter((l): l is Label => !!l);
     let x = padL;
     known.slice(0, 3).forEach((l) => {
       const text = l.name.toUpperCase();
@@ -468,7 +472,7 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       }
       let right = w - CARD.padX;
       if (o.ownerName || o.ownerId) {
-        const ring = ctx.ownerColor?.(o);
+        const ring = safeColor(ctx.ownerColor?.(o), undefined);
         const x = right - 24;
         inner += `<g><title>${escapeXml(o.ownerName || 'Owner')}${ring ? '' : ' (no account)'}</title><rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
         inner += ring

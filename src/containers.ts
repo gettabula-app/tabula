@@ -142,6 +142,17 @@ export function movingOrder(store: Store, ids: Iterable<Id>): Id[] {
 }
 
 /**
+ * Why cards cannot move into a lane, or null when they can. Only cards the lane does not already show count as
+ * arriving: one whose lane was deleted and that this lane shows already is not new to it.
+ */
+export function moveRefusal(store: Store, ids: Id[], laneId: Id): string | null {
+  const lane = store.get(laneId);
+  const shown = lane?.type === 'lane' && lane.parent ? store.containerLayout(lane.parent)?.cards.get(laneId) ?? [] : [];
+  const arriving = ids.filter((id) => !shown.includes(id)).length;
+  return arriving ? addRefusal(store, laneId, arriving) : null;
+}
+
+/**
  * Moves cards into a lane at `index` (among the lane's cards that are not moving), keeping their order: one transaction
  * and one undo step that writes each card's `parent` and `rank`, plus fresh ranks for the lane's other cards when it had
  * equal or mixed ones (docs/kanban.md, Concurrent edits). Locked cards stay. Returns whether anything was written.
@@ -161,8 +172,7 @@ export function moveCards(store: Store, ids: Id[], laneId: Id, index: number): b
   const after = [...others.slice(0, at), ...moving, ...others.slice(at)];
   if (after.length === current.length && after.every((id, i) => id === current[i])) return false;
   const siblings = others.map((id) => store.get(id)!).filter(Boolean);
-  const arriving = moving.filter((id) => !current.includes(id)).length;
-  if (arriving && addRefusal(store, laneId, arriving)) return false;
+  if (moveRefusal(store, moving, laneId)) return false;
   const { ranks, repairs } = planInsert(siblings, laneId, at, moving.length);
   store.undo.stopCapturing();
   store.transact(() => {
@@ -188,4 +198,56 @@ export function dropLoose(store: Store, places: { id: Id; x: number; y: number; 
   });
   store.undo.stopCapturing();
   return true;
+}
+
+export type DeletePlan = { ids: Set<Id>; relocate: { id: Id; parent: Id; rank: string }[] } | { refused: string };
+
+/**
+ * What deleting `selected` (unlocked objects) does inside kanbans: a container takes its lanes and cards with it; a
+ * lane's cards move to the end of the nearest lane on its left that stays, else on its right, and go with the last lane
+ * of a kanban (docs/kanban.md, Concurrent edits). A lane of a locked kanban stays. Locked lanes and cards are never
+ * deleted or moved by it: the whole delete is refused instead, as a locked object is never changed by an edit.
+ */
+export function planKanbanDelete(store: Store, selected: Id[]): DeletePlan {
+  const ids = new Set(selected);
+  const locked = (id: Id) => !!store.get(id)?.locked;
+  for (const id of selected) {
+    const o = store.get(id);
+    if (o?.type === 'container') {
+      const inside = store.containerLayout(id)?.order ?? [];
+      if (inside.some(locked)) return { refused: 'This kanban has locked lanes or cards. Unlock them to delete it.' };
+      inside.forEach((c) => ids.add(c));
+    }
+    if (o?.type === 'lane' && o.parent && !ids.has(o.parent) && locked(o.parent)) ids.delete(id);
+  }
+  const relocate: { id: Id; parent: Id; rank: string }[] = [];
+  const planned = new Map<Id, { id: Id; parent?: Id; rank?: string }[]>();
+  for (const id of Array.from(ids)) {
+    const lane = store.get(id);
+    if (lane?.type !== 'lane' || !lane.parent || ids.has(lane.parent)) continue;
+    const layout = store.containerLayout(lane.parent);
+    if (!layout) continue;
+    const cards = (layout.cards.get(id) ?? []).filter((c) => !ids.has(c));
+    if (cards.some(locked)) return { refused: 'This lane has locked cards. Unlock them to delete it.' };
+    const at = layout.lanes.indexOf(id);
+    const keep = (l: Id) => !ids.has(l);
+    const target = layout.lanes.slice(0, Math.max(at, 0)).reverse().find(keep) ?? layout.lanes.slice(at + 1).find(keep);
+    if (!target) {
+      cards.forEach((c) => ids.add(c));
+      continue;
+    }
+    if (!cards.length) continue;
+    let siblings = planned.get(target);
+    if (!siblings) siblings = (layout.cards.get(target) ?? []).filter((c) => !ids.has(c)).map((c) => store.get(c)!).map((o) => ({ id: o.id, parent: o.parent, rank: (o as BaseObj).rank }));
+    const plan = planInsert(siblings, target, siblings.length, cards.length);
+    const fixed = new Map(plan.repairs.map((r) => [r.id, r]));
+    relocate.push(...plan.repairs);
+    siblings = siblings.map((c) => fixed.get(c.id) ?? c);
+    cards.forEach((c, i) => {
+      relocate.push({ id: c, parent: target, rank: plan.ranks[i] });
+      siblings!.push({ id: c, parent: target, rank: plan.ranks[i] });
+    });
+    planned.set(target, siblings);
+  }
+  return { ids, relocate };
 }

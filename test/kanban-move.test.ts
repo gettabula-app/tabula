@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { FEATURES, featureKey, isMixedRank } from '../shared/containers';
 import { Store } from '../src/store';
-import { addCard, dropLoose, moveCards, movingOrder, newKanban } from '../src/containers';
+import { addCard, dropLoose, moveCards, moveRefusal, movingOrder, newKanban, planKanbanDelete } from '../src/containers';
+import { LIMITS, ranksBetween } from '../shared/containers';
 import type { BaseObj, Id } from '../src/types';
 
 // docs/kanban.md, slice 2: a move, an add and a new kanban are each one transaction and one undo step, and two people
@@ -256,5 +257,73 @@ describe('two people moving at once', () => {
       expect(titles(s, a.container, a.lanes[0])).toEqual(['A', 'B']);
       expect(titles(s, a.container, a.lanes[2])).toEqual(['C']);
     }
+  });
+});
+
+describe('planning a delete inside a kanban', () => {
+  const plan = (store: Store, ids: Id[]) => {
+    const p = planKanbanDelete(store, ids);
+    if ('refused' in p) throw new Error(p.refused);
+    return p;
+  };
+
+  it('moves a lane’s cards to the end of the lane on its left', () => {
+    const { store, container, lanes, ids } = seeded();
+    const d = addCard(store, lanes[1], 'D', { createdBy: 'me' })!;
+    moveCards(store, [ids[2]], lanes[1], 1);
+    const p = plan(store, [lanes[1]]);
+    expect([...p.ids]).toEqual([lanes[1]]);
+    store.transact(() => {
+      for (const r of p.relocate) store.update(r.id, { parent: r.parent, rank: r.rank });
+      store.remove(p.ids);
+    });
+    expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'D', 'C']);
+    expect(store.get(d)!.parent).toBe(lanes[0]);
+  });
+
+  it('moves the first lane’s cards to the lane on its right', () => {
+    const { store, lanes, ids } = seeded();
+    const p = plan(store, [lanes[0]]);
+    expect(p.relocate.filter((r) => ids.includes(r.id)).map((r) => r.parent)).toEqual([lanes[1], lanes[1], lanes[1]]);
+  });
+
+  it('deletes the cards with the last lane of a kanban', () => {
+    const { store, lanes, ids } = seeded();
+    const p = plan(store, lanes);
+    expect(p.relocate).toEqual([]);
+    for (const id of ids) expect(p.ids.has(id)).toBe(true);
+  });
+
+  it('deletes a kanban with everything in it', () => {
+    const { store, container, lanes, ids } = seeded();
+    const p = plan(store, [container]);
+    expect([...p.ids].sort()).toEqual([container, ...lanes, ...ids].sort());
+  });
+
+  it('refuses when a locked card would be moved or deleted, and keeps lanes of a locked kanban', () => {
+    const { store, container, lanes, ids } = seeded();
+    store.transact(() => store.update(ids[1], { locked: true }));
+    expect(planKanbanDelete(store, [lanes[0]])).toEqual({ refused: expect.stringContaining('locked') });
+    expect(planKanbanDelete(store, [container])).toEqual({ refused: expect.stringContaining('locked') });
+    store.transact(() => {
+      store.update(ids[1], { locked: undefined });
+      store.update(container, { locked: true });
+    });
+    expect([...plan(store, [lanes[1]]).ids]).toEqual([]);
+  });
+});
+
+describe('the lane limit on a drop', () => {
+  it('does not count a card the lane already shows (its own lane was deleted) as arriving', () => {
+    const { store, container, lanes } = board();
+    const ranks = ranksBetween(null, null, LIMITS.cardsPerLane - 1, lanes[0]);
+    store.transact(() => {
+      ranks.forEach((rank, i) => store.create({ id: `k${i}`, type: 'card', parent: lanes[0], rank, text: 'x', x: 0, y: 0, w: 264, h: 34, rotation: 0, z: 'a0' } as BaseObj));
+      store.create({ id: 'stray', type: 'card', parent: 'gone', rank: 'a0@gone', text: 'y', x: 0, y: 0, w: 264, h: 34, rotation: 0, z: 'a0' } as BaseObj);
+    });
+    expect(cardsIn(store, container, lanes[0])).toHaveLength(LIMITS.cardsPerLane);
+    expect(moveRefusal(store, ['stray'], lanes[0])).toBeNull();
+    expect(moveCards(store, ['stray'], lanes[0], 0)).toBe(true);
+    expect(moveRefusal(store, ['stray'], lanes[1])).toBeNull();
   });
 });

@@ -15,12 +15,11 @@ import {
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { cardBody, objectMarkup, textHeight } from './markup';
-import { addRefusal, containerOf, dropLoose, moveCards, movingOrder, newKanban, newKanbanSize } from './containers';
+import { containerOf, dropLoose, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete } from './containers';
 import { CardInput } from './ui/kanban';
 import {
-  dropLine, keyboardMove, laneCards, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
+  dropLine, keyboardMove, laneCards, lowDetail, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
 } from './ui/kanban-logic';
-import { planInsert } from '../shared/containers';
 import { remapObjects } from './custom-templates';
 import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
@@ -403,7 +402,8 @@ export class BoardApp {
         continue;
       }
       if (o.type === 'frame' && opts.frames === false) continue;
-      if (hitBox(this.store.placed(o), p, tol)) return o;
+      // lanes and cards sit 8 apart and 16 apart: no slack around them, or the one below takes clicks meant for its neighbour
+      if (hitBox(this.store.placed(o), p, this.store.isLaidOut(o) ? 0 : tol)) return o;
     }
     return undefined;
   }
@@ -485,7 +485,8 @@ export class BoardApp {
     svg.addEventListener('pointerdown', (e) => this.onDown(e));
     svg.addEventListener('pointermove', (e) => this.onMove(e));
     svg.addEventListener('pointerup', (e) => this.onUp(e));
-    svg.addEventListener('pointercancel', (e) => this.onUp(e));
+    // a cancelled pointer (the system took it, a palm, a lost capture) drops nothing: a card drag is given up
+    svg.addEventListener('pointercancel', (e) => this.onCancel(e));
     svg.addEventListener('dblclick', (e) => this.onDblClick(e));
     svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     svg.addEventListener('contextmenu', (e) => {
@@ -749,7 +750,9 @@ export class BoardApp {
     const lane = this.store.getPlaced(laneId);
     const layout = lane?.parent ? this.store.containerLayout(lane.parent) : null;
     if (!lane || !layout || !layout.rects.has(laneId)) return null;
-    return laneRegionAt(lane as BaseObj, laneCards(layout, laneId), p);
+    const region = laneRegionAt(lane as BaseObj, laneCards(layout, laneId), p);
+    // below zoom 0.4 the add-card row is not drawn, so it is not there to click either
+    return region === 'add' && lowDetail(this.zoom) ? 'body' : region;
   }
 
   /** A new kanban with To do, Doing and Done, its top-left at `at`, with the add-card input open in its first lane. */
@@ -820,7 +823,7 @@ export class BoardApp {
     const t = d.target;
     if (t) {
       const lane = this.store.get(t.id) as BaseObj | undefined;
-      const refused = addRefusal(this.store, t.id, ids.filter((id) => this.store.get(id)?.parent !== t.id).length);
+      const refused = moveRefusal(this.store, ids, t.id);
       if (refused) return this.notify(refused);
       if (moveCards(this.store, ids, t.id, t.index)) {
         const order = this.store.containerLayout(t.container)?.cards.get(t.id) ?? [];
@@ -1126,6 +1129,11 @@ export class BoardApp {
     this.queue(() => this.store.transact(() => this.store.update(d.id, patch)));
   }
 
+  private onCancel(e: PointerEvent) {
+    if (this.drag?.mode === 'cards') return this.cancelCardDrag();
+    this.onUp(e);
+  }
+
   private onUp(e: PointerEvent) {
     this.cancelLongPress();
     const d = this.drag;
@@ -1272,7 +1280,7 @@ export class BoardApp {
     if (d.tool.kind === 'kanban') {
       // its size comes from its lanes: a drag only says where its corner goes, a click where its middle goes
       const size = newKanbanSize();
-      let at = dragged ? { x: rect.x, y: rect.y } : { x: d.start.x - size.w / 2, y: d.start.y - size.h / 2 };
+      let at = dragged ? { x: d.start.x, y: d.start.y } : { x: d.start.x - size.w / 2, y: d.start.y - size.h / 2 };
       if (this.snapOn(e)) at = { x: snapTo(at.x, this.grid()), y: snapTo(at.y, this.grid()) };
       this.createKanban(at);
       return;
@@ -1506,15 +1514,12 @@ export class BoardApp {
   }
 
   deleteSelection() {
-    const ids = new Set(this.selection.filter((id) => !this.store.get(id)?.locked));
-    // a kanban goes with its lanes and cards; a lane in a locked kanban stays (a lock blocks structural edits)
-    for (const id of Array.from(ids)) {
-      const o = this.store.get(id);
-      if (o?.type === 'container') for (const c of this.store.containerLayout(id)?.order ?? []) ids.add(c);
-      if (o?.type === 'lane' && o.parent && this.store.get(o.parent)?.locked) ids.delete(id);
-    }
+    // a kanban goes with its lanes and cards, a lane's cards move to its neighbour; locks are respected (containers.ts)
+    const plan = planKanbanDelete(this.store, this.selection.filter((id) => !this.store.get(id)?.locked));
+    if ('refused' in plan) return this.notify(plan.refused);
+    const { ids, relocate } = plan;
     if (!ids.size) return;
-    const relocate = this.laneRelocations(ids);
+    this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
     const moved = new Set(relocate.map((r) => r.id));
     this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
     this.store.undo.stopCapturing();
@@ -1537,44 +1542,8 @@ export class BoardApp {
       }
       this.store.remove(ids);
     });
+    this.store.undo.stopCapturing();
     this.setSelection([]);
-  }
-
-  /**
-   * Where the cards of lanes about to be deleted go: to the end of the nearest lane on the left that stays, else the
-   * nearest on the right. A kanban that keeps no lane loses their cards too, so those are added to `ids`.
-   */
-  private laneRelocations(ids: Set<Id>): { id: Id; parent: Id; rank: string }[] {
-    const out: { id: Id; parent: Id; rank: string }[] = [];
-    const planned = new Map<Id, { id: Id; parent?: Id; rank?: string }[]>();
-    for (const id of Array.from(ids)) {
-      const lane = this.store.get(id);
-      if (lane?.type !== 'lane' || !lane.parent || ids.has(lane.parent)) continue;
-      const layout = this.store.containerLayout(lane.parent);
-      if (!layout) continue;
-      const cards = (layout.cards.get(id) ?? []).filter((c) => !ids.has(c));
-      const at = layout.lanes.indexOf(id);
-      const keep = (l: Id) => !ids.has(l);
-      const left = layout.lanes.slice(0, Math.max(at, 0)).reverse().find(keep);
-      const target = left ?? layout.lanes.slice(at + 1).find(keep);
-      if (!target) {
-        cards.forEach((c) => ids.add(c));
-        continue;
-      }
-      if (!cards.length) continue;
-      let siblings = planned.get(target);
-      if (!siblings) siblings = (layout.cards.get(target) ?? []).filter((c) => !ids.has(c)).map((c) => this.store.get(c)!).map((o) => ({ id: o.id, parent: o.parent, rank: (o as BaseObj).rank }));
-      const plan = planInsert(siblings, target, siblings.length, cards.length);
-      const fixed = new Map(plan.repairs.map((r) => [r.id, r]));
-      out.push(...plan.repairs);
-      siblings = siblings.map((c) => fixed.get(c.id) ?? c);
-      cards.forEach((c, i) => {
-        out.push({ id: c, parent: target, rank: plan.ranks[i] });
-        siblings!.push({ id: c, parent: target, rank: plan.ranks[i] });
-      });
-      planned.set(target, siblings);
-    }
-    return out;
   }
 
   /** Selected objects plus connectors between them, as a portable list. */

@@ -3,6 +3,9 @@
 // give the same answer. shared/containers.d.ts carries the types for TypeScript; the Dockerfile copies this folder.
 
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
+// the one place the kanban takes its colour check from: switch to './colors.mjs' when it lands, then delete the shim
+import { safeColor } from './colors-shim.mjs';
+export { safeColor };
 
 /**
  * @typedef {{ x: number, y: number, w: number, h: number }} Rect
@@ -69,6 +72,19 @@ export const LIMITS = Object.freeze({
 
 /** Palette keys for board labels: the sticky swatches (a test keeps them equal to src/palette.ts), coloured by theme tokens. */
 export const LABEL_COLORS = Object.freeze(['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey']);
+
+/**
+ * A board label as it may be used, or null: an id, a name of at most 40 characters and a colour that `safeColor`
+ * accepts. Anything read from the `labels` map goes through this first, since any client can write that map.
+ * @returns {{ id: string, name: string, color: string, order: number } | null}
+ */
+export function validLabel(value) {
+  if (!value || typeof value !== 'object') return null;
+  const { id, name, color, order } = value;
+  const c = safeColor(color);
+  if (typeof id !== 'string' || !id || typeof name !== 'string' || name.length > LIMITS.labelName || !c) return null;
+  return { id, name, color: c, order: Number.isFinite(order) ? order : 0 };
+}
 
 // ---------------------------------------------------------------- ranks
 

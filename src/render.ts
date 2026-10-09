@@ -1,6 +1,6 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
-import { isContainerType } from '../shared/containers';
+import { isContainerType, validLabel } from '../shared/containers';
 import { lowDetail } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
@@ -181,7 +181,7 @@ export class Renderer {
       layout: () => this.connectorLayout(),
       containerLayout: (id) => this.store.containerLayout(id),
       dragging: (id) => this.kanbanState.dragging.has(id),
-      label: (id) => this.store.labels.get(id),
+      label: (id) => validLabel(this.store.labels.get(id)) ?? undefined,
       ownerColor: (o) => this.ownerColor(o),
       commentCount: (id) => this.commentCount(id),
     };

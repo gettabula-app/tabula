@@ -3,10 +3,9 @@ import * as Y from 'yjs';
 import { Renderer } from '../src/render';
 import { Store } from '../src/store';
 import { addCard, moveCards, newKanban } from '../src/containers';
-import { hitBox } from '../src/geometry';
-import type { BaseObj, Id, Obj } from '../src/types';
+import type { Id } from '../src/types';
 
-// docs/kanban.md, slice 2: what the renderer redraws and tweens, and what a click hits.
+// docs/kanban.md, slice 2: what the renderer redraws and tweens.
 
 const els: FakeEl[] = [];
 const writes = new Map<Id, string[]>();
@@ -142,28 +141,4 @@ describe('the drop tween', () => {
   });
 });
 
-describe('what a click hits', () => {
-  /** The topmost object whose drawn rectangle holds the point, as BoardApp.hit finds it. */
-  const hitAt = (store: Store, p: { x: number; y: number }): Obj | undefined =>
-    [...store.ordered()].reverse().find((o) => hitBox(store.placed(o) as BaseObj, p, 1));
-
-  it('finds a card over its lane, a lane header or empty body over the container, and the container by its header', () => {
-    const { store, container, lanes, ids } = setup();
-    const at = (id: Id, fx: number, fy: number) => {
-      const r = store.geometry(store.get(id)!);
-      return { x: r.x + r.w * fx, y: r.y + r.h * fy };
-    };
-    expect(hitAt(store, at(ids[1], 0.5, 0.5))?.id).toBe(ids[1]);
-    expect(hitAt(store, at(lanes[0], 0.5, 0.05))?.id).toBe(lanes[0]);
-    expect(hitAt(store, at(lanes[1], 0.5, 0.7))?.id).toBe(lanes[1]);
-    expect(hitAt(store, { x: 30, y: 20 })?.id).toBe(container);
-  });
-
-  it('follows a moved container: its card hit box moves with it', () => {
-    const { store, container, ids } = setup();
-    const before = store.geometry(store.get(ids[0])!);
-    store.transact(() => store.update(container, { x: 500, y: 40 }));
-    const p = { x: before.x + 500 + 10, y: before.y + 40 + 10 };
-    expect(hitAt(store, p)?.id).toBe(ids[0]);
-  });
-});
+// What a click hits is tested on BoardApp.hit itself, in test/kanban-app.test.ts.

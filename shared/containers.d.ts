@@ -89,6 +89,10 @@ export const LIMITS: {
 
 export const LABEL_COLORS: readonly ['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey'];
 
+export { safeColor } from './colors-shim';
+
+export function validLabel(value: unknown): { id: string; name: string; color: string; order: number } | null;
+
 export function splitRank(rank: unknown): { key: string; parent: string } | null;
 export function rankBetween(prev: string | null | undefined, next: string | null | undefined, parentId: string): string;
 export function ranksBetween(prev: string | null | undefined, next: string | null | undefined, n: number, parentId: string): string[];
