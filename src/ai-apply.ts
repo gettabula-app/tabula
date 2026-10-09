@@ -1,7 +1,7 @@
 import type { BoardApp } from './app';
 import { STICKY_COLORS } from './palette';
 import { newId } from './store';
-import type { BaseObj, Id, Obj } from './types';
+import type { BaseObj, Id, Obj, ProposedBy } from './types';
 
 // Writes an AI proposal into the board (docs/ai.md, "Proposals"). The layout is a pure function so the preview (ghosts) and
 // the add draw the same thing: what is previewed is what is added. Objects go right of everything on the board, at the
@@ -111,8 +111,11 @@ export function boardOf(app: BoardApp): { content: Rect | null; get: (id: Id) =>
   };
 }
 
-/** Writes the proposal as one undo step. `avoid` are the areas of other previews still on the board. */
-export function applyProposal(app: BoardApp, proposal: AiProposal, avoid: Rect[] = []): ApplyResult {
+/**
+ * Writes the proposal as one undo step. `avoid` are the areas of other previews still on the board. `proposedBy` (TAB-160)
+ * is stamped on what it creates, next to `createdBy` (the person who added it); moved stickies keep their own.
+ */
+export function applyProposal(app: BoardApp, proposal: AiProposal, avoid: Rect[] = [], proposedBy?: ProposedBy): ApplyResult {
   if (app.readOnly) return { ok: false, reason: 'read_only' };
   const layout = layoutProposal(proposal, boardOf(app), avoid);
   if (!layout) return { ok: false, reason: 'board_changed' };
@@ -120,6 +123,7 @@ export function applyProposal(app: BoardApp, proposal: AiProposal, avoid: Rect[]
   const now = Date.now();
   const base = (type: BaseObj['type'], r: Rect, z: string): BaseObj => ({
     id: newId(), type, x: r.x, y: r.y, w: r.w, h: r.h, rotation: 0, z, createdBy: app.user.id, updatedAt: now, font: meta.bodyFont,
+    ...(proposedBy ? { proposedBy: { feature: proposedBy.feature, by: { ...proposedBy.by } } } : {}),
   });
 
   const created: Obj[] = [];
