@@ -66,7 +66,7 @@ describe('group-aware store index and geometry', () => {
     expect(changed).toEqual(new Set(['note', 'inner', 'outer']));
   });
 
-  it('uses the supplied privacy predicate and leaves empty groups out of shown objects', () => {
+  it('uses the supplied privacy predicate and removes empty groups', () => {
     const s = new Store(new Y.Doc());
     s.transact(() => {
       s.create(group('g'));
@@ -77,7 +77,7 @@ describe('group-aware store index and geometry', () => {
     s.setGeometryVisibility((o) => o.id !== 'secret');
     expect(s.geometry(s.get('g')!)).toEqual({ x: 10, y: 20, w: 30, h: 40 });
     expect(s.shown().map((o) => o.id)).not.toContain('empty');
-    expect(s.geometry(s.get('empty')!)).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(s.get('empty')).toBeUndefined();
     expect(s.get('g')).toMatchObject({ x: 0, y: 0, w: 0, h: 0, rotation: 0 });
     s.transact(() => s.update('g', { x: 123, y: 456, w: 1, h: 2, rotation: 1 }));
     expect(s.get('g')).toMatchObject({ x: 0, y: 0, w: 0, h: 0, rotation: 0 });
