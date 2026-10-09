@@ -1,6 +1,7 @@
 // Pure SVG markup for board objects. Used by the live renderer and by SVG/PNG export.
 
 import type { BaseObj, ConnectorObj, Obj, Point, VAlign } from './types';
+import { sanitizeSvg } from '../shared/svg-safety';
 import { FAILED_LABEL, type ImageState } from './image-loader';
 import { isConnector } from './types';
 import { connectorGeom, pathPoints, type ConnectorLayout } from './geometry';
@@ -151,30 +152,14 @@ function wrapG(o: BaseObj, inner: string, opacity: number) {
   return `<g transform="translate(${n(o.x)} ${n(o.y)})${rot}"${op}>${inner}</g>`;
 }
 
-// Strip anything executable from third-party SVG (Iconify bodies arrive over
-// the network and from collaborators' boards).
+// Icon and sticker bodies arrive from Iconify, from collaborators' boards and from files: the shared policy
+// (shared/svg-safety.mjs, the same one the server holds templates to) leaves out anything that runs or loads from outside.
 const iconBodyCache = new Map<string, string>();
 export function sanitizeSvgBody(body: string): string {
   const hit = iconBodyCache.get(body);
   if (hit !== undefined) return hit;
-  let out = body
-    .replace(/<\s*(script|foreignObject|iframe|object|embed)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-    .replace(/<\s*(script|foreignObject|iframe|object|embed)[^>]*\/?>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
-    .replace(/(href\s*=\s*["']?)\s*javascript:[^"'\s>]*/gi, '$1#');
-  if (typeof DOMParser !== 'undefined') {
-    const doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${out}</svg>`, 'image/svg+xml');
-    if (doc.querySelector('parsererror')) out = '';
-    else {
-      doc.querySelectorAll('script,foreignObject,iframe,object,embed').forEach((el) => el.remove());
-      doc.querySelectorAll('*').forEach((el) => {
-        for (const a of Array.from(el.attributes)) {
-          if (/^on/i.test(a.name) || (/href$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) el.removeAttribute(a.name);
-        }
-      });
-      out = doc.documentElement.innerHTML;
-    }
-  }
+  const out = sanitizeSvg(body);
+  if (iconBodyCache.size > 2000) iconBodyCache.clear();
   iconBodyCache.set(body, out);
   return out;
 }

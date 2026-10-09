@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } from './board-ops.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
 export const TEMPLATE_CATEGORIES = [
@@ -26,7 +27,6 @@ export const TEMPLATE_STEP_MODES = ['write', 'private-write', 'cluster', 'vote',
 export const MAX_TEMPLATE_OBJECTS = 2000;
 export const MAX_TEMPLATE_STEPS = 100;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
-export const MAX_SVG_BODY = 100_000;
 export const NAME_MAX = 80;
 export const DESCRIPTION_MAX = 280;
 export const MAX_TEMPLATES_PER_OWNER = 200;
@@ -70,101 +70,9 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // ---------------------------------------------------------------- SVG bodies
 
-// Icons and stickers carry their SVG inline in `body`. Anything that is not plain drawing is refused rather than
-// cleaned: the list of elements is an allow-list, scripts and external references have no way in, and markup the
-// checker cannot read as a plain tag is a refusal, since a browser might read it differently.
-const SVG_ELEMENTS = new Set([
-  'svg', 'g', 'defs', 'symbol', 'use', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'image',
-  'text', 'tspan', 'title', 'desc', 'marker', 'pattern', 'clipPath', 'mask', 'linearGradient', 'radialGradient', 'stop',
-  'filter', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix', 'feDiffuseLighting',
-  'feDisplacementMap', 'feDistantLight', 'feDropShadow', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR',
-  'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode', 'feMorphology', 'feOffset', 'fePointLight',
-  'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence',
-]);
-const SVG_NS = 'http://www.w3.org/2000/svg';
-const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'))?)*)\s*(\/?)>/y;
-const ATTR_RE = /\s+([A-Za-z_:][A-Za-z0-9_:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
-// Character classes by code point, not by regular expression (as in board-ops.mjs).
-const isSvgControl = (cp) => cp <= 0x08 || cp === 0x0b || cp === 0x0c || (cp >= 0x0e && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029;
-// whitespace, control and invisible characters a browser ignores inside a URL scheme
-const isUrlNoise = (cp) =>
-  cp <= 0x20 || (cp >= 0x7f && cp <= 0xa0) || cp === 0x1680 || cp === 0x180e || (cp >= 0x2000 && cp <= 0x200f) ||
-  (cp >= 0x2028 && cp <= 0x202f) || (cp >= 0x205f && cp <= 0x206f) || cp === 0x3000 || cp === 0xfeff;
-const without = (value, drop) => {
-  let out = '';
-  for (const ch of value) if (!drop(ch.codePointAt(0))) out += ch;
-  return out;
-};
-const RASTER_DATA_RE = /^data:image\/(png|jpeg|gif|webp)[;,]/;
-const BLOCKED_ATTRIBUTES = new Set(['xml:base', 'srcdoc', 'formaction', 'action', 'poster', 'ping']);
-
-const decodeBasic = (v) => v.replace(/&(amp|lt|gt|quot|apos);/g, (_m, name) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[name]);
-
-function attributeProblem(element, name, rawValue) {
-  const lname = name.toLowerCase();
-  if (lname.startsWith('on')) return `has an event handler (${name.slice(0, 30)})`;
-  if (BLOCKED_ATTRIBUTES.has(lname)) return `has the ${name.slice(0, 30)} attribute`;
-  const value = decodeBasic(rawValue);
-  if (value.includes('\\')) return 'has a backslash in an attribute';
-  const flat = without(value, isUrlNoise).toLowerCase();
-  if (lname === 'xmlns' || lname.startsWith('xmlns:')) {
-    return value === SVG_NS || value === XLINK_NS ? null : 'declares a namespace other than SVG';
-  }
-  const local = lname.slice(lname.lastIndexOf(':') + 1);
-  if (local === 'href' || local === 'src') {
-    if (flat.startsWith('#')) return null;
-    if (element !== 'use' && RASTER_DATA_RE.test(flat)) return null;
-    return element === 'use'
-      ? 'has a <use> that points outside the icon'
-      : 'has a link that is not a reference inside the icon or an inline png, jpeg, gif or webp image';
-  }
-  if (flat.includes('javascript:') || flat.includes('vbscript:') || flat.includes('data:')) return 'has a script or data address in an attribute';
-  if (lname === 'style' && /@import|expression|behavior|binding/.test(flat)) return 'has a style that loads or runs something';
-  // mask, cursor and the like take CSS images, which can name an address without url()
-  if (/(image-set|image|cross-fade|element|paint|src)\(/.test(flat)) return 'has a CSS image function that could load something from outside';
-  for (const m of flat.matchAll(/url\(([^)]*)\)/g)) {
-    if (!m[1].replace(/^['"]/, '').startsWith('#')) return 'has a url() that points outside the icon';
-  }
-  return null;
-}
-
-/** Why an SVG body is refused, or null when it is plain drawing. */
-export function svgProblem(body) {
-  if (typeof body !== 'string') return 'is not text';
-  if (body.length > MAX_SVG_BODY) return `is longer than ${MAX_SVG_BODY.toLocaleString('en-US')} characters`;
-  for (const ch of body) if (isSvgControl(ch.codePointAt(0))) return 'has control characters';
-  if (/<[!?]/.test(body)) return 'has a comment, CDATA section, DOCTYPE or processing instruction';
-  if (/&#/.test(body) || /&(?!(?:amp|lt|gt|quot|apos);)/.test(body)) return 'has character references other than &amp; &lt; &gt; &quot; and &apos;';
-  const stack = [];
-  let at = 0;
-  while (at < body.length) {
-    const lt = body.indexOf('<', at);
-    const between = body.slice(at, lt === -1 ? body.length : lt);
-    if (between.includes('>')) return 'has a stray ">"';
-    if (lt === -1) break;
-    TAG_RE.lastIndex = lt;
-    const tag = TAG_RE.exec(body);
-    if (!tag) return 'has markup that is not a plain SVG tag';
-    at = TAG_RE.lastIndex;
-    const [, closing, element, attributes, selfClosing] = tag;
-    if (!SVG_ELEMENTS.has(element)) return `uses <${element.slice(0, 30)}>, which an icon cannot contain`;
-    if (closing) {
-      if (attributes.trim() || selfClosing || stack.pop() !== element) return 'has tags that do not match';
-      continue;
-    }
-    const seen = new Set();
-    for (const attr of attributes.matchAll(ATTR_RE)) {
-      const key = attr[1].toLowerCase();
-      if (seen.has(key)) return `repeats the ${attr[1].slice(0, 30)} attribute`;
-      seen.add(key);
-      const problem = attributeProblem(element, attr[1], attr[2] ?? attr[3] ?? '');
-      if (problem) return problem;
-    }
-    if (!selfClosing) stack.push(element);
-  }
-  return stack.length ? 'has a tag that is not closed' : null;
-}
+// The SVG policy lives in shared/svg-safety.mjs, shared with the app's icon and sticker sanitizer (TAB-204). Templates
+// refuse a body with any problem, animations included; the app cleans instead.
+export { MAX_SVG_BODY, svgProblem };
 
 // ---------------------------------------------------------------- content
 
