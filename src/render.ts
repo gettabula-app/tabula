@@ -424,7 +424,7 @@ export class Renderer {
    */
   connectorLayout(): ConnectorLayout {
     if (!this.layoutCache) {
-      const next = buildConnectorLayout((id) => this.store.getPlaced(id), this.store.ordered().filter(isConnector));
+      const next = buildConnectorLayout((id) => this.store.getPlaced(id), this.store.shown().filter(isConnector));
       // A connector that joins, leaves or reorders a side moves the others on it, even though they did not change.
       if (this.lastLayout) for (const id of movedConnectors(this.lastLayout, next)) this.markDirty(id);
       this.layoutCache = this.lastLayout = next;
@@ -442,7 +442,7 @@ export class Renderer {
 
   contentBounds(ids?: Iterable<Id>): Rect | null {
     let rs: Rect[] = [];
-    const list = ids ? [...ids].map((id) => this.store.get(id)).filter(Boolean) as Obj[] : this.store.ordered();
+    const list = ids ? [...ids].map((id) => this.store.get(id)).filter(Boolean) as Obj[] : this.store.shown();
     for (const o of list) {
       const b = this.bounds(o);
       if (b) rs.push(b);
@@ -509,7 +509,8 @@ export class Renderer {
     const vp = this.viewport();
     const margin = 200 / this.cam.zoom;
     const view = { x: vp.x - margin, y: vp.y - margin, w: vp.w + margin * 2, h: vp.h + margin * 2 };
-    const ordered = this.store.ordered();
+    // hidden objects (TAB-198) are not drawn: their nodes go like any culled one
+    const ordered = this.store.shown();
     const visible = new Set<Id>();
     let prev: SVGGElement | null = null;
     // containers that moved since the last draw: what they lay out moves with them, without a tween

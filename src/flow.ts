@@ -398,7 +398,8 @@ export class Flow {
     const s = this.app.store;
     const f = this.state();
     const lines: string[] = [`# ${s.getMeta().name}`, ''];
-    const frames = s.ordered().filter((o) => o.type === 'frame') as BaseObj[];
+    // hidden objects (TAB-198) are left out, as on the canvas, and so is everything in a hidden frame
+    const frames = s.shown().filter((o) => o.type === 'frame') as BaseObj[];
     const totals = new Map<Id, number>();
     const voteSteps = new Set(f.steps.filter((st) => st.mode === 'vote').map((st) => st.id));
     if (f.results) voteSteps.add(f.results);
@@ -407,7 +408,7 @@ export class Flow {
     if (running?.mode === 'vote' && !f.reveal) voteSteps.delete(running.id);
     for (const id of voteSteps) for (const v of this.votesForStep(id)) totals.set(v.itemId, (totals.get(v.itemId) ?? 0) + 1);
     for (const fr of frames) {
-      const kids = s.childrenOf(fr.id).filter((o) => ((o as BaseObj).text || o.type === 'image') && !isConnector(o) && !this.isHidden(o as BaseObj)) as BaseObj[];
+      const kids = s.childrenOf(fr.id).filter((o) => ((o as BaseObj).text || o.type === 'image') && !isConnector(o) && !this.isHidden(o as BaseObj) && s.isShown(o)) as BaseObj[];
       if (!kids.length) continue;
       lines.push(`## ${fr.name || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);

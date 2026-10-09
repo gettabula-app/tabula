@@ -3,7 +3,7 @@
 // withheld are not here, and it uses the same summaries, which carry no author and no comment. This module touches no room:
 // the caller hands over a document inside roomAccess.read.
 
-import { boardTitle, cleanForModel, fence, readAll, summarise } from '../board-ops.mjs';
+import { boardTitle, cleanForModel, fence, hiddenOf, readAll, summarise } from '../board-ops.mjs';
 
 export const READ_LIMITS = Object.freeze({
   /** Boxes and connectors sent in one run. */
@@ -39,7 +39,11 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
  * @returns {{ frameMissing: true } | { scope: 'selection' | 'frame' | 'board', frame: { id: string, name: string } | null, items: any[], stickyIds: string[], inScope: number, sent: number, chars: number, cut: boolean }}
  */
 export function readForAi(doc, { selection = null, frameId = null, onlyStickies = false, maxObjects = READ_LIMITS.objects, maxChars = READ_LIMITS.chars } = {}) {
-  const { boxes, connectors } = readAll(doc);
+  const all = readAll(doc);
+  // what the board hides from everyone (TAB-198) is not sent, as it is not drawn
+  const hidden = hiddenOf(all);
+  const boxes = all.boxes.filter((o) => !hidden.has(o.id));
+  const connectors = all.connectors.filter((c) => !hidden.has(c.id));
   let scope = 'board';
   let frame = null;
   let candidates = boxes;
