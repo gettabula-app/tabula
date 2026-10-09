@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -624,6 +624,60 @@ async function openAiKeyDialogWith({ page, base }, testReply) {
   await page.getByRole('button', { name: 'Test key' }).click();
 }
 
+
+const NVIDIA = { baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3' };
+
+/**
+ * The AI key screens with fixed answers (accounts mode): `mine` is the person's saved key and `workspace` the workspace's, each
+ * null or `{ provider, hint, baseUrl?, model? }`. The reply of a save or a test is not mocked: these states only look.
+ */
+async function mockAiKeyScreens({ page }, { mine = null, workspace = null } = {}) {
+  const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const view = (k) => (k ? { provider: k.provider, baseUrl: k.baseUrl ?? null, model: k.model ?? null, hint: k.hint, createdAt: NOW - 9 * 24 * HOUR, lastUsedAt: NOW - 2 * HOUR } : null);
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const me = await (await route.fetch()).json();
+    return json(route, { ...me, ai: { personalKeys: true } });
+  });
+  await page.route('**/api/ai/config', (route) => json(route, {
+    enabled: true, features: ['generate', 'summarise', 'cluster'], keySource: mine ? 'user' : workspace ? 'workspace' : null,
+    provider: (mine ?? workspace)?.provider ?? null, model: (mine ?? workspace)?.model ?? 'claude-opus-5-5', personalKeys: true, hasSecret: true, myKey: view(mine),
+  }));
+  await page.route('**/api/admin/ai', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return json(route, {
+      enabled: true, features: ['generate', 'summarise', 'cluster'], model: 'claude-opus-5-5', personalKeys: true, membersOnly: false,
+      limits: { perPersonHour: 20, perWorkspaceHour: 200 }, hasSecret: true, key: workspace ? { ...view(workspace), readable: true } : null,
+    });
+  });
+}
+
+/** "Your AI key" of the account menu, opened on a board. */
+async function openMyAiKey(env, keys) {
+  await mockAiKeyScreens(env, keys);
+  await env.page.goto(`${env.base}/#/b/${BOARD_ID}`);
+  await env.page.getByRole('button', { name: 'Menu' }).click();
+  await env.page.getByText('Your AI key', { exact: true }).click();
+  await env.page.getByRole('combobox', { name: 'Provider' }).waitFor();
+}
+
+/** The AI tab of the admin dashboard. */
+async function openAdminAi(env, keys) {
+  await mockAiKeyScreens(env, keys);
+  await env.page.goto(`${env.base}/#/admin/ai`);
+  await env.page.getByRole('combobox', { name: 'Provider' }).waitFor();
+}
+
+/** Picks OpenAI-compatible and fills the three fields (the key is a made-up value). */
+async function fillOpenAiKey({ page }, { baseUrl = NVIDIA.baseUrl, model = NVIDIA.model } = {}) {
+  await page.getByRole('combobox', { name: 'Provider' }).selectOption('openai-compatible');
+  await page.getByPlaceholder('https://integrate.api.nvidia.com/v1').fill(baseUrl);
+  await page.getByPlaceholder('moonshotai/kimi-k3').fill(model);
+  await page.getByPlaceholder(/^(Paste the key|Paste the API key)/).first().fill('sk-test-not-a-real-key-1234');
+  // the sentence under the fields (and the button) is what the shot is about
+  await page.getByRole('button', { name: /^(Save key|Replace key)$/ }).scrollIntoViewIfNeeded();
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -1118,6 +1172,41 @@ const STATES = {
     await openAiKeyDialogWith(env, { ok: false, status: 502, body: { error: 'ai_key_invalid', message: 'rejected' } });
     await env.page.getByText('The AI key was rejected.').waitFor();
   },
+  // TAB-222: both key screens, Anthropic and OpenAI-compatible, empty, filled in, with a bad address, and with a saved key
+  async 'ai-key-me'(env) {
+    await openMyAiKey(env, {});
+  },
+  async 'ai-key-me-openai'(env) {
+    await openMyAiKey(env, {});
+    await fillOpenAiKey(env);
+  },
+  async 'ai-key-me-openai-bad'(env) {
+    await openMyAiKey(env, {});
+    await fillOpenAiKey(env, { baseUrl: 'http://10.0.0.5/v1', model: 'a b' });
+  },
+  async 'ai-key-me-openai-saved'(env) {
+    await openMyAiKey(env, { mine: { provider: 'openai-compatible', hint: '1234', ...NVIDIA } });
+  },
+  async 'ai-key-me-anthropic-saved'(env) {
+    await openMyAiKey(env, { mine: { provider: 'anthropic', hint: '4f2a' } });
+  },
+  async 'ai-admin'(env) {
+    await openAdminAi(env, {});
+  },
+  async 'ai-admin-openai'(env) {
+    await openAdminAi(env, {});
+    await fillOpenAiKey(env);
+  },
+  async 'ai-admin-openai-bad'(env) {
+    await openAdminAi(env, {});
+    await fillOpenAiKey(env, { baseUrl: 'https://localhost/v1', model: '-x' });
+  },
+  async 'ai-admin-openai-saved'(env) {
+    await openAdminAi(env, { workspace: { provider: 'openai-compatible', hint: '1234', ...NVIDIA } });
+  },
+  async 'ai-admin-anthropic-saved'(env) {
+    await openAdminAi(env, { workspace: { provider: 'anthropic', hint: '4f2a' } });
+  },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
     await openEmptyBoard(env, '?debug&aibar');
@@ -1170,7 +1259,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay

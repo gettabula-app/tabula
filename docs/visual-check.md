@@ -73,6 +73,14 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `ai-live-remote-preview` | (open mode) Their ready preview beside the board: ghost frame "Ideas" and stickies, dashed outline with its dark halo, the "Ana's AI preview" label row with Discard, Review and Accept. The view is fitted to the board and the room beside it, because `zoomToFit` leaves a preview out |
 | `ai-key-test` | (accounts mode) The account menu's "Your AI key" dialog after Test key answers "The key works." (the replies are mocked) |
 | `ai-key-test-error` | The same after the provider rejected the key: the status line in the danger colour |
+| `ai-key-me` | (accounts mode, TAB-222) "Your AI key" with no key: Anthropic selected, the API key field and the reason Save is off (the replies are mocked) |
+| `ai-key-me-openai` | The same with OpenAI-compatible chosen and the Base URL, Model and a made-up key filled in |
+| `ai-key-me-openai-bad` | The same with an `http://` private address and a model id with a space: the first sentence that says why Save is off |
+| `ai-key-me-openai-saved` | A saved OpenAI-compatible key: the key line with host and model, Test key and Remove, and the fields filled with the saved values |
+| `ai-key-me-anthropic-saved` | A saved Anthropic key, for comparison |
+| `ai-admin` | The admin dashboard's AI tab with no workspace key, scrolled to the key form |
+| `ai-admin-openai`, `ai-admin-openai-bad` | The workspace key form with OpenAI-compatible chosen: filled in, and with a local address and a bad model id |
+| `ai-admin-openai-saved`, `ai-admin-anthropic-saved` | The tab with a saved workspace key: for an OpenAI-compatible one the Model row is read-only ("From the key") |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |
