@@ -46,6 +46,50 @@ async function prepare() {
 }
 
 describe('the relay restoring a workspace', () => {
+  it('aborts before maintenance when a final room save fails, keeping later edits available for retry', async () => {
+    const s = await prepare();
+    const relay = await launch(s.dir, { ...backupEnv(h!.fake.url), SAVE_DEBOUNCE_MS: '30000', SAVE_RETRY_MS: '200' });
+    const c = client(relay, s.dir);
+    const cookie = await c.signIn('owner@example.com');
+    const editor = c.connect('b1', cookie);
+    const watcher = c.connect('b1', cookie);
+    await until(() => editor.provider.synced && watcher.provider.synced);
+    const blocker = path.join(s.dir, 'b1.yjs.tmp');
+    fs.rmSync(blocker, { force: true });
+    fs.mkdirSync(blocker);
+    // The safety backup precedes staging. One retried download leaves time for an edit that only the final save can keep.
+    let staging = false;
+    h!.fake.rules.push({ method: 'GET', times: 1, status: 503, key: {
+      test(key: string) {
+        if (!key.includes('/objects/') || !relay.out().includes('the live data is backed up')) return false;
+        staging = true;
+        return true;
+      },
+    } as RegExp });
+    const restoring = c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: CONFIRM });
+    await until(() => staging);
+    editor.doc.getMap('objects').set('last-edit', 'after the safety backup');
+    await until(() => watcher.doc.getMap('objects').get('last-edit') === 'after the safety backup');
+    const res = await restoring;
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: 'restore_failed' });
+    expect(relay.proc.exitCode).toBeNull();
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
+    expect(editor.closes).toEqual([]);
+    expect(fs.readdirSync(s.dir).some((f) => f.startsWith('.pre-restore-'))).toBe(false);
+    fs.rmdirSync(blocker);
+    await until(() => {
+      const saved = new Y.Doc();
+      try {
+        Y.applyUpdate(saved, fs.readFileSync(path.join(s.dir, 'b1.yjs')));
+        return saved.getMap('objects').get('last-edit') === 'after the safety backup';
+      } finally {
+        saved.destroy();
+      }
+    });
+    expect((await raw<{ value: string }>(s.dir, "SELECT value FROM settings WHERE key = 'fixture'"))[0].value).toBe('B');
+  }, 60_000);
+
   it('shuts everything down for the swap, leaves with 75, and starts again on the restored data', async () => {
     const s = await prepare();
     // the disk is given, never read: how long the old data is kept must not depend on the machine the test runs on

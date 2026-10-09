@@ -155,8 +155,9 @@ function boardState(id) {
   if (room) return Y.encodeStateAsUpdate(room.doc);
   try {
     return fs.readFileSync(path.join(DATA_DIR, `${id}.yjs`));
-  } catch {
-    return null;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
   }
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
@@ -262,7 +263,7 @@ const restore = createRestore({
   config: backupConfig,
   dataDir: DATA_DIR,
   log,
-  hooks: { enterMaintenance },
+  hooks: { saveRooms: saveAllRooms, enterMaintenance },
   exit: (code) => process.exit(code),
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
@@ -320,13 +321,14 @@ function liveStats() {
 
 // Every open room to its file; the one place both shutdown and a restore do it.
 function saveAllRooms() {
-  if (roomsFrozen) return;
-  for (const r of rooms.values()) r.save();
+  if (roomsFrozen) return true;
+  let saved = true;
+  for (const r of rooms.values()) if (!r.save()) saved = false;
+  return saved;
 }
 
-// A restore is about to replace the data directory. The order matters: sockets first (they stop editing), then every
-// room is saved for the last time, then nothing may save again, then the timers that use the database stop. The restore
-// engine stops the backups and closes the database next.
+// The restore engine just saved every room synchronously. Close sockets and freeze rooms before yielding, so no
+// edits can arrive between that save and the freeze. The restore engine stops the backups and closes the database next.
 async function enterMaintenance() {
   maintenance = true;
   for (const ws of wss.clients) {
@@ -340,7 +342,6 @@ async function enterMaintenance() {
   chatRetention?.stop();
   chatNotifier?.stop();
   closeChat();
-  saveAllRooms();
   roomsFrozen = true;
   for (const room of rooms.values()) {
     clearTimeout(room.saveTimer);
@@ -363,8 +364,6 @@ class Room {
     this.kind = parseRoom(name).kind;
     this.file = path.join(DATA_DIR, `${name}.yjs`);
     this.doc = new Y.Doc({ gc: true });
-    this.awareness = new awarenessProtocol.Awareness(this.doc);
-    this.awareness.setLocalState(null);
     /** @type {Map<import('ws').WebSocket, Set<number>>} */
     this.conns = new Map();
     this.saveTimer = null;
@@ -372,27 +371,21 @@ class Room {
     this.dirty = false;
     this.firstUnsavedAt = null;
 
-    if (fs.existsSync(this.file)) {
-      // A file that cannot be read now (EIO, EMFILE) throws: the room does not open, so nothing overwrites the file.
-      const saved = fs.readFileSync(this.file);
+    try {
+      let saved;
       try {
-        Y.applyUpdate(this.doc, saved);
+        saved = fs.readFileSync(this.file);
       } catch (err) {
-        // A file that cannot be decoded is set aside before the room starts empty, as history.mjs does with an index:
-        // the next save would otherwise replace it. People who still have the board offline bring it back by syncing.
-        log(`room ${name}: the saved state is unreadable and was set aside`, err?.message);
-        try {
-          fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
-        } catch (renameErr) {
-          throw new Error(`room ${name}: could not set aside an unreadable file (${renameErr?.message})`);
-        }
-        this.awareness.destroy();
-        this.doc.destroy();
-        this.doc = new Y.Doc({ gc: true });
-        this.awareness = new awarenessProtocol.Awareness(this.doc);
-        this.awareness.setLocalState(null);
+        if (err?.code !== 'ENOENT') throw err;
       }
+      if (saved) Y.applyUpdate(this.doc, saved);
+    } catch (err) {
+      // Keep unreadable state in place: an empty replacement would hide it from backups and image retention.
+      this.doc.destroy();
+      throw err;
     }
+    this.awareness = new awarenessProtocol.Awareness(this.doc);
+    this.awareness.setLocalState(null);
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
@@ -1151,11 +1144,11 @@ const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
-  saveAllRooms();
+  let saved = saveAllRooms();
   if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
     await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
     // people were still editing while it ran
-    saveAllRooms();
+    saved = saveAllRooms();
   }
   const stopping = backup?.stop();
   restore?.stop();
@@ -1166,7 +1159,7 @@ async function stopRelay() {
   if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
   closeChat();
   directory?.close();
-  process.exit(0);
+  process.exit(saved ? 0 : 1);
 }
 // Every way in shares one run, so a second signal while it winds down changes nothing.
 let shuttingDown = null;
