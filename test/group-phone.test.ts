@@ -36,15 +36,14 @@ describe('group chips beside an open tray (phone width)', () => {
 });
 
 describe('Undo and Redo on a phone rail', () => {
-  it('are one box at the foot of the rail, which sticks to the bottom while the rail scrolls', () => {
+  it('sit below the scrolling tools as a separate box', () => {
     expect(board).toMatch(/class: 'rail-end'[\s\S]*?'aria-label': 'Undo'[\s\S]*?'aria-label': 'Redo'/);
-    const rule = phoneBlock(styles).split('\n').find((l) => l.includes('.rail-end {')) ?? '';
-    expect(rule).toMatch(/position:\s*sticky/);
-    expect(rule).toMatch(/bottom:\s*0/);
-    expect(rule).toMatch(/background:\s*var\(--tray\)/);
+    expect(board).toMatch(/class: 'rail-tools'[\s\S]*?pollBtn,[\s\S]*?class: 'rail-end'/);
+    expect(styles).toMatch(/\.rail-tools\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
+    expect(styles).not.toMatch(/\.rail-end\s*\{[^}]*position:\s*sticky/);
   });
-  it('do not change the rail on a wide screen', () => {
-    expect(styles).toMatch(/\.rail-end \{ display: contents; \}/);
+  it('flattens the wrappers on a tall wide screen', () => {
+    expect(styles).toMatch(/\.rail-tools, \.rail-end \{ display: contents; \}/);
   });
 });
 
