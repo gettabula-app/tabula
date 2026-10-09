@@ -65,4 +65,17 @@ describe('stylesheets', () => {
     const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
     expect(css).toMatch(/\.stickers \.input:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--signal\)/);
   });
+
+  it('keep swatch colours and mark selected things with an outline in forced colours', () => {
+    const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
+    const block = css.slice(css.indexOf('@media (forced-colors: active)'));
+    expect(block).toMatch(/\.swatch[^{]*\{[^}]*forced-color-adjust:\s*none/);
+    expect(block).toMatch(/\.swatch\.on[^{]*\{[^}]*outline:[^}]*Highlight/);
+  });
+
+  it('leave pinch zoom to the browser everywhere except on the canvas', () => {
+    const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
+    expect(css).not.toMatch(/\.board-root\s*\{[^}]*touch-action/);
+    expect(css).toMatch(/\.board-surface,\s*\.canvas\s*\{\s*touch-action:\s*none/);
+  });
 });

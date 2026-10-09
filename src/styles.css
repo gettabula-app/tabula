@@ -60,7 +60,9 @@ hr { border: 0; }
 
 /* ------------------------------------------------------------- board */
 
-.board-root { position: fixed; inset: 0; overflow: hidden; background: var(--canvas); touch-action: none; }
+.board-root { position: fixed; inset: 0; overflow: hidden; background: var(--canvas); }
+/* only the canvas takes touch gestures itself; elsewhere the browser's pinch zoom stays available */
+.board-surface, .canvas { touch-action: none; }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--graphite); }
 .board-surface { position: absolute; inset: 0; }
 .canvas { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; }
@@ -403,7 +405,7 @@ select.input {
 .menu-item > span:not([class]) { flex: 1; }
 .menu-hint { color: var(--tray-muted); font-size: 12px; }
 
-.font-picker { width: 340px; display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; max-height: min(620px, calc(100vh - 32px)); }
+.font-picker { width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; max-height: min(620px, calc(100vh - 32px)); }
 .font-picker .pop-head { padding: 12px 0 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { height: 26px; padding: 0 10px; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--tray-text) 6%, transparent); font-size: 12px; font-weight: 500; }
@@ -545,3 +547,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
 .readonly-badge.show { display: inline-flex; }
 .rail-btn:disabled:hover { background: transparent; }
 .flowbar .flow-step:disabled { opacity: 1; cursor: default; }
+
+/* Windows high contrast: colours the page sets are replaced by the system's, which would blank the colour swatches and drop
+   every selection drawn with a box-shadow or a fill. Swatches keep their colour; selected things get an outline. */
+@media (forced-colors: active) {
+  .swatch, .sticky-swatch .note, .theme-preview, .avatar, .remote-cursor span, .comment-avatar { forced-color-adjust: none; }
+  .swatch.on, .tile.on, .font-row.on, .segmented button.on, .chip.on, .icon-btn.on, .rail-btn.on, .dot-presets button.on,
+  .menu-item[aria-checked='true'], .combo-opt[aria-selected='true'], .history-row.on { outline: 2px solid Highlight; outline-offset: -2px; }
+}
