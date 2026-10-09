@@ -16,6 +16,12 @@ Select **Share** at the top right of a board (or the sync status next to the boa
 - With sign-in, the dialog tells you that only people with access can open the link. Send the link to people who already have access.
 - If you own the board (workspace owners and admins count as owners of every board), the dialog also has a **People with access** list. See [Give a person or team a role](#give-a-person-or-team-a-role).
 
+### Join a board with a code
+
+Your server can turn on join codes (it is off by default; ask whoever runs the server). Then an **Owner** or **Editor** sees **Join code** in the **Share** dialog. Choose the guest's role (**Commenter** or **Editor**), how long the code lasts (3 hours by default, up to 24) and how many people can use it (100 by default, up to 1,000), then create it. The code is shown once, with a link to copy: keep it private, because anyone who has it can join until it expires or is revoked.
+
+A guest opens the link, types a display name and joins that one board without an account. They can reach nothing else in the workspace. Guests are marked **Guest** next to their names in presence and comments. Select **Revoke** on a code to end it and every guest session made from it. If join codes are turned off on the server, guests are signed out.
+
 ### Give a person or team a role
 
 1. Open **Share** on the board.
