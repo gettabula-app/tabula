@@ -15,3 +15,4 @@ tabula-review/
 # npm only: lockfiles of other package managers must not come back
 pnpm-lock.yaml
 yarn.lock
+test-results.json
