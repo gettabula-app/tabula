@@ -73,8 +73,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       label = 'Saved on this device';
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
     } else if (s === 'denied') {
-      label = app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
-      tip = 'The server refused this connection. Your changes are still saved on this device.';
+      const restoring = app.conn.denied === 'restoring';
+      label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = restoring
+        ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
+        : 'The server refused this connection. Your changes are still saved on this device.';
     }
     status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
     status.dataset.tip = tip;

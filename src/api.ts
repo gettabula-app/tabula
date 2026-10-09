@@ -1,4 +1,5 @@
 import type { TemplateContent, TemplateScope } from './custom-templates';
+import { isRestoringAnswer } from './ui/backups-logic';
 
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';
@@ -237,6 +238,101 @@ export interface AuditPage {
   next: number | null;
 }
 
+// Backups and restore (docs/backups.md, "Routes" and "In the app"). Owner only.
+
+/** One backup in the list. A backup that cannot be read has `readable: false` and `error`, and no counts. */
+export interface BackupSummary {
+  name: string;
+  createdAt: number | null;
+  protected: boolean;
+  protectedUntil: number | null;
+  readable: boolean;
+  files?: number;
+  bytes?: number;
+  keyId?: string;
+  error?: string;
+}
+
+/** The backup engine's own status, as the owner sees it: times in ms since the epoch, null when not known yet. */
+export interface BackupEngineStatus {
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastFailureError: string | null;
+  consecutiveFailures: number | null;
+  nextRunAt: number | null;
+  running: boolean | null;
+  intervalMinutes: number | null;
+  keyId: string | null;
+  bytesStored: number | null;
+  objects: number | null;
+  manifests: number | null;
+}
+
+export interface RestoreRecord {
+  kind: 'workspace' | 'board';
+  result: 'done' | 'failed';
+  at: number | null;
+  manifest: string | null;
+  error?: string;
+  files?: number;
+  bytes?: number;
+  boards?: number;
+  keepOldFor?: string;
+}
+
+export interface RestoreStatus {
+  inProgress: null | 'workspace' | 'board';
+  maintenance: boolean;
+  last: RestoreRecord | null;
+  protectedBackups: { manifest: string; until: number }[];
+  oldData: { name: string; restoredAt: number; keepOldFor: string }[];
+}
+
+export interface BackupList {
+  backups: BackupSummary[];
+  truncated: boolean;
+  status: BackupEngineStatus;
+  restore: RestoreStatus;
+}
+
+/** What restoring one backup would do, before anything is downloaded. */
+export interface BackupPreview {
+  name: string;
+  createdAt: number | null;
+  appVersion: string | null;
+  keyId: string;
+  files: number;
+  bytes: number;
+  boards: number;
+  protected: boolean;
+  confirmWord: string;
+  keepOldFor: string;
+  reason: string;
+  space: { needed: number; free: number; enough: boolean };
+}
+
+export interface BackupBoard {
+  id: string;
+  title: string;
+  teamId: string | null;
+  teamName: string | null;
+  deleted: boolean;
+}
+
+export interface BackupBoards {
+  boards: BackupBoard[];
+  truncated: boolean;
+}
+
+export interface BoardCopy {
+  ok: true;
+  boardId: string;
+  title: string;
+  teamId: string | null;
+  fallback?: 'personal';
+  message?: string;
+}
+
 export type VersionKind = 'auto' | 'named' | 'pre-restore' | 'restore';
 
 /** One saved version of a board (docs/history.md). */
@@ -290,12 +386,15 @@ export interface TemplateInput {
 export class ApiError extends Error {
   status: number;
   code: string;
+  /** The plain facts an error answer carries besides its code and message (`needed` and `free` bytes, `retryAfter` seconds). */
+  facts: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, facts: Record<string, unknown> = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.facts = facts;
   }
 }
 
@@ -307,6 +406,10 @@ const REQUEST_TIMEOUT_MS = 8000;
 const BYTES_TIMEOUT_MS = 30000;
 /** A template can be a megabyte, and it travels in both directions. */
 const TEMPLATE_TIMEOUT_MS = 30000;
+/** Reading a bucket (a listing, a preview, the boards of a backup, a board copy) is many requests behind one. */
+const BACKUP_TIMEOUT_MS = 60000;
+/** A whole restore answers only after the safety backup, the download and the checks. */
+const RESTORE_TIMEOUT_MS = 10 * 60000;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
@@ -319,7 +422,39 @@ function failure(res: Response, body: Body): ApiError {
   const fields: Record<string, unknown> = body.valid && isRecord(body.data) ? body.data : {};
   const code = typeof fields.error === 'string' ? fields.error : 'unknown';
   const message = typeof fields.message === 'string' ? fields.message : code;
-  return new ApiError(res.status, code, message);
+  const facts: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'error' || key === 'message') continue;
+    if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.length <= 200)) facts[key] = value;
+  }
+  const wait = Number(res.headers?.get('retry-after'));
+  if (Number.isFinite(wait) && wait > 0) facts.retryAfter = wait;
+  return new ApiError(res.status, code, message, facts);
+}
+
+export interface ApiOptions {
+  /** Called when the server answers 503 `{error: 'restoring'}`: a restore has taken the workspace over. */
+  onRestoring?: () => void;
+}
+
+const restoringListeners = new Set<() => void>();
+
+/** Hears of every answer, from the shared client, that says a restore is running (the app shows its restoring screen). */
+export function onRestoring(fn: () => void): () => void {
+  restoringListeners.add(fn);
+  return () => {
+    restoringListeners.delete(fn);
+  };
+}
+
+function announceRestoring(): void {
+  for (const fn of restoringListeners) {
+    try {
+      fn();
+    } catch (err) {
+      console.error('restoring listener failed:', err);
+    }
+  }
 }
 
 async function readBody(res: Response): Promise<Body> {
@@ -340,7 +475,22 @@ async function readBody(res: Response): Promise<Body> {
 // A 10 MB image on a slow connection.
 const ASSET_TIMEOUT_MS = 120_000;
 
-export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
+
+export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options: ApiOptions = {}) {
+  const restoring = options.onRestoring ?? announceRestoring;
+
+  /** An error answer as an ApiError. Only the code `restoring` on a 503 tells the app a restore is running. */
+  function reject(res: Response, body: Body): ApiError {
+    if (body.valid && isRestoringAnswer(res.status, body.data)) {
+      try {
+        restoring();
+      } catch {
+        /* the listener must not change the error the caller sees */
+      }
+    }
+    return failure(res, body);
+  }
+
   async function call<T>(method: Method, path: string, payload?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (method !== 'GET') headers['x-tabula'] = '1';
@@ -358,7 +508,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
       throw new ApiError(0, 'network', 'network');
     }
     const body = await readBody(res);
-    if (!res.ok) throw failure(res, body);
+    if (!res.ok) throw reject(res, body);
     if (!body.valid) throw new ApiError(res.status, 'unknown', 'unknown');
     return body.data as T;
   }
@@ -389,7 +539,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     } catch {
       throw new ApiError(0, 'network', 'network');
     }
-    if (!res.ok) throw failure(res, await readBody(res));
+    if (!res.ok) throw reject(res, await readBody(res));
     try {
       return new Uint8Array(await res.arrayBuffer());
     } catch {
@@ -497,6 +647,14 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a)) {
     restoreBoard: (id: string) => call<void>('POST', `/api/admin/boards/${seg(id)}/restore`),
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),
+
+    adminBackups: () => call<BackupList>('GET', '/api/admin/backups', undefined, BACKUP_TIMEOUT_MS),
+    adminBackup: (name: string) => call<BackupPreview>('GET', `/api/admin/backups/${seg(name)}`, undefined, BACKUP_TIMEOUT_MS),
+    adminBackupBoards: (name: string) => call<BackupBoards>('GET', `/api/admin/backups/${seg(name)}/boards`, undefined, BACKUP_TIMEOUT_MS),
+    restoreBackupBoard: (manifest: string, boardId: string) =>
+      call<BoardCopy>('POST', '/api/admin/backups/restore-board', { manifest, boardId }, BACKUP_TIMEOUT_MS),
+    restoreBackup: (manifest: string, confirm: string) =>
+      call<{ ok: true; restarting: true; keepOldFor: string }>('POST', '/api/admin/backups/restore', { manifest, confirm }, RESTORE_TIMEOUT_MS),
   };
 }
 

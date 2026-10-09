@@ -34,7 +34,7 @@ describe('the shared lists', () => {
 
   it('puts an AI tab in the admin dashboard, before the audit log', () => {
     expect(ADMIN_TABS).toContain('ai');
-    expect(ADMIN_TABS.indexOf('ai')).toBe(ADMIN_TABS.indexOf('audit') - 1);
+    expect(ADMIN_TABS.indexOf('ai')).toBeLessThan(ADMIN_TABS.indexOf('audit'));
   });
 
   it('tells the person that board content leaves the instance', () => {

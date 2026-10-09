@@ -9,6 +9,7 @@ import { renderTemplates } from './ui/templates-page';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
+import { showRestoring } from './ui/restoring';
 import { loadCatalogue } from './fonts';
 import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
 import { getTemplate } from './template-store';
@@ -18,7 +19,7 @@ import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
-import { ApiError, api, type ServerBoard } from './api';
+import { ApiError, api, onRestoring, type ServerBoard } from './api';
 import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
@@ -29,6 +30,8 @@ import type { Desktop } from './desktop';
 
 applyTheme(getStoredTheme());
 installTooltips();
+// Any answer of the server that says a restore is running (503 restoring) puts the restoring screen up.
+onRestoring(() => showRestoring());
 
 const RETURN_KEY = 'driftboard:return';
 

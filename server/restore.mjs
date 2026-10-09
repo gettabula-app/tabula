@@ -40,6 +40,10 @@ const PROTECT_MS = PROTECT_DAYS * DAY_MS;
 const WORKSPACE_INTERVAL_MS = 10 * MINUTE_MS;
 const BOARD_WINDOW_MS = 10 * MINUTE_MS;
 const BOARD_MAX_PER_WINDOW = 10;
+const BOARDS_LIST_WINDOW_MS = MINUTE_MS;
+const BOARDS_LIST_MAX_PER_WINDOW = 20;
+const BOARDS_LISTED_MAX = 500;
+const TEAM_NAME_MAX = 80;
 const SPACE_MARGIN_BYTES = 64 * MIB;
 const FULL_RATIO = 0.8;
 const EXIT_GRACE_MS = 5000;
@@ -518,6 +522,7 @@ export function createRestore({
   let maintenance = false;
   let lastWholeAt = -Infinity;
   let boardStarts = /** @type {number[]} */ ([]);
+  const boardListStarts = /** @type {Map<string, number[]>} */ (new Map());
   let sweepTimer = null;
   let sweeping = false;
   let stopped = false;
@@ -1157,9 +1162,20 @@ export function createRestore({
 
   // ------------------------------------------------------------ one board, as a copy
 
-  const cleanTitle = (value) => {
+  const cleanLabel = (value, fallback) => {
     const text = String(value ?? '').replace(/[\p{Cc}\u2028\u2029]/gu, ' ').replace(/\s+/g, ' ').trim();
-    return text || 'Untitled board';
+    return text || fallback;
+  };
+  const cleanTitle = (value) => cleanLabel(value, 'Untitled board');
+
+  /** At most `max` UTF-16 units, never cutting a character in half. */
+  const cutText = (text, max) => {
+    let kept = '';
+    for (const character of text) {
+      if (kept.length + character.length > max) break;
+      kept += character;
+    }
+    return kept.trim();
   };
 
   // The directory cuts a title at 200 UTF-16 units, so the copy is cut before that and the date at the end survives.
@@ -1341,7 +1357,9 @@ export function createRestore({
     }
   }
 
-  async function findBoardRow(databaseFile, boardId) {
+
+  /** Opens a database from a backup read-only, runs the checks every restore object gets, and hands it to `read`. */
+  async function withBackupDatabase(databaseFile, read) {
     const { MIGRATIONS } = await import('./directory.mjs');
     const { DatabaseSync } = await import('node:sqlite');
     try {
@@ -1352,13 +1370,98 @@ export function createRestore({
         const version = Number(db.prepare('PRAGMA user_version').get().user_version);
         if (version < 1) throw new RestoreError('invalid_backup', 'The database in the backup is not a Tabula database');
         if (version > MIGRATIONS.length) throw new RestoreError('schema_too_new', `The database in the backup was written by a newer Tabula. ${NEWEST_SCHEMA_HINT}`);
-        return db.prepare('SELECT title, team_id FROM boards WHERE id = ?').get(boardId) ?? null;
+        return read(db);
       } finally {
         db.close();
       }
     } catch (err) {
       if (err instanceof RestoreError) throw err;
       throw new RestoreError('integrity_check_failed', 'The database in the backup cannot be read, so nothing was changed');
+    }
+  }
+
+  const findBoardRow = (databaseFile, boardId) =>
+    withBackupDatabase(databaseFile, (db) => db.prepare('SELECT title, team_id FROM boards WHERE id = ?').get(boardId) ?? null);
+
+  // ------------------------------------------------------------ the boards inside one backup
+
+  /**
+   * The boards of one backup that have saved content in it (so each can be restored), most recently edited first, at
+   * most 500. Only the backup's database is downloaded, verified like any other restore object, and read from a
+   * temporary copy that is deleted again whatever happens. Reading is not restoring: nothing is recorded as a restore,
+   * and the audit row (written by the caller) holds a count, never a title or an id. At most 20 reads a minute per owner.
+   * @param {string} name
+   * @param {Actor} actor
+   */
+  async function listBoardsInBackup(name, actor) {
+    if (typeof name !== 'string' || parseManifestName(name) === null) throw new RestoreError('bad_request', 'manifest must be the name of a backup');
+    if (!actor || typeof actor.id !== 'string') throw new RestoreError('forbidden', 'Only the workspace owner can read a backup');
+    if (busy || maintenance) throw new RestoreError('restore_in_progress', 'A restore is already running');
+    const startedAt = now();
+    const recent = (boardListStarts.get(actor.id) ?? []).filter((t) => t > startedAt - BOARDS_LIST_WINDOW_MS);
+    if (recent.length >= BOARDS_LIST_MAX_PER_WINDOW) {
+      boardListStarts.set(actor.id, recent);
+      throw new RestoreError('rate_limited', 'The boards of backups were read too often in the last minute. Try again in a moment', { retryAfter: Math.max(1, Math.ceil((recent[0] + BOARDS_LIST_WINDOW_MS - startedAt) / 1000)) });
+    }
+    recent.push(startedAt);
+    boardListStarts.set(actor.id, recent);
+    let stagingDir = null;
+    try {
+      const manifest = await readManifestChecked(name);
+      const plan = planFromManifest(manifest);
+      const index = manifest.files.findIndex((f) => f.path === 'directory.sqlite');
+      const entry = manifest.files[index];
+      const where = ` (file ${index + 1} of ${plan.files})`;
+      const vol = await volume();
+      const needed = 2 * entry.size + SPACE_MARGIN_BYTES;
+      if (vol.free < needed) throw new RestoreError('not_enough_space', 'There is not enough free disk space to read this backup, so nothing was changed', { needed, free: vol.free });
+      let data;
+      try {
+        data = await backup.readObject(entry.objectId);
+      } catch (err) {
+        throw fromBackupError(err, where);
+      }
+      if (data.length !== entry.size) throw new RestoreError('size_mismatch', `A file in the backup is not the size its manifest says${where}`);
+      stagingDir = path.join(dataDir, `.restore-${crypto.randomBytes(8).toString('hex')}`);
+      fs.mkdirSync(stagingDir, { mode: 0o700 });
+      const databaseFile = path.join(stagingDir, 'directory.sqlite');
+      writeFileDurable(databaseFile, data);
+      const withContent = new Set(manifest.files.filter((f) => ROOM_FILE_RE.test(f.path) && !f.path.endsWith('~comments.yjs')).map((f) => f.path.slice(0, -'.yjs'.length)));
+      return await withBackupDatabase(databaseFile, (db) => {
+        const rows = db
+          .prepare('SELECT b.id AS id, b.title AS title, b.team_id AS team_id, b.deleted_at AS deleted_at, t.name AS team_name FROM boards b LEFT JOIN teams t ON t.id = b.team_id ORDER BY b.updated_at DESC, b.id')
+          .iterate();
+        const boards = [];
+        let truncated = false;
+        for (const row of rows) {
+          if (typeof row.id !== 'string' || !withContent.has(row.id)) continue;
+          if (boards.length >= BOARDS_LISTED_MAX) {
+            truncated = true;
+            break;
+          }
+          boards.push({
+            id: row.id,
+            title: cutText(cleanTitle(row.title), TITLE_MAX),
+            teamId: typeof row.team_id === 'string' && BOARD_ID_RE.test(row.team_id) ? row.team_id : null,
+            teamName: typeof row.team_name === 'string' ? cutText(cleanLabel(row.team_name, 'Team'), TEAM_NAME_MAX) : null,
+            deleted: row.deleted_at !== null && row.deleted_at !== undefined,
+          });
+        }
+        return { boards, truncated };
+      });
+    } catch (err) {
+      const failure = err instanceof RestoreError ? err : fromBackupError(err);
+      say(`could not list the boards of a backup (${describe(failure)})`);
+      if (failure instanceof RestoreError) throw failure;
+      throw new RestoreError('restore_failed', 'The boards of this backup could not be listed. See the server log');
+    } finally {
+      if (stagingDir) {
+        try {
+          removeTree(stagingDir);
+        } catch {
+          /* the next start removes it by name */
+        }
+      }
     }
   }
 
@@ -1468,6 +1571,7 @@ export function createRestore({
   return {
     listBackups,
     previewManifest,
+    listBoardsInBackup,
     restoreBoardCopy,
     restoreWorkspace,
     recoverOnStart: () => recoverOnStart({ dataDir, log: say, step }),

@@ -4,6 +4,7 @@ import { setSignedOut, signOut } from '../auth';
 import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logic';
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { aiAdminPanel } from './ai';
+import { backupsAdminPanel } from './backups';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
 import { tokensAdminPanel } from './tokens';
@@ -20,6 +21,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   sessions: 'Sessions',
   tokens: 'Access tokens',
   ai: 'AI',
+  backups: 'Backups',
   audit: 'Audit log',
 };
 
@@ -649,13 +651,14 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   sessions: () => sessionsPanel(),
   tokens: (me) => tokensAdminPanel(me, { head, loadList, change, armable, emptyLine }),
   ai: () => aiAdminPanel({ head, loadList, change, armable, emptyLine }),
+  backups: (me) => backupsAdminPanel(me, { head, loadList, change, armable, emptyLine }),
   audit: () => auditPanel(),
 };
 
 /** The admin dashboard. The caller has checked that `me` is an owner or admin. */
 export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): void {
   document.title = 'Admin - Tabula';
-  const tabs = visibleAdminTabs(ADMIN_TABS, me.mcp);
+  const tabs = visibleAdminTabs(ADMIN_TABS, me.mcp, me.user.role);
   const tab = tabs.includes(requested) ? requested : 'overview';
   clearTimeout(statusTimer);
   statusLine = h('p', { class: 'admin-status', role: 'status', 'aria-live': 'polite' });

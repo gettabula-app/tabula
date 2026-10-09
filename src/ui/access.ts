@@ -1,5 +1,6 @@
 import './access.css';
 import { h, icon } from './dom';
+import { showRestoring } from './restoring';
 import type { BoardConn, DeniedReason } from '../sync';
 
 interface AccessHandlers {
@@ -8,14 +9,17 @@ interface AccessHandlers {
   onHome: () => void;
 }
 
-const TEXT: Record<DeniedReason, string> = {
+const TEXT: Record<Exclude<DeniedReason, 'restoring'>, string> = {
   unauthenticated: 'Your session has ended. Sign in again to keep syncing this board.',
   no_access: "You don't have access to this board.",
   not_found: "This board doesn't exist on the server.",
   access_removed: 'Your access to this board was removed. Your copy on this device is still here.',
 };
 
-/** Shows why the relay stopped syncing this board. Local data is never removed here. */
+/**
+ * Shows why the relay stopped syncing this board. Local data is never removed here. A restore (close code 4503) is not
+ * a refusal: the restoring screen takes over, waits for the server and reloads.
+ */
 export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: AccessHandlers): () => void {
   let banner: HTMLElement | null = null;
   const dismiss = () => {
@@ -24,6 +28,10 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
   };
   const unsubscribe = conn.onDenied((reason) => {
     dismiss();
+    if (reason === 'restoring') {
+      showRestoring();
+      return;
+    }
     banner = renderBanner(reason, handlers, dismiss);
     root.appendChild(banner);
   });
@@ -33,7 +41,7 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
   };
 }
 
-function renderBanner(reason: DeniedReason, handlers: AccessHandlers, dismiss: () => void): HTMLElement {
+function renderBanner(reason: Exclude<DeniedReason, 'restoring'>, handlers: AccessHandlers, dismiss: () => void): HTMLElement {
   const actions: HTMLElement[] = [];
   switch (reason) {
     case 'unauthenticated':

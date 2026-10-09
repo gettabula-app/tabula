@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `templates`, `settings`, and in accounts mode `admin` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `templates`, `settings`, and in accounts mode `admin` and the six `backups-` states below |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -34,7 +34,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | `--frameable` | off | Starts the throwaway relay with `TABULA_DEV_ALLOW_FRAMING=1` (see below) |
 | `--help` | | Prints the options |
 
-The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths) and about 70 seconds on a laptop, 180 shots in accounts mode.
+The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths) and about 70 seconds on a laptop, 360 shots in accounts mode (12 states).
 
 ## States
 
@@ -46,8 +46,14 @@ The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths)
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |
+| `backups-list` | `#/admin/backups`: the status and the list of seven backups (two protected, two unreadable). Accounts mode; the backup routes are answered with fixed data and the shot is the whole page |
+| `backups-detail` | The first backup opened in place: facts, free space, how long the old data is kept, the two actions (whole page) |
+| `backups-board-copy` | **Restore a board as a copy**: the boards of the backup with one picked (whole page) |
+| `backups-confirm` | **Restore the whole workspace**: what will happen and the word to type, the button still off (whole page) |
+| `backups-restoring` | The **Restoring…** screen after the restore was accepted (the fixed data keeps `/api/health` saying `restoring`) |
+| `backups-off` | The Backups tab on a server without backups (the throwaway relay itself answers `backups_off`) |
 
-A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause.
+A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`).
 
 ## What the script does
 

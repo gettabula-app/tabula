@@ -44,7 +44,7 @@ GET  /api/admin/audit?limit=50&before=<id>&action=<prefix>
   (`limit` 1..200, default 50; `before` pages by `id` descending; `action` matches by prefix, e.g. `board.` or `member.update`; `next` is the id to pass as `before`, null at the end. `actorName`/`actorEmail` are null for system rows or deleted users.)
 ```
 
-Backups (workspace **owner** only, not admins; the screen for them comes later): `GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` and `POST /api/admin/backups/restore` list the backups, preview one, restore one board as a copy and restore the whole workspace. They follow the same API rules (CSRF header on the POSTs, an audit row for each call), answer `409 backups_off` when backups are not set up, and are described in [backups.md](backups.md#restoring).
+Backups (workspace **owner** only, not admins; the **Backups** tab): `GET /api/admin/backups` (the list and the engine's status), `GET /api/admin/backups/:name`, `GET /api/admin/backups/:name/boards` (the boards inside one backup), `POST /api/admin/backups/restore-board` and `POST /api/admin/backups/restore` list the backups, preview one, list its boards, restore one board as a copy and restore the whole workspace. They follow the same API rules (CSRF header on the POSTs, an audit row for each call), answer `409 backups_off` when backups are not set up, and are described in [backups.md](backups.md#restoring).
 
 Teams: the dashboard uses the existing `GET /api/teams` (workspace admins already see every team, including archived) and `PATCH /api/teams/:id {archived}`.
 
@@ -60,13 +60,14 @@ export interface AdminBoard { id; title; ownerId; ownerName; teamId: string | nu
 export interface AuditEntry { id: number; ts: number; actorId: string | null; actorName: string | null; actorEmail: string | null; action: string; detail: Record<string, unknown> }
 ```
 
-Layout (Swiss, symmetric padding, theme variables only, no new colours): a full-page screen with a top bar (back to home, "Admin", signed-in person) and a left tab list: **Overview**, **Members**, **Teams**, **Boards**, **Sessions**, **Audit log**. The selected tab is part of the hash (`#/admin/members`), so reload and back work.
+Layout (Swiss, symmetric padding, theme variables only, no new colours): a full-page screen with a top bar (back to home, "Admin", signed-in person) and a left tab list: **Overview**, **Members**, **Teams**, **Boards**, **Sessions**, **Access tokens** (when AI tool access is on), **AI**, **Backups** (owners only) and **Audit log**. The selected tab is part of the hash (`#/admin/members`), so reload and back work.
 
 - **Overview**: stat tiles (members by role, disabled members, teams, boards, active sessions, sign-ins in 7 days, live connections; members, teams and boards count everything, with the disabled, archived or deleted part on the line under the number) and an instance card (base URL, mail mode, version).
 - **Members**: searchable table (name, email, role select, last seen, active sessions, boards, teams). Row actions: change role, disable/enable, sign out everywhere, remove (second-click confirmation, like comment delete). The controls the server would refuse (acting on an owner as a non-owner, the last owner) are disabled with a title explaining why.
 - **Teams**: all teams (name, members, archived badge) with archive/unarchive.
 - **Boards**: searchable table with a "Show deleted" toggle; open, delete (confirm), restore.
 - **Sessions**: table with revoke per row; the current session is marked and its revoke button is labelled "Sign out".
+- **Backups** (owners only, listed for every owner also when backups are off): the state of the backup engine, the list of backups, one backup in detail, a board restored as a copy, the whole workspace restored, and the screen that waits for the server to come back. `src/ui/backups.ts` (+ `backups-logic.ts`, `backups.css`), the restoring screen in `src/ui/restoring.ts`. See [backups.md](backups.md#in-the-app).
 - **Audit log**: newest first, action filter (All, Members, Teams, Boards, Templates, Invites, Sign-ins, Sessions: revoked sessions and sign-outs everywhere), "Load more" using `next`. Each entry reads as a sentence (for example "ana@example.com changed owner@… to admin") built from `action` and `detail`, with the raw action as a tooltip; unknown actions fall back to the raw action string.
 
 All lists show an empty state and an error state with Retry. Mutations update the row in place and toast the outcome. Non-admins who open `#/admin` are sent home.

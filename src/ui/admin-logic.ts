@@ -347,7 +347,10 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
   ];
 }
 
-/** Admin sections to show: Access tokens only when AI tool access is on for this server. */
-export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined): T[] {
-  return tabs.filter((t) => t !== 'tokens' || mcp === true);
+/**
+ * Admin sections to show: Access tokens only when AI tool access is on for this server, and Backups only to owners (the
+ * routes behind it refuse admins). Backups is listed for every owner, also when backups are off: the tab then says so.
+ */
+export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined): T[] {
+  return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner'));
 }
