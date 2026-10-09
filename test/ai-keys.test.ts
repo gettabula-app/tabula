@@ -143,15 +143,23 @@ describe('the configuration', () => {
     expect(() => loadConfig({ ...env, TABULA_AI_BASE_URL: 'https://api.example.com/v1', TABULA_AI_MODEL: 'a b' }, () => {})).toThrow('TABULA_AI_MODEL');
   });
 
-  it('refuses an address for Anthropic, and ignores the OpenAI-compatible variables in accounts mode with a warning', () => {
+  it('refuses an address for Anthropic in open mode', () => {
     expect(() => loadConfig({ TABULA_AI_BASE_URL: 'https://api.example.com/v1' }, () => {})).toThrow('applies to TABULA_AI_PROVIDER=openai-compatible only');
-    const warned: string[] = [];
-    const config = loadConfig(
-      { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'o@example.com', TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_BASE_URL: 'https://api.example.com/v1', TABULA_AI_MODEL: 'm-1' },
-      (m: string) => warned.push(m),
-    );
-    expect(config.ai.open).toBeNull();
-    expect(warned.join('\n')).toContain('ignored in accounts mode');
+  });
+
+  it('ignores the OpenAI-compatible variables in accounts mode with a warning, whatever they hold, and still starts', () => {
+    for (const env of [
+      { TABULA_AI_PROVIDER: 'openai-compatible' },
+      { TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_BASE_URL: 'not a url', TABULA_AI_MODEL: 'a b' },
+      { TABULA_AI_BASE_URL: 'https://api.example.com/v1' },
+    ]) {
+      const warned: string[] = [];
+      const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'o@example.com', ...env }, (m: string) => warned.push(m));
+      expect(config.ai.open).toBeNull();
+      expect(config.ai.baseUrl).toBeNull();
+      expect(config.ai.model).toBe('claude-opus-5-5');
+      expect(warned.join('\n')).toContain('ignored for OpenAI-compatible providers in accounts mode');
+    }
   });
 
   it('checks the provider and the model', () => {

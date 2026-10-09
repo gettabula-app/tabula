@@ -101,15 +101,18 @@ function loadAi(env, authEnabled, warn) {
   // An OpenAI-compatible provider has no fixed list of models and no fixed address: the operator names both (docs/ai.md).
   let model;
   let baseUrl = null;
-  if (provider === 'openai-compatible') {
+  if (provider === 'openai-compatible' && !authEnabled) {
     const url = checkBaseUrl(env.TABULA_AI_BASE_URL, { trusted: true });
     if (url.error) throw new Error(`TABULA_AI_BASE_URL is required with TABULA_AI_PROVIDER=openai-compatible: ${url.error.replace(/^baseUrl /, '')}`);
     baseUrl = url.baseUrl;
     const id = checkModelId(env.TABULA_AI_MODEL);
     if (id.error) throw new Error(`TABULA_AI_MODEL is required with TABULA_AI_PROVIDER=openai-compatible: ${id.error.replace(/^model /, '')}`);
     model = id.model;
+  } else if (provider === 'openai-compatible') {
+    // accounts mode: each key carries its own provider, address and model, so these variables are ignored, not even checked
+    model = DEFAULT_MODEL;
   } else {
-    if ((env.TABULA_AI_BASE_URL || '').trim()) throw new Error('TABULA_AI_BASE_URL applies to TABULA_AI_PROVIDER=openai-compatible only');
+    if ((env.TABULA_AI_BASE_URL || '').trim() && !authEnabled) throw new Error('TABULA_AI_BASE_URL applies to TABULA_AI_PROVIDER=openai-compatible only');
     model = (env.TABULA_AI_MODEL || '').trim() || DEFAULT_MODEL;
     if (!MODELS.includes(model)) throw new Error(`TABULA_AI_MODEL must be one of ${MODELS.join(', ')} (got "${model.slice(0, 40)}")`);
   }
@@ -133,7 +136,7 @@ function loadAi(env, authEnabled, warn) {
   } else if (flag === '1') {
     warn('TABULA_AI_OPEN=1 does nothing without TABULA_AI_API_KEY');
   }
-  if (authEnabled && provider === 'openai-compatible') warn('TABULA_AI_PROVIDER, TABULA_AI_BASE_URL and TABULA_AI_MODEL are ignored in accounts mode: each key carries its own provider, address and model');
+  if (authEnabled && (provider === 'openai-compatible' || (env.TABULA_AI_BASE_URL || '').trim())) warn('TABULA_AI_PROVIDER, TABULA_AI_BASE_URL and TABULA_AI_MODEL are ignored for OpenAI-compatible providers in accounts mode: each key carries its own provider, address and model');
   return hide({ provider, model, baseUrl, secret, previous, open }, ['secret', 'previous', 'open']);
 }
 

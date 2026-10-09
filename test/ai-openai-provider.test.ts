@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { describeError } from '../server/ai/errors.mjs';
 import { AiError } from '../server/ai/errors.mjs';
 import { createOpenAiCompatibleProvider, httpsTransport } from '../server/ai/openai-compatible.mjs';
@@ -200,6 +200,50 @@ describe('OpenAI-compatible provider contract', () => {
     expect(error.code).toBe('ai_bad_output');
     expect(error.message).toContain('stronger instruction-following model');
     expect(requests).toBe(2);
+  });
+
+  it.each([
+    ['text with markup and an address', '<script>alert(1)</script> https://evil.example/secret-path'],
+    ['a very long name', `m${'x'.repeat(200)}`],
+    ['an empty name', ''],
+    ['a name with a space', 'two words'],
+    ['a name that is not text', 42],
+  ])('keeps the model the provider names for the run only when it looks like a model id: %s is replaced by the configured model', async (_name, claimed) => {
+    const server = await localServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        model: claimed, choices: [{ message: { content: '{"text":"ok"}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2 },
+      }));
+    });
+    const events = await collect(provider(server.base));
+    expect(events[1].usage.model).toBe(MODEL);
+  });
+
+  it('keeps a model id the provider names when it is one', async () => {
+    const server = await localServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        model: 'moonshotai/kimi-k3-0905', choices: [{ message: { content: '{"text":"ok"}' }, finish_reason: 'stop' }],
+      }));
+    });
+    expect((await collect(provider(server.base)))[1].usage.model).toBe('moonshotai/kimi-k3-0905');
+  });
+
+  it('talks through an agent of its own, never the global one that an environment proxy would take over', async () => {
+    const server = await localServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [] }));
+    });
+    let options: any = null;
+    const realRequest = http.request;
+    const wrapper = vi.spyOn(http, 'request').mockImplementation(((...args: any[]) => {
+      options = args.find((a) => a && typeof a === 'object' && !(a instanceof URL));
+      return realRequest(...(args as Parameters<typeof http.request>));
+    }) as never);
+    try {
+      await httpsTransport({ url: `${server.base}/models`, method: 'GET', headers: {}, body: undefined, signal: undefined, lookup: undefined, trusted: true, timeoutMs: 2000 });
+    } finally {
+      wrapper.mockRestore();
+    }
+    expect(options?.agent).toBeDefined();
+    expect(options.agent).not.toBe(http.globalAgent);
   });
 
   it('maps a missing model to ai_model_invalid', async () => {

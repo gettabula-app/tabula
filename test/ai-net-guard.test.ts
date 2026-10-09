@@ -61,6 +61,11 @@ describe('isPublicAddress', () => {
     ['6to4 for a private address', '2002:0a00:0001::1'],
     ['6to4 for the metadata address', '2002:a9fe:a9fe::1'],
     ['an address below 2000::/3', '1000::1'],
+    ['ORCHIDv2, reserved by the IETF', '2001:20::1'],
+    ['deprecated ORCHID', '2001:10::1'],
+    ['benchmarking space', '2001:2::1'],
+    ['the IETF space, its last address', '2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff'],
+    ['3fff documentation space', '3fff:0:0:1::1'],
     ['a NAT64 address for a private target', '64:ff9b::10.0.0.1'],
     ['an IPv4-mapped metadata address', '::ffff:a9fe:a9fe'],
   ])('refuses %s (%s)', (_name, ip) => {
@@ -70,6 +75,9 @@ describe('isPublicAddress', () => {
   it('accepts 6to4 for a public address, and the unicast ranges of well-known providers', () => {
     expect(isPublicAddress('2002:0808:0808::1')).toBe(true);
     expect(isPublicAddress('2a00:1450:4001:81b::200e')).toBe(true);
+    // the first real allocation after the IETF's own space
+    expect(isPublicAddress('2001:200::1')).toBe(true);
+    expect(isPublicAddress('2001:4860:4860::8844')).toBe(true);
   });
 
   it.each(['not an IP', '256.1.1.1', 'fe80::1%en0', '', '::ffff:999.1.1.1'])('rejects invalid IP text %s', (ip) => {

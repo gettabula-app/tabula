@@ -85,8 +85,11 @@ export function isPublicAddress(ip) {
   // Only global unicast, 2000::/3, can be a public address. That leaves out in one rule the unspecified and loopback
   // addresses, the IPv4-compatible ::a.b.c.d, unique local fc00::/7, link local fe80::/10, multicast and discard 100::/64.
   if (value >> 125n !== 1n) return false;
+  // 2001::/23 is the IETF's own space, not an allocation to anyone: Teredo, benchmarking, ORCHID (2001:10::/28, 2001:20::/28)
+  // and the rest of it. Real allocations start at 2001:200::/23. Documentation, 2001:db8::/32, lies outside it.
+  if (value >> 105n === 0x20010000n >> 9n) return false;
   if (value >> 96n === 0x20010db8n) return false; // documentation, 2001:db8::/32
-  if (value >> 96n === 0x20010000n) return false; // Teredo, 2001::/32, which carries an IPv4 relay and client
+  if (value >> 108n === 0x3fff0n) return false; // documentation, 3fff::/20
   // 6to4, 2002::/16, carries the IPv4 address it stands for in the next 32 bits
   if (value >> 112n === 0x2002n) {
     const v4 = (value >> 80n) & 0xffffffffn;

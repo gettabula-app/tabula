@@ -51,9 +51,12 @@ function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+// the model the provider says answered is text from the network: it is used only when it looks like a model id
+const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$/;
+
 function usageOf(envelope, model) {
   return {
-    model: typeof envelope?.model === 'string' ? envelope.model : model,
+    model: typeof envelope?.model === 'string' && MODEL_ID_RE.test(envelope.model) ? envelope.model : model,
     inputTokens: numberOrZero(envelope?.usage?.prompt_tokens),
     outputTokens: numberOrZero(envelope?.usage?.completion_tokens),
     cacheReadTokens: 0,
@@ -178,7 +181,9 @@ export function httpsTransport({
     }, Math.max(1, timeoutMs));
     timer.unref?.();
 
-    const requestOptions = { method, headers: requestHeaders, signal: controller.signal };
+    // an agent of its own: the global one follows the proxy environment variables when a Node is started with them, and a
+    // proxy would resolve the name itself, past the address guard of this request
+    const requestOptions = { method, headers: requestHeaders, signal: controller.signal, agent: new client.Agent({ keepAlive: false }) };
     if (!trusted) requestOptions.lookup = guardedLookup({ lookup });
     const request = client.request(target, requestOptions, (response) => {
       const chunks = [];
@@ -365,7 +370,7 @@ export function createOpenAiCompatibleProvider({
           }
 
           const answerText = JSON.stringify(value);
-          const answerModel = typeof envelope.model === 'string' ? envelope.model : req.model;
+          const answerModel = usage.model;
           if (containsApiKey(answerText) || containsApiKey(answerModel)) throw new AiError('ai_bad_output');
 
           yield {
