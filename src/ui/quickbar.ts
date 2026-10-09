@@ -20,6 +20,7 @@ import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
+import { groupActionForSelection } from './group-ui-logic';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -124,11 +125,13 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   }
 
   const styleValue = (key: 'fill' | 'stroke') => (): string => {
-    const o = app.selected()[0];
+    const o = app.selectedLeaves()[0];
     // styleOf resolves the stored colour through the colour grammar: it becomes a custom property below (TAB-203)
-    return o ? styleOf(o)[key] : 'none';
+    if (!o) return 'none';
+    if (key === 'stroke' && o.type === 'icon') return safeColor((o as BaseObj).textColor, styleOf(o).stroke);
+    return styleOf(o)[key];
   };
-  const stickyFill = () => safeColor((app.selected()[0] as BaseObj | undefined)?.fill, DEFAULTS.sticky.fill);
+  const stickyFill = () => safeColor((app.selectedLeaves()[0] as BaseObj | undefined)?.fill, DEFAULTS.sticky.fill);
 
   function swatch(label: string, current: () => string, content: () => HTMLElement) {
     const chip = h('span', { class: 'qb-chip' });
@@ -201,23 +204,26 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     lock = undefined;
     more = undefined;
     const sel = app.selected();
+    const styleSel = app.selectedLeaves();
     if (!sel.length) {
       bar.replaceChildren();
       return;
     }
     const first = sel[0];
     const same = sel.every((o) => o.type === first.type);
+    const styleFirst = styleSel[0] ?? first;
+    const styleSame = styleSel.length > 0 && styleSel.every((o) => o.type === styleFirst.type);
     const boxes = sel.filter(isBox).length;
     const groups: HTMLElement[][] = [];
     groups.push(kanbanActions(sel));
 
     const style: HTMLElement[] = [];
-    if (same && first.type === 'sticky') {
+    if (styleSame && styleFirst.type === 'sticky') {
       style.push(swatch('Colour', stickyFill, () => field('Colour', stickyColorField(app, stickyFill(), (v) => {
         app.stickyColor = v;
-        app.updateSelected({ fill: v }, isSticky);
+        app.updateSelectedLeaves({ fill: v }, isSticky);
       }, {
-        onLive: (v) => app.store.transact(() => app.selected().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
+        onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
         size: 'lg',
         label: 'Sticky note colour',
       }))));
@@ -234,11 +240,16 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         ]));
       }));
     }
-    if (sel.some(HAS_FILL)) {
-      style.push(swatch('Fill', styleValue('fill'), () => field('Fill', swatches(FILLS, styleValue('fill')(), (v) => app.updateSelected({ fill: v }, HAS_FILL), { label: 'Fill colour' }))));
+    if (styleSel.some(HAS_FILL)) {
+      style.push(swatch('Fill', styleValue('fill'), () => field('Fill', swatches(FILLS, styleValue('fill')(), (v) => app.updateSelectedLeaves({ fill: v }, HAS_FILL), { label: 'Fill colour' }))));
     }
-    if (sel.some(HAS_STROKE) && !sel.every((o) => o.type === 'icon' || isConnector(o))) {
-      style.push(swatch('Line', styleValue('stroke'), () => field('Line', swatches(STROKES, styleValue('stroke')(), (v) => app.updateSelected({ stroke: v }, HAS_STROKE), { label: 'Line colour' }))));
+    if (styleSel.some(HAS_STROKE)) {
+      const label = styleSel.every((o) => o.type === 'icon') ? 'Colour' : 'Line';
+      style.push(swatch(label, styleValue('stroke'), () => field(label, swatches(STROKES, styleValue('stroke')(), (v) => {
+        app.store.undo.stopCapturing();
+        app.store.transact(() => app.selectedLeaves().filter(HAS_STROKE).forEach((o) => app.store.update(o.id, o.type === 'icon' ? { textColor: v } : { stroke: v })));
+        app.store.undo.stopCapturing();
+      }, { label: 'Line colour' }))));
     }
     if (sel.every(isConnector)) {
       style.push(menu('connector', 'Route', () => field('Route', segmented<Route>([
@@ -278,26 +289,43 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push(picture);
 
     const text: HTMLElement[] = [];
-    if (sel.some(HAS_TEXT)) {
+    if (styleSel.some(HAS_TEXT)) {
       text.push(menu('text', 'Text', () => {
-        const s = styleOf(app.selected()[0]);
+        const s = styleOf(app.selectedLeaves()[0]);
         const parts: HTMLElement[] = [field('Align', segmented<Align>([
           { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
           { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
           { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
-        ], s.align, (v) => app.updateSelected({ align: v }, HAS_TEXT), 'Text alignment'))];
-        if (app.selected().some(isVAligned)) {
+        ], s.align, (v) => app.updateSelectedLeaves({ align: v }, HAS_TEXT), 'Text alignment'))];
+        if (app.selectedLeaves().some(isVAligned)) {
           parts.push(field('Vertical', segmented<VAlign>([
             { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
             { value: 'middle', label: 'Align middle', icon: icon('alignMiddleV', 16) },
             { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
-          ], s.valign, (v) => app.updateSelected({ valign: v }, isVAligned), 'Vertical alignment')));
+          ], s.valign, (v) => app.updateSelectedLeaves({ valign: v }, isVAligned), 'Vertical alignment')));
         }
-        parts.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => app.updateSelected({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
+        parts.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => app.updateSelectedLeaves({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
         return h('div', null, ...parts);
       }));
     }
     groups.push(text);
+
+    const groupActions: HTMLElement[] = [];
+    const groupAction = groupActionForSelection(sel);
+    if (groupAction === 'group') {
+      const groupReason = app.groupReason();
+      groupActions.push(h('button', {
+        class: 'icon-btn qb-text group-action', type: 'button', 'aria-label': 'Group', 'data-tip': groupReason ?? 'Group', 'data-tip-key': 'mod+g',
+        disabled: groupReason !== null, onclick: () => app.groupSelection(),
+      }, icon('group', 20), 'Group'));
+    } else if (groupAction === 'ungroup') {
+      const canUngroup = app.canUngroupSelection();
+      groupActions.push(h('button', {
+        class: 'icon-btn qb-text group-action', type: 'button', 'aria-label': 'Ungroup', 'data-tip': canUngroup ? 'Ungroup' : 'Select a group to ungroup', 'data-tip-key': 'mod+shift+g',
+        disabled: !canUngroup, onclick: () => app.ungroupSelection(),
+      }, icon('ungroup', 20), 'Ungroup'));
+    }
+    groups.push(groupActions);
 
     const arrange: HTMLElement[] = [];
     if (boxes >= 2) {

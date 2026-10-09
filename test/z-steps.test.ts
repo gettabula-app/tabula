@@ -126,12 +126,15 @@ describe('Store.restack', () => {
 });
 
 describe('the context menu', () => {
-  it('has the four stacking steps in order, then duplicate, lock and delete', () => {
+  it('has stacking, grouping, duplicate, lock and delete in order', () => {
     const items = contextMenuItems({ count: 1, locked: false });
-    expect(items.map((i) => i.action)).toEqual(['front', 'forward', 'backward', 'back', 'duplicate', 'lock', 'delete']);
+    expect(items.map((i) => i.action)).toEqual(['front', 'forward', 'backward', 'back', 'group', 'ungroup', 'duplicate', 'lock', 'delete']);
     expect(items.map((i) => i.label).slice(0, 4)).toEqual(['Bring to front', 'Bring forward', 'Send backward', 'Send to back']);
     expect(items.find((i) => i.action === 'delete')!.danger).toBe(true);
     expect(items.find((i) => i.action === 'duplicate')!.separatorBefore).toBe(true);
+    expect(items.find((i) => i.action === 'group')).toMatchObject({ disabled: true, reason: 'Select at least two groupable items.' });
+    expect(items.find((i) => i.action === 'ungroup')!.disabled).toBe(true);
+    expect(contextMenuItems({ count: 2, locked: false, groupReason: null, canUngroup: true }).filter((i) => i.action === 'group' || i.action === 'ungroup').every((i) => !i.disabled)).toBe(true);
   });
 
   it('says Unlock for a locked selection and has no entries without a selection', () => {

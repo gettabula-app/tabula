@@ -146,6 +146,6 @@ export function applyProposal(app: BoardApp, proposal: AiProposal, avoid: Rect[]
   });
   app.store.undo.stopCapturing();
   const stickies = layout.kind === 'create' ? created.filter((o) => o.type === 'sticky').map((o) => o.id) : layout.moves.map((m) => m.id);
-  app.setSelection(stickies);
+  app.resetScopeSelection(stickies);
   return { ok: true, created: layout.kind === 'create' ? layout.stickies.length : 0, moved: layout.kind === 'group' ? layout.moves.length : 0 };
 }

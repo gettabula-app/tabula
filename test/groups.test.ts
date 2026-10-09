@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   GROUP_MAX_DEPTH, GROUP_MAX_MEMBERS, GROUP_MAX_PER_BOARD, GROUP_NAME_MAX,
-  ancestorsOf, descendantsOf, effectiveLocked, frameOf, groupDepth, groupFitsLimits, isGroup, membersBounds, outermostGroup,
+  ancestorsOf, descendantsOf, effectiveLocked, frameOf, groupDepth, groupFitsLimits, groupPlan, isGroup, liftToScope, membersBounds,
+  outermostGroup, pick, topLevelAncestors, ungroupPlan,
 } from '../src/groups';
 import { referenceRects } from '../src/guides';
 import type { BaseObj, ConnectorObj, Group, Obj } from '../src/types';
@@ -101,5 +102,111 @@ describe('derived member bounds', () => {
     const objects: Obj[] = [group('empty'), connector('line', 'empty')];
     const { get, children } = access(objects);
     expect(membersBounds(get('empty') as Group, get, children)).toBeNull();
+  });
+});
+
+describe('group selection plans', () => {
+  it('picks through nested groups and lifts selections to one scope', () => {
+    const objects: Obj[] = [group('outer'), group('inner', 'outer'), box('leaf', 'inner'), box('sibling', 'outer'), box('other')];
+    const { get } = access(objects);
+    expect(pick('leaf', null, get)?.id).toBe('outer');
+    expect(pick('leaf', 'outer', get)?.id).toBe('inner');
+    expect(pick('leaf', 'inner', get)?.id).toBe('leaf');
+    expect(liftToScope(['leaf', 'inner', 'sibling'], 'outer', get).sort()).toEqual(['inner', 'sibling']);
+    expect(topLevelAncestors(['leaf', 'inner', 'other'], get).sort()).toEqual(['other', 'outer']);
+  });
+
+  it('leaves frames and kanban lane children out, puts the group at the top member z and finds its frame', () => {
+    const objects: Obj[] = [
+      { ...box('frame'), type: 'frame', x: 0, y: 0, w: 200, h: 120, z: 'a0' },
+      box('a', undefined, { x: 20, y: 20, w: 20, h: 20, z: 'a3', locked: true }),
+      box('b', undefined, { x: 80, y: 20, w: 20, h: 20, z: 'a9' }),
+      { ...box('lane'), type: 'lane' }, box('card', 'lane'),
+      { ...connector('inside'), z: 'z9', from: { kind: 'bound', id: 'a', anchor: 'auto' }, to: { kind: 'bound', id: 'b', anchor: 'auto' } },
+      { ...connector('outside'), from: { kind: 'bound', id: 'a', anchor: 'auto' }, to: { kind: 'bound', id: 'outside-box', anchor: 'auto' } },
+      box('outside-box'),
+    ];
+    const { get, children } = access(objects);
+    const result = groupPlan(['a', 'b', 'frame', 'card', 'inside', 'outside'], get, children, {
+      all: () => objects, bounds: (o) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }),
+      frameAt: (p) => p.x > 0 && p.x < 200 ? get('frame') as BaseObj : undefined, newId: () => 'new-group',
+    });
+    expect(result).toMatchObject({
+      ok: true, group: { id: 'new-group', z: 'z9', parent: 'frame' }, members: ['a', 'b'],
+      skipped: { frames: 1, other: 2 }, connectors: ['inside'],
+    });
+  });
+
+  it('counts free connector ends only when they lie on selected items and refuses fewer than two items', () => {
+    const objects: Obj[] = [
+      box('a', undefined, { x: 0, y: 0, w: 20, h: 20, z: 'a1' }),
+      box('b', undefined, { x: 80, y: 0, w: 20, h: 20, z: 'a2' }),
+      { ...connector('free-inside'), from: { kind: 'free', x: 10, y: 10 }, to: { kind: 'free', x: 90, y: 10 } },
+      { ...connector('free-outside'), from: { kind: 'free', x: 10, y: 10 }, to: { kind: 'free', x: 300, y: 300 } },
+      { ...box('frame'), type: 'frame' },
+    ];
+    const { get, children } = access(objects);
+    const helpers = { all: () => objects, bounds: (o: Obj) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }), frameAt: () => undefined, newId: () => 'g' };
+    expect(groupPlan(['a', 'b'], get, children, helpers)).toMatchObject({ ok: true, connectors: ['free-inside'] });
+    expect(groupPlan(['frame', 'a'], get, children, helpers)).toMatchObject({ ok: false, reason: expect.stringContaining('two') });
+  });
+
+  it('enforces depth, direct-member and board group limits', () => {
+    const depthItems: Obj[] = [];
+    for (let i = 0; i < GROUP_MAX_DEPTH; i++) depthItems.push(group(`g${i}`, i ? `g${i - 1}` : undefined));
+    depthItems.push(box('one', 'g7'), box('two', 'g7'));
+    const depthAccess = access(depthItems);
+    expect(groupPlan(['one', 'two'], depthAccess.get, depthAccess.children, {
+      scope: 'g7', all: () => depthItems, bounds: (o) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }), frameAt: () => undefined, newId: () => 'x',
+    })).toMatchObject({ ok: false, reason: expect.stringContaining('8 levels') });
+
+    const allowedDepth: Obj[] = [];
+    for (let i = 0; i < GROUP_MAX_DEPTH - 1; i++) allowedDepth.push(group(`a${i}`, i ? `a${i - 1}` : undefined));
+    allowedDepth.push(box('allowed-one', 'a6'), box('allowed-two', 'a6'));
+    const allowedAccess = access(allowedDepth);
+    expect(groupPlan(['allowed-one', 'allowed-two'], allowedAccess.get, allowedAccess.children, {
+      scope: 'a6', all: () => allowedDepth, bounds: (o) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }), frameAt: () => undefined, newId: () => 'at-limit',
+    })).toMatchObject({ ok: true, group: { id: 'at-limit' } });
+
+    const members = Array.from({ length: GROUP_MAX_MEMBERS + 1 }, (_, i) => box(`m${i}`));
+    const memberAccess = access(members);
+    expect(groupPlan(members.map((o) => o.id), memberAccess.get, memberAccess.children, {
+      all: () => members, bounds: (o) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }), frameAt: () => undefined, newId: () => 'x',
+    })).toMatchObject({ ok: false, reason: expect.stringContaining('500 items') });
+
+    const manyGroups = [...Array.from({ length: GROUP_MAX_PER_BOARD }, (_, i) => group(`g${i}`)), box('a'), box('b')];
+    const boardAccess = access(manyGroups);
+    expect(groupPlan(['a', 'b'], boardAccess.get, boardAccess.children, {
+      all: () => manyGroups, bounds: (o) => ({ x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 }), frameAt: () => undefined, newId: () => 'x',
+    })).toMatchObject({ ok: false, reason: expect.stringContaining('500 groups') });
+  });
+});
+
+describe('ungroup plans', () => {
+  it('places ordered members at the group z between its siblings, keeping the parent and nested groups', () => {
+    const objects: Obj[] = [
+      box('below', 'frame', { z: 'a0' }),
+      group('g', 'frame', { z: 'a5' }),
+      box('b', 'g', { z: 'z2' }), group('nested', 'g', { z: 'z3' }), box('a', 'g', { z: 'z1' }),
+      box('above', 'frame', { z: 'a9' }),
+    ];
+    const { get, children } = access(objects);
+    const plan = ungroupPlan(['g'], get, children, { all: () => objects });
+    const members = plan.groups[0].members;
+    expect(members.map((m) => m.id)).toEqual(['a', 'b', 'nested']);
+    expect(members.every((m) => m.parent === 'frame' && m.z > 'a5' && m.z < 'a9')).toBe(true);
+    expect(members.map((m) => m.z)).toEqual(members.map((m) => m.z).sort());
+    expect(get('nested')?.type).toBe('group');
+  });
+
+  it('plans empty and one-member groups and removes only the level requested', () => {
+    const objects: Obj[] = [group('empty', undefined, { z: 'a0' }), group('one', undefined, { z: 'a3' }), box('member', 'one'), group('outer', undefined, { z: 'a6' }), group('inner', 'outer'), box('leaf', 'inner')];
+    const { get, children } = access(objects);
+    const plan = ungroupPlan(['empty', 'one', 'outer'], get, children, { all: () => objects });
+    expect(plan.groups.map((g) => g.id)).toEqual(['empty', 'one', 'outer']);
+    expect(plan.groups[0].members).toEqual([]);
+    expect(plan.groups[1].members).toHaveLength(1);
+    expect(plan.groups[2].members.map((m) => m.id)).toEqual(['inner']);
+    expect(get('inner')?.parent).toBe('outer');
   });
 });
