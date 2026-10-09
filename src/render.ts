@@ -279,6 +279,11 @@ export class Renderer {
     if (at) this.ghostLayer.setAttribute('transform', `translate(${at.x} ${at.y})`);
   }
 
+  /** Moves the drag ghost so that its top-left is at `at`. */
+  moveGhost(at: Point) {
+    this.ghostLayer.setAttribute('transform', `translate(${at.x} ${at.y})`);
+  }
+
   /** Redraws these objects at the next frame (an image whose bytes arrived). */
   invalidateObjects(ids: Iterable<Id>) {
     for (const id of ids) this.markDirty(id);

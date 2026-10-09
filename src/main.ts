@@ -5,6 +5,7 @@ import { mountBoardUi } from './ui/board';
 import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
 import { mountNewerBanner } from './ui/newer-banner';
+import { cardContentHeight } from './markup';
 import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
@@ -277,8 +278,9 @@ async function route() {
   app.deleted = deleted;
   current = app;
   desktop?.watchBoard(app);
-  // Inspection handle for automated tests and debugging (?debug in the URL).
-  if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
+  // Inspection handle for automated tests and debugging (?debug in the URL). `__kanban` lets a seed store card heights
+  // the way the app does (scripts/visual-check.mjs).
+  if (location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
   // the pictures of an imported board file go to this board's asset store in the background
   if (job?.imported?.assets) void app.images.adopt(job.imported.assets);
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });

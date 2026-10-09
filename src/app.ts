@@ -14,7 +14,13 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { objectMarkup, textHeight } from './markup';
+import { cardBody, objectMarkup, textHeight } from './markup';
+import { addRefusal, containerOf, dropLoose, moveCards, movingOrder, newKanban, newKanbanSize } from './containers';
+import { CardInput } from './ui/kanban';
+import {
+  dropLine, keyboardMove, laneCards, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
+} from './ui/kanban-logic';
+import { planInsert } from '../shared/containers';
 import { remapObjects } from './custom-templates';
 import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
@@ -44,6 +50,7 @@ export type Tool =
   | { kind: 'connector'; relation?: UmlRelation }
   | { kind: 'pen' }
   | { kind: 'frame' }
+  | { kind: 'kanban' }
   | { kind: 'comment' }
   | { kind: 'uml'; def: UmlElementDef };
 
@@ -56,7 +63,9 @@ type Drag =
   | { mode: 'create'; start: Point; tool: Tool }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
-  | { mode: 'pen'; pts: Point[] };
+  | { mode: 'pen'; pts: Point[] }
+  // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
+  | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null };
 
 type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments';
 
@@ -77,6 +86,10 @@ export class BoardApp {
   readonly r: Renderer;
   readonly flow: Flow;
   readonly editor: TextEditor;
+  /** The inline "+ Add card" input (docs/kanban.md, Cards). */
+  readonly cardInput: CardInput;
+  /** The card a keyboard move is on: it shows the ring and the "Moving" tag until the selection changes. */
+  private kbMoving: Id | null = null;
   /** Live previews from the properties panel; see style-edit.ts. */
   readonly styleEdit: StyleEdit;
   tool: Tool = { kind: 'select' };
@@ -140,6 +153,12 @@ export class BoardApp {
     this.r.readOnly = this.readOnly;
     this.flow = new Flow(this);
     this.editor = new TextEditor(this);
+    this.cardInput = new CardInput(this);
+    this.r.ownerColor = (o) => {
+      const p = o.ownerId ? this.participants().find((x) => x.user.id === o.ownerId) : undefined;
+      return p ? personColor(p.user.color) : undefined;
+    };
+    this.r.commentCount = (id) => this.comments.list().filter((t) => t.anchor.obj === id && !t.resolved).reduce((n, t) => n + 1 + t.replies.length, 0);
     this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
     this.images = new BoardImages(this);
@@ -166,6 +185,7 @@ export class BoardApp {
         if (o && 'font' in o && o.font) ensureFont(o.font, [o.fontWeight || 400, 700]);
       }
       this.refreshPins();
+      if (this.kbMoving) this.showMoving(this.kbMoving);
       this.emit('objects');
     });
 
@@ -174,6 +194,8 @@ export class BoardApp {
       if (v) {
         this.cancelLongPress();
         this.editor.commit();
+        this.cardInput.stop();
+        this.cancelCardDrag();
         this.store.undo.clear();
         if (this.drag && this.drag.mode !== 'pan') {
           this.drag = null;
@@ -181,6 +203,8 @@ export class BoardApp {
         }
         this.setTool(this.tool);
       }
+      // lanes offer "+ Add card" to editors only
+      this.r.invalidateAll();
       this.emit('readonly');
       this.emitSelection();
     });
@@ -190,8 +214,17 @@ export class BoardApp {
     this.bindPresence();
     this.loadBoardFonts();
     conn.onStatus(() => this.emit('status'));
+    let ownersSig = '';
+    const redrawCards = () => this.r.invalidateObjects([...this.store.cache.values()].filter((o) => o.type === 'card').map((o) => o.id));
     this.disposers.push(
-      this.comments.onChange(() => this.refreshPins()),
+      this.comments.onChange(() => { this.refreshPins(); redrawCards(); }),
+      // an owner badge takes the colour of a person in the room: redraw when who is here changes, not on every cursor move
+      this.on('presence', () => {
+        const sig = this.participants().map((x) => `${x.user.id}:${x.user.color}`).sort().join('|');
+        if (sig === ownersSig) return;
+        ownersSig = sig;
+        if ([...this.store.cache.values()].some((o) => o.type === 'card' && (o as BaseObj).ownerId)) redrawCards();
+      }),
       this.on('flow', () => this.refreshPins()),
       this.on('comments', () => this.refreshPins()),
     );
@@ -219,6 +252,7 @@ export class BoardApp {
   }
 
   private emitSelection() {
+    if (this.kbMoving && (this.selection.length !== 1 || this.selection[0] !== this.kbMoving)) this.clearMoving();
     this.r.setOverlay({ selection: this.selection });
     this.conn.awareness.setLocalStateField('sel', this.selection);
     this.emit('selection');
@@ -470,6 +504,7 @@ export class BoardApp {
         const [a, b] = [...touches.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
         this.cancelLongPress();
+        this.cancelCardDrag();
         this.drag = null;
         this.emit('drag');
         this.r.setOverlay({ marquee: null, preview: '' });
@@ -573,6 +608,7 @@ export class BoardApp {
   private onDown(e: PointerEvent) {
     this.cancelLongPress();
     if (this.editor.active) this.editor.commit();
+    this.clearMoving();
     if (e.pointerType === 'touch' && this.isPinching()) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     const p = this.worldOf(e);
@@ -631,6 +667,12 @@ export class BoardApp {
           return;
         }
         if (top?.locked) this.armLongPress(top.id, e);
+        // a lane's "+ Add card" row opens the inline input (editors only; viewers do not see the row)
+        if (!this.readOnly && !e.shiftKey && hit.type === 'lane' && this.laneRegion(hit.id, p) === 'add') {
+          this.setSelection([]);
+          this.cardInput.start(hit.id);
+          return;
+        }
         if (e.shiftKey) {
           const s = new Set(this.selection);
           if (s.has(hit.id)) s.delete(hit.id);
@@ -639,7 +681,10 @@ export class BoardApp {
         } else if (!this.selection.includes(hit.id)) {
           this.setSelection([hit.id]);
         }
-        if (this.selection.includes(hit.id) && !this.readOnly) this.beginMove(p);
+        if (this.selection.includes(hit.id) && !this.readOnly) {
+          if (hit.type === 'card') this.beginCardDrag(hit.id, p);
+          else this.beginMove(p);
+        }
         return;
       }
       case 'connector': {
@@ -694,6 +739,158 @@ export class BoardApp {
     this.drag = { mode: 'move', start: p, ids: [...ids], orig, bounds, moved: false };
   }
 
+  // ---------------------------------------------------------------- kanban (docs/kanban.md, slice 2)
+
+
+  /** Where in a lane a world point is: its header, its add-card row, or the rest of its body. */
+  private laneRegion(laneId: Id, p: Point): 'header' | 'add' | 'body' | null {
+    const lane = this.store.getPlaced(laneId);
+    const layout = lane?.parent ? this.store.containerLayout(lane.parent) : null;
+    if (!lane || !layout || !layout.rects.has(laneId)) return null;
+    return laneRegionAt(lane as BaseObj, laneCards(layout, laneId), p);
+  }
+
+  /** A new kanban with To do, Doing and Done, its top-left at `at`, with the add-card input open in its first lane. */
+  createKanban(at: Point) {
+    if (this.readOnly) return null;
+    const meta = this.store.getMeta();
+    const size = newKanbanSize();
+    const frame = this.frameAt({ x: at.x + size.w / 2, y: at.y + size.h / 2 });
+    const { container, lanes } = newKanban(at, { z: this.store.topZ(), createdBy: this.user.id, headingFont: meta.headingFont, bodyFont: meta.bodyFont, parent: frame?.id });
+    this.store.undo.stopCapturing();
+    this.store.transact(() => [container, ...lanes].forEach((o) => this.store.create(o)));
+    this.store.undo.stopCapturing();
+    this.setTool({ kind: 'select' });
+    this.setSelection([container.id]);
+    // the spec's "one empty card in edit mode": the add-card input, so that nothing is left behind when it is not used
+    this.cardInput.start(lanes[0].id);
+    return container.id;
+  }
+
+  /** Cards that a drag starting on `id` takes: the selected cards that are not locked, or just `id`. */
+  private beginCardDrag(id: Id, p: Point) {
+    const ids = this.selection.filter((x) => { const o = this.store.get(x); return o?.type === 'card' && !o.locked; });
+    if (!ids.includes(id)) return;
+    const lead = this.store.getPlaced(id) as BaseObj;
+    this.drag = { mode: 'cards', start: p, ids: movingOrder(this.store, ids), lead: id, grab: { x: p.x - lead.x, y: p.y - lead.y }, moved: false, target: null, frame: null };
+  }
+
+  private doCardDrag(d: Extract<Drag, { mode: 'cards' }>, p: Point) {
+    if (!d.moved && Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
+    if (!d.moved) {
+      d.moved = true;
+      this.emit('drag');
+      this.cardInput.stop();
+      this.r.setKanbanState({ dragging: new Set(d.ids) });
+      const lead = this.store.getPlaced(d.lead) as BaseObj;
+      this.r.setGhost(cardBody(lead, { ...this.r.ctx, editingId: null, dragging: undefined }, 'ghost'));
+    }
+    this.r.moveGhost({ x: p.x - d.grab.x, y: p.y - d.grab.y });
+    const moving = new Set(d.ids);
+    const containers = this.store.ordered().filter((o) => o.type === 'container').flatMap((o) => {
+      const layout = this.store.containerLayout(o.id);
+      return layout ? [{ id: o.id, layout }] : [];
+    });
+    const t = laneTargetAt(containers, p, moving);
+    d.target = t;
+    let line = null;
+    if (t) {
+      const layout = this.store.containerLayout(t.container)!;
+      line = dropLine(layout.rects.get(t.id)!, laneCards(layout, t.id, moving), t.index);
+    }
+    // off every kanban the cards would land loose, in the frame under them if any
+    const lead = this.store.getPlaced(d.lead) as BaseObj;
+    d.frame = t ? null : this.frameAt({ x: p.x - d.grab.x + lead.w / 2, y: p.y - d.grab.y + lead.h / 2 })?.id ?? null;
+    this.r.setKanbanState({ dropLane: t?.id ?? null });
+    this.r.setOverlay({ kanban: line ? { line } : null, dropTarget: d.frame });
+  }
+
+  private finishCardDrag(d: Extract<Drag, { mode: 'cards' }>, p: Point) {
+    const ids = d.ids;
+    const lead = this.store.getPlaced(d.lead) as BaseObj | undefined;
+    this.endCardDrag();
+    if (!d.moved) {
+      // plain click on an already-selected card inside a multi-selection selects just it
+      if (this.selection.length > 1) this.setSelection([d.lead]);
+      return;
+    }
+    const t = d.target;
+    if (t) {
+      const lane = this.store.get(t.id) as BaseObj | undefined;
+      const refused = addRefusal(this.store, t.id, ids.filter((id) => this.store.get(id)?.parent !== t.id).length);
+      if (refused) return this.notify(refused);
+      if (moveCards(this.store, ids, t.id, t.index)) {
+        const order = this.store.containerLayout(t.container)?.cards.get(t.id) ?? [];
+        this.announce(moveAnnouncement(lane?.name ?? '', order.indexOf(ids[0]) + 1, order.length));
+      }
+      return;
+    }
+    if (!lead) return;
+    // each card keeps its place relative to the one under the pointer
+    const at = { x: p.x - d.grab.x, y: p.y - d.grab.y };
+    const places = ids.map((id) => {
+      const o = this.store.getPlaced(id) as BaseObj;
+      const x = at.x + (o.x - lead.x), y = at.y + (o.y - lead.y);
+      return { id, x, y, w: o.w, h: o.h, parent: this.frameAt({ x: x + o.w / 2, y: y + o.h / 2 })?.id };
+    });
+    dropLoose(this.store, places);
+  }
+
+  /** Takes the ghost, the drop line and the placeholders away. */
+  private endCardDrag() {
+    this.r.setGhost(null);
+    this.r.setKanbanState({ dragging: new Set(), dropLane: null });
+    this.r.setOverlay({ kanban: this.r.overlay.kanban?.moving ? { moving: this.r.overlay.kanban.moving } : null, dropTarget: null });
+  }
+
+  /** A card drag that is given up (Esc, a pinch, the board turning read-only): nothing is written. */
+  private cancelCardDrag() {
+    if (this.drag?.mode !== 'cards') return;
+    this.drag = null;
+    this.endCardDrag();
+    this.emit('drag');
+  }
+
+  /**
+   * Alt+arrow on one selected card in a lane: up and down within the lane, left and right to the neighbouring lane. One
+   * transaction and one undo step per press, announced in the live region. False when the selection is not such a card.
+   */
+  private keyboardCardMove(key: MoveKey): boolean {
+    if (this.selection.length !== 1) return false;
+    const card = this.store.get(this.selection[0]);
+    if (card?.type !== 'card' || !this.store.isLaidOut(card)) return false;
+    if (card.locked) return true;
+    const cid = containerOf(this.store, card) ?? this.containerShowing(card.id);
+    const layout = cid ? this.store.containerLayout(cid) : null;
+    const move = layout ? keyboardMove(layout, card.id, key) : null;
+    if (move && moveCards(this.store, [card.id], move.lane, move.index)) {
+      this.announce(moveAnnouncement((this.store.get(move.lane) as BaseObj | undefined)?.name ?? '', move.position, move.total));
+    }
+    this.showMoving(card.id);
+    return true;
+  }
+
+  /** The container whose layout shows a card (a card whose lane is gone is shown in another container's first lane). */
+  private containerShowing(id: Id): Id | null {
+    for (const o of this.store.ordered()) if (o.type === 'container' && this.store.containerLayout(o.id)?.rects.has(id)) return o.id;
+    return null;
+  }
+
+  /** The keyboard-move ring and the "Moving" tag on a card. */
+  private showMoving(id: Id) {
+    const o = this.store.getPlaced(id);
+    if (!o || o.type !== 'card' || !this.store.isLaidOut(o)) return this.clearMoving();
+    this.kbMoving = id;
+    const b = o as BaseObj;
+    this.r.setOverlay({ kanban: { ...this.r.overlay.kanban, moving: { x: b.x, y: b.y, w: b.w, h: b.h } } });
+  }
+
+  private clearMoving() {
+    if (!this.kbMoving) return;
+    this.kbMoving = null;
+    this.r.setOverlay({ kanban: this.r.overlay.kanban?.line ? { line: this.r.overlay.kanban.line } : null });
+  }
+
   private onMove(e: PointerEvent) {
     const lp = this.longPress;
     if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 5) this.cancelLongPress();
@@ -711,6 +908,8 @@ export class BoardApp {
         return;
       case 'move':
         return this.doMove(d, p, e);
+      case 'cards':
+        return this.doCardDrag(d, p);
       case 'resize':
         return this.doResize(d, p, e);
       case 'rotate': {
@@ -941,6 +1140,9 @@ export class BoardApp {
           if (hit && this.selection.length > 1) this.setSelection([hit.id]);
         }
         break;
+      case 'cards':
+        this.finishCardDrag(d, p);
+        break;
       case 'marquee':
         this.emitSelection();
         break;
@@ -1063,6 +1265,14 @@ export class BoardApp {
     const q = this.snapPoint(p, e);
     let rect = rectOfPoints([d.start, q]);
     const dragged = rect.w * this.zoom > 8 || rect.h * this.zoom > 8;
+    if (d.tool.kind === 'kanban') {
+      // its size comes from its lanes: a drag only says where its corner goes, a click where its middle goes
+      const size = newKanbanSize();
+      let at = dragged ? { x: rect.x, y: rect.y } : { x: d.start.x - size.w / 2, y: d.start.y - size.h / 2 };
+      if (this.snapOn(e)) at = { x: snapTo(at.x, this.grid()), y: snapTo(at.y, this.grid()) };
+      this.createKanban(at);
+      return;
+    }
     if (!dragged) {
       const s = this.defaultSize(d.tool);
       rect = { x: d.start.x - s.w / 2, y: d.start.y - s.h / 2, ...s };
@@ -1114,6 +1324,16 @@ export class BoardApp {
     const hit = this.hit(p);
     if (this.readOnly) {
       if (hit) this.setSelection([hit.id]);
+      return;
+    }
+    if (hit?.type === 'lane' && this.laneRegion(hit.id, p) !== 'header') {
+      // empty lane space adds a card; the header renames the lane
+      this.cardInput.start(hit.id);
+      return;
+    }
+    // the card dialog is slice 3 of docs/kanban.md: until then a double-click selects the card
+    if (hit?.type === 'card') {
+      this.setSelection([hit.id]);
       return;
     }
     if (hit) {
@@ -1190,6 +1410,7 @@ export class BoardApp {
       if (k === 'delete' || k === 'backspace') { e.preventDefault(); if (!ro) this.deleteSelection(); return; }
       if (k === 'escape') {
         this.cancelLongPress();
+        this.cancelCardDrag();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         this.setSelection([]);
         this.closeThread();
@@ -1197,10 +1418,12 @@ export class BoardApp {
         this.setTool({ kind: 'select' });
         return;
       }
-      if (k === 'enter' && this.selection.length === 1) { e.preventDefault(); if (!ro) this.editor.start(this.selection[0]); return; }
+      if (k === 'enter' && this.selection.length === 1) { e.preventDefault(); if (!ro && this.store.get(this.selection[0])?.type !== 'card') this.editor.start(this.selection[0]); return; }
       if (k.startsWith('arrow') && this.selection.length) {
         e.preventDefault();
         if (ro) return;
+        // Alt+arrows move a card in its lane or to the next lane (docs/kanban.md, Cards)
+        if (e.altKey && this.keyboardCardMove(k.slice(5) as MoveKey)) return;
         const step = e.shiftKey ? this.grid() : 1;
         const dx = k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0;
         const dy = k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0;
@@ -1280,10 +1503,20 @@ export class BoardApp {
 
   deleteSelection() {
     const ids = new Set(this.selection.filter((id) => !this.store.get(id)?.locked));
+    // a kanban goes with its lanes and cards; a lane in a locked kanban stays (a lock blocks structural edits)
+    for (const id of Array.from(ids)) {
+      const o = this.store.get(id);
+      if (o?.type === 'container') for (const c of this.store.containerLayout(id)?.order ?? []) ids.add(c);
+      if (o?.type === 'lane' && o.parent && this.store.get(o.parent)?.locked) ids.delete(id);
+    }
     if (!ids.size) return;
+    const relocate = this.laneRelocations(ids);
+    const moved = new Set(relocate.map((r) => r.id));
     this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
     this.store.undo.stopCapturing();
     this.store.transact(() => {
+      // the cards of a deleted lane move to the end of its neighbour first (docs/kanban.md, Concurrent edits)
+      for (const p of relocate) this.store.update(p.id, { parent: p.parent, rank: p.rank });
       // Connectors attached to deleted shapes keep their line: bound ends become free.
       for (const id of ids) {
         for (const c of this.store.connectorsOf(id)) {
@@ -1296,11 +1529,48 @@ export class BoardApp {
           this.store.update(c.id, patch);
         }
         // children of deleted frames stay on the board
-        for (const ch of this.store.childrenOf(id)) if (!ids.has(ch.id)) this.store.update(ch.id, { parent: undefined });
+        for (const ch of this.store.childrenOf(id)) if (!ids.has(ch.id) && !moved.has(ch.id)) this.store.update(ch.id, { parent: undefined });
       }
       this.store.remove(ids);
     });
     this.setSelection([]);
+  }
+
+  /**
+   * Where the cards of lanes about to be deleted go: to the end of the nearest lane on the left that stays, else the
+   * nearest on the right. A kanban that keeps no lane loses their cards too, so those are added to `ids`.
+   */
+  private laneRelocations(ids: Set<Id>): { id: Id; parent: Id; rank: string }[] {
+    const out: { id: Id; parent: Id; rank: string }[] = [];
+    const planned = new Map<Id, { id: Id; parent?: Id; rank?: string }[]>();
+    for (const id of Array.from(ids)) {
+      const lane = this.store.get(id);
+      if (lane?.type !== 'lane' || !lane.parent || ids.has(lane.parent)) continue;
+      const layout = this.store.containerLayout(lane.parent);
+      if (!layout) continue;
+      const cards = (layout.cards.get(id) ?? []).filter((c) => !ids.has(c));
+      const at = layout.lanes.indexOf(id);
+      const keep = (l: Id) => !ids.has(l);
+      const left = layout.lanes.slice(0, Math.max(at, 0)).reverse().find(keep);
+      const target = left ?? layout.lanes.slice(at + 1).find(keep);
+      if (!target) {
+        cards.forEach((c) => ids.add(c));
+        continue;
+      }
+      if (!cards.length) continue;
+      let siblings = planned.get(target);
+      if (!siblings) siblings = (layout.cards.get(target) ?? []).filter((c) => !ids.has(c)).map((c) => this.store.get(c)!).map((o) => ({ id: o.id, parent: o.parent, rank: (o as BaseObj).rank }));
+      const plan = planInsert(siblings, target, siblings.length, cards.length);
+      const fixed = new Map(plan.repairs.map((r) => [r.id, r]));
+      out.push(...plan.repairs);
+      siblings = siblings.map((c) => fixed.get(c.id) ?? c);
+      cards.forEach((c, i) => {
+        out.push({ id: c, parent: target, rank: plan.ranks[i] });
+        siblings!.push({ id: c, parent: target, rank: plan.ranks[i] });
+      });
+      planned.set(target, siblings);
+    }
+    return out;
   }
 
   /** Selected objects plus connectors between them, as a portable list. */

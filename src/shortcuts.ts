@@ -42,6 +42,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Delete, Backspace', action: 'Delete selection', ids: ['delete', 'backspace'] },
   { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item', ids: ['enter'] },
   { group: 'Edit', keys: 'Arrows (Shift for grid steps)', action: 'Nudge', ids: ['arrows'] },
+  { group: 'Edit', keys: 'Alt+Arrows on a kanban card', action: 'Move the card in its lane, or to the next lane', ids: [] },
   { group: 'Edit', keys: ']', action: 'Bring to front', ids: [']'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+]', action: 'Bring forward one step', ids: ['mod+]'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+[', action: 'Send backward one step', ids: ['mod+['] },

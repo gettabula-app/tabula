@@ -1,0 +1,30 @@
+/* Kanban on the canvas (docs/kanban.md, Visual design). Board objects are SVG drawn by src/markup.ts with inline
+   theme variables, so that exports carry them; this file is the DOM around them: the inline add-card input, the live
+   region, and the drag ghost's lift. Radius 0, no shadows. */
+
+:root {
+  --k-meta: color-mix(in srgb, var(--canvas-ink) 82%, var(--canvas));
+}
+
+/* the live region that announces moves ("Moved to Doing, position 2 of 5") */
+.k-live { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* + Add card, typed in place: a card with a 2px ink border, laid over the canvas and scaled with it */
+.k-input-wrap { position: absolute; left: 0; top: 0; z-index: 5; display: none; transform-origin: 0 0; }
+.k-input-wrap.show { display: block; }
+.k-input {
+  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 2px solid var(--ink); border-radius: 0;
+  background: var(--paper); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
+}
+.k-input::placeholder { color: color-mix(in srgb, var(--ink) 55%, var(--paper)); }
+.k-input-hint {
+  display: block; margin-top: 4px; color: var(--k-meta); white-space: nowrap;
+  font: 600 11px/16px var(--k-font, inherit); letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+/* the dragged card lifts in over 120 ms; with reduced motion it is there at once */
+.k-ghost { animation: k-lift 120ms ease-out; pointer-events: none; }
+@keyframes k-lift { from { transform: translate(-8px, -8px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .k-ghost { animation: none; }
+}
