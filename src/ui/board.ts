@@ -63,8 +63,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('meta', () => {
     if (document.activeElement !== name) name.value = app.store.getMeta().name;
     document.title = `${app.store.getMeta().name} - Tabula`;
+    heading.textContent = app.store.getMeta().name;
   });
   document.title = `${app.store.getMeta().name} - Tabula`;
+  // the page's h1 for a screen reader: the board's name (the visible name is an input)
+  const heading = h('h1', { class: 'sr-only' }, app.store.getMeta().name);
   const status = h('button', { class: 'sync-status', onclick: () => openShare(app) });
   const renderStatus = () => {
     const s = app.conn.status;
@@ -98,7 +101,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
   const homeLabel = scratch ? 'Back to templates' : 'All boards';
-  const topLeft = h('div', { class: 'tray top-left' },
+  const topLeft = h('div', { class: 'tray top-left', role: 'region', 'aria-label': 'Board' },
+    heading,
     h('button', { class: 'icon-btn', 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
     scratch ? null : name, scratch ? null : status, badge,
   );
@@ -132,7 +136,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const history = scratch ? null : mountHistory(app, chrome);
   menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch));
   const comments = mountComments(app, chrome);
-  const topRight = h('div', { class: 'tray top-right' },
+  const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch ? null : people,
     scratch ? null : comments.button,
     scratch ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),

@@ -27,7 +27,7 @@ const NO_ROTATE = ['frame', 'uml-lifeline', 'uml-package', 'path'];
 
 /** Floating quick actions above the selection. Rebuilds only on selection and meta changes, so open pickers survive. */
 export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnType<typeof mountProps>) {
-  const bar = h('div', { class: 'tray quickbar', role: 'toolbar', 'aria-label': 'Quick actions' });
+  const bar = h('div', { class: 'tray quickbar', role: 'region', 'aria-label': 'Quick actions' });
   parent.appendChild(bar);
   let below = false;
   let shown = false;
