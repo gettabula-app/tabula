@@ -10,6 +10,8 @@ For fast remote-mode tests against a local relay only, set `LOAD_CLASS_BURST_MS`
 
 The summary reports relay RSS and CPU, sync-marker latency, time to first sync, generator event-loop lag, sign-in and socket failures, chat 429/5xx responses, relay stderr and relay exit. CPU is shown as a percentage of one local core. A Fly `shared-cpu-1x` gets a fraction of a core with burst capacity, so local CPU percentages are a lower bound on pressure there. A generator lag p95 over 50 ms makes that step's latency untrustworthy; the clients already run in worker threads, so distribute the clients over a second process and rerun.
 
+Before a run, the harness checks the machine's 1-minute load average per core: below 0.5 is quiet, 0.5 through 1.0 is busy (warns and proceeds), and above 1.0 is overloaded (refuses). Set `LOAD_CLASS_ALLOW_BUSY=1` to override the refusal. Other work on a busy machine distorts latency; if the ending load is overloaded, the report marks the run untrustworthy and the latency numbers should not be used.
+
 This is a local relay measurement, not a Fly benchmark: the laptop CPU does not match a Fly shared CPU, the run has no TLS or proxy, and there are no real browsers or rendering costs. Rendering is client-side and is not measured here. The laptop output alone cannot justify a Fly machine size; run the 30, 60 and 100-user cases on a staging machine with the candidate Fly CPU and memory to make that recommendation. A short local smoke run only checks that the harness works.
 
 ## Remote run against a throwaway Fly workspace (TAB-227)
