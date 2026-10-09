@@ -83,6 +83,8 @@ export class BoardApp {
   selection: Id[] = [];
   /** Shows a short toast; the UI assigns it. */
   notify: (msg: string) => void = () => {};
+  /** Tells screen readers what just changed on the board; the UI assigns it (src/ui/announce.ts). */
+  announce: (msg: string) => void = () => {};
   /** Colour of the next sticky note; remembered on this device. */
   private _stickyColor = loadStickyColor();
   get stickyColor() {
@@ -141,6 +143,7 @@ export class BoardApp {
     this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
     this.images = new BoardImages(this);
+    this.store.undo.on('stack-item-popped', (e: { type: 'undo' | 'redo' }) => this.announce(e.type === 'undo' ? 'Undone' : 'Redone'));
 
     const meta = this.store.getMeta();
     this.r.gridType = meta.gridType;
@@ -1274,6 +1277,7 @@ export class BoardApp {
   deleteSelection() {
     const ids = new Set(this.selection.filter((id) => !this.store.get(id)?.locked));
     if (!ids.size) return;
+    this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       // Connectors attached to deleted shapes keep their line: bound ends become free.
@@ -1340,6 +1344,7 @@ export class BoardApp {
     });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
+    this.announce(out.length === 1 ? 'Added 1 object' : `Added ${out.length} objects`);
     this.setSelection(out.filter((o) => !o.parent || !map.has(o.parent!)).map((o) => o.id).filter((id) => {
       const o = this.store.get(id);
       return o && (!isConnector(o) || out.length === 1);
@@ -1397,12 +1402,16 @@ export class BoardApp {
 
   /** One step forward: past the nearest object the selection overlaps (TAB-108). */
   bringForward() {
-    return this.store.restack(planStep(this.store.ordered(), this.selection, 1, (a, b) => this.overlap(a, b)));
+    const moved = this.store.restack(planStep(this.store.ordered(), this.selection, 1, (a, b) => this.overlap(a, b)));
+    if (moved) this.announce('Brought forward');
+    return moved;
   }
 
   /** One step backward: below the nearest object the selection overlaps. */
   sendBackward() {
-    return this.store.restack(planStep(this.store.ordered(), this.selection, -1, (a, b) => this.overlap(a, b)));
+    const moved = this.store.restack(planStep(this.store.ordered(), this.selection, -1, (a, b) => this.overlap(a, b)));
+    if (moved) this.announce('Sent backward');
+    return moved;
   }
 
   private overlap(a: Obj, b: Obj): boolean {
@@ -1414,10 +1423,12 @@ export class BoardApp {
 
   bringToFront() {
     this.store.bringToFront(this.selection);
+    if (this.selection.length) this.announce('Brought to front');
   }
 
   sendToBack() {
     this.store.sendToBack(this.selection);
+    if (this.selection.length) this.announce('Sent to back');
   }
 
   updateSelected(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {

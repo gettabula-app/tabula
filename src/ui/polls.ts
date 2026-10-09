@@ -20,7 +20,8 @@ function answeredText(app: BoardApp, pollId: Id): string {
 /** Rewrites the "N of M answered" texts under `root` in place, so cursor moves do not redraw the card or bar. */
 export function refreshAnswered(app: BoardApp, root: ParentNode) {
   root.querySelectorAll<HTMLElement>('[data-answered]').forEach((el) => {
-    el.textContent = answeredText(app, el.dataset.answered!);
+    const text = answeredText(app, el.dataset.answered!);
+    if (el.textContent !== text) el.textContent = text;
   });
 }
 
@@ -78,7 +79,7 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
     : open ? 'View only. Only people who can edit the board can answer.' : 'This poll is closed.';
   return h('div', { class: 'poll-body' },
     h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'),
-      h('span', { class: 'poll-label', 'data-answered': poll.revealed ? undefined : poll.id }, status)),
+      h('span', { class: 'poll-label', role: 'status', 'data-answered': poll.revealed ? undefined : poll.id }, status)),
     h('h2', { class: 'poll-question', id: questionId }, poll.question),
     h('div', { class: 'poll-scroll', onscroll: (e: Event) => showMore(e.currentTarget as HTMLElement) },
       h('fieldset', { class: 'poll-choices', disabled: !canAnswer, 'aria-labelledby': questionId }, ...choices),
@@ -146,8 +147,8 @@ export function pollBarControls(app: BoardApp, pollId: Id): HTMLElement[] {
   if (!poll) return [];
   if (!poll.revealed) {
     return [
-      h('span', { class: 'poll-label poll-chip', 'data-answered': pollId }, answeredText(app, pollId)),
-      h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(pollId)) }, icon('eye', 16), 'Reveal results'),
+      h('span', { class: 'poll-label poll-chip', role: 'status', 'data-answered': pollId }, answeredText(app, pollId)),
+      h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(pollId), 'Results revealed') }, icon('eye', 16), 'Reveal results'),
     ];
   }
   return [
@@ -166,7 +167,7 @@ export function pollResultsBlock(app: BoardApp, poll: Poll, onHide: () => void):
       h('span', { class: 'muted small' }, `${poll.question} · ${plural(responses, 'response', 'responses')}`)),
     h('button', { class: 'btn ghost poll-btn', disabled: !poll.revealed, onclick: () => copyResults(app, poll.id) }, icon('copy', 16), 'Copy results'),
     h('button', { class: 'btn ghost poll-btn', disabled: !poll.revealed || app.readOnly, onclick: () => attempt(() => polls.addResultsSticky(poll.id), 'Results added to the board') }, 'Add results to board'),
-    poll.revealed ? null : h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(poll.id)) }, icon('eye', 16), 'Reveal results'),
+    poll.revealed ? null : h('button', { class: 'btn primary poll-btn', disabled: app.readOnly, onclick: () => attempt(() => polls.reveal(poll.id), 'Results revealed') }, icon('eye', 16), 'Reveal results'),
     h('button', { class: 'btn ghost poll-btn', disabled: app.readOnly, onclick: () => attempt(() => app.flow.clearPoll(poll.id), 'Poll cleared') }, icon('trash', 16), 'Clear poll'),
     h('button', { class: 'icon-btn', 'aria-label': 'Hide', onclick: onHide }, icon('close', 18)),
   );

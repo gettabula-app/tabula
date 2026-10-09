@@ -5,6 +5,7 @@ import { mayDelete, type Anchor, type Author, type Reply, type Thread } from '..
 import type { Point } from '../types';
 import { authState } from '../auth';
 import { h, icon } from './dom';
+import { announce } from './announce';
 import { fmtAgo, segmented, toast } from './common';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
@@ -110,8 +111,26 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
         h('span', { class: 'comment-row-meta' }, `${n} repl${n === 1 ? 'y' : 'ies'} · ${fmtAgo(t.createdAt)}`)));
   }
 
+  // what others wrote since the last render, said once (the first render only learns what is there)
+  let seen: Map<string, number> | null = null;
+  function announceArrivals(threads: Thread[]) {
+    const me = authorOf(app).id;
+    const next = new Map(threads.map((t) => [t.id, t.replies.length]));
+    if (seen) {
+      for (const t of threads) {
+        const before = seen.get(t.id);
+        if (before === undefined && t.authorId !== me) announce(`New comment from ${t.authorName}`, { key: 'comments', delay: 600, merge: true });
+        else if (before !== undefined && t.replies.length > before && t.replies[t.replies.length - 1].authorId !== me) {
+          announce(`${t.replies[t.replies.length - 1].authorName} replied to a comment`, { key: 'comments', delay: 600, merge: true });
+        }
+      }
+    }
+    seen = next;
+  }
+
   function render() {
     const threads = app.visibleThreads();
+    announceArrivals(app.comments.list());
     const open = threads.filter((t) => !t.resolved);
     const resolved = threads.filter((t) => t.resolved);
     count.textContent = String(open.length);

@@ -53,11 +53,11 @@ export function focusIsIn(root: HTMLElement): boolean {
   return !active || active === document.body || root.contains(active);
 }
 
-/** Makes everything in the body except `keep` (and the toast, which must stay announced) inert. Returns the undo. */
+/** Makes everything in the body except `keep` (and the toast and the announcer, which must stay announced) inert. Returns the undo. */
 export function inertPage(keep: HTMLElement): () => void {
   const changed: HTMLElement[] = [];
   for (const el of Array.from(document.body.children) as HTMLElement[]) {
-    if (el === keep || el.inert || el.classList.contains('toast')) continue;
+    if (el === keep || el.inert || el.classList.contains('toast') || el.classList.contains('sr-only')) continue;
     el.inert = true;
     changed.push(el);
   }
