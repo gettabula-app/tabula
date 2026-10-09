@@ -101,7 +101,7 @@ Select something and a small bar appears above it (below, if above would cover a
 
 ## The properties panel
 
-**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it.
+**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it.
 
 ## Selecting, moving and grouping
 
@@ -111,6 +111,7 @@ Select something and a small bar appears above it (below, if above would cover a
 - Hold `Alt` while dragging to ignore the grid and [smart guides](smart-guides.md).
 - Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.
+- Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
 - Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
 
 There is no separate group command. To keep objects together, put them in a **Frame**: moving the frame moves what is inside it.

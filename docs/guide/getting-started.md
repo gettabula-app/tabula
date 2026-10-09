@@ -123,6 +123,8 @@ On Mac, use `Cmd` where the table says `Ctrl`. The board menu lists every shortc
 | Arrow keys | Nudge by 1 pixel |
 | `Shift`+arrow keys | Nudge by one grid step |
 | `]` | Bring to front |
+| `Ctrl+]` | Bring forward one step (`Cmd+]` on Mac) |
+| `Ctrl+[` | Send backward one step (`Cmd+[` on Mac) |
 | `[` | Send to back |
 | `Ctrl+Z` | Undo |
 | `Shift+Ctrl+Z` or `Ctrl+Y` | Redo |

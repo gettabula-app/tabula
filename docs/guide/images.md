@@ -53,7 +53,16 @@ A grey box can also say:
 ## Pictures in exports and templates
 
 - **PNG image** and **SVG vector** exports include the pictures.
+- **Board file (.drift)** keeps the pictures inside the file. Opening it as a new board, or with **Import a board file into this board**, brings them back and sends them to the board in the background. A picture that cannot be read from the file (a type Tabula does not support, or a file that is too large) shows as a placeholder, and the rest of the board opens as usual.
+- **JSON snapshot** names the pictures but does not hold them. The file says so. Use a `.drift` file to keep them.
+- **Markdown summary** lists a picture inside a frame as `Image: ` followed by its alt text, or `Image (image/png, 640 x 480)` when it has none.
 - When you save a board or a selection as a template, pictures are left out. The save dialog says how many. Templates cannot hold pictures yet.
+
+## Deleting a picture
+
+Deleting a picture takes it off the board, but not out of the board's history. Older versions in [Version history](version-history.md) still show it, and restoring one brings it back. Tabula keeps the file for as long as any kept version or the board itself refers to it, and removes it automatically some days after the last one stops. Until then, anyone who can open the board can still see it in those versions.
+
+If a picture must be gone for good, delete it from the board and then delete the versions that show it.
 
 ## Related
 

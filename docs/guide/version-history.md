@@ -81,7 +81,7 @@ Select a version and click **Delete**, then click **Confirm delete**.
 - Editors can delete only the named versions they saved.
 - Owners can rename any named version. Editors can name an unnamed version, and rename named versions they saved.
 
-Version history keeps content people deleted from the board. If something sensitive was on the board, delete every version that still contains it.
+Version history keeps content people deleted from the board, [pictures](images.md#deleting-a-picture) included. If something sensitive was on the board, delete every version that still contains it.
 
 ## How long versions are kept
 
