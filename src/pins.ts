@@ -1,6 +1,7 @@
 import type { Thread } from './comments';
 import { anchorPosition } from './comments';
 import type { Obj, Point } from './types';
+import { personColor } from './palette';
 
 /** A pin as the overlay draws it. Positions are world coordinates; sizes are screen pixels (scaled by the renderer). */
 export interface PinView {
@@ -24,7 +25,7 @@ export function pinViews(opts: { threads: Thread[]; get: (id: string) => Obj | u
     for (const t of opts.threads) {
       const p = anchorPosition(t.anchor, opts.get);
       out.push({
-        id: t.id, x: p.x, y: p.y, label: initial(t.authorName), color: t.authorColor, resolved: t.resolved,
+        id: t.id, x: p.x, y: p.y, label: initial(t.authorName), color: personColor(t.authorColor), resolved: t.resolved,
         count: 1 + t.replies.length, selected: t.id === opts.openId,
       });
     }

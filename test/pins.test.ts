@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { anchorFor, type Anchor, type Thread } from '../src/comments';
 import { pinAt, pinCenter, pinPath, pinViews, type PinView } from '../src/pins';
+import { personColor } from '../src/palette';
 import type { BaseObj, Obj } from '../src/types';
 
 const box = (over: Partial<BaseObj> = {}): BaseObj => ({
@@ -30,7 +31,7 @@ describe('pinViews', () => {
 
   it('places a pin at the anchor and takes the label from the author initial', () => {
     const [pin] = pinViews({ threads: [thread({ authorName: 'bob' })], get: none, openId: null, draft: null, visible: true });
-    expect(pin).toMatchObject({ id: 't1', x: 10, y: 20, label: 'B', color: '#f00', resolved: false, count: 1, selected: false });
+    expect(pin).toMatchObject({ id: 't1', x: 10, y: 20, label: 'B', color: personColor('#f00'), resolved: false, count: 1, selected: false });
   });
 
   it('uses ? when the author has no name', () => {

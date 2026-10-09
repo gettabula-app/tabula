@@ -6,7 +6,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { Store } from './store';
 import { Comments } from './comments';
 import type { User } from './types';
-import { USER_COLORS } from './palette';
+import { USER_COLORS, personColor } from './palette';
 import { isDesktop } from './desktop-env';
 
 // ---------------------------------------------------------------- identity
@@ -18,7 +18,13 @@ const NOUN = ['Otter', 'Heron', 'Fox', 'Lynx', 'Wren', 'Moth', 'Badger', 'Finch'
 export function getUser(): User {
   try {
     const raw = localStorage.getItem(USER_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const u = JSON.parse(raw) as User;
+      // a colour stored before TAB-197 maps to its replacement, once, here
+      const color = personColor(u.color);
+      if (color !== u.color) { u.color = color; saveUser(u); }
+      return u;
+    }
   } catch { /* ignore */ }
   const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
   const u: User = {
