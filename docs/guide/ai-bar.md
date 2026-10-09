@@ -26,7 +26,7 @@ Collapsing the bar leaves a small spark button, **Ask AI**. Select it, or press 
 
 While it works the bar says what it is doing, for example "Summarising 3 stickies…", and shows **Stop**. `Esc` also stops it. Nothing changes on the board until you add the result.
 
-Everyone on the board sees that a run is under way, and then its result as a preview on the canvas, labelled "Your AI preview" for you and, for example, "Ana's AI preview" for others. Editors can add or discard anyone's preview. The first to act wins, and the others are told who did. A preview can land outside the part of the board you are looking at, so you may need to move the view to see it.
+Everyone on the board sees that a run is under way, and then its result as a preview on the canvas, labelled "Your AI preview" for you and, for example, "Ana's AI preview" for others. Editors can add or discard anyone's preview. The first to act wins, and the others are told who did. A preview can land outside the part of the board you are looking at. Choose **Show**, on the preview's label or in the bar, to move the view to your own preview. The view only moves when you ask.
 
 ## When something goes wrong
 
@@ -42,7 +42,7 @@ Each message has **Retry** where it helps, and a button to dismiss it.
 
 ## The preview
 
-When the AI has finished, the bar says what it would add, for example "3 stickies in a new frame “Summary”", and offers **Discard**, **Retry**, **Review** and **Add to board**. "Nothing is on the board until you add it. Enter adds, Esc discards."
+When the AI has finished, the bar says what it would add, for example "3 stickies in a new frame “Summary”", and offers **Discard**, **Retry**, **Review**, **Show** and **Add to board**. "Nothing is on the board until you add it. Enter adds, Esc discards."
 
 ## Review before you add
 
