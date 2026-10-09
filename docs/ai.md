@@ -321,7 +321,7 @@ Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray,
 - `cleanProposedBy` (`src/safe-obj.ts`, run by `safeObj`) keeps the one shape: the feature must be one of the three, the id a plain id (`[A-Za-z0-9_-]`, 64 at most), the name one line of at most 40 visible characters with control, zero-width, bidirectional and tag characters removed. Anything else in the value is dropped, and a value that is not an object, or has another feature, is dropped whole.
 - The properties panel shows "Proposed by AI (Summarise) for Ana" from the cleaned value, set as text.
 - MCP (the object lists and `get_objects`) shows only `{ feature, name }`, the name cut to 40 characters like other names a model reads; the id is not shown. An unknown shape shows nothing. MCP cannot write it: `create_objects` takes no such field.
-- Copy, paste and duplicate (`remapObjects`) pass it through `cleanProposedBy` too, so a crafted clipboard or file cannot put another shape on a board. Exports (`toJson`) write what the board holds.
+- Copy, paste and duplicate (`remapObjects`) pass it through `cleanProposedBy` too, so a crafted clipboard or file cannot put another shape on a board. The readable snapshot (`toJson`, which is also `board.json` inside a `.drift` file) writes it in the clean shape or leaves it out. The CRDT state a `.drift` file carries is the document as it is, so it keeps what the document holds, and it is cleaned when read.
 - Templates never keep it: saving one removes it, and using one (in the app, `instantiate`, and on the server, `planUseTemplate`) drops it from content that has it.
 
 ### Deferred

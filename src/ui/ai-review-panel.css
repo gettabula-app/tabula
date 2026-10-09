@@ -37,3 +37,6 @@
 @media (max-width: 860px) {
   .chrome > .aireview { top: auto; bottom: 64px; left: var(--rail-clear); right: 12px; width: auto; max-height: 60vh; }
 }
+
+/* the properties panel is hidden while a review is open, as for the drawers (src/styles.css): both sit at the right */
+.chrome:has(> .aireview) > .props { visibility: hidden; }
