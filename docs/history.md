@@ -257,7 +257,7 @@ Existing, registration-level lines only (`src/app.ts`, `src/sync.ts`, `src/store
 - `test/admin.test.ts`: the audit actions.
 - `docs/accounts.md`: the open-mode `404` sentence points here, the audit action list, the new data directory.
 - `README.md`: a Version history row in the feature table, the `.drift` description corrected, and "version history" removed from "Not built yet".
-- `CHANGELOG.md`: Added (version history) and Changed (the `.drift` hint, the room save maximum wait).
+- Fragments in `changelog.d/` (see `changelog.d/README.md`): an Added entry for version history and Changed entries for the `.drift` hint and room save maximum wait.
 
 ## Decisions
 
@@ -268,6 +268,6 @@ Taken when the spec was reviewed:
 3. The numbers stand: 10 minute interval, 24 hour / 7 day / 30 day thinning, 64 MB budget, 100 named versions, the 10 objects / 70% large-deletion rule.
 4. No environment variables, so there is no operator switch to turn history off.
 5. Files rather than a SQLite table, to keep open mode on one code path.
-6. The `.drift` menu hint "Full history" is reworded ("Board with its sync data"), since deleted content is not in the file. Noted in the changelog under Changed.
+6. The `.drift` menu hint "Full history" is reworded ("Board with its sync data"), since deleted content is not in the file. Add a Changed fragment in `changelog.d/` (see `changelog.d/README.md`).
 7. Restore is refused while a session runs.
-8. Room saves get a maximum wait of 30 seconds (`scheduleSave`), so continuous editing no longer defers saves and snapshots. Noted in the changelog under Changed.
+8. Room saves get a maximum wait of 30 seconds (`scheduleSave`), so continuous editing no longer defers saves and snapshots. Add a Changed fragment in `changelog.d/` (see `changelog.d/README.md`).

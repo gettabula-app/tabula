@@ -227,6 +227,8 @@ Icon sets come from [Iconify's open data](https://github.com/iconify/icon-sets) 
 npm test             # vitest
 npm run lint         # oxlint
 npm run typecheck    # tsc --noEmit
+npm run changelog:check  # validate changelog fragments
+npm run changelog:fold   # fold fragments into CHANGELOG.md when merging
 npm run test:repeat -- test/relay.test.ts --times 20   # flake gate: repeat files under CI=true
 npm run visual -- --id TAB-123   # headless screenshots of the app, see docs/visual-check.md
 ```
@@ -236,6 +238,10 @@ Covers CRDT merging of concurrent and offline edits, undo scope, ordering, conne
 `npm run test:repeat -- [files] [--times 20] [--platform win32] [--bail]` runs test files again and again under `CI=true` (the CI settings of `vite.config.ts`) and reports which tests failed in which runs; without files it takes the test files changed versus `origin/main`. New test files should pass it 10 to 20 times before they are merged. `--platform win32` makes tests that branch on the platform take their Windows branch (`test/platform.ts`).
 
 `npm run visual` needs Chromium once (`npx playwright install chromium`). It starts its own throwaway relay, seeds a fixed board and writes screenshots for every state, theme and width to `tabula-review/<id>/`, so nobody needs the shared Chrome for a look at a change. See [docs/visual-check.md](docs/visual-check.md).
+
+### Changelog
+
+Add a fragment for each change and let the person merging to `main` fold it into `CHANGELOG.md`. See [changelog.d/README.md](changelog.d/README.md) for the format and workflow.
 
 ## CI/CD
 

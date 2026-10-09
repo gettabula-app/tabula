@@ -457,7 +457,7 @@ Existing, touched at registration level unless noted:
 - `src/ui/board.ts`: the **AI tool access** menu item (`src/ui/home.ts` is not touched).
 - `package.json`, `package-lock.json`: `@modelcontextprotocol/sdk` 1.32.1 as an exact-pinned devDependency (smoke test only). It is the first release that `npm audit --audit-level=high`, which CI runs, accepts: 1.30.1 and earlier carry an advisory about its OAuth client, which this repo does not use.
 - `test/directory.test.ts`: the two expectations of the schema version (3 becomes 4).
-- `README.md`, `CHANGELOG.md`: a short setup section and the entry.
+- `README.md`: a short setup section. Add a fragment in `changelog.d/` (see `changelog.d/README.md`).
 - Not touched on purpose: `src/app.ts` and `src/types.ts` (the rename is in `app.ts`; no new object fields), `src/store.ts`, `Dockerfile` (`server/` is copied whole; there is no new runtime dependency).
 
 ## Decisions

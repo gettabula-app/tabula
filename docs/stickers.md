@@ -28,7 +28,7 @@ A new object type would add a second render path, sanitiser, export branch and s
 
 Some Iconify bodies carry SVG `id`s that gradients refer to. In the probe, 14 of 60 `noto` bodies and 60 of 60 `fluent-emoji` bodies have them, and two different Fluent icons (`grinning-face` and `grinning-face-with-big-eyes`) share 10 ids. Whether their gradient definitions differ was not checked, and the fix does not depend on it. Board objects are inlined into one document, both in the live renderer (`render.ts` sets each object's `innerHTML`) and in export (`exportSvg` joins every `objectMarkup`). The browser resolves `url(#id)` to the first element with that id, so two stickers can take each other's gradients.
 
-Copy and duplicate keep the body and give the copy a new object id, so the fix cannot be made at placement. It goes in `iconMarkup`: every icon's body has its ids scoped by object id at render and export time. This also changes any existing icon whose body has ids, and changes nothing for icons without them. It ships as a Fixed entry in the changelog.
+Copy and duplicate keep the body and give the copy a new object id, so the fix cannot be made at placement. It goes in `iconMarkup`: every icon's body has its ids scoped by object id at render and export time. This also changes any existing icon whose body has ids, and changes nothing for icons without them. Add a Fixed fragment in `changelog.d/` (see `changelog.d/README.md`).
 
 ## Data model
 
@@ -203,7 +203,7 @@ EXISTING (one line each):
 - `src/styles.css`: `.stickers-label`, `.sticker-sets`, `.sticker-grid`, `.sticker-tile`, `.stickers-note`, `.reaction-grid` and the React popover rules; theme variables only, no radius or shadows.
 - `test/core.test.ts`: the two icon-markup cases listed above.
 - `README.md`: a row in the "What works today" table for stickers and reactions.
-- `CHANGELOG.md`: an Unreleased Added entry for stickers and reactions, and a Fixed entry for the gradient id collision.
+- Fragments in `changelog.d/` (see `changelog.d/README.md`): an Added entry for stickers and reactions and a Fixed entry for the gradient id collision.
 
 Untouched: `src/app.ts` and `src/render.ts` (the rename is editing them), `src/exporters.ts`, `src/icons.ts`, `src/store.ts`, `src/sync.ts`, `public/sw.js` and `server/`.
 

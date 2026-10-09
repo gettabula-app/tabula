@@ -2,7 +2,7 @@ name: CI
 
 # A push that only touches Markdown, docs/, design/ mockups, licence files or dependabot.yml starts no run at all, so it
 # cannot cancel a code run in progress through the concurrency group below. A push that changes the user guide is built
-# by docs.yml.
+# by docs.yml. Fragment-only pushes to main are also ignored by `**.md`; main receives fragments with their code change.
 # Pull requests have no paths filter on purpose: a workflow that never starts reports nothing, so "CI passed" could wait
 # forever as a required check. Every pull request starts a run and the "changes" job decides what it needs.
 on:
@@ -84,6 +84,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run changelog:check
       - run: npm run typecheck
       - run: npm audit --audit-level=high
 
