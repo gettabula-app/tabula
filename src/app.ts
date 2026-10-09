@@ -1,3 +1,4 @@
+import { planStep } from './z-order';
 import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
@@ -10,7 +11,7 @@ import type { Store } from './store';
 import { newId } from './store';
 import { Renderer, handlesFor, type HandleId } from './render';
 import {
-  boxBounds, center, connectorGeom, distToPolyline, hitBox, pointInRect, rectContains, rectOfPoints,
+  boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { objectMarkup, textHeight } from './markup';
@@ -116,6 +117,8 @@ export class BoardApp {
   private spaceDown = false;
   private listeners = new Map<Events, Set<() => void>>();
   private lastPointer: Point = { x: 0, y: 0 };
+  /** The right button was dragged since it went down: the view moved, so its contextmenu is not a click. */
+  private panned = false;
   private clipboard: Obj[] = [];
   private cursorTimer = 0;
   private pendingFrame = 0;
@@ -124,6 +127,8 @@ export class BoardApp {
   private disposers: (() => void)[] = [];
   /** Where the pixels of image objects come from and how new ones reach the relay (src/board-images.ts). */
   readonly images: BoardImages;
+  /** Set by the board UI: opens the object menu at a screen position. */
+  openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
 
@@ -444,7 +449,10 @@ export class BoardApp {
     svg.addEventListener('pointercancel', (e) => this.onUp(e));
     svg.addEventListener('dblclick', (e) => this.onDblClick(e));
     svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-    svg.addEventListener('contextmenu', (e) => e.preventDefault());
+    svg.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.onContextMenu(e);
+    });
     svg.addEventListener('pointerleave', () => this.r.setOverlay({ hover: null, lockedHover: null }));
 
     // Touch pinch-zoom (two pointers).
@@ -566,6 +574,7 @@ export class BoardApp {
     this.r.svg.setPointerCapture(e.pointerId);
 
     if (e.button === 1 || e.button === 2 || this.spaceDown || this.tool.kind === 'hand') {
+      this.panned = false;
       this.drag = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: this.r.cam.x, cy: this.r.cam.y };
       this.r.root.classList.add('panning');
       return;
@@ -691,6 +700,7 @@ export class BoardApp {
 
     switch (d.mode) {
       case 'pan':
+        if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) this.panned = true;
         this.r.setCamera({ x: d.cx - (e.clientX - d.sx) / this.zoom, y: d.cy - (e.clientY - d.sy) / this.zoom });
         return;
       case 'move':
@@ -1160,6 +1170,8 @@ export class BoardApp {
       }
       if (mod && k === 'y') { e.preventDefault(); if (!ro) this.store.undo.redo(); return; }
       if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.ordered().filter((o) => !o.locked).map((o) => o.id)); return; }
+      if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
+      if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
       if (mod && k === 'c') { this.copy(); return; }
       if (mod && k === 'x') { if (!ro) { this.copy(); this.deleteSelection(); } return; }
@@ -1366,6 +1378,37 @@ export class BoardApp {
 
   pasteInternal() {
     if (this.clipboard.length) this.pasteText(JSON.stringify({ driftboard: 1, objects: this.clipboard }));
+  }
+
+  /** A right-click: selects what is under the pointer (unless it is already selected) and asks the UI for its menu. */
+  private onContextMenu(e: MouseEvent) {
+    // a right-button press starts a pan: it is a click for a menu only when the view did not move
+    if (this.readOnly || this.panned || (this.drag && this.drag.mode !== 'pan')) return;
+    const hit = this.hit(this.r.clientToWorld(e.clientX, e.clientY));
+    if (!hit) return;
+    if (!this.selection.includes(hit.id)) this.setSelection([hit.id]);
+    if (this.drag?.mode === 'pan') {
+      this.drag = null;
+      this.r.root.classList.remove('panning');
+    }
+    this.openObjectMenu?.(e.clientX, e.clientY);
+  }
+
+  /** One step forward: past the nearest object the selection overlaps (TAB-108). */
+  bringForward() {
+    return this.store.restack(planStep(this.store.ordered(), this.selection, 1, (a, b) => this.overlap(a, b)));
+  }
+
+  /** One step backward: below the nearest object the selection overlaps. */
+  sendBackward() {
+    return this.store.restack(planStep(this.store.ordered(), this.selection, -1, (a, b) => this.overlap(a, b)));
+  }
+
+  private overlap(a: Obj, b: Obj): boolean {
+    const layout = this.r.connectorLayout();
+    const ra = objBounds((id) => this.store.get(id), a, layout);
+    const rb = objBounds((id) => this.store.get(id), b, layout);
+    return !!ra && !!rb && rectsIntersect(ra, rb);
   }
 
   bringToFront() {

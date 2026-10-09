@@ -75,6 +75,8 @@ export const ICONS = {
   copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="1.5"/><path d="M15.5 8.5V5a1 1 0 00-1-1H5a1 1 0 00-1 1v9.5a1 1 0 001 1h3.5"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>',
   unlock: '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 017.7-1.5"/>',
+  forward: '<rect x="4" y="9" width="10" height="10" rx="1"/><rect x="10" y="4" width="10" height="10" rx="1" fill="currentColor" fill-opacity=".18"/>',
+  backward: '<rect x="10" y="9" width="10" height="10" rx="1"/><rect x="4" y="4" width="10" height="10" rx="1" fill="currentColor" fill-opacity=".18"/>',
   front: '<rect x="8" y="8" width="12" height="12" rx="1" fill="currentColor" fill-opacity=".18"/><path d="M4 15V5a1 1 0 011-1h10"/>',
   back: '<rect x="4" y="4" width="12" height="12" rx="1" fill="currentColor" fill-opacity=".18"/><path d="M20 9v10a1 1 0 01-1 1H9"/>',
   alignLeft: '<path d="M4 3v18M8 7h10M8 12h6M8 17h11"/>',

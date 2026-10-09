@@ -1,3 +1,4 @@
+import { openContextMenu } from './context-menu';
 import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
@@ -133,6 +134,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   imageBtn.hidden = !imagesAvailable();
   app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
   app.onImageFiles = (files) => void addImages(app, files);
+  app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
