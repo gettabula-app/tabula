@@ -5,6 +5,7 @@ import { Flow, UNLIMITED } from '../src/flow';
 import type { BaseObj } from '../src/types';
 import { inkOn, mix, normalizeHex } from '../src/palette';
 import { objectMarkup } from '../src/markup';
+import { votableOutline } from '../src/render';
 
 /** The parts of BoardApp that Flow uses, without any DOM. */
 function fakeApp(doc = new Y.Doc(), userId = 'me') {
@@ -260,5 +261,30 @@ describe('dot vote scope (TAB-232)', () => {
     flow.quickVote(UNLIMITED);
     expect(flow.activeStep()!.voteScope).toBeUndefined();
     expect(flow.canVote(flow.activeStep(), store.get('s1'))).toBe(true);
+  });
+});
+
+describe('the ring on votable items (TAB-238)', () => {
+  const box = { x: 100, y: 50, w: 200, h: 80 };
+  const widths = (svg: string) => [...svg.matchAll(/stroke-width="([\d.]+)"/g)].map((m) => Number(m[1]));
+
+  it('takes its colours from the theme, not a fixed blue', () => {
+    const svg = votableOutline(box, (v) => v);
+    expect(svg).toContain('var(--canvas-ink');
+    expect(svg).toContain('var(--canvas');
+    expect(svg).not.toMatch(/#2F6FED/i);
+  });
+
+  it('is as heavy on screen at any zoom: every length scales with 1 / zoom', () => {
+    const at = (z: number) => votableOutline(box, (v) => v / z);
+    const [full, far] = [widths(at(1)), widths(at(0.11))];
+    far.forEach((w, i) => expect(w * 0.11).toBeCloseTo(full[i], 5));
+    expect(Math.min(...full)).toBeGreaterThanOrEqual(2);
+    const dash = (svg: string) => svg.match(/stroke-dasharray="([\d. ]+)"/)![1].split(' ').map(Number);
+    dash(at(0.11)).forEach((d, i) => expect(d * 0.11).toBeCloseTo(dash(at(1))[i], 5));
+  });
+
+  it('is at least 70% opaque', () => {
+    expect(votableOutline(box, (v) => v)).toContain('stroke-opacity="0.7"');
   });
 });

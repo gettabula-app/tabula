@@ -68,6 +68,16 @@ export const emptyOverlay = (): Overlay => ({
   guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
 });
 
+/**
+ * The ring round an item a dot may go on (TAB-238): the theme's ink at 70% over a halo in the canvas colour, so it reads on every theme (Matrix included) and over busy content.
+ * Every length goes through `px`, so the line is as thick and as dashed at 11% zoom as at 100%.
+ */
+export function votableOutline(b: { x: number; y: number; w: number; h: number }, px: (v: number) => number): string {
+  const rect = (grow: number) => `x="${b.x - px(grow)}" y="${b.y - px(grow)}" width="${b.w + px(grow * 2)}" height="${b.h + px(grow * 2)}" rx="${px(6)}" fill="none"`;
+  return `<rect ${rect(3)} stroke="var(--canvas, #EEF1F4)" stroke-opacity="0.8" stroke-width="${px(4)}" pointer-events="none"/>` +
+    `<rect ${rect(3)} stroke="var(--canvas-ink, #18212B)" stroke-opacity="0.7" stroke-width="${px(2)}" stroke-dasharray="${px(5)} ${px(3)}" pointer-events="none"/>`;
+}
+
 const GUIDE = 'var(--guide, #D6247F)';
 
 /** A number for an attribute: guides and gaps are measured from stored geometry, which may not be numbers (TAB-203). */
@@ -705,7 +715,7 @@ export class Renderer {
       const o = get(id);
       if (!isBox(o)) continue;
       const b = boxBounds(o);
-      out += `<rect x="${b.x - px(3)}" y="${b.y - px(3)}" width="${b.w + px(6)}" height="${b.h + px(6)}" rx="${px(6)}" fill="none" stroke="${WIRE}" stroke-opacity="0.35" stroke-width="${px(1.5)}" stroke-dasharray="${px(4)} ${px(3)}" pointer-events="none"/>`;
+      out += votableOutline(b, px);
     }
 
     // vote badges
