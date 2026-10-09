@@ -121,7 +121,21 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 - Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
 - Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
 
-There is no separate group command. To keep objects together, put them in a **Frame**: moving the frame moves what is inside it.
+To keep objects together, put them in a **Frame** (moving the frame moves what is inside it) or make them a **group**.
+
+### Groups
+
+A group bundles items so you can select them as one. It has no picture of its own.
+
+- Select two or more items and press `Ctrl+G` (`Cmd+G` on a Mac), or choose **Group** in the quick-action bar. `Shift+Ctrl+G` (`Shift+Cmd+G`) or **Ungroup** takes a group apart again. Both are one step in Undo. Frames cannot be grouped, and the message says so when you leave one out.
+- Connectors with both ends inside the selection join the group.
+- Click any item of a group to select the whole group. Dragging a box over part of a group selects it too.
+- **Double-click** an item to enter the group. The rest of the board dims, the group gets a dashed outline and its name, and you can select, edit and move the items inside. Press `Esc`, click **Done**, or click empty canvas to leave. Groups can hold groups; `Esc` leaves one level at a time, and **Ungroup** takes apart only the outer one.
+- Choosing a colour or other style for a group changes every item in it that has one.
+- On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar and double-tap to enter. The **Done** chip leaves the group.
+- During a dot vote a click gives a dot to the item you click, not to its group.
+
+Some things do not work on a whole group yet: moving, resizing and rotating it, copying and pasting it, and deleting or locking it as one. For now, enter the group to move or edit its items.
 
 ## Locking
 
