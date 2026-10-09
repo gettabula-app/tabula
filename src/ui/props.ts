@@ -209,6 +209,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     const locked = sel.every((o) => o.locked);
     blocks.push(h('div', { class: 'btn-row arrange' },
       btn('front', 'Bring to front', () => app.bringToFront(), '', ']'),
+      btn('forward', 'Bring forward', () => void app.bringForward(), '', 'mod+]'),
+      btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
       btn('back', 'Send to back', () => app.sendToBack(), '', '['),
       btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       btn(locked ? 'unlock' : 'lock', locked ? 'Unlock' : 'Lock', () => app.toggleLock()),

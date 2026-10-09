@@ -175,6 +175,13 @@ export class Store {
     return generateNKeysBetween(null, min, n);
   }
 
+  /** Writes new stacking keys in one step (one undo step). Returns whether anything was written. */
+  restack(patches: { id: Id; z: string }[] | null): boolean {
+    if (!patches?.length || this._readOnly) return false;
+    this.transact(() => patches.forEach((p) => this.update(p.id, { z: p.z })));
+    return true;
+  }
+
   /** Put the given objects above everything else, keeping their order among themselves. */
   bringToFront(ids: Iterable<Id>) {
     const set = new Set(ids);

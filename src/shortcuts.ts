@@ -43,6 +43,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item', ids: ['enter'] },
   { group: 'Edit', keys: 'Arrows (Shift for grid steps)', action: 'Nudge', ids: ['arrows'] },
   { group: 'Edit', keys: ']', action: 'Bring to front', ids: [']'] },
+  { group: 'Edit', keys: 'Ctrl/Cmd+]', action: 'Bring forward one step', ids: ['mod+]'] },
+  { group: 'Edit', keys: 'Ctrl/Cmd+[', action: 'Send backward one step', ids: ['mod+['] },
   { group: 'Edit', keys: '[', action: 'Send to back', ids: ['['] },
   { group: 'Edit', keys: 'Double-click', action: 'Edit text, or add text on empty canvas', ids: [] },
   { group: 'Edit', keys: 'Shift-click while voting', action: 'Remove a vote', ids: [] },
