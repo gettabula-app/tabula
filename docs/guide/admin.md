@@ -75,7 +75,7 @@ Each row is a sign-in: the person, when they signed in, when they were last seen
 
 ## Access tokens
 
-Active [personal access tokens](ai-tools.md) for AI tools, across the workspace: whose it is, its name and access level, which boards it covers, when it was last used and when it expires. **Revoke** stops a token at once. The section appears only when AI tool access is turned on for your server.
+Active [personal access tokens](ai-tools.md) for AI tools, across the workspace: whose it is, its name and access level, which boards it covers, when it was last used and when it expires. **Create a token** at the top makes one for yourself (see [Access tokens and AI tools](ai-tools.md)). **Revoke** stops a token at once. The section appears only when AI tool access is turned on for your server.
 
 ## AI
 

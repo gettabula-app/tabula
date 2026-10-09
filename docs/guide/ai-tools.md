@@ -23,6 +23,8 @@ Two safeguards apply to every token:
 
 ## Create a token
 
+Admins can also select **Create a token** in the **Access tokens** section of Admin. It opens this same form and makes a token for you, and the list there refreshes.
+
 1. Choose **AI tool access** in the top bar of the **Boards** or **Templates** page, or open the board menu and choose it under **Account**.
 2. Select **New token**.
 3. Enter a **Name**, for example "Claude Code on my laptop".
