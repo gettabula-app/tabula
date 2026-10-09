@@ -508,17 +508,18 @@ async function openKanbanBoard({ page, base }, { fit = true, board = KANBAN_ID }
 }
 
 /**
- * On a phone (under 600 px) fits the view to one lane, at about 100% zoom, so the chips, dimming, Full outline and name
+ * On a phone (under 600 px) fits the view to one lane (or the lanes named), at about 100% zoom, so the chips, dimming, Full outline and name
  * field of a state can be judged there; the whole-board fit leaves a kanban at 16 to 23%. On wider screens it does nothing.
  */
-async function zoomOnLane(page, laneId) {
-  const did = await page.evaluate((id) => {
+async function zoomOnLane(page, laneIds) {
+  const did = await page.evaluate((ids) => {
     const app = window.__board;
-    const o = app.store.getPlaced(id);
-    if (window.innerWidth >= 600 || !o) return false;
-    app.r.fit({ x: o.x, y: o.y, w: o.w, h: o.h }, 8, 1);
+    const os = [ids].flat().map((id) => app.store.getPlaced(id)).filter(Boolean);
+    if (window.innerWidth >= 600 || !os.length) return false;
+    const x = Math.min(...os.map((o) => o.x)), y = Math.min(...os.map((o) => o.y));
+    app.r.fit({ x, y, w: Math.max(...os.map((o) => o.x + o.w)) - x, h: Math.max(...os.map((o) => o.y + o.h)) - y }, 8, 1);
     return true;
-  }, laneId);
+  }, laneIds);
   if (did) await settle(page);
 }
 
@@ -874,12 +875,14 @@ const STATES = {
       app.setSelection([]);
     });
     await settle(page);
-    const from = await screenOf(page, 'k-c3', 0.5, 0.5);
+    // phone: Doing and Review side by side, zoomed before the pickup (a card picked up at the whole-board zoom keeps its
+    // low-detail ghost), and the card taken from Doing so that it and the full lane are both on screen
+    const phone = await page.evaluate(() => window.innerWidth < 600);
+    if (phone) await zoomOnLane(page, ['k-doing', 'k-review']);
+    const from = await screenOf(page, phone ? 'k-d1' : 'k-c3', 0.5, 0.5);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x + 12, from.y + 12, { steps: 3 });
-    // phone: zoom to the full lane while the card is held, then drag over it
-    await zoomOnLane(page, 'k-review');
     const over = await screenOf(page, 'k-review', 0.5, 0.55);
     await page.mouse.move(over.x, over.y, { steps: 8 });
     await settle(page);

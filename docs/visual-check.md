@@ -62,7 +62,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `kanban-wip` | A fourth card in the lane with a limit of three: the danger count and rule |
 | `kanban-lowdetail` | The kanban at zoom 0.3: titles as bars, chips as colour, lane headers as names |
 | `kanban-labels-colour` | The Labels dialog with the first label's colour list open |
-| (phone zoom) | Under 600 px wide the states `kanban-filter-on`, `kanban-wip-block`, `kanban-wip-refused` and `kanban-addlane` fit the view to one lane (Doing, Review, Review and the new lane) at about 100% instead of the whole kanban at 16 to 23%, so the dimming, the Full outline, the toast and the name field can be judged on a phone |
+| (phone zoom) | Under 600 px wide the states `kanban-filter-on`, `kanban-wip-block`, `kanban-wip-refused` and `kanban-addlane` fit the view to one lane (Doing, Doing and Review side by side at about 50% with a card of Doing held, and the new lane) at about 100% (the WIP ones about 50%) instead of the whole kanban at 16 to 23%, so the dimming, the Full outline, the toast and the name field can be judged on a phone |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |
 | `backups-list` | `#/admin/backups`: the status and the list of seven backups (two protected, two unreadable). Accounts mode; the backup routes are answered with fixed data and the shot is the whole page |
 | `backups-detail` | The first backup opened in place: facts, free space, how long the old data is kept, the two actions (whole page) |
