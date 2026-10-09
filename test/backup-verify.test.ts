@@ -529,6 +529,8 @@ describe('the deep verify', () => {
     h.write('b2.yjs', docBytes('changed just before a restore'));
     const safety = await engine.runNow('manual');
     expect(safety).toMatchObject({ ok: true, uploaded: 1 });
+    // the interrupted check is not started again by the run that interrupted it: nothing is left waiting on the bucket
+    expect(await Promise.race([engine.deepIdle().then(() => 'idle'), new Promise((r) => setTimeout(() => r('waiting'), 500))])).toBe('idle');
     await engine.deepIdle();
     expect(engine.status()).toMatchObject({ deepVerifiedAt: null, deepDamaged: 0, lastError: null });
     expect(objectGets()).toBe(0);
