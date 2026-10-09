@@ -1232,7 +1232,7 @@ const pinger = setInterval(() => {
   }
 }, PING_MS);
 
-// The rooms are saved first, so the files and the backup's view of the open rooms are final. Then the backup gets
+// The rooms are saved first, so the files include the state the final backup starts with. Then the backup gets
 // TABULA_BACKUP_SHUTDOWN_SECONDS to finish a run in progress and to back up what changed since the last one (a restore
 // holds maintenance and stops the backups itself). Whatever is still running after that is told to stop and given a
 // moment to let go of the database before it is closed; both waits are short, so a supervisor's kill timeout is not reached.
@@ -1243,16 +1243,18 @@ async function stopRelay() {
   let saved = saveAllRooms();
   if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
     await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
-    // people were still editing while it ran
-    saved = saveAllRooms();
   }
   const stopping = backup?.stop();
   restore?.stop();
-  history.close();
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
-  if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+  if (stopping) {
+    await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+    // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.
+    saved = saveAllRooms();
+  }
+  history.close();
   closeChat();
   directory?.close();
   process.exit(saved ? 0 : 1);

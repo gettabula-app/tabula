@@ -9,5 +9,7 @@ section: Fixed
   the unsaved edits of every other room. The relay logs it and tries again after 5 seconds; the edits stay in memory, a
   room that could not be saved is not unloaded, and at shutdown the other rooms are still saved. A failed final save
   exits with an error status; shutdown still ends the process, so edits that could not be saved cannot survive it.
+- Shutdown saves room edits once more after the bounded backup-stop wait, so edits accepted during that wait are
+  included in the final save and its exit status without extending the backup shutdown budget.
 - A workspace restore stops before maintenance if its final room saves fail. Connected clients and unsaved edits stay
   available while saving retries, rather than reporting success and losing edits made after the safety backup.
