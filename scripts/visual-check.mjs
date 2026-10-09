@@ -507,6 +507,21 @@ async function openKanbanBoard({ page, base }, { fit = true, board = KANBAN_ID }
   await settle(page);
 }
 
+/**
+ * On a phone (under 600 px) fits the view to one lane, at about 100% zoom, so the chips, dimming, Full outline and name
+ * field of a state can be judged there; the whole-board fit leaves a kanban at 16 to 23%. On wider screens it does nothing.
+ */
+async function zoomOnLane(page, laneId) {
+  const did = await page.evaluate((id) => {
+    const app = window.__board;
+    const o = app.store.getPlaced(id);
+    if (window.innerWidth >= 600 || !o) return false;
+    app.r.fit({ x: o.x, y: o.y, w: o.w, h: o.h }, 8, 1);
+    return true;
+  }, laneId);
+  if (did) await settle(page);
+}
+
 /** The screen point of a world point on the kanban board. */
 const screenOf = (page, id, fx, fy) =>
   page.evaluate(({ id, fx, fy }) => {
@@ -842,6 +857,7 @@ const STATES = {
     await openKanbanBoard(env, { board: `${KANBAN_ID}-filter` });
     await env.page.evaluate(() => window.__board.setKanbanFilter('k-box', { mine: true, labels: ['bug'], due: [], text: '' }));
     await settle(env.page);
+    await zoomOnLane(env.page, 'k-doing'); // phone: one lane at about 100%, where the dimming shows
   },
   async 'kanban-wip-block'(env) {
     // its own board: Review is filled to its limit of 2
@@ -859,10 +875,13 @@ const STATES = {
     });
     await settle(page);
     const from = await screenOf(page, 'k-c3', 0.5, 0.5);
-    const to = await screenOf(page, 'k-review', 0.5, 0.55);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
-    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await page.mouse.move(from.x + 12, from.y + 12, { steps: 3 });
+    // phone: zoom to the full lane while the card is held, then drag over it
+    await zoomOnLane(page, 'k-review');
+    const over = await screenOf(page, 'k-review', 0.5, 0.55);
+    await page.mouse.move(over.x, over.y, { steps: 8 });
     await settle(page);
     return { noPark: true };
   },
@@ -881,6 +900,8 @@ const STATES = {
       app.r.fit(window.innerWidth < 600 ? app.r.contentBounds(['k-box']) : app.r.contentBounds(), window.innerWidth < 600 ? 8 : 40, 1);
     });
     await settle(env.page);
+    // phone: the new lane, with its name field open, at about 100%
+    await zoomOnLane(env.page, await env.page.evaluate(() => window.__board.store.containerLayout('k-box').lanes.at(-1)));
     return { noPark: true };
   },
   async 'kanban-lowdetail'(env) {
