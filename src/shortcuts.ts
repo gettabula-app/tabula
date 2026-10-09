@@ -53,6 +53,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'View', keys: 'Shift+1 / Shift+2 / Shift+0', action: 'Fit board / fit selection / 100%', ids: ['shift+1', 'shift+2', 'shift+0'] },
   { group: 'View', keys: 'Hold Space', action: 'Pan while held', ids: ['space'] },
   { group: 'View', keys: 'Ctrl/Cmd+K or /', action: 'Ask AI', ids: ['mod+k', '/'] },
+  { group: 'View', keys: 'M', action: 'Open or close board chat', ids: ['m'] },
   { group: 'While dragging', keys: 'Alt while dragging', action: 'Ignore grid and guides', ids: [] },
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
 ];

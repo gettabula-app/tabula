@@ -1,0 +1,150 @@
+/* Board chat (docs/chat.md, Interface): the Chat tab of the side tray. Swiss: theme variables only, radius 0, no
+   shadows, hairlines and 2px rules, 11px uppercase labels, an 8px grid. --signal marks only Send and the active tab. */
+
+/* the Chat button and its unread badge (a red outline when someone mentions you) */
+.chat-toggle { position: relative; }
+.chat-count {
+  display: none; position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 0; background: var(--tray-text); color: var(--tray); font-size: 10px; font-weight: 700; line-height: 16px;
+  text-align: center; pointer-events: none;
+}
+.chat-count.show { display: block; }
+.chat-count.mention { outline: 2px solid var(--danger); outline-offset: 0; }
+
+.side-tray .chat-panel { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.side-tray .chat-panel[hidden] { display: none; }
+
+.chat-status {
+  flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tray-line); border-left: 4px solid var(--tray-muted);
+  color: var(--tray-text); font-size: 12px; line-height: 16px;
+}
+.chat-status[hidden] { display: none; }
+
+.chat-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.chat-log {
+  position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overflow-anchor: none;
+  padding: 8px 0 16px; scrollbar-width: thin; outline: none;
+}
+.chat-log:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
+.chat-older { padding: 8px 16px; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
+.chat-older:empty { display: none; }
+
+/* date line and the New messages line: labels on a rule */
+.chat-day, .chat-new {
+  display: flex; align-items: center; gap: 8px; margin: 16px 16px 8px; color: var(--tray-muted);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; line-height: 16px;
+}
+.chat-day::after, .chat-new::after { content: ''; flex: 1; height: 1px; background: var(--tray-line); }
+.chat-new { color: var(--tray-text); }
+.chat-new::after { height: 2px; background: var(--tray-text); }
+
+/* one message: a colour square at the start of a run, the text beside it, the actions button at the end */
+.chat-msg {
+  position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) 32px; column-gap: 8px; align-items: start;
+  padding: 2px 4px 2px 16px;
+}
+.chat-msg.head { margin-top: 8px; }
+.chat-msg:hover, .chat-msg:focus-within { background: var(--tray-hover); }
+.chat-gutter { width: 24px; }
+.chat-avatar {
+  width: 24px; height: 24px; margin-top: 2px; border-radius: 0; background: var(--c, var(--tray-2)); color: #fff;
+  display: grid; place-items: center; font: 700 10px/1 var(--ui); letter-spacing: 0.02em;
+}
+.chat-main { min-width: 0; }
+.chat-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
+.chat-name { min-width: 0; font-weight: 600; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.chat-time { color: var(--tray-muted); font-size: 11px; line-height: 20px; white-space: nowrap; }
+.chat-text, .chat-tomb, .chat-state { margin: 0; font-size: 13.5px; line-height: 20px; }
+.chat-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tray-text); }
+.chat-tomb { color: var(--tray-muted); font-style: italic; }
+.chat-edited { color: var(--tray-muted); font-size: 11px; }
+.chat-link { color: var(--tray-text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
+.chat-link:hover { text-decoration-thickness: 2px; }
+.chat-mention { padding: 0 2px; background: var(--tray-2); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
+.chat-mention.me { text-decoration: underline 2px; text-underline-offset: 3px; }
+.chat-quote {
+  display: flex; gap: 8px; min-width: 0; margin: 2px 0 4px; padding-left: 8px; border-left: 2px solid var(--tray-line);
+  color: var(--tray-muted); font-size: 12px; line-height: 16px;
+}
+.chat-quote-name { flex: none; font-weight: 600; }
+.chat-quote-name:empty { display: none; }
+.chat-quote-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-more { width: 32px; height: 28px; opacity: 0; }
+.chat-msg:hover .chat-more, .chat-more:focus-visible, .chat-more[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .chat-more { opacity: 1; } }
+
+/* the person's own messages on their way: greyed, with what happened under them */
+.chat-msg.pending .chat-text { color: var(--tray-muted); }
+.chat-state { color: var(--tray-muted); font-size: 12px; line-height: 20px; }
+.chat-msg.failed .chat-text { color: var(--tray-text); }
+.chat-msg.failed .chat-state { padding-left: 8px; border-left: 2px solid var(--danger); color: var(--tray-text); }
+.chat-action {
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--tray-text); font: inherit; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.chat-action:hover { text-decoration-thickness: 2px; }
+
+.chat-edit { margin-top: 4px; }
+.chat-edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 8px 0 4px; }
+.chat-edit-actions .btn.small { height: 32px; padding: 0 12px; border-radius: 0; font-size: 12.5px; }
+
+.chat-jump {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); height: 32px; padding: 0 16px; border-radius: 0;
+  border: 1px solid var(--tray-text); background: var(--tray); color: var(--tray-text);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.chat-jump:hover { background: var(--tray-2); }
+.chat-jump[hidden] { display: none; }
+
+/* the composer: below a 2px rule, the field grows to six lines */
+.chat-composer {
+  position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 8px 16px 16px;
+  border-top: 2px solid var(--tray-text);
+}
+.chat-panel .chat-input {
+  display: block; width: 100%; min-height: 38px; resize: none; overflow-y: hidden; border-radius: 0;
+  padding: 8px; font-size: 14px; line-height: 20px;
+}
+.chat-panel .chat-input:focus { border-color: var(--tray-text); }
+.chat-panel .chat-input:disabled { opacity: 1; color: var(--tray-muted); cursor: not-allowed; }
+.chat-compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.chat-note { flex: 1; min-width: 0; margin: 0; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
+.chat-note.over { color: var(--tray-text); font-weight: 600; }
+.chat-send.btn { height: 32px; padding: 0 16px; border-radius: 0; }
+.chat-replying {
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 8px; border-left: 2px solid var(--tray-text);
+  font-size: 12px; line-height: 16px;
+}
+.chat-replying[hidden] { display: none; }
+.chat-replying-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-replying-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-text); }
+.chat-replying-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tray-muted); }
+
+/* the people list under `@`: above the field, a hairline box on the tray */
+.chat-suggest {
+  position: absolute; left: 16px; right: 16px; bottom: calc(100% - 2px); z-index: 2; margin: 0; padding: 0; list-style: none;
+  max-height: 240px; overflow-y: auto; background: var(--tray); border: 1px solid var(--tray-line); border-bottom: 2px solid var(--tray-text);
+}
+.chat-suggest[hidden] { display: none; }
+.chat-option {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 8px 8px 4px; border-left: 4px solid transparent; cursor: pointer;
+  border-top: 1px solid var(--tray-line); color: var(--tray-text); font-size: 13px;
+}
+.chat-option:first-child { border-top: 0; }
+.chat-option > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-option.on { background: var(--tray-2); border-left-color: var(--tray-text); }
+.chat-option .chat-avatar { margin-top: 0; }
+
+/* the message actions menu */
+.chat-menu { min-width: 200px; }
+.chat-menu-note { margin: 0; padding: 8px 10px; color: var(--tray-muted); font-size: 12px; line-height: 16px; max-width: 240px; }
+
+/* Windows high contrast: the colour squares keep their colour; the open tab, the chosen person and the badge get system
+   outlines, since their fills and bars are replaced (as in styles.css). */
+@media (forced-colors: active) {
+  .chat-avatar { forced-color-adjust: none; }
+  .side-tray-tab.on, .chat-option.on { outline: 2px solid Highlight; outline-offset: -2px; }
+  .side-tray-tab.on::after { background: Highlight; }
+  .chat-count { border: 1px solid CanvasText; }
+  .side-tray { border-color: CanvasText; }
+}

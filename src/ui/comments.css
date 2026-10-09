@@ -36,22 +36,43 @@
 }
 .comment-count.show { display: block; }
 
-/* comments panel, placed like the properties panel */
-.comments-panel {
-  position: absolute; right: 12px; top: var(--panel-top); width: 300px; max-height: calc(100% - var(--panel-top) - 84px); overflow-y: auto; display: none;
-  padding: 0 14px 14px; box-sizing: border-box; scrollbar-width: thin;
+/* The side tray (src/ui/side-tray.ts): Comments and, where chat is on, Chat as two tabs of one panel, placed like the
+   properties panel below the top bars. Swiss: radius 0, no shadow, a hairline edge and a 2px rule under the head. */
+:root .chrome > .side-tray.tray,
+:root:not([data-theme='default']) .chrome > .side-tray.tray { border-radius: 0; box-shadow: none; }
+.side-tray {
+  position: absolute; right: 12px; top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px));
+  max-height: calc(100% - var(--panel-top) - 84px); display: none; flex-direction: column; box-sizing: border-box;
+  border: 1px solid var(--tray-line);
 }
-.comments-panel.show { display: block; }
-/* narrow windows: never under the rail, which runs the full height there (TAB-133) */
-@media (max-width: 860px) { .comments-panel { width: min(300px, calc(100% - var(--rail-clear) - 12px)); } }
-.comments-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 2px; }
-.comments-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
-.comments-head .icon-btn:last-child { margin-right: -13px; }
-.comments-panel .segmented { margin-top: 10px; }
-.comments-list { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.side-tray.show { display: flex; }
+.side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px); }
+.side-tray-head {
+  flex: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 16px;
+  border-bottom: 2px solid var(--tray-text);
+}
+.side-tray-title,
+.side-tray-tab { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.side-tray-title { flex: 1; margin: 0; color: var(--tray-text); }
+.side-tray-tabs { flex: 1; align-self: stretch; display: flex; gap: 24px; min-width: 0; }
+.side-tray-tabs[hidden], .side-tray-title[hidden] { display: none; }
+.side-tray-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--tray-muted);
+}
+.side-tray-tab:hover, .side-tray-tab.on { color: var(--tray-text); }
+.side-tray-tab.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 4px; background: var(--signal); }
+.side-tray-tab[hidden] { display: none; }
+.side-tray-close { flex: none; }
+.side-tray-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; }
+.side-tray-panel[hidden] { display: none; }
+
+/* the comments panel: the Comments tab */
+.comments-panel .segmented { margin-top: 16px; }
+.comments-list { display: flex; flex-direction: column; margin-top: 16px; border-top: 1px solid var(--tray-line); }
 .comment-row {
-  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--tray-text); text-align: left;
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--tray-line);
+  border-radius: 0; background: transparent; color: var(--tray-text); text-align: left;
 }
 .comment-row:hover { background: var(--tray-hover); }
 .comment-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }

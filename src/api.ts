@@ -32,7 +32,37 @@ export interface Me {
   images?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
   ai?: { personalKeys: true };
+  /** Present (true) when team chat is on for this server (docs/chat.md). */
+  chat?: boolean;
 }
+
+/** A chat message as the API and the /chat socket show it (docs/chat.md, API). Text is plain; never HTML. */
+export interface ChatMessage {
+  id: number;
+  kind: string;
+  ref: string;
+  authorId: string | null;
+  authorName: string;
+  clientId: string;
+  text: string;
+  replyTo: number | null;
+  objectId: string | null;
+  mentions: { id: string; name: string | null }[];
+  createdAt: number;
+  editedAt: number | null;
+  deleted: boolean;
+  deletedBy: 'author' | 'moderator' | null;
+}
+
+/** GET /api/chat/:kind/:ref: what the caller may do in a channel and who can read it. */
+export interface ChatChannelInfo {
+  kind: string;
+  ref: string;
+  access: { write: boolean; moderate: boolean; role: BoardRole | null; readOnly: boolean };
+  people: { id: string; name: string }[];
+}
+
+export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
 
 /** What the server stored for an upload. */
 export interface AssetInfo { hash: string; mime: string; bytes: number; width: number; height: number }
@@ -645,6 +675,17 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     adminBoards: (deleted = false) => call<AdminBoard[]>('GET', `/api/admin/boards${qs({ deleted: deleted ? 1 : undefined })}`),
     adminBoard: (id: string) => call<AdminBoard>('GET', `/api/admin/boards/${seg(id)}`),
     restoreBoard: (id: string) => call<void>('POST', `/api/admin/boards/${seg(id)}/restore`),
+    chatChannel: (kind: string, ref: string) => call<ChatChannelInfo>('GET', `/api/chat/${seg(kind)}/${seg(ref)}`),
+    chatMessages: (kind: string, ref: string, opts: { before?: number; limit?: number } = {}) =>
+      call<{ messages: ChatMessage[]; next: number | null }>('GET', `/api/chat/${seg(kind)}/${seg(ref)}/messages${qs({ before: opts.before, limit: opts.limit })}`),
+    chatSend: (kind: string, ref: string, body: { clientId: string; text: string; replyTo?: number | null; objectId?: string | null }) =>
+      call<{ message: ChatMessage }>('POST', `/api/chat/${seg(kind)}/${seg(ref)}/messages`, body),
+    chatEdit: (id: number, text: string) => call<{ message: ChatMessage }>('PATCH', `/api/chat/messages/${id}`, { text }),
+    chatDelete: (id: number) => call<void>('DELETE', `/api/chat/messages/${id}`),
+    chatRead: (kind: string, ref: string, lastId: number) =>
+      call<{ kind: string; ref: string; lastId: number }>('PUT', `/api/chat/${seg(kind)}/${seg(ref)}/read`, { lastId }),
+    chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
+
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),
 

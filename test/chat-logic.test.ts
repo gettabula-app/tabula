@@ -1,0 +1,266 @@
+import { describe, expect, it } from 'vitest';
+import type { ChatMessage } from '../src/api';
+import {
+  GROUP_MS, applyDelete, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
+  findLinks, fromTokens, initials, insertMention, mentionLabel, mentionQuery, mergeMessages, newer, outboxItem, quoteText, segments,
+  timeLabel, toTokens, trimOldest, type ChatAccess,
+} from '../src/ui/chat-logic';
+
+// docs/chat.md: merging by id, grouping into runs, date lines and the New messages line, plain-text links, mentions.
+// Times are built in local time and `now` is passed in, so nothing here depends on the machine's zone or clock.
+
+const at = (d: number, h: number, m = 0) => new Date(2026, 0, d, h, m).getTime();
+
+let next = 1;
+const msg = (fields: Partial<ChatMessage> = {}): ChatMessage => ({
+  id: next++, kind: 'board', ref: 'b1', authorId: 'ana', authorName: 'Ana', clientId: `client-${next}-x`, text: 'hello', replyTo: null,
+  objectId: null, mentions: [], createdAt: at(15, 9), editedAt: null, deleted: false, deletedBy: null, ...fields,
+});
+
+describe('merging', () => {
+  it('orders by id and ignores a frame it has already seen', () => {
+    const a = msg({ id: 1 }), b = msg({ id: 2 }), c = msg({ id: 3 });
+    const list = mergeMessages([c, a], [b, a, c]);
+    expect(list.map((m) => m.id)).toEqual([1, 2, 3]);
+    expect(mergeMessages(list, [b])).toEqual(list);
+  });
+
+  it('orders by id, never by the clock', () => {
+    const late = msg({ id: 5, createdAt: at(15, 8) });
+    const early = msg({ id: 4, createdAt: at(15, 10) });
+    expect(mergeMessages([], [late, early]).map((m) => m.id)).toEqual([4, 5]);
+  });
+
+  it('keeps the newest state whichever copy arrives last', () => {
+    const plain = msg({ id: 9, text: 'one' });
+    const edited = { ...plain, text: 'two', editedAt: 100 };
+    const dead = { ...plain, text: '', deleted: true, deletedBy: 'author' as const };
+    expect(newer(edited, plain).text).toBe('two');
+    expect(newer(plain, edited).text).toBe('two');
+    expect(newer(dead, edited).deleted).toBe(true);
+    expect(newer(edited, dead).deleted).toBe(true);
+    expect(mergeMessages([edited], [plain])[0].text).toBe('two');
+  });
+
+  it('turns a deleted message into a tombstone with no text', () => {
+    const m = msg({ id: 3, text: 'secret', mentions: [{ id: 'ben', name: 'Ben' }] });
+    const [dead] = applyDelete([m], 3, 'moderator');
+    expect(dead).toMatchObject({ id: 3, text: '', mentions: [], deleted: true, deletedBy: 'moderator' });
+    expect(applyDelete([m], 99, 'author')).toEqual([m]);
+  });
+
+  it('keeps at most the newest messages', () => {
+    const list = Array.from({ length: 5 }, (_, i) => msg({ id: i + 1 }));
+    expect(trimOldest(list, 3).map((m) => m.id)).toEqual([3, 4, 5]);
+    expect(trimOldest(list, 10)).toHaveLength(5);
+  });
+
+  it('counts unread after the marker, without own messages and tombstones', () => {
+    const list = [msg({ id: 1 }), msg({ id: 2, authorId: 'me' }), msg({ id: 3, deleted: true }), msg({ id: 4 }), msg({ id: 5 })];
+    expect(countUnread(list, 1, 'me')).toBe(2);
+    expect(countUnread(list, 5, 'me')).toBe(0);
+  });
+});
+
+describe('rows', () => {
+  const now = at(15, 12);
+
+  it('shows the name once for a run by one person within five minutes', () => {
+    const rows = buildRows([
+      msg({ id: 1, createdAt: at(15, 9, 0) }),
+      msg({ id: 2, createdAt: at(15, 9, 4) }),
+      msg({ id: 3, createdAt: at(15, 9, 4) + GROUP_MS }),
+      msg({ id: 4, createdAt: at(15, 9, 10), authorId: 'ben', authorName: 'Ben' }),
+      msg({ id: 5, createdAt: at(15, 9, 11) }),
+    ], [], { newAfter: null, meId: 'me', now });
+    expect(rows.map((r) => (r.type === 'message' ? `${r.message.id}${r.head ? '*' : ''}` : r.type))).toEqual(['day', '1*', '2', '3*', '4*', '5*']);
+  });
+
+  it('puts a date line where the day changes, and starts a new run there', () => {
+    const rows = buildRows([
+      msg({ id: 1, createdAt: at(13, 23, 58) }),
+      msg({ id: 2, createdAt: at(14, 0, 1) }),
+      msg({ id: 3, createdAt: at(15, 8) }),
+    ], [], { newAfter: null, meId: 'me', now });
+    expect(rows.map((r) => (r.type === 'day' ? r.label : r.type === 'message' ? `${r.message.id}${r.head ? '*' : ''}` : r.type)))
+      .toEqual(['Tuesday 13 January 2026', '1*', 'Yesterday', '2*', 'Today', '3*']);
+  });
+
+  it('puts New messages before the first unread message of someone else, once', () => {
+    const rows = buildRows([
+      msg({ id: 1 }), msg({ id: 2, authorId: 'me', authorName: 'Me' }), msg({ id: 3, authorId: 'me', authorName: 'Me' }),
+      msg({ id: 4, deleted: true }), msg({ id: 5 }), msg({ id: 6 }),
+    ], [], { newAfter: 1, meId: 'me', now });
+    const kinds = rows.map((r) => (r.type === 'message' ? r.message.id : r.type));
+    expect(kinds).toEqual(['day', 1, 2, 3, 4, 'new', 5, 6]);
+    const five = rows.find((r) => r.type === 'message' && r.message.id === 5);
+    expect(five?.type === 'message' && five.head).toBe(true);
+  });
+
+  it('has no New messages line when nothing is unread', () => {
+    const rows = buildRows([msg({ id: 1 }), msg({ id: 2 })], [], { newAfter: 2, meId: 'me', now });
+    expect(rows.some((r) => r.type === 'new')).toBe(false);
+    expect(buildRows([msg({ id: 1 })], [], { newAfter: null, meId: 'me', now }).some((r) => r.type === 'new')).toBe(false);
+  });
+
+  it('starts a new run after a tombstone', () => {
+    const rows = buildRows([msg({ id: 1 }), msg({ id: 2, deleted: true }), msg({ id: 3 })], [], { newAfter: null, meId: 'me', now });
+    expect(rows.filter((r) => r.type === 'message').map((r) => r.type === 'message' && r.head)).toEqual([true, false, true]);
+  });
+
+  it('puts unsent messages last, oldest first, in a run with the person\'s last message', () => {
+    const rows = buildRows([msg({ id: 1, authorId: 'me', createdAt: at(15, 11, 58) })], [
+      outboxItem({ clientId: 'bbbbbbbb', kind: 'board', ref: 'b1', text: 'second', createdLocal: at(15, 11, 59, ) + 1 }),
+      outboxItem({ clientId: 'aaaaaaaa', kind: 'board', ref: 'b1', text: 'first', createdLocal: at(15, 11, 59) }),
+    ], { newAfter: null, meId: 'me', now });
+    expect(rows.map((r) => (r.type === 'pending' ? `${r.item.text}${r.head ? '*' : ''}` : r.type))).toEqual(['day', 'message', 'first', 'second']);
+  });
+
+  it('gives every row a stable key', () => {
+    const rows = buildRows([msg({ id: 41 })], [outboxItem({ clientId: 'aaaaaaaa', kind: 'board', ref: 'b1', text: 'x', createdLocal: at(15, 9) })], { newAfter: 0, meId: 'me', now });
+    expect(rows.map((r) => r.key)).toEqual([`day:2026-1-15`, 'new', 'm:41', 'p:aaaaaaaa']);
+  });
+
+  it('labels days and times in local time', () => {
+    expect(dayLabel(at(15, 0, 1), at(15, 23))).toBe('Today');
+    expect(dayLabel(at(14, 23, 59), at(15, 0, 1))).toBe('Yesterday');
+    expect(dayLabel(at(1, 12), at(15, 12))).toBe('Thursday 1 January 2026');
+    expect(timeLabel(at(15, 9, 5))).toBe('09:05');
+    expect(timeLabel(at(15, 21, 30))).toBe('21:30');
+  });
+});
+
+describe('links', () => {
+  it('finds http and https links only, the same way as the server', () => {
+    expect(findLinks('see https://example.com/a?b=1#c and http://x.org').map((l) => l.url)).toEqual(['https://example.com/a?b=1#c', 'http://x.org']);
+    for (const text of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', 'data:text/html,<b>x</b>', 'mailto:ana@example.com', 'ftp://example.com/f', 'www.example.com', 'https://']) {
+      expect(findLinks(text)).toEqual([]);
+    }
+  });
+
+  it('leaves sentence punctuation outside and keeps a bracket that belongs to the address', () => {
+    expect(findLinks('Read https://example.com/page.').map((l) => l.url)).toEqual(['https://example.com/page']);
+    expect(findLinks('(see https://example.com/x)').map((l) => l.url)).toEqual(['https://example.com/x']);
+    expect(findLinks('https://en.wikipedia.org/wiki/Mercury_(planet) is it').map((l) => l.url)).toEqual(['https://en.wikipedia.org/wiki/Mercury_(planet)']);
+    expect(findLinks('<https://example.com>"x"').map((l) => l.url)).toEqual(['https://example.com']);
+  });
+
+  it('splits a text into plain text, links and mentions', () => {
+    const parts = segments('Hi @{ben1}, see https://example.com/x. And <b>@{gone}</b>', [{ id: 'ben1', name: 'Ben' }]);
+    expect(parts).toEqual([
+      { type: 'text', text: 'Hi ' },
+      { type: 'mention', id: 'ben1', name: 'Ben' },
+      { type: 'text', text: ', see ' },
+      { type: 'link', url: 'https://example.com/x' },
+      { type: 'text', text: '. And <b>' },
+      { type: 'mention', id: 'gone', name: null },
+      { type: 'text', text: '</b>' },
+    ]);
+  });
+
+  it('keeps markup as text, never as a link', () => {
+    expect(segments('<a href="javascript:x">click</a>', [])).toEqual([{ type: 'text', text: '<a href="javascript:x">click</a>' }]);
+  });
+});
+
+describe('mentions', () => {
+  it('names a mention by the current name, a removed person as Former member, a stray token as someone', () => {
+    expect(mentionLabel({ id: 'a', name: 'Ana' }, true)).toBe('@Ana');
+    expect(mentionLabel({ id: 'a', name: null }, true)).toBe('@Former member');
+    expect(mentionLabel({ id: 'a', name: null }, false)).toBe('@someone');
+  });
+
+  it('finds the @ word at the caret', () => {
+    expect(mentionQuery('@', 1)).toEqual({ start: 0, query: '' });
+    expect(mentionQuery('hi @an', 6)).toEqual({ start: 3, query: 'an' });
+    expect(mentionQuery('(@an', 4)).toEqual({ start: 1, query: 'an' });
+    expect(mentionQuery('mail ana@example.com', 20)).toBeNull();
+    expect(mentionQuery('hi @ana lima', 12)).toBeNull();
+    expect(mentionQuery('no at sign', 5)).toBeNull();
+  });
+
+  it('lists people by name, starts first, never oneself', () => {
+    const people = [{ id: 'me', name: 'Anna Me' }, { id: 'b', name: 'Bo Andersen' }, { id: 'a', name: 'Ana Lima' }, { id: 'c', name: 'Cy' }];
+    expect(filterPeople(people, 'an', 'me').map((p) => p.id)).toEqual(['a', 'b']);
+    expect(filterPeople(people, '', 'me').map((p) => p.id)).toEqual(['b', 'a', 'c']);
+    expect(filterPeople(people, 'zz', 'me')).toEqual([]);
+  });
+
+  it('inserts the chosen name in place of what was typed', () => {
+    expect(insertMention('hi @an', 3, 6, 'Ana Lima')).toEqual({ value: 'hi @Ana Lima ', caret: 13 });
+    expect(insertMention('hi @an and more', 3, 6, 'Ana')).toEqual({ value: 'hi @Ana and more', caret: 8 });
+  });
+
+  it('turns picked names into the server\'s tokens, longest name first', () => {
+    const picked = [{ id: 'a1', name: 'Ana' }, { id: 'a2', name: 'Ana Lima' }];
+    expect(toTokens('@Ana Lima and @Ana, thanks', picked)).toBe('@{a2} and @{a1}, thanks');
+    expect(toTokens('@Anabel is not Ana', picked)).toBe('@Anabel is not Ana');
+    expect(toTokens('nobody picked @Ana', [])).toBe('nobody picked @Ana');
+    expect(toTokens('@A.B (x)', [{ id: 'z', name: 'A.B (x)' }])).toBe('@{z}');
+  });
+
+  it('turns tokens back into names for editing, with the people they name', () => {
+    expect(fromTokens('Thanks @{a1} and @{gone}', [{ id: 'a1', name: 'Ana' }, { id: 'gone', name: null }]))
+      .toEqual({ text: 'Thanks @Ana and @someone', picked: [{ id: 'a1', name: 'Ana' }] });
+    const round = fromTokens('@{a1} @{a1}', [{ id: 'a1', name: 'Ana' }]);
+    expect(toTokens(round.text, round.picked)).toBe('@{a1} @{a1}');
+  });
+});
+
+describe('quotes, initials and colours', () => {
+  it('quotes the first 80 characters on one line, mentions as names', () => {
+    expect(quoteText({ text: 'Hi @{b}\nsee   you', mentions: [{ id: 'b', name: 'Ben' }], deleted: false })).toBe('Hi @Ben see you');
+    const long = quoteText({ text: 'x'.repeat(100), mentions: [], deleted: false });
+    expect(long).toBe(`${'x'.repeat(80)}…`);
+    expect(quoteText({ text: '', mentions: [], deleted: true })).toBe('Message deleted');
+  });
+
+  it('makes initials and a stable colour', () => {
+    expect(initials('Ana Lima Souza')).toBe('AL');
+    expect(initials('ben')).toBe('B');
+    expect(initials('  ')).toBe('?');
+    expect(colourIndex('user-1', 8)).toBe(colourIndex('user-1', 8));
+    expect(colourIndex(null, 8)).toBe(0);
+    for (const id of ['a', 'bb', 'ccc', 'dddd']) expect(colourIndex(id, 8)).toBeLessThan(8);
+  });
+});
+
+describe('what the person may do', () => {
+  const writer: ChatAccess = { write: true, moderate: false, role: 'commenter', readOnly: false };
+  const owner: ChatAccess = { write: true, moderate: true, role: 'owner', readOnly: false };
+  const viewer: ChatAccess = { write: false, moderate: false, role: 'viewer', readOnly: false };
+  const locked: ChatAccess = { write: false, moderate: false, role: 'owner', readOnly: true };
+
+  it('says why the composer is off', () => {
+    expect(composerState(writer, { lost: false, signedOut: false })).toEqual({ enabled: true, reason: null });
+    expect(composerState(viewer, { lost: false, signedOut: false })).toEqual({ enabled: false, reason: 'Viewers can read this chat but not post.' });
+    expect(composerState(locked, { lost: false, signedOut: false }).reason).toMatch(/read-only/);
+    expect(composerState(writer, { lost: true, signedOut: false }).reason).toMatch(/no longer have access/);
+    expect(composerState(writer, { lost: false, signedOut: true }).reason).toMatch(/Sign in/);
+    expect(composerState(null, { lost: false, signedOut: false })).toEqual({ enabled: false, reason: null });
+  });
+
+  it('lets authors edit and authors or moderators delete, only online', () => {
+    const mine = msg({ authorId: 'me' });
+    const theirs = msg({ authorId: 'ana' });
+    expect(canEdit(mine, 'me', writer, true)).toBe(true);
+    expect(canEdit(mine, 'me', writer, false)).toBe(false);
+    expect(canEdit(theirs, 'me', owner, true)).toBe(false);
+    expect(canEdit({ ...mine, deleted: true }, 'me', writer, true)).toBe(false);
+    expect(canDelete(mine, 'me', writer, true)).toBe(true);
+    expect(canDelete(theirs, 'me', writer, true)).toBe(false);
+    expect(canDelete(theirs, 'me', owner, true)).toBe(true);
+    expect(canDelete(theirs, 'me', owner, false)).toBe(false);
+    expect(canDelete(mine, 'me', locked, true)).toBe(false);
+  });
+
+  it('knows when the list is at the bottom', () => {
+    expect(atBottom(500, 1000, 500)).toBe(true);
+    expect(atBottom(480, 1000, 500)).toBe(true);
+    expect(atBottom(400, 1000, 500)).toBe(false);
+  });
+
+  it('remembers open or closed per person and board under the driftboard prefix', () => {
+    expect(chatOpenKey('u1', 'board-1')).toBe('driftboard:chat:u1:board-1');
+  });
+});

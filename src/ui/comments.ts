@@ -7,6 +7,7 @@ import { authState } from '../auth';
 import { h, icon } from './dom';
 import { announce } from './announce';
 import { fmtAgo, segmented, toast } from './common';
+import type { SideTray } from './side-tray';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
 type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt' | 'imported' | 'importedBy' | 'legacy'> & { root: boolean };
@@ -73,8 +74,8 @@ function placeCard(el: HTMLElement, p: Point) {
   el.style.top = `${Math.max(MARGIN, Math.min(y, vh - hgt - MARGIN))}px`;
 }
 
-/** The comment tool's card, the comments panel and its count badge. */
-export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTMLButtonElement } {
+/** The comment tool's card, the comments panel (the Comments tab of the side tray) and its count badge. */
+export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray): { button: HTMLButtonElement } {
   let current: { close: (notify: boolean) => void } | null = null;
   let panelOpen = false;
   let filter: Filter = 'open';
@@ -82,18 +83,18 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
   let flightUntil = 0;
 
   const count = h('span', { class: 'comment-count', 'aria-hidden': 'true' });
-  const button = h('button', { class: 'icon-btn comment-toggle', 'aria-label': 'Comments', 'aria-pressed': 'false', onclick: () => togglePanel() }, icon('comment', 18), count);
-  const panel = h('aside', { class: 'comments-panel tray', 'aria-label': 'Comments' });
-  chrome.appendChild(panel);
+  const button = h('button', { class: 'icon-btn comment-toggle', 'aria-label': 'Comments', 'aria-pressed': 'false', onclick: () => tray.toggle('comments') }, icon('comment', 18), count);
+  const panel = tray.slot('comments');
 
-  function togglePanel() {
-    panelOpen = !panelOpen;
+  tray.onChange((tab) => {
+    const open = tab === 'comments';
+    if (open === panelOpen) return;
+    panelOpen = open;
     painted = '';
     button.classList.toggle('on', panelOpen);
     button.setAttribute('aria-pressed', String(panelOpen));
-    panel.classList.toggle('show', panelOpen);
     render();
-  }
+  });
 
   function openRow(t: Thread) {
     flightUntil = performance.now() + FLIGHT_MS;
@@ -142,9 +143,6 @@ export function mountComments(app: BoardApp, chrome: HTMLElement): { button: HTM
     if (key === painted) return;
     painted = key;
     panel.replaceChildren(
-      h('div', { class: 'comments-head' },
-        h('h2', null, 'Comments'),
-        h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close comments', onclick: () => togglePanel() }, icon('close', 18))),
       segmented<Filter>([
         { value: 'open', label: `Open (${open.length})` },
         { value: 'resolved', label: `Resolved (${resolved.length})` },

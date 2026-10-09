@@ -31,8 +31,9 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, templates, settings, and in accounts mode
-                     admin, backups-list, backups-detail, backups-board-copy, backups-confirm, backups-restoring, backups-off
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, and in
+                     accounts mode admin, backups-list, backups-detail, backups-board-copy, backups-confirm, backups-restoring,
+                     backups-off, chat, chat-composer, chat-unread (the chat states turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -259,6 +260,111 @@ async function openBackup({ page, base }) {
   await page.getByRole('button', { name: 'Restore the whole workspace' }).waitFor();
 }
 
+// ---------------------------------------------------------------- chat (accounts mode, TABULA_CHAT=on)
+
+/**
+ * Opens the seeded board's Chat tab. The owner's read marker goes back to where the seed put it first, because the
+ * previous shot read the whole channel, and the "New messages" line belongs in every shot.
+ */
+async function openSeedChat(env) {
+  const { page, chat } = env;
+  await resetChatMarker(env);
+  await openSeedBoard(env);
+  await page.locator('.chat-toggle').click();
+  await page.waitForFunction((n) => document.querySelectorAll('.side-tray.show .chat-msg').length >= n, chat.count);
+  await page.locator('.chat-new').waitFor();
+}
+
+async function resetChatMarker({ chat, dataDir }) {
+  if (!chat) throw new Error('the chat states need --mode accounts');
+  await withChatDb(dataDir, (db) => {
+    db.prepare('UPDATE chat_reads SET last_id = ? WHERE user_id = ? AND kind = ? AND ref = ?').run(chat.readUpTo, chat.ownerId, 'board', BOARD_ID);
+  });
+}
+
+async function withChatDb(dataDir, fn) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(dataDir, 'chat.sqlite'));
+  try {
+    db.exec('PRAGMA busy_timeout = 5000');
+    return fn(db);
+  } finally {
+    db.close();
+  }
+}
+
+async function apiJson(base, verb, route, body, cookie) {
+  const headers = { accept: 'application/json', 'x-tabula': '1', ...(cookie ? { cookie } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
+  const init = { method: verb, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${base}/api/${route}`, init);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${verb} /api/${route} answered ${res.status}: ${text}`);
+  return text ? JSON.parse(text) : null;
+}
+
+/** Signs a person in over the API (through a team invite when there is one) and gives them a name. Returns the cookie. */
+async function signInAs({ base, dataDir }, email, name, invite) {
+  await postJson(base, 'auth/request', invite ? { email, invite } : { email });
+  const verified = await postJson(base, 'auth/verify', { token: await readLoginToken(dataDir) });
+  const cookie = verified.headers.getSetCookie()[0].split(';')[0].trim();
+  await postJson(base, 'me', { name }, cookie, 'PATCH');
+  return cookie;
+}
+
+/**
+ * Two more people join a team the seeded board is shared with, and the three talk in its chat through the REST API,
+ * each with their own session: an edited message, a deleted one, a reply, mentions, a long link and a day break. The
+ * server stamps the real time, so the times are then moved next to the browser's fixed clock in chat.sqlite.
+ */
+async function seedChat(relay, ownerCookie) {
+  const { base } = relay;
+  const me = await apiJson(base, 'GET', 'me', undefined, ownerCookie);
+  const team = await apiJson(base, 'POST', 'teams', { name: 'Retro team' }, ownerCookie);
+  const join = async (email, name) => {
+    const invite = await apiJson(base, 'POST', `teams/${team.id}/invites`, { role: 'member' }, ownerCookie);
+    await sleep(50);
+    return signInAs(relay, email, name, invite.token);
+  };
+  const ana = await join('ana@example.test', 'Ana Lima');
+  const ben = await join('ben@example.test', 'Ben Okafor');
+  await apiJson(base, 'POST', `boards/${BOARD_ID}/shares`, { principalType: 'team', principalId: team.id, role: 'editor' }, ownerCookie);
+  const ids = {};
+  for (const [cookie, who] of [[ana, 'ana'], [ben, 'ben']]) ids[who] = (await apiJson(base, 'GET', 'me', undefined, cookie)).user.id;
+  ids.owner = me.user.id;
+
+  const route = `chat/board/${BOARD_ID}/messages`;
+  let n = 0;
+  const say = async (cookie, text, extra = {}) =>
+    (await apiJson(base, 'POST', route, { clientId: `visual-seed-${++n}`, text, ...extra }, cookie)).message.id;
+  const times = [];
+  const at = (id, time, extra = {}) => times.push({ id, time, ...extra });
+  const DAY = 24 * HOUR;
+
+  at(await say(ana, 'Retro notes are on the board. Can everyone add their stickies before tomorrow?'), NOW - DAY + 6 * HOUR + 2 * MINUTE);
+  at(await say(ana, 'The flow we talked about: https://www.figma.com/file/AbCdEfGhIjKlMnOpQrStUv/Checkout-flow-v3?node-id=1234-5678&mode=design&t=averyveryverylongtokenvalue0123456789'), NOW - DAY + 6 * HOUR + 3 * MINUTE);
+  const willDo = await say(ben, 'Will do, after lunch.');
+  at(willDo, NOW - DAY + 6 * HOUR + 20 * MINUTE);
+  at(await say(ownerCookie, 'Thanks Ana, mine are in.'), NOW - DAY + 6 * HOUR + 21 * MINUTE);
+  const question = await say(ben, 'Are we starting at ten?');
+  at(question, NOW - 48 * MINUTE);
+  const answer = await say(ownerCookie, `Yes, ten sharp. @{${ids.ben}} can you share your screen?`, { replyTo: question });
+  at(answer, NOW - 46 * MINUTE);
+  const flaky = await say(ana, `Flaky tests are mine, I'll take that action. @{${ids.owner}}`);
+  at(flaky, NOW - 20 * MINUTE, { edited: NOW - 18 * MINUTE });
+  at(await say(ana, 'Running five minutes late, sorry!'), NOW - 2 * MINUTE);
+
+  await apiJson(base, 'PATCH', `chat/messages/${flaky}`, { text: `Flaky tests are mine, I'll take the action point. @{${ids.owner}}` }, ana);
+  await apiJson(base, 'DELETE', `chat/messages/${willDo}`, undefined, ben);
+  await apiJson(base, 'PUT', `chat/board/${BOARD_ID}/read`, { lastId: answer }, ownerCookie);
+
+  await withChatDb(relay.dataDir, (db) => {
+    const move = db.prepare('UPDATE chat_messages SET created_at = ?, edited_at = CASE WHEN edited_at IS NULL THEN NULL ELSE ? END, deleted_at = CASE WHEN deleted_at IS NULL THEN NULL ELSE ? END WHERE id = ?');
+    for (const t of times) move.run(t.time, t.edited ?? t.time, t.time + MINUTE, t.id);
+  });
+  return { ownerId: ids.owner, readUpTo: answer, count: times.length };
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -300,7 +406,7 @@ const STATES = {
   async comments(env) {
     await openSeedBoard(env);
     await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
-    await env.page.locator('.comments-panel.show, .comments-panel.open, aside.comments-panel:not([hidden])').first().waitFor();
+    await env.page.locator('.side-tray.show .comment-row').first().waitFor();
   },
   // TAB-124: the empty-board hint lies under every overlay
   async 'empty-templates'(env) {
@@ -339,6 +445,23 @@ const STATES = {
       await env.page.locator('.focus-stack > *').first().waitFor({ timeout: 8000 });
       await env.page.waitForTimeout(300);
     }
+  },
+  async 'chat-unread'(env) {
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    await env.page.locator('.chat-count.show.mention').waitFor();
+  },
+  async chat(env) {
+    await openSeedChat(env);
+  },
+  async 'chat-composer'(env) {
+    await openSeedChat(env);
+    const field = env.page.getByRole('combobox', { name: 'Message' });
+    await field.click();
+    await field.pressSequentially('Thanks @b');
+    await env.page.locator('.chat-suggest .chat-option').first().waitFor();
+    // the typeahead closes when the field loses focus, so this shot keeps it
+    return { keepFocus: true };
   },
   async templates({ page, base }) {
     await page.goto(`${base}/#/templates`);
@@ -389,7 +512,8 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread']);
+const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -406,12 +530,13 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
   if (mode === 'accounts') {
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
+    if (chat) env.TABULA_CHAT = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -493,7 +618,7 @@ async function prepareAccounts({ base, dataDir }) {
     await sleep(1100);
   }
   const eq = cookie.indexOf('=');
-  return { name: cookie.slice(0, eq), value: cookie.slice(eq + 1) };
+  return { session: { name: cookie.slice(0, eq), value: cookie.slice(eq + 1) }, cookie };
 }
 
 // ---------------------------------------------------------------- browser
@@ -555,8 +680,9 @@ async function capture({ browser, state, theme, width, file, shared }) {
   const { context, page, errors } = await newPage(browser, { width, theme, ...shared });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
-    await STATES[state]({ page, base: shared.base });
-    await park(page);
+    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat });
+    if (shot?.keepFocus) await page.mouse.move(1, 1);
+    else await park(page);
     await settle(page);
     result.overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth);
     await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide', fullPage: FULL_PAGE.has(state) });
@@ -713,9 +839,14 @@ async function main() {
     const distDir = ensureBuilt(options.noBuild);
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable });
-    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null };
-    if (options.mode === 'accounts') shared.session = await prepareAccounts(relay);
+    const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
+    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
+    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null };
+    if (options.mode === 'accounts') {
+      const owner = await prepareAccounts(relay);
+      shared.session = owner.session;
+      if (chat) shared.chat = await seedChat(relay, owner.cookie);
+    }
     for (const state of options.states) {
       for (const theme of options.themes) {
         for (const width of options.widths) {

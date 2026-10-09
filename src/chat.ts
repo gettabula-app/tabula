@@ -1,0 +1,680 @@
+// Board chat on the client (docs/chat.md): the REST calls, the one /chat socket of this tab, the outbox and the
+// offline copy. src/ui/chat.ts draws it; src/ui/chat-logic.ts holds the rules that need no I/O.
+//
+// The socket is one per tab, opened when a board with chat opens and kept across boards (the hub allows ten per
+// person), and closed on sign-out. A board's channel is subscribed only while its Chat tab is open; with the tab
+// closed the badge comes from the `hello` summary and the `unread` frames, which carry counts and never text.
+
+import { ApiError, api, type ChatChannelInfo, type ChatMessage } from './api';
+import { authState, chatAvailable, onAuth } from './auth';
+import * as cache from './chat-cache';
+import {
+  CACHE_PER_CHANNEL, KEEP_IN_LIST, PAGE, applyDelete, backoffMs, classifyFailure, countUnread, delivered, enqueue, mergeMessages,
+  newClientId, newestId, nextToSend, oldestId, outboxItem, removeItem, revive, trimOldest, updateItem,
+  type ChatAccess, type OutboxItem,
+} from './ui/chat-logic';
+
+const KIND = 'board';
+const PING_MS = 25_000;
+const PONG_WAIT_MS = 10_000;
+const READ_THROTTLE_MS = 2000;
+/** After a reconnect, pages fetched backwards to close the gap before the list starts over from the newest page. */
+const CATCH_UP_PAGES = 5;
+/** Too many sockets of this person (4429): try again much later. */
+const CROWDED_MS = 60_000;
+
+export interface ChatView {
+  meId: string;
+  messages: ChatMessage[];
+  /** This person's unsent messages in this channel. */
+  pending: OutboxItem[];
+  access: ChatAccess | null;
+  people: ChatChannelInfo['people'];
+  loading: boolean;
+  loadingOlder: boolean;
+  hasOlder: boolean;
+  /** The server could not be reached; the list is the copy saved in this browser. */
+  savedOnly: boolean;
+  /** Access to the channel was lost while it was open. */
+  lost: boolean;
+  /** The socket and the API can be reached: edits and deletes are possible. */
+  online: boolean;
+  signedOut: boolean;
+  /** The read marker when the tab was opened: the "New messages" line goes after it. */
+  newAfter: number | null;
+  unread: number;
+  mentions: number;
+  error: string | null;
+}
+
+interface Channel {
+  key: string;
+  ref: string;
+  messages: ChatMessage[];
+  next: number | null;
+  info: ChatChannelInfo | null;
+  lastRead: number | null;
+  newAfter: number | null;
+  loading: boolean;
+  loadingOlder: boolean;
+  savedOnly: boolean;
+  fetchOk: boolean;
+  lost: boolean;
+  error: string | null;
+  visible: boolean;
+  readPut: number;
+  readTimer: ReturnType<typeof setTimeout> | null;
+  listeners: Set<() => void>;
+}
+
+type SocketState = 'idle' | 'connecting' | 'open' | 'stopped';
+
+let socket: WebSocket | null = null;
+let socketState: SocketState = 'idle';
+let attempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let pingTimer: ReturnType<typeof setInterval> | null = null;
+let pongTimer: ReturnType<typeof setTimeout> | null = null;
+let signedOut = false;
+let workspaceReadOnly = false;
+const unread = new Map<string, { unread: number; mentions: number; lastId?: number }>();
+const channels = new Map<string, Channel>();
+const badgeListeners = new Set<() => void>();
+let outbox: OutboxItem[] = [];
+let outboxLoad: Promise<void> | null = null;
+let flushing = false;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let flushAttempt = 0;
+/** Bumped by resetChat, so an answer that arrives after sign-out changes nothing. */
+let generation = 0;
+let windowHooked = false;
+/** A hello after an earlier one means a reconnect: open channels catch up on what was said meanwhile. */
+let helloSeen = false;
+
+const keyOf = (ref: string) => `${KIND}/${ref}`;
+
+function meId(): string {
+  const auth = authState();
+  return (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me ? auth.me.user.id : '';
+}
+
+const browserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+
+function emit(ch?: Channel) {
+  const targets = ch ? [ch] : [...channels.values()];
+  for (const c of targets) for (const fn of Array.from(c.listeners)) fn();
+  for (const fn of Array.from(badgeListeners)) fn();
+}
+
+// ---------------------------------------------------------------- socket
+
+function socketUrl(): string | null {
+  if (typeof location === 'undefined' || (location.protocol !== 'http:' && location.protocol !== 'https:')) return null;
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/chat`;
+}
+
+function sendFrame(frame: Record<string, unknown>) {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(frame));
+}
+
+function stopTimers() {
+  if (pingTimer) clearInterval(pingTimer);
+  if (pongTimer) clearTimeout(pongTimer);
+  pingTimer = null;
+  pongTimer = null;
+}
+
+function scheduleReconnect(ms: number) {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, ms);
+}
+
+function hookWindow() {
+  if (windowHooked || typeof window === 'undefined') return;
+  windowHooked = true;
+  window.addEventListener('online', () => {
+    if (socketState === 'idle' && channels.size) {
+      attempt = 0;
+      connect();
+    }
+    void flush();
+  });
+  window.addEventListener('offline', () => emit());
+}
+
+function connect() {
+  if (socketState !== 'idle' || !chatAvailable() || typeof WebSocket === 'undefined') return;
+  const url = socketUrl();
+  if (!url) return;
+  hookWindow();
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(url);
+  } catch {
+    scheduleReconnect(backoffMs(attempt++));
+    return;
+  }
+  socket = ws;
+  socketState = 'connecting';
+  ws.onopen = () => {
+    if (socket !== ws) return;
+    pingTimer = setInterval(() => {
+      sendFrame({ t: 'ping' });
+      if (!pongTimer) pongTimer = setTimeout(() => ws.close(), PONG_WAIT_MS);
+    }, PING_MS);
+  };
+  ws.onmessage = (e) => {
+    if (socket !== ws || typeof e.data !== 'string') return;
+    let frame: unknown;
+    try {
+      frame = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    if (frame && typeof frame === 'object') onFrame(frame as Record<string, unknown>);
+  };
+  ws.onclose = (e) => {
+    if (socket !== ws) return;
+    socket = null;
+    stopTimers();
+    socketState = 'idle';
+    if (e.code === 4401) {
+      socketState = 'stopped';
+      signedOut = true;
+    } else if (channels.size) {
+      scheduleReconnect(e.code === 4429 ? CROWDED_MS : backoffMs(attempt++));
+    }
+    emit();
+  };
+}
+
+function onFrame(f: Record<string, unknown>) {
+  const t = f.t;
+  if (t === 'pong') {
+    if (pongTimer) clearTimeout(pongTimer);
+    pongTimer = null;
+    return;
+  }
+  if (t === 'hello') {
+    socketState = 'open';
+    attempt = 0;
+    const reconnect = helloSeen;
+    helloSeen = true;
+    signedOut = false;
+    workspaceReadOnly = f.readOnly === true;
+    unread.clear();
+    for (const c of Array.isArray(f.channels) ? f.channels : []) {
+      if (c && c.kind === KIND && typeof c.ref === 'string') unread.set(keyOf(c.ref), { unread: Number(c.unread) || 0, mentions: Number(c.mentions) || 0, lastId: Number(c.lastId) || 0 });
+    }
+    for (const ch of channels.values()) {
+      if (ch.info) ch.info = { ...ch.info, access: withReadOnly(ch.info.access, workspaceReadOnly) };
+      if (!ch.visible) continue;
+      sendFrame({ t: 'sub', kind: KIND, ref: ch.ref });
+      if (ch.loading) continue;
+      if (!ch.fetchOk) void load(ch);
+      else if (reconnect) void catchUp(ch);
+    }
+    void flush();
+    emit();
+    return;
+  }
+  if (f.kind !== KIND || typeof f.ref !== 'string') return;
+  const key = keyOf(f.ref);
+  const ch = channels.get(key);
+  if (t === 'unread') {
+    unread.set(key, { ...unread.get(key), unread: Number(f.unread) || 0, mentions: Number(f.mentions) || 0 });
+    emit();
+    return;
+  }
+  if (t === 'read') {
+    const lastId = Number(f.lastId) || 0;
+    unread.set(key, { unread: 0, mentions: 0, lastId });
+    if (ch) ch.lastRead = Math.max(ch.lastRead ?? 0, lastId);
+    emit();
+    return;
+  }
+  if (!ch) return;
+  if ((t === 'message' || t === 'edit') && isMessage(f.message)) {
+    if (!ch.visible) return;
+    ch.messages = keepBounded(ch, mergeMessages(ch.messages, [f.message]));
+    settleDelivered([f.message]);
+    saveChannel(ch);
+    emit(ch);
+  } else if (t === 'delete' && typeof f.id === 'number') {
+    ch.messages = applyDelete(ch.messages, f.id, f.by === 'moderator' ? 'moderator' : 'author');
+    saveChannel(ch);
+    emit(ch);
+  } else if (t === 'closed' || (t === 'denied' && f.reason !== 'too_many')) {
+    ch.lost = true;
+    emit(ch);
+  } else if (t === 'readonly') {
+    workspaceReadOnly = f.on === true;
+    for (const c of channels.values()) {
+      if (c.info) c.info = { ...c.info, access: withReadOnly(c.info.access, workspaceReadOnly) };
+      if (!workspaceReadOnly && c.visible) void refreshInfo(c);
+    }
+    emit();
+  }
+}
+
+/** A read-only workspace refuses writes and moderation; reading goes on. Lifting it needs the server's answer again. */
+function withReadOnly(access: ChatChannelInfo['access'], on: boolean): ChatChannelInfo['access'] {
+  return on ? { ...access, readOnly: true, write: false, moderate: false } : access;
+}
+
+const isMessage = (m: unknown): m is ChatMessage =>
+  !!m && typeof m === 'object' && typeof (m as ChatMessage).id === 'number' && typeof (m as ChatMessage).text === 'string';
+
+// ---------------------------------------------------------------- loading
+
+function keepBounded(ch: Channel, list: ChatMessage[]): ChatMessage[] {
+  if (list.length <= KEEP_IN_LIST) return list;
+  const kept = trimOldest(list);
+  ch.next = oldestId(kept);
+  return kept;
+}
+
+function saveChannel(ch: Channel) {
+  if (!ch.fetchOk) return;
+  void cache.writeChannel({ key: ch.key, messages: ch.messages.slice(-CACHE_PER_CHANNEL), savedAt: Date.now() });
+}
+
+async function refreshInfo(ch: Channel) {
+  const gen = generation;
+  try {
+    const info = await api.chatChannel(KIND, ch.ref);
+    if (gen !== generation) return;
+    ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
+    ch.lost = false;
+  } catch (err) {
+    if (gen !== generation) return;
+    if (err instanceof ApiError && err.status === 404) ch.lost = true;
+  }
+  emit(ch);
+}
+
+/** Opening the tab: the saved copy at once, then the channel, the newest page and where this person had read to. */
+async function load(ch: Channel) {
+  const gen = generation;
+  ch.loading = true;
+  ch.error = null;
+  emit(ch);
+  if (!ch.messages.length) {
+    const saved = await cache.readChannel(ch.key);
+    if (gen !== generation) return;
+    if (saved && !ch.messages.length) ch.messages = saved.messages;
+    emit(ch);
+  }
+  try {
+    const [info, page, summary] = await Promise.all([
+      api.chatChannel(KIND, ch.ref),
+      api.chatMessages(KIND, ch.ref, { limit: PAGE }),
+      api.chatUnread().catch(() => null),
+    ]);
+    if (gen !== generation) return;
+    ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
+    // frames that arrived while the page was on its way are newer than it and stay; the saved copy does not
+    const top = newestId(page.messages);
+    ch.messages = mergeMessages(page.messages, ch.messages.filter((m) => m.id > top));
+    ch.next = page.next;
+    ch.fetchOk = true;
+    ch.savedOnly = false;
+    ch.lost = false;
+    const entry = summary?.channels.find((c) => c.kind === KIND && c.ref === ch.ref);
+    if (entry) unread.set(ch.key, { unread: entry.unread, mentions: entry.mentions, lastId: entry.lastId });
+    else unread.set(ch.key, { unread: 0, mentions: 0, lastId: newestId(ch.messages) });
+    ch.lastRead = entry ? entry.lastId : newestId(ch.messages);
+    if (ch.newAfter === null && entry && entry.unread > 0) ch.newAfter = entry.lastId;
+    settleDelivered(ch.messages);
+    saveChannel(ch);
+  } catch (err) {
+    if (gen !== generation) return;
+    ch.fetchOk = false;
+    if (err instanceof ApiError && err.status === 404) ch.lost = true;
+    else if (err instanceof ApiError && err.status === 401) signedOut = true;
+    else ch.savedOnly = true;
+    if (ch.savedOnly && !ch.messages.length) ch.error = 'Chat could not be reached and nothing is saved on this device yet.';
+  } finally {
+    if (gen === generation) {
+      ch.loading = false;
+      emit(ch);
+    }
+  }
+}
+
+/** After a reconnect: everything after the last known id, merged by id, so nothing said meanwhile is missing. */
+async function catchUp(ch: Channel) {
+  const gen = generation;
+  const known = newestId(ch.messages);
+  try {
+    let fetched: ChatMessage[] = [];
+    let next: number | null = null;
+    let before: number | undefined;
+    for (let i = 0; i < CATCH_UP_PAGES; i++) {
+      const page = await api.chatMessages(KIND, ch.ref, { limit: PAGE, before });
+      if (gen !== generation) return;
+      fetched = mergeMessages(fetched, page.messages);
+      next = page.next;
+      if (!page.messages.length || next === null || oldestId(page.messages) <= known + 1) break;
+      before = oldestId(page.messages);
+    }
+    const closed = next === null || oldestId(fetched) <= known + 1 || fetched.length === 0;
+    if (closed) {
+      ch.messages = keepBounded(ch, mergeMessages(ch.messages, fetched));
+    } else {
+      // the gap is too wide to fill: start over from the newest pages
+      ch.messages = fetched;
+      ch.next = next;
+    }
+    ch.fetchOk = true;
+    ch.savedOnly = false;
+    settleDelivered(fetched);
+    saveChannel(ch);
+  } catch {
+    if (gen !== generation) return;
+  }
+  emit(ch);
+}
+
+// ---------------------------------------------------------------- outbox
+
+function persist(item: OutboxItem | undefined) {
+  if (item) void cache.putOutbox(item);
+}
+
+function setItem(clientId: string, patch: Partial<OutboxItem>) {
+  outbox = updateItem(outbox, clientId, patch);
+  persist(outbox.find((o) => o.clientId === clientId));
+}
+
+function dropItem(clientId: string) {
+  outbox = removeItem(outbox, clientId);
+  void cache.deleteOutbox(clientId);
+}
+
+/** Messages the server has: their outbox entries go (a send whose answer was lost shows up as a frame or in a page). */
+function settleDelivered(messages: ChatMessage[]) {
+  for (const item of delivered(outbox, messages, meId())) {
+    if (item.state !== 'sending') dropItem(item.clientId);
+  }
+}
+
+function ensureOutbox(): Promise<void> {
+  outboxLoad ??= cache.readOutbox().then((saved) => {
+    const merged = revive(saved).reduce((list, item) => enqueue(list, item), outbox);
+    outbox = merged;
+    emit();
+    void flush();
+  });
+  return outboxLoad;
+}
+
+function scheduleFlush(ms: number) {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flush();
+  }, ms);
+}
+
+/** Sends the outbox oldest first, one at a time. A refusal for good stays with its reason; anything else waits. */
+async function flush() {
+  if (flushing || !browserOnline()) return;
+  flushing = true;
+  const gen = generation;
+  try {
+    for (;;) {
+      if (gen !== generation || !browserOnline()) break;
+      const item = nextToSend(outbox, Date.now());
+      if (!item) break;
+      setItem(item.clientId, { state: 'sending', reason: undefined, waitUntil: undefined });
+      emit();
+      try {
+        const { message } = await api.chatSend(item.kind, item.ref, { clientId: item.clientId, text: item.text, replyTo: item.replyTo, objectId: item.objectId });
+        if (gen !== generation) break;
+        dropItem(item.clientId);
+        flushAttempt = 0;
+        const ch = channels.get(`${item.kind}/${item.ref}`);
+        if (ch?.visible) ch.messages = keepBounded(ch, mergeMessages(ch.messages, [message]));
+        if (ch) saveChannel(ch);
+        emit();
+      } catch (err) {
+        if (gen !== generation) break;
+        const failure = err instanceof ApiError ? classifyFailure(err.status, err.code, typeof err.facts.retryAfter === 'number' ? err.facts.retryAfter : undefined) : classifyFailure(0, 'network');
+        if (failure.kind === 'permanent') {
+          setItem(item.clientId, { state: 'blocked', reason: failure.reason });
+          emit();
+          continue;
+        }
+        if (failure.kind === 'wait') {
+          setItem(item.clientId, { state: 'queued', reason: 'Slow down a moment', waitUntil: Date.now() + failure.ms });
+          scheduleFlush(failure.ms);
+        } else if (failure.kind === 'signed-out') {
+          signedOut = true;
+          setItem(item.clientId, { state: 'failed', reason: 'sign in again to send it' });
+        } else {
+          setItem(item.clientId, { state: 'failed', reason: undefined });
+          scheduleFlush(backoffMs(flushAttempt++));
+        }
+        emit();
+        break;
+      }
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+// ---------------------------------------------------------------- the badge without an open tab
+
+/** Unread and mentions of one board's chat, for its button. */
+export function boardUnread(boardId: string): { unread: number; mentions: number } {
+  const key = keyOf(boardId);
+  const ch = channels.get(key);
+  if (ch?.visible && ch.fetchOk && ch.lastRead !== null) {
+    const me = meId();
+    const after = ch.messages.filter((m) => m.id > (ch.lastRead ?? 0) && !m.deleted && m.authorId !== me);
+    return { unread: after.length, mentions: after.filter((m) => m.mentions.some((p) => p.id === me)).length };
+  }
+  const entry = unread.get(key);
+  return { unread: entry?.unread ?? 0, mentions: entry?.mentions ?? 0 };
+}
+
+// ---------------------------------------------------------------- one board's chat
+
+export interface BoardChat {
+  view(): ChatView;
+  onChange(fn: () => void): () => void;
+  /** The Chat tab opened or closed: subscribe and load, or unsubscribe. */
+  setVisible(visible: boolean): void;
+  loadOlder(): Promise<void>;
+  send(text: string, replyTo: number | null): void;
+  retry(clientId: string): void;
+  discard(clientId: string): void;
+  edit(id: number, text: string): Promise<void>;
+  remove(id: number): Promise<void>;
+  /** The newest message is on screen: move the read marker there (at most every two seconds). */
+  markRead(): void;
+}
+
+export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
+  const key = keyOf(boardId);
+  const ch: Channel = channels.get(key) ?? {
+    key, ref: boardId, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, loadingOlder: false,
+    savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, readPut: 0, readTimer: null, listeners: new Set(),
+  };
+  channels.set(key, ch);
+  void ensureOutbox();
+  connect();
+
+  signal.addEventListener('abort', () => {
+    if (ch.visible) sendFrame({ t: 'unsub', kind: KIND, ref: ch.ref });
+    ch.visible = false;
+    if (ch.readTimer) clearTimeout(ch.readTimer);
+    ch.listeners.clear();
+    channels.delete(key);
+  }, { once: true });
+
+  const online = () => browserOnline() && !signedOut && (socketState === 'open' || ch.fetchOk);
+
+  function putRead() {
+    ch.readTimer = null;
+    if (!ch.visible || !ch.fetchOk) return;
+    const newest = newestId(ch.messages);
+    if (newest <= (ch.lastRead ?? 0) && (unread.get(key)?.unread ?? 0) === 0) return;
+    ch.readPut = Date.now();
+    ch.lastRead = Math.max(ch.lastRead ?? 0, newest);
+    unread.set(key, { unread: 0, mentions: 0, lastId: ch.lastRead });
+    emit(ch);
+    api.chatRead(KIND, ch.ref, newest).catch(() => undefined);
+  }
+
+  return {
+    view() {
+      const me = meId();
+      const counts = boardUnread(boardId);
+      return {
+        meId: me,
+        messages: ch.messages,
+        pending: outbox.filter((o) => o.kind === KIND && o.ref === ch.ref),
+        access: ch.info?.access ?? null,
+        people: ch.info?.people ?? [],
+        loading: ch.loading,
+        loadingOlder: ch.loadingOlder,
+        hasOlder: ch.next !== null,
+        savedOnly: ch.savedOnly,
+        lost: ch.lost,
+        online: online(),
+        signedOut,
+        newAfter: ch.newAfter,
+        unread: ch.visible ? countUnread(ch.messages, ch.lastRead ?? newestId(ch.messages), me) : counts.unread,
+        mentions: counts.mentions,
+        error: ch.error,
+      };
+    },
+    onChange(fn) {
+      ch.listeners.add(fn);
+      return () => ch.listeners.delete(fn);
+    },
+    setVisible(visible) {
+      if (visible === ch.visible) return;
+      ch.visible = visible;
+      if (visible) {
+        connect();
+        sendFrame({ t: 'sub', kind: KIND, ref: ch.ref });
+        void load(ch);
+      } else {
+        sendFrame({ t: 'unsub', kind: KIND, ref: ch.ref });
+        ch.newAfter = null;
+        if (ch.readTimer) clearTimeout(ch.readTimer);
+        ch.readTimer = null;
+        emit(ch);
+      }
+    },
+    async loadOlder() {
+      if (ch.loadingOlder || ch.next === null || !ch.fetchOk) return;
+      const gen = generation;
+      ch.loadingOlder = true;
+      emit(ch);
+      try {
+        const page = await api.chatMessages(KIND, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined });
+        if (gen !== generation) return;
+        ch.messages = mergeMessages(ch.messages, page.messages);
+        ch.next = page.next;
+      } catch {
+        /* the list stays as it is; scrolling up again tries again */
+      } finally {
+        if (gen === generation) {
+          ch.loadingOlder = false;
+          emit(ch);
+        }
+      }
+    },
+    send(text, replyTo) {
+      const item = outboxItem({ clientId: newClientId(), kind: KIND, ref: ch.ref, text, replyTo, createdLocal: Date.now() });
+      outbox = enqueue(outbox, item);
+      persist(item);
+      emit();
+      void flush();
+    },
+    retry(clientId) {
+      setItem(clientId, { state: 'queued', reason: undefined, waitUntil: undefined });
+      flushAttempt = 0;
+      emit();
+      void flush();
+    },
+    discard(clientId) {
+      const item = outbox.find((o) => o.clientId === clientId);
+      if (!item || item.state === 'sending') return;
+      dropItem(clientId);
+      emit();
+    },
+    async edit(id, text) {
+      const { message } = await api.chatEdit(id, text);
+      ch.messages = mergeMessages(ch.messages, [message]);
+      saveChannel(ch);
+      emit(ch);
+    },
+    async remove(id) {
+      await api.chatDelete(id);
+      const by = ch.messages.find((m) => m.id === id)?.authorId === meId() ? 'author' : 'moderator';
+      ch.messages = applyDelete(ch.messages, id, by);
+      saveChannel(ch);
+      emit(ch);
+    },
+    markRead() {
+      if (!ch.visible || ch.readTimer) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const wait = READ_THROTTLE_MS - (Date.now() - ch.readPut);
+      if (wait > 0) ch.readTimer = setTimeout(putRead, wait);
+      else putRead();
+    },
+  };
+}
+
+/** Badge changes for any board (the Chat button listens while its tab is closed). */
+export function onChatBadge(fn: () => void): () => void {
+  badgeListeners.add(fn);
+  return () => badgeListeners.delete(fn);
+}
+
+/** Sign-out: the socket closes and every message kept in this browser, sent or not, is forgotten. */
+export function resetChat(): Promise<void> {
+  generation++;
+  const ws = socket;
+  socket = null;
+  socketState = 'idle';
+  stopTimers();
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (flushTimer) clearTimeout(flushTimer);
+  reconnectTimer = null;
+  flushTimer = null;
+  try {
+    ws?.close(1000, 'signed out');
+  } catch {
+    /* already closed */
+  }
+  attempt = 0;
+  flushAttempt = 0;
+  helloSeen = false;
+  signedOut = false;
+  workspaceReadOnly = false;
+  unread.clear();
+  for (const ch of channels.values()) {
+    ch.messages = [];
+    ch.info = null;
+    ch.next = null;
+  }
+  outbox = [];
+  outboxLoad = null;
+  flushing = false;
+  return cache.clearChatCache();
+}
+
+// Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy).
+onAuth((state) => {
+  if (state.mode === 'signed-out') void resetChat();
+});

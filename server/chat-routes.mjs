@@ -122,6 +122,23 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
   }
 
   return [
+    // The channel's metadata for the interface (docs/chat.md, Mentions): what the caller may do in it, and the people
+    // who can read it (the `@` list). Names only, never email; a hidden channel is the same 404 as everywhere else.
+    compile('GET', 'chat/:kind/:ref', {}, ({ user, params }) => {
+      const { kind, ref } = params;
+      const can = channelFor(user, kind, ref);
+      const people = directory
+        .listUsers()
+        .filter((u) => !u.disabled && access(u, kind, ref)?.read === true)
+        .map((u) => ({ id: u.id, name: u.name }));
+      return [200, {
+        kind,
+        ref,
+        access: { write: can.write, moderate: can.moderate, role: can.role, readOnly: can.readOnly },
+        people,
+      }];
+    }),
+
     compile('GET', 'chat/:kind/:ref/messages', {}, ({ user, params, query }) => {
       channelFor(user, params.kind, params.ref);
       const before = query.get('before');
