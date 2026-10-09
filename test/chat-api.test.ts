@@ -375,6 +375,70 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     expect((await h.api(creator.cookie, 'GET', '/api/chat/team/x')).status).toBe(404);
     expect((await h.api(creator.cookie, 'GET', '/api/chat/board/no-such-board')).status).toBe(404);
   });
+
+  it('gates the channel description exactly like reading the channel', async () => {
+    const { creator, board, person, outsider } = await setup();
+    const vic = await person('viewer');
+    const gone = await person('commenter');
+    const stranger = await outsider();
+    const meta = (cookie: string, ref = board) => h.api(cookie, 'GET', `/api/chat/board/${ref}`);
+    const messages = (cookie: string, ref = board) => h.api(cookie, 'GET', `/api/chat/board/${ref}/messages`);
+
+    // a viewer reads the channel, so the viewer gets the description too
+    expect((await meta(vic.cookie)).status).toBe(200);
+    expect((await messages(vic.cookie)).status).toBe(200);
+
+    // an outsider and a board that does not exist get the same 404, word for word, from both routes
+    const hidden = await meta(stranger.cookie);
+    const missing = await meta(creator.cookie, 'no-such-board-0001');
+    expect(hidden.status).toBe(404);
+    expect(missing.status).toBe(404);
+    expect(hidden.body).toEqual(missing.body);
+    expect(hidden.body).toEqual((await messages(stranger.cookie)).body);
+
+    // a disabled person: no description, and no longer among the people of the channel
+    expect((await h.api(owner.cookie, 'PATCH', `/api/members/${gone.user.id}`, { disabled: true })).status).toBe(200);
+    expect((await meta(gone.cookie)).status).toBe((await messages(gone.cookie)).status);
+    expect((await meta(gone.cookie)).status).toBe(401);
+    expect((await meta(creator.cookie)).body.people.map((p: any) => p.id)).not.toContain(gone.user.id);
+
+    // a deleted board: hidden from its members, readable but not writable for workspace admins, as its messages are
+    expect((await h.api(creator.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
+    for (const who of [creator, vic]) {
+      const res = await meta(who.cookie);
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual(hidden.body);
+      expect((await messages(who.cookie)).status).toBe(404);
+    }
+    const admin = await meta(owner.cookie);
+    expect(admin.status).toBe(200);
+    expect(admin.body.access).toMatchObject({ write: false, moderate: false });
+    expect((await messages(owner.cookie)).status).toBe(200);
+  });
+
+  it('limits the reads around a conversation with the same 429 and Retry-After', async () => {
+    const { board, person } = await setup();
+    const reads = [
+      { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}`) },
+      { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', '/api/chat/unread') },
+      { max: 60, call: (who: Account) => h.api(who.cookie, 'PUT', `/api/chat/board/${board}/read`, { lastId: 0 }) },
+    ];
+    for (const { max, call } of reads) {
+      const ana = await person('commenter');
+      const answers = await Promise.all(Array.from({ length: max + 2 }, () => call(ana)));
+      expect(answers.filter((r) => r.status === 200)).toHaveLength(max);
+      const refused = answers.filter((r) => r.status === 429);
+      expect(refused).toHaveLength(2);
+      expect(refused[0].body).toMatchObject({ error: 'rate_limited' });
+      const wait = Number(refused[0].headers.get('retry-after'));
+      expect(wait).toBeGreaterThanOrEqual(1);
+      expect(wait).toBeLessThanOrEqual(60);
+      expect(refused[0].body.retryAfter).toBe(wait);
+      // someone else is not affected
+      const ben = await person('commenter');
+      expect((await call(ben)).status).toBe(200);
+    }
+  });
 });
 
 describe('without chat', { timeout: 60_000 }, () => {

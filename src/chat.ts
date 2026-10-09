@@ -333,7 +333,14 @@ async function load(ch: Channel) {
   } catch (err) {
     if (gen !== generation) return;
     ch.fetchOk = false;
-    if (err instanceof ApiError && err.status === 404) ch.lost = true;
+    if (err instanceof ApiError && err.status === 429) {
+      // asked too often (the server limits these reads per person): try again when it says, still loading meanwhile
+      const wait = typeof err.facts.retryAfter === 'number' ? err.facts.retryAfter : 5;
+      setTimeout(() => {
+        if (gen === generation && ch.visible && !ch.fetchOk && !ch.loading) void load(ch);
+      }, Math.max(1, wait) * 1000);
+      ch.savedOnly = ch.messages.length > 0;
+    } else if (err instanceof ApiError && err.status === 404) ch.lost = true;
     else if (err instanceof ApiError && err.status === 401) signedOut = true;
     else ch.savedOnly = true;
     if (ch.savedOnly && !ch.messages.length) ch.error = 'Chat could not be reached and nothing is saved on this device yet.';

@@ -1,4 +1,4 @@
-// Rate limits of chat writes (docs/chat.md, "Limits"). Sliding windows in memory, modelled on the MCP limiter in
+// Rate limits of chat (docs/chat.md, "Limits"): the writes, and the reads that are not a page of messages. Sliding windows in memory, modelled on the MCP limiter in
 // mcp.mjs: a request over any of its limits is refused and counts against none of them.
 
 const MINUTE_MS = 60_000;
@@ -11,6 +11,12 @@ export const CHAT_LIMITS = Object.freeze({
   // "burst of 5": at most five sends in any two seconds, across channels (the minute windows set the steady rate)
   postBurst: { max: 5, windowMs: 2_000 },
   change: { max: 20, windowMs: MINUTE_MS },
+  // the reads around a conversation: a channel's metadata is asked for once per opening of the tab, the unread summary
+  // once per opening and page, a read marker at most every two seconds per tab (src/chat.ts); 60 a minute leaves room for
+  // the headless visual check, which opens chat that often as one person
+  channelInfo: { max: 60, windowMs: MINUTE_MS },
+  unread: { max: 60, windowMs: MINUTE_MS },
+  read: { max: 60, windowMs: MINUTE_MS },
 });
 
 /** One sliding window per key. `wait(key)` is 0 when a hit fits, else the seconds until it would. */
@@ -57,10 +63,19 @@ export function createChatLimits({ now = Date.now, limits = CHAT_LIMITS } = {}) 
   const overall = createWindow(limits.postOverall, now);
   const burst = createWindow(limits.postBurst, now);
   const change = createWindow(limits.change, now);
+  const channelInfo = createWindow(limits.channelInfo, now);
+  const unread = createWindow(limits.unread, now);
+  const read = createWindow(limits.read, now);
   return {
     /** A new message from `userId` in the channel `channel` ("kind/ref"). */
     post: (userId, channel) => hitAll([[perChannel, `${userId} ${channel}`], [overall, userId], [burst, userId]]),
     /** An edit or a delete by `userId`. */
     change: (userId) => hitAll([[change, userId]]),
+    /** GET of a channel's metadata (access and people) by `userId`. */
+    channelInfo: (userId) => hitAll([[channelInfo, userId]]),
+    /** GET of the unread summary by `userId`. */
+    unread: (userId) => hitAll([[unread, userId]]),
+    /** PUT of a read marker by `userId`, in any channel. */
+    read: (userId) => hitAll([[read, userId]]),
   };
 }
