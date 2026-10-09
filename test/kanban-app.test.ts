@@ -3,7 +3,9 @@ import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
 import { Renderer } from '../src/render';
 import { Store } from '../src/store';
-import { addCard, newKanban } from '../src/containers';
+import { KANBANS_LEFT_OUT, addCard, newKanban } from '../src/containers';
+import { insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
+import type { CustomTemplate } from '../src/custom-templates';
 import { KANBAN, LIMITS, ranksBetween } from '../shared/containers';
 import { addRow, laneCards } from '../src/ui/kanban-logic';
 import type { BaseObj, Id, Point } from '../src/types';
@@ -378,31 +380,44 @@ describe('someone else\'s private notes during a running private step', () => {
   function withPrivate() {
     const h = harness();
     flagOn();
-    // written by someone else in a private step that is still running: hidden on this screen
+    // as Flow decides it (src/flow.ts): a note of a private step that is not revealed is hidden from everyone but its author
+    Object.assign(h.app.flow, { isHidden: (o: BaseObj) => !!o.privateStep && o.createdBy !== 'me' });
     h.store.transact(() => h.store.create({ id: 'secret', type: 'sticky', x: 3000, y: 3000, w: 192, h: 192, rotation: 0, z: 'a6', fill: '#FFE16B', text: 'Secret', privateStep: 'step1', createdBy: 'other', updatedAt: 0 } as BaseObj));
     addSticky(h.store, 'mine', { x: 3300, y: 3000 }, 'Mine');
     return h;
   }
 
-  it('Cmd+A then K leaves them hidden stickies', () => {
+  it('Cmd+A does not select them (TAB-207), so K leaves them hidden stickies', () => {
     const { app, store } = withPrivate();
     press(app, 'a', { metaKey: true });
-    expect(app.selection).toContain('secret');
+    expect(app.selection).toContain('mine');
+    expect(app.selection).not.toContain('secret');
     press(app, 'k');
     expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
     expect(store.get('mine')!.type).toBe('card');
   });
 
-  it('Cmd+A then Make kanban leaves them out', () => {
+  // The guards below are defence in depth: the selection never holds a hidden note, so each test puts one there directly
+  // (past setSelection) to show that the conversion itself still refuses it (mayConvertSticky).
+  it('K with a hidden note in the selection anyway leaves it a hidden sticky', () => {
     const { app, store } = withPrivate();
-    press(app, 'a', { metaKey: true });
-    app.makeKanbanFromSelection();
+    app.selection = ['secret', 'mine'];
+    press(app, 'k');
     expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(store.get('mine')!.type).toBe('card');
   });
 
-  it('dropped on a lane with a selection, they move but stay hidden stickies', () => {
+  it('Make kanban with a hidden note in the selection anyway leaves it out', () => {
+    const { app, store } = withPrivate();
+    app.selection = ['secret', 'mine'];
+    expect(app.makeKanbanFromSelection()).not.toBeNull();
+    expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(store.get('mine')!.type).toBe('card');
+  });
+
+  it('dropped on a lane with a hidden note in the selection anyway, it moves but stays a hidden sticky', () => {
     const { app, store, r, ids } = withPrivate();
-    app.setSelection(['secret', 'mine']);
+    app.selection = ['secret', 'mine'];
     const from = centre(store, 'secret');
     const to = centre(store, ids[1], 0.3);
     call(app, 'onDown', pointer(r, from));
@@ -446,5 +461,57 @@ describe('pasting, duplicating and importing while the kanban flag is off', () =
     app.insertObjects(foreign(), { x: 0, y: 2000 });
     expect(count(store, 'container')).toBe(2);
     expect(count(store, 'connector')).toBe(1);
+  });
+});
+
+describe('placing a template while the kanban flag is off (src/templates.ts)', () => {
+  // A template's ids are all new, so none is a copy of something on this board: without the flag every container goes.
+  // Lanes and cards cannot be in a template until slice 5 (the validator refuses them), so a container is enough here.
+  const kanbanTemplate = (): TemplateDef => ({
+    id: 'test-kanban', name: 'Kanban test', category: 'Planning', description: '',
+    build: (b) => {
+      b.objs.push({ id: 'tk', type: 'container', layout: 'kanban', name: 'From a template', x: b.ox, y: b.oy, w: 900, h: 400, rotation: 0, z: '', createdBy: 'me', updatedAt: 0 } as BaseObj);
+      b.sticky('Note', 0, 500);
+    },
+  });
+  const custom = (): CustomTemplate => ({
+    id: 'c1', version: 1, name: 'Saved', category: 'Custom', description: '', createdBy: 'me', createdAt: 0, updatedAt: 0,
+    content: {
+      objects: [
+        { id: 'tk', type: 'container', layout: 'kanban', name: 'Saved kanban', x: 0, y: 0, w: 900, h: 400, rotation: 0, z: 'a0', createdBy: 'me', updatedAt: 0 },
+        { id: 'ts', type: 'sticky', text: 'Note', x: 0, y: 500, w: 192, h: 192, rotation: 0, z: 'a1', fill: '#FFE16B', createdBy: 'me', updatedAt: 0 },
+      ] as BaseObj[],
+      steps: [], bounds: { x: 0, y: 0, w: 900, h: 692 },
+    },
+  });
+  const withFlow = (app: Harness) => Object.assign(app.flow, { state: () => ({ steps: [] }), setSteps() {}, end() {} });
+  const count = (store: Store, type: string) => [...store.cache.values()].filter((o) => o.type === type).length;
+
+  it('a built-in template leaves its kanbans out and says so; the rest is placed', () => {
+    const { app, store, notify } = harness();
+    withFlow(app);
+    insertTemplate(app, kanbanTemplate());
+    expect(count(store, 'container')).toBe(1);
+    expect(count(store, 'sticky')).toBe(1);
+    expect(notify).toHaveBeenCalledWith(KANBANS_LEFT_OUT);
+  });
+
+  it('a saved template does the same', () => {
+    const { app, store, notify } = harness();
+    withFlow(app);
+    insertCustomTemplate(app, custom());
+    expect(count(store, 'container')).toBe(1);
+    expect(count(store, 'sticky')).toBe(1);
+    expect(notify).toHaveBeenCalledWith(KANBANS_LEFT_OUT);
+  });
+
+  it('with the flag on, both keep their kanbans and say nothing', () => {
+    const { app, store, notify } = harness();
+    withFlow(app);
+    flagOn();
+    insertTemplate(app, kanbanTemplate());
+    insertCustomTemplate(app, custom());
+    expect(count(store, 'container')).toBe(3);
+    expect(notify).not.toHaveBeenCalled();
   });
 });

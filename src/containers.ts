@@ -496,6 +496,9 @@ export function kanbanFromStickies(store: Store, ids: Id[], base: NewObjectBase)
   return { id: store.get(container.id) ? container.id : null };
 }
 
+/** What a paste, an import or a template says when the kanban flag left kanbans out of it (src/flags.ts). */
+export const KANBANS_LEFT_OUT = 'Kanbans cannot be added to a board yet, so they were left out.';
+
 /**
  * Objects to insert (a paste, a duplicate, an imported file, a template) without the kanban parts that would make a new
  * kanban or card while making kanbans is behind its flag (src/flags.ts). A container, lane or card is kept only when

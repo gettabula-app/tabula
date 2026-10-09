@@ -17,7 +17,7 @@ import {
 } from './geometry';
 import { cardBody, objectMarkup, textHeight } from './markup';
 import {
-  cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
+  KANBANS_LEFT_OUT, cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
@@ -1769,7 +1769,7 @@ export class BoardApp {
     // while making kanbans is behind its flag, only copies of a kanban on this board come through (src/flags.ts)
     if (!kanbanFlag()) {
       const r = withoutNewKanbans(objs, (o) => this.store.get(o.id)?.type === o.type);
-      if (r.dropped) this.notify('Kanbans cannot be added to a board yet, so they were left out.');
+      if (r.dropped) this.notify(KANBANS_LEFT_OUT);
       objs = r.objs;
       if (!objs.length) return [];
     }
