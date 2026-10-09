@@ -201,9 +201,11 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const stopRole = app.on('readonly', roleChanged);
   const stopComments = app.comments.onReadOnly(roleChanged);
   app.store.labels.observe(onLabels);
+  let resizes: ResizeObserver | undefined;
   const d = dialog(heading, body, [], {
     className: 'k-card-dialog',
     onClose: () => {
+      resizes?.disconnect();
       stopStore();
       stopRole();
       stopComments();
@@ -216,6 +218,18 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     },
   });
   keepKeys(d.box);
+  // TAB-210: a scroll cue (a fade over the foot of the body, styled at phone width) while there is more below
+  const scroller = d.box.querySelector<HTMLElement>('.modal-body');
+  if (scroller) {
+    const cue = () => scroller.classList.toggle('k-more', scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 2);
+    scroller.addEventListener('scroll', cue, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      resizes = new ResizeObserver(cue);
+      resizes.observe(scroller);
+      resizes.observe(body);
+    }
+    requestAnimationFrame(cue);
+  }
   const start = { title, owner, due, labels } as const;
   if (focus && focus !== 'title') {
     requestAnimationFrame(() => {

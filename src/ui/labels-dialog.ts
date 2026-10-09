@@ -93,7 +93,7 @@ export function openLabelsDialog(app: BoardApp) {
   );
 
   function row(l: Label, i: number, n: number): HTMLElement {
-    const input = h('input', { class: 'input', type: 'text', maxlength: LIMITS.labelName, 'aria-label': `Name of ${l.name}`, 'data-label': l.id, autocomplete: 'off' });
+    const input = h('input', { class: 'input k-label-name', type: 'text', maxlength: LIMITS.labelName, 'aria-label': `Name of ${l.name}`, 'data-label': l.id, autocomplete: 'off' });
     input.value = l.name;
     input.addEventListener('change', () => {
       if (!renameLabel(app.store, l.id, input.value)) input.value = l.name;

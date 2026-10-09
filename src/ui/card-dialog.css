@@ -52,7 +52,20 @@
 .k-colour-opt .k-chip-check { margin-left: auto; }
 .k-chip-check { display: inline-flex; }
 .k-label-list { margin: 0; padding: 0; list-style: none; border-bottom: 1px solid var(--tray-line); }
-.k-label-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line); }
+.k-label-row {
+  display: grid; grid-template-columns: auto minmax(160px, 1fr) auto; grid-template-areas: 'colour name tools';
+  gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line);
+}
+.k-label-row > .k-colour-btn { grid-area: colour; }
+.k-label-row > .k-label-name { grid-area: name; min-width: 0; }
+.k-label-row > .k-label-tools { grid-area: tools; }
+.k-label-row > .k-empty { grid-column: 1 / -1; }
+/* TAB-210: on a phone the name takes the whole row, and the colour and the tools go on a line under it */
+@media (max-width: 480px) {
+  .k-label-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'name name' 'colour tools'; }
+  .k-label-row > .k-label-tools { justify-self: end; }
+  .k-label-row > .k-colour-btn { width: 128px; }
+}
 .k-label-list > :first-child { border-top: 0; }
 .k-label-tools { display: flex; gap: 4px; }
 .k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -77,5 +90,10 @@
   .k-row2 { grid-template-columns: 1fr; }
   .k-card-form .input, .k-card-form .btn { min-height: 40px; }
   .k-chip { height: 40px; }
+  /* TAB-210: while the body scrolls on, a soft fade over its foot says there is more; gone at the end */
+  .k-card-dialog .modal-body.k-more .k-actions::before {
+    content: ''; position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 32px; pointer-events: none;
+    background: linear-gradient(color-mix(in srgb, var(--tray) 0%, transparent), var(--tray));
+  }
 }
 .k-up .ico svg { transform: rotate(180deg); }
