@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Fixed
+- Narrow windows (860 px and below; history from 720 px): the comments panel and version history start right of the toolbar instead of under it, history also stops above the zoom controls, and the empty-board hint is centred in the room right of the toolbar instead of being cut off by it (TAB-133, found re-checking TAB-112 and TAB-124). `npm run visual` has states for the drawers, history, comments and the empty board under the Templates drawer, Share, the menu and a focus request.
 - Phones (860 px and below): the selection's quick-action bar starts right of the toolbar instead of covering it, and scrolls when it is wider than the room; the properties panel has a fold button that folds it to its title row, so the board shows above it while the selection stays (TAB-187). `npm run visual` has a `board-selected-folded` state.
 
 ### Added
