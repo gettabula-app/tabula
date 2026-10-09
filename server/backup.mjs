@@ -1087,8 +1087,11 @@ export function createBackup({
   /** The deep verify in progress, if any: it runs outside a run and gives way to any run, a shutdown and stop(). */
   let deepCtl = null;
   let deepPromise = null;
+  /** Aborts the deep verify in progress, its request in flight included. True when there was one. */
   function cancelDeep() {
-    deepCtl?.abort(aborted());
+    if (!deepCtl || deepCtl.signal.aborted) return false;
+    deepCtl.abort(aborted());
+    return true;
   }
 
   const intervalMs = config.intervalMinutes * MINUTE_MS;
@@ -1761,8 +1764,9 @@ export function createBackup({
   async function run(trigger) {
     if (stopped) return { ok: false, aborted: true };
     if (running) return { ok: false, skipped: 'running' };
-    // a run, whatever started it, goes before a deep verify
-    cancelDeep();
+    // a run, whatever started it, goes before a deep verify; one it interrupted is left to the next run, not started again
+    // when this one ends (a restore's safety backup is followed by the restore, which must not share the bucket with it)
+    const interrupted = cancelDeep();
     running = true;
     const startedAt = now();
     const seqAtStart = changeSeq;
@@ -1794,7 +1798,7 @@ export function createBackup({
       running = false;
       if (failed && settleMs > 0) retryNotBefore = now() + retryDelay(state.consecutiveFailures);
       afterRun();
-      if (verifyNext) startDeepVerifyIfDue(trigger, verifyNext);
+      if (verifyNext && !interrupted) startDeepVerifyIfDue(trigger, verifyNext);
     }
   }
 
