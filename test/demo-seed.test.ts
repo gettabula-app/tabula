@@ -12,7 +12,10 @@ import { isConnector } from '../src/types';
 
 afterEach(() => vi.unstubAllGlobals());
 
-function fakeApp(userId = 'demo-visitor'): BoardApp {
+function fakeApp(userId = 'demo-visitor', viewport = { w: 1280, h: 800 }): BoardApp {
+  const bounds = viewport.w <= 500
+    ? { x: 40, y: 25, w: 530, h: 715 }
+    : { x: 40, y: 25, w: 1110, h: 525 };
   return {
     store: new Store(new Y.Doc()),
     comments: new Comments(new Y.Doc()),
@@ -22,7 +25,13 @@ function fakeApp(userId = 'demo-visitor'): BoardApp {
     on: vi.fn<(...args: unknown[]) => unknown>(),
     emit: vi.fn<(...args: unknown[]) => unknown>(),
     setSelection: vi.fn<(...args: unknown[]) => unknown>(),
-    r: { setOverlay: vi.fn<(...args: unknown[]) => unknown>(), invalidateAll: vi.fn<() => void>() },
+    r: {
+      size: vi.fn<() => ReturnType<BoardApp['r']['size']>>(() => ({ ...viewport, left: 0, top: 0 })),
+      contentBounds: vi.fn<() => ReturnType<BoardApp['r']['contentBounds']>>(() => bounds),
+      setCamera: vi.fn<(...args: unknown[]) => unknown>(),
+      setOverlay: vi.fn<(...args: unknown[]) => unknown>(),
+      invalidateAll: vi.fn<() => void>(),
+    },
   } as unknown as BoardApp;
 }
 
@@ -67,7 +76,10 @@ describe('demo board seed', () => {
     expect(transact).toHaveBeenCalledTimes(1);
     expect(app.store.getMeta().name).toBe('Try Tabula');
     expect(app.store.cache.size).toBe(45);
-    expect(app.zoomToFit).toHaveBeenCalledTimes(1);
+    expect(app.r.setCamera).toHaveBeenCalledTimes(1);
+    const initialCamera = vi.mocked(app.r.setCamera).mock.calls[0][0];
+    expect(initialCamera.zoom).toBeGreaterThanOrEqual(0.5);
+    expect(initialCamera.zoom).toBeLessThanOrEqual(1);
     expect(app.store.undo.undoStack).toHaveLength(0);
 
     const objects = [...app.store.cache.values()];
@@ -153,6 +165,17 @@ describe('demo board seed', () => {
       expect(sanitizeSvgBody(icon.body ?? '')).toBe(icon.body);
       expect(sanitizeSvgBody(icon.body ?? '')).not.toBe('');
     }
+  });
+
+  it('stacks the intro frames on phones so both fit at 50% zoom or more', () => {
+    withAnimationFrame();
+    const app = fakeApp('demo-visitor', { w: 390, h: 844 });
+    seedDemo(app);
+
+    expect(app.store.get('demo-well-frame')).toMatchObject({ x: 40, y: 180, w: 530, h: 270 });
+    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 470, w: 530, h: 270 });
+    const camera = vi.mocked(app.r.setCamera).mock.calls[0][0];
+    expect(camera.zoom).toBeGreaterThanOrEqual(0.5);
   });
 
   it('can answer the seeded poll after moving to its step', () => {

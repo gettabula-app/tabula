@@ -69,6 +69,7 @@ hr { border: 0; }
   display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 12px;
   background: var(--tray); color: var(--tray-text); font-size: 12px; font-weight: 600; line-height: 1.25;
 }
+.demo-banner-short-copy { display: none; }
 .demo-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 .demo-board > .chrome .top-left { top: 46px; }
 .demo-board > .chrome .top-right { top: 46px; }
@@ -563,6 +564,12 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar) { visibility: hidden; }
   /* the rail runs the full height here: the hint is centred in the room right of it, not under it */
   .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px)); }
+}
+
+@media (max-width: 500px) {
+  .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
+  .demo-banner-wide-copy { display: none; }
+  .demo-banner-short-copy { display: block; }
 }
 
 /* quick actions */

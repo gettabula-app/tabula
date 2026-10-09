@@ -6,6 +6,7 @@ import { USER_COLORS } from '../palette';
 import { Builder } from '../templates';
 import type { BoardApp } from '../app';
 import type { BaseObj, ConnectorObj, Obj, Step } from '../types';
+import { demoViewInsets, initialDemoView } from './view';
 
 const SEEDED_AT = Date.UTC(2026, 9, 9, 12, 0, 0);
 
@@ -65,8 +66,8 @@ function frame(id: string, name: string, x: number, y: number, w: number, h: num
   return base(id, 'frame', x, y, w, h, createdBy, { name, fill, font: 'cabinet-grotesk' });
 }
 
-function sticky(id: string, text: string, x: number, y: number, fill: string, parent: string, createdBy: string): BaseObj {
-  return base(id, 'sticky', x, y, 150, 130, createdBy, {
+function sticky(id: string, text: string, x: number, y: number, fill: string, parent: string, createdBy: string, height = 130): BaseObj {
+  return base(id, 'sticky', x, y, 150, height, createdBy, {
     text, fill, parent, fontSize: 18, fontWeight: 500, textColor: '#1D1A12', align: 'center', valign: 'middle',
   });
 }
@@ -118,6 +119,12 @@ const STICKERS = [
 
 function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; name: string; color: string; order: number }[] } {
   const me = app.user.id;
+  const phone = app.r.size().w <= 500;
+  const lowerShift = phone ? 120 : 0;
+  const lower = (y: number) => y + lowerShift;
+  const frameY = phone ? 180 : 190;
+  const secondFrameY = phone ? 470 : 190;
+  const introFrameHeight = phone ? 270 : 360;
   const objects: Obj[] = [];
   const wellId = 'demo-well-frame';
   const improveId = 'demo-improve-frame';
@@ -126,18 +133,18 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
   const wellIds = ['demo-well-1', 'demo-well-2', 'demo-well-3', 'demo-well-4', 'demo-well-5'];
 
   objects.push(
-    base('demo-title', 'text', 40, 25, 1030, 55, me, {
+    base('demo-title', 'text', 40, 25, phone ? 530 : 1030, 55, me, {
       text: 'A board to play with', font: 'cabinet-grotesk', fontSize: 40, fontWeight: 700,
       textColor: '#18212B', align: 'left', valign: 'middle',
     }),
-    base('demo-instructions', 'text', 40, 96, 1080, 38, me, {
-      text: 'Try it: click, drag, double-click, Cmd/Ctrl+G to group, place a dot, then Esc.',
+    base('demo-instructions', 'text', 40, 96, phone ? 530 : 1080, 38, me, {
+      text: phone ? 'Try it: click, drag, group, vote, then Esc.' : 'Try it: click, drag, double-click, Cmd/Ctrl+G to group, place a dot, then Esc.',
       fontSize: 17, fontWeight: 400, textColor: '#5B6672', align: 'left', valign: 'middle',
     }),
-    frame(wellId, 'What went well', 40, 190, 530, 430, me, '#FFF8D7'),
-    frame(improveId, 'To improve', 620, 190, 530, 430, me, '#F6F1FF'),
-    frame(flowId, 'A tiny flow', 40, 660, 1110, 290, me, '#F5F8FC'),
-    frame(toolkitId, 'More to try', 40, 990, 400, 650, me, '#F7F8FA'),
+    frame(wellId, 'What went well', 40, frameY, 530, introFrameHeight, me, '#FFF8D7'),
+    frame(improveId, 'To improve', phone ? 40 : 620, secondFrameY, 530, introFrameHeight, me, '#F6F1FF'),
+    frame(flowId, 'A tiny flow', 40, lower(660), 1110, 290, me, '#F5F8FC'),
+    frame(toolkitId, 'More to try', 40, lower(990), 400, 650, me, '#F7F8FA'),
   );
 
   const wellNotes = [
@@ -147,21 +154,24 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
     ['Good keyboard shortcuts', '#FFE16B', 155, 430],
     ['We can share a laugh', '#FFA3C4', 410, 430],
   ] as const;
-  wellNotes.forEach(([text, fill, x, y], i) => objects.push(sticky(wellIds[i], text, x, y, fill, wellId, me)));
+  wellNotes.forEach(([text, fill, x, y], i) => {
+    const noteY = phone ? (y === 270 ? 220 : 330) : (y === 270 ? 260 : 380);
+    objects.push(sticky(wellIds[i], text, x, noteY, fill, wellId, me, 100));
+  });
 
   const improvements = [
-    ['Name the next action', '#CDB8FF', 650, 275],
-    ['Add a keyboard hint', '#FFE16B', 890, 275],
-    ['Tighten the toolbar', '#FFA3C4', 650, 445],
-    ['Show one sample board', '#BCE88C', 890, 445],
+    ['Name the next action', '#CDB8FF', phone ? 70 : 650, phone ? 510 : 260],
+    ['Add a keyboard hint', '#FFE16B', phone ? 310 : 890, phone ? 510 : 260],
+    ['Tighten the toolbar', '#FFA3C4', phone ? 70 : 650, phone ? 620 : 380],
+    ['Show one sample board', '#BCE88C', phone ? 310 : 890, phone ? 620 : 380],
   ] as const;
-  improvements.forEach(([text, fill, x, y], i) => objects.push(sticky(`demo-improve-${i + 1}`, text, x, y, fill, improveId, me)));
+  improvements.forEach(([text, fill, x, y], i) => objects.push(sticky(`demo-improve-${i + 1}`, text, x, y, fill, improveId, me, 100)));
 
   const flowShapes = [
-    base('demo-flow-start', 'shape', 75, 770, 145, 84, me, { parent: flowId, kind: 'rect', text: 'Start here', fill: '#DDF5E8', fontSize: 17, align: 'center' }),
-    base('demo-flow-decision', 'shape', 335, 758, 150, 108, me, { parent: flowId, kind: 'diamond', text: 'Pick a note', fill: '#FFF2C2', fontSize: 17, align: 'center' }),
-    base('demo-flow-feedback', 'shape', 605, 770, 145, 84, me, { parent: flowId, kind: 'ellipse', text: 'Add a dot', fill: '#DCEBFF', fontSize: 17, align: 'center' }),
-    base('demo-flow-done', 'shape', 865, 770, 170, 84, me, { parent: flowId, kind: 'rounded', text: 'See what wins', fill: '#FFE2D6', fontSize: 17, align: 'center' }),
+    base('demo-flow-start', 'shape', 75, lower(770), 145, 84, me, { parent: flowId, kind: 'rect', text: 'Start here', fill: '#DDF5E8', fontSize: 17, align: 'center' }),
+    base('demo-flow-decision', 'shape', 335, lower(758), 150, 108, me, { parent: flowId, kind: 'diamond', text: 'Pick a note', fill: '#FFF2C2', fontSize: 17, align: 'center' }),
+    base('demo-flow-feedback', 'shape', 605, lower(770), 145, 84, me, { parent: flowId, kind: 'ellipse', text: 'Add a dot', fill: '#DCEBFF', fontSize: 17, align: 'center' }),
+    base('demo-flow-done', 'shape', 865, lower(770), 170, 84, me, { parent: flowId, kind: 'rounded', text: 'See what wins', fill: '#FFE2D6', fontSize: 17, align: 'center' }),
   ];
   objects.push(...flowShapes);
   objects.push(
@@ -172,7 +182,7 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
   );
 
   ICONS.forEach((icon, i) => {
-    const positions = [[70, 1070], [170, 1070], [270, 1070], [70, 1155], [170, 1155]] as const;
+    const positions = [[70, lower(1070)], [170, lower(1070)], [270, lower(1070)], [70, lower(1155)], [170, lower(1155)]] as const;
     const [x, y] = positions[i];
     objects.push(base(icon.id, 'icon', x, y, 56, 56, me, {
       parent: toolkitId, ref: icon.ref, body: icon.body, viewBox: [0, 0, 24, 24],
@@ -181,12 +191,12 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
   });
   STICKERS.forEach((icon, i) => {
     const x = i === 0 ? 270 : 70;
-    const y = i === 0 ? 1155 : 1240;
+    const y = lower(i === 0 ? 1155 : 1240);
     objects.push(base(icon.id, 'icon', x, y, 64, 64, me, {
       parent: toolkitId, ref: icon.ref, body: icon.body, viewBox: [0, 0, 32, 32], sticker: true,
     }));
   });
-  objects.push(base('demo-font-example', 'text', 70, 1335, 330, 48, me, {
+  objects.push(base('demo-font-example', 'text', 70, lower(1335), 330, 48, me, {
     parent: toolkitId, text: 'A bigger headline', font: 'cabinet-grotesk', fontSize: 28, fontWeight: 700,
     textColor: '#18212B', align: 'left', valign: 'middle',
   }));
@@ -197,12 +207,12 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
     ['demo-crew-marta', 'Marta', USER_COLORS[0], 65],
     ['demo-crew-jonas', 'Jonas', USER_COLORS[1], 175],
     ['demo-crew-you', 'You', USER_COLORS[2], 285],
-  ].forEach(([id, name, fill, x]) => objects.push(base(id as string, 'shape', x as number, 1510, 100, 66, me, {
+  ].forEach(([id, name, fill, x]) => objects.push(base(id as string, 'shape', x as number, lower(1510), 100, 66, me, {
     parent: groupId, kind: 'ellipse', text: name as string, fill: fill as string, textColor: '#FFFFFF',
     fontSize: 14, fontWeight: 600, align: 'center', valign: 'middle',
   })));
 
-  const builder = new Builder({ user: app.user, store: app.store }, 470, 990);
+  const builder = new Builder({ user: app.user, store: app.store }, 470, lower(990));
   const containerId = builder.kanban('How we will improve', 0, 0, [
     { name: 'To do', stage: 'todo', cards: [
       { title: 'Sketch the next screen', labels: ['Feature'] },
@@ -315,9 +325,17 @@ function seed(app: BoardApp) {
   app.store.undo.clear();
 
   createComments(app);
-  // The first paint may run before the SVG has a measured viewport. Fit on the next frame.
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => app.zoomToFit());
-  else app.zoomToFit();
+  // Let the renderer measure the viewport, then fit the intro cluster clear of the vote bar and toolbars.
+  const fitIntro = () => {
+    const viewport = app.r.size();
+    const bounds = app.r.contentBounds(['demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame']);
+    if (!bounds) return app.zoomToFit();
+    const flowbar = app.r.root?.parentElement?.querySelector<HTMLElement>('.flowbar.show');
+    const flowbarTop = flowbar?.getBoundingClientRect().top;
+    app.r.setCamera(initialDemoView(viewport, bounds, demoViewInsets(viewport, flowbarTop)));
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitIntro);
+  else fitIntro();
 }
 
 /** Seeds a fresh in-memory demo board. Existing boards are left alone. */

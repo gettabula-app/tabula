@@ -10,17 +10,21 @@ afterEach(() => {
 });
 
 describe('demo disclosure', () => {
-  it('shows the ephemeral notice and a Get Tabula link that goes to the top page', () => {
+  it('explains reload and export, with one Make it yours link to the top page', () => {
     browser = installFakeBrowser();
     const root = browser.mount();
     const banner = mountDemoBanner(root as unknown as HTMLElement);
     const link = banner.querySelector('a');
+    const wideCopy = banner.querySelector('.demo-banner-wide-copy');
+    const shortCopy = banner.querySelector('.demo-banner-short-copy');
     expect(banner.getAttribute('role')).toBe('note');
-    expect(banner.textContent).toContain('Demo: nothing is saved');
-    expect(link?.textContent).toBe('Get Tabula');
-    expect(link?.href).toBe('https://gettabula.app');
+    expect(wideCopy?.textContent).toBe('Demo: nothing is saved unless you export it. Reload and it resets.');
+    expect(shortCopy?.textContent).toBe('Demo: nothing is saved unless you export it.');
+    expect(banner.querySelectorAll('a')).toHaveLength(1);
+    expect(link?.textContent).toBe('Make it yours →');
+    expect(link?.getAttribute('href')).toBe('/#pricing');
     expect(link?.getAttribute('target')).toBe('_top'); // the iframe sandbox allows top navigation by user activation
-    expect(link?.getAttribute('rel')).toContain('noopener');
     expect(link?.getAttribute('rel')).toBe('noopener');
+    expect(banner.textContent).not.toMatch(/Get Tabula|sign up/i);
   });
 });

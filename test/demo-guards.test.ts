@@ -104,9 +104,11 @@ describe('demo guards', () => {
     await expect(fetch('/assets/outside-demo.js')).rejects.toThrow('Demo blocked fetch');
     await expect(fetch('https://api.iconify.design/collections')).rejects.toThrow('Demo blocked fetch');
     await expect(fetch('https://example.test/anything')).rejects.toThrow('Demo blocked fetch');
+    await expect(fetch('https://api.fontshare.com/v2/css?f[]=evil-slug@400&display=swap')).rejects.toThrow('Demo blocked fetch');
+    await expect(fetch('https://api.fontshare.com/v2/fonts?offset=0&limit=100')).rejects.toThrow('Demo blocked fetch');
     await expect(fetch('/demo/favicon.svg', { method: 'POST' })).rejects.toThrow('Demo blocked fetch');
     expect(nativeFetch).toHaveBeenCalledTimes(4);
-    expect(demo.demoGuardReport().blocked).toBe(6);
+    expect(demo.demoGuardReport().blocked).toBe(8);
   });
 
   it('allows a static XHR GET and blocks API XHR, sockets, service worker registration and both sendBeacon methods', async () => {

@@ -12,7 +12,7 @@ import { isWithheld, leaveOutWithheld, updateWithoutWithheld } from './private-s
 import { answerKey } from './polls';
 import { cleanProposedBy } from './safe-obj';
 import { SVG_DEFS, objectMarkup } from './markup';
-import { cssUrl, fontName, nearestWeight } from './fonts';
+import { cssUrl, fontIsAllowed, fontName, nearestWeight } from './fonts';
 import { customStickyColors } from './palette';
 import { cardRows, cardsCsvName, csvText } from './csv';
 import { containerOf } from './containers';
@@ -234,6 +234,7 @@ function usedFonts(objs: Obj[]): Map<string, Set<number>> {
   for (const o of objs) {
     const b = o as BaseObj;
     if (!b.font || b.font === 'system') continue;
+    if (!fontIsAllowed(b.font)) continue;
     const s = m.get(b.font) ?? new Set<number>();
     s.add(nearestWeight(b.font, b.fontWeight || 400));
     if (o.type === 'uml-class') s.add(nearestWeight(b.font, 700));
@@ -317,7 +318,10 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
   const body = objs.map((o) => objectMarkup(app.store.placed(o), ctx)).join('\n');
   let style = opts.fontCss ?? '';
   if (!opts.fontCss) {
-    style = [...usedFonts(objs)].map(([slug, ws]) => `@import url("${cssUrl(slug, [...ws])}");`).join('\n');
+    style = [...usedFonts(objs)].flatMap(([slug, ws]) => {
+      const url = cssUrl(slug, [...ws]);
+      return url ? [`@import url("${url}");`] : [];
+    }).join('\n');
   }
   const bg = opts.background === false ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#FFFFFF"/>`;
   const svg = resolveColorMix(resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
@@ -385,7 +389,9 @@ async function inlineFontCss(objs: Obj[]): Promise<string> {
   const parts: string[] = [];
   for (const [slug, ws] of usedFonts(objs)) {
     try {
-      const css = await (await fetchWithin(cssUrl(slug, [...ws]))).text();
+      const url = cssUrl(slug, [...ws]);
+      if (!url) continue;
+      const css = await (await fetchWithin(url)).text();
       const name = fontName(slug).toLowerCase();
       // The endpoint sometimes returns faces of other families too; keep only ours.
       const faces = (css.match(/@font-face\s*{[^}]*}/g) || []).filter((f) => f.toLowerCase().includes(`'${name}'`) || f.toLowerCase().includes(`"${name}"`));

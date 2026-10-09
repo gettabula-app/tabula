@@ -1,3 +1,5 @@
+import { DEMO_FONT_ALLOWLIST } from './font-policy';
+
 /** A build-time switch; ordinary app builds replace this with `undefined`. */
 declare global {
   interface ImportMetaEnv {
@@ -57,6 +59,25 @@ export function installDemoGuards(): () => void {
     attempts.push(`${kind}: ${target}`);
     throw new Error(`Demo blocked ${kind}: ${target}`);
   };
+  const allowedFontshare = (url: URL): boolean => {
+    if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hash) return false;
+    if (url.hostname === 'api.fontshare.com') {
+      if (url.pathname !== '/v2/css') return false;
+      const params = [...url.searchParams.entries()];
+      const values = url.searchParams.getAll('f[]');
+      if (!values.length || params.some(([key]) => key !== 'f[]' && key !== 'display')) return false;
+      if (url.searchParams.getAll('display').some((value) => value !== 'swap')) return false;
+      return values.every((value) => {
+        const match = /^([a-z0-9-]+)(?:@([0-9]{3}(?:,[0-9]{3})*))?$/.exec(value);
+        if (!match || !DEMO_FONT_ALLOWLIST.has(match[1])) return false;
+        return !match[2] || match[2].split(',').every((weight) => Number(weight) >= 100 && Number(weight) <= 900);
+      });
+    }
+    if (url.hostname === 'cdn.fontshare.com') {
+      return !url.search && /(?:^|\/)\w[^/]*\.(?:woff2?|otf|ttf)$/i.test(url.pathname);
+    }
+    return false;
+  };
   const allowed = (method: string, value: string | URL): boolean => {
     if (method.toUpperCase() !== 'GET') return false;
     let url: URL;
@@ -65,7 +86,9 @@ export function installDemoGuards(): () => void {
     } catch {
       return false;
     }
-    if (url.protocol === 'https:' && ['api.fontshare.com', 'cdn.fontshare.com'].includes(url.hostname)) return true;
+    if (url.protocol === 'https:' && ['api.fontshare.com', 'cdn.fontshare.com'].includes(url.hostname)) {
+      return allowedFontshare(url);
+    }
     const origin = globalThis.location?.origin ?? new URL(globalThis.location?.href ?? 'http://localhost/').origin;
     if (url.origin !== origin) return false;
     const base = new URL(import.meta.env.BASE_URL || '/', globalThis.location?.href ?? 'http://localhost/').pathname;
