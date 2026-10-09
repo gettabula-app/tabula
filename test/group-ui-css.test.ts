@@ -23,9 +23,9 @@ describe('group UI motion and touch targets', () => {
     expect(css).not.toContain('group-chip-bridge');
   });
 
-  it('keeps light tokens at 70% hover and 62% dim, with stronger dark-scheme tokens', () => {
-    expect(css).toMatch(/:root\s*\{[^}]*--group-hover:\s*color-mix\(in srgb, var\(--wire\) 70%, transparent\);[^}]*--group-dim:\s*color-mix\(in srgb, var\(--canvas\) 62%, transparent\);/);
-    expect(css).toMatch(/:root\[data-scheme='dark'\]\s*\{[^}]*--group-hover:\s*color-mix\(in srgb, var\(--wire\) 85%, transparent\);[^}]*--group-dim:\s*color-mix\(in srgb, var\(--canvas\) 75%, transparent\);/);
+  it('hovers in the guide colour in every scheme (TAB-254), with a 62% dim in light and 75% in dark schemes', () => {
+    expect(css).toMatch(/:root\s*\{[^}]*--group-hover:\s*var\(--guide\);[^}]*--group-dim:\s*color-mix\(in srgb, var\(--canvas\) 62%, transparent\);/);
+    expect(css).toMatch(/:root\[data-scheme='dark'\]\s*\{[^}]*--group-dim:\s*color-mix\(in srgb, var\(--canvas\) 75%, transparent\);/);
   });
 
   it('uses a 2 px casing that leaves the group line visible', () => {
