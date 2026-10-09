@@ -418,7 +418,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       {
         user: userView(user),
         teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
-        ...(cloud ? { workspace: cloud.workspaceView() } : {}),
+        ...(cloud ? {
+          workspace: {
+            ...cloud.workspaceView(),
+            ...(isAdmin(user) ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
+          },
+        } : {}),
         ...(config.mcp ? { mcp: true } : {}),
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
@@ -874,6 +879,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           ...directory.adminStats(),
           live: { rooms: live.rooms, connections: live.connections },
           instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: VERSION },
+          ...(cloud ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
         },
       ];
     }),

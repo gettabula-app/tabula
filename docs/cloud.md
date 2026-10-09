@@ -85,13 +85,14 @@ The release label (`null` if `TABULA_VERSION` was not set), process start time i
 The first deploy that sets `TABULA_FLY_VOLUME_ID` on an existing machine only records it and signs nobody out. Not verified: whether Fly exposes the volume id to the machine on its own (an environment variable or the metadata service); until that is known, the control plane must set the variable itself.
 
 ```
-PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banner?: string | null, billing?: boolean }
-  -> { seatLimit, readOnly, banner, billing }      (what is stored now)
+PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banner?: string | null, billing?: boolean, trialEndsAt?: string | null, state?: string | null }
+  -> { seatLimit, readOnly, banner, billing, trialEndsAt, state }      (what is stored now)
 ```
 
-- Fields that are left out stay as they are; `null` clears `seatLimit` and `banner`. An empty body is `400 Nothing to change`.
+- Fields that are left out stay as they are; `null` clears `seatLimit`, `banner`, `trialEndsAt` or `state`. The lifecycle fields default to `null`, so older control planes that omit them continue to work. An empty body is `400 Nothing to change`.
 - `billing` (default `true`) is `false` for a workspace that is provided free (education, internal): it has no subscription, so `/api/me` says `workspace.billing: false`, the owner sees "This workspace is provided free (education or internal). There's nothing to bill." where Manage billing would be, and `POST /api/billing/portal` answers `409 no_billing` without calling the control plane.
 - `seatLimit` is a whole number from 1 to 100000. `banner` is at most 300 characters on a single line (no control characters), trimmed; an empty text means no banner. Unknown fields are refused with `400`, so a typo cannot silently do nothing.
+- `trialEndsAt` is either null or an ISO 8601 UTC timestamp ending in `Z`, at most 40 characters, with a year from 2000 through 2100; an invalid timestamp is refused with `400`. `state` is null or 1–32 lowercase letters, digits, underscores or hyphens. The client shows a trial end date only for `state: "trialing"`; other (including unknown) states show no trial label.
 - The limits are stored in the `settings` table (`cloud.limits`, one JSON value; migration 3) and survive restarts. Each change writes an audit row `cloud.limits` with no actor (the dashboard shows "System") and tells the relay, which applies it to open sockets at once.
 - This endpoint stays reachable while the workspace is read-only (it is how the lock is lifted).
 
@@ -197,7 +198,7 @@ Everything else keeps working: people who already have an account sign in, roles
 
 ## What the app shows
 
-`GET /api/me` gains `workspace: { readOnly, banner, seatLimit, seatsUsed }` in cloud mode and only then. The app uses it for:
+`GET /api/me` gains `workspace: { readOnly, banner, seatLimit, seatsUsed, billing }` in cloud mode and only then. Owners and admins also receive `trialEndsAt` and `state` in that workspace object; these lifecycle fields are absent for members and guests. The admin-only `GET /api/admin/overview` includes both fields at the top level. The app uses `/api/me` for:
 
 - A thin banner with the banner text above the home screen and the board (above the board it is a single line and the editing chrome moves down). A read-only workspace without a banner text gets "This workspace is read-only."
 - Read-only boards and the badge described above. A viewer stays a viewer when the workspace becomes writable again.

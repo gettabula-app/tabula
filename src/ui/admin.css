@@ -62,6 +62,7 @@
 .admin .admin-kicker { margin: 0 0 8px; }
 .admin-heading { margin: 0 0 32px; font: 800 40px/1 var(--display); letter-spacing: -0.03em; }
 .admin-sub { margin: 48px 0 16px; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
+.admin-billing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 
 .admin-state { margin: 0; padding: 16px 0; color: var(--graphite); }
 .admin-error {

@@ -13,8 +13,13 @@ const CALL_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_CHARS = 64 * 1024;
 const SEAT_LIMIT_MAX = 100_000;
 const BANNER_MAX = 300;
+const TRIAL_ENDS_AT_MAX = 40;
+const TRIAL_YEAR_MIN = 2000;
+const TRIAL_YEAR_MAX = 2100;
 const SEAT_ROLES = ['owner', 'admin', 'member'];
-const LIMIT_FIELDS = ['seatLimit', 'readOnly', 'banner', 'billing'];
+const LIMIT_FIELDS = ['seatLimit', 'readOnly', 'banner', 'billing', 'trialEndsAt', 'state'];
+const TRIAL_ENDS_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
+const STATE_RE = /^[a-z0-9_-]{1,32}$/;
 const NOT_SINGLE_LINE_RE = /[\p{Cc}\u2028\u2029]/u;
 const BEARER_RE = /^bearer +(\S+)$/i;
 const NOTIFY_FIELDS = ['template', 'date'];
@@ -35,7 +40,7 @@ const NOTIFY_TEMPLATES = {
 };
 
 // `billing: false` is a workspace that is provided free (education, internal): it has no subscription and no billing portal.
-const DEFAULT_LIMITS = Object.freeze({ seatLimit: null, readOnly: false, banner: null, billing: true });
+const DEFAULT_LIMITS = Object.freeze({ seatLimit: null, readOnly: false, banner: null, billing: true, trialEndsAt: null, state: null });
 
 /** A call to the control plane failed. The message is safe to show; the reason went to the log. */
 export class CloudError extends Error {
@@ -74,6 +79,28 @@ function checkLimits(body) {
       return { error: `banner must be at most ${BANNER_MAX} characters on a single line` };
     }
     patch.banner = text || null;
+  }
+  if (body.trialEndsAt !== undefined) {
+    const value = body.trialEndsAt;
+    if (value !== null) {
+      const match = typeof value === 'string' && value.length <= TRIAL_ENDS_AT_MAX ? TRIAL_ENDS_AT_RE.exec(value) : null;
+      const parts = match?.slice(1).map(Number);
+      const [year, month, day, hour, minute, second] = parts ?? [];
+      const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN;
+      const date = Number.isNaN(parsed) ? null : new Date(parsed);
+      if (!match || year < TRIAL_YEAR_MIN || year > TRIAL_YEAR_MAX || !date
+        || date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day
+        || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) {
+        return { error: `trialEndsAt must be a valid ISO 8601 UTC date or null` };
+      }
+    }
+    patch.trialEndsAt = value;
+  }
+  if (body.state !== undefined) {
+    if (body.state !== null && (typeof body.state !== 'string' || !STATE_RE.test(body.state))) {
+      return { error: 'state must be a string of at most 32 lowercase letters, digits, underscores or hyphens, or null' };
+    }
+    patch.state = body.state;
   }
   return { patch };
 }
