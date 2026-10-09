@@ -554,3 +554,38 @@ export function parseMention(f: Record<string, unknown>): MentionNotice | null {
 
 /** Where a notice's Open button goes: the board, or the channel on the Chat page. */
 export const noticeHash = (n: Pick<MentionNotice, 'kind' | 'ref'>): string => (n.kind === 'board' ? `#/b/${n.ref}` : channelHash(n.kind, n.ref));
+
+// ---------------------------------------------------------------- object chips
+
+/** What the board can say about an object a message points at; undefined when it is no longer on the board. */
+export interface ObjectInfo {
+  /** The layers panel's label: its name, the first words of its text, or its type. */
+  label: string;
+  /** Hidden from this person by a session's private-writing step: its words are never shown. */
+  private: boolean;
+  /** Hidden for everyone with the Layers panel's eye: not drawn, so there is nowhere to go. */
+  hidden: boolean;
+}
+
+export interface ObjectChip {
+  state: 'ok' | 'private' | 'hidden' | 'missing';
+  label: string;
+  /** Whether a click can take the person there. */
+  canOpen: boolean;
+  /** The sentence for the chip's tooltip. */
+  tip: string;
+}
+
+/**
+ * The chip under a message that points at a board object (docs/chat.md, Object link). The text of an object this person may
+ * not see is never part of it, and an object that is gone says so.
+ */
+export function objectChip(info: ObjectInfo | undefined): ObjectChip {
+  if (!info) return { state: 'missing', label: 'Object no longer on the board', canOpen: false, tip: 'It was deleted from the board.' };
+  if (info.private) return { state: 'private', label: 'An object', canOpen: false, tip: 'It stays hidden until the session reveals it.' };
+  if (info.hidden) return { state: 'hidden', label: 'A hidden object', canOpen: false, tip: 'Show it in the Layers panel first.' };
+  return { state: 'ok', label: info.label, canOpen: true, tip: 'Go to it on the board.' };
+}
+
+/** Where a chip goes when there is no board open to fly in (the Chat page): the board itself. */
+export const objectBoardHash = (boardId: string): string => `#/b/${boardId}`;

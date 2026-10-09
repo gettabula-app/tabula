@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatChannelEntry, ChatMessage } from '../src/api';
 import {
-  GROUP_MS, applyDelete, atBottom, CHAT_REACTIONS, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
+  GROUP_MS, applyDelete, atBottom, CHAT_REACTIONS, objectBoardHash, objectChip, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
   findLinks, fromTokens, initials, insertMention, mentionLabel, mentionQuery, mergeMessages, newer, outboxItem, quoteText, segments,
   timeLabel, toTokens, trimOldest, noticeHash, parseMention, reactedWith, reactionChips, withReactions, type ChatAccess,
 } from '../src/ui/chat-logic';
@@ -404,5 +404,34 @@ describe('mention notices', () => {
     expect(noticeHash({ kind: 'board', ref: 'b1' })).toBe('#/b/b1');
     expect(noticeHash({ kind: 'team', ref: 't1' })).toBe('#/chat/team/t1');
     expect(noticeHash({ kind: 'workspace', ref: 'main' })).toBe('#/chat/workspace/main');
+  });
+});
+
+describe('object chips', () => {
+  it('say what the object is while it can be shown', () => {
+    expect(objectChip({ label: 'Reviews were fast', private: false, hidden: false })).toEqual({
+      state: 'ok', label: 'Reviews were fast', canOpen: true, tip: 'Go to it on the board.',
+    });
+  });
+
+  it('never show the words of an object a session keeps from this person', () => {
+    const chip = objectChip({ label: 'my private idea', private: true, hidden: false });
+    expect(chip).toMatchObject({ state: 'private', label: 'An object', canOpen: false });
+    expect(JSON.stringify(chip)).not.toContain('private idea');
+  });
+
+  it('say so when the object was hidden for everyone with the eye, and do not go there', () => {
+    const chip = objectChip({ label: 'secret plan', private: false, hidden: true });
+    expect(chip).toMatchObject({ state: 'hidden', label: 'A hidden object', canOpen: false });
+    expect(JSON.stringify(chip)).not.toContain('secret plan');
+  });
+
+  it('prefer private over hidden when both apply, and say when the object is gone', () => {
+    expect(objectChip({ label: 'x', private: true, hidden: true }).state).toBe('private');
+    expect(objectChip(undefined)).toMatchObject({ state: 'missing', label: 'Object no longer on the board', canOpen: false });
+  });
+
+  it('link to the board where no board is open', () => {
+    expect(objectBoardHash('b1')).toBe('#/b/b1');
   });
 });

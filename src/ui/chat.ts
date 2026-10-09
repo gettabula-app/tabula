@@ -4,14 +4,16 @@ import type { ChatMessage } from '../api';
 import { authState } from '../auth';
 import { boardUnread, onChatBadge, openBoardChat, type BoardChat, type ChatView } from '../chat';
 import { USER_COLORS } from '../palette';
+import { layerLabel } from '../layers';
+import type { BaseObj } from '../types';
 import { h, icon } from './dom';
 import { announce } from './announce';
 import { popover, toast } from './common';
 import type { SideTray } from './side-tray';
 import {
-  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, filterPeople, fromTokens,
+  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, objectBoardHash, objectChip, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, filterPeople, fromTokens,
   initials, insertMention, mentionLabel, mentionQuery, quoteText, reactedWith, reactionChips, segments, textLength, timeLabel, toTokens,
-  type OutboxItem, type Person, type Row,
+  type ObjectInfo, type OutboxItem, type Person, type Row,
 } from './chat-logic';
 
 /** Six lines of 20px plus the field's padding. */
@@ -76,6 +78,20 @@ function avatar(id: string | null, name: string): HTMLElement {
   return a;
 }
 
+/**
+ * What a board's chat can do with board objects (docs/chat.md, Object link): which one is selected, what the board says
+ * about one a message points at, how to go there, and when any of that may have changed. Only board chat on a board has it.
+ */
+export interface ObjectRefs {
+  /** The one selected object, or null when none or several are. */
+  selected(): string | null;
+  describe(id: string): ObjectInfo | undefined;
+  /** Takes the view to it; false when it cannot be shown. */
+  open(id: string): boolean;
+  /** Called after the selection or the objects changed. Returns the way to stop. */
+  onChange(fn: () => void): () => void;
+}
+
 /** What one conversation needs to be drawn: the channel, the element to draw in and who is looking. */
 export interface ConversationOptions {
   chat: BoardChat;
@@ -87,6 +103,8 @@ export interface ConversationOptions {
   meName: string;
   /** Called with every new view, open or not (the board's button paints its badge from it). */
   onView?: (view: ChatView) => void;
+  /** Present in the board chat of an open board: **Reference selection** and chips that go to the object. */
+  objects?: ObjectRefs;
 }
 
 export interface Conversation {
@@ -94,6 +112,8 @@ export interface Conversation {
   setOpen(open: boolean): void;
   /** Focuses the composer once the channel says whether this person may write; the list when they may not. */
   focusComposer(): void;
+  /** The board changed under the chips and the attach button (a selection, an object edited or gone): draw them again. */
+  refresh(): void;
 }
 
 /**
@@ -123,13 +143,17 @@ export function mountConversation(opts: ConversationOptions): Conversation {
   const note = h('p', { class: 'chat-note', id: `chat-note-${boardId}` });
   ta.setAttribute('aria-describedby', note.id);
   const sendBtn = h('button', { class: 'btn primary chat-send', disabled: true, onclick: () => send() }, 'Send');
-  const composer = h('div', { class: 'chat-composer' }, suggest, replying, ta, h('div', { class: 'chat-compose-foot' }, note, sendBtn));
+  // Reference selection (board chat on an open board): a button that attaches the selected object to the next message, and the chip it makes
+  const attachBtn = h('button', { class: 'btn small chat-attach-btn', type: 'button', hidden: !opts.objects, onclick: () => attach() }, icon('select', 16), h('span', null, 'Reference selection'));
+  const attachChip = h('div', { class: 'chat-attached', hidden: true });
+  const composer = h('div', { class: 'chat-composer' }, suggest, replying, attachChip, ta, h('div', { class: 'chat-compose-foot' }, note, attachBtn, sendBtn));
   panel.replaceChildren(status, body, composer);
 
   let view: ChatView = chat.view();
   let open = false;
   let stick = true;
   let replyTo: { id: number; name: string; quote: string } | null = null;
+  let attached: string | null = null;
   let picked: Person[] = [];
   let editing: { id: number; picked: Person[] } | null = null;
   let suggestions: Person[] = [];
@@ -203,6 +227,10 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       }
       if (!head) p.prepend(h('span', { class: 'sr-only' }, `${m.authorName}, ${timeLabel(m.createdAt)}: `));
       main.append(p);
+      if (m.objectId && m.kind === 'board') {
+        const chip = objectEl(m.objectId, m.ref);
+        if (chip) main.append(chip);
+      }
       const chips = reactionChips(m, myId);
       if (chips.length) main.append(reactionsEl(m, chips));
     }
@@ -215,6 +243,56 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       el.append(more);
     }
     return el;
+  }
+
+  /** The chip for an object a message points at: its label from the board as it is now, and a click that goes there. */
+  function objectEl(id: string, boardId: string): HTMLElement | null {
+    const objects = opts.objects;
+    if (!objects) {
+      // no board open here (the Chat page): the chip is a way into the board
+      return boardId ? h('a', { class: 'chat-object', href: objectBoardHash(boardId) }, icon('select', 14), h('span', null, 'An object on the board. Open the board')) : null;
+    }
+    const chip = objectChip(objects.describe(id));
+    const b = h('button', {
+      class: `chat-object ${chip.state}`, type: 'button', 'aria-disabled': chip.canOpen ? undefined : 'true', 'data-tip': chip.tip,
+      'aria-label': `${chip.label}. ${chip.tip}`,
+      onclick: () => {
+        if (!chip.canOpen) toast(chip.tip);
+        else if (!objects.open(id)) toast('It cannot be shown right now.');
+      },
+    }, icon('select', 14));
+    const label = h('span', null);
+    label.textContent = chip.label;
+    b.append(label);
+    return b;
+  }
+
+  /** Attaches the selected object to the message being written. */
+  function attach() {
+    const id = opts.objects?.selected() ?? null;
+    if (!id) return;
+    attached = id;
+    paintAttached();
+    ta.focus();
+  }
+
+  function paintAttached() {
+    const objects = opts.objects;
+    attachChip.replaceChildren();
+    if (attached && objects) {
+      const chip = objectChip(objects.describe(attached));
+      if (chip.state === 'missing') attached = null;
+      else {
+        const label = h('span', { class: 'chat-attached-label' });
+        label.textContent = `Pointing at: ${chip.label}`;
+        attachChip.append(label, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Remove the object from this message', onclick: () => { attached = null; paintAttached(); ta.focus(); } }, icon('close', 16)));
+      }
+    }
+    attachChip.hidden = attached === null;
+    const state = composerState(view.access, { lost: view.lost, signedOut: view.signedOut });
+    const selected = objects?.selected() ?? null;
+    attachBtn.hidden = !objects;
+    attachBtn.disabled = !state.enabled || selected === null || selected === attached;
   }
 
   /** The reactions under a message: small outlined counts, each a button that toggles this person's own. */
@@ -243,6 +321,10 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     if (item.replyTo !== null) main.append(quoteEl(item.replyTo));
     const mentions = [...item.text.matchAll(/@\{([A-Za-z0-9_-]{1,64})\}/g)].map((x) => ({ id: x[1], name: personName(x[1]) }));
     main.append(h('p', { class: 'chat-text' }, ...textNodes(item.text, mentions, myId)));
+    if (item.objectId && item.kind === 'board') {
+      const chip = objectEl(item.objectId, item.ref);
+      if (chip) main.append(chip);
+    }
     const state = h('p', { class: 'chat-state' });
     const link = (label: string, fn: () => void) => h('button', { class: 'chat-action', onclick: fn }, label);
     const dot = () => h('span', { 'aria-hidden': 'true' }, ' · ');
@@ -266,11 +348,18 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     if (row.type === 'new') return 'n';
     if (row.type === 'pending') {
       const i = row.item;
-      return JSON.stringify(['p', row.head, i.state, i.reason ?? '', i.text, i.replyTo, i.replyTo !== null ? quoteSig(i.replyTo) : '', view.people.length, view.online]);
+      return JSON.stringify(['p', row.head, i.state, i.reason ?? '', i.text, i.replyTo, i.replyTo !== null ? quoteSig(i.replyTo) : '', view.people.length, view.online, objectSig(i.objectId)]);
     }
     const m = row.message;
     return JSON.stringify(['m', row.head, m.text, m.editedAt, m.deleted, m.deletedBy, m.authorName, m.mentions, editing?.id === m.id,
-      m.replyTo !== null ? quoteSig(m.replyTo) : '', m.reactions ?? [], view.online, view.access?.write]);
+      m.replyTo !== null ? quoteSig(m.replyTo) : '', m.reactions ?? [], view.online, view.access?.write, objectSig(m.objectId)]);
+  }
+
+  /** What an object chip would say now, so a row is drawn again when its object changes. */
+  function objectSig(id: string | null | undefined): string {
+    if (!id || !opts.objects) return '';
+    const chip = objectChip(opts.objects.describe(id));
+    return `${chip.state}|${chip.label}`;
   }
 
   function quoteSig(id: number): string {
@@ -376,6 +465,7 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     note.classList.toggle('over', length > MAX_TEXT);
     ta.placeholder = state.enabled ? 'Message' : 'You cannot post here';
     replying.hidden = !replyTo || !state.enabled;
+    paintAttached();
   }
 
   function paintReplying() {
@@ -401,7 +491,9 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       note.textContent = `A message can mention at most ${MAX_MENTIONS} people.`;
       return;
     }
-    chat.send(text, replyTo?.id ?? null);
+    chat.send(text, replyTo?.id ?? null, attached);
+    attached = null;
+    paintAttached();
     ta.value = '';
     picked = [];
     replyTo = null;
@@ -673,6 +765,9 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       if (view.access) requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
       else focusWhenReady = true;
     },
+    refresh() {
+      render();
+    },
   };
 }
 
@@ -713,7 +808,37 @@ export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonEl
   }
 
   // ---------------------------------------------------------------- panel
-  const conversation = mountConversation({ chat, id: boardId, panel: tray.slot('chat'), signal, meId: myId, meName: myName, onView: paintBadge });
+  // what board chat can do with the board's objects (docs/chat.md, Object link)
+  const objects: ObjectRefs = {
+    selected: () => (app.selection.length === 1 ? app.selection[0] : null),
+    describe(id) {
+      const o = app.store.get(id);
+      if (!o) return undefined;
+      return { label: layerLabel(o), private: app.flow.isHidden(o as BaseObj), hidden: !app.store.isShown(o) };
+    },
+    open: (id) => app.flyToObject(id),
+    onChange(fn) {
+      const offSel = app.on('selection', fn);
+      const offObj = app.on('objects', fn);
+      return () => {
+        offSel();
+        offObj();
+      };
+    },
+  };
+  const conversation = mountConversation({ chat, id: boardId, panel: tray.slot('chat'), signal, meId: myId, meName: myName, onView: paintBadge, objects });
+  let redraw = 0;
+  const offObjects = objects.onChange(() => {
+    if (redraw || !open) return;
+    redraw = requestAnimationFrame(() => {
+      redraw = 0;
+      conversation.refresh();
+    });
+  });
+  signal.addEventListener('abort', () => {
+    offObjects();
+    cancelAnimationFrame(redraw);
+  }, { once: true });
   const offBadge = onChatBadge(() => {
     if (!open) paintBadge(boardUnread(boardId));
   });

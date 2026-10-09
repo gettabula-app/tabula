@@ -1492,6 +1492,20 @@ export class BoardApp {
     const b = this.r.contentBounds();
     if (b) this.r.flyTo(b, 80, 2);
   }
+  /**
+   * Takes the view to one object and selects it, for a chat message that points at it. Does nothing for an object that is
+   * not there, hidden or hidden from this person; says whether it went.
+   */
+  flyToObject(id: Id): boolean {
+    const o = this.store.get(id);
+    if (!o || !this.store.isShown(o) || this.flow.isHidden(o as BaseObj)) return false;
+    const b = this.r.contentBounds([id]);
+    if (!b) return false;
+    this.r.flyTo(b, 120, 3);
+    if (!o.locked) this.setSelection([id]);
+    return true;
+  }
+
   zoomToSelection() {
     const b = this.r.contentBounds(this.selection);
     if (b) this.r.flyTo(b, 120, 3);
