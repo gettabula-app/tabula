@@ -15,6 +15,50 @@ const DAY = 86_400_000;
 export const SYSTEM = 'system';
 export const SYSTEM_STACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+const FONT_KEYWORD_ALIASES = [
+  ['sans', 'sans serif', 'sans-serif', 'sansserif'],
+  ['mono', 'monospace', 'monospaced', 'fixed width', 'fixed-width', 'typewriter', 'code', 'coding'],
+  ['serif', 'serif typeface'],
+  ['handwriting', 'handwritten', 'hand writing', 'script', 'cursive'],
+  ['display', 'decorative', 'headline'],
+  ['rounded', 'round'],
+  ['geometric', 'geometric sans', 'geometric sans serif'],
+] as const;
+
+const normalizeFontSearch = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+function fontKeywords(font: FontEntry): string[] {
+  const keywords = [font.category, ...font.tags].map(normalizeFontSearch).filter(Boolean);
+  const expanded = new Set(keywords);
+  for (const keyword of keywords) {
+    for (const aliases of FONT_KEYWORD_ALIASES) {
+      if (aliases.some((alias) => keyword.includes(normalizeFontSearch(alias)))) {
+        aliases.forEach((alias) => expanded.add(normalizeFontSearch(alias)));
+      }
+    }
+  }
+  return [...expanded];
+}
+
+/** Search font names and style metadata, with exact family names ranked first. */
+export function searchFonts(query: string, fonts: readonly FontEntry[] = catalogue): FontEntry[] {
+  const normalizedQuery = normalizeFontSearch(query);
+  if (!normalizedQuery) return [];
+  const tokens = normalizedQuery.split(' ');
+  const ranked = fonts.flatMap((font, index) => {
+    const name = normalizeFontSearch(font.name);
+    const nameAndSlug = [name, normalizeFontSearch(font.slug)];
+    const nameMatch = tokens.every((token) => nameAndSlug.some((value) => value.includes(token)));
+    const metadata = fontKeywords(font);
+    const metadataMatch = tokens.every((token) => metadata.some((value) => value.includes(token)));
+    if (name !== normalizedQuery && !nameMatch && !metadataMatch) return [];
+    const rank = name === normalizedQuery ? 0 : nameMatch ? 1 : 2;
+    return [{ font, index, rank }];
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map(({ font }) => font);
+}
+
 // A small built-in list so the picker and defaults work before the catalogue
 // has ever been fetched (first run offline).
 let catalogue: FontEntry[] = DEMO ? BUILTIN_FONTS : readCached()?.fonts ?? BUILTIN_FONTS;
