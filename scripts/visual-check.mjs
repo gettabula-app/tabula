@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members (the chat states
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -359,8 +359,11 @@ async function seedChat(relay, ownerCookie) {
 
   const route = `chat/board/${BOARD_ID}/messages`;
   let n = 0;
-  const say = async (cookie, text, extra = {}) =>
-    (await apiJson(base, 'POST', route, { clientId: `visual-seed-${++n}`, text, ...extra }, cookie)).message.id;
+  // a pause before each, so the posting burst limit (five in two seconds) never answers 429
+  const say = async (cookie, text, extra = {}) => {
+    await sleep(450);
+    return (await apiJson(base, 'POST', route, { clientId: `visual-seed-${++n}`, text, ...extra }, cookie)).message.id;
+  };
   const times = [];
   const at = (id, time, extra = {}) => times.push({ id, time, ...extra });
   const DAY = 24 * HOUR;
@@ -378,6 +381,11 @@ async function seedChat(relay, ownerCookie) {
   at(flaky, NOW - 20 * MINUTE, { edited: NOW - 18 * MINUTE });
   const late = await say(ana, 'Running five minutes late, sorry!');
   at(late, NOW - 2 * MINUTE);
+  // two messages that point at objects: one on the board, one that was deleted from it
+  const look = await say(ana, 'Look at the first sticky, it needs a better headline.', { objectId: 'seed-note-1' });
+  at(look, NOW - 9 * MINUTE);
+  const gone = await say(ben, 'And the old backlog box I moved away.', { objectId: 'deleted-long-ago' });
+  at(gone, NOW - 8 * MINUTE);
 
   await apiJson(base, 'PATCH', `chat/messages/${flaky}`, { text: `Flaky tests are mine, I'll take the action point. @{${ids.owner}}` }, ana);
   await apiJson(base, 'DELETE', `chat/messages/${willDo}`, undefined, ben);
@@ -642,6 +650,14 @@ const STATES = {
     await page.goto(`${base}/#/admin/members`);
     await page.getByRole('button', { name: 'Erase chat messages' }).first().waitFor();
   },
+  async 'chat-object'(env) {
+    await openSeedChat(env);
+    await env.page.locator('.chat-object').first().waitFor();
+    // a sticky selected on the board: the button that attaches it, and the chip it makes
+    await env.page.evaluate(() => window.__board.setSelection(['seed-rect']));
+    await env.page.getByRole('button', { name: 'Reference selection' }).click();
+    await env.page.locator('.chat-attached').waitFor();
+  },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
     await env.page.getByRole('button', { name: 'Notifications' }).click();
@@ -784,7 +800,7 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

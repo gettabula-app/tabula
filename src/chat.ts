@@ -518,7 +518,7 @@ export interface BoardChat {
   /** The Chat tab opened or closed: subscribe and load, or unsubscribe. */
   setVisible(visible: boolean): void;
   loadOlder(): Promise<void>;
-  send(text: string, replyTo: number | null): void;
+  send(text: string, replyTo: number | null, objectId?: string | null): void;
   retry(clientId: string): void;
   discard(clientId: string): void;
   edit(id: number, text: string): Promise<void>;
@@ -627,8 +627,8 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
         }
       }
     },
-    send(text, replyTo) {
-      const item = outboxItem({ clientId: newClientId(), kind: ch.kind, ref: ch.ref, text, replyTo, createdLocal: Date.now() });
+    send(text, replyTo, objectId = null) {
+      const item = outboxItem({ clientId: newClientId(), kind: ch.kind, ref: ch.ref, text, replyTo, objectId, createdLocal: Date.now() });
       outbox = enqueue(outbox, item);
       persist(item);
       emit();

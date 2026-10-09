@@ -6,6 +6,14 @@ import { vi, type Mock } from 'vitest';
 
 type Listener = (event: FakeEvent) => void;
 
+/** Inline style: plain properties, plus the custom-property calls the real CSSStyleDeclaration has. */
+class FakeStyle {
+  [key: string]: unknown;
+  setProperty(name: string, value: string): void { this[name] = value; }
+  getPropertyValue(name: string): string { return String(this[name] ?? ''); }
+  removeProperty(name: string): void { delete this[name]; }
+}
+
 export class FakeEvent {
   defaultPrevented = false;
   target: FakeNode | null = null;
@@ -30,6 +38,16 @@ export class FakeNode {
   }
   remove() {
     this.parentNode?.removeChild(this);
+  }
+  get nextSibling(): FakeNode | null {
+    const list = this.parentNode?.childNodes;
+    return list ? (list[list.indexOf(this) + 1] ?? null) : null;
+  }
+  replaceWith(...nodes: FakeNode[]) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    for (const n of nodes) parent.insertBefore(n, this);
+    parent.removeChild(this);
   }
   get textContent(): string {
     return '';
@@ -94,7 +112,7 @@ export class FakeElement extends FakeNode {
   readOnly = false;
   nodeType = 1;
   childNodes: FakeNode[] = [];
-  style: Record<string, string> = {};
+  style = new FakeStyle() as unknown as Record<string, string> & FakeStyle;
   private attrs = new Map<string, string>();
   private listeners = new Map<string, Listener[]>();
   private inputValue: string | null = null;
@@ -213,8 +231,24 @@ export class FakeElement extends FakeNode {
     this.childNodes.push(node);
     return node;
   }
+  /** Puts `node` before `ref` (at the end when `ref` is null), moving it if it is somewhere else. */
+  insertBefore<T extends FakeNode>(node: T, ref: FakeNode | null): T {
+    node.parentNode?.removeChild(node);
+    const at = ref ? this.childNodes.indexOf(ref) : -1;
+    node.parentNode = this;
+    if (at >= 0) this.childNodes.splice(at, 0, node);
+    else this.childNodes.push(node);
+    return node;
+  }
+  get firstChild(): FakeNode | null {
+    return this.childNodes[0] ?? null;
+  }
   append(...nodes: (FakeNode | string)[]) {
     for (const n of nodes) this.appendChild(typeof n === 'string' ? new FakeText(n) : n);
+  }
+  prepend(...nodes: (FakeNode | string)[]) {
+    const first = this.firstChild;
+    for (const n of nodes) this.insertBefore(typeof n === 'string' ? new FakeText(n) : n, first);
   }
   replaceChildren(...nodes: (FakeNode | string)[]) {
     for (const old of this.childNodes) old.parentNode = null;
@@ -335,6 +369,7 @@ export function installFakeBrowser(): FakeBrowser {
     innerWidth: 1024,
   };
   vi.stubGlobal('document', document);
+  vi.stubGlobal('HTMLElement', FakeElement);
   vi.stubGlobal('window', window);
   vi.stubGlobal('location', location);
   vi.stubGlobal('sessionStorage', {
