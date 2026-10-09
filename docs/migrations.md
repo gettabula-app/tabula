@@ -36,7 +36,7 @@ A build knowing `K` migrations can open a database when `min_reader <= K`. The b
 
 A database with no valid `schema_meta` row is legacy. Its minimum reader is its `user_version`, so it is strict: only a build that knows at least that generation can open it. The first successful open records that generation before applying any later migrations.
 
-For a release `A` writing schema generation `A.schema`, rollback to release `B` is supported when `A.schema >= B.maxReader`. A string migration defaults to `n - 1`, so it permits one generation of rollback. A breaking migration can require the current generation and prevent rollback to the immediately previous build. The first release with this mechanism cannot safely be rolled back to a build from before the mechanism existed.
+Rolling back from a newer release `N` to an older release `O` is data-safe when `O.schema >= N.maxReader`: `N.maxReader` is the highest minimum reader that `N`'s migrations record in the database, and `O` can open the file only if it knows at least that many migrations. A string migration defaults to `n - 1`, so it permits one generation of rollback. A breaking migration can require the current generation and prevent rollback to the immediately previous build. The first release with this mechanism cannot safely be rolled back to a build from before the mechanism existed.
 
 Backups and restores use the same reader rule. A restore accepts a newer backup when its `min_reader` permits this build to read it; legacy backups remain strict.
 
