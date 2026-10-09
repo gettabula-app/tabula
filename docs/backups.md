@@ -210,6 +210,43 @@ Errors are shown as plain sentences, never as codes: one table in `src/ui/backup
 - The app's boards that are open in a browser get close code `4503` and show **Restoring…** until the server is back (see [In the app](#in-the-app)); the page then reloads and everybody signs in again, because every session is gone. An older app that does not know `4503` keeps reconnecting and fails with "sign in again" (`4401`).
 - Not tested against a real S3 provider, a real Fly restart, or a data directory of production size.
 
+## Volumes and restores
+
+The backups above restore data **into** a running server. A hosted workspace can also be brought back a level lower: an operator restores a Fly volume snapshot into a **new** volume and points the machine at it (the ops runbook's Tier 1 restore). The server then runs on a copy of an older disk, and it must notice: anything that was live on the disk when the snapshot was taken (sessions, a half-done backup run) belongs to the past, and a volume of **another** workspace, attached by mistake, must never be served.
+
+**The marker.** `DATA_DIR/volume.json` says which workspace and which Fly volume the data was last served as:
+
+```
+{ version: 1, volumeId, workspaceId, flyVolumeId, createdAt, adoptedAt, history: [{ at, from: { workspaceId, flyVolumeId }, to: { ... }, reason }] }
+```
+
+`volumeId` is random, made once when the marker is first written, and never changes (a restored copy keeps it, so the history reads as one line). `workspaceId` is `TABULA_CLOUD_WORKSPACE_ID` in a hosted workspace, else `null`; `flyVolumeId` is `TABULA_FLY_VOLUME_ID`, else `null`. `history` keeps the last 20 adoptions (`reason` is `operator` or `restored-copy`). The file is written to a temporary file next to it, flushed and renamed, like the restore journal. It is not part of a backup and a restore leaves it in place: it describes the disk, not the data. A marker that cannot be read stops the start; do not delete it unless you are sure the volume belongs to this workspace.
+
+**At every start**, right after the restore recovery above and before the database is opened (`server/volume.mjs`):
+
+| The marker | The environment | What happens |
+| --- | --- | --- |
+| none | anything | It is written with the current ids. An existing volume is adopted silently on its first start with this release, as before. |
+| this workspace, same Fly volume | | Nothing. |
+| another workspace (hosted mode) | | **The server refuses to start.** The message on stderr names both workspaces and how to adopt; nothing is served, the exit code is 1. |
+| another workspace (hosted mode) | `TABULA_ADOPT_VOLUME=<this workspace id>` | **Adopted** (reason `operator`). |
+| `flyVolumeId` set | `TABULA_FLY_VOLUME_ID` is a different id | **Adopted** (reason `restored-copy`): a restored snapshot, or another volume of the same workspace. |
+| `flyVolumeId` is `null` | `TABULA_FLY_VOLUME_ID` set | The id is **only recorded**: no adoption, nobody is signed out. This is the first deploy that sets the variable. |
+| `workspaceId` is `null` (hosted mode) | | The workspace is recorded, no adoption. |
+| this workspace | `TABULA_ADOPT_VOLUME=<this workspace id>` | Nothing to adopt; the log says the variable can be removed. |
+
+`TABULA_ADOPT_VOLUME` that is not this server's `TABULA_CLOUD_WORKSPACE_ID`, or that is set outside a hosted workspace, stops the start with a message. A `TABULA_FLY_VOLUME_ID` that is not 1 to 128 letters, digits, `.`, `-` or `_` does too. Outside a hosted workspace the marker has no workspace and only `TABULA_FLY_VOLUME_ID` can lead to an adoption; a hosted volume started without `TABULA_CLOUD_*` is served and keeps its workspace on record.
+
+**Adopting** does, in this order, and stops the start on the first step that fails (nothing half adopted is served; the next start finds the old marker and adopts again, which is safe to repeat):
+
+1. Checks that no restore is pending. The restore recovery has already run (it finishes or undoes an interrupted restore and removes staging directories), so this only confirms that no `.restore-*` staging directory is left and that a `restore.json` still there is a `rolled-back` one (the old data is back; the journal waits for the restore engine to record the failure). `.pre-restore-*` directories are kept: they are this workspace's older data and expire as described in [The old data](#the-old-data).
+2. Clears what a backup run left mid-way: the temporary database copies (`directory.sqlite.backup-*.tmp`) and the `running` and `nextRunAt` of the stored backup status. The rest of the status (the last manifest, counts) and the backups protected from pruning stay: they describe the bucket, which the copy still shares, and the next run compares against the bucket anyway.
+3. Accounts mode: **every session is revoked and every sign-in link deleted**, always. Everybody signs in again. Access tokens (MCP) and invite links are not touched.
+4. Accounts mode: writes an audit row `volume.adopt` with no actor (the dashboard shows "System") and `{ from: { workspaceId, flyVolumeId }, to: { ... }, reason }`.
+5. Writes the marker with the new ids, `adoptedAt` and the history entry.
+
+One log line per adoption names the volume and both sets of ids (ids only). In a hosted workspace the control plane is sent a usage report after the start, as after a restore. The control plane reads the marker with `GET /api/internal/volume` ([cloud.md](cloud.md)).
+
 ## Status
 
 In a hosted workspace (see [cloud.md](cloud.md)) the control plane reads the status with the bearer token:

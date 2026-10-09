@@ -98,6 +98,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
+  'volume.adopt',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -335,9 +336,29 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const age = typeof d.ageDays === 'number' ? ` (${countLabel(d.ageDays, 'day', 'days')} old)` : '';
       return `The old data of a restore was removed${age}`;
     }
+    case 'volume.adopt': {
+      const from = idsOf(d.from);
+      const to = idsOf(d.to);
+      if (d.reason === 'operator') {
+        const ws = from.workspaceId ? ` of workspace ${from.workspaceId}` : '';
+        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out`;
+      }
+      if (d.reason === 'restored-copy') {
+        const vols = from.flyVolumeId && to.flyVolumeId ? ` (Fly volume ${from.flyVolumeId} → ${to.flyVolumeId})` : '';
+        return `The server adopted a restored copy of its data volume${vols}; everyone was signed out`;
+      }
+      return 'The server adopted its data volume; everyone was signed out';
+    }
     default:
       return entry.action;
   }
+}
+
+/** The ids in the `from` or `to` of a volume.adopt row; a missing or odd one is null. */
+function idsOf(value: unknown): { workspaceId: string | null; flyVolumeId: string | null } {
+  const v = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  const id = (x: unknown) => (typeof x === 'string' && x ? x : null);
+  return { workspaceId: id(v.workspaceId), flyVolumeId: id(v.flyVolumeId) };
 }
 
 /** "the backup of 2026-01-15 09:30 UTC": a manifest's name carries the time it was taken. */

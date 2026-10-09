@@ -142,7 +142,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -1054,6 +1054,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/client-ip', { internal: true }, ({ req }) => [200, clientIpReport(req, config)]),
           // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
+          // TAB-200: which volume this is and its last adoption (docs/cloud.md, "Volumes"); ids only.
+          compile('GET', 'internal/volume', { internal: true }, () => [200, volumeStatus()]),
           compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {
             const checked = validateLimits(body);
             if (checked.error) throw badRequest(checked.error);

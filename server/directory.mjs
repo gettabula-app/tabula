@@ -461,6 +461,17 @@ export function openDirectory(file) {
     return run('UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0', userId);
   }
 
+  /**
+   * Every session ends and every sign-in link stops working (server/volume.mjs, adopting a volume: tokens issued on
+   * the volume a snapshot was taken of must not work on the copy). Returns how many of each there were.
+   */
+  function revokeAllSessions() {
+    return transaction(() => ({
+      sessions: run('UPDATE sessions SET revoked = 1 WHERE revoked = 0'),
+      loginTokens: run('DELETE FROM login_tokens'),
+    }));
+  }
+
   // Sessions for the admin console. Explicit columns: the token hash never leaves this module.
   const toActiveSession = (r) => ({
     id: r.id,
@@ -892,6 +903,7 @@ export function openDirectory(file) {
     getSession,
     revokeSession,
     revokeUserSessions,
+    revokeAllSessions,
     listActiveSessions,
     getActiveSession,
     createTeam,

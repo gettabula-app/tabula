@@ -895,6 +895,36 @@ const megabytes = (bytes) => (bytes >= 1024 * 1024 ? `${Math.ceil(bytes / (1024 
 const tooLarge = (rel, size, limit) => new BackupError('too_large', `${rel} is ${megabytes(size)}, more than the ${megabytes(limit)} a backup file may be`);
 
 /**
+ * What a run leaves in the data directory or the database that only means something to the process that wrote it:
+ * the temporary database copies of a run that never finished, and the `running`/`nextRunAt` of the stored status.
+ * Called when a volume is adopted (server/volume.mjs), whether or not backups are on, before the engine is created.
+ * Everything else is kept: the status's last manifest and counts and `backup.protected` describe the bucket, which a
+ * restored copy of the same workspace still shares. Returns how many files went.
+ * @param {{ dataDir: string, directory?: any }} options
+ */
+export function clearRunState({ dataDir, directory = null }) {
+  let removed = 0;
+  for (const name of fs.readdirSync(dataDir)) {
+    if (!STALE_TEMP_RE.test(name)) continue;
+    fs.rmSync(path.join(dataDir, name), { force: true });
+    removed++;
+  }
+  const stored = directory?.getSetting(STATUS_KEY);
+  if (typeof stored === 'string') {
+    let value = null;
+    try {
+      value = JSON.parse(stored);
+    } catch {
+      /* readStatus starts again from nothing; nothing to clear */
+    }
+    if (isObject(value) && (value.running !== false || value.nextRunAt != null)) {
+      directory.setSetting(STATUS_KEY, JSON.stringify({ ...value, running: false, nextRunAt: null }));
+    }
+  }
+  return removed;
+}
+
+/**
  * The backup engine. Returns null when backups are off. Nothing here throws out of a timer: a failed run is recorded
  * in the status (and the audit log in accounts mode) and tried again at the next interval.
  *
