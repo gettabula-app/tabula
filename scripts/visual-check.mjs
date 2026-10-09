@@ -31,7 +31,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, quickbar-multi, quickbar-multi-end, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -738,6 +738,18 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
+  async 'quickbar-multi'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => window.__board.setSelection(['seed-note-1', 'seed-note-2', 'seed-note-3']));
+    await env.page.locator('.quickbar.show').waitFor();
+    await env.page.waitForTimeout(150);
+  },
+  async 'quickbar-multi-end'(env) {
+    await STATES['quickbar-multi'](env);
+    await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    await env.page.waitForTimeout(150);
   },
   async 'board-selected'(env) {
     await openSeedBoard(env);

@@ -51,6 +51,15 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     position();
   }
 
+  /** Which edge of a bar that scrolls has more behind it (TAB-239): the CSS fades that edge out. */
+  function cue() {
+    const left = bar.scrollLeft > 1;
+    const right = bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1;
+    if (left || right) bar.dataset.more = left && right ? 'both' : left ? 'left' : 'right';
+    else delete bar.dataset.more;
+  }
+  bar.addEventListener('scroll', cue, { passive: true });
+
   function position() {
     const b = app.r.contentBounds(app.selection);
     if (!b) return;
@@ -66,6 +75,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
     bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
+    cue();
   }
 
   /** The AI bar (or its button) is one more thing the quick bar keeps off: it flips above the selection instead of landing under it. */

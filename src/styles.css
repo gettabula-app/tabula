@@ -517,7 +517,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .props.folded { overflow: hidden; padding-bottom: 0; }
   .props.folded > :not(.props-head) { display: none; }
   .props-fold { display: inline-grid; }
-  .quickbar { max-width: calc(100% - var(--rail-clear) - 12px); }
+  /* TAB-239: after the base rule below in source order, so it needs the extra class to win; the bar scrolls inside this width */
+  .chrome > .quickbar { max-width: calc(100% - var(--rail-clear) - 12px); }
   .flowbar { left: var(--rail-clear); right: 12px; width: auto; max-width: none; bottom: 60px; }
   /* TAB-237: the bar is the space between the rail and the edge, never wider: the step takes a row of its own, its instruction wraps, and the buttons wrap under it */
   .flowbar .flow-step { flex: 1 1 100%; max-width: none; min-width: 0; height: auto; min-height: 36px; padding: 4px 10px 4px 6px; }
@@ -534,6 +535,10 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 /* quick actions */
 .quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
 .quickbar.show { display: flex; }
+/* TAB-239: a bar wider than its room scrolls sideways and fades out at the edge that has more behind it */
+.quickbar[data-more='right'] { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); }
+.quickbar[data-more='left'] { -webkit-mask-image: linear-gradient(to left, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to left, var(--ink) calc(100% - 28px), transparent); }
+.quickbar[data-more='both'] { -webkit-mask-image: linear-gradient(to right, transparent, var(--ink) 28px, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, var(--ink) 28px, var(--ink) calc(100% - 28px), transparent); }
 .quickbar :focus-visible { outline-offset: -2px; }
 .qb-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--tray-line); }
 .icon-btn.qb-text { width: auto; min-width: 36px; padding: 0 9px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
