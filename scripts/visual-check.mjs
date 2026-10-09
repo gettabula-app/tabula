@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -961,6 +961,35 @@ const STATES = {
     await fillReview(env.page);
     await openSheet(env.page, 'k-doing');
     await openMoveTo(env.page, 'Lane menu and WIP warning');
+    return { noPark: true };
+  },
+  async 'kanban-lane-drag'(env) {
+    // slice 5, part 2: a lane held by its header over the gap after the next lane (a pointer; a finger pans)
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-lane-drag` });
+    const { page } = env;
+    if (await page.evaluate(() => window.innerWidth < 600)) await zoomOnLane(page, ['k-todo', 'k-doing']);
+    const from = await screenOf(page, 'k-todo', 0.4, 0.05);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 12, from.y + 4, { steps: 3 });
+    const over = await screenOf(page, 'k-doing', 0.7, 0.05);
+    await page.mouse.move(over.x, over.y, { steps: 8 });
+    await settle(page);
+    return { noPark: true };
+  },
+  async 'kanban-sheet-viewer'(env) {
+    // a viewer: no Add card bar, no grips; the last row must scroll clear of the home indicator
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-viewer` });
+    await env.page.evaluate(() => {
+      window.__board.store.setReadOnly(true);
+      window.__board.comments.setReadOnly(true);
+    });
+    await openSheet(env.page, 'k-doing');
+    // headless has no home indicator, so check the rule that reserves its space is the one that applies
+    const reserved = await env.page.evaluate(() => !!document.querySelector('.ks-panel:has(+ .ks-add[hidden])'));
+    if (!reserved) throw new Error('kanban-sheet-viewer: the panel does not reserve the safe area under the last row');
+    await env.page.evaluate(() => document.querySelector('.ks-panel')?.scrollTo(0, 1e6));
+    await settle(env.page);
     return { noPark: true };
   },
   async 'kanban-sheet-full'(env) {

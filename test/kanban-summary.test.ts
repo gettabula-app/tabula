@@ -1,0 +1,120 @@
+import { describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
+import { Store } from '../src/store';
+import { Flow } from '../src/flow';
+import { addCard, newKanban, stickiesToCards } from '../src/containers';
+import { cardRows } from '../src/csv';
+
+// docs/kanban.md, Export and import: the Markdown summary lists a kanban as a heading, its lanes as lower headings and its
+// cards as bullets with (owner, due); what Layers hides stays out, as in the rest of the summary.
+
+function setup(user = 'me') {
+  const store = new Store(new Y.Doc());
+  const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'me' });
+  store.transact(() => [container, ...lanes].forEach((o) => store.create(o)));
+  store.transact(() => store.update(container.id, { name: 'Q4 delivery' }));
+  const [todo, doing, done] = lanes.map((l) => l.id);
+  const app = { store, user: { id: user, name: user, color: '#000' }, r: { invalidateAll() {}, setOverlay() {} }, emit() {}, participants: () => [] };
+  const md = () => new Flow(app as never).summaryMarkdown();
+  return { store, container: container.id, todo, doing, done, md };
+}
+
+describe('the Markdown summary of a kanban', () => {
+  it('lists the kanban, its lanes and its cards in the order drawn, with owner and due date', () => {
+    const s = setup();
+    const a = addCard(s.store, s.todo, 'Write the guide', { createdBy: 'me' })!;
+    addCard(s.store, s.todo, 'Fix login', { createdBy: 'me' });
+    s.store.transact(() => s.store.update(a, { ownerName: 'Ada', due: '2026-10-12' }));
+    const md = s.md();
+    expect(md).toContain('## Q4 delivery');
+    expect(md).toContain('### To do');
+    expect(md.indexOf('- Write the guide (Ada, 2026-10-12)')).toBeGreaterThan(-1);
+    expect(md.indexOf('- Write the guide')).toBeLessThan(md.indexOf('- Fix login'));
+    expect(md).toContain('_No cards_');
+  });
+
+  it('shows a lane limit and keeps a card on one line', () => {
+    const s = setup();
+    s.store.transact(() => s.store.update(s.doing, { wip: 2, wipMode: 'block' }));
+    addCard(s.store, s.doing, 'One\n# not a heading', { createdBy: 'me' });
+    const md = s.md();
+    expect(md).toMatch(/### Doing \(.*1 of 2, blocks\)/);
+    expect(md).toContain('- One # not a heading');
+    expect(md).not.toMatch(/^# not a heading/m);
+  });
+
+  it('leaves out a hidden kanban, a hidden lane and a hidden card', () => {
+    const s = setup();
+    addCard(s.store, s.todo, 'Visible', { createdBy: 'me' });
+    const h = addCard(s.store, s.todo, 'Secret card', { createdBy: 'me' })!;
+    addCard(s.store, s.doing, 'In hidden lane', { createdBy: 'me' });
+    s.store.transact(() => {
+      s.store.update(h, { hidden: true });
+      s.store.update(s.doing, { hidden: true });
+    });
+    let md = s.md();
+    expect(md).toContain('- Visible');
+    expect(md).not.toContain('Secret card');
+    expect(md).not.toContain('In hidden lane');
+    s.store.transact(() => s.store.update(s.container, { hidden: true }));
+    md = s.md();
+    expect(md).not.toContain('Q4 delivery');
+    expect(md).not.toContain('Visible');
+  });
+});
+
+describe('Markdown in a kanban summary (injection)', () => {
+  const lineBreaks = ['\r', '\u0085', '\u2028', '\u2029'];
+
+  it('keeps titles, names and owners literal: no links, images, HTML, code, headings, lists or tables', () => {
+    const s = setup();
+    s.store.transact(() => {
+      s.store.update(s.container, { name: '# Board [x](javascript:alert(1))' });
+      s.store.update(s.todo, { name: '`lane` <b>x</b> | y' });
+    });
+    const a = addCard(s.store, s.todo, '![i](https://evil.example/p.png) and [click](javascript:alert(1)) <img src=x onerror=1>', { createdBy: 'me' })!;
+    addCard(s.store, s.todo, '# not a heading', { createdBy: 'me' });
+    addCard(s.store, s.todo, '- nested\u0085## two\u2028> quote\r1. one', { createdBy: 'me' });
+    addCard(s.store, s.todo, '1. numbered', { createdBy: 'me' });
+    s.store.transact(() => s.store.update(a, { ownerName: '*Ada* _x_ [o](u)' }));
+    const md = s.md();
+    const lines = md.split('\n');
+    // every line is one of the shapes the summary writes: a heading it wrote, or a bullet, never one the text made
+    expect(lines.filter((l) => l.startsWith('- '))).toHaveLength(4);
+    // the headings are the three the summary wrote, however the names read
+    expect(lines.filter((l) => l.startsWith('#')).map((l) => l.split(' ')[0])).toEqual(['#', '##', '###', '###', '###']);
+    expect(md).toContain('- !\\[i\\](https://evil.example/p.png) and \\[click\\](javascript:alert(1)) \\<img src=x onerror=1\\>');
+    for (const ch of lineBreaks) expect(md).not.toContain(ch);
+    for (const l of lines.filter((x) => x.startsWith('- '))) {
+      const bare = l.replace(/\\./g, '');
+      for (const ch of ['<', '[', '`', '|', '*', '_']) expect(bare).not.toContain(ch);
+    }
+    expect(md).toContain('- \\# not a heading');
+    expect(md).toContain('- 1\\. numbered');
+    expect(md).toContain('\\- nested');
+    expect(md).toContain('(\\*Ada\\* \\_x\\_ \\[o\\]');
+  });
+});
+
+describe('private notes never reach a kanban summary or CSV (slice 5 privacy check)', () => {
+  it('a hidden private sticky parented to a lane is not a card, so neither lists it', () => {
+    const s = setup();
+    addCard(s.store, s.todo, 'Public card', { createdBy: 'me' });
+    s.store.transact(() => s.store.create({ id: 'secret', type: 'sticky', parent: s.todo, rank: 'a5@' + s.todo, text: 'Secret', privateStep: 'step1', createdBy: 'other', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a9' } as never));
+    const md = s.md();
+    expect(md).toContain('Public card');
+    expect(md).not.toContain('Secret');
+    const rows = cardRows({
+      get: (id) => s.store.get(id) as never, containerLayout: (id) => s.store.containerLayout(id), labels: [], commentCount: () => 0,
+    }, [s.container]);
+    expect(rows.flat().join('|')).not.toContain('Secret');
+  });
+
+  it('someone else’s unrevealed private note cannot be turned into a card, so it cannot get into either', () => {
+    const s = setup();
+    s.store.transact(() => s.store.create({ id: 'secret', type: 'sticky', text: 'Secret', privateStep: 'step1', createdBy: 'other', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a9' } as never));
+    expect(stickiesToCards(s.store, ['secret'], () => ({ lane: s.todo, index: 0 }), 'me').done).toEqual([]);
+    expect(s.store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(s.md()).not.toContain('Secret');
+  });
+});

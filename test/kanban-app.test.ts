@@ -1013,3 +1013,119 @@ describe('kanban templates and copies (slice 5)', () => {
     expect(store.containerLayout(container)!.cards.get(store.containerLayout(container)!.lanes[0])).toHaveLength(3);
   });
 });
+
+describe('dragging a lane header (slice 5, part 2)', () => {
+  const laneNames = (store: Store, container: Id) => store.containerLayout(container)!.lanes.map((l) => (store.get(l) as BaseObj).name);
+  /** A point in a lane's header band, clear of its ⋯ button. */
+  const header = (store: Store, id: Id, dx = 0) => {
+    const g = store.geometry(store.get(id)!);
+    return { x: g.x + g.w / 2 + dx, y: g.y + 16 };
+  };
+  const drag = (app: Harness, r: Renderer, from: Point, to: Point, type = 'mouse') => {
+    call(app, 'onDown', { ...pointer(r, from), pointerType: type });
+    for (let i = 1; i <= 4; i++) call(app, 'onMove', { ...pointer(r, { x: from.x + ((to.x - from.x) * i) / 4, y: from.y + ((to.y - from.y) * i) / 4 }, 'pointermove'), pointerType: type });
+  };
+
+  it('drops a lane where the pointer lets go, in one undo step, with a drop line while it moves', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
+    expect(r.overlay.kanban?.laneLine).toBeTruthy();
+    expect(r.overlay.kanban?.laneFrom).toBeTruthy();
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+    call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+    expect(laneNames(store, container)).toEqual(['Doing', 'Done', 'To do']);
+    expect(r.overlay.kanban).toBeNull();
+    expect(app.announce).toHaveBeenLastCalledWith('Moved To do to position 3 of 3');
+    store.undo.undo();
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
+  it('puts a lane first when dropped left of the others', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[2]), header(store, lanes[0], -90));
+    call(app, 'onUp', pointer(r, header(store, lanes[0], -90), 'pointerup'));
+    expect(laneNames(store, container)).toEqual(['Done', 'To do', 'Doing']);
+  });
+
+  it('writes nothing for a click, a drop in its own place, or a cancelled drag', () => {
+    const { app, store, r, container, lanes } = harness();
+    const n = vi.fn<() => void>();
+    store.doc.on('update', n);
+    call(app, 'onDown', pointer(r, header(store, lanes[1])));
+    call(app, 'onUp', pointer(r, header(store, lanes[1]), 'pointerup'));
+    drag(app, r, header(store, lanes[1]), header(store, lanes[1], 20));
+    call(app, 'onUp', pointer(r, header(store, lanes[1], 20), 'pointerup'));
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
+    call(app, 'onCancel', pointer(r, header(store, lanes[2], 60), 'pointercancel'));
+    expect(n).not.toHaveBeenCalled();
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+    expect(app.dragging).toBe(false);
+    expect(r.overlay.kanban).toBeNull();
+  });
+
+  it('does not move a locked lane, a lane of a locked kanban, or anything for a viewer', () => {
+    vi.stubGlobal('window', { setTimeout, clearTimeout });
+    const a = harness();
+    a.store.transact(() => a.store.update(a.lanes[0], { locked: true }));
+    drag(a.app, a.r, header(a.store, a.lanes[0]), header(a.store, a.lanes[2], 60));
+    call(a.app, 'onUp', pointer(a.r, header(a.store, a.lanes[2], 60), 'pointerup'));
+    expect(laneNames(a.store, a.container)).toEqual(['To do', 'Doing', 'Done']);
+    const b = harness();
+    b.store.transact(() => b.store.update(b.container, { locked: true }));
+    drag(b.app, b.r, header(b.store, b.lanes[1]), header(b.store, b.lanes[2], 60));
+    call(b.app, 'onUp', pointer(b.r, header(b.store, b.lanes[2], 60), 'pointerup'));
+    expect(laneNames(b.store, b.container)).toEqual(['To do', 'Doing', 'Done']);
+    const c = harness();
+    c.store.setReadOnly(true);
+    drag(c.app, c.r, header(c.store, c.lanes[0]), header(c.store, c.lanes[2], 60));
+    call(c.app, 'onUp', pointer(c.r, header(c.store, c.lanes[2], 60), 'pointerup'));
+    expect(laneNames(c.store, c.container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
+  it('leaves a finger on a lane header to pan, and a pointer on the card area to cards', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60), 'touch');
+    call(app, 'onUp', { ...pointer(r, header(store, lanes[2], 60), 'pointerup'), pointerType: 'touch' });
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
+  it('writes nothing, and leaves no marks, when the lane or its kanban is hidden before the drop', () => {
+    for (const hide of ['lane', 'kanban'] as const) {
+      const { app, store, r, container, lanes } = harness();
+      drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
+      store.transact(() => store.update(hide === 'lane' ? lanes[0] : container, { hidden: true }));
+      call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+      store.transact(() => store.update(hide === 'lane' ? lanes[0] : container, { hidden: false }));
+      expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+      expect(r.overlay.kanban).toBeNull();
+    }
+  });
+
+  it('reads the place again at the drop: a lane that went since the last move, or a view that moved, does not misplace it', () => {
+    const { app, store, r, container, lanes } = harness();
+    const last = addLane(store, container, { createdBy: 'me' })!;
+    drag(app, r, header(store, lanes[0]), header(store, last, 60));
+    // the last lane goes (an undo or a remote delete) before the pointer lets go: the pointer is now past every lane
+    store.transact(() => store.remove([last]));
+    call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+    expect(laneNames(store, container)).toEqual(['Doing', 'Done', 'To do']);
+  });
+
+  it('gives the drag up, marks and all, when a second pointer goes down', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60), 'pen');
+    expect(r.overlay.kanban?.laneLine).toBeTruthy();
+    call(app, 'onDown', { ...pointer(r, header(store, lanes[1])), pointerType: 'touch', pointerId: 2 });
+    expect(r.overlay.kanban).toBeNull();
+    expect((app as unknown as { drag: { mode: string } | null }).drag?.mode).not.toBe('lane');
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
+  it('is given up when the board turns read-only mid-drag', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
+    store.setReadOnly(true);
+    call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+});

@@ -24,6 +24,15 @@ export function imageLine(o: BaseObj): string {
   return `Image (${o.mime ?? 'image'}, ${w} x ${h})`;
 }
 
+/**
+ * User text as one line of Markdown that reads as typed: line breaks (NEL and the Unicode separators too) fold to a space,
+ * the characters that start emphasis, code, links, images, HTML, tables or a character reference are escaped, and so is a
+ * leading `#`, `>`, `-`, `+` or `1.` that would make a block of a bullet's text.
+ */
+export function mdText(t: string | undefined): string {
+  return (t ?? '').replace(/[\s\u0085\u2028\u2029]+/g, ' ').trim().replace(/[\\`*_[\]<>|~&]/g, '\\$&').replace(/^(#|>|-|\+)/, '\\$1').replace(/^(\d+)([.)])/, '$1\\$2');
+}
+
 export class Flow {
   private lastActive = -2;
   readonly polls: Polls;
@@ -420,7 +429,40 @@ export class Flow {
       }
       lines.push('');
     }
+    lines.push(...this.kanbanLines(totals));
     lines.push(...this.polls.markdownLines());
     return lines.join('\n');
+  }
+
+  /**
+   * The kanbans of the board for the summary (docs/kanban.md, Export and import): a heading per kanban, a lower heading per
+   * lane with its stage and limit, the cards as bullets in the order drawn, `(owner, due)` in parentheses, and the votes a
+   * card got. A hidden kanban, lane or card (TAB-198) and a card this person may not see are left out, as are the notes.
+   */
+  private kanbanLines(totals: Map<Id, number>): string[] {
+    const s = this.app.store;
+    const line = mdText;
+    const out: string[] = [];
+    for (const c of s.shown()) {
+      if (c.type !== 'container') continue;
+      const layout = s.containerLayout(c.id);
+      if (!layout) continue;
+      out.push(`## ${line((c as BaseObj).name) || 'Kanban'}`, '');
+      for (const laneId of layout.lanes) {
+        const lane = s.get(laneId) as BaseObj | undefined;
+        if (!lane) continue;
+        const cards = (layout.cards.get(laneId) ?? []).map((id) => s.get(id) as BaseObj | undefined).filter((k): k is BaseObj => !!k && k.type === 'card' && !this.isHidden(k));
+        const notes = [lane.stage, lane.wip ? `${cards.length} of ${lane.wip}${lane.wipMode === 'block' ? ', blocks' : ''}` : ''].filter(Boolean).join(', ');
+        out.push(`### ${line(lane.name) || 'Lane'}${notes ? ` (${notes})` : ''}`, '');
+        if (!cards.length) out.push('_No cards_');
+        for (const k of cards) {
+          const who = [line(k.ownerName), k.due].filter(Boolean).join(', ');
+          const n = totals.get(k.id);
+          out.push(`- ${line(k.text) || 'Untitled card'}${who ? ` (${who})` : ''}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+        }
+        out.push('');
+      }
+    }
+    return out;
   }
 }

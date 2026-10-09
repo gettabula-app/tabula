@@ -622,10 +622,21 @@ export function editLane(store: Store, laneId: Id, patch: LanePatch): boolean {
  */
 export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boolean {
   const lane = store.get(laneId);
-  if (lane?.type !== 'lane' || !lane.parent || lane.locked || structureRefusal(store, lane.parent)) return false;
-  const layout = store.containerLayout(lane.parent);
+  const layout = lane?.parent ? store.containerLayout(lane.parent) : null;
   const to = layout ? laneMoveIndex(layout.lanes, laneId, dir) : null;
-  if (!layout || to === null) return false;
+  return to !== null && moveLaneTo(store, laneId, to);
+}
+
+/**
+ * Moves a lane to a place among the other lanes (`to` counts them without it, as for `planInsert`): the write of Move left,
+ * Move right and of dragging a lane header, one transaction and one undo step. False, and nothing written, when the lane
+ * would not change place, is locked, sits in a locked kanban, or the move would rewrite a locked lane's rank.
+ */
+export function moveLaneTo(store: Store, laneId: Id, to: number): boolean {
+  const lane = store.get(laneId);
+  if (lane?.type !== 'lane' || !lane.parent || lane.locked || structureRefusal(store, lane.parent) || !store.isShown(lane)) return false;
+  const layout = store.containerLayout(lane.parent);
+  if (!layout || !Number.isInteger(to) || to < 0 || to >= layout.lanes.length || to === layout.lanes.indexOf(laneId)) return false;
   const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
   const { ranks, repairs } = planInsert(others, lane.parent, to, 1);
   // the repair of tied ranks would rewrite a locked lane's rank: a locked object is never changed by an edit
@@ -640,20 +651,27 @@ export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boole
 }
 
 /**
- * Why Move left or Move right cannot move a lane, or null when it can (an edge is not a refusal: the menu disables it).
+ * Why a lane cannot be moved to a place among the others, or null when it can (no change of place is not a refusal).
  * Besides the locks, a move whose repair of tied ranks would rewrite a locked lane is refused.
  */
-export function moveLaneRefusal(store: Store, laneId: Id, dir: 'left' | 'right'): string | null {
+export function laneReorderRefusal(store: Store, laneId: Id, to: number | null): string | null {
   const lane = store.get(laneId);
-  if (lane?.type !== 'lane' || !lane.parent) return 'This lane is gone.';
+  // a lane or kanban that Layers hides (TAB-198) is not on the board to be moved
+  if (lane?.type !== 'lane' || !lane.parent || !store.isShown(lane)) return 'This lane is gone.';
   const refused = structureRefusal(store, lane.parent) ?? laneEditRefusal(store, laneId);
   if (refused) return refused;
   const layout = store.containerLayout(lane.parent);
-  const to = layout ? laneMoveIndex(layout.lanes, laneId, dir) : null;
   if (!layout || to === null) return null;
   const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
   const { repairs } = planInsert(others, lane.parent, to, 1);
   return repairs.some((p) => store.get(p.id)?.locked) ? 'The lanes need re-ordering and one of them is locked. Unlock it to move this lane.' : null;
+}
+
+/** Why Move left or Move right cannot move a lane, or null when it can (an edge is not a refusal: the menu disables it). */
+export function moveLaneRefusal(store: Store, laneId: Id, dir: 'left' | 'right'): string | null {
+  const lane = store.get(laneId);
+  const layout = lane?.type === 'lane' && lane.parent ? store.containerLayout(lane.parent) : null;
+  return laneReorderRefusal(store, laneId, layout ? laneMoveIndex(layout.lanes, laneId, dir) : null);
 }
 
 /** Why a lane cannot be added to a kanban, or null when it can. */
