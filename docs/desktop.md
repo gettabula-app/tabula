@@ -115,6 +115,10 @@ Phase 1 (macOS 15.1.1, arm64; the harness was a temporary debug build that repor
 
 Not run: a DMG, a universal binary, anything on Windows or Linux, any signing or notarization, an end-to-end relay connection from the desktop app, clicking or typing with a real pointer or keyboard, any screenshot of the window.
 
+### Known advisory: `glib` (Linux only)
+
+Dependabot alert GHSA-wrw7-89jp-8q8g (unsoundness in `glib::VariantStrIter`, fixed in `glib` 0.20.0) names `glib` 0.18.5 in `desktop/src-tauri/Cargo.lock`. It comes in through tauri, tao, muda and wry, the Linux GTK3 backend, and is compiled only for Linux: `cargo tree -i glib --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` print nothing. The app bundles `app`, `dmg` and `nsis` only, and our Rust code does not use `glib`. It cannot be bumped on its own, because wry 0.57 and tauri 2.12 need the gtk 0.18 bindings, which need `glib` 0.18. Re-check when we move to Tauri 3 (GTK4), or before any Linux build is added.
+
 ## `.drift` file association
 
 Configured in `bundle.fileAssociations`:
