@@ -2,12 +2,6 @@
 
 A kanban board is a set of columns, called lanes, with cards in them. You drag a card from one lane to another as the work moves along. It sits on the canvas like any other object.
 
-## Kanban is in preview
-
-Making a kanban is switched off for now. To try it, add `?kanban` to the board's address, for example `https://your-tabula/board/abc?kanban`. Tabula remembers it on that browser. Without it you do not see the Kanban tool or **Make kanban**, and a sticky can only become a card inside a kanban that is already on the board. Kanbans already on a board always show and can be edited.
-
-Without the switch, pasting, importing or using a template leaves out kanbans and cards that are not copies of ones already on the board.
-
 ## Add a kanban
 
 1. Open the **Shapes** panel and select **Kanban** under **Boards**. You can also type "kanban" in **Search shapes**.
@@ -15,7 +9,7 @@ Without the switch, pasting, importing or using a template leaves out kanbans an
 
 You get three lanes, **To do**, **Doing** and **Done**, and the first lane opens **+ Add card** so you can type the first card at once.
 
-If you can only view a board, you cannot add one.
+If you can only view a board, you cannot add one. Copying and pasting a kanban, importing a board file and using a template keep kanbans like any other object.
 
 ## Add cards
 
@@ -47,7 +41,7 @@ Choose **Labels** in the card dialog, or in the quick-action bar or properties p
 - Select stickies or cards and press `K`, or choose **Turn into card** or **Turn into sticky**. It is the same object, so its comments, connectors, votes and history stay. The first line becomes the title and the rest the description.
 - A sticky over a lane joins that lane. A card turned into a sticky stays where it was drawn.
 - Drag a sticky onto a lane to make it a card there. A line shows where it will land.
-- **Make kanban from selection** (with the preview switch on) puts the selected stickies into the first lane of a new kanban, in reading order.
+- **Make kanban from selection** puts the selected stickies into the first lane of a new kanban, in reading order.
 - Someone else's note is never converted while private writing is running.
 
 ## Move cards
@@ -113,7 +107,7 @@ On a touch screen, a card on the board lifts after you press and hold it for abo
 
 ## Kanban templates
 
-While the preview switch is on, the templates drawer offers four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, due dates and links to trackers are never part of a template.
+The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, due dates and links to trackers are never part of a template.
 
 When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, due dates and tracker links.
 

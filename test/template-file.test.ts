@@ -222,8 +222,9 @@ describe('builtinToCustom', () => {
     expect(t.createdAt).toBe(7000);
     expect(t.content.objects.length).toBeGreaterThan(0);
     // a kanban template is a board to work on, with no session steps (docs/kanban.md, Templates)
-    expect(t.content.steps.length > 0).toBe(!def.kanban);
-    expect(t.content.objects.filter((o) => o.type === 'container')).toHaveLength(def.kanban ? 1 : 0);
+    const kanbanTemplate = ['kanban', 'sprint-board', 'bug-triage', 'personal-tasks'].includes(def.id);
+    expect(t.content.steps.length > 0).toBe(!kanbanTemplate);
+    expect(t.content.objects.filter((o) => o.type === 'container')).toHaveLength(kanbanTemplate ? 1 : 0);
     expect(t.content.bounds.x).toBe(0);
     expect(t.content.bounds.y).toBe(0);
     expect(t.content.fonts).toEqual({ heading: 'cabinet-grotesk', body: 'satoshi' });

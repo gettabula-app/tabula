@@ -4,7 +4,7 @@ import { dialog, field, popover, toast } from './common';
 import { newId } from '../store';
 import { getUser } from '../sync';
 import { download, safeName } from '../exporters';
-import { CATEGORIES, CUSTOM_CATEGORY, CUSTOM_PREFIX, availableTemplates, type TemplateDef } from '../templates';
+import { CATEGORIES, CUSTOM_CATEGORY, CUSTOM_PREFIX, TEMPLATES, type TemplateDef } from '../templates';
 import { builtinThumbnail, thumbnailSvg } from '../template-thumb';
 import { duplicateSavedTemplate, getTemplate, listTemplates, onTemplatesChange, putTemplate, removeTemplate, templatesShared } from '../template-store';
 import { accountId, mayChange, scopeLabel, splitMine } from '../template-share';
@@ -39,7 +39,7 @@ export function customThumbnail(t: CustomTemplate): string {
 
 /** One template from each of the first categories: the short list on the home page. */
 export function featuredTemplates(count = 4): TemplateDef[] {
-  return CATEGORIES.slice(0, count).flatMap((category) => availableTemplates().find((t) => t.category === category) ?? []);
+  return CATEGORIES.slice(0, count).flatMap((category) => TEMPLATES.find((t) => t.category === category) ?? []);
 }
 
 const matches = (t: { name: string; category: string; description: string }, query: string) =>
@@ -231,7 +231,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     if (category !== null && !available.includes(category)) category = null;
     const q = query.trim().toLowerCase();
     const show = (c: string) => category === null || c === category;
-    const shown = availableTemplates().filter((t) => show(t.category) && matches(t, q));
+    const shown = TEMPLATES.filter((t) => show(t.category) && matches(t, q));
     const shownMine = (mine ?? []).filter((t) => show(t.category) && matches(t, q));
     const shownShared = shared.filter((t) => show(t.category) && matches(t, q));
     // The buttons are rebuilt only when the set of categories changes, so a focused chip stays focused.

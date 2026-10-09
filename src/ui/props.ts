@@ -331,7 +331,7 @@ function kanbanFields(app: BoardApp, sel: Obj[]): HTMLElement[] {
   }
   if (stickies.length && stickies.length === sel.length) {
     if (app.canTurnIntoCards()) out.push(h('button', { class: 'btn wide', onclick: () => app.turnIntoCards() }, stickies.length === 1 ? 'Turn into card' : 'Turn into cards'));
-    if (stickies.length >= 2 && app.kanbanCreation) out.push(h('button', { class: 'btn wide', onclick: () => app.makeKanbanFromSelection() }, 'Make kanban from selection'));
+    if (stickies.length >= 2 && !app.readOnly) out.push(h('button', { class: 'btn wide', onclick: () => app.makeKanbanFromSelection() }, 'Make kanban from selection'));
   }
   if (sel.length === 1 && sel[0].type === 'container') {
     const c = sel[0] as BaseObj;

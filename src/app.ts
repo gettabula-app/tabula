@@ -18,8 +18,8 @@ import {
 import { cardBody, kanbanHeaderControls, objectMarkup, styleOf, textHeight } from './markup';
 import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
-  KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
-  cardsToStickies, containerOf, laneOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
+  addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
+  cardsToStickies, containerOf, laneOf, dropLoose, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
@@ -36,7 +36,6 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
-import { kanbanFlag } from './flags';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 function loadStickyColor(): string {
@@ -398,7 +397,7 @@ export class BoardApp {
   /** On a read-only board only select and hand (and, where comments are writable, the comment tool) are allowed; anything else falls back to select. */
   setTool(t: Tool) {
     // Select and hand always work; the comment tool needs a writable comments document (commenters have a read-only board); everything else needs a writable board.
-    const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly && (t.kind !== 'kanban' || kanbanFlag()));
+    const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly);
     const next: Tool = allowed ? t : { kind: 'select' };
     this.cancelLongPress();
     this.tool = next;
@@ -829,7 +828,7 @@ export class BoardApp {
 
   /** A new kanban with To do, Doing and Done, its top-left at `at`, with the add-card input open in its first lane. */
   createKanban(at: Point) {
-    if (this.readOnly || !kanbanFlag()) return null;
+    if (this.readOnly) return null;
     const meta = this.store.getMeta();
     const size = newKanbanSize();
     const frame = this.frameAt({ x: at.x + size.w / 2, y: at.y + size.h / 2 });
@@ -1190,8 +1189,7 @@ export class BoardApp {
    */
   turnIntoCards(ids: Id[] = this.selection): boolean {
     if (this.readOnly) return false;
-    // without the kanban flag only stickies over a lane become cards: nothing makes a loose card (src/flags.ts)
-    const stickies = ids.filter((id) => this.convertible(id) && (kanbanFlag() || this.cardTargetOf(id)));
+    const stickies = ids.filter((id) => this.convertible(id));
     if (!stickies.length) return false;
     const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id), this.user.id);
     if (r.refused) {
@@ -1219,15 +1217,10 @@ export class BoardApp {
     return o?.type === 'sticky' && mayConvertSticky(o as BaseObj, this.user.id);
   }
 
-  /** Whether Turn into card does anything for the selection: always with the kanban flag, else only over a lane. */
+  /** Whether Turn into card does anything for the selection. */
   canTurnIntoCards(ids: Id[] = this.selection): boolean {
     if (this.readOnly) return false;
-    return ids.some((id) => this.convertible(id) && (kanbanFlag() || !!this.cardTargetOf(id)));
-  }
-
-  /** Whether making kanbans is on (src/flags.ts). */
-  get kanbanCreation(): boolean {
-    return kanbanFlag() && !this.readOnly;
+    return ids.some((id) => this.convertible(id));
   }
 
   /** Turns the selected cards (or `ids`) back into stickies where they are drawn. One undo step. */
@@ -1249,7 +1242,7 @@ export class BoardApp {
 
   /** A kanban from the selected stickies, with them as cards in its first lane in reading order. One undo step. */
   makeKanbanFromSelection(): Id | null {
-    if (this.readOnly || !kanbanFlag()) return null;
+    if (this.readOnly) return null;
     const meta = this.store.getMeta();
     const stickies = this.selection.filter((id) => this.convertible(id));
     if (!stickies.length) return null;
@@ -2270,13 +2263,6 @@ export class BoardApp {
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
-    // while making kanbans is behind its flag, only copies of a kanban on this board come through (src/flags.ts)
-    if (!kanbanFlag()) {
-      const r = withoutNewKanbans(objs, (o) => this.store.get(o.id)?.type === o.type);
-      if (r.dropped) this.notify(KANBANS_LEFT_OUT);
-      objs = r.objs;
-      if (!objs.length) return [];
-    }
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
     const out = remapObjects(objs, map, offset, (id) => {

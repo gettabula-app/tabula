@@ -172,7 +172,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     }
     if (cards.length && cards.length === sel.length) out.push(action('sticky', cards.length === 1 ? 'Turn into sticky' : 'Turn into stickies', () => app.turnIntoStickies(), '', 'k'));
     if (stickies.length && app.canTurnIntoCards()) out.push(action('card', stickies.length === 1 ? 'Turn into card' : 'Turn into cards', () => app.turnIntoCards(), '', 'k'));
-    if (stickies.length >= 2 && app.kanbanCreation) out.push(action('kanban', 'Make kanban from selection', () => app.makeKanbanFromSelection()));
+    if (stickies.length >= 2 && !app.readOnly) out.push(action('kanban', 'Make kanban from selection', () => app.makeKanbanFromSelection()));
     if (sel.length === 1 && sel[0].type === 'container') {
       const id = sel[0].id;
       // slice 4: Add lane and Filter, as the design's quick-action bar for a kanban, and its ⋯ menu (the bar's own ⋯ is

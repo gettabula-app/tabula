@@ -1,11 +1,10 @@
-import { kanbanFlag } from '../flags';
 import type { BoardApp } from '../app';
 import type { BaseObj, ConnectorObj, End, Point, ShapeKind, UmlRelation } from '../types';
 import { ICONS, h, icon } from './dom';
 import { dialog, toast } from './common';
 import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
-import { availableTemplates, insertCustomTemplate, insertTemplate } from '../templates';
+import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import { accountId, scopeLabel, splitMine } from '../template-share';
 import { authState } from '../auth';
@@ -138,8 +137,7 @@ export function shapesTab(app: BoardApp, close: () => void) {
       const kinds = SHAPE_KINDS.filter((k) => k.group === group && (k.label.toLowerCase().includes(q) || k.kind.includes(q)));
       return kinds.length ? [h('div', { class: 'list-label' }, label), h('div', { class: 'tiles' }, ...kinds.map((k) => tile(k.kind, k.label)))] : [];
     });
-    // making kanbans is behind a flag until slices 3 to 5 are done (src/flags.ts): without it neither heading nor tile
-    if ('kanban board'.includes(q) && !app.readOnly && kanbanFlag()) groups.push(h('div', { class: 'list-label' }, 'Boards'), h('div', { class: 'tiles' }, kanbanTile()));
+    if ('kanban board'.includes(q) && !app.readOnly) groups.push(h('div', { class: 'list-label' }, 'Boards'), h('div', { class: 'tiles' }, kanbanTile()));
     results.replaceChildren(...(groups.length ? groups : [h('div', { class: 'empty' }, `No shapes match “${query}”.`)]));
   };
   input.addEventListener('input', render);
@@ -374,7 +372,7 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
 }
 
 function templatesTab(app: BoardApp, close: () => void) {
-  const templates = availableTemplates();
+  const templates = TEMPLATES;
   const cats = [...new Set(templates.map((t) => t.category))];
   const mine = h('div', null);
   const paintMine = (list: CustomTemplate[]) => {

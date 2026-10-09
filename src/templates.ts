@@ -1,5 +1,3 @@
-import { kanbanFlag } from './flags';
-import { KANBANS_LEFT_OUT, withoutNewKanbans } from './containers';
 import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, ShapeKind, Step, StepMode } from './types';
 import { newId } from './store';
@@ -15,8 +13,6 @@ export interface TemplateDef {
   category: 'Retrospective' | 'Ideation' | 'Discussion' | 'Prioritisation' | 'Planning' | 'Discovery' | 'Strategy' | 'Risk';
   description: string;
   build: (b: Builder) => void;
-  /** It makes a kanban, so it is offered only while making kanbans is on (src/flags.ts). */
-  kanban?: true;
 }
 
 /** A lane of a template kanban, with its cards (titles, an optional description and label names). */
@@ -576,7 +572,7 @@ export const TEMPLATES: TemplateDef[] = [
   },
   // kanbans (docs/kanban.md, Templates): a container with lanes and cards, and a few labels merged into the board's
   {
-    id: 'kanban', name: 'Kanban', category: 'Planning', kanban: true,
+    id: 'kanban', name: 'Kanban', category: 'Planning',
     description: 'To do, Doing and Done. Add cards, give them owners and due dates, and move them across as work moves.',
     build: (b) => {
       b.kanban('Kanban', 0, 0, [
@@ -587,7 +583,7 @@ export const TEMPLATES: TemplateDef[] = [
     },
   },
   {
-    id: 'sprint-board', name: 'Sprint board', category: 'Planning', kanban: true,
+    id: 'sprint-board', name: 'Sprint board', category: 'Planning',
     description: 'Backlog, Sprint, In review and Done, with at most three cards in review at a time.',
     build: (b) => {
       b.kanban('Sprint board', 0, 0, [
@@ -599,7 +595,7 @@ export const TEMPLATES: TemplateDef[] = [
     },
   },
   {
-    id: 'bug-triage', name: 'Bug triage', category: 'Planning', kanban: true,
+    id: 'bug-triage', name: 'Bug triage', category: 'Planning',
     description: 'New reports in, sorted into confirmed, in progress, fixed or won\u2019t fix, with labels for the kind of work.',
     build: (b) => {
       b.kanban('Bug triage', 0, 0, [
@@ -612,7 +608,7 @@ export const TEMPLATES: TemplateDef[] = [
     },
   },
   {
-    id: 'personal-tasks', name: 'Personal tasks', category: 'Planning', kanban: true,
+    id: 'personal-tasks', name: 'Personal tasks', category: 'Planning',
     description: 'Your own list: what is next, what you are on today, and what you finished.',
     build: (b) => {
       b.kanban('My tasks', 0, 0, [
@@ -623,9 +619,6 @@ export const TEMPLATES: TemplateDef[] = [
     },
   },
 ];
-
-/** The built-in templates offered now: the kanban ones only while making kanbans is on (src/flags.ts). */
-export const availableTemplates = (): TemplateDef[] => TEMPLATES.filter((t) => !t.kanban || kanbanFlag());
 
 /** Template ids with this prefix name a saved template; anything else is a built-in id. */
 export const CUSTOM_PREFIX = 'custom:';
@@ -646,12 +639,6 @@ function templateOrigin(app: BoardApp) {
 
 /** Create the objects in one undo step, replace the flow when `steps` is given, and fly to them. */
 function place(app: BoardApp, objs: Obj[], steps: Step[] | null, labels: readonly TemplateLabel[] = []) {
-  // while making kanbans is behind its flag, a template makes none (src/flags.ts); its ids are all new
-  if (!kanbanFlag()) {
-    const r = withoutNewKanbans(objs, () => false);
-    if (r.dropped) app.notify(KANBANS_LEFT_OUT);
-    objs = r.objs;
-  }
   const zs = app.store.topZs(objs.length);
   objs.forEach((o, i) => (o.z = zs[i]));
   app.store.undo.stopCapturing();

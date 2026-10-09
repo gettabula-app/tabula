@@ -90,7 +90,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |
 | `kanban-moveto-full` | **Move to…** with a full block lane disabled ("Full") |
-| `kanban-templates` | `/?kanban#/templates` (the flag on) on the Planning category: the four kanban templates and their thumbnails |
+| `kanban-templates` | `/#/templates` on the Planning category: the four kanban templates and their thumbnails |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |
 | `backups-list` | `#/admin/backups`: the status and the list of seven backups (two protected, two unreadable). Accounts mode; the backup routes are answered with fixed data and the shot is the whole page |
 | `backups-detail` | The first backup opened in place: facts, free space, how long the old data is kept, the two actions (whole page) |
