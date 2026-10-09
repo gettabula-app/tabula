@@ -32,6 +32,8 @@ The **Chat** link in the top bar shows how many messages you have not read in al
 - A badge on the button counts messages you have not read. It has a red outline when someone mentioned you.
 - The board remembers whether you left the chat open, for you only.
 
+![The Chat tab of the side tray, with replies, a reaction, a mention and object chips](images/chat-tray.png)
+
 ## Read
 
 Messages are a live list, oldest at the top.

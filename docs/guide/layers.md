@@ -9,6 +9,8 @@ The Layers panel lists everything on the board in one place, top of the stack fi
 
 The panel's title shows how many objects are hidden. If you can only view the board, the list is read only.
 
+![The Layers panel listing the board's objects, with a frame opened to show its notes](images/layers-panel.png)
+
 ## The list
 
 - The topmost object is first. Items inside a frame are listed under it, and so are the lanes and cards of a [kanban board](kanban.md).
