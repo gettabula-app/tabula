@@ -526,8 +526,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }
-  /* an open drawer or the Comments and Chat tray takes the board: the selection's quick bar and properties panel wait, kept in place, until it closes */
-  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props) { visibility: hidden; }
+  /* an open drawer or the Comments and Chat tray takes the board: the selection's quick bar, the properties panel and the session bar (TAB-243: it sat over the chat composer) wait, kept in place, until it closes */
+  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar) { visibility: hidden; }
   /* the rail runs the full height here: the hint is centred in the room right of it, not under it */
   .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px)); }
 }

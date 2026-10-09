@@ -20,12 +20,16 @@ function phoneBlock(): string {
 
 describe('quick bar and properties sheet beside an open tray (phone width)', () => {
   const block = phoneBlock();
-  const rule = block.split('\n').find((l) => /\.quickbar, \.props\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
+  const rule = block.split('\n').find((l) => /\.quickbar, \.props(?:, \.flowbar)?\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
   const hides = (opener: string) => new RegExp(`:has\\(>[^{]*${opener}[^{]*\\.show`).test(rule);
 
   it('are hidden while the Comments and Chat tray is open', () => {
     expect(block).toContain('.quickbar');
     expect(hides('\\.side-tray')).toBe(true);
+  });
+
+  it('and the session bar waits too, so it cannot sit over the chat composer (TAB-243)', () => {
+    expect(rule).toMatch(/\.flowbar/);
   });
 
   it('still wait for an open drawer', () => {
