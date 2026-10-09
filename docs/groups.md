@@ -86,7 +86,8 @@ State kept by the client, not synced: `scope`, the group the person has entered 
 - `pick(o, scope)`: climb from the object through its group ancestors until the next step up would be the scope (or the top). That ancestor is what a click selects.
 - **Click** an item: select `pick(item)`. Shift-click toggles it; items from other levels are lifted to the scope's level so one selection never mixes levels.
 - **Double-click** a member of a group that is not the scope: enter it (`scope` becomes that group) and select the member that was clicked. A second double-click on an item that is already a direct child of the scope does what double-click does today (edit text, enter a frame name). A double-click on empty space inside the scope's rectangle does nothing new.
-- **Leave** with `Esc` (selects the group just left and sets `scope` to its parent group), with a click on empty canvas, or by selecting something outside. A nested scope leaves one level at a time.
+- During a **dot vote**, double-clicking does not enter a group or edit an item; its two pointer clicks each use the normal single-click vote behavior.
+- **Leave** with `Esc` (selects the group just left and sets `scope` to its parent group), with a click on empty canvas, or by selecting something outside. A nested scope leaves one level at a time, so an empty-canvas click selects the group just left and returns to its parent scope.
 - **Marquee** selects the items at the scope's level that touch the rectangle (a group when any visible member does), as the marquee does today for single objects.
 - **Select all** (`Ctrl+A`) selects the top-level items (or the scope's children), skipping locked ones as now.
 - Selection after undo, redo, paste or an AI apply sets `scope` to `null` and selects the top-level ancestors of what changed.
@@ -110,7 +111,7 @@ In one transaction:
 
 The members were in other places in the paint order. Those that were below an outside object that lies between members now paint above it (the group moves up to its top member), as in the decisions list.
 
-**Ungroup** (`Shift+Ctrl+G`, **Ungroup** in the same places): for each selected group, in one transaction, give its members the group's `parent` and fresh `z` keys that put them exactly where the group was, in their order (`generateNKeysBetween(group.z, next sibling above, n)`), delete the group object, and select the members. Ungrouping a selection of several groups does all of them in one step. Ungroup on something that is not a group is disabled.
+**Ungroup** (`Shift+Ctrl+G`, **Ungroup** in the same places): for each selected group, in one transaction, give its members the group's `parent` and fresh `z` keys that put them exactly where the group was, in their order (`generateNKeysBetween(group.z, next sibling above, n)`), delete the group object, and select the members. Ungrouping a selection of several groups does all of them in one step. Ungroup is available only when every selected item is a group; a selection containing a group and a non-group is disabled.
 
 Ungrouping only one level: members that are themselves groups stay groups.
 

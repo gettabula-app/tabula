@@ -67,19 +67,23 @@ export function placeEnteredGroupChips(
   doneSize: { width: number; height: number },
   viewport: { width: number; height: number },
   topInset: number,
-  gap = 8,
+  gap = 0,
 ): { name: { x: number; y: number }; done: { x: number; y: number } } {
-  const name = clampGroupChipPosition(nameAnchor.x, nameAnchor.y, nameSize, viewport, topInset);
-  let done = clampGroupChipPosition(doneAnchor.x, doneAnchor.y, doneSize, viewport, topInset);
+  const rowHeight = Math.max(nameSize.height, doneSize.height);
+  const rowY = Math.max(topInset, Math.min(nameAnchor.y, viewport.height - rowHeight - 8));
+  const name = clampGroupChipPosition(nameAnchor.x, rowY, nameSize, viewport, topInset);
+  let done = clampGroupChipPosition(doneAnchor.x, rowY, doneSize, viewport, topInset);
   const overlap = name.x < done.x + doneSize.width && name.x + nameSize.width > done.x &&
     name.y < done.y + doneSize.height && name.y + nameSize.height > done.y;
   if (!overlap) return { name, done };
 
-  const beside = clampGroupChipPosition(name.x + nameSize.width + gap, name.y, doneSize, viewport, topInset);
-  if (beside.x >= name.x + nameSize.width + gap) return { name, done: beside };
+  const margin = 8;
+  const maxDoneX = Math.max(margin, viewport.width - doneSize.width - margin);
+  const besideX = name.x + nameSize.width + gap;
+  if (besideX <= maxDoneX) return { name, done: { x: besideX, y: rowY } };
 
-  return {
-    name,
-    done: clampGroupChipPosition(name.x, name.y + nameSize.height + 4, doneSize, viewport, topInset),
-  };
+  // Keep Done on the same row at the viewport's right edge; move the path chip left when the group is narrow.
+  const maxNameX = maxDoneX - gap - nameSize.width;
+  const nameX = Math.max(margin, Math.min(name.x, maxNameX));
+  return { name: { x: nameX, y: rowY }, done: { x: maxDoneX, y: rowY } };
 }

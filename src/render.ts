@@ -647,11 +647,16 @@ export class Renderer {
 
     const entered = ov.enteredGroup ? get(ov.enteredGroup) : undefined;
     const enteredBounds = entered?.type === 'group' ? this.bounds(entered) : null;
-    if (enteredBounds) {
+    if (entered?.type === 'group' && enteredBounds) {
       const v = this.viewport();
-      this.groupDimPath.setAttribute('d', `M${v.x} ${v.y}h${v.w}v${v.h}h-${v.w}z M${enteredBounds.x} ${enteredBounds.y}h${enteredBounds.w}v${enteredBounds.h}h-${enteredBounds.w}z`);
+      const memberBounds = this.store.descendantsOf(entered.id)
+        .filter((member) => member.type !== 'group' && member.type !== 'frame' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
+        .map((member) => this.bounds(member))
+        .filter((bounds): bounds is Rect => !!bounds);
+      const cutouts = memberBounds.map((b) => `M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z`).join(' ');
+      this.groupDimPath.setAttribute('d', `M${v.x} ${v.y}h${v.w}v${v.h}h-${v.w}z ${cutouts}`);
       this.groupDimPath.setAttribute('class', 'group-dim-wash active');
-      out += this.groupOutline(enteredBounds, px, 'var(--group-line)', 1.5, [6, 4]);
+      out += this.groupOutline(enteredBounds, px, 'var(--group-line)', 1.5, [6, 4], true);
     } else {
       this.groupDimPath.setAttribute('class', 'group-dim-wash');
     }
@@ -675,8 +680,8 @@ export class Renderer {
       const o = get(ov.hover);
       if (o?.type === 'group') {
         const b = this.bounds(o);
-        if (b) out += this.groupOutline(b, px, 'var(--group-hover)', 1.5);
-      } else if (o) out += this.outline(o, px(1.5), 0.6);
+        if (b) out += this.groupOutline(b, px, 'var(--group-hover)', 1.5, undefined, true);
+      } else if (o) out += this.outline(o, px(1.5), 1, 'var(--group-hover)');
     }
     if (ov.lockedHover) {
       const candidate = get(ov.lockedHover);
@@ -698,7 +703,7 @@ export class Renderer {
         for (const member of this.store.childrenOf(selectedGroup.id)) {
           if (member.parent === selectedGroup.id) out += this.groupMemberOutline(member, px);
         }
-        out += this.groupOutline(b, px, 'var(--group-line)', 1.5);
+        out += this.groupOutline(b, px, 'var(--group-line)', 1.5, undefined, true);
         // TODO(slice 3): add the whole-group transform handles around this solid box.
       }
     } else {
@@ -860,10 +865,12 @@ export class Renderer {
     return `<g transform="translate(${at(p.x)} ${at(p.y)})">${ring}${body}${label}${badge}</g>`;
   }
 
-  private groupOutline(b: Rect, px: (v: number) => number, stroke: string, width: number, dash?: [number, number]) {
+  private groupOutline(b: Rect, px: (v: number) => number, stroke: string, width: number, dash?: [number, number], casing = false) {
     const grow = px(6);
     const dashAttr = dash ? ` stroke-dasharray="${px(dash[0])} ${px(dash[1])}"` : '';
-    return `<rect x="${b.x - grow}" y="${b.y - grow}" width="${b.w + grow * 2}" height="${b.h + grow * 2}" fill="none" stroke="${stroke}" stroke-width="${px(width)}"${dashAttr} pointer-events="none"/>`;
+    const rect = `x="${b.x - grow}" y="${b.y - grow}" width="${b.w + grow * 2}" height="${b.h + grow * 2}" fill="none"`;
+    const underlay = casing ? `<rect ${rect} stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="${px(3)}" pointer-events="none"/>` : '';
+    return underlay + `<rect ${rect} stroke="${stroke}" stroke-width="${px(width)}"${dashAttr} pointer-events="none"/>`;
   }
 
   private groupMemberOutline(raw: Obj, px: (v: number) => number) {
@@ -876,21 +883,21 @@ export class Renderer {
       });
       if (hiddenEnd) return '';
       const g = connectorGeom(this.safeGet, safeObj(raw), this.connectorLayout());
-      return g ? `<path d="${g.d}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+      return g ? `<path d="${g.d}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
     }
     if (isBox(raw) && this.isHidden(raw)) return '';
     if (raw.type === 'group') {
       const b = this.bounds(raw);
-      return b ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+      return b ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
     }
     const o = safeObj(this.store.placed(raw));
     const c = center(o);
     const deg = ((o.rotation || 0) * 180) / Math.PI;
     if (o.type === 'path') {
       const b = boxBounds(o);
-      return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+      return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>`;
     }
-    return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+    return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>`;
   }
 
   private lockBadge(b: Rect, px: (v: number) => number, padded: boolean) {

@@ -20,8 +20,8 @@ function readThemes() {
 /** The group tokens of docs/groups-visual.md: every one is built from a theme variable. */
 const TOKENS = `
   --group-line: var(--wire);
-  --group-line-soft: color-mix(in srgb, var(--wire) 45%, transparent);
-  --group-hover: color-mix(in srgb, var(--wire) 70%, transparent);
+  --group-member-line: var(--graphite);
+  --group-hover: var(--guide);
   --group-handle: var(--paper);
   --group-dim: color-mix(in srgb, var(--canvas) 62%, transparent);
   --group-locked: var(--graphite);
@@ -62,7 +62,7 @@ const cursor = (x, y) => `<path d="M${x} ${y}l0 16 4-4 3 7 3-1.5-3-6.5h6z" fill=
 
 const single = () => scene() + rect(pad(B, 0), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(B);
 const multi = () => scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1" stroke-dasharray="5 4"') + handles(pad(G, 6)).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, '');
-const groupSel = () => scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-line-soft)" stroke-width="1"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(pad(G, 6)) + chip(pad(G, 6).x, pad(G, 6).y - 26 + 0, 'Group · 3', 62).replace(/y="(\d+)"/, (m, y) => `y="${+y + 0}"`);
+const groupSel = () => scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-member-line)" stroke-width="1"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(pad(G, 6)) + chip(pad(G, 6).x, pad(G, 6).y - 26 + 0, 'Group · 3', 62).replace(/y="(\d+)"/, (m, y) => `y="${+y + 0}"`);
 const hoverSingle = () => scene() + rect(B, 'fill="none" stroke="var(--group-hover)" stroke-width="1.5"') + cursor(206, 82);
 const hoverGroup = () => scene() + rect(pad(G, 6), 'fill="none" stroke="var(--group-hover)" stroke-width="1.5"') + cursor(206, 82);
 const dim = (members, scope, label, labelW) => {
@@ -84,7 +84,7 @@ const COPY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke
 const TRASH = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
 const bar = (grouped) => `<div class="qbar" style="top:192px"><span class="sw"></span><span class="sep"></span><button class="b txt${grouped ? '' : ' hot'}">${grouped ? UNGROUP_ICON + 'Ungroup' : GROUP_ICON + 'Group'}</button><span class="sep"></span><button class="b">${LOCK}</button><button class="b">${COPY}</button><button class="b">${TRASH}</button></div>`;
 const touchMulti = () => ({ svg: scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1" stroke-dasharray="5 4"') + handles(pad(G, 6), 16).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, ''), html: bar(false) });
-const touchGroup = () => ({ svg: scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-line-soft)" stroke-width="1"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(pad(G, 6), 16), html: bar(true) });
+const touchGroup = () => ({ svg: scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-member-line)" stroke-width="1"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(pad(G, 6), 16), html: bar(true) });
 
 const STATES = {
   'selected': { title: 'Selected: one item, several items today, a group', rows: [['One item', single], ['Several items (today)', multi], ['A group', groupSel]] },

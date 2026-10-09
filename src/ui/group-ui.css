@@ -1,7 +1,7 @@
 :root {
   --group-line: var(--wire);
-  --group-line-soft: color-mix(in srgb, var(--wire) 45%, transparent);
-  --group-hover: color-mix(in srgb, var(--wire) 70%, transparent);
+  --group-member-line: var(--graphite);
+  --group-hover: var(--guide);
   --group-handle: var(--paper);
   --group-dim: color-mix(in srgb, var(--canvas) 62%, transparent);
   --group-locked: var(--graphite);
@@ -10,10 +10,13 @@
   --group-chip-line: var(--tray-line);
 }
 
+/* Contain the transformed SVG layer so the chrome chips can paint above comment pins. */
+.board-surface { z-index: 0; }
+
 .group-chip,
 .group-done {
   position: absolute;
-  z-index: 13;
+  z-index: 20;
   left: 0;
   top: 0;
   box-sizing: border-box;
@@ -38,7 +41,17 @@
 }
 
 .group-chip[hidden],
-.group-done[hidden] { display: none; }
+.group-done[hidden],
+.group-chip-bridge[hidden] { display: none; }
+
+.group-chip-bridge {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  background: var(--group-chip-bg);
+}
 
 .group-done {
   display: inline-flex;
@@ -68,9 +81,19 @@
 
 @media (pointer: coarse) {
   .group-done {
-    height: 44px;
+    height: 28px;
     min-width: 44px;
-    padding: 0 12px;
+    padding: 0 8px;
+  }
+
+  .group-done::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
   }
 
   .icon-btn.qb-text.group-action {
