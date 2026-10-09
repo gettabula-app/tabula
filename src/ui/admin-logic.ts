@@ -95,7 +95,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.settings', 'ai.key.set', 'ai.key.delete',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
-  'chat.delete', 'chat.settings', 'chat.retention',
+  'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
 ] as const;
@@ -281,6 +281,12 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       else if (typeof d.retentionDays === 'number') changes.push(`keep messages ${countLabel(d.retentionDays, 'day', 'days')}`);
       return `${who} changed the chat settings${changes.length ? ` (${changes.join(', ')})` : ''}`;
     }
+    case 'chat.erase': {
+      const count = typeof d.count === 'number' ? d.count : 0;
+      return `${who} erased the chat messages of ${member} (${count === 1 ? '1 message' : `${count} messages`})`;
+    }
+    case 'chat.export':
+      return `${who} exported the chat messages of ${member}`;
     case 'chat.retention': {
       const removed = typeof d.removed === 'number' ? d.removed : 0;
       const days = typeof d.days === 'number' ? ` older than ${countLabel(d.days, 'day', 'days')}` : '';

@@ -16,6 +16,8 @@ const SETTINGS_FIELDS = ['viewersMayPost', 'retentionDays', 'workspaceChannel'];
 /** Boards show in the channel list while their chat has had a message this recently. */
 export const RECENT_BOARD_MS = 14 * 24 * 60 * 60 * 1000;
 const WORKSPACE_NAME = 'Workspace';
+/** Erasing a person with a great many messages tells the people watching about this many; the rest show on the next load. */
+const ERASE_FRAMES = 500;
 const FORMER_MEMBER = 'Former member';
 
 const TEXT_ERRORS = {
@@ -293,6 +295,34 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       const wait = limits.unread(user.id);
       if (wait) throw limited(res, wait);
       return [200, { channels: channelList({ directory, store, access, user }) }];
+    }),
+
+    // A right-to-erasure request (docs/chat.md, Removing and erasing people): every message the person wrote is wiped, in every
+    // channel. People who are subscribed see them turn into tombstones at once. Only counts and ids go in the audit row.
+    compile('POST', 'admin/members/:id/chat-erase', {}, ({ user, params }) => {
+      requireAdmin(user);
+      const target = directory.getUser(params.id);
+      if (!target) throw notFound('Member not found');
+      if (target.role === 'owner' && user.role !== 'owner') throw forbidden('Only an owner can erase an owner’s messages');
+      const { messages, count } = store().eraseAuthor(target.id, user.id);
+      audit(user, 'chat.erase', { userId: target.id, count });
+      for (const m of messages.slice(0, ERASE_FRAMES)) publish(m.kind, m.ref, { t: 'delete', kind: m.kind, ref: m.ref, id: m.id, by: 'moderator' });
+      return [200, { removed: count }];
+    }),
+
+    // A copy of what one person wrote, as a file, for the administrator who answers their request. Not their reading, only their words.
+    compile('GET', 'admin/members/:id/chat-export', {}, ({ res, user, params }) => {
+      requireAdmin(user);
+      const target = directory.getUser(params.id);
+      if (!target) throw notFound('Member not found');
+      const { messages, reactions } = store().exportAuthor(target.id);
+      audit(user, 'chat.export', { userId: target.id, count: messages.length });
+      res.setHeader('content-disposition', 'attachment; filename="chat-messages.json"');
+      return [200, {
+        format: 'tabula-chat-export', exportedAt: new Date().toISOString(), person: { id: target.id, name: target.name, email: target.email },
+        note: 'Everything this person wrote in chat. Deleted messages are listed without text. Backups may still hold earlier copies until they expire.',
+        messages, reactions,
+      }];
     }),
 
     compile('GET', 'admin/chat', {}, ({ user }) => {

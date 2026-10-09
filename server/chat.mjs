@@ -271,6 +271,58 @@ export function openChat(file) {
     });
   }
 
+  /**
+   * A person was removed from the workspace (docs/chat.md, Removing and erasing people): their messages stay, with the name
+   * they were written under and no account behind them. Their reactions, read markers and the mentions of them go.
+   * @returns {number} how many messages lost their author
+   */
+  function anonymiseAuthor(userId) {
+    return transaction(() => {
+      const n = Number(run('UPDATE chat_messages SET author_id = NULL WHERE author_id = ?', userId).changes);
+      run('DELETE FROM chat_reactions WHERE user_id = ?', userId);
+      run('DELETE FROM chat_reads WHERE user_id = ?', userId);
+      run('DELETE FROM chat_mentions WHERE user_id = ?', userId);
+      return n;
+    });
+  }
+
+  /**
+   * The answer to a right-to-erasure request: every message the person wrote becomes a tombstone with no text and no
+   * author name ("Former member"), in every channel, so replies keep their place and quote nothing. What they reacted
+   * with, whom they mentioned, who mentioned them and their read markers go too.
+   * @returns {{ messages: { id: number, kind: string, ref: string }[], count: number }} the live messages that were erased
+   */
+  function eraseAuthor(userId, byUserId, now = Date.now()) {
+    return transaction(() => {
+      const live = all('SELECT id, kind, ref FROM chat_messages WHERE author_id = ? AND deleted_at IS NULL ORDER BY id', userId)
+        .map((r) => ({ id: Number(r.id), kind: r.kind, ref: r.ref }));
+      const ids = all('SELECT id FROM chat_messages WHERE author_id = ?', userId).map((r) => Number(r.id));
+      for (let i = 0; i < ids.length; i += 500) {
+        const marks = ids.slice(i, i + 500).map(() => '?').join(', ');
+        db.prepare(`DELETE FROM chat_mentions WHERE message_id IN (${marks})`).run(...ids.slice(i, i + 500));
+        db.prepare(`DELETE FROM chat_reactions WHERE message_id IN (${marks})`).run(...ids.slice(i, i + 500));
+      }
+      run("UPDATE chat_messages SET body = '', deleted_at = COALESCE(deleted_at, ?), deleted_by = COALESCE(deleted_by, ?), author_id = NULL, author_name = 'Former member' WHERE author_id = ?", now, byUserId, userId);
+      run('DELETE FROM chat_reactions WHERE user_id = ?', userId);
+      run('DELETE FROM chat_reads WHERE user_id = ?', userId);
+      run('DELETE FROM chat_mentions WHERE user_id = ?', userId);
+      return { messages: live, count: live.length };
+    });
+  }
+
+  /**
+   * Everything one person wrote in chat, for the administrator who answers a request for a copy of their data: their
+   * messages (deleted ones as bare tombstones: when, where, no text) and the reactions they gave.
+   */
+  function exportAuthor(userId) {
+    const messages = withMentions(all('SELECT * FROM chat_messages WHERE author_id = ? ORDER BY id', userId).map(toMessage)).map((m) => ({
+      id: m.id, channel: { kind: m.kind, ref: m.ref }, createdAt: m.createdAt, editedAt: m.editedAt, deletedAt: m.deletedAt,
+      text: m.deletedAt === null ? m.body : null, replyTo: m.replyTo, objectId: m.objectId, mentions: m.mentions,
+    }));
+    const reactions = all('SELECT message_id, emoji FROM chat_reactions WHERE user_id = ? ORDER BY message_id, emoji', userId).map((r) => ({ messageId: Number(r.message_id), emoji: r.emoji }));
+    return { messages, reactions };
+  }
+
   const topId = (kind, ref) => Number(get('SELECT MAX(id) AS top FROM chat_messages WHERE kind = ? AND ref = ?', kind, ref).top ?? 0);
 
   const markerOf = (userId, kind, ref) => {
@@ -402,6 +454,9 @@ export function openChat(file) {
     topId,
     readMarker: markerOf,
     setReaction,
+    anonymiseAuthor,
+    eraseAuthor,
+    exportAuthor,
     markRead,
     channelUnread,
     unreadSummary,

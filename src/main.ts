@@ -11,6 +11,7 @@ import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { renderChatPage } from './ui/chat-page';
 import { mountMentionNotices } from './ui/mention-notice';
+import { mountTitleBadge } from './ui/title-badge';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
@@ -360,11 +361,16 @@ async function boot() {
   startMeRefresh();
   // the cards for mentions in channels you are not looking at, while chat is on for this person
   let stopMentions: (() => void) | null = null;
+  let stopTitle: (() => void) | null = null;
   const syncMentions = () => {
-    if (chatAvailable() && !stopMentions) stopMentions = mountMentionNotices();
-    else if (!chatAvailable() && stopMentions) {
+    if (chatAvailable() && !stopMentions) {
+      stopMentions = mountMentionNotices();
+      stopTitle = mountTitleBadge();
+    } else if (!chatAvailable() && stopMentions) {
       stopMentions();
+      stopTitle?.();
       stopMentions = null;
+      stopTitle = null;
     }
   };
   syncMentions();

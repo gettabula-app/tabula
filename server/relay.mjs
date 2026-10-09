@@ -188,6 +188,15 @@ if (config.authEnabled) {
     const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier };
+    // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
+    events.on('user-removed', ({ userId } = {}) => {
+      if (maintenance || typeof userId !== 'string') return;
+      try {
+        store().anonymiseAuthor(userId);
+      } catch (err) {
+        log('chat: could not anonymise a removed member:', err?.message);
+      }
+    });
     chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
     chatRetention.start();
   }

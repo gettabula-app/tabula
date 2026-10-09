@@ -662,6 +662,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     members: () => call<Member[]>('GET', '/api/members'),
     updateMember: (id: string, patch: { role?: UserRole; disabled?: boolean }) =>
       call<Member>('PATCH', `/api/members/${seg(id)}`, patch),
+    eraseMemberChat: (id: string) => call<{ removed: number }>('POST', `/api/admin/members/${seg(id)}/chat-erase`),
+    memberChatExport: (id: string) => call<unknown>('GET', `/api/admin/members/${seg(id)}/chat-export`),
     removeMember: (id: string) => call<void>('DELETE', `/api/members/${seg(id)}`),
 
     billingPortal: () => call<{ url: string }>('POST', '/api/billing/portal'),
