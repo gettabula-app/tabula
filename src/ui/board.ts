@@ -42,7 +42,7 @@ import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
 import { aiBarFlag, aiBarFor, aiBarShown, aiSetupFor, glyph, mountAiBar, onAiBarChange } from './ai-bar';
-import { liveRunsFor, mountAiLive } from './ai-live';
+import { liveRunsFor, mountAiLive, onLiveChange } from './ai-live';
 import './ai-review-panel';
 import { avatarLine, badgeRun } from '../ai-live-logic';
 import { openTokensDialog } from './tokens';
@@ -379,7 +379,7 @@ async function importInto(app: BoardApp, file: File) {
 
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
-function firstRunHint(app: BoardApp, chrome: HTMLElement) {
+export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   if (app.store.cache.size || app.readOnly) return;
   // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
   const generate = aiBarFlag() ? h('button', {
@@ -394,15 +394,23 @@ function firstRunHint(app: BoardApp, chrome: HTMLElement) {
       generate,
     ),
   );
+  hint.hidden = hasPreview(app);
   chrome.appendChild(hint);
   if (generate) onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
+  // while an AI preview is on the board the hint has done its job (the person has started); it returns if the preview goes
+  // and the board is still empty (TAB-214)
+  const offLive = onLiveChange(app, () => { hint.hidden = hasPreview(app); });
   const off = app.on('objects', () => {
     if (app.store.cache.size) {
       hint.remove();
       off();
+      offLive();
     }
   });
 }
+
+/** Whether a ready AI preview (anyone's) is on the board: its ghosts are drawn where the empty-board hint sits. */
+export const hasPreview = (app: BoardApp): boolean => !!liveRunsFor(app)?.list().some((r) => r.status === 'ready');
 
 // ---------------------------------------------------------------- minimap
 
