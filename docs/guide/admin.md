@@ -178,7 +178,7 @@ When the server accepts it, the whole window shows **Restoring…**. The page ch
 
 If something fails before the swap, nothing changes and the page says why in plain words, for example that there is not enough disk space or that the safety backup failed. If the whole workspace cannot be restored, the server starts again on the data it had before.
 
-<!-- screenshot: Backups section with the status block and the list, one backup protected and one unreadable -->
+![The Backups tab with the status block and the list of backups, one protected and two unreadable](images/admin-backups.png)
 
 ## Backups
 

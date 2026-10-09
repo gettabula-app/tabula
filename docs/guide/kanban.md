@@ -36,6 +36,8 @@ Double-click a card, select it and press `Enter`, or choose **Open** in the quic
 
 Each field saves when you leave it, and each is one step in Undo. On a phone the dialog is a sheet at the bottom. Commenters see the card read-only and can still comment. Viewers cannot open it.
 
+![The card dialog with title, description, owner, due date and labels](images/kanban-card-dialog.png)
+
 ## Labels
 
 Choose **Labels** in the card dialog, or in the quick-action bar or properties panel of a kanban, to manage the board's labels. You can create, rename, reorder and delete labels, and give each one of eight named colours. Only editors can change labels. A label on a card shows as a chip, with a check mark in the picker.
