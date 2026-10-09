@@ -61,6 +61,14 @@ How they hear about it depends on where they are:
 - If they have Tabula open on that channel, they simply see your message.
 - If they have Tabula closed, they get an email after 10 minutes, as long as nobody has opened Tabula or read the message since. See [Notifications](#notifications).
 
+### Point at something on the board
+
+In board chat, select one object on the board, then choose **Reference selection** next to the message box. A line above the box shows what you are pointing at, with a button to take it off. Send the message and it carries a chip with the object's words.
+
+Select a chip to fly to the object and select it. The chip follows the board, so it shows the object's current words. If the object has been deleted, the chip says so and goes nowhere. On the Chat page, a chip opens that board at the object.
+
+Reference selection is off unless exactly one object is selected. Notes that [private writing](sessions.md#private-writing) hides from you, and objects hidden in the Layers panel, show no words and you cannot fly to them. Other kinds of channel have no chips.
+
 ### Reply, copy, edit and delete
 
 Each message has a menu:
