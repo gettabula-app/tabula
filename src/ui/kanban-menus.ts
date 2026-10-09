@@ -49,7 +49,7 @@ function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLButtonEl
   return h('button', {
     class: `menu-item${o.danger ? ' danger' : ''}`, type: 'button', role: o.checked === undefined ? 'menuitem' : 'menuitemradio',
     'aria-checked': o.checked === undefined ? undefined : String(o.checked), 'aria-haspopup': o.sub ? 'true' : undefined,
-    disabled: o.disabled, title: o.title, onclick: onPick,
+    disabled: o.disabled, 'data-tip': o.title, onclick: onPick,
   },
   sw, h('span', { class: 'k-mi-label' }, label),
   o.checked ? h('span', { class: 'menu-hint k-mi-check', 'aria-hidden': 'true' }, icon('check', 14)) : null,
