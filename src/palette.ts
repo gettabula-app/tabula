@@ -45,7 +45,39 @@ export const STROKES = [
 
 export const TEXT_COLORS = [INK, GRAPHITE, '#FFFFFF', '#2F6FED', '#1E9A6A', '#C98A00', '#D64545', '#7A5AF8'];
 
-export const USER_COLORS = ['#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8', '#E0559B', '#0E9AA7', '#E06D2B'];
+/**
+ * The eight person colours (cursors, avatars, comment pins, remote selections, AI run outlines). Each is dark enough
+ * for white text (>= 4.5:1) and light enough to read as a 3:1 outline on every theme's canvas (test/person-colors.test.ts).
+ * That leaves a narrow band of luminance (about 0.155 to 0.18), so the hues carry the difference, not the lightness.
+ */
+export const USER_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
+
+/** Text on a person colour: always white. */
+export const PERSON_INK = '#FFFFFF';
+
+/** The person colours before TAB-197, in the same order as USER_COLORS. Stored profiles and comments still carry them. */
+const LEGACY_USER_COLORS = ['#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8', '#E0559B', '#0E9AA7', '#E06D2B'];
+
+/**
+ * The person colour to draw for a stored or remote one. A current colour is kept, an old one maps to its replacement, and
+ * any other hex (an API client, an older build) takes the nearest of the eight. Not a colour at all gives the first.
+ * Every place that draws a person colour goes through this, so nobody keeps a colour that fails contrast.
+ */
+export function personColor(c: string | undefined | null): string {
+  const rgb = parseHex(c ?? undefined);
+  if (!rgb) return USER_COLORS[0];
+  const hex = toHex(rgb);
+  if (USER_COLORS.includes(hex)) return hex;
+  const legacy = LEGACY_USER_COLORS.indexOf(hex);
+  if (legacy >= 0) return USER_COLORS[legacy];
+  let best = USER_COLORS[0], bd = Infinity;
+  for (const u of USER_COLORS) {
+    const v = parseHex(u)!;
+    const d = (v[0] - rgb[0]) ** 2 + (v[1] - rgb[1]) ** 2 + (v[2] - rgb[2]) ** 2;
+    if (d < bd) { bd = d; best = u; }
+  }
+  return best;
+}
 
 // ---------------------------------------------------------------- colour maths
 

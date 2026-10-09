@@ -1,5 +1,6 @@
 import './focus.css';
 import type { BoardApp } from '../app';
+import { personColor } from '../palette';
 import { isBox } from '../types';
 import { boxBounds } from '../geometry';
 import { newId } from '../store';
@@ -199,7 +200,7 @@ export function mountFocus(app: BoardApp, parent: HTMLElement) {
       fn();
     };
     const el = h('div', { class: 'focus-card', 'data-kind': req.kind },
-      h('p', { class: 'focus-text' }, h('span', { class: 'focus-swatch', 'aria-hidden': 'true', style: req.from.color ? `--c:${req.from.color}` : undefined }), requestText(req)),
+      h('p', { class: 'focus-text' }, h('span', { class: 'focus-swatch', 'aria-hidden': 'true', style: req.from.color ? `--c:${personColor(req.from.color)}` : undefined }), requestText(req)),
       h('div', { class: 'focus-actions' },
         h('button', { class: 'btn primary', onclick: done(() => goTo(req)) }, 'Go to'),
         h('button', { class: 'btn', onclick: done(() => follow(clientId, req)) }, 'Follow'),

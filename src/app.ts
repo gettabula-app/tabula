@@ -18,7 +18,7 @@ import { remapObjects } from './custom-templates';
 import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
-import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex } from './palette';
+import { CANVAS_INK, STICKY_COLORS, normalizeHex, parseHex, personColor } from './palette';
 import { TOOL_KEYS } from './shortcuts';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
@@ -1453,8 +1453,8 @@ export class BoardApp {
       const cursors: { id: number; name: string; color: string; p: Point }[] = [];
       aw.getStates().forEach((st, clientId) => {
         if (clientId === aw.clientID || !st.user) return;
-        if (Array.isArray(st.sel) && st.sel.length) remote.push({ ids: st.sel, color: st.user.color });
-        if (st.cursor) cursors.push({ id: clientId, name: st.user.name, color: st.user.color, p: st.cursor });
+        if (Array.isArray(st.sel) && st.sel.length) remote.push({ ids: st.sel, color: personColor(st.user.color) });
+        if (st.cursor) cursors.push({ id: clientId, name: st.user.name, color: personColor(st.user.color), p: st.cursor });
       });
       this.r.setOverlay({ remote });
       this.renderCursors(cursors);
@@ -1499,7 +1499,7 @@ export class BoardApp {
   participants(): { clientId: number; user: User; isMe: boolean }[] {
     const out: { clientId: number; user: User; isMe: boolean }[] = [];
     this.conn.awareness.getStates().forEach((st, id) => {
-      if (st.user) out.push({ clientId: id, user: st.user, isMe: id === this.conn.awareness.clientID });
+      if (st.user) out.push({ clientId: id, user: { ...st.user, color: personColor(st.user.color) }, isMe: id === this.conn.awareness.clientID });
     });
     return out;
   }

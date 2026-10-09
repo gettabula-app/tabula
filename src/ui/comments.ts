@@ -1,5 +1,6 @@
 import './comments.css';
 import type { BoardApp } from '../app';
+import { personColor } from '../palette';
 import { mayDelete, type Anchor, type Author, type Reply, type Thread } from '../comments';
 import type { Point } from '../types';
 import { authState } from '../auth';
@@ -33,7 +34,7 @@ function canModerate(app: BoardApp): boolean {
 
 function avatar(name: string, color: string): HTMLSpanElement {
   const a = h('span', { class: 'comment-avatar', 'aria-hidden': 'true' }, ([...name.trim()][0] ?? '?').toUpperCase());
-  a.style.setProperty('--c', color);
+  a.style.setProperty('--c', personColor(color));
   return a;
 }
 
