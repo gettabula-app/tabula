@@ -90,6 +90,21 @@ Chat keeps the last 50 messages of each board you opened on this device. Without
 
 Messages you send while offline wait in a queue, grey, with **Sending…**. They go out in order when the connection comes back. If one cannot be sent, it shows **Not sent** with **Retry**, **Copy** and **Discard**. If the server refuses it, it says why. Editing and deleting need a connection. Signing out removes the saved messages from the device.
 
+## When someone leaves
+
+Removing a member keeps their chat messages, shown under the name they were written under but with no account behind them. Their reactions, read markers and the mentions of them are dropped.
+
+Admins can also handle a request for a copy of someone's chat data, or to be forgotten. In **Admin > Members**, each person has two actions:
+
+- **Export chat** downloads a JSON file with everything they wrote and the reactions they gave. Deleted messages have no text.
+- **Erase chat messages** turns every message they wrote, in every channel, into a deleted message by "Former member". It asks for a second click, and people watching the channel see the change at once.
+
+Both are recorded in the audit log, with the person and a count but never the text. Filter by **Chat** to find them. Backups keep erased messages until the backups expire. This is not a full export of someone's personal data.
+
+## Unread count in the tab title
+
+While the tab is in the background, the page title starts with the number of unread chat messages, for example `(3) Roadmap - Tabula`.
+
 ## Things to know
 
 - Chat is not part of version history, and it is not in exports or board files. A board you export and open elsewhere comes without its conversation.
