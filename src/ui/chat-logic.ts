@@ -494,3 +494,63 @@ export function channelMeta(e: ChatChannelEntry, now: number): string {
   const when = days <= 0 ? timeLabel(e.lastAt) : days === 1 ? 'yesterday' : days < 7 ? `${days} days ago` : new Date(e.lastAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   return `${kind}${state} · ${when}`;
 }
+
+// ---------------------------------------------------------------- reactions
+
+/** The small fixed set (docs/chat.md, Messages), in the order the server lists them. */
+export const CHAT_REACTIONS = ['👍', '❤️', '😄', '🎉', '👀', '✅'] as const;
+
+export interface ReactionChip {
+  emoji: string;
+  count: number;
+  mine: boolean;
+  /** What a screen reader hears for the chip. */
+  label: string;
+}
+
+/** A message's reactions as chips: the set's order, how many, and whether this person is one of them. */
+export function reactionChips(m: Pick<ChatMessage, 'reactions'>, meId: string): ReactionChip[] {
+  return (m.reactions ?? [])
+    .filter((r) => r.userIds.length > 0)
+    .sort((a, b) => CHAT_REACTIONS.indexOf(a.emoji as never) - CHAT_REACTIONS.indexOf(b.emoji as never))
+    .map((r) => {
+      const mine = r.userIds.includes(meId);
+      const n = r.userIds.length;
+      return { emoji: r.emoji, count: n, mine, label: `${r.emoji}, ${n} ${n === 1 ? 'person' : 'people'}${mine ? `, including you` : ''}` };
+    });
+}
+
+/** The list with one message's reactions replaced (a frame or an answer). A message that is not in the list changes nothing. */
+export function withReactions(messages: readonly ChatMessage[], id: number, reactions: { emoji: string; userIds: string[] }[]): ChatMessage[] {
+  return messages.map((m) => (m.id === id ? { ...m, reactions } : m));
+}
+
+/** Whether this person has reacted to the message with `emoji`. */
+export const reactedWith = (m: Pick<ChatMessage, 'reactions'>, meId: string, emoji: string): boolean =>
+  (m.reactions ?? []).some((r) => r.emoji === emoji && r.userIds.includes(meId));
+
+// ---------------------------------------------------------------- mention notices
+
+export interface MentionNotice {
+  kind: ChannelKind;
+  ref: string;
+  /** The mentioning message's id. */
+  id: number;
+  from: string;
+  channel: string;
+  text: string;
+}
+
+const KINDS_OK = ['board', 'team', 'workspace'];
+
+/** A `mention` frame as a notice, or null when its shape is not what the server sends. Text is cut and never HTML. */
+export function parseMention(f: Record<string, unknown>): MentionNotice | null {
+  const from = f.from as { name?: unknown } | undefined;
+  if (typeof f.kind !== 'string' || !KINDS_OK.includes(f.kind) || typeof f.ref !== 'string' || f.ref.length === 0 || f.ref.length > 128) return null;
+  if (!Number.isSafeInteger(f.id) || typeof f.channel !== 'string' || typeof f.text !== 'string' || typeof from?.name !== 'string') return null;
+  const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  return { kind: f.kind as ChannelKind, ref: f.ref, id: f.id as number, from: cut(from.name.trim() || 'Someone', 80), channel: cut(f.channel.trim() || 'a channel', 80), text: cut(f.text.replace(/\s+/g, ' ').trim(), 140) };
+}
+
+/** Where a notice's Open button goes: the board, or the channel on the Chat page. */
+export const noticeHash = (n: Pick<MentionNotice, 'kind' | 'ref'>): string => (n.kind === 'board' ? `#/b/${n.ref}` : channelHash(n.kind, n.ref));

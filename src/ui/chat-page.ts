@@ -6,6 +6,7 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { mountConversation } from './chat';
 import { badgeText, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, type ChannelKind } from './chat-logic';
+import { openChatNotifications } from './chat-prefs';
 import { accountMe, createTopbar } from './topbar';
 
 /** Below this width the list and the conversation are two screens, as the side tray and the home page already break. */
@@ -41,7 +42,8 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   // ---------------------------------------------------------------- the list
   const status = h('p', { class: 'chat-list-status', role: 'status' });
   const listBody = h('div', { class: 'chat-list-body' });
-  const list = h('nav', { class: 'chat-list', 'aria-label': 'Chat channels' }, listBody, status);
+  const prefs = h('button', { class: 'chat-prefs', type: 'button', onclick: () => openChatNotifications() }, 'Notifications');
+  const list = h('nav', { class: 'chat-list', 'aria-label': 'Chat channels' }, listBody, status, h('div', { class: 'chat-list-foot' }, prefs));
 
   // ---------------------------------------------------------------- the conversation
   const back = h('a', { class: 'chat-back', href: '#/chat' }, icon('prev', 16), h('span', null, 'All channels'));

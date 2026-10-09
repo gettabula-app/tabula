@@ -9,8 +9,8 @@ import { announce } from './announce';
 import { popover, toast } from './common';
 import type { SideTray } from './side-tray';
 import {
-  MAX_MENTIONS, MAX_TEXT, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, filterPeople, fromTokens,
-  initials, insertMention, mentionLabel, mentionQuery, quoteText, segments, textLength, timeLabel, toTokens,
+  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, filterPeople, fromTokens,
+  initials, insertMention, mentionLabel, mentionQuery, quoteText, reactedWith, reactionChips, segments, textLength, timeLabel, toTokens,
   type OutboxItem, type Person, type Row,
 } from './chat-logic';
 
@@ -203,6 +203,8 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       }
       if (!head) p.prepend(h('span', { class: 'sr-only' }, `${m.authorName}, ${timeLabel(m.createdAt)}: `));
       main.append(p);
+      const chips = reactionChips(m, myId);
+      if (chips.length) main.append(reactionsEl(m, chips));
     }
     el.append(main);
     if (!m.deleted && editing?.id !== m.id) {
@@ -213,6 +215,23 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       el.append(more);
     }
     return el;
+  }
+
+  /** The reactions under a message: small outlined counts, each a button that toggles this person's own. */
+  function reactionsEl(m: ChatMessage, chips: ReturnType<typeof reactionChips>): HTMLElement {
+    const writable = composerState(view.access, { lost: view.lost, signedOut: view.signedOut }).enabled && view.online;
+    return h('div', { class: 'chat-reactions', role: 'group', 'aria-label': 'Reactions' }, ...chips.map((c) => {
+      const b = h('button', {
+        class: `chat-reaction${c.mine ? ' mine' : ''}`, type: 'button', 'aria-pressed': String(c.mine), 'aria-label': c.label, disabled: !writable,
+        onclick: () => react(m.id, c.emoji, !c.mine),
+      });
+      b.append(h('span', { 'aria-hidden': 'true' }, c.emoji), h('span', { class: 'chat-reaction-n', 'aria-hidden': 'true' }, String(c.count)));
+      return b;
+    }));
+  }
+
+  function react(id: number, emoji: string, on: boolean) {
+    chat.react(id, emoji, on).catch((err: Error) => toast(err.message || 'Could not react to the message.'));
   }
 
   function pendingEl(item: OutboxItem, head: boolean): HTMLElement {
@@ -251,7 +270,7 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     }
     const m = row.message;
     return JSON.stringify(['m', row.head, m.text, m.editedAt, m.deleted, m.deletedBy, m.authorName, m.mentions, editing?.id === m.id,
-      m.replyTo !== null ? quoteSig(m.replyTo) : '']);
+      m.replyTo !== null ? quoteSig(m.replyTo) : '', m.reactions ?? [], view.online, view.access?.write]);
   }
 
   function quoteSig(id: number): string {
@@ -500,6 +519,7 @@ export function mountConversation(opts: ConversationOptions): Conversation {
           paintComposer();
           ta.focus();
         }) : null,
+        writable && view.online ? item('React', () => picker()) : null,
         item('Copy text', () => {
           pop.close();
           copyText(fromTokens(m.text, m.mentions).text);
@@ -511,6 +531,20 @@ export function mountConversation(opts: ConversationOptions): Conversation {
         canDelete(m, myId, view.access, view.online) ? item(own ? 'Delete' : 'Remove', () => confirmDelete()) : null,
         !view.online && (own || view.access?.moderate) ? h('p', { class: 'chat-menu-note' }, 'Editing and deleting need a connection.') : null,
       ].filter((el) => el !== null) as HTMLElement[]);
+    };
+    // the six reactions in one row of buttons; the current ones are marked, and choosing one turns it on or off
+    const picker = () => {
+      const mine = (emoji: string) => reactedWith(m, myId, emoji);
+      menu.replaceChildren(
+        h('div', { class: 'chat-picker', role: 'group', 'aria-label': 'Reactions' }, ...CHAT_REACTIONS.map((emoji) => h('button', {
+          class: `menu-item chat-pick${mine(emoji) ? ' on' : ''}`, role: 'menuitemcheckbox', 'aria-checked': String(mine(emoji)), 'aria-label': emoji,
+          onclick: () => {
+            pop.close();
+            react(m.id, emoji, !mine(emoji));
+          },
+        }, emoji))),
+        h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { items(); first(); } }, h('span', null, 'Back')));
+      first();
     };
     const confirmDelete = () => {
       const label = h('p', { class: 'chat-menu-note' }, own ? 'Delete this message for everyone?' : 'Remove this message for everyone?');

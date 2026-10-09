@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatChannelEntry, ChatMessage } from '../src/api';
 import {
-  GROUP_MS, applyDelete, atBottom, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
+  GROUP_MS, applyDelete, atBottom, CHAT_REACTIONS, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
   findLinks, fromTokens, initials, insertMention, mentionLabel, mentionQuery, mergeMessages, newer, outboxItem, quoteText, segments,
-  timeLabel, toTokens, trimOldest, type ChatAccess,
+  timeLabel, toTokens, trimOldest, noticeHash, parseMention, reactedWith, reactionChips, withReactions, type ChatAccess,
 } from '../src/ui/chat-logic';
 
 // docs/chat.md: merging by id, grouping into runs, date lines and the New messages line, plain-text links, mentions.
@@ -328,5 +328,81 @@ describe('the channel list', () => {
     expect(channelMeta(entry('board', 'b', 'B', { lastAt: NOW - 86_400_000 }), NOW)).toBe('Board · yesterday');
     expect(channelMeta(entry('board', 'b', 'B', { lastAt: NOW - 3 * 86_400_000 }), NOW)).toBe('Board · 3 days ago');
     expect(channelMeta(entry('team', 't', 'T', { archived: true, lastAt: NOW - 86_400_000 }), NOW)).toBe('Team · archived · yesterday');
+  });
+});
+
+// ---------------------------------------------------------------- reactions and mention notices
+
+describe('reactions', () => {
+  const withReacts = (reactions: { emoji: string; userIds: string[] }[]) => ({ reactions });
+
+  it('are chips in the order of the set, with counts, and say whether you are one of them', () => {
+    const chips = reactionChips(withReacts([{ emoji: '✅', userIds: ['a'] }, { emoji: '👍', userIds: ['a', 'me'] }, { emoji: '🎉', userIds: [] }]), 'me');
+    expect(chips.map((c) => [c.emoji, c.count, c.mine])).toEqual([['👍', 2, true], ['✅', 1, false]]);
+    expect(chips[0].label).toBe('👍, 2 people, including you');
+    expect(chips[1].label).toBe('✅, 1 person');
+  });
+
+  it('are nothing for a message without any, or saved before reactions existed', () => {
+    expect(reactionChips({}, 'me')).toEqual([]);
+    expect(reactionChips(withReacts([]), 'me')).toEqual([]);
+  });
+
+  it('replace one message’s list and leave the others alone', () => {
+    const a = msg({ id: 1 }), b = msg({ id: 2 });
+    const next = withReactions([a, b], 2, [{ emoji: '👀', userIds: ['x'] }]);
+    expect(next[0]).toBe(a);
+    expect(next[1].reactions).toEqual([{ emoji: '👀', userIds: ['x'] }]);
+    expect(withReactions([a], 99, [])).toEqual([a]);
+  });
+
+  it('know whether you reacted with one emoji', () => {
+    const m = withReacts([{ emoji: '👍', userIds: ['me'] }, { emoji: '❤️', userIds: ['other'] }]);
+    expect(reactedWith(m, 'me', '👍')).toBe(true);
+    expect(reactedWith(m, 'me', '❤️')).toBe(false);
+    expect(reactedWith({}, 'me', '👍')).toBe(false);
+  });
+
+  it('are the six of the spec', () => {
+    expect([...CHAT_REACTIONS]).toEqual(['👍', '❤️', '😄', '🎉', '👀', '✅']);
+  });
+});
+
+describe('mention notices', () => {
+  const frame = (extra: Record<string, unknown> = {}) => ({ t: 'mention', kind: 'team', ref: 't1', id: 7, from: { id: 'ana', name: 'Ana' }, channel: 'Design', text: 'can you check?', ...extra });
+
+  it('read a mention frame', () => {
+    expect(parseMention(frame())).toEqual({ kind: 'team', ref: 't1', id: 7, from: 'Ana', channel: 'Design', text: 'can you check?' });
+  });
+
+  it('cut long text and names, and never keep line breaks', () => {
+    const n = parseMention(frame({ text: `a\n\n${'b'.repeat(300)}`, channel: 'c'.repeat(200), from: { name: 'n'.repeat(200) } }))!;
+    expect(n.text).toHaveLength(140);
+    expect(n.text.startsWith('a b')).toBe(true);
+    expect(n.channel).toHaveLength(80);
+    expect(n.from).toHaveLength(80);
+  });
+
+  it('fall back to plain words for empty names', () => {
+    const n = parseMention(frame({ from: { name: '  ' }, channel: ' ' }))!;
+    expect([n.from, n.channel]).toEqual(['Someone', 'a channel']);
+  });
+
+  it.each<[string, Record<string, unknown>]>([
+    ['an unknown kind', { kind: 'room' }],
+    ['no ref', { ref: '' }],
+    ['a ref that is too long', { ref: 'x'.repeat(129) }],
+    ['an id that is not a whole number', { id: 1.5 }],
+    ['no sender', { from: undefined }],
+    ['a text that is not text', { text: 5 }],
+    ['a channel that is not text', { channel: null }],
+  ])('refuse %s', (_name, extra) => {
+    expect(parseMention(frame(extra))).toBeNull();
+  });
+
+  it('open a board in the board and anything else on the Chat page', () => {
+    expect(noticeHash({ kind: 'board', ref: 'b1' })).toBe('#/b/b1');
+    expect(noticeHash({ kind: 'team', ref: 't1' })).toBe('#/chat/team/t1');
+    expect(noticeHash({ kind: 'workspace', ref: 'main' })).toBe('#/chat/workspace/main');
   });
 });

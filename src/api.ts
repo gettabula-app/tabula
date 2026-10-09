@@ -52,6 +52,8 @@ export interface ChatMessage {
   editedAt: number | null;
   deleted: boolean;
   deletedBy: 'author' | 'moderator' | null;
+  /** Who reacted with what, in the fixed order of the set. Absent in messages saved before reactions existed. */
+  reactions?: { emoji: string; userIds: string[] }[];
 }
 
 /** GET /api/chat/:kind/:ref: what the caller may do in a channel and who can read it. */
@@ -706,6 +708,10 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatRead: (kind: string, ref: string, lastId: number) =>
       call<{ kind: string; ref: string; lastId: number }>('PUT', `/api/chat/${seg(kind)}/${seg(ref)}/read`, { lastId }),
     chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
+    chatReact: (id: number, emoji: string, on: boolean) =>
+      call<{ id: number; reactions: { emoji: string; userIds: string[] }[] }>(on ? 'PUT' : 'DELETE', `/api/chat/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    chatPrefs: () => call<{ emailMentions: boolean }>('GET', '/api/me/prefs'),
+    setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),
     adminChat: () => call<ChatSettings>('GET', '/api/admin/chat'),
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),

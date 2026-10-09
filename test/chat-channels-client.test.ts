@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type ChatChannelEntry, type ChatMessage } from '../src/api';
 import { initAuth } from '../src/auth';
 import {
-  channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, resetChat, totalUnread, watchChat,
+  channelUnread, fetchChannels, hasUnlisted, onChatBadge, onMention, openChat, resetChat, totalUnread, watchChat,
 } from '../src/chat';
 
 // docs/chat.md, Unread and the Chat page: the client store keeps counts for every kind of channel from the socket's hello
@@ -213,5 +213,58 @@ describe('opening a team or workspace channel', () => {
     ws.say({ t: 'hello', readOnly: false, channels: [] });
     chat.setVisible(false);
     expect(ws.sent).toContainEqual({ t: 'unsub', kind: 'team', ref: 't9' });
+  });
+});
+
+describe('reactions and mention notices', () => {
+  async function opened(kind: 'team' | 'workspace' | 'board', ref: string) {
+    vi.spyOn(api, 'chatChannel').mockResolvedValue({ kind, ref, access: { write: true, moderate: false, role: 'member', readOnly: false }, people: [] });
+    vi.spyOn(api, 'chatMessages').mockResolvedValue({ messages: [message(1, kind, ref), message(2, kind, ref, { reactions: [{ emoji: '👍', userIds: ['ana'] }] })], next: null });
+    vi.spyOn(api, 'chatUnread').mockResolvedValue({ channels: [] });
+    const chat = openChat(kind, ref, life.signal);
+    chat.setVisible(true);
+    await vi.advanceTimersByTimeAsync(10);
+    const ws = lastSocket();
+    ws.open();
+    ws.say({ t: 'hello', readOnly: false, channels: [] });
+    return { chat, ws };
+  }
+
+  it('apply a reaction frame to the message in the open channel', async () => {
+    const { chat, ws } = await opened('team', 't1');
+    ws.say({ t: 'reaction', kind: 'team', ref: 't1', id: 1, emoji: '🎉', userId: 'ben', on: true, reactions: [{ emoji: '🎉', userIds: ['ben'] }] });
+    expect(chat.view().messages.find((m) => m.id === 1)!.reactions).toEqual([{ emoji: '🎉', userIds: ['ben'] }]);
+    expect(chat.view().messages.find((m) => m.id === 2)!.reactions).toEqual([{ emoji: '👍', userIds: ['ana'] }]);
+  });
+
+  it('ignore a reaction frame for another channel or without its list', async () => {
+    const { chat, ws } = await opened('team', 't1');
+    ws.say({ t: 'reaction', kind: 'team', ref: 'other', id: 1, emoji: '🎉', userId: 'ben', on: true, reactions: [{ emoji: '🎉', userIds: ['ben'] }] });
+    ws.say({ t: 'reaction', kind: 'team', ref: 't1', id: 1, emoji: '🎉', userId: 'ben', on: true });
+    expect(chat.view().messages.find((m) => m.id === 1)!.reactions).toBeUndefined();
+  });
+
+  it('send a reaction and keep what the server answers', async () => {
+    const { chat } = await opened('team', 't1');
+    const react = vi.spyOn(api, 'chatReact').mockResolvedValue({ id: 1, reactions: [{ emoji: '✅', userIds: ['me'] }] });
+    await chat.react(1, '✅', true);
+    expect(react).toHaveBeenCalledWith(1, '✅', true);
+    expect(chat.view().messages.find((m) => m.id === 1)!.reactions).toEqual([{ emoji: '✅', userIds: ['me'] }]);
+  });
+
+  it('hand a mention frame to the listeners, for any channel, and stop when they let go', async () => {
+    watchChat(life.signal);
+    const ws = lastSocket();
+    ws.open();
+    ws.say({ t: 'hello', readOnly: false, channels: [] });
+    const seen: unknown[] = [];
+    const off = onMention((n) => seen.push(n));
+    ws.say({ t: 'mention', kind: 'workspace', ref: 'main', id: 4, from: { id: 'ana', name: 'Ana' }, channel: 'Workspace', text: 'hello @Me' });
+    ws.say({ t: 'mention', kind: 'room', ref: 'x', id: 4, from: { name: 'Ana' }, channel: 'x', text: 'bad kind' });
+    ws.say({ t: 'mention', kind: 'team', ref: 't1', id: 'no', from: { name: 'Ana' }, channel: 'x', text: 'bad id' });
+    expect(seen).toEqual([{ kind: 'workspace', ref: 'main', id: 4, from: 'Ana', channel: 'Workspace', text: 'hello @Me' }]);
+    off();
+    ws.say({ t: 'mention', kind: 'team', ref: 't1', id: 5, from: { name: 'Ana' }, channel: 'Design', text: 'later' });
+    expect(seen).toHaveLength(1);
   });
 });

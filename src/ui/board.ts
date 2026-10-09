@@ -5,6 +5,7 @@ import type { GridType } from '../types';
 import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
+import { openChatNotifications } from './chat-prefs';
 import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
@@ -517,6 +518,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       ? item('user', 'Admin', () => { location.hash = '#/admin'; })
       : null,
     auth.me.mcp ? item('link', 'AI tool access', () => openTokensDialog(auth.me)) : null,
+    auth.me.chat ? item('chat', 'Chat notifications', () => openChatNotifications()) : null,
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
   const themeGroup = h('div', { role: 'radiogroup', 'aria-label': 'Theme' }, themeRows.map((r) => r.row));

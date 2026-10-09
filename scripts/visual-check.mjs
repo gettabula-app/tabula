@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin (the chat states turn on TABULA_CHAT)
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications (the chat states turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -375,10 +375,18 @@ async function seedChat(relay, ownerCookie) {
   at(answer, NOW - 46 * MINUTE);
   const flaky = await say(ana, `Flaky tests are mine, I'll take that action. @{${ids.owner}}`);
   at(flaky, NOW - 20 * MINUTE, { edited: NOW - 18 * MINUTE });
-  at(await say(ana, 'Running five minutes late, sorry!'), NOW - 2 * MINUTE);
+  const late = await say(ana, 'Running five minutes late, sorry!');
+  at(late, NOW - 2 * MINUTE);
 
   await apiJson(base, 'PATCH', `chat/messages/${flaky}`, { text: `Flaky tests are mine, I'll take the action point. @{${ids.owner}}` }, ana);
   await apiJson(base, 'DELETE', `chat/messages/${willDo}`, undefined, ben);
+  // reactions under three messages, from the three of them
+  const react = (cookie, id, emoji) => apiJson(base, 'PUT', `chat/messages/${id}/reactions/${encodeURIComponent(emoji)}`, undefined, cookie);
+  await react(ben, question, '👍');
+  await react(ana, question, '👍');
+  await react(ownerCookie, flaky, '✅');
+  await react(ben, flaky, '✅');
+  await react(ownerCookie, late, '👀');
   await apiJson(base, 'PUT', `chat/board/${BOARD_ID}/read`, { lastId: answer }, ownerCookie);
 
   // the team channel and the workspace channel (the Chat page): the owner is caught up first, so what is said next is unread
@@ -400,7 +408,7 @@ async function seedChat(relay, ownerCookie) {
     const move = db.prepare('UPDATE chat_messages SET created_at = ?, edited_at = CASE WHEN edited_at IS NULL THEN NULL ELSE ? END, deleted_at = CASE WHEN deleted_at IS NULL THEN NULL ELSE ? END WHERE id = ?');
     for (const t of times) move.run(t.time, t.edited ?? t.time, t.time + MINUTE, t.id);
   });
-  return { ownerId: ids.owner, readUpTo: answer, count: times.length - 5, teamId: team.id };
+  return { ownerId: ids.owner, readUpTo: answer, count: times.length - 5, teamId: team.id, anaCookie: ana, questionId: question };
 }
 
 
@@ -611,6 +619,29 @@ const STATES = {
     await env.page.locator('.chat-conv.open .chat-msg').first().waitFor();
     await env.page.locator('.chat-new').waitFor();
   },
+  // a message menu with its six reactions, and the card for a mention in a channel you are not looking at
+  async 'chat-react'(env) {
+    await openSeedChat(env);
+    await env.page.locator('.chat-reaction').first().waitFor();
+    await env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) }).locator('.chat-more').click();
+    await env.page.getByRole('menuitem', { name: 'React' }).click();
+    await env.page.locator('.chat-picker').waitFor();
+  },
+  async 'chat-mention'(env) {
+    await resetChatMarker(env);
+    await env.page.goto(`${env.base}/#/`);
+    await env.page.locator('.topbar-badge.show').waitFor();
+    // the socket is open once the unread total shows; a pause makes sure the server has it before the mention is sent
+    await env.page.waitForTimeout(1000);
+    await apiJson(env.base, 'POST', `chat/team/${env.chat.teamId}/messages`, { clientId: `visual-mention-${Date.now()}`, text: `@{${env.chat.ownerId}} can you confirm the room before lunch? I need it for the design review on Thursday.` }, env.chat.anaCookie);
+    await env.page.locator('.mention-card').waitFor();
+  },
+  async 'chat-notifications'(env) {
+    await env.page.goto(`${env.base}/#/chat`);
+    await env.page.getByRole('button', { name: 'Notifications' }).click();
+    await env.page.getByRole('checkbox', { name: 'Email me when I am mentioned in chat' }).waitFor();
+    await env.page.waitForFunction(() => !document.querySelector('.modal input')?.disabled);
+  },
   async 'chat-home'(env) {
     await resetChatMarker(env);
     await env.page.goto(`${env.base}/#/`);
@@ -747,7 +778,7 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
