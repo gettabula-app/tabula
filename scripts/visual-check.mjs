@@ -33,7 +33,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --mode <mode>      open (default) or accounts
   --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
-                     kanban-lowdetail, kanban-dialog, kanban-labels, kanban-full-card, kanban-convert, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -767,6 +767,15 @@ const STATES = {
     await env.page.evaluate(() => window.__board.openLabels());
     await env.page.getByRole('dialog', { name: 'Labels' }).waitFor();
     await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+  },
+  async 'kanban-labels-colour'(env) {
+    // the Labels dialog with the first label's colour list open
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => window.__board.openLabels());
+    await env.page.getByRole('dialog', { name: 'Labels' }).waitFor();
+    await env.page.locator('.k-colour-btn').first().click();
+    await env.page.locator('.k-colour-pop').waitFor();
     await settle(env.page);
   },
   async 'kanban-full-card'(env) {

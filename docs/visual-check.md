@@ -61,6 +61,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `kanban-adding` | The inline "+ Add card" input with a title typed (not parked, so it keeps focus) |
 | `kanban-wip` | A fourth card in the lane with a limit of three: the danger count and rule |
 | `kanban-lowdetail` | The kanban at zoom 0.3: titles as bars, chips as colour, lane headers as names |
+| `kanban-labels-colour` | The Labels dialog with the first label's colour list open |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |
 | `backups-list` | `#/admin/backups`: the status and the list of seven backups (two protected, two unreadable). Accounts mode; the backup routes are answered with fixed data and the shot is the whole page |
 | `backups-detail` | The first backup opened in place: facts, free space, how long the old data is kept, the two actions (whole page) |
