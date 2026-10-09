@@ -1,6 +1,7 @@
 import type { BoardApp } from './app';
 import { newId } from './store';
 import type { Id, Obj, Poll, PollAnswer, PollOption, Step } from './types';
+import { mdText } from './md-text';
 
 export const POLL_LIMITS = { question: 200, option: 120, minOptions: 2, maxOptions: 10 } as const;
 
@@ -68,8 +69,8 @@ export function checkPoll(input: PollInput): PollInput {
 }
 
 /** Ranked rows as plain lines, then the response count. */
-function rankedLines(t: PollTally): string[] {
-  const lines = t.rows.map((r, i) => `${i + 1}. ${r.option.text} (${r.count}${r.pct === null ? '' : `, ${r.pct}%`})${r.names.length ? ` - ${r.names.join(', ')}` : ''}`);
+function rankedLines(t: PollTally, text: (s: string) => string = (s) => s): string[] {
+  const lines = t.rows.map((r, i) => `${i + 1}. ${text(r.option.text)} (${r.count}${r.pct === null ? '' : `, ${r.pct}%`})${r.names.length ? ` - ${r.names.map(text).join(', ')}` : ''}`);
   lines.push(`${t.responses} ${t.responses === 1 ? 'response' : 'responses'}`);
   return lines;
 }
@@ -288,8 +289,8 @@ export class Polls {
     if (!opened.length) return [];
     const out = ['## Polls', ''];
     for (const p of opened) {
-      out.push(`### ${p.question}`, '');
-      out.push(...(p.revealed ? rankedLines(this.tally(p.id)) : ['Results not revealed.']), '');
+      out.push(`### ${mdText(p.question)}`, '');
+      out.push(...(p.revealed ? rankedLines(this.tally(p.id), mdText) : ['Results not revealed.']), '');
     }
     return out;
   }
@@ -298,7 +299,7 @@ export class Polls {
   copyText(pollId: Id): string {
     const poll = this.require(pollId);
     if (!poll.revealed) throw new PollError('Reveal the results first.');
-    return [`**${poll.question}**`, ...rankedLines(this.tally(pollId))].join('\n');
+    return [`**${mdText(poll.question)}**`, ...rankedLines(this.tally(pollId), mdText)].join('\n');
   }
 
   /** A plain sticky with the question and ranked lines. A snapshot, not live. */

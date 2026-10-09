@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Fixed
+- The Markdown summary and Copy results keep user text literal (follow-up to TAB-134): the board's name, frame names, sticky text, picture descriptions and types, poll questions and options, and voters' names go through one escape (`src/md-text.ts`), so a title like `![x](https://…)` or `# heading` can no longer become an image, a link, HTML or a heading of its own. Kanban lines already did.
 - The admin audit log reads every action as a sentence (TAB-199): creating and revoking AI tool access tokens showed as raw names (`mcp.token.create`, `mcp.token.revoke`, `mcp.token.revoke_all`); they now read "Ana created an AI tool access token “Claude Desktop” (read and edit)" and the like, with an **AI tool access** filter. A backup run that repaired objects (TAB-126) says how many. A test now scans the server for every audit action written by name and fails if the log has no sentence for it.
 
 ### Added

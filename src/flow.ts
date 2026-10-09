@@ -4,6 +4,7 @@ import { isBox, isConnector } from './types';
 import { newId, type FlowState } from './store';
 import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
+import { mdText } from './md-text';
 
 /** `votesPerPerson` value meaning no limit. */
 export const UNLIMITED = 0;
@@ -17,20 +18,11 @@ const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' 
  */
 /** How a picture reads in the Markdown summary: its description, else what it is (docs/images.md). */
 export function imageLine(o: BaseObj): string {
-  const alt = typeof o.alt === 'string' ? o.alt.replace(/\s+/g, ' ').trim() : '';
+  const alt = typeof o.alt === 'string' ? mdText(o.alt) : '';
   if (alt) return `Image: ${alt}`;
   const w = Math.round(o.nw ?? o.w);
   const h = Math.round(o.nh ?? o.h);
-  return `Image (${o.mime ?? 'image'}, ${w} x ${h})`;
-}
-
-/**
- * User text as one line of Markdown that reads as typed: line breaks (NEL and the Unicode separators too) fold to a space,
- * the characters that start emphasis, code, links, images, HTML, tables or a character reference are escaped, and so is a
- * leading `#`, `>`, `-`, `+` or `1.` that would make a block of a bullet's text.
- */
-export function mdText(t: string | undefined): string {
-  return (t ?? '').replace(/[\s\u0085\u2028\u2029]+/g, ' ').trim().replace(/[\\`*_[\]<>|~&]/g, '\\$&').replace(/^(#|>|-|\+)/, '\\$1').replace(/^(\d+)([.)])/, '$1\\$2');
+  return `Image (${mdText(typeof o.mime === 'string' ? o.mime : 'image') || 'image'}, ${w} x ${h})`;
 }
 
 export class Flow {
@@ -408,7 +400,7 @@ export class Flow {
   summaryMarkdown(): string {
     const s = this.app.store;
     const f = this.state();
-    const lines: string[] = [`# ${s.getMeta().name}`, ''];
+    const lines: string[] = [`# ${mdText(s.getMeta().name)}`, ''];
     // hidden objects (TAB-198) are left out, as on the canvas, and so is everything in a hidden frame
     const frames = s.shown().filter((o) => o.type === 'frame') as BaseObj[];
     const totals = new Map<Id, number>();
@@ -421,11 +413,11 @@ export class Flow {
     for (const fr of frames) {
       const kids = s.childrenOf(fr.id).filter((o) => ((o as BaseObj).text || o.type === 'image') && !isConnector(o) && !this.isHidden(o as BaseObj) && s.isShown(o)) as BaseObj[];
       if (!kids.length) continue;
-      lines.push(`## ${fr.name || 'Frame'}`, '');
+      lines.push(`## ${mdText(fr.name) || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
       for (const k of kids) {
         const n = totals.get(k.id);
-        lines.push(`- ${k.type === 'image' ? imageLine(k) : k.text!.replace(/\n+/g, ' ')}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+        lines.push(`- ${k.type === 'image' ? imageLine(k) : mdText(k.text)}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
       }
       lines.push('');
     }
