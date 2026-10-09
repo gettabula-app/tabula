@@ -85,7 +85,7 @@ describe('compatible-provider key settings', () => {
     chooseProvider('openai-compatible');
     expect(browser.document.body.querySelector('input[placeholder="https://integrate.api.nvidia.com/v1"]')).not.toBeNull();
     expect(browser.document.body.querySelector('input[placeholder="moonshotai/kimi-k3"]')).not.toBeNull();
-    expect(textOf(browser.document.body)).toContain("Where your provider's API lives");
+    expect(textOf(browser.document.body)).toContain("Where your provider's API lives: NVIDIA, OpenAI, OpenRouter or a server of your own");
     expect(textOf(browser.document.body)).toContain('The model id your provider calls it');
   });
 

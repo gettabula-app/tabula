@@ -26,7 +26,7 @@ export const PROVIDER_LABEL = 'Anthropic';
 export const OPENAI_COMPATIBLE_PROVIDER = 'openai-compatible';
 export const PROVIDER_OPTIONS: { value: string; label: string }[] = [
   { value: PROVIDER, label: 'Anthropic' },
-  { value: OPENAI_COMPATIBLE_PROVIDER, label: 'OpenAI-compatible (NVIDIA, OpenAI, OpenRouter, local)' },
+  { value: OPENAI_COMPATIBLE_PROVIDER, label: 'OpenAI-compatible' },
 ];
 
 /** The same bounds the server enforces (server/ai/settings.mjs). */

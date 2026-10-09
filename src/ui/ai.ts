@@ -163,7 +163,7 @@ export function openAiKeyDialog(): void {
     const providerFields = h('div', { class: 'ai-fields' });
     const baseUrlField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
-      h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
+      h('div', { class: 'ai-meta' }, "Where your provider's API lives: NVIDIA, OpenAI, OpenRouter or a server of your own"));
     const modelField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Model', model),
       h('div', { class: 'ai-meta' }, 'The model id your provider calls it'));
@@ -337,7 +337,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     const providerFields = h('div', { class: 'ai-fields' });
     const baseUrlField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Base URL', baseUrl),
-      h('div', { class: 'ai-meta' }, "Where your provider's API lives"));
+      h('div', { class: 'ai-meta' }, "Where your provider's API lives: NVIDIA, OpenAI, OpenRouter or a server of your own"));
     const modelField = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, 'Model', modelId),
       h('div', { class: 'ai-meta' }, 'The model id your provider calls it'));
