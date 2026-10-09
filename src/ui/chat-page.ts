@@ -134,7 +134,7 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
       ? `${entry?.member === false ? 'You can read this team without being a member' : 'Members of this team'}${entry?.archived ? ' · archived, read only' : ''}`
       : 'Everyone who can open this board';
     openBoard.hidden = s.kind !== 'board';
-    if (s.kind === 'board') openBoard.href = `#/b/${s.ref}`;
+    if (s.kind === 'board') openBoard.setAttribute('href', `#/b/${s.ref}`);
     document.title = `${name} - Chat - Tabula`;
     conv.classList.add('open');
     list.classList.add('away');
