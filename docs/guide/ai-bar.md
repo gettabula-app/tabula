@@ -52,6 +52,8 @@ When a preview is ready, choose **Review**. A panel opens at the right of the bo
 - **Clusters:** each group has a title and a box, and each sticky it would move has a box. A group needs a title and at least one sticky left.
 - **Changed since:** if a sticky has changed or gone since the AI looked at it, it is marked **Changed since**, unticked, and cannot be ticked. It stays where it is.
 
+This holds even if you choose **Add to board** without opening Review: a sticky that changed since, or was deleted or locked, is not moved, and a message says how many were left where they are, for example "1 sticky that changed since the proposal came was left where it is." If every sticky changed, there is nothing to add, and the bar says so.
+
 The main button reads **Add all** while everything is kept and **Add selected** (or **Move selected** for clusters) when you have left something out. **Discard** throws the preview away. Choosing **Add** with nothing kept says so and changes nothing.
 
 Your edits are your own. Other people keep seeing the preview as the AI proposed it, and the preview on your screen shows exactly what you will add. Adding is one step in Undo, so `Ctrl+Z` takes back everything you added.
