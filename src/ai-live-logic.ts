@@ -228,35 +228,63 @@ export const ROW_H = 24;
 const ROW_GAP = 2;
 const ROW_MARGIN = 4;
 const ROW_EDGE = 8;
+/** A row keeps this far from the rail it sits right of: the collision padding of `touches`, so it never counts as touching it. */
+const ROW_RAIL_GAP = 4;
 const ROW_STEP = 24;
 const ROW_STEPS = 24;
 
-export interface LabelRowIn { id: string; /** the preview's box in screen pixels */ anchor: Rect; w: number; h: number }
-export interface LabelRowOut { x: number; y: number; below: boolean }
+export interface LabelRowIn {
+  id: string;
+  /** the preview's box in screen pixels */
+  anchor: Rect;
+  w: number;
+  h: number;
+  /** The row's size with its buttons stacked under the label, for a board too narrow for it in one line (TAB-215). */
+  wrap?: { w: number; h: number };
+}
+export interface LabelRowOut {
+  x: number;
+  y: number;
+  below: boolean;
+  /** Set when the row does not fit in one line: the caller stacks the buttons under the label. */
+  wrapped?: true;
+}
 
 const touches = (a: Rect, b: Rect, padX = 4, padY = 2): boolean => a.x < b.x + b.w + padX && b.x < a.x + a.w + padX && a.y < b.y + b.h + padY && b.y < a.y + a.h + padY;
 
 /**
- * Where each label row goes, in stacking order. A row hangs above its preview's top-left corner, kept inside the board. If it
- * would touch a row already placed or an obstacle (the selection quick bar, the AI bar) it moves under the bottom-left corner,
- * and if that collides too it steps down 24px at a time. Previews themselves never move.
+ * Where each label row goes, in stacking order. A row hangs above its preview's top-left corner, kept inside the board and
+ * right of `left` (the rail's right edge: a row never goes under it). If it would touch a row already placed or an obstacle
+ * (the selection quick bar, the AI bar) it moves under the bottom-left corner, and if that collides too it steps down 24px at
+ * a time; when nothing is free it stays above its preview, never at the bottom of the board. A row wider than the room between
+ * `left` and the right edge takes its `wrap` size when it has one (TAB-215). Previews themselves never move.
  */
-export function placeLabelRows(rows: readonly LabelRowIn[], obstacles: readonly Rect[], board: { w: number; h: number }): Map<string, LabelRowOut> {
+export function placeLabelRows(rows: readonly LabelRowIn[], obstacles: readonly Rect[], board: { w: number; h: number }, left = 0): Map<string, LabelRowOut> {
   const out = new Map<string, LabelRowOut>();
   const placed: Rect[] = [];
+  const minX = Math.max(ROW_EDGE, left > 0 ? left + ROW_RAIL_GAP : 0);
   for (const row of rows) {
-    const x = Math.max(ROW_EDGE, Math.min(board.w - row.w - ROW_EDGE, row.anchor.x - 2));
-    const clampY = (y: number) => Math.max(ROW_MARGIN, Math.min(board.h - row.h - ROW_MARGIN, y));
-    const box = (y: number): Rect => ({ x, y, w: row.w, h: row.h });
+    const wrapped = !!row.wrap && row.w > board.w - ROW_EDGE - minX;
+    const w = wrapped ? row.wrap!.w : row.w;
+    const h = wrapped ? row.wrap!.h : row.h;
+    const x = Math.max(minX, Math.min(board.w - w - ROW_EDGE, row.anchor.x - 2));
+    const clampY = (y: number) => Math.max(ROW_MARGIN, Math.min(board.h - h - ROW_MARGIN, y));
+    const box = (y: number): Rect => ({ x, y, w, h });
     const free = (y: number) => ![...placed, ...obstacles].some((o) => touches(box(y), o));
-    let y = clampY(row.anchor.y - row.h - ROW_GAP);
+    const above = clampY(row.anchor.y - h - ROW_GAP);
+    let y = above;
     let below = false;
     if (!free(y)) {
       below = true;
       y = clampY(row.anchor.y + row.anchor.h + ROW_GAP);
       for (let i = 0; i < ROW_STEPS && !free(y); i++) y = clampY(y + ROW_STEP);
+      // nothing free: beside its preview, not at the bottom of the board
+      if (!free(y)) {
+        y = above;
+        below = false;
+      }
     }
-    out.set(row.id, { x, y, below });
+    out.set(row.id, { x, y, below, ...(wrapped ? { wrapped: true as const } : {}) });
     placed.push(box(y));
   }
   return out;

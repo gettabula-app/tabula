@@ -187,6 +187,8 @@ interface Row {
   sig: string;
   /** Measured width in pixels; 0 until measured. */
   w: number;
+  /** Measured size with the buttons under the label (TAB-215); set with `w`. */
+  wrap?: { w: number; h: number };
   buttons: HTMLButtonElement[];
 }
 
@@ -397,11 +399,23 @@ export function mountAiLive(app: BoardApp): void {
       // a preview that is off screen shows nothing: the avatar badge says someone has one
       row.el.hidden = reviewing.has(run.id) || !intersects(anchor, view);
       if (row.el.hidden) continue;
-      if (!row.w) row.w = row.el.offsetWidth;
-      input.push({ id: run.id, anchor, w: row.w, h: ROW_H });
+      if (!row.w) {
+        // the row in one line, then with its buttons under the label, for a board too narrow for the first (TAB-215)
+        row.el.classList.remove('wrapped');
+        row.w = row.el.offsetWidth;
+        row.el.classList.add('wrapped');
+        row.wrap = { w: row.el.offsetWidth, h: row.el.offsetHeight || 2 * ROW_H };
+        row.el.classList.remove('wrapped');
+      }
+      input.push({ id: run.id, anchor, w: row.w, h: ROW_H, ...(row.wrap?.w ? { wrap: row.wrap } : {}) });
     }
-    for (const [id, at] of placeLabelRows(input, obstacles, { w: view.w, h: view.h })) {
-      rows.get(id)!.el.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
+    // a row never goes left of the rail
+    const railEl = document.querySelector('.chrome > .rail');
+    const railEdge = railEl ? Math.max(0, railEl.getBoundingClientRect().right - origin.left) : 0;
+    for (const [id, at] of placeLabelRows(input, obstacles, { w: view.w, h: view.h }, railEdge)) {
+      const el = rows.get(id)!.el;
+      el.classList.toggle('wrapped', at.wrapped === true);
+      el.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
     }
   }
 
