@@ -61,6 +61,20 @@ describe('the AI review browser check and the normal test run', () => {
     expect(src).toContain("fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-ai-review-'))");
   });
 
+  it('gives each browser context its own client address, so the relay\'s 20 runs an hour per address never stops it', () => {
+    const src = read(SCRIPT);
+    // only in the check's throwaway relay: it trusts x-forwarded-for there, and every context sends a different one
+    expect(src).toContain("TABULA_TRUST_PROXY: '1'");
+    expect(src).toMatch(/extraHTTPHeaders: \{ 'x-forwarded-for': freshAddress\(\) \}/);
+    const addresses = new Set<string>();
+    const fresh = new Function(`${/let nextAddress = 1;\nconst freshAddress = [^\n]+/.exec(src)![0]}\nreturn freshAddress;`)() as () => string;
+    for (let i = 0; i < 1000; i++) addresses.add(fresh());
+    expect(addresses.size).toBe(1000);
+    for (const a of addresses) expect(a).toMatch(/^198\.1[89]\.\d{1,3}\.\d{1,3}$/);
+    // the production limits are untouched: the open-mode handler still counts DEFAULT_LIMITS per address
+    expect(read('server/ai/run.mjs')).toContain('limits: DEFAULT_LIMITS');
+  });
+
   it('says how to use it, and refuses an unknown option, before starting anything', () => {
     const help = spawnSync(process.execPath, [path.join(root, SCRIPT), '--help'], { encoding: 'utf8', cwd: root, timeout: 20_000 });
     expect(help.status).toBe(0);
