@@ -167,6 +167,13 @@ describe('Accept without opening the review', () => {
   });
 });
 
+describe("someone else's preview (TAB-218)", () => {
+  it('has no Show: only your own preview offers to bring itself into view', () => {
+    rig(group);
+    expect(browser.document.documentElement.querySelectorAll('button').some((b) => b.textContent === 'Show')).toBe(false);
+  });
+});
+
 describe('the sentences', () => {
   it('say how many were left, and nothing when none', () => {
     expect(leftOutNote(0)).toBe('');

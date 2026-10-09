@@ -20,10 +20,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { startAnthropicStub } from './lib/anthropic-stub.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)';
+const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
 let options;
 try {
-  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
+  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
 } catch (err) {
   console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
@@ -31,6 +31,11 @@ try {
 if (options.help) {
   console.log(USAGE);
   process.exit(0);
+}
+const THEME = options.theme ?? 'default';
+if (!/^[\w-]+$/.test(THEME)) {
+  console.error(`bad theme "${THEME}"\n${USAGE}`);
+  process.exit(2);
 }
 const SHOTS = path.resolve(options.out ?? path.join(root, 'tabula-review', 'ai-review'));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-ai-review-'));
@@ -211,8 +216,8 @@ async function openBoard(boardId, width, name, color) {
   });
   contexts.push(context);
   await context.clock.setFixedTime(NOW);
-  await context.addInitScript(({ person }) => {
-    localStorage.setItem('driftboard:theme', 'default');
+  await context.addInitScript(({ person, theme }) => {
+    localStorage.setItem('driftboard:theme', theme);
     localStorage.setItem('driftboard:user', JSON.stringify(person));
     localStorage.setItem('driftboard:ai-bar', 'open');
     localStorage.setItem('driftboard:fontshare-catalogue', JSON.stringify({ at: Date.UTC(2026, 0, 15, 10, 0, 0), fonts: [] }));
@@ -231,7 +236,7 @@ async function openBoard(boardId, width, name, color) {
       }
       return response;
     };
-  }, { person: { id: makeId(name), name, color } });
+  }, { person: { id: makeId(name), name, color }, theme: THEME });
   const page = await context.newPage();
   const errors = { console: [], page: [], failedRequests: [] };
   pageLogs.push({ name, width, errors });
@@ -249,11 +254,11 @@ async function openBoard(boardId, width, name, color) {
     return !provider || provider.synced === true;
   }, null, { timeout: 20_000 });
   await page.locator('.aibar').waitFor({ timeout: 20_000 });
-  check(`${name}: light theme and AI bar`, await page.evaluate(() => ({
+  check(`${name}: theme ${THEME} and AI bar`, await page.evaluate(() => ({
     theme: localStorage.getItem('driftboard:theme'),
     canvas: getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim().toLowerCase(),
     aiBar: Boolean(document.querySelector('.aibar')),
-  })), { theme: 'default', canvas: '#eef1f4', aiBar: true });
+  })), { theme: THEME, canvas: '#eef1f4', aiBar: true }, (a, e) => a.theme === e.theme && a.aiBar === e.aiBar && (THEME !== 'default' || a.canvas === e.canvas));
   return { context, page, errors, boardId, name, width };
 }
 
@@ -452,6 +457,40 @@ async function screenshotScenario(width) {
       ghostTexts: GENERATED.map((o) => closedText.includes(o.text)), summaryGhost: closedText.includes('Summary'),
     }, { ui: 'preview', panelOpen: false, reviewVisible: true, ghostTexts: [true, true, true, true, true], summaryGhost: true });
     await saveShot(target, `01-create-closed-${width}.png`);
+
+    // Show (TAB-218): with the preview off screen nothing moves the view by itself; the bar's Show brings it into view
+    await target.page.evaluate(() => {
+      const app = window.__board;
+      app.r.setCamera({ x: app.r.cam.x + 20000, y: app.r.cam.y + 20000, zoom: app.r.cam.zoom });
+    });
+    await target.page.waitForFunction(() => document.querySelectorAll('.ailive-row:not([hidden])').length === 0, null, { timeout: 10_000 });
+    const panned = await target.page.evaluate(() => ({ x: window.__board.r.cam.x, y: window.__board.r.cam.y }));
+    await sleep(500);
+    const stayed = await target.page.evaluate(() => ({ x: window.__board.r.cam.x, y: window.__board.r.cam.y }));
+    check(`A.${width}: an off-screen preview of your own does not move the view by itself`, { stayed: isDeepStrictEqual(panned, stayed), rows: await target.page.locator('.ailive-row:not([hidden])').count() }, { stayed: true, rows: 0 });
+    await target.page.locator('.aibar-actions').getByRole('button', { name: 'Show', exact: true }).click();
+    await target.page.locator('.ailive-row:not([hidden])').waitFor({ timeout: 10_000 });
+    // the flight takes a moment: wait until the view stops moving
+    for (let last = '', i = 0; i < 40; i++) {
+      const now = await target.page.evaluate(() => JSON.stringify(window.__board.r.cam));
+      if (now === last) break;
+      last = now;
+      await sleep(150);
+    }
+    check(`A.${width}: Show brings the preview into view, and its own Show is pressable`, await target.page.evaluate(() => {
+      const row = document.querySelector('.ailive-row:not([hidden])');
+      const r = row?.getBoundingClientRect();
+      const b = [...(row?.querySelectorAll('button') ?? [])].find((x) => x.textContent?.trim() === 'Show');
+      const br = b?.getBoundingClientRect();
+      const top = br ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2) : null;
+      return {
+        rowInside: Boolean(r && r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight),
+        showPressable: Boolean(b && top && (top === b || b.contains(top))),
+      };
+    }), { rowInside: true, showPressable: true });
+    await saveShot(target, `01b-after-show-${width}.png`);
+    await fitPreviewIntoView(target.page, run.data.proposal);
+    await target.page.waitForFunction(() => Boolean(document.querySelector('.ailive-row:not([hidden])')), null, { timeout: 10_000 });
 
     const panel = await openReview(target);
     check(`A.${width}: untouched create review keeps five stickies and frame`, await panel.evaluate((el) => ({

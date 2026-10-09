@@ -17,7 +17,7 @@ import { boxBounds } from '../geometry';
 import { isBox } from '../types';
 import { openAiKeyDialog } from './ai';
 import { modelLabel } from './ai-logic';
-import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, setOwnRun, setStarting, takeReview } from './ai-live';
+import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, setOwnRun, setStarting, showRun, takeReview } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
 
@@ -377,7 +377,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   // ------------------------------------------------------------ painting
 
   let actionsSig = '';
-  const btns: Partial<Record<'run' | 'stop' | 'discard' | 'retry' | 'review' | 'add' | 'edit' | 'dismiss', HTMLButtonElement>> = {};
+  const btns: Partial<Record<'run' | 'stop' | 'discard' | 'retry' | 'show' | 'review' | 'add' | 'edit' | 'dismiss', HTMLButtonElement>> = {};
   let waitNum: HTMLElement | null = null;
   let errKey: ErrorView | null = null;
   let collapseIcon = '';
@@ -502,6 +502,10 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
           (btns.discard = button('btn ghost', 'Discard', 'Discard', 'escape', discard)),
           (btns.retry = button('btn', 'Retry', 'Run it again', null, retryPreview)),
           // item by item, edited before it is added (TAB-160): the panel's Add and Discard are this bar's
+          // your own preview is drawn where the board has room, which may be off screen (TAB-218)
+          (btns.show = button('btn', 'Show', 'Bring the preview into view', null, () => {
+            if (st.preview) showRun(app, st.preview.runId);
+          })),
           (btns.review = button('btn', 'Review', 'Choose what to add and edit it first', null, () => {
             const p = st.preview;
             if (p) openReview(app, p.runId, { accept: () => void add(false), discard });
