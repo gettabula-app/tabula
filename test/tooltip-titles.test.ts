@@ -20,11 +20,12 @@ const ALLOWED_PROPS: { file: string; snippet: string }[] = [
   { file: 'src/ui/admin.ts', snippet: 'title: lock.reason' },
 ];
 
-// Assignments to an element's title: the same disabled explanations, and the workspace banner's full text when it is cut off.
+// Assignments to an element's title: disabled explanations, the workspace banner's cut-off text, and the full nested group path.
 const ALLOWED_ASSIGNMENTS: { file: string; snippet: string }[] = [
   { file: 'src/ui/admin.ts', snippet: 'button.title = opts.title' },
   { file: 'src/ui/admin.ts', snippet: 'button.title = armedLabel' },
   { file: 'src/ui/workspace.ts', snippet: "el.title = text ?? ''" },
+  { file: 'src/ui/group-ui.ts', snippet: 'pathChip.title = path.full' },
 ];
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();

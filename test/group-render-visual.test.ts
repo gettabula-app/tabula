@@ -1,0 +1,97 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
+import { Renderer } from '../src/render';
+import { Store } from '../src/store';
+import type { Id, Obj } from '../src/types';
+
+class FakeEl {
+  dataset: Record<string, string> = {};
+  style = { setProperty() {} };
+  classList = { add() {}, remove() {} };
+  className = '';
+  nextSibling = null;
+  firstChild = null;
+  attrs = new Map<string, string>();
+  private html = '';
+  get innerHTML() { return this.html; }
+  set innerHTML(value: string) { this.html = value; }
+  append() {}
+  appendChild() {}
+  insertBefore() {}
+  remove() {}
+  setAttribute(name: string, value: string) { this.attrs.set(name, value); }
+  getAttribute(name: string) { return this.attrs.get(name) ?? null; }
+  querySelector() { return new FakeEl(); }
+  getBoundingClientRect() { return { width: 1600, height: 1200, left: 0, top: 0 }; }
+  getContext() { return null; }
+}
+
+const group = (id: Id, z: string, parent?: Id, locked = false): Obj => ({
+  id, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z, parent, locked: locked || undefined,
+});
+const sticky = (id: Id, z: string, parent: Id, x: number): Obj => ({
+  id, type: 'sticky', x, y: 20, w: 80, h: 60, rotation: 0, z, parent, text: id,
+});
+
+describe('group renderer overlays', () => {
+  let store: Store;
+  let renderer: Renderer;
+  const drawOverlay = () => (renderer as unknown as { renderOverlay(): void }).renderOverlay();
+  const svg = () => (renderer as unknown as { overlayLayer: FakeEl }).overlayLayer.innerHTML;
+  const dimPath = () => (renderer as unknown as { groupDimPath: FakeEl }).groupDimPath;
+
+  beforeEach(() => {
+    vi.stubGlobal('document', { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(group('outer', 'a0', undefined, true));
+      store.create(group('g', 'a1', 'outer'));
+      store.create(sticky('a', 'a2', 'g', 10));
+      store.create(sticky('b', 'a3', 'g', 120));
+    });
+    renderer = new Renderer(store, new FakeEl() as unknown as HTMLElement);
+  });
+
+  afterEach(() => {
+    renderer.destroy();
+    vi.unstubAllGlobals();
+  });
+
+  it('draws a selected group body and member outlines with theme tokens only', () => {
+    renderer.setOverlay({ selection: ['g'] });
+    drawOverlay();
+    const out = svg();
+    expect(out).toContain('stroke="var(--group-line-soft)"');
+    expect(out).toContain('stroke="var(--group-line)"');
+    expect(out).toContain('stroke-width="1.5"');
+    expect(out).not.toContain('#');
+    expect(out).not.toContain('#2F6FED');
+  });
+
+  it('uses the group hover, entered, and dim tokens in their overlays', () => {
+    renderer.setOverlay({ hover: 'g' });
+    drawOverlay();
+    expect(svg()).toContain('stroke="var(--group-hover)"');
+    expect(svg()).not.toContain('#');
+
+    renderer.setOverlay({ hover: null, enteredGroup: 'g' });
+    drawOverlay();
+    expect(svg()).toContain('stroke="var(--group-line)"');
+    expect(svg()).toContain('stroke-dasharray="6 4"');
+    expect(dimPath().getAttribute('fill')).toBe('var(--group-dim)');
+    expect(dimPath().getAttribute('class')).toBe('group-dim-wash active');
+    expect(`${svg()}${dimPath().getAttribute('fill')}`).not.toContain('#');
+  });
+
+  it('lifts a lock hover to the outermost locked group and uses the tray badge tokens', () => {
+    renderer.setOverlay({ enteredGroup: null, lockedHover: 'a' });
+    drawOverlay();
+    const out = svg();
+    expect(out).toContain('stroke="var(--group-locked)"');
+    expect(out).toContain('fill="var(--group-chip-bg)"');
+    expect(out).toContain('stroke="var(--group-chip-ink)"');
+    expect(out).not.toContain('#');
+  });
+});

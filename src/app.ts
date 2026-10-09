@@ -49,7 +49,7 @@ import { ensureFont } from './fonts';
 import { Flow } from './flow';
 import { TextEditor } from './editor';
 import { StyleEdit } from './style-edit';
-import { descendantsOf, groupPlan, isGroup, liftToScope, pick, topLevelAncestors, ungroupPlan } from './groups';
+import { ancestorsOf, descendantsOf, groupPlan, isGroup, liftToScope, pick, topLevelAncestors, ungroupPlan } from './groups';
 
 export type Tool =
   | { kind: 'select' }
@@ -1764,8 +1764,11 @@ export class BoardApp {
     const t = this.tool.kind;
     const top = t === 'select' || t === 'connector' ? this.hit(p, { locked: true }) : undefined;
     const live = top?.locked ? this.hit(p) : top;
-    const lockedTop = !live && top?.locked ? top : undefined;
-    const anchorHost = !this.readOnly && CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
+    const lockedAncestor = top && !this.flow.isVoting()
+      ? [top, ...ancestorsOf(top, (id) => this.store.get(id))].filter((o) => isGroup(o) && o.locked).at(-1)
+      : undefined;
+    const lockedTop = lockedAncestor ?? (!live && top?.locked ? top : undefined);
+    const anchorHost = !lockedAncestor && !this.readOnly && CONNECTABLE(live) && !live.locked && !this.flow.isVoting() ? live.id : null;
     // Keep anchors visible while the pointer is on one of them, or still close to the shape that shows them. The
     // dots sit just outside the edge, often on a connector that already leaves that side; hovering that connector
     // on the way to the dot must not hide them, or a second connector could never start there.
@@ -1779,13 +1782,14 @@ export class BoardApp {
     if (overPin) cursor = 'pointer';
     else if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
+    else if (lockedAncestor) cursor = '';
     else if (t === 'select' && top?.type === 'container' && this.kanbanControlAt(top.id, p)) cursor = 'pointer';
     else if (t === 'select' && top?.type === 'lane' && !this.readOnly && this.laneRegion(top.id, p) === 'menu') cursor = 'pointer';
     else if (live?.type === 'lane' && t === 'select' && !this.readOnly && this.laneRegion(live.id, p) === 'add') cursor = 'pointer';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
-    const hovered = live && t === 'select' && !this.flow.isVoting() ? pick(live, this.scope, (id) => this.store.get(id)) : live;
+    const hovered = lockedAncestor ? undefined : live && t === 'select' && !this.flow.isVoting() ? pick(live, this.scope, (id) => this.store.get(id)) : live;
     this.r.setOverlay({ hover: hovered?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
   }
 

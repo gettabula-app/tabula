@@ -11,6 +11,7 @@ import { onFontLoaded } from './fonts';
 import { USER_COLORS, WIRE } from './palette';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
+import { ancestorsOf, isGroup } from './groups';
 import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
 import type { GapMark, Guide } from './guides';
 
@@ -137,6 +138,8 @@ export class Renderer {
   readonly svg: SVGSVGElement;
   readonly world: SVGGElement;
   private objLayer: SVGGElement;
+  private groupDimLayer: SVGGElement;
+  private groupDimPath: SVGPathElement;
   private overlayLayer: SVGGElement;
   private ghostLayer: SVGGElement;
   private gridRect: SVGRectElement;
@@ -199,11 +202,18 @@ export class Renderer {
     this.svg.classList.add('canvas');
     this.svg.setAttribute('role', 'application');
     this.svg.setAttribute('aria-label', 'Whiteboard canvas');
-    this.svg.innerHTML = `<defs>${SVG_DEFS}</defs><defs class="grid-defs"></defs><rect class="grid-bg" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)"/><g class="world"><g class="objects"></g><g class="overlay"></g><g class="k-ghost-layer"></g></g>`;
+    this.svg.innerHTML = `<defs>${SVG_DEFS}</defs><defs class="grid-defs"></defs><rect class="grid-bg" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)"/><g class="world"><g class="objects"></g><g class="group-dim-layer"></g><g class="overlay"></g><g class="k-ghost-layer"></g></g>`;
     this.gridDefs = this.svg.querySelector('.grid-defs')!;
     this.gridRect = this.svg.querySelector('.grid-bg')!;
     this.world = this.svg.querySelector('.world')!;
     this.objLayer = this.svg.querySelector('.objects')!;
+    this.groupDimLayer = this.svg.querySelector('.group-dim-layer')!;
+    this.groupDimPath = document.createElementNS(SVGNS, 'path') as SVGPathElement;
+    this.groupDimPath.setAttribute('class', 'group-dim-wash');
+    this.groupDimPath.setAttribute('fill', 'var(--group-dim)');
+    this.groupDimPath.setAttribute('fill-rule', 'evenodd');
+    this.groupDimPath.setAttribute('pointer-events', 'none');
+    this.groupDimLayer.appendChild(this.groupDimPath);
     this.overlayLayer = this.svg.querySelector('.overlay')!;
     this.ghostLayer = this.svg.querySelector('.k-ghost-layer')!;
     this.cursorLayer = document.createElement('div');
@@ -635,21 +645,15 @@ export class Renderer {
     const ov = this.overlay;
     let out = ov.ai;
 
-    if (ov.enteredGroup) {
-      const group = get(ov.enteredGroup);
-      if (group?.type === 'group') {
-        const b = this.bounds(group);
-        if (b) {
-          const v = this.viewport();
-          out += `<path d="M${v.x} ${v.y}h${v.w}v${v.h}h-${v.w}z M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z" fill="var(--canvas-ink)" fill-opacity="0.1" fill-rule="evenodd" pointer-events="none"/>`;
-          const label = escapeXml(typeof group.name === 'string' && group.name.trim() ? group.name.trim() : 'Group');
-          const width = Math.max(px(42), px(12 + label.length * 7));
-          const height = px(18), x = b.x, y = b.y - px(6);
-          out += `<rect x="${x}" y="${y - height}" width="${width}" height="${height}" rx="${px(2)}" fill="var(--canvas)" stroke="var(--wire)" stroke-width="${px(1)}" pointer-events="none"/>`;
-          out += `<text x="${x + px(6)}" y="${y - px(5)}" font-size="${px(11)}" font-weight="600" fill="var(--canvas-ink)" font-family="Switzer, system-ui, sans-serif" pointer-events="none">${label}</text>`;
-          out += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--wire)" stroke-width="${px(1.5)}" stroke-dasharray="${px(6)} ${px(4)}" pointer-events="none"/>`;
-        }
-      }
+    const entered = ov.enteredGroup ? get(ov.enteredGroup) : undefined;
+    const enteredBounds = entered?.type === 'group' ? this.bounds(entered) : null;
+    if (enteredBounds) {
+      const v = this.viewport();
+      this.groupDimPath.setAttribute('d', `M${v.x} ${v.y}h${v.w}v${v.h}h-${v.w}z M${enteredBounds.x} ${enteredBounds.y}h${enteredBounds.w}v${enteredBounds.h}h-${enteredBounds.w}z`);
+      this.groupDimPath.setAttribute('class', 'group-dim-wash active');
+      out += this.groupOutline(enteredBounds, px, 'var(--group-line)', 1.5, [6, 4]);
+    } else {
+      this.groupDimPath.setAttribute('class', 'group-dim-wash');
     }
 
     // remote selections
@@ -669,23 +673,43 @@ export class Renderer {
     // hover outline
     if (ov.hover && !ov.selection.includes(ov.hover)) {
       const o = get(ov.hover);
-      if (o) out += this.outline(o, px(1.5), 0.6);
+      if (o?.type === 'group') {
+        const b = this.bounds(o);
+        if (b) out += this.groupOutline(b, px, 'var(--group-hover)', 1.5);
+      } else if (o) out += this.outline(o, px(1.5), 0.6);
     }
     if (ov.lockedHover) {
-      const lo = get(ov.lockedHover);
-      const lb = lo?.locked && this.bounds(lo);
-      if (lb) out += `<g transform="translate(${lb.x + lb.w} ${lb.y})"><circle r="${px(11)}" fill="#18212B" stroke="#fff" stroke-width="${px(1.5)}"/><g transform="translate(${-px(7)} ${-px(7)}) scale(${px(14) / 24})" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></g></g>`;
+      const candidate = get(ov.lockedHover);
+      const lockedGroups = candidate ? [candidate, ...ancestorsOf(candidate, get)].filter((o) => isGroup(o) && o.locked) : [];
+      const locked = lockedGroups.at(-1) ?? (candidate?.locked ? candidate : undefined);
+      const b = locked && this.bounds(locked);
+      if (locked && b) {
+        if (locked.type === 'group') out += this.groupOutline(b, px, 'var(--group-locked)', 1.5);
+        out += this.lockBadge(b, px, locked.type === 'group');
+      }
     }
 
     // selection
     const sel = ov.selection.map(get).filter(Boolean) as Obj[];
-    // a dragged card's slot is its dashed placeholder, with no selection outline over it
-    for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
-    if (sel.length > 1) {
-      const b = this.contentBounds(ov.selection);
-      if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
+    const selectedGroup = sel.length === 1 && sel[0].type === 'group' ? sel[0] : undefined;
+    if (selectedGroup) {
+      const b = this.bounds(selectedGroup);
+      if (b) {
+        for (const member of this.store.childrenOf(selectedGroup.id)) {
+          if (member.parent === selectedGroup.id) out += this.groupMemberOutline(member, px);
+        }
+        out += this.groupOutline(b, px, 'var(--group-line)', 1.5);
+        // TODO(slice 3): add the whole-group transform handles around this solid box.
+      }
+    } else {
+      // a dragged card's slot is its dashed placeholder, with no selection outline over it
+      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
+      if (sel.length > 1) {
+        const b = this.contentBounds(ov.selection);
+        if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
+      }
     }
-    if (sel.length === 1 && sel[0].id !== this.editingId && !this.readOnly) {
+    if (!selectedGroup && sel.length === 1 && sel[0].id !== this.editingId && !this.readOnly) {
       const o = sel[0];
       const hs = handlesFor(o, get, z, this.connectorLayout());
       const rot = hs.find((h) => h.id === 'rot');
@@ -836,20 +860,59 @@ export class Renderer {
     return `<g transform="translate(${at(p.x)} ${at(p.y)})">${ring}${body}${label}${badge}</g>`;
   }
 
-  private outline(raw: Obj, sw: number, opacity: number) {
+  private groupOutline(b: Rect, px: (v: number) => number, stroke: string, width: number, dash?: [number, number]) {
+    const grow = px(6);
+    const dashAttr = dash ? ` stroke-dasharray="${px(dash[0])} ${px(dash[1])}"` : '';
+    return `<rect x="${b.x - grow}" y="${b.y - grow}" width="${b.w + grow * 2}" height="${b.h + grow * 2}" fill="none" stroke="${stroke}" stroke-width="${px(width)}"${dashAttr} pointer-events="none"/>`;
+  }
+
+  private groupMemberOutline(raw: Obj, px: (v: number) => number) {
+    if (!this.store.isShown(raw)) return '';
+    if (isConnector(raw)) {
+      const hiddenEnd = [raw.from, raw.to].some((end) => {
+        if (end.kind !== 'bound') return false;
+        const target = this.store.get(end.id);
+        return !!target && isBox(target) && this.isHidden(target);
+      });
+      if (hiddenEnd) return '';
+      const g = connectorGeom(this.safeGet, safeObj(raw), this.connectorLayout());
+      return g ? `<path d="${g.d}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+    }
+    if (isBox(raw) && this.isHidden(raw)) return '';
+    if (raw.type === 'group') {
+      const b = this.bounds(raw);
+      return b ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+    }
+    const o = safeObj(this.store.placed(raw));
+    const c = center(o);
+    const deg = ((o.rotation || 0) * 180) / Math.PI;
+    if (o.type === 'path') {
+      const b = boxBounds(o);
+      return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+    }
+    return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+  }
+
+  private lockBadge(b: Rect, px: (v: number) => number, padded: boolean) {
+    const right = b.x + b.w + (padded ? px(6) : 0);
+    const top = b.y - (padded ? px(6) : 0);
+    return `<g transform="translate(${right} ${top})"><circle r="${px(11)}" fill="var(--group-chip-bg)" stroke="var(--group-chip-ink)" stroke-width="${px(1.5)}"/><g transform="translate(${-px(7)} ${-px(7)}) scale(${px(14) / 24})" fill="none" stroke="var(--group-chip-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></g></g>`;
+  }
+
+  private outline(raw: Obj, sw: number, opacity: number, stroke = WIRE) {
     const o = safeObj(raw);
     if (isConnector(o)) {
       const g = connectorGeom(this.safeGet, safeObj(o), this.connectorLayout());
       if (!g) return '';
-      return `<path d="${g.d}" fill="none" stroke="${WIRE}" stroke-width="${sw * 2.5}" stroke-opacity="${0.25 * opacity}"/>`;
+      return `<path d="${g.d}" fill="none" stroke="${stroke}" stroke-width="${sw * 2.5}" stroke-opacity="${0.25 * opacity}"/>`;
     }
     const b = o;
     const c = center(b);
     const deg = ((b.rotation || 0) * 180) / Math.PI;
     if (b.type === 'path') {
       const r = boxBounds(b);
-      return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="none" stroke="${WIRE}" stroke-width="${sw}" opacity="${opacity}"/>`;
+      return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
     }
-    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${WIRE}" stroke-width="${sw}" opacity="${opacity}"/>`;
+    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
   }
 }

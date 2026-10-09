@@ -31,7 +31,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -738,6 +738,39 @@ async function walkKeyFormByKeyboard({ page }, { saveName }) {
   if (!ringed) throw new Error(`the focused field shows no focus indicator: ${JSON.stringify(look)}`);
 }
 
+/** Stable nested groups for the group overlay shots; reuses them when visual states share a relay. */
+async function ensureVisualGroups(page) {
+  return page.evaluate(() => {
+    const app = window.__board;
+    const parentGroupOf = (ids) => [...app.store.cache.values()].find((o) =>
+      o.type === 'group' && ids.every((id) => app.store.get(id)?.parent === o.id));
+
+    let inner = parentGroupOf(['seed-note-1', 'seed-note-2']);
+    if (!inner) {
+      app.setSelection(['seed-note-1', 'seed-note-2']);
+      if (!app.groupSelection()) throw new Error('could not create the visual inner group');
+      inner = app.store.get(app.selection[0]);
+    }
+
+    let outer = parentGroupOf([inner.id, 'seed-note-3']);
+    if (!outer) {
+      app.setSelection([inner.id, 'seed-note-3']);
+      if (!app.groupSelection()) throw new Error('could not create the visual outer group');
+      outer = app.store.get(app.selection[0]);
+    }
+
+    app.store.transact(() => {
+      app.store.update(inner.id, { name: 'Notes', locked: undefined });
+      app.store.update(outer.id, { name: 'Header', locked: undefined });
+    });
+    return { innerId: inner.id, outerId: outer.id };
+  });
+}
+
+async function waitForGroupStyles(page) {
+  await page.waitForFunction(() => Boolean(getComputedStyle(document.documentElement).getPropertyValue('--group-line').trim()));
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -766,6 +799,59 @@ const STATES = {
     await more.waitFor();
     await more.evaluate((el) => el.click());
     await env.page.locator('.props.show').waitFor();
+  },
+  async 'group-selected'(env) {
+    await openSeedBoard(env);
+    await waitForGroupStyles(env.page);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await env.page.evaluate((id) => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update(id, { name: undefined, locked: undefined }));
+      app.setSelection([id]);
+    }, outerId);
+    await env.page.waitForFunction(() => {
+      const chip = document.querySelector('.group-chip:not(.group-path-chip)');
+      return window.__board.r.cam.zoom < 0.3 ? chip.hidden : !chip.hidden;
+    });
+  },
+  async 'group-hover'(env) {
+    await openSeedBoard(env);
+    await waitForGroupStyles(env.page);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await env.page.evaluate((id) => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update(id, { locked: undefined }));
+      app.setSelection([]);
+      app.r.setOverlay({ hover: id, lockedHover: null });
+    }, outerId);
+    return { noPark: true };
+  },
+  async 'group-entered'(env) {
+    await openSeedBoard(env);
+    await waitForGroupStyles(env.page);
+    const { outerId, innerId } = await ensureVisualGroups(env.page);
+    await env.page.evaluate(({ outer, inner }) => {
+      const app = window.__board;
+      app.store.transact(() => {
+        app.store.update(outer, { name: 'Header', locked: undefined });
+        app.store.update(inner, { name: 'Notes', locked: undefined });
+      });
+      app.enterGroup(outer);
+      app.enterGroup(inner);
+    }, { outer: outerId, inner: innerId });
+    await env.page.locator('.group-done:not([hidden])').waitFor();
+  },
+  async 'group-locked'(env) {
+    await openSeedBoard(env);
+    await waitForGroupStyles(env.page);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await env.page.evaluate((id) => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update(id, { name: undefined, locked: true }));
+      app.setSelection([]);
+      app.r.setOverlay({ hover: null, lockedHover: id });
+    }, outerId);
+    return { noPark: true };
   },
   // TAB-232: the step before a dot vote, with an item selected (so Selected items is the default) and then the vote running with its outlines
   async 'vote-setup'(env) {
@@ -1554,6 +1640,8 @@ async function newPage(browser, { width, theme, mode, base, session }) {
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
     deviceScaleFactor: 1,
+    isMobile: width <= 500,
+    hasTouch: width <= 500,
     locale: 'en-US',
     timezoneId: 'UTC',
     reducedMotion: 'reduce',

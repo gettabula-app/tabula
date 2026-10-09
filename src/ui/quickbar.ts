@@ -20,6 +20,7 @@ import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
+import { groupActionForSelection } from './group-ui-logic';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -309,19 +310,24 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     }
     groups.push(text);
 
-    const arrange: HTMLElement[] = [];
-    const groupReason = app.groupReason();
-    const canUngroup = app.canUngroupSelection();
-    arrange.push(
-      h('button', {
-        class: 'icon-btn', type: 'button', 'aria-label': 'Group', 'data-tip': groupReason ?? 'Group', 'data-tip-key': 'mod+g',
+    const groupActions: HTMLElement[] = [];
+    const groupAction = groupActionForSelection(sel);
+    if (groupAction === 'group') {
+      const groupReason = app.groupReason();
+      groupActions.push(h('button', {
+        class: 'icon-btn qb-text group-action', type: 'button', 'aria-label': 'Group', 'data-tip': groupReason ?? 'Group', 'data-tip-key': 'mod+g',
         disabled: groupReason !== null, onclick: () => app.groupSelection(),
-      }, icon('group', 18)),
-      h('button', {
-        class: 'icon-btn', type: 'button', 'aria-label': 'Ungroup', 'data-tip': canUngroup ? 'Ungroup' : 'Select one or more groups to ungroup', 'data-tip-key': 'mod+shift+g',
+      }, icon('group', 20), 'Group'));
+    } else if (groupAction === 'ungroup') {
+      const canUngroup = app.canUngroupSelection();
+      groupActions.push(h('button', {
+        class: 'icon-btn qb-text group-action', type: 'button', 'aria-label': 'Ungroup', 'data-tip': canUngroup ? 'Ungroup' : 'Select a group to ungroup', 'data-tip-key': 'mod+shift+g',
         disabled: !canUngroup, onclick: () => app.ungroupSelection(),
-      }, icon('ungroup', 18)),
-    );
+      }, icon('ungroup', 20), 'Ungroup'));
+    }
+    groups.push(groupActions);
+
+    const arrange: HTMLElement[] = [];
     if (boxes >= 2) {
       arrange.push(menu('alignLeft', 'Align', () => {
         const n = app.selected().filter(isBox).length;
