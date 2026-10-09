@@ -77,6 +77,7 @@ export function installDemoGuards(): () => void {
     replace(target, 'localStorage', memoryStorage());
     replace(target, 'sessionStorage', memoryStorage());
     replace(target, 'indexedDB', undefined);
+    replace(target, 'caches', undefined);
   }
 
   const originalFetch = globalThis.fetch.bind(globalThis);
@@ -126,10 +127,22 @@ export function installDemoGuards(): () => void {
       return [];
     }
   }).filter((target, i, list) => list.findIndex((other) => other === target) === i);
+  const blockedBeacon = (url: string | URL) => {
+    try { reject('sendBeacon', String(url)); } catch { return false; }
+    return false;
+  };
   for (const nav of navigatorTargets) {
-    replace(nav, 'sendBeacon', (url: string | URL) => {
-      try { reject('sendBeacon', String(url)); } catch { return false; }
-    });
+    replace(nav, 'sendBeacon', blockedBeacon);
+    const serviceWorker = (nav as Navigator & { serviceWorker?: ServiceWorkerContainer }).serviceWorker;
+    if (serviceWorker && typeof serviceWorker.register === 'function') {
+      replace(serviceWorker, 'register', ((scriptURL: string | URL) => {
+        try { reject('serviceWorker.register', String(scriptURL)); } catch (error) { return Promise.reject(error); }
+      }) as ServiceWorkerContainer['register']);
+    }
+  }
+
+  if (typeof Navigator !== 'undefined' && typeof Navigator.prototype.sendBeacon === 'function') {
+    replace(Navigator.prototype, 'sendBeacon', blockedBeacon);
   }
 
   releaseGuards = () => {

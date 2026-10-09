@@ -593,6 +593,7 @@ export async function loadPreviews(names: string[], signal?: AbortSignal, onIcon
 
 /** Preview URL for the picker grid: a data URL once `loadPreviews` has run for a hosted icon, Iconify's image for any other. */
 export const previewUrl = (full: string): string => {
+  if (DEMO) return '';
   const hit = previews.get(full);
   if (hit) return hit;
   const [prefix, name] = split(full);

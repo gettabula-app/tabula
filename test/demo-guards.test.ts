@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { demoGuardReport, installDemoGuards } from '../src/demo';
 
 const storage = () => ({
   getItem: vi.fn<(key: string) => string | null>(() => null),
@@ -14,22 +13,36 @@ let release: (() => void) | undefined;
 let realLocal: ReturnType<typeof storage>;
 let realSession: ReturnType<typeof storage>;
 let nativeFetch: ReturnType<typeof vi.fn>;
+let nativeBeacon: ReturnType<typeof vi.fn<(url: string | URL) => boolean>>;
+let nativeRegister: ReturnType<typeof vi.fn<() => Promise<ServiceWorkerRegistration>>>;
+let nativeCache: { open: ReturnType<typeof vi.fn<() => Promise<Cache>>> };
+let createdXhr: { open: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> } | undefined;
 
 afterEach(() => {
   release?.();
   release = undefined;
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.resetModules();
+  createdXhr = undefined;
 });
 
-function install() {
+async function install() {
   realLocal = storage();
   realSession = storage();
   nativeFetch = vi.fn<() => Promise<Response>>(async () => new Response('{}'));
-  const navigator = { sendBeacon: vi.fn<(url: string | URL, data?: BodyInit | null) => boolean>(() => true) };
+  nativeBeacon = vi.fn<(url: string | URL) => boolean>(() => true);
+  nativeRegister = vi.fn<() => Promise<ServiceWorkerRegistration>>(async () => ({} as ServiceWorkerRegistration));
+  nativeCache = { open: vi.fn<() => Promise<Cache>>(async () => ({} as Cache)) };
+  const navigator = new class TestNavigator {
+    serviceWorker = { register: nativeRegister } as unknown as ServiceWorkerContainer;
+    sendBeacon(url: string | URL) { return nativeBeacon(url); }
+  }();
   const surface = {
     localStorage: realLocal,
     sessionStorage: realSession,
     indexedDB: { open: vi.fn<() => void>() },
+    caches: nativeCache,
     navigator,
     fetch: nativeFetch,
     WebSocket: class {},
@@ -37,27 +50,35 @@ function install() {
     XMLHttpRequest: class {
       open = vi.fn<() => void>();
       send = vi.fn<() => void>();
+      constructor() { createdXhr = { open: this.open, send: this.send }; }
     },
   };
+  vi.stubEnv('VITE_DEMO', '1');
+  vi.stubEnv('BASE_URL', '/demo/');
   vi.stubGlobal('window', surface);
   vi.stubGlobal('localStorage', realLocal);
   vi.stubGlobal('sessionStorage', realSession);
   vi.stubGlobal('indexedDB', surface.indexedDB);
+  vi.stubGlobal('caches', nativeCache);
   vi.stubGlobal('navigator', navigator);
-  vi.stubGlobal('location', { href: 'https://demo.test/demo/', origin: 'https://demo.test' });
+  vi.stubGlobal('location', { href: 'https://demo.test/demo/', origin: 'https://demo.test', pathname: '/demo/' });
   vi.stubGlobal('fetch', nativeFetch);
   vi.stubGlobal('WebSocket', surface.WebSocket);
   vi.stubGlobal('EventSource', surface.EventSource);
   vi.stubGlobal('XMLHttpRequest', surface.XMLHttpRequest);
-  release = installDemoGuards();
-  return surface;
+  vi.stubGlobal('Navigator', navigator.constructor);
+  const demo = await import('../src/demo');
+  release = demo.installDemoGuards();
+  return { surface, demo };
 }
 
 describe('demo guards', () => {
-  it('replaces persistent storage and IndexedDB with an empty in-memory surface', () => {
-    const surface = install();
+  it('replaces persistent storage, Cache Storage and IndexedDB with in-memory or unavailable surfaces', async () => {
+    const { surface } = await install();
     expect(indexedDB).toBeUndefined();
     expect(surface.indexedDB).toBeUndefined();
+    expect(caches).toBeUndefined();
+    expect(surface.caches).toBeUndefined();
     expect(localStorage.getItem('before')).toBeNull();
     localStorage.setItem('ephemeral', 'yes');
     sessionStorage.setItem('ephemeral', 'yes');
@@ -72,29 +93,52 @@ describe('demo guards', () => {
     expect(realSession.clear).not.toHaveBeenCalled();
   });
 
-  it('allows only static GETs and Fontshare, counting and rejecting other fetches', async () => {
-    install();
-    await fetch('/favicon.svg');
+  it('allows only static GETs below /demo/ and Fontshare, including a Request input', async () => {
+    const { demo } = await install();
+    await fetch('/demo/favicon.svg');
+    await fetch(new Request('https://demo.test/demo/assets/index.js'));
     await fetch('https://api.fontshare.com/v2/css?f[]=switzer');
     await fetch('https://cdn.fontshare.com/fonts/switzer.woff2');
-    await expect(fetch('/api/me')).rejects.toThrow('Demo blocked fetch');
-    await expect(fetch('/sync')).rejects.toThrow('Demo blocked fetch');
+    await expect(fetch('/demo/api/x')).rejects.toThrow('Demo blocked fetch');
+    await expect(fetch('/demo/sync')).rejects.toThrow('Demo blocked fetch');
+    await expect(fetch('/assets/outside-demo.js')).rejects.toThrow('Demo blocked fetch');
     await expect(fetch('https://api.iconify.design/collections')).rejects.toThrow('Demo blocked fetch');
     await expect(fetch('https://example.test/anything')).rejects.toThrow('Demo blocked fetch');
-    await expect(fetch('/favicon.svg', { method: 'POST' })).rejects.toThrow('Demo blocked fetch');
-    expect(nativeFetch).toHaveBeenCalledTimes(3);
-    expect(demoGuardReport().blocked).toBe(5);
+    await expect(fetch('/demo/favicon.svg', { method: 'POST' })).rejects.toThrow('Demo blocked fetch');
+    expect(nativeFetch).toHaveBeenCalledTimes(4);
+    expect(demo.demoGuardReport().blocked).toBe(6);
   });
 
-  it('blocks sockets, non-static XHR and sendBeacon', () => {
-    install();
-    expect(() => new WebSocket('wss://demo.test/sync')).toThrow('Demo blocked WebSocket');
-    expect(() => new EventSource('/api/events')).toThrow('Demo blocked EventSource');
+  it('allows a static XHR GET and blocks API XHR, sockets, service worker registration and both sendBeacon methods', async () => {
+    const { demo } = await install();
+    const staticXhr = new XMLHttpRequest();
+    staticXhr.open('GET', '/demo/assets/index.js');
+    staticXhr.send();
+    expect(createdXhr?.open).toHaveBeenCalledWith('GET', '/demo/assets/index.js', true, null, null);
+    expect(createdXhr?.send).toHaveBeenCalledWith(null);
     expect(() => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload');
+      xhr.open('GET', '/demo/api/x');
     }).toThrow('Demo blocked XMLHttpRequest');
-    expect(navigator.sendBeacon('/api/track', 'x')).toBe(false);
-    expect(demoGuardReport().blocked).toBe(4);
+    expect(() => new WebSocket('wss://demo.test/sync')).toThrow('Demo blocked WebSocket');
+    expect(() => new EventSource('/demo/api/events')).toThrow('Demo blocked EventSource');
+    await expect(navigator.serviceWorker.register('/demo/sw.js')).rejects.toThrow('Demo blocked serviceWorker.register');
+    expect(navigator.sendBeacon('/demo/api/track', 'x')).toBe(false);
+    const NavigatorClass = (globalThis as unknown as { Navigator: typeof Navigator }).Navigator;
+    expect(NavigatorClass.prototype.sendBeacon.call(navigator, '/demo/api/prototype')).toBe(false);
+    expect(nativeRegister).not.toHaveBeenCalled();
+    expect(nativeBeacon).not.toHaveBeenCalled();
+    expect(demo.demoGuardReport().blocked).toBe(6);
+  });
+
+  it('returns the same release function when installed more than once', async () => {
+    const { demo } = await install();
+    expect(demo.installDemoGuards()).toBe(release);
+  });
+
+  it('does not return remote icon previews in the demo', async () => {
+    await install();
+    const { previewUrl } = await import('../src/icons');
+    expect(previewUrl('not-hosted:example')).toBe('');
   });
 });

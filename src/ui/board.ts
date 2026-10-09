@@ -611,7 +611,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     }),
     h('div', { class: 'list-label' }, 'Help'),
     item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
-    demo ? null : item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab'),
+    !DEMO && !demo ? item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab') : null,
     fileInput,
   ), { side: 'bottom' });
 }

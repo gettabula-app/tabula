@@ -1,3 +1,4 @@
+import './demo';
 import { DEMO, installDemoGuards } from './demo';
 import './styles.css';
 import { BoardApp } from './app';
@@ -174,7 +175,7 @@ async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
   root.replaceChildren();
   const app = new BoardApp(conn, user, root);
   current = app;
-  if (location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
+  if (!DEMO && location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountTemplateEditor(app, root, tpl);
 }
 
@@ -212,7 +213,6 @@ async function route() {
     app.store.undo.stopCapturing();
     mountBoardUi(app, root, { home: () => undefined }, { demo: true });
     mountDemoBanner(root);
-    if (location.search.includes('debug')) Object.assign(window, { __board: app });
     return;
   }
 
@@ -326,7 +326,7 @@ async function route() {
   desktop?.watchBoard(app);
   // Inspection handle for automated tests and debugging (?debug in the URL). `__kanban` lets a seed store card heights
   // the way the app does (scripts/visual-check.mjs).
-  if (location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
+  if (!DEMO && location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
   // the pictures of an imported board file go to this board's asset store in the background
   if (job?.imported?.assets) void app.images.adopt(job.imported.assets);
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });
@@ -413,7 +413,7 @@ async function boot() {
     if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
     syncMentions();
   });
-  if (isDesktop()) {
+  if (!DEMO && isDesktop()) {
     try {
       desktop = await (await import('./desktop')).startDesktop(nav);
     } catch (e) {

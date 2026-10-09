@@ -1,22 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { installFakeBrowser, type FakeBrowser } from './fake-dom';
 
 const mocks = vi.hoisted(() => ({
-  release: undefined as (() => void) | undefined,
   seedDemo: vi.fn<() => void>(),
   mountBoardUi: vi.fn<(...args: unknown[]) => void>(),
-  mountDemoBanner: vi.fn<(...args: unknown[]) => void>(),
   app: undefined as {
     store: { undo: { clear: () => void; stopCapturing: () => void } };
     conn: { destroy: () => void };
   } | undefined,
 }));
 
-vi.mock('../src/demo', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/demo')>();
-  mocks.release = actual.installDemoGuards();
-  return { ...actual, DEMO: true };
-});
 vi.mock('../src/app', () => ({
   BoardApp: class {
     store: { undo: { clear: () => void; stopCapturing: () => void } };
@@ -29,7 +23,6 @@ vi.mock('../src/app', () => ({
   },
 }));
 vi.mock('../src/ui/board', () => ({ mountBoardUi: mocks.mountBoardUi }));
-vi.mock('../src/ui/demo-banner', () => ({ mountDemoBanner: mocks.mountDemoBanner }));
 vi.mock('../src/demo/seed', () => ({ seedDemo: mocks.seedDemo }));
 vi.mock('../src/ui/tooltip', () => ({ installTooltips: vi.fn<() => void>() }));
 
@@ -43,19 +36,20 @@ let realLocal: ReturnType<typeof spyStorage>;
 let realSession: ReturnType<typeof spyStorage>;
 let realIndexedDB: { open: ReturnType<typeof vi.fn> };
 let fetchSpy: ReturnType<typeof vi.fn>;
+let releaseGuards: (() => void) | undefined;
 
 afterEach(() => {
-  mocks.release?.();
-  mocks.release = undefined;
+  releaseGuards?.();
+  releaseGuards = undefined;
   mocks.app?.conn.destroy();
   mocks.app = undefined;
   browser?.uninstall();
   browser = undefined;
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.resetModules();
   mocks.seedDemo.mockClear();
   mocks.mountBoardUi.mockClear();
-  mocks.mountDemoBanner.mockClear();
 });
 
 describe('demo boot', () => {
@@ -70,7 +64,7 @@ describe('demo boot', () => {
     vi.stubGlobal('sessionStorage', realSession);
     realIndexedDB = { open: vi.fn<() => void>() };
     Object.assign(window, { localStorage: realLocal, sessionStorage: realSession, indexedDB: realIndexedDB });
-    Object.assign(location, { href: 'https://demo.test/demo/#/templates', origin: 'https://demo.test', search: '' });
+    Object.assign(location, { href: 'https://demo.test/demo/#/templates', origin: 'https://demo.test', pathname: '/demo/', search: '?debug' });
     vi.stubGlobal('history', {
     replaceState: vi.fn<(_state: unknown, _title: string, url: string) => void>((_state, _title, url) => {
         const at = url.indexOf('#');
@@ -82,25 +76,43 @@ describe('demo boot', () => {
     fetchSpy = vi.fn<() => Promise<Response>>(async () => new Response('{}'));
     vi.stubGlobal('fetch', fetchSpy);
     vi.stubGlobal('XMLHttpRequest', class { open = vi.fn<() => void>(); send = vi.fn<() => void>(); });
+    vi.stubEnv('VITE_DEMO', '1');
     await import('../src/main');
 
     const { authState, imagesAvailable } = await import('../src/auth');
     const demo = await import('../src/demo');
+    releaseGuards = demo.installDemoGuards();
     const sync = await import('../src/sync');
     expect(authState().mode).toBe('open');
     expect(imagesAvailable()).toBe(false);
     expect(location.hash).toBe('#/b/demo');
     expect(mocks.seedDemo).toHaveBeenCalledTimes(1);
     expect(mocks.mountBoardUi).toHaveBeenCalledWith(mocks.app, local, expect.any(Object), { demo: true });
-    expect(mocks.mountDemoBanner).toHaveBeenCalledWith(local);
+    expect(local.querySelector('.demo-banner')?.textContent).toContain('Demo: nothing is saved');
     const testConn = sync.scratchBoard('test', { id: 'test', name: 'Test', color: '#2F6FED' }, false);
     expect(testConn.comments.readOnly()).toBe(false);
     testConn.destroy();
     expect(indexedDB).toBeUndefined();
     expect(realIndexedDB.open).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(realLocal.getItem).not.toHaveBeenCalled();
     expect(realLocal.setItem).not.toHaveBeenCalled();
+    expect(realLocal.removeItem).not.toHaveBeenCalled();
+    expect(realSession.getItem).not.toHaveBeenCalled();
     expect(realSession.setItem).not.toHaveBeenCalled();
+    expect(realSession.removeItem).not.toHaveBeenCalled();
+    expect((window as unknown as { __board?: unknown }).__board).toBeUndefined();
     expect(demo.demoGuardReport()).toEqual({ blocked: 0, attempts: [] });
+  });
+
+  it('imports src/demo.ts before every other main dependency', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    const firstImport = main.match(/^\s*import\b[^\n]*/m)?.[0].trim();
+    expect(firstImport).toBe("import './demo';");
+  });
+
+  it('keeps the explicit main entry guard call', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    expect(main).toMatch(/if\s*\(DEMO\)\s*installDemoGuards\(\);/);
   });
 });

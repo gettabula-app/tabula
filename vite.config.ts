@@ -41,11 +41,12 @@ const docsPages = {
 const demoConfigPlugin = {
   name: 'tabula-demo-config',
   config(_config: unknown, env: { mode: string }) {
-    if (env.mode !== 'demo') return undefined;
+    if (env.mode === 'test') return undefined;
+    if (env.mode !== 'demo') return { define: { 'import.meta.env.VITE_DEMO': 'undefined' } };
     return {
       publicDir: false,
       define: { 'import.meta.env.VITE_DEMO': '"1"' },
-      build: { sourcemap: false },
+      build: { sourcemap: false, rolldownOptions: { output: { codeSplitting: false } } },
     };
   },
 };
@@ -54,7 +55,6 @@ const demoConfigPlugin = {
 // so the client always connects to same-origin /sync (and /chat, the team chat socket).
 export default defineConfig({
   plugins: [docsPages, demoConfigPlugin, demoBuildPlugin()],
-  define: { 'import.meta.env.VITE_DEMO': 'undefined' },
   server: {
     port: 5173,
     proxy: {
