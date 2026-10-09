@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampX, clearOfDock, dockTopOf, placeBar } from '../src/ui/quickbar-layout';
+import { clampX, clearOfDock, dockTopOf, GROUP_BAR_GAP, placeBar } from '../src/ui/quickbar-layout';
 
 const view = { w: 1000, h: 800 };
 const bar = { w: 300, h: 40 };
@@ -11,6 +11,14 @@ describe('placeBar', () => {
 
   it('lifts above a rotate handle', () => {
     expect(placeBar({ x: 400, y: 150, w: 200, h: 100 }, bar, view, 28)).toEqual({ x: 350, y: 70, below: false });
+  });
+
+  it('leaves a selected group 8 px more clearance above the bar', () => {
+    const group = { x: 400, y: 300, w: 200, h: 100 };
+    const regular = placeBar(group, bar, view);
+    const selectedGroup = placeBar(group, bar, view, 0, undefined, 64, GROUP_BAR_GAP);
+    expect(GROUP_BAR_GAP).toBe(20);
+    expect(regular.y - selectedGroup.y).toBe(8);
   });
 
   it('flips below when too close to the top', () => {

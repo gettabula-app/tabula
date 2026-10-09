@@ -1,4 +1,10 @@
+import { PIN_R, type PinView } from '../pins';
+
 export type GroupAction = 'group' | 'ungroup' | null;
+
+export interface GroupPinBox { x: number; y: number; w: number; h: number }
+export interface EnteredChipPinBox { box: GroupPinBox; text: GroupPinBox }
+export interface EnteredPinPlacement { id: string; x: number; y: number; promoted: boolean; moved: boolean }
 
 export function groupChipText(name: unknown, directMemberCount: number): string {
   const label = typeof name === 'string' ? name.trim() : '';
@@ -86,4 +92,28 @@ export function placeEnteredGroupChips(
   const maxNameX = maxDoneX - gap - nameSize.width;
   const nameX = Math.max(margin, Math.min(name.x, maxNameX));
   return { name: { x: nameX, y: rowY }, done: { x: maxDoneX, y: rowY } };
+}
+
+/** Keeps pin glyphs above chip fills, but moves a pin below the row when its glyph would cover chip text. */
+export function placeEnteredGroupPins(
+  pins: readonly PinView[],
+  chips: readonly EnteredChipPinBox[],
+  gap = 2,
+): EnteredPinPlacement[] {
+  if (!chips.length) return pins.map(({ id, x, y }) => ({ id, x, y, promoted: false, moved: false }));
+  const rowBottom = Math.max(...chips.map(({ box }) => box.y + box.h));
+  const overlaps = (a: GroupPinBox, b: GroupPinBox) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  return pins.map((pin) => {
+    if (pin.draft) return { id: pin.id, x: pin.x, y: pin.y, promoted: false, moved: false };
+    const left = pin.selected ? 3 : 0;
+    const right = pin.count > 1 ? 26 : pin.selected ? 25 : PIN_R * 2;
+    const top = pin.count > 1 ? 26 : pin.selected ? 25 : PIN_R * 2;
+    const bottom = pin.selected ? 3 : 0;
+    const glyph = { x: pin.x - left, y: pin.y - top, w: left + right, h: top + bottom };
+    if (chips.some(({ text }) => overlaps(glyph, text))) {
+      return { id: pin.id, x: pin.x, y: rowBottom + top + gap, promoted: false, moved: true };
+    }
+    return { id: pin.id, x: pin.x, y: pin.y, promoted: chips.some(({ box }) => overlaps(glyph, box)), moved: false };
+  });
 }

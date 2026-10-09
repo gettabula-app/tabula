@@ -12,7 +12,7 @@ import { downloadCardsCsv } from '../exporters';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { trackMore } from './scroll-cue';
-import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
+import { clampX, clearOfDock, dockTopOf, GROUP_BAR_GAP, placeBar, type Box } from './quickbar-layout';
 
 // the phone layout of styles.css, where the rail runs the full height
 const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
@@ -66,7 +66,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
     const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a)]);
+    const selectedGroup = sel.length === 1 && sel[0].type === 'group';
+    const gap = selectedGroup ? GROUP_BAR_GAP : undefined;
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a)]);
     const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
     bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;

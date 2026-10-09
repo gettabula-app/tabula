@@ -19,6 +19,28 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 
 export interface Camera { x: number; y: number; zoom: number }
 
+export function pinMarkup(p: PinView, at: Point, px: (v: number) => number): string {
+  const R = px(PIN_R);
+  const c = pinCenter({ x: 0, y: 0 }, R);
+  const color = safeColor(p.color, USER_COLORS[0]);
+  let body: string;
+  if (p.draft) body = `<path d="${pinPath(R)}" fill="${color}" stroke="#18212B" stroke-width="${px(1.5)}" stroke-dasharray="${px(3)} ${px(2)}"/>`;
+  else if (p.resolved) body = `<path d="${pinPath(R)}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${px(1.5)}"/>`;
+  else body = `<path d="${pinPath(R)}" fill="${color}" stroke="#fff" stroke-width="${px(1.5)}"/>`;
+  // A faded pin is pale, so its label takes the dark ink for contrast.
+  const ink = p.draft || p.resolved ? '#18212B' : '#fff';
+  const ring = p.selected ? `<circle cx="${c.x}" cy="${c.y}" r="${px(PIN_R + 3)}" fill="none" stroke="${WIRE}" stroke-width="${px(2)}"/>` : '';
+  const label = `<text x="${c.x}" y="${c.y + px(4)}" font-size="${px(11)}" font-weight="700" fill="${ink}" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${escapeXml(p.label)}</text>`;
+  let badge = '';
+  if (p.count > 1) {
+    const bx = c.x + R * Math.SQRT1_2, by = c.y - R * Math.SQRT1_2;
+    badge = `<circle cx="${bx}" cy="${by}" r="${px(7)}" fill="#18212B"/><text x="${bx}" y="${by + px(3.2)}" font-size="${px(9)}" font-weight="700" fill="#fff" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${p.count}</text>`;
+  }
+  const x = typeof at.x === 'number' && Number.isFinite(at.x) ? at.x : 0;
+  const y = typeof at.y === 'number' && Number.isFinite(at.y) ? at.y : 0;
+  return `<g transform="translate(${x} ${y})">${ring}${body}${label}${badge}</g>`;
+}
+
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot' | 'from' | 'to';
 
 export interface Handle { id: HandleId; p: Point }
@@ -149,6 +171,8 @@ export class Renderer {
   cam: Camera = { x: -200, y: -120, zoom: 1 };
   overlay: Overlay = emptyOverlay();
   pins: PinView[] = [];
+  private promotedPinIds = new Set<string>();
+  private pinListeners = new Set<() => void>();
   editingId: string | null = null;
   isHidden: (o: BaseObj) => boolean = () => false;
   /** What there is to draw for an image object (src/image-loader.ts); until set, an image shows its placeholder. */
@@ -272,6 +296,7 @@ export class Renderer {
     this.stopFonts();
     this.resizeObserver.disconnect();
     this.cameraListeners.clear();
+    this.pinListeners.clear();
     this.root.remove();
   }
 
@@ -387,6 +412,20 @@ export class Renderer {
 
   setPins(pins: PinView[]) {
     this.pins = pins;
+    this.overlayDirty = true;
+    this.schedule();
+    for (const listener of this.pinListeners) listener();
+  }
+
+  onPins(listener: () => void): () => void {
+    this.pinListeners.add(listener);
+    return () => this.pinListeners.delete(listener);
+  }
+
+  setPromotedPinIds(ids: Iterable<string>) {
+    const next = new Set(ids);
+    if (next.size === this.promotedPinIds.size && [...next].every((id) => this.promotedPinIds.has(id))) return;
+    this.promotedPinIds = next;
     this.overlayDirty = true;
     this.schedule();
   }
@@ -837,39 +876,17 @@ export class Renderer {
         `<text x="${tx + px(8)}" y="${ty + px(14)}" font-size="${px(11)}" font-weight="600" letter-spacing="${px(0.66)}" style="fill:var(--on-signal, #18212B)" font-family="Switzer, system-ui, sans-serif">${text}</text></g>`;
     }
 
-    // pins last, so they sit above selections and handles; overlay only, never in exports
-    for (const p of this.pins) out += this.pinMarkup(p, px);
+    // Pins last, so they sit above selections and handles; promoted pins live in the chrome pin layer.
+    for (const p of this.pins) if (!this.promotedPinIds.has(p.id)) out += pinMarkup(p, p, px);
 
     this.overlayLayer.innerHTML = out;
-  }
-
-  private pinMarkup(p: PinView, px: (v: number) => number) {
-    const R = px(PIN_R);
-    const c = pinCenter({ x: 0, y: 0 }, R);
-    const color = safeColor(p.color, USER_COLORS[0]);
-    let body: string;
-    if (p.draft) body = `<path d="${pinPath(R)}" fill="${color}" stroke="#18212B" stroke-width="${px(1.5)}" stroke-dasharray="${px(3)} ${px(2)}"/>`;
-    else if (p.resolved) body = `<path d="${pinPath(R)}" fill="${color}" fill-opacity="0.35" stroke="${color}" stroke-width="${px(1.5)}"/>`;
-    else body = `<path d="${pinPath(R)}" fill="${color}" stroke="#fff" stroke-width="${px(1.5)}"/>`;
-    // a faded pin is pale, so its label takes the dark ink for contrast
-    const ink = p.draft || p.resolved ? '#18212B' : '#fff';
-    const ring = p.selected ? `<circle cx="${c.x}" cy="${c.y}" r="${px(PIN_R + 3)}" fill="none" stroke="${WIRE}" stroke-width="${px(2)}"/>` : '';
-    const label = `<text x="${c.x}" y="${c.y + px(4)}" font-size="${px(11)}" font-weight="700" fill="${ink}" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${escapeXml(p.label)}</text>`;
-    let badge = '';
-    if (p.count > 1) {
-      const bx = c.x + R * Math.SQRT1_2, by = c.y - R * Math.SQRT1_2;
-      badge = `<circle cx="${bx}" cy="${by}" r="${px(7)}" fill="#18212B"/><text x="${bx}" y="${by + px(3.2)}" font-size="${px(9)}" font-weight="700" fill="#fff" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${p.count}</text>`;
-    }
-    // a pin sits at a comment's anchor, which comes from the comments document (any commenter writes it)
-    const at = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-    return `<g transform="translate(${at(p.x)} ${at(p.y)})">${ring}${body}${label}${badge}</g>`;
   }
 
   private groupOutline(b: Rect, px: (v: number) => number, stroke: string, width: number, dash?: [number, number], casing = false) {
     const grow = px(6);
     const dashAttr = dash ? ` stroke-dasharray="${px(dash[0])} ${px(dash[1])}"` : '';
     const rect = `x="${b.x - grow}" y="${b.y - grow}" width="${b.w + grow * 2}" height="${b.h + grow * 2}" fill="none"`;
-    const underlay = casing ? `<rect ${rect} stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="${px(3)}" pointer-events="none"/>` : '';
+    const underlay = casing ? `<rect ${rect} stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="${px(2)}" pointer-events="none"/>` : '';
     return underlay + `<rect ${rect} stroke="${stroke}" stroke-width="${px(width)}"${dashAttr} pointer-events="none"/>`;
   }
 

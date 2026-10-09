@@ -3,16 +3,84 @@ import type { BoardApp } from '../app';
 import { isConnector } from '../types';
 import type { Group, Obj } from '../types';
 import { h } from './dom';
-import { PIN_R } from '../pins';
-import { clampGroupChipPosition, doneChipText, groupChipText, groupPathLabel, placeEnteredGroupChips, showSelectedGroupChip } from './group-ui-logic';
+import type { PinView } from '../pins';
+import { pinMarkup } from '../render';
+import { clampGroupChipPosition, doneChipText, groupChipText, groupPathLabel, placeEnteredGroupChips, placeEnteredGroupPins, showSelectedGroupChip, type EnteredChipPinBox } from './group-ui-logic';
 
 /** The local group scope controls; outlines and dimming are renderer overlays. */
 export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
   const selectedChip = h('div', { class: 'group-chip', hidden: true, 'aria-hidden': 'true' });
-  const chipBridge = h('div', { class: 'group-chip-bridge', hidden: true, 'aria-hidden': 'true' });
   const pathChip = h('div', { class: 'group-chip group-path-chip', hidden: true });
   const done = h('button', { class: 'group-done', type: 'button', hidden: true, onclick: () => app.leaveGroup() });
-  parent.append(selectedChip, chipBridge, pathChip, done);
+  const pinOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  pinOverlay.setAttribute('class', 'group-pin-overlay');
+  pinOverlay.setAttribute('aria-hidden', 'true');
+  pinOverlay.setAttribute('preserveAspectRatio', 'none');
+  parent.append(selectedChip, pathChip, done, pinOverlay);
+
+  let adjustedPins: PinView[] | null = null;
+  let adjustedPinOffsets = new Map<string, number>();
+  let updatingPins = false;
+
+  const sourcePins = (): PinView[] => {
+    const current = app.r.pins;
+    if (current !== adjustedPins) return current;
+    return current.map((pin) => {
+      const offset = adjustedPinOffsets.get(pin.id) ?? 0;
+      return offset ? { ...pin, y: pin.y - offset } : pin;
+    });
+  };
+
+  const applyPinLayout = (chips: readonly EnteredChipPinBox[] | null) => {
+    const currentPins = app.r.pins;
+    const basePins = sourcePins();
+    if (!chips) {
+      app.r.setPromotedPinIds([]);
+      pinOverlay.innerHTML = '';
+      if (currentPins === adjustedPins) {
+        updatingPins = true;
+        app.r.setPins(basePins);
+        updatingPins = false;
+      }
+      adjustedPins = null;
+      adjustedPinOffsets.clear();
+      return;
+    }
+
+    const rootRect = app.r.root.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+    const offset = { x: parentRect.left - rootRect.left, y: parentRect.top - rootRect.top };
+    const screenPins = basePins.map((pin) => {
+      const screen = app.r.toScreen(pin);
+      return { ...pin, x: screen.x - offset.x, y: screen.y - offset.y };
+    });
+    const placements = placeEnteredGroupPins(screenPins, chips);
+    const placed = new Map(placements.map((position) => [position.id, position]));
+    const nextPins = basePins.map((pin) => {
+      const position = placed.get(pin.id);
+      if (!position?.moved) return pin;
+      const world = app.r.toWorld(position.x + offset.x, position.y + offset.y);
+      return { ...pin, x: world.x, y: world.y };
+    });
+    const changed = nextPins.some((pin, index) => pin.x !== currentPins[index]?.x || pin.y !== currentPins[index]?.y);
+    app.r.setPromotedPinIds(placements.filter((position) => position.promoted).map((position) => position.id));
+    pinOverlay.innerHTML = placements.filter((position) => position.promoted).map((position) => {
+      const pin = screenPins.find((item) => item.id === position.id);
+      return pin ? pinMarkup(pin, position, (value) => value) : '';
+    }).join('');
+    if (changed) {
+      adjustedPins = nextPins;
+      adjustedPinOffsets = new Map(nextPins
+        .map((pin, index): [string, number] => [pin.id, pin.y - basePins[index].y])
+        .filter(([, dy]) => dy !== 0));
+      updatingPins = true;
+      app.r.setPins(nextPins);
+      updatingPins = false;
+    } else if (currentPins !== adjustedPins) {
+      adjustedPins = null;
+      adjustedPinOffsets.clear();
+    }
+  };
 
   const hasWithheldMember = (member: Obj): boolean => {
     if (member.type === 'sticky' && app.r.isHidden(member)) return true;
@@ -80,8 +148,8 @@ export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
     const scope = app.scope ? app.store.get(app.scope) : undefined;
     const enteredGroup = scope?.type === 'group' ? scope as Group : undefined;
     const scopeBounds = enteredGroup ? app.r.bounds(enteredGroup) : null;
+    let pinChips: EnteredChipPinBox[] | null = null;
     if (enteredGroup && scopeBounds) {
-      chipBridge.hidden = true;
       const path = pathFor(enteredGroup);
       pathChip.textContent = path.text;
       pathChip.title = path.full;
@@ -104,26 +172,24 @@ export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
       );
       positionAt(pathChip, placement.name);
       positionAt(done, placement.done);
-      const nameRight = placement.name.x + pathChip.offsetWidth;
-      const doneLeft = placement.done.x;
-      const rowHeight = Math.max(pathChip.offsetHeight, done.offsetHeight);
-      if (doneLeft > nameRight && app.r.pins.some((pin) => {
-        if (pin.draft) return false;
-        const at = app.r.toScreen({ x: pin.x, y: pin.y });
-        const extent = pin.count > 1 ? PIN_R * 2 + 4 : PIN_R * 2;
-        return at.x < doneLeft && at.x + extent > nameRight &&
-          at.y - extent < placement.name.y + rowHeight && at.y > placement.name.y;
-      })) {
-        chipBridge.hidden = false;
-        chipBridge.style.width = `${doneLeft - nameRight}px`;
-        chipBridge.style.height = `${rowHeight}px`;
-        positionAt(chipBridge, { x: nameRight, y: placement.name.y });
-      }
+      const chipBox = (position: { x: number; y: number }, size: { width: number; height: number }): EnteredChipPinBox => ({
+        box: { x: position.x, y: position.y, w: size.width, h: size.height },
+        text: {
+          x: position.x + 9,
+          y: position.y + (size.height - 11) / 2,
+          w: Math.max(0, size.width - 18),
+          h: 11,
+        },
+      });
+      pinChips = [
+        chipBox(placement.name, { width: pathChip.offsetWidth, height: pathChip.offsetHeight }),
+        chipBox(placement.done, { width: done.offsetWidth, height: done.offsetHeight }),
+      ];
     } else {
       pathChip.hidden = true;
       done.hidden = true;
-      chipBridge.hidden = true;
     }
+    applyPinLayout(pinChips);
   };
 
   app.on('selection', place);
@@ -132,16 +198,25 @@ export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
   app.on('comments', place);
   const offComments = app.comments.onChange(place);
   const offCamera = app.r.onCamera(place);
+  const offPins = app.r.onPins(() => { if (!updatingPins) place(); });
   const resize = new ResizeObserver(place);
   resize.observe(parent);
   app.onDestroy(() => {
     offComments();
     offCamera();
+    offPins();
     resize.disconnect();
+    const pins = sourcePins();
+    app.r.setPromotedPinIds([]);
+    if (app.r.pins === adjustedPins) {
+      updatingPins = true;
+      app.r.setPins(pins);
+      updatingPins = false;
+    }
     selectedChip.remove();
-    chipBridge.remove();
     pathChip.remove();
     done.remove();
+    pinOverlay.remove();
   });
   place();
 }
