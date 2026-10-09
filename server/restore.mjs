@@ -42,7 +42,7 @@ const BOARD_WINDOW_MS = 10 * MINUTE_MS;
 const BOARD_MAX_PER_WINDOW = 10;
 const BOARDS_LIST_WINDOW_MS = MINUTE_MS;
 const BOARDS_LIST_MAX_PER_WINDOW = 20;
-const BOARDS_LISTED_MAX = 500;
+export const BOARDS_LISTED_MAX = 500;
 const TEAM_NAME_MAX = 80;
 const SPACE_MARGIN_BYTES = 64 * MIB;
 const FULL_RATIO = 0.8;
@@ -456,6 +456,7 @@ export function recoverOnStart({ dataDir, log = noop, step = noop }) {
  * @property {any} [setTimeout]
  * @property {any} [clearTimeout]
  * @property {number} [exitDelayMs] how long to wait after the response before leaving (tests of the relay)
+ * @property {number} [boardsListedMax] tests only: how many boards one backup's list holds (BOARDS_LISTED_MAX)
  */
 
 /**
@@ -498,6 +499,7 @@ export function createRestore({
   setTimeout: setTimer = (...args) => globalThis.setTimeout(...args),
   clearTimeout: clearTimer = (...args) => globalThis.clearTimeout(...args),
   exitDelayMs = 0,
+  boardsListedMax = BOARDS_LISTED_MAX,
 }) {
   if (!backup || !directory) return null;
 
@@ -1471,7 +1473,7 @@ export function createRestore({
         let truncated = false;
         for (const row of rows) {
           if (typeof row.id !== 'string' || !withContent.has(row.id)) continue;
-          if (boards.length >= BOARDS_LISTED_MAX) {
+          if (boards.length >= boardsListedMax) {
             truncated = true;
             break;
           }
