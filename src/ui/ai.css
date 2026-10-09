@@ -5,6 +5,8 @@
 .ai-intro, .ai-state, .ai-problem, .ai-source, .ai-meta { margin: 0; line-height: 1.5; }
 .ai-problem { min-height: 24px; font-size: 13px; }
 .ai-problem:empty { min-height: 0; }
+/* a refusal or a failed check reads in the danger colour, mixed with the text colour so it holds on the tray and on the page */
+.ai-problem.bad { color: color-mix(in srgb, var(--danger) 55%, currentColor); }
 .ai-meta { font-size: 13px; overflow-wrap: anywhere; }
 .ai-field { display: grid; gap: 8px; min-width: 0; }
 .ai-field .input, .ai-limit .input { width: 100%; }

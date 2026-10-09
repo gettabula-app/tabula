@@ -83,10 +83,13 @@ function keyTest(run: () => Promise<unknown>) {
     button.disabled = true;
     button.textContent = 'Testing…';
     status.textContent = '';
+    status.classList.remove('bad');
     try {
       await run();
+      status.classList.remove('bad');
       status.textContent = 'The key works.';
     } catch (e) {
+      status.classList.add('bad');
       status.textContent = keyTestErrorMessage(e) ?? describe(e);
     } finally {
       button.disabled = false;
@@ -151,6 +154,7 @@ export function openAiKeyDialog(): void {
       if (keyProblem(value) !== null) return;
       save.disabled = true;
       save.textContent = 'Checking…';
+      problem.classList.remove('bad');
       problem.textContent = 'Checking the key with the provider…';
       try {
         await api.saveMyAiKey({ provider: PROVIDER, apiKey: value.trim() });
@@ -159,6 +163,7 @@ export function openAiKeyDialog(): void {
         if (alive()) load();
       } catch (e) {
         if (!alive()) return;
+        problem.classList.add('bad');
         problem.textContent = describe(e);
         save.textContent = 'Save key';
         check();
@@ -207,6 +212,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     const problem = h('p', { class: 'ai-problem', role: 'status' });
     const refresh = () => {
       const why = draftProblem(edit);
+      problem.classList.toggle('bad', why !== null);
       problem.textContent = why ?? '';
       save.disabled = why !== null || patchOf(state, edit) === null;
     };

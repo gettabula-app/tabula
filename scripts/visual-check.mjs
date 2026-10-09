@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -162,8 +162,8 @@ async function openEmptyBoard({ page, base }) {
   await page.locator('.empty-hint').waitFor();
 }
 
-async function openSeedBoard({ page, base }) {
-  await page.goto(`${base}/?debug#/b/${BOARD_ID}`);
+async function openSeedBoard({ page, base }, query = '?debug') {
+  await page.goto(`${base}/${query}#/b/${BOARD_ID}`);
   await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
   await page.waitForFunction(() => {
     const provider = window.__board.conn.provider;
@@ -561,6 +561,29 @@ const screenOf = (page, id, fx, fy) =>
     const box = app.r.svg.getBoundingClientRect();
     return { x: box.left + s.x, y: box.top + s.y };
   }, { id, fx, fy });
+
+
+// ---------------------------------------------------------------- AI surfaces (QA sweep)
+
+/** The account menu's "Your AI key" dialog with a stored key and Test key answered by a fixed reply (accounts mode). */
+async function openAiKeyDialogWith({ page, base }, testReply) {
+  const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const me = await res.json();
+    return json(route, { ...me, ai: { personalKeys: true } });
+  });
+  await page.route('**/api/ai/config', (route) => json(route, {
+    enabled: true, features: ['generate'], keySource: 'user', model: 'claude-sonnet-5-5', personalKeys: true, hasSecret: true,
+    myKey: { provider: 'anthropic', hint: '4f2a', createdAt: NOW - 9 * 24 * HOUR, lastUsedAt: NOW - 2 * HOUR },
+  }));
+  await page.route('**/api/ai/keys/me/test', (route) => (testReply.ok ? json(route, { ok: true, provider: 'anthropic', checkedAt: NOW }) : json(route, testReply.body, testReply.status)));
+  await page.goto(`${base}/#/b/${BOARD_ID}`);
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('menuitem', { name: 'Your AI key' }).click().catch(async () => page.getByText('Your AI key', { exact: true }).click());
+  await page.getByRole('button', { name: 'Test key' }).click();
+}
 
 const STATES = {
   async home({ page, base }) {
@@ -1047,6 +1070,38 @@ const STATES = {
     await env.page.getByRole('button', { name: 'Restore this backup' }).click();
     await env.page.locator('.restoring').waitFor();
   },
+  // QA sweep of the AI surfaces: Test key answered well and badly, and the review panel of someone else's proposal
+  async 'ai-key-test'(env) {
+    await openAiKeyDialogWith(env, { ok: true });
+    await env.page.getByText('The key works.').waitFor();
+  },
+  async 'ai-key-test-error'(env) {
+    await openAiKeyDialogWith(env, { ok: false, status: 502, body: { error: 'ai_key_invalid', message: 'rejected' } });
+    await env.page.getByText('The AI key was rejected.').waitFor();
+  },
+  async 'ai-review'(env) {
+    const { page } = env;
+    await openSeedBoard(env, '?debug&aibar');
+    // the relay's message, handed to the handler the page registered for it (6 is MSG_AI_RUNS)
+    await page.evaluate(() => {
+      const app = window.__board;
+      const run = {
+        id: 'visual-run', feature: 'generate', status: 'ready', private: false, startedAt: 1, readyAt: 2, cut: false,
+        by: { id: 'visual-ana', name: 'Ana', color: '#7A5AF8' }, target: { ids: [] },
+        proposal: { kind: 'create', objects: [{ text: 'Pilot the new onboarding with five teams' }, { text: 'Write the migration guide' }, { text: 'Decide on the pricing page copy' }, { text: 'A deliberately long sticky text that has to wrap onto several lines inside the review panel row' }] },
+      };
+      const bytes = new TextEncoder().encode(JSON.stringify({ kind: 'snapshot', runs: [run] }));
+      const arr = new Uint8Array(bytes.length + 5);
+      let n = bytes.length, i = 0;
+      while (n > 127) { arr[i++] = (n & 127) | 128; n >>>= 7; }
+      arr[i++] = n;
+      arr.set(bytes, i);
+      app.conn.provider.messageHandlers[6](null, { arr, pos: 0, len: i + bytes.length });
+    });
+    await page.getByRole('button', { name: /review/i }).first().click();
+    await page.locator('.aireview').first().waitFor();
+    await settle(page);
+  },
   async 'backups-off'({ page, base }) {
     await page.goto(`${base}/#/admin/backups`);
     await page.getByText('Not set up', { exact: true }).waitFor();
@@ -1058,7 +1113,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'ai-review': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay

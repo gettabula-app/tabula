@@ -367,15 +367,17 @@ export function mountAiLive(app: BoardApp): void {
       }
     }
 
-    // what a label row keeps off: the selection's quick bar, the AI bar, and the trays that always sit on the board
+    // what a label row keeps off: the selection's quick bar, the AI bar, the review panel, and the trays that always sit on the board
     const obstacles: Rect[] = [];
-    for (const el of document.querySelectorAll('.quickbar.show, .chrome > .top-left, .chrome > .top-right, .chrome > .rail, .chrome > .zoom-tray')) {
+    for (const el of document.querySelectorAll('.quickbar.show, .chrome > .top-left, .chrome > .top-right, .chrome > .rail, .chrome > .zoom-tray, .chrome > .aireview')) {
       const r = el.getBoundingClientRect();
       if (r.width > 0) obstacles.push(toRect(r, origin));
     }
     const bar = live.link?.rect();
     if (bar) obstacles.push(toRect(bar, origin));
 
+    // the run under review has its own Add and Discard in the panel: its row would only peek out from behind it
+    const reviewing = new Set([...document.querySelectorAll<HTMLElement>('.chrome > .aireview')].map((el) => el.dataset.run));
     const input: LabelRowIn[] = [];
     for (const run of ready) {
       const row = rows.get(run.id);
@@ -383,7 +385,7 @@ export function mountAiLive(app: BoardApp): void {
       if (!row || !layout) continue;
       const anchor = screenRect(previewBox(layout));
       // a preview that is off screen shows nothing: the avatar badge says someone has one
-      row.el.hidden = !intersects(anchor, view);
+      row.el.hidden = reviewing.has(run.id) || !intersects(anchor, view);
       if (row.el.hidden) continue;
       if (!row.w) row.w = row.el.offsetWidth;
       input.push({ id: run.id, anchor, w: row.w, h: ROW_H });
