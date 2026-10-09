@@ -248,7 +248,7 @@ describe('version history in open mode', { timeout: 40_000 }, () => {
     }
     expect((await call(s, undefined, 'PUT', versionsUrl('abc'), {})).status).toBe(405);
     expect((await call(s, undefined, 'DELETE', versionsUrl('abc'))).status).toBe(405);
-    expect((await call(s, undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false });
+    expect((await call(s, undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false, images: true });
   });
 
   it('never snapshots the comments room', async () => {

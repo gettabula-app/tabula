@@ -35,6 +35,8 @@ import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
 import { createOpenRun } from './ai/run.mjs';
 import { createLiveRuns } from './ai/live.mjs';
+import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
+import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -178,9 +180,28 @@ const restore = createRestore({
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
 });
+// Images on a board (docs/images.md): the files are shared by both modes; the index of who may read which is the directory
+// database with accounts and a small JSON file without.
+function clientIp(req) {
+  if (config.trustProxy) {
+    const header = req.headers['x-forwarded-for'];
+    const entries = String(Array.isArray(header) ? header.join(',') : (header ?? '')).split(',').map((v) => v.trim()).filter(Boolean);
+    if (entries.length) return entries[entries.length - 1];
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+const assets = config.assets
+  ? (() => {
+      const dir = path.join(DATA_DIR, 'assets');
+      const store = createAssetStore({ dir, index: directory ?? createJsonAssetIndex(dir), limits: config.assets });
+      return { store, handlers: createAssetHandlers({ store, limiter: createUploadLimiter() }) };
+    })()
+  : null;
+const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: assets.handlers, clientIp }) : null;
+
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive } });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -679,13 +700,15 @@ async function onRequest(req, res) {
       if (api) {
         if (!(await api.handle(req, res))) sendJson(res, 404, { error: 'not_found' });
       } else if (url.pathname === '/api/config') {
-        sendJson(res, 200, { authEnabled: false });
+        sendJson(res, 200, { authEnabled: false, ...(assets ? { images: true } : {}) });
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
         await openAiRun.handle(req, res);
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
         await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
+      } else if (openAssets && (await openAssets(req, res, url))) {
+        // answered: an image upload or download of open mode
       } else if (!(await history.handleOpen(req, res))) {
         sendJson(res, 404, { error: 'not_found' });
       }

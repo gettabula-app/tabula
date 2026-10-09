@@ -225,7 +225,7 @@ describe('accounts mode server', () => {
       expect(owner.user.role).toBe('owner');
       expect(owner.user.email).toBe(OWNER);
       const me = await api(owner.cookie, 'GET', '/api/me');
-      expect(me.body).toEqual({ user: owner.user, teams: [] });
+      expect(me.body).toEqual({ user: owner.user, teams: [], images: true });
 
       const second = await signIn(OWNER);
       expect(second.user.id).toBe(owner.user.id);
@@ -1173,7 +1173,7 @@ describe('other server configurations', () => {
   it('leaves open mode alone: config says so, other /api paths are 404 JSON, and sockets need no cookie', async () => {
     const open = await launch(1, { TABULA_AUTH: 'off' });
     const config = await fetch(`${open.base}/api/config`);
-    expect(await config.json()).toEqual({ authEnabled: false });
+    expect(await config.json()).toEqual({ authEnabled: false, images: true });
     expect(((await (await fetch(`${open.base}/api/health`)).json()) as Body).ok).toBe(true);
 
     for (const url of ['/api/me', '/api/teams', '/api/nothing']) {

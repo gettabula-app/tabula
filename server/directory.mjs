@@ -6,6 +6,7 @@ import { normaliseEmail } from './config.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 import { AI_KEYS_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
+import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
 export { normaliseEmail };
 
@@ -134,6 +135,8 @@ export const MIGRATIONS = [
   TEMPLATES_MIGRATION,
   // Encrypted provider API keys for the AI features, one for the workspace and one per person (docs/ai.md).
   AI_KEYS_MIGRATION,
+  // Which board may read which image file (docs/images.md).
+  ASSETS_MIGRATION,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -906,6 +909,7 @@ export function openDirectory(file) {
     ...createTokenStore({ get, all, run, transaction }),
     ...createTemplateStore({ get, all, run }),
     ...createAiKeyStore({ get, run, transaction }),
+    ...createAssetIndex({ get, all, run }),
     audit,
     listAudit,
     listAuditPage,

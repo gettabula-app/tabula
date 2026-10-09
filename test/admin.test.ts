@@ -163,6 +163,7 @@ describe('auditSentence', () => {
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
+      'asset.upload',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });

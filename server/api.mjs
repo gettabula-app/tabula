@@ -14,6 +14,7 @@ import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from '
 import { describeError } from './ai/errors.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
+import { AssetError } from './assets.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -135,7 +136,7 @@ function compile(method, pattern, options, handler) {
 // (docs/ai.md); the tests do, so no request leaves the machine.
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {} }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -184,6 +185,22 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (!board || role === null) throw notFound('Board not found');
     if (own && role !== 'owner') throw forbidden('Only the board owner can do that');
     return { board, role };
+  }
+
+  // Images (docs/images.md): adding one is a board write, so it takes the same role as writing the room; reading takes any role.
+  function requireAssetWriter(user, boardId) {
+    const { role } = boardFor(user, boardId);
+    if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add images');
+  }
+
+  // The asset handlers refuse with AssetError; the dispatcher answers HttpError.
+  async function assetReply(fn) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof AssetError) throw new HttpError(err.status, err.code, err.message);
+      throw err;
+    }
   }
 
   const requireAdmin = (user) => {
@@ -336,6 +353,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         teams: directory.listTeamsFor(user.id).map((t) => ({ id: t.id, name: t.name, role: t.role })),
         ...(cloud ? { workspace: cloud.workspaceView() } : {}),
         ...(config.mcp ? { mcp: true } : {}),
+        ...(assets ? { images: true } : {}),
         ...aiApi.meFlag(user),
       },
     ]),
@@ -952,6 +970,38 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ]
       : []),
 
+    // ---------------------------------------------------------- images (docs/images.md)
+
+    ...(assets
+      ? [
+          compile('POST', 'boards/:id/assets', {}, ({ req, params, user }) => assetReply(() => assets.handlers.upload({
+            boardId: params.id,
+            req,
+            rateKey: `user:${user.id}`,
+            userId: user.id,
+            authorize: () => requireAssetWriter(user, params.id),
+            onCreated: (row) => audit(user, 'asset.upload', { boardId: row.boardId, hash: row.hash, bytes: row.bytes }),
+          }))),
+          compile('POST', 'boards/:id/assets/claim', { body: true }, ({ params, user, body }) => assetReply(() => assets.handlers.claim({
+            boardId: params.id,
+            body,
+            userId: user.id,
+            authorize: () => requireAssetWriter(user, params.id),
+            mayReadFrom: (other) => {
+              const board = directory.getBoard(other);
+              return board != null && board.deletedAt == null && directory.boardRole(other, user.id) !== null;
+            },
+            onCreated: (row) => audit(user, 'asset.upload', { boardId: row.boardId, hash: row.hash, bytes: row.bytes, claimed: true }),
+          }))),
+          compile('GET', 'boards/:id/assets/:hash', {}, ({ req, params, user }) => {
+            boardFor(user, params.id);
+            return assetReply(() => (String(req.method).toUpperCase() === 'HEAD'
+              ? assets.handlers.head({ boardId: params.id, hash: params.hash })
+              : assets.handlers.get({ boardId: params.id, hash: params.hash, req })));
+          }),
+        ]
+      : []),
+
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
 
     ...aiApi.routes,
@@ -998,7 +1048,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   function send(res, status, body, headers) {
     if (body === undefined) {
-      res.writeHead(status);
+      res.writeHead(status, headers);
       res.end();
       return;
     }

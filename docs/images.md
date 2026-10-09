@@ -1,16 +1,33 @@
 # Images on the board
 
-TAB-127. Status: spec for review. Nothing here is built yet.
+TAB-127. Status: decided by Johan on 2026-10-09 (see **Decided** below); the asset store and its API are built (slice 2), the client is next.
 
 People want to put a picture on a board: a screenshot, a photo of a whiteboard, a logo, a diagram exported from somewhere else. Today the app has no image object, and pasting or dropping an image either does nothing (paste reads only `text/plain`) or fails with "This file is not a Tabula board." (drop). This page specifies the image object, how bytes are stored and served, and how images fit the features that already touch every object: sync, history, export, templates, backups, permissions and the AI tools.
 
 The shape of the answer, in one paragraph: the board document holds a small **reference** to an image, never its bytes. Bytes live in a separate, **hash-addressed asset store** on the relay, written through a small authenticated API, scoped to the board that uploaded them. The browser downscales before it uploads, keeps the original blob locally until the upload succeeds, and shows the image from its own cache when offline. Everything else follows from not putting bytes in the Yjs document.
 
+## Decided
+
+Johan went with the recommendations on every open question, which changes this page in these places. Where the text below says otherwise, this list wins.
+
+- **SVG is rasterised to PNG in the browser in v1.** The server accepts only PNG, JPEG, GIF and WebP; an `image/svg+xml` upload is `400 unsupported_type`. The stored `mime` is never `image/svg+xml`, the SVG sections below describe the later, real-SVG version, and `svgProblem` is not used by the asset store.
+- **Sizes**: 10 MB per file, 100 MB per board, and **50 MB per board in open mode** (no accounts, anyone with a link can upload). `TABULA_ASSET_MAX_BYTES`, `TABULA_ASSET_BOARD_QUOTA` (default depends on the mode) and `TABULA_ASSET_TOTAL_QUOTA` take bytes or a number with `K`, `M` or `G`.
+- **GIFs** pass through unchanged when within the caps and play once or on hover.
+- **Deleted images stay in history** until the versions holding them expire; a purge action is v2.
+- **JSON snapshot**: references only. `.drift`: embeds the files.
+- **No images in templates** in v1, **alt text only**, **pasting a URL fetches nothing**.
+- **Who may add**: owners and editors (open mode: everyone who can edit). Everyone who can open the board can view.
+- **Toolbar**: **Image**, after **Frame**.
+
+### Built so far (slice 2, server)
+
+`server/image-header.mjs` (type by magic bytes, size from the header), `server/image-strip.mjs` (metadata removal), `server/assets.mjs` (the store, both forms of its index, the upload limiter, the body reader and the response headers), `server/asset-routes.mjs` (the handlers, shared by both modes, and the open-mode routes), the `assets` migration, `TABULA_ASSETS`, the routes in `server/api.mjs`, the `images` flag in `/api/me` and `/api/config`, the `asset.upload` audit action. Open mode keeps its index in `<DATA_DIR>/assets/index.json` because it has no database. Still to do: the client, the garbage collector, the backup walk, templates guard, MCP types, export and the guide (slices 1, 3 and 4).
+
 ## Summary
 
 - **Add an image** by pasting it (`Ctrl+V` with an image on the clipboard), dropping a file or files onto the board, or choosing **Image** on the left toolbar (file picker, several files allowed). Placed at the pointer or the view centre, stepped like clicked stickers when there are several.
 - **A new object type `image`**: position, size, rotation, lock, z-order like every box, plus `asset` (the content hash), `mime`, natural size `nw` and `nh`, and an optional `alt` text. Corner resize keeps the proportions, as it does for icons.
-- **Formats**: PNG, JPEG, GIF and WebP, and SVG through the same allow-list that custom templates use. Anything else is refused with a clear message.
+- **Formats**: PNG, JPEG, GIF and WebP. An SVG file is rasterised to PNG in the browser (v1). Anything else is refused with a clear message.
 - **Storage**: `<DATA_DIR>/assets/<aa>/<sha256>`, one file per distinct content, plus an `assets` table in the directory database for ownership, size and quota. Uploaded with `POST /api/boards/:id/assets` (raw body), read with `GET /api/boards/:id/assets/:hash`.
 - **Downscaling** in the browser before upload: longest side at most 2560 px, re-encoded, EXIF dropped. The server enforces its own hard limits and strips metadata again, because it cannot trust the client.
 - **Offline**: the blob stays in IndexedDB with a pending upload record; the object is created at once with a `pending:` reference and the picture shows from the local blob. Uploads run when the relay is reachable.
