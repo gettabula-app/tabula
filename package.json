@@ -21,6 +21,7 @@
     "changelog:fold": "node scripts/changelog.mjs fold",
     "changelog:check": "node scripts/changelog.mjs check",
     "test:repeat": "node scripts/test-repeat.mjs",
+    "qa:prelaunch": "node scripts/prelaunch-smoke.mjs",
     "drill:local": "node scripts/drill-local.mjs",
     "load:class": "node scripts/load-class.mjs",
     "check:ai-review": "node scripts/check-ai-review.mjs",
