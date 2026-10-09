@@ -67,7 +67,7 @@ In the quick-action bar, **Text** sets horizontal alignment (left, centre, right
 
 ### Fonts
 
-Open the properties panel (see below) and use **Font**. The font list has a search field (**Search Fontshare fonts**), category filters and a section for fonts already used on the board. Pointing at a font previews it on your selection. Click to keep it, or press `Esc` to put the old one back. You can also set **Size** and **Weight** there. Size changes by 1 with the arrow keys or mouse wheel, and by 10 with `Shift`.
+Open the properties panel (see below) and use **Font**. The font list has a search field (**Search Fontshare fonts**) that matches names and style words such as "serif", with exact name matches first, category filters and a section for fonts already used on the board. Pointing at a font previews it on your selection. Click to keep it, or press `Esc` to put the old one back. You can also set **Size** and **Weight** there. Size changes by 1 with the arrow keys or mouse wheel, and by 10 with `Shift`.
 
 Board-wide heading and body fonts for new objects are set in **Board settings** in the board menu.
 
