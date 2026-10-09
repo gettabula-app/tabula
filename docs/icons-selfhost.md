@@ -173,7 +173,7 @@ Dropping it would remove every set Tabula does not host. Instead:
 
 `package.json`: `"build": "tsc --noEmit && vite build && node scripts/build-icons.mjs"`, `"build:app": "tsc --noEmit && vite build"` and `"build:icons": "node scripts/build-icons.mjs"`. The order matters: `vite build` empties `dist/`. The script writes `dist/icons/` and nothing else. `npm test` does not run it.
 
-**Input.** The sets are read from the installed `@iconify/json` (an exact-pinned devDependency, `node_modules/@iconify/json/json/<prefix>.json`: icons, aliases, set-wide `width`, `height`, `left`, `top`, `info` with name, author, licence, category and `hidden`, and `categories`). `ICON_SETS` chooses the sets: unset or `all` builds every set that passes the rules below (minus `EXCLUDED_SETS`), `curated` builds `CURATED_SETS`. Any other value stops the script. The order of `CURATED_SETS` is the priority order in the picker and in cross-set search; sets that are not in it follow by prefix. The 16 pinned reactions and the shard limits (96 icons or 64 KiB) are constants in the script and its library.
+**Input.** The sets are read from the installed `@iconify/json` (an exact-pinned devDependency, `node_modules/@iconify/json/json/<prefix>.json`: icons, aliases, set-wide `width`, `height`, `left`, `top`, `info` with name, author, licence, category and `hidden`, and `categories`). `ICON_SETS` chooses the sets: unset or `all` builds every set that passes the rules below (minus `EXCLUDED_SETS`), `curated` builds `CURATED_SETS`, and `demo` builds `DEMO_SETS` plus only the Fluent names in `DEMO_EMOJI_NAMES` and the pinned reactions. Any other value stops the script. The order of `CURATED_SETS` is the priority order in the picker and in cross-set search; sets that are not in it follow by prefix. The 16 pinned reactions and the shard limits (96 icons or 64 KiB) are constants in the script and its library.
 
 **For each set:**
 
@@ -192,6 +192,10 @@ s/<prefix>.<n>.<hash>.json          shard n of a set
 pin.<hash>.json                     bodies of the pinned names (the 16 reactions)
 LICENSES.txt                        every hosted set: name, author, licence id and URL (plain text, not hashed)
 ```
+
+**Static demo (`ICON_SETS=demo`).** Set `ICONS_OUT=dist-demo/icons` to write plain `manifest.json`, `i/*.json`, `s/*.json` and `pin.*.json`; content hashes still use the canonical, uncompressed JSON, so unchanged inputs keep immutable names. The mode includes `lucide` and a subset of `fluent-emoji-flat`; Twemoji and Noto are omitted. Fluent is limited to a named list of common emoji plus the 16 pinned reactions. It writes `LICENSES.txt` for these sets only. On `@iconify/json` 2.2.540 this produced 2,275 icons (1,941 Lucide and 334 Fluent), 1,055,364 bytes raw total, 0.26 MiB when gzip is measured per file, and a largest file of 65,004 bytes. The Lucide index and shards used 0.57 MiB raw / 0.10 MiB gzip; Fluent used 0.42 MiB raw / 0.15 MiB gzip. The build fails above 3 MiB total raw or 1 MiB per file. Static hosting can apply its own gzip or Brotli compression; there are no `.gz` files.
+
+Only those two prefixes appear in the demo manifest. In the demo, set selection comes from that manifest, API fallbacks are disabled, and `previewUrl()` returns an empty string, so an absent set makes no network request. The included sets have ISC and MIT notice-tier licences; their licence tiers, authors and links remain in the manifest and `LICENSES.txt`, which lets the credits UI list them. If an attribution-tier set is added later, preserve its attribution metadata and license entry so the same UI can show the required credit.
 
 Manifest:
 

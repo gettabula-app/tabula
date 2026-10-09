@@ -2,6 +2,7 @@ import { hostedSets } from '../icons';
 import { downloadSets, offlineStates, offlineSupported, removeSets, type OfflineState } from '../icon-offline';
 import { toast } from './common';
 import { h } from './dom';
+import { DEMO } from '../demo';
 
 export interface OfflineTarget { label: string; prefixes: string[] }
 
@@ -12,7 +13,7 @@ const mb = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(b
  * A download keeps going when the drawer closes. Hidden where the browser has no Cache Storage.
  */
 export function offlineRow(target: () => OfflineTarget | null, signal: AbortSignal) {
-  const el = h('div', { class: 'offline-row', hidden: !offlineSupported() });
+  const el = h('div', { class: 'offline-row', hidden: DEMO || !offlineSupported() });
   let busy: AbortController | null = null;
   let seq = 0;
 
@@ -42,7 +43,7 @@ export function offlineRow(target: () => OfflineTarget | null, signal: AbortSign
 
   const update = async () => {
     const mine = ++seq;
-    if (!offlineSupported() || busy) return;
+    if (DEMO || !offlineSupported() || busy) return;
     const t = target();
     el.hidden = !t;
     if (!t) return;

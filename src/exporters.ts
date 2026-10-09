@@ -12,11 +12,15 @@ import { isWithheld, leaveOutWithheld, updateWithoutWithheld } from './private-s
 import { answerKey } from './polls';
 import { cleanProposedBy } from './safe-obj';
 import { SVG_DEFS, objectMarkup } from './markup';
-import { cssUrl, fontName, nearestWeight } from './fonts';
+import { cssUrl, fontIsAllowed, fontName, nearestWeight } from './fonts';
 import { customStickyColors } from './palette';
 import { cardRows, cardsCsvName, csvText } from './csv';
 import { containerOf } from './containers';
 import { listLabels } from './labels';
+import { DEMO } from './demo';
+
+const DEMO_IMPORT_COMPRESSED_LIMIT = 20 * 1024 * 1024;
+const DEMO_IMPORT_UNCOMPRESSED_LIMIT = 100 * 1024 * 1024;
 
 export interface BoardJson {
   format: 'driftboard';
@@ -121,10 +125,27 @@ export async function toDrift(app: BoardApp, opts: { leaveOutWithheld?: boolean 
 export interface ImportedBoard { json: BoardJson; update?: Uint8Array; comments?: Uint8Array; /** The pictures of the file by the `asset` reference they stand for. */ assets?: Record<string, ImportedAsset> }
 
 export async function readBoardFile(file: File): Promise<ImportedBoard> {
+  if (DEMO && file.size > DEMO_IMPORT_COMPRESSED_LIMIT) {
+    throw new Error('This board file exceeds the 20 MiB demo import limit.');
+  }
   const buf = new Uint8Array(await file.arrayBuffer());
   // zip magic: PK\x03\x04
   if (buf[0] === 0x50 && buf[1] === 0x4b) {
-    const files = unzipSync(buf);
+    let compressedTotal = 0;
+    let uncompressedTotal = 0;
+    const files = unzipSync(buf, DEMO ? {
+      filter: (entry) => {
+        compressedTotal += entry.size;
+        uncompressedTotal += entry.originalSize;
+        if (compressedTotal > DEMO_IMPORT_COMPRESSED_LIMIT) {
+          throw new Error('This board archive exceeds the 20 MiB demo import limit.');
+        }
+        if (uncompressedTotal > DEMO_IMPORT_UNCOMPRESSED_LIMIT) {
+          throw new Error('This board archive expands beyond the 100 MiB demo import limit.');
+        }
+        return true;
+      },
+    } : undefined);
     const assets = unpackAssets(files);
     if (!files['board.json']) throw new Error('This file is not a Tabula board (board.json is missing).');
     return {
@@ -234,6 +255,7 @@ function usedFonts(objs: Obj[]): Map<string, Set<number>> {
   for (const o of objs) {
     const b = o as BaseObj;
     if (!b.font || b.font === 'system') continue;
+    if (!fontIsAllowed(b.font)) continue;
     const s = m.get(b.font) ?? new Set<number>();
     s.add(nearestWeight(b.font, b.fontWeight || 400));
     if (o.type === 'uml-class') s.add(nearestWeight(b.font, 700));
@@ -317,7 +339,10 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
   const body = objs.map((o) => objectMarkup(app.store.placed(o), ctx)).join('\n');
   let style = opts.fontCss ?? '';
   if (!opts.fontCss) {
-    style = [...usedFonts(objs)].map(([slug, ws]) => `@import url("${cssUrl(slug, [...ws])}");`).join('\n');
+    style = [...usedFonts(objs)].flatMap(([slug, ws]) => {
+      const url = cssUrl(slug, [...ws]);
+      return url ? [`@import url("${url}");`] : [];
+    }).join('\n');
   }
   const bg = opts.background === false ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#FFFFFF"/>`;
   const svg = resolveColorMix(resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
@@ -385,7 +410,9 @@ async function inlineFontCss(objs: Obj[]): Promise<string> {
   const parts: string[] = [];
   for (const [slug, ws] of usedFonts(objs)) {
     try {
-      const css = await (await fetchWithin(cssUrl(slug, [...ws]))).text();
+      const url = cssUrl(slug, [...ws]);
+      if (!url) continue;
+      const css = await (await fetchWithin(url)).text();
       const name = fontName(slug).toLowerCase();
       // The endpoint sometimes returns faces of other families too; keep only ours.
       const faces = (css.match(/@font-face\s*{[^}]*}/g) || []).filter((f) => f.toLowerCase().includes(`'${name}'`) || f.toLowerCase().includes(`"${name}"`));
