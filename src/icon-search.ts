@@ -12,6 +12,8 @@ export interface SearchOptions {
   limit: number;
   /** At most this many results from one set. */
   perSet?: number;
+  /** Called once for each indexed name or alias checked against the query. */
+  onCandidateCheck?: () => void;
 }
 
 /** Lower-case words of a query. */
@@ -40,17 +42,19 @@ interface Hit { index: number; tier: number; score: number }
 
 const better = (a: Hit, b: Hit, names: string[]) => a.tier - b.tier || a.score - b.score || names[a.index].length - names[b.index].length || (names[a.index] < names[b.index] ? -1 : 1);
 
-function setHits(set: SearchSet, tokens: string[]): Hit[] {
+function setHits(set: SearchSet, tokens: string[], onCandidateCheck?: () => void): Hit[] {
   const best = new Map<number, Hit>();
   const offer = (hit: Hit) => {
     const have = best.get(hit.index);
     if (!have || better(hit, have, set.names) < 0) best.set(hit.index, hit);
   };
   set.names.forEach((name, index) => {
+    onCandidateCheck?.();
     const score = allScore(name, tokens);
     if (score >= 0) offer({ index, tier: 0, score });
   });
   for (const [alias, index] of set.aliases) {
+    onCandidateCheck?.();
     const score = allScore(alias, tokens);
     if (score >= 0) offer({ index, tier: 1, score });
   }
@@ -84,12 +88,12 @@ function setHits(set: SearchSet, tokens: string[]): Hit[] {
  * A whole word beats the start of a word beats a substring; a match in the name beats one in an alias beats one in a
  * category; shorter names first; ties go to the set earlier in the list. An alias hit returns the icon's own name.
  */
-export function searchSets(sets: SearchSet[], query: string, { limit, perSet }: SearchOptions): string[] {
+export function searchSets(sets: SearchSet[], query: string, { limit, perSet, onCandidateCheck }: SearchOptions): string[] {
   const tokens = queryTokens(query);
   if (!tokens.length || limit <= 0) return [];
   const all: { hit: Hit; set: number }[] = [];
   sets.forEach((set, setIndex) => {
-    let hits = setHits(set, tokens);
+    let hits = setHits(set, tokens, onCandidateCheck);
     if (perSet !== undefined && hits.length > perSet) hits = hits.sort((a, b) => better(a, b, set.names)).slice(0, perSet);
     for (const hit of hits) all.push({ hit, set: setIndex });
   });
