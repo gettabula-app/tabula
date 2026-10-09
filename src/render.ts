@@ -26,6 +26,7 @@ export interface RemoteSel { ids: Id[]; color: string }
 
 export interface Overlay {
   selection: Id[];
+  enteredGroup: Id | null;
   hover: Id | null;
   lockedHover: Id | null;
   anchorsFor: Id | null;
@@ -64,7 +65,7 @@ export interface KanbanDrawState {
 }
 
 export const emptyOverlay = (): Overlay => ({
-  selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
+  selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
 });
 
@@ -633,6 +634,23 @@ export class Renderer {
     const get = this.safeGet;
     const ov = this.overlay;
     let out = ov.ai;
+
+    if (ov.enteredGroup) {
+      const group = get(ov.enteredGroup);
+      if (group?.type === 'group') {
+        const b = this.bounds(group);
+        if (b) {
+          const v = this.viewport();
+          out += `<path d="M${v.x} ${v.y}h${v.w}v${v.h}h-${v.w}z M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z" fill="var(--canvas-ink)" fill-opacity="0.1" fill-rule="evenodd" pointer-events="none"/>`;
+          const label = escapeXml(typeof group.name === 'string' && group.name.trim() ? group.name.trim() : 'Group');
+          const width = Math.max(px(42), px(12 + label.length * 7));
+          const height = px(18), x = b.x, y = b.y - px(6);
+          out += `<rect x="${x}" y="${y - height}" width="${width}" height="${height}" rx="${px(2)}" fill="var(--canvas)" stroke="var(--wire)" stroke-width="${px(1)}" pointer-events="none"/>`;
+          out += `<text x="${x + px(6)}" y="${y - px(5)}" font-size="${px(11)}" font-weight="600" fill="var(--canvas-ink)" font-family="Switzer, system-ui, sans-serif" pointer-events="none">${label}</text>`;
+          out += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--wire)" stroke-width="${px(1.5)}" stroke-dasharray="${px(6)} ${px(4)}" pointer-events="none"/>`;
+        }
+      }
+    }
 
     // remote selections
     for (const r of ov.remote) {

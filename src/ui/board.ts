@@ -15,6 +15,7 @@ import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
+import { mountGroupUI } from './group-ui';
 import { mountLibrary, openMermaidImport } from './library';
 import { bindLayersKey } from './layers';
 import { mountFlowBar, openVoteSetup, startVote } from './flowbar';
@@ -319,6 +320,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
+  mountGroupUI(app, chrome);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)

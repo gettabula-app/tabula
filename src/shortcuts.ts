@@ -38,6 +38,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Ctrl/Cmd+X', action: 'Cut', ids: ['mod+x'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+V', action: 'Paste', ids: ['mod+v'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+D', action: 'Duplicate', ids: ['mod+d'] },
+  { group: 'Edit', keys: 'Ctrl/Cmd+G', action: 'Group selected items', ids: ['mod+g'] },
+  { group: 'Edit', keys: 'Shift+Ctrl/Cmd+G', action: 'Ungroup selected groups', ids: ['mod+shift+g'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+A', action: 'Select all', ids: ['mod+a'] },
   { group: 'Edit', keys: 'Delete, Backspace', action: 'Delete selection', ids: ['delete', 'backspace'] },
   { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item, open a card, or open a kanban as a list', ids: ['enter'] },

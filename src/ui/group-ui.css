@@ -1,0 +1,22 @@
+.group-done {
+  position: absolute;
+  z-index: 13;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--tray-line);
+  border-radius: 0;
+  background: var(--tray);
+  color: var(--tray-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.group-done[hidden] { display: none; }
+.group-done:hover { background: var(--tray-2); }

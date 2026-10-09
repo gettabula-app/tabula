@@ -1,7 +1,7 @@
 import { planStep } from './z-order';
 import { gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
-import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
+import type { BaseObj, ConnectorObj, End, Group, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
 import type { Anchor, Comments, Thread } from './comments';
@@ -49,6 +49,7 @@ import { ensureFont } from './fonts';
 import { Flow } from './flow';
 import { TextEditor } from './editor';
 import { StyleEdit } from './style-edit';
+import { descendantsOf, groupPlan, isGroup, liftToScope, pick, topLevelAncestors, ungroupPlan } from './groups';
 
 export type Tool =
   | { kind: 'select' }
@@ -68,7 +69,7 @@ type Drag =
   | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession }
   | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj; guides?: GuideSession }
   | { mode: 'rotate'; id: Id; c: Point; a0: number; r0: number }
-  | { mode: 'marquee'; start: Point; base: Id[] }
+  | { mode: 'marquee'; start: Point; base: Id[]; moved: boolean }
   | { mode: 'create'; start: Point; tool: Tool }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
@@ -116,6 +117,8 @@ export class BoardApp {
   readonly styleEdit: StyleEdit;
   tool: Tool = { kind: 'select' };
   selection: Id[] = [];
+  /** Group entered on this device; it is view state and is never synced. */
+  scope: Id | null = null;
   /** Shows a short toast; the UI assigns it. */
   notify: (msg: string) => void = () => {};
   /** Tells screen readers what just changed on the board; the UI assigns it (src/ui/announce.ts). */
@@ -199,10 +202,21 @@ export class BoardApp {
     this.disposers.push(this.watchLabels());
     this.r.dimmed = (o) => this.isDimmed(o);
     this.r.commentCount = (id) => this.comments.list().filter((t) => t.anchor.obj === id && !t.resolved).reduce((n, t) => n + 1 + t.replies.length, 0);
-    this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
+    this.styleEdit = new StyleEdit(this.store, () => this.selectedLeaves(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
     this.images = new BoardImages(this);
-    this.store.undo.on('stack-item-popped', (e: { type: 'undo' | 'redo' }) => this.announce(e.type === 'undo' ? 'Undone' : 'Redone'));
+    this.store.undo.on('stack-item-popped', (e: { type: 'undo' | 'redo'; changedParentTypes?: Map<unknown, Array<{ path?: (string | number)[]; changes?: { keys?: Map<string, unknown> } }>> }) => {
+      this.announce(e.type === 'undo' ? 'Undone' : 'Redone');
+      const changed = new Set<Id>();
+      for (const [type, events] of e.changedParentTypes ?? []) {
+        for (const event of events) {
+          if (type === this.store.objects) {
+            for (const id of event.changes?.keys?.keys() ?? []) changed.add(id);
+          } else if (event.path?.length) changed.add(String(event.path[0]));
+        }
+      }
+      this.resetScopeSelection(changed);
+    });
 
     const meta = this.store.getMeta();
     this.r.gridType = meta.gridType;
@@ -217,9 +231,10 @@ export class BoardApp {
 
     this.store.onChange((changed) => {
       // drop deleted, locked and hidden objects from the selection (someone else may have hidden one)
-      const before = this.selection.length;
-      this.selection = selectableIds(this.store, this.flow, this.selection).filter((id) => !this.store.get(id)?.locked);
-      if (this.selection.length !== before) this.emitSelection();
+      const before = this.selection.join('\0');
+      const oldScope = this.scope;
+      this.selection = this.selectionAtScope(this.selection.filter((id) => !this.store.get(id)?.locked));
+      if (this.selection.join('\0') !== before || this.scope !== oldScope) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
         if (o && 'font' in o && o.font) ensureFont(o.font, [o.fontWeight || 400, 700]);
@@ -293,19 +308,171 @@ export class BoardApp {
 
   private emitSelection() {
     if (this.kbMoving && (this.selection.length !== 1 || this.selection[0] !== this.kbMoving)) this.clearMoving();
-    this.r.setOverlay({ selection: this.selection });
+    this.r.setOverlay({ selection: this.selection, enteredGroup: this.scope });
     this.conn.awareness.setLocalStateField('sel', this.selection);
     this.emit('selection');
   }
 
   setSelection(ids: Id[]) {
-    // never a note that private writing hides from this person (TAB-207), nor one hidden with the Layers panel's eye
-    this.selection = selectableIds(this.store, this.flow, ids);
+    this.selection = this.selectionAtScope(ids);
     this.emitSelection();
+  }
+
+  private selectionAtScope(ids: Iterable<Id>): Id[] {
+    // Never select a private note or an object hidden with the Layers panel's eye.
+    const visible = selectableIds(this.store, this.flow, ids);
+    let at: Id | null = this.scope && isGroup(this.store.get(this.scope)) ? this.scope : null;
+    const seen = new Set<Id>();
+    for (;;) {
+      if (at && seen.has(at)) at = null;
+      if (at) seen.add(at);
+      const lifted = liftToScope(visible, at, (id) => this.store.get(id));
+      if (at === null || lifted.every((id) => this.store.get(id)?.parent === at)) {
+        this.scope = at;
+        return lifted;
+      }
+      // A click on a sibling in the parent group leaves just this level; a selection outside that too keeps climbing.
+      const parent = this.store.get(at)?.parent;
+      at = parent && isGroup(this.store.get(parent)) ? parent : null;
+    }
   }
 
   selected(): Obj[] {
     return this.selection.map((id) => this.store.get(id)).filter(Boolean) as Obj[];
+  }
+
+  /** Non-group descendants used by style and text controls; arrange actions keep using selected(). */
+  selectedLeaves(): Obj[] {
+    const leaves: Id[] = [];
+    for (const o of this.selected()) {
+      if (isGroup(o)) leaves.push(...descendantsOf(o.id, (id) => this.store.get(id), (id) => this.store.childrenOf(id)).filter((x) => !isGroup(x)).map((x) => x.id));
+      else leaves.push(o.id);
+    }
+    return selectableIds(this.store, this.flow, leaves).map((id) => this.store.get(id)).filter((o): o is Obj => !!o && !o.locked);
+  }
+
+  /** Enters one group level and clears the selection until the caller selects a member. */
+  enterGroup(id: Id): boolean {
+    if (!isGroup(this.store.get(id))) return false;
+    this.scope = id;
+    this.selection = [];
+    this.emitSelection();
+    return true;
+  }
+
+  /** Leaves one level and selects the group that was just open. */
+  leaveGroup(): void {
+    if (!this.scope) return;
+    const group = this.store.get(this.scope);
+    if (!isGroup(group)) {
+      this.scope = null;
+      this.setSelection([]);
+      return;
+    }
+    const parent = group.parent ? this.store.get(group.parent) : undefined;
+    this.scope = isGroup(parent) ? parent.id : null;
+    this.selection = [group.id];
+    this.emitSelection();
+  }
+
+  /** Used by history, paste and AI apply: a changed descendant selects its top-level group. */
+  resetScopeSelection(ids: Iterable<Id>): void {
+    this.scope = null;
+    this.setSelection(topLevelAncestors(ids, (id) => this.store.get(id)));
+  }
+
+  private itemsAtScope(): Obj[] {
+    const shown = this.store.shown();
+    if (this.scope) return this.store.childrenOf(this.scope).filter((o) => o.parent === this.scope && shown.some((s) => s.id === o.id));
+    return topLevelAncestors(shown.map((o) => o.id), (id) => this.store.get(id)).map((id) => this.store.get(id)).filter((o): o is Obj => !!o);
+  }
+
+  private visibleAtMarquee(o: Obj, rect: Rect): boolean {
+    if (!this.store.isShown(o) || isWithheld(o, this.flow) || this.isDimmed(o)) return false;
+    const bounds = this.r.bounds(o);
+    return !!bounds && rectsIntersect(rect, bounds);
+  }
+
+  private marqueeTouches(o: Obj, rect: Rect): boolean {
+    if (!isGroup(o)) return this.visibleAtMarquee(o, rect);
+    return descendantsOf(o.id, (id) => this.store.get(id), (id) => this.store.childrenOf(id))
+      .some((member) => !isGroup(member) && this.visibleAtMarquee(member, rect));
+  }
+
+  private planGroupSelection(idSource: () => Id) {
+    return groupPlan(this.selection, (id) => this.store.get(id), (id) => this.store.childrenOf(id), {
+      all: () => [...this.store.cache.values()],
+      bounds: (o) => this.store.geometry(o),
+      frameAt: (p) => this.frameAt(p),
+      newId: idSource,
+      scope: this.scope,
+    });
+  }
+
+  /** A disabled reason for the Group action, or null when the selection can be grouped. */
+  groupReason(): string | null {
+    if (this.readOnly) return 'This board is read-only.';
+    const plan = this.planGroupSelection(() => '__group_plan__');
+    return plan.ok ? null : plan.reason;
+  }
+
+  canGroupSelection(): boolean {
+    return this.groupReason() === null;
+  }
+
+  canUngroupSelection(): boolean {
+    return !this.readOnly && this.selection.length > 0 && this.selected().every(isGroup);
+  }
+
+  /** Creates one group and reparents the selected objects and eligible connectors in one undo step. */
+  groupSelection(): boolean {
+    if (this.readOnly) return false;
+    const result = this.planGroupSelection(newId);
+    if (!result.ok) {
+      this.notify(result.reason);
+      return false;
+    }
+    const { group, members, connectors, skipped } = result;
+    const created: Group = {
+      id: group.id, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0,
+      z: group.z, ...(group.parent ? { parent: group.parent } : {}),
+      createdBy: this.user.id, updatedAt: Date.now(),
+    };
+    this.store.undo.stopCapturing();
+    this.store.transact(() => {
+      this.store.create(created);
+      for (const id of [...members, ...connectors]) this.store.update(id, { parent: group.id });
+    });
+    this.store.undo.stopCapturing();
+    const omitted = [
+      skipped.frames ? `${skipped.frames} frame${skipped.frames === 1 ? '' : 's'}` : '',
+      skipped.other ? `${skipped.other} item${skipped.other === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    if (omitted.length) this.notify(`${omitted.join(' and ')} left out of the group.`);
+    this.setSelection([group.id]);
+    this.announce(`Grouped ${members.length + connectors.length} items`);
+    return true;
+  }
+
+  /** Frees the selected groups' direct members at the groups' former z positions in one undo step. */
+  ungroupSelection(): boolean {
+    if (this.readOnly || !this.canUngroupSelection()) return false;
+    const plan = ungroupPlan(this.selection, (id) => this.store.get(id), (id) => this.store.childrenOf(id), {
+      all: () => [...this.store.cache.values()],
+    });
+    if (!plan.groups.length) return false;
+    const ids = plan.groups.flatMap((g) => g.members.map((m) => m.id));
+    this.store.undo.stopCapturing();
+    this.store.transact(() => {
+      for (const item of plan.groups) {
+        for (const member of item.members) this.store.update(member.id, { parent: member.parent, z: member.z });
+        this.store.remove([item.id]);
+      }
+    });
+    this.store.undo.stopCapturing();
+    this.setSelection(ids);
+    this.announce('Ungrouped');
+    return true;
   }
 
   get dragging(): boolean {
@@ -728,8 +895,8 @@ export class BoardApp {
         if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
         const hit = top?.locked ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
-          this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [] };
-          if (!e.shiftKey) this.setSelection([]);
+          this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [], moved: false };
+          if (!e.shiftKey && !this.scope) this.setSelection([]);
           if (top?.locked) this.armLongPress(top.id, e);
           return;
         }
@@ -742,15 +909,18 @@ export class BoardApp {
           this.cardInput.start(hit.id);
           return;
         }
+        const selectedId = pick(hit, this.scope, (id) => this.store.get(id))?.id ?? hit.id;
         if (e.shiftKey) {
           const s = new Set(this.selection);
-          if (s.has(hit.id)) s.delete(hit.id);
-          else s.add(hit.id);
+          if (s.has(selectedId)) s.delete(selectedId);
+          else s.add(selectedId);
           this.setSelection([...s]);
-        } else if (!this.selection.includes(hit.id)) {
-          this.setSelection([hit.id]);
+        } else if (!this.selection.includes(selectedId)) {
+          this.setSelection([selectedId]);
         }
-        if (this.selection.includes(hit.id) && !this.readOnly) {
+        if (this.selection.includes(selectedId) && !this.readOnly) {
+          // Whole-group transforms are slice 3; it remains selectable and enterable here, but does not start a drag yet.
+          if (this.selection.some((id) => isGroup(this.store.get(id)))) return;
           // on a touch screen a card lifts after a long press (600 ms), so a finger that only taps or scrolls moves nothing
           if (hit.type === 'card' && e.pointerType === 'touch' && !hit.locked) this.armLongPress(hit.id, e, () => this.liftCard(hit.id, p));
           else if (hit.type === 'card') this.beginCardDrag(hit.id, p);
@@ -1522,14 +1692,12 @@ export class BoardApp {
         return;
       }
       case 'marquee': {
+        if (Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
+        d.moved = true;
         const m = rectOfPoints([d.start, p]);
-        const inside = this.store.shown().filter((o) => {
-          const b = this.r.bounds(o);
-          // a card this viewer's filter dims is not picked up by a marquee (docs/kanban.md, Filters)
-          return !o.locked && b && rectContains(m, b) && !isWithheld(o, this.flow) && !this.isDimmed(o);
-        });
+        const inside = this.itemsAtScope().filter((o) => !o.locked && this.marqueeTouches(o, m));
         this.r.setOverlay({ marquee: m });
-        this.selection = [...new Set([...d.base, ...inside.map((o) => o.id)])];
+        this.selection = this.selectionAtScope([...d.base, ...inside.map((o) => o.id)]);
         this.r.setOverlay({ selection: this.selection });
         return;
       }
@@ -1617,7 +1785,8 @@ export class BoardApp {
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
-    this.r.setOverlay({ hover: live?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
+    const hovered = live && t === 'select' && !this.flow.isVoting() ? pick(live, this.scope, (id) => this.store.get(id)) : live;
+    this.r.setOverlay({ hover: hovered?.id ?? null, anchorsFor, anchorHot: an ? `${an.id}:${an.side}` : null, lockedHover: lockedTop?.id ?? null });
   }
 
   private doMove(d: Extract<Drag, { mode: 'move' }>, p: Point, e: PointerEvent) {
@@ -1779,7 +1948,8 @@ export class BoardApp {
         this.finishLaneDrag(d, p);
         break;
       case 'marquee':
-        this.emitSelection();
+        if (!d.moved && this.scope) this.leaveGroup();
+        else this.emitSelection();
         break;
       case 'create':
         this.finishCreate(d, p, e);
@@ -1977,6 +2147,15 @@ export class BoardApp {
     }
     if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
+    if (hit) {
+      const selected = pick(hit, this.scope, (id) => this.store.get(id));
+      if (isGroup(selected) && selected.id !== this.scope) {
+        this.enterGroup(selected.id);
+        const member = pick(hit, selected.id, (id) => this.store.get(id));
+        if (member) this.setSelection([member.id]);
+        return;
+      }
+    }
     if (this.readOnly) {
       if (hit) this.setSelection([hit.id]);
       // commenters read a card in its dialog, read-only (docs/kanban.md, Permissions)
@@ -2045,6 +2224,14 @@ export class BoardApp {
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
       const ro = this.readOnly;
+      if (mod && k === 'g') {
+        e.preventDefault();
+        if (!ro) {
+          if (e.shiftKey) this.ungroupSelection();
+          else this.groupSelection();
+        }
+        return;
+      }
       if (mod && k === 'z') {
         e.preventDefault();
         if (ro) return;
@@ -2053,7 +2240,7 @@ export class BoardApp {
         return;
       }
       if (mod && k === 'y') { e.preventDefault(); if (!ro) this.store.undo.redo(); return; }
-      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.store.shown().filter((o) => !o.locked).map((o) => o.id)); return; }
+      if (mod && k === 'a') { e.preventDefault(); this.setSelection(this.itemsAtScope().filter((o) => !o.locked).map((o) => o.id)); return; }
       if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
       if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
@@ -2070,7 +2257,8 @@ export class BoardApp {
         this.cancelLongPress();
         this.cancelCardDrag();
         if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
-        this.setSelection([]);
+        if (this.scope) this.leaveGroup();
+        else this.setSelection([]);
         this.closeThread();
         this.setDraftPin(null);
         this.setTool({ kind: 'select' });
@@ -2277,7 +2465,7 @@ export class BoardApp {
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
     this.announce(out.length === 1 ? 'Added 1 object' : `Added ${out.length} objects`);
-    this.setSelection(out.filter((o) => !o.parent || !map.has(o.parent!)).map((o) => o.id).filter((id) => {
+    this.resetScopeSelection(out.filter((o) => !o.parent || !map.has(o.parent!)).map((o) => o.id).filter((id) => {
       const o = this.store.get(id);
       return o && (!isConnector(o) || out.length === 1);
     }));
@@ -2311,7 +2499,7 @@ export class BoardApp {
     const objs = lines.map((l, i) => this.makeObj('sticky', { x: at.x + (i % cols) * 216, y: at.y + Math.floor(i / cols) * 216, w: 192, h: 192 }, { text: l }));
     this.store.undo.stopCapturing();
     this.store.transact(() => objs.forEach((o) => this.store.create(o)));
-    this.setSelection(objs.map((o) => o.id));
+    this.resetScopeSelection(objs.map((o) => o.id));
   }
 
   pasteInternal() {
@@ -2368,6 +2556,16 @@ export class BoardApp {
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       for (const o of this.selected()) {
+        if (filter && !filter(o)) continue;
+        this.writeStyle(o, patch);
+      }
+    });
+  }
+
+  updateSelectedLeaves(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
+    this.store.undo.stopCapturing();
+    this.store.transact(() => {
+      for (const o of this.selectedLeaves()) {
         if (filter && !filter(o)) continue;
         this.writeStyle(o, patch);
       }

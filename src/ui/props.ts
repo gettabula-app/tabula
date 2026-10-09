@@ -23,7 +23,7 @@ import { proposedLine } from '../ai-review';
 import { kanbanSwatch } from '../markup';
 
 const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
 };
@@ -77,8 +77,12 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     const first = sel[0];
     const same = sel.every((o) => o.type === first.type);
     const title = sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
-    const s = styleOf(first);
+    const styleSel = app.selectedLeaves();
+    const styleFirst = styleSel[0] ?? first;
+    const styleSame = styleSel.length > 0 && styleSel.every((o) => o.type === styleFirst.type);
+    const s = styleOf(styleFirst);
     const up = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelected(patch, filter);
+    const upLeaves = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelectedLeaves(patch, filter);
     const edit = app.styleEdit;
     /** Live preview, revert and commit of one patch shape, for a control. */
     // a control from an earlier render (a stray timer) must not write to whatever is selected now
@@ -93,17 +97,21 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       const vals = sel.filter(filter).map(read);
       return vals.length && vals.every((v) => v === vals[0]) ? vals[0] : null;
     };
+    const sharedLeaves = <T,>(read: (o: Obj) => T, filter: (o: Obj) => boolean = () => true): T | null => {
+      const vals = styleSel.filter(filter).map(read);
+      return vals.length && vals.every((v) => v === vals[0]) ? vals[0] : null;
+    };
     const blocks: (HTMLElement | null)[] = [];
 
     // ---- type-specific
-    if (same && first.type === 'sticky') {
+    if (styleSame && styleFirst.type === 'sticky') {
       const isSticky = (o: Obj) => o.type === 'sticky';
-      blocks.push(field('Colour', stickyColorField(app, (first as BaseObj).fill ?? DEFAULTS.sticky.fill, (v) => {
+      blocks.push(field('Colour', stickyColorField(app, (styleFirst as BaseObj).fill ?? DEFAULTS.sticky.fill, (v) => {
         app.stickyColor = v;
-        up({ fill: v }, isSticky);
+        upLeaves({ fill: v }, isSticky);
       }, {
         // live preview while the colour picker is open
-        onLive: (v) => app.store.transact(() => app.selected().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
+        onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
       })));
     }
     if (same && first.type === 'shape') {
@@ -132,31 +140,37 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     blocks.push(...kanbanFields(app, sel));
 
     // ---- fill & stroke
-    if (sel.some(HAS_FILL)) {
-      blocks.push(field('Fill', swatches(FILLS, s.fill, (v) => up({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
+    if (styleSel.some(HAS_FILL)) {
+      blocks.push(field('Fill', swatches(FILLS, s.fill, (v) => upLeaves({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
     }
-    if (sel.some(HAS_STROKE)) {
-      const isIcon = same && first.type === 'icon';
-      blocks.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), isIcon ? safeColor((first as BaseObj).textColor, s.stroke) : s.stroke, (v) => {
-        if (isIcon) up({ textColor: v });
-        else up({ stroke: v }, HAS_STROKE);
+    if (styleSel.some(HAS_STROKE)) {
+      const isIcon = styleSame && styleFirst.type === 'icon';
+      const lineValue = isIcon ? safeColor((styleFirst as BaseObj).textColor, s.stroke) : s.stroke;
+      const setLine = (v: string) => {
+        if (isIcon) return upLeaves({ textColor: v });
+        app.store.undo.stopCapturing();
+        app.store.transact(() => styleSel.filter(HAS_STROKE).forEach((o) => app.store.update(o.id, o.type === 'icon' ? { textColor: v } : { stroke: v })));
+        app.store.undo.stopCapturing();
+      };
+      blocks.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
+        setLine(v);
       }, { label: 'Line colour' })));
       if (!isIcon) {
         blocks.push(h('div', { class: 'row2' },
-          field('Width', segmented([1, 2, 3, 4, 6].map((w) => ({ value: w, label: `${w}px`, icon: h('span', { class: 'line-sample', style: `--w:${w}px` }) })), first.strokeWidth ?? s.strokeWidth, (v) => up({ strokeWidth: v }, HAS_STROKE), 'Line width')),
+          field('Width', segmented([1, 2, 3, 4, 6].map((w) => ({ value: w, label: `${w}px`, icon: h('span', { class: 'line-sample', style: `--w:${w}px` }) })), (styleFirst as BaseObj).strokeWidth ?? s.strokeWidth, (v) => upLeaves({ strokeWidth: v }, HAS_STROKE), 'Line width')),
         ));
-        if (!sel.every((o) => o.type === 'path')) {
+        if (!styleSel.every((o) => o.type === 'path')) {
           blocks.push(field('Style', segmented([
             { value: 'solid', label: 'Solid', icon: h('span', { class: 'dash-sample solid' }) },
             { value: 'dashed', label: 'Dashed', icon: h('span', { class: 'dash-sample dashed' }) },
             { value: 'dotted', label: 'Dotted', icon: h('span', { class: 'dash-sample dotted' }) },
-          ], first.dash ?? 'solid', (v) => up({ dash: v }, HAS_STROKE), 'Line style')));
+          ], (styleFirst as BaseObj).dash ?? 'solid', (v) => upLeaves({ dash: v }, HAS_STROKE), 'Line style')));
         }
       }
     }
 
     // ---- text
-    if (sel.some(HAS_TEXT)) {
+    if (styleSel.some(HAS_TEXT)) {
       const fb = h('button', { class: 'input font-btn', style: `font-family:"${fontName(s.font)}", system-ui`, 'aria-label': `Font: ${fontName(s.font)}` }, h('span', { class: 'font-name' }, fontName(s.font)), icon('chevron', 16));
       fb.addEventListener('click', () => {
         const used = [...new Set([...app.store.cache.values()].map((o) => (o as BaseObj).font).filter(Boolean))] as string[];
@@ -171,11 +185,11 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       const entry = getCatalogue().find((f) => f.slug === s.font);
       const weights = entry?.weights ?? [400, 500, 700];
       const size = numberField({
-        label: 'Font size', value: shared((o) => styleOf(o).fontSize, HAS_TEXT), ...FONT_SIZE_STEPS,
+        label: 'Font size', value: sharedLeaves((o) => styleOf(o).fontSize, HAS_TEXT), ...FONT_SIZE_STEPS,
         ...live((v: number) => ({ fontSize: v }), HAS_TEXT),
       });
       const weight = combo<number>({
-        label: 'Font weight', value: shared((o) => nearestWeight(s.font, styleOf(o).fontWeight), HAS_TEXT),
+        label: 'Font weight', value: sharedLeaves((o) => nearestWeight(s.font, styleOf(o).fontWeight), HAS_TEXT),
         options: weights.map((w) => ({ value: w, label: WEIGHT_NAMES[w] ?? String(w), style: `font-family:"${fontName(s.font)}", system-ui;font-weight:${w}` })),
         ...live((v) => ({ fontWeight: v }), HAS_TEXT),
       });
@@ -184,21 +198,21 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
         { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
         { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
-      ], s.align, (v) => up({ align: v }, HAS_TEXT), 'Text alignment')));
-      if (sel.some((o) => o.type === 'shape' || o.type === 'sticky')) {
+      ], s.align, (v) => upLeaves({ align: v }, HAS_TEXT), 'Text alignment')));
+      if (styleSel.some((o) => o.type === 'shape' || o.type === 'sticky')) {
         blocks.push(field('Vertical', segmented<VAlign>([
           { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
           { value: 'middle', label: 'Align middle', icon: icon('alignMiddleV', 16) },
           { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
-        ], s.valign, (v) => up({ valign: v }, (o) => o.type === 'shape' || o.type === 'sticky'), 'Vertical alignment')));
+        ], s.valign, (v) => upLeaves({ valign: v }, (o) => o.type === 'shape' || o.type === 'sticky'), 'Vertical alignment')));
       }
-      blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => up({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
+      blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => upLeaves({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
     }
 
     // ---- opacity
-    blocks.push(field('Opacity', numberField({
+    if (styleSel.length) blocks.push(field('Opacity', numberField({
       label: 'Opacity', unit: '%', min: 10, max: 100, step: 1, big: 10,
-      value: shared((o) => Math.round((o.opacity ?? 1) * 100)),
+      value: sharedLeaves((o) => Math.round((o.opacity ?? 1) * 100)),
       ...live((v: number) => ({ opacity: v >= 100 ? undefined : v / 100 })),
     })));
 
@@ -217,7 +231,17 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       )));
     }
     const locked = sel.every((o) => o.locked);
+    const groupReason = app.groupReason();
+    const canUngroup = app.canUngroupSelection();
     blocks.push(h('div', { class: 'btn-row arrange' },
+      h('button', {
+        class: 'icon-btn', 'aria-label': 'Group', 'data-tip': groupReason ?? 'Group', 'data-tip-key': 'mod+g', disabled: groupReason !== null,
+        onclick: () => app.groupSelection(),
+      }, icon('group', 18)),
+      h('button', {
+        class: 'icon-btn', 'aria-label': 'Ungroup', 'data-tip': canUngroup ? 'Ungroup' : 'Select one or more groups to ungroup', 'data-tip-key': 'mod+shift+g', disabled: !canUngroup,
+        onclick: () => app.ungroupSelection(),
+      }, icon('ungroup', 18)),
       btn('front', 'Bring to front', () => app.bringToFront(), '', ']'),
       btn('forward', 'Bring forward', () => void app.bringForward(), '', 'mod+]'),
       btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
