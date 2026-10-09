@@ -16,7 +16,7 @@ If you can only view a board, you cannot add one. Copying and pasting a kanban, 
 - Select **+ Add card** at the bottom of a lane, or double-click empty space in a lane.
 - Type a title. `Enter` adds the card and starts the next one. `Esc` stops.
 
-A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. Deleting a card works like deleting any other object.
+A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. People have a square initials badge; agents have an octagonal one. A link icon opens the card's HTTP or HTTPS link in a new tab. Deleting a card works like deleting any other object.
 
 ## Open a card
 
@@ -24,7 +24,9 @@ Double-click a card, select it and press `Enter`, or choose **Open** in the quic
 
 - **Title** and **Description**.
 - **Owner**: you, the people on the board now, anyone already named on it, or a name you type.
+- **Owner type**: person or agent. Old cards without an owner type are people; agent badges have a distinct octagonal shape.
 - **Due date**, with the date picker of your browser.
+- **Link**, one HTTP or HTTPS URL up to 2,000 characters.
 - **Labels**, picked from the board's labels.
 - **Comment**, **Turn into sticky** and **Delete**.
 
@@ -78,7 +80,7 @@ The **⋯** in the kanban's header (editors) offers **Rename**, **Add lane**, **
 
 ## Filter the cards
 
-Select **Filter** in the kanban's header, or in the quick-action bar, to show only the cards you care about. You can combine:
+Select **Filter** in the kanban's header, or in the quick-action bar, to show only the cards you care about. The popover has quick chips for **Mine** and **Overdue**. Overdue means before today in your local time zone and skips cards in a **Done** lane. You can combine these with:
 
 - **Mine**: cards you own.
 - **Labels**: cards with any of the labels you pick.
@@ -107,13 +109,13 @@ On a touch screen, a card on the board lifts after you press and hold it for abo
 
 ## Kanban templates
 
-The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, due dates and links to trackers are never part of a template.
+The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, owner types, due dates, card links and tracker links are never part of a template.
 
-When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, due dates and tracker links.
+When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, owner types, due dates and card or tracker links.
 
 ## Export cards as CSV
 
-Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's **⋯** menu, or **Export cards (CSV)** in the quick-action bar. You get one row per card, for all kanbans on the board or just the selected ones. The columns are the kanban, lane, stage, position, title, description, owner, due date, labels, comment count, who created it, when it was last updated and its id. The file opens correctly in Excel. Any cell that starts with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet shows it as text and never runs it. Kanbans hidden in the Layers panel are left out.
+Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's **⋯** menu, or **Export cards (CSV)** in the quick-action bar. You get one row per card, for all kanbans on the board or just the selected ones. The columns are the kanban, lane, stage, position, title, description, owner, owner kind, due date, link, labels, comment count, who created it, when it was last updated and its id. An absent owner kind is exported as **person**. The file opens correctly in Excel. Any cell that starts with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet shows it as text and never runs it. Kanbans hidden in the Layers panel are left out.
 
 ## Older versions
 

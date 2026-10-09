@@ -8,6 +8,7 @@ import type { BaseObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
+import { isSafeHttpUrl } from './safe-obj';
 import { cardFillFromSticky, isDueDate, isStage, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
@@ -293,10 +294,12 @@ export const STICKY_SIZE = 192;
 export interface CardPatch {
   title?: string;
   desc?: string;
-  /** A person: `ownerId` and the name at the time; a name alone for someone with no account; null clears the owner. */
-  owner?: { id?: string; name: string } | null;
+  /** A person or agent: identity and kind are stored together; a name alone is allowed, null clears all owner fields. */
+  owner?: { id?: string; name: string; kind?: 'person' | 'agent' } | null;
   /** `YYYY-MM-DD`, or null to clear. */
   due?: string | null;
+  /** One http(s) URL of at most 2,000 characters, or null to clear. */
+  link?: string | null;
   labels?: Id[];
   /** The accent: a palette key or a colour `kanbanColor` accepts; null clears it. */
   fill?: string | null;
@@ -310,9 +313,10 @@ const cardWidth = (store: Store, card: Obj) => (store.isLaidOut(card) ? store.ge
 
 /**
  * The fields a card patch writes, checked: the title is one line of at most 200 characters (an empty title is not
- * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, labels only ones the
- * board has (which also drops ids of deleted labels, docs/kanban.md, Labels) and colours through `kanbanColor`. Null when
- * the patch asks for something that is not allowed. The height follows from the result, as the writer stores it.
+ * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, `link` one safe HTTP(S)
+ * URL up to 2,000 characters, labels only ones the board has (which also drops ids of deleted labels, docs/kanban.md,
+ * Labels) and colours through `kanbanColor`. Owner id, name and kind are one patch. Null when the patch asks for something
+ * that is not allowed. The height follows from the result, as the writer stores it.
  */
 export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Partial<BaseObj> | null {
   const out: Partial<BaseObj> = {};
@@ -330,11 +334,17 @@ export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Parti
     const name = (patch.owner?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, OWNER_NAME_MAX).trim();
     out.ownerName = patch.owner ? name || undefined : undefined;
     out.ownerId = patch.owner?.id && typeof patch.owner.id === 'string' ? patch.owner.id : undefined;
+    if (patch.owner && patch.owner.kind !== undefined && patch.owner.kind !== 'person' && patch.owner.kind !== 'agent') return null;
+    out.ownerKind = patch.owner ? patch.owner.kind ?? (card.ownerKind === 'agent' ? 'agent' : 'person') : undefined;
     if (patch.owner && !out.ownerName && !out.ownerId) return null;
   }
   if (patch.due !== undefined) {
     if (patch.due !== null && patch.due !== '' && !isDueDate(patch.due)) return null;
     out.due = patch.due || undefined;
+  }
+  if (patch.link !== undefined) {
+    if (patch.link !== null && patch.link !== '' && !isSafeHttpUrl(patch.link)) return null;
+    out.link = patch.link || undefined;
   }
   const known = knownLabels(store);
   if (patch.labels !== undefined) out.labels = cleanCardLabels(patch.labels, known);

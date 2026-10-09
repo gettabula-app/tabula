@@ -160,12 +160,37 @@ describe('editing a card', () => {
     expect(editCard(store, a, { desc: 'x'.repeat(LIMITS.description + 1) })).toBe(false);
     expect(editCard(store, a, { due: '2026-02-30' })).toBe(false);
     expect(editCard(store, a, { due: '16/01/2026' })).toBe(false);
+    for (const link of ['javascript:alert(1)', 'data:text/html,x', 'ftp://example.com', ' https://example.com', 'https://example.com/a b', 'https://example.com/\u200b', `https://example.com/${'x'.repeat(2000)}`]) {
+      expect(editCard(store, a, { link })).toBe(false);
+    }
+    expect(editCard(store, a, { link: 'https://example.com/a?q=one&b=two' })).toBe(true);
+    expect(bo(store, a).link).toBe('https://example.com/a?q=one&b=two');
+    expect(editCard(store, a, { link: null })).toBe(true);
     expect(editCard(store, a, { owner: { name: '   ' } })).toBe(false);
     expect(editCard(store, a, { owner: { name: 'y'.repeat(200) } })).toBe(true);
     expect(bo(store, a).ownerName).toHaveLength(80);
     expect(bo(store, a).ownerId).toBeUndefined();
     expect(editCard(store, a, { owner: null })).toBe(true);
     expect(bo(store, a).ownerName).toBeUndefined();
+    expect(bo(store, a).ownerKind).toBeUndefined();
+  });
+
+  it('writes owner id, name and kind in one Yjs transaction, defaulting to person', () => {
+    const { store, cards } = board();
+    const [a] = cards;
+    const updates: Uint8Array[] = [];
+    const onUpdate = (update: Uint8Array) => updates.push(update);
+    store.doc.on('update', onUpdate);
+    try {
+      expect(editCard(store, a, { owner: { id: 'u1', name: 'Ada' } })).toBe(true);
+    } finally {
+      store.doc.off('update', onUpdate);
+    }
+    expect(updates).toHaveLength(1);
+    expect(bo(store, a)).toMatchObject({ ownerId: 'u1', ownerName: 'Ada', ownerKind: 'person' });
+
+    expect(editCard(store, a, { owner: { id: 'agent-1', name: 'Build agent', kind: 'agent' } })).toBe(true);
+    expect(bo(store, a)).toMatchObject({ ownerId: 'agent-1', ownerName: 'Build agent', ownerKind: 'agent' });
   });
 
   it('drops the ids of deleted labels on the next edit', () => {

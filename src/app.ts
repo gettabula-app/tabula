@@ -38,6 +38,10 @@ import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
+const isCardLinkTarget = (target: EventTarget | null) => {
+  const el = target as unknown as { closest?: (selector: string) => unknown } | null;
+  return !!el?.closest?.('[data-card-link]');
+};
 function loadStickyColor(): string {
   try {
     const c = localStorage.getItem(STICKY_COLOR_KEY);
@@ -81,7 +85,7 @@ type Drag =
   | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null; armed?: boolean };
 
 /** The field the card dialog starts on. */
-export type CardFocus = 'title' | 'owner' | 'due' | 'labels';
+export type CardFocus = 'title' | 'owner' | 'due' | 'link' | 'labels';
 /** The kanban menus (docs/kanban.md, slice 4): a lane's ⋯, the container's ⋯, and the Filter popover. */
 export type KanbanMenuKind = 'lane' | 'container' | 'filter';
 /** A control on a kanban's header, or its add-lane +. */
@@ -829,6 +833,8 @@ export class BoardApp {
   }
 
   private onDown(e: PointerEvent) {
+    // The inline SVG link owns pointer activation; let the browser open it without starting a card drag or selection.
+    if (isCardLinkTarget(e.target)) return;
     // another pointer going down (a pinch, a second device) gives up a lane drag, overlay and all
     if (this.drag?.mode === 'lane') this.cancelCardDrag();
     this.cancelLongPress();
@@ -2144,6 +2150,7 @@ export class BoardApp {
   }
 
   private onDblClick(e: MouseEvent) {
+    if (isCardLinkTarget(e.target)) return;
     // During a dot vote, the two pointer clicks already cast votes; double-click must not also enter a group or edit.
     if (this.flow.isVoting()) return;
     const p = this.worldOf(e);
@@ -2229,7 +2236,7 @@ export class BoardApp {
     const signal = this.lifetime.signal;
     window.addEventListener('keydown', (e) => {
       const tgt = e.target as HTMLElement;
-      const typing = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable);
+      const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       if (e.code === 'Space' && !typing) {
         if (!this.spaceDown) {
           this.spaceDown = true;

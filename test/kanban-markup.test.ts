@@ -158,6 +158,31 @@ describe('a card', () => {
     expect(free).not.toContain(USER_COLORS[2]);
   });
 
+  it('draws agent owners with a distinct polygon badge shape instead of the person square', () => {
+    const { store, ids } = board();
+    store.transact(() => store.update(ids[0], { ownerName: 'Build agent', ownerId: 'agent-1' }));
+    const person = draw(store, ids[0]);
+    expect(person).toContain('data-owner-kind="person"');
+    store.transact(() => store.update(ids[0], { ownerKind: 'agent' }));
+    const agent = draw(store, ids[0]);
+    expect(agent).toContain('data-owner-kind="agent"');
+    expect(agent).toContain('<polygon points=');
+    expect(agent).toContain('>BA</text>');
+  });
+
+  it('puts a small keyboard-focusable, safe external link on the card face', () => {
+    const { store, ids } = board();
+    store.transact(() => store.update(ids[0], { link: 'https://example.com/docs?a=1&b=2' }));
+    const svg = draw(store, ids[0]);
+    expect(svg).toContain('class="k-card-link"');
+    expect(svg).toContain('data-card-link="true"');
+    expect(svg).toContain('href="https://example.com/docs?a=1&amp;b=2"');
+    expect(svg).toContain('target="_blank"');
+    expect(svg).toContain('rel="noopener noreferrer"');
+    expect(svg).toContain('tabindex="0"');
+    expect(svg).toContain('aria-label="Open card link in a new tab"');
+  });
+
   it('shows the comment count in the meta row, and has no meta row without a due date or an owner', () => {
     const { store, ids } = board();
     expect(draw(store, ids[0], { commentCount: () => 3 })).not.toContain('3 comments');

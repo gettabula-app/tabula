@@ -96,9 +96,25 @@ describe('the card dialog, for an editor', () => {
     change(byLabel('Due date'), '2026-01-16');
     change(byLabel('Owner'), 'id:u2');
     button('Bug')!.click();
-    expect(bo(store, card)).toMatchObject({ text: 'Fix the Safari login loop', desc: 'Steps:\n1. Open Safari 17', due: '2026-01-16', ownerId: 'u2', ownerName: 'Marta Ruiz', labels: [bug] });
+    expect(bo(store, card)).toMatchObject({ text: 'Fix the Safari login loop', desc: 'Steps:\n1. Open Safari 17', due: '2026-01-16', ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'person', labels: [bug] });
     expect(steps(store)).toBe(5);
     expect(button('Bug')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('saves and reloads an agent owner and card link', () => {
+    const { store, app, card } = setup();
+    const d = open(app, card)!;
+    change(byLabel('Owner'), 'id:u2');
+    button('Agent')!.click();
+    change(byLabel('Link'), 'https://example.com/plan?q=one&b=two');
+    expect(bo(store, card)).toMatchObject({ ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'agent', link: 'https://example.com/plan?q=one&b=two' });
+    d.close();
+
+    open(app, card);
+    expect(byLabel('Owner').value).toBe('id:u2');
+    expect(byLabel('Link').value).toBe('https://example.com/plan?q=one&b=two');
+    expect(button('Agent')!.getAttribute('aria-pressed')).toBe('true');
+    expect(button('Person')!.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('offers me, the people here and those already named, plus a free-text owner', () => {
@@ -262,6 +278,8 @@ describe('the card dialog, by role', () => {
     expect(byLabel('Description').readOnly).toBe(true);
     expect(byLabel('Owner').disabled).toBe(true);
     expect(byLabel('Due date').disabled).toBe(true);
+    expect(byLabel('Link').disabled).toBe(true);
+    expect(button('Agent')!.disabled).toBe(true);
     expect(button('Comment')).toBeTruthy();
     expect(button('Turn into sticky')).toBeUndefined();
     expect(button('Delete')).toBeUndefined();

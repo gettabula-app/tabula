@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { KANBAN, layoutContainer } from '../shared/containers';
 import {
-  ADD_ROW, addRow, cardHeight, dropIndexAt, dropLine, dueChip, emptyBox, initials, keyboardMove, laneCards, laneCount,
+  ADD_ROW, EMPTY_FILTER, addRow, cardHeight, cardMatches, dropIndexAt, dropLine, dueChip, emptyBox, initials, keyboardMove, laneCards, laneCount,
   laneRegionAt, laneTargetAt, localToday, lowDetail, moveAnnouncement,
-  cardFillFromSticky, isDueDate, joinCardText, ownerKey, ownerOptions, readingOrder, splitStickyText, stickyFillFromCard,
+  cardFillFromSticky, isDueDate, joinCardText, ownerKey, ownerOptions, readingOrder, splitStickyText, stickyFillFromCard, type KanbanFilter,
 } from '../src/ui/kanban-logic';
 import { STICKY_COLORS } from '../src/palette';
 
@@ -179,6 +179,18 @@ describe('due chips', () => {
 
   it('reads the viewer local date', () => {
     expect(localToday(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
+
+describe('the Overdue filter', () => {
+  const overdue: KanbanFilter = { ...EMPTY_FILTER, due: ['overdue'] };
+  const ctx = { viewer: { id: 'u1', name: 'Ada', accounts: true }, today: '2026-10-09' };
+
+  it('matches dates before the viewer’s local today and excludes done lanes', () => {
+    expect(cardMatches({ due: '2026-10-08' }, overdue, { ...ctx, done: false })).toBe(true);
+    expect(cardMatches({ due: '2026-10-09' }, overdue, { ...ctx, done: false })).toBe(false);
+    expect(cardMatches({ due: '2026-10-10' }, overdue, { ...ctx, done: false })).toBe(false);
+    expect(cardMatches({ due: '2026-10-08' }, overdue, { ...ctx, done: true })).toBe(false);
   });
 });
 

@@ -113,7 +113,9 @@ export interface BaseObj extends Partial<StyleFields> {
   desc?: string;
   ownerId?: string;
   ownerName?: string;
+  ownerKind?: 'person' | 'agent';
   due?: string;
+  link?: string;
   labels?: Id[];
 }
 
