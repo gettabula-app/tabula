@@ -142,3 +142,34 @@ export function toggleCardLabel(ids: readonly unknown[] | undefined, id: Id, kno
   if (cur.length >= LIMITS.labelsPerCard) return null;
   return [...cur, id];
 }
+
+/**
+ * A template's labels merged by name into the board's (docs/kanban.md, Templates): a board label with the same name
+ * (ignoring case) wins, a missing one is added at the end while the board has room for it. It writes without a
+ * transaction of its own, so call it inside the one that adds the template (one undo step). Returns the board label id
+ * for each template label id that has one; cards drop the others.
+ */
+export function mergeTemplateLabels(store: Store, labels: readonly { id: string; name: string; color: string }[]): Map<string, Id> {
+  const out = new Map<string, Id>();
+  if (!labels.length || store.readOnly) return out;
+  const board = listLabels(store);
+  const byName = new Map(board.map((l) => [l.name.toLowerCase(), l.id]));
+  let order = board.length ? board[board.length - 1].order + 1 : 0;
+  let count = board.length;
+  for (const l of labels) {
+    const name = cleanLabelName(l.name);
+    if (!name) continue;
+    const have = byName.get(name.toLowerCase());
+    if (have) {
+      out.set(l.id, have);
+      continue;
+    }
+    if (count >= LIMITS.labels) continue;
+    const id = newId();
+    store.labels.set(id, { id, name, color: kanbanColor(l.color, LABEL_DEFAULT_COLOR)!, order: order++ });
+    byName.set(name.toLowerCase(), id);
+    out.set(l.id, id);
+    count++;
+  }
+  return out;
+}

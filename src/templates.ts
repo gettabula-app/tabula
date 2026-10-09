@@ -4,7 +4,10 @@ import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, ShapeKind, Step, StepMode } from './types';
 import { newId } from './store';
 import { STICKY_COLORS } from './palette';
-import { instantiate, type CustomTemplate } from './custom-templates';
+import { instantiate, type CustomTemplate, type TemplateLabel } from './custom-templates';
+import { KANBAN, layoutContainer, ranksBetween } from '../shared/containers';
+import { cardContentHeight } from './markup';
+import { mergeTemplateLabels } from './labels';
 
 export interface TemplateDef {
   id: string;
@@ -12,11 +15,25 @@ export interface TemplateDef {
   category: 'Retrospective' | 'Ideation' | 'Discussion' | 'Prioritisation' | 'Planning' | 'Discovery' | 'Strategy' | 'Risk';
   description: string;
   build: (b: Builder) => void;
+  /** It makes a kanban, so it is offered only while making kanbans is on (src/flags.ts). */
+  kanban?: true;
+}
+
+/** A lane of a template kanban, with its cards (titles, an optional description and label names). */
+export interface TemplateLane {
+  name: string;
+  stage?: 'todo' | 'doing' | 'done';
+  wip?: number;
+  wipMode?: 'warn' | 'block';
+  fill?: string;
+  cards?: { title: string; desc?: string; labels?: string[]; fill?: string }[];
 }
 
 const TINT = {
   mint: '#E6F7EF', sky: '#E4EFFF', butter: '#FFF6D6', peach: '#FFE9E0', lilac: '#F0EAFF', mist: '#F3F5F7', rose: '#FFE8F0',
 };
+/** The colours of the template labels (docs/kanban.md, Templates: Bug, Feature, Chore). */
+const LABEL_COLORS: Record<string, string> = { Bug: 'pink', Feature: 'blue', Chore: 'grey' };
 const ST = Object.fromEntries(STICKY_COLORS.map((c) => [c.name.toLowerCase(), c.fill])) as Record<string, string>;
 
 /** What a Builder reads from the board: the local user and the board fonts. */
@@ -29,6 +46,8 @@ export interface BuilderHost {
 export class Builder {
   objs: Obj[] = [];
   steps: Step[] = [];
+  /** The labels its cards use, merged by name into the board's when it is placed (docs/kanban.md, Templates). */
+  labels: TemplateLabel[] = [];
   constructor(private app: BuilderHost, readonly ox: number, readonly oy: number) {}
 
   private base(type: BaseObj['type'], x: number, y: number, w: number, h: number, extra: Partial<BaseObj>): BaseObj {
@@ -58,6 +77,61 @@ export class Builder {
 
   shape(kind: ShapeKind, text: string, x: number, y: number, w: number, h: number, fill = '#FFFFFF', parent?: Id, extra: Partial<BaseObj> = {}): Id {
     return this.base('shape', x, y, w, h, { kind, text, fill, parent, ...extra }).id;
+  }
+
+  /** A template label by name (a palette key colour), made once. Returns its template id. */
+  label(name: string, color: string): string {
+    const have = this.labels.find((l) => l.name === name);
+    if (have) return have.id;
+    const id = `l${this.labels.length + 1}`;
+    this.labels.push({ id, name, color });
+    return id;
+  }
+
+  /**
+   * A kanban with its lanes and cards (docs/kanban.md, Templates), laid out as the board lays it out: each card's height
+   * is stored from its content, as the app stores it, and the stored rectangles are the layout's. Returns its id.
+   */
+  kanban(name: string, x: number, y: number, lanes: TemplateLane[], labelColors: Record<string, string> = {}): Id {
+    const meta = this.app.store.getMeta();
+    const now = Date.now();
+    const container: BaseObj = {
+      id: newId(), type: 'container', layout: 'kanban', name, x: this.ox + x, y: this.oy + y, w: 0, h: 0, rotation: 0, z: '',
+      createdBy: this.app.user.id, updatedAt: now, font: meta.headingFont,
+    };
+    const laneRanks = ranksBetween(null, null, lanes.length, container.id);
+    const laneObjs: BaseObj[] = [];
+    const cards: BaseObj[] = [];
+    const w = KANBAN.laneW - KANBAN.lanePad * 2;
+    lanes.forEach((l, i) => {
+      const lane: BaseObj = {
+        id: newId(), type: 'lane', parent: container.id, rank: laneRanks[i], name: l.name, x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '',
+        createdBy: this.app.user.id, updatedAt: now, font: meta.bodyFont,
+      };
+      if (l.stage) lane.stage = l.stage;
+      if (l.wip) lane.wip = l.wip;
+      if (l.wip && l.wipMode === 'block') lane.wipMode = 'block';
+      if (l.fill) lane.fill = l.fill;
+      laneObjs.push(lane);
+      const ranks = ranksBetween(null, null, l.cards?.length ?? 0, lane.id);
+      (l.cards ?? []).forEach((c, j) => {
+        const card: BaseObj = {
+          id: newId(), type: 'card', parent: lane.id, rank: ranks[j], text: c.title, x: 0, y: 0, w, h: 0, rotation: 0, z: '',
+          createdBy: this.app.user.id, updatedAt: now, font: meta.bodyFont,
+        };
+        if (c.desc) card.desc = c.desc;
+        if (c.fill) card.fill = c.fill;
+        if (c.labels?.length) card.labels = c.labels.map((n) => this.label(n, labelColors[n] ?? 'grey'));
+        card.h = cardContentHeight(card, w);
+        cards.push(card);
+      });
+    });
+    const layout = layoutContainer(container, laneObjs, cards)!;
+    container.w = layout.w;
+    container.h = layout.h;
+    for (const o of [...laneObjs, ...cards]) Object.assign(o, layout.rects.get(o.id));
+    this.objs.push(container, ...laneObjs, ...cards);
+    return container.id;
   }
 
   step(title: string, instructions: string, mode: StepMode, minutes?: number, frameId?: Id, votesPerPerson?: number) {
@@ -500,7 +574,58 @@ export const TEMPLATES: TemplateDef[] = [
       b.step('Pick a target', 'The decider chooses one customer and one moment on the map to focus the sprint on.', 'discuss', 10, map);
     },
   },
+  // kanbans (docs/kanban.md, Templates): a container with lanes and cards, and a few labels merged into the board's
+  {
+    id: 'kanban', name: 'Kanban', category: 'Planning', kanban: true,
+    description: 'To do, Doing and Done. Add cards, give them owners and due dates, and move them across as work moves.',
+    build: (b) => {
+      b.kanban('Kanban', 0, 0, [
+        { name: 'To do', stage: 'todo', cards: [{ title: 'Write the first card', labels: ['Chore'] }, { title: 'Drag a card to Doing when you start it' }] },
+        { name: 'Doing', stage: 'doing', cards: [{ title: 'Open a card to add an owner, a due date and labels' }] },
+        { name: 'Done', stage: 'done' },
+      ], LABEL_COLORS);
+    },
+  },
+  {
+    id: 'sprint-board', name: 'Sprint board', category: 'Planning', kanban: true,
+    description: 'Backlog, Sprint, In review and Done, with at most three cards in review at a time.',
+    build: (b) => {
+      b.kanban('Sprint board', 0, 0, [
+        { name: 'Backlog', stage: 'todo', cards: [{ title: 'Sketch the next feature', labels: ['Feature'] }, { title: 'Tidy up old tickets', labels: ['Chore'] }] },
+        { name: 'Sprint', stage: 'doing', fill: 'blue', cards: [{ title: 'Pick this sprint\u2019s goal', labels: ['Feature'] }] },
+        { name: 'In review', stage: 'doing', wip: 3, fill: 'violet' },
+        { name: 'Done', stage: 'done', fill: 'green' },
+      ], LABEL_COLORS);
+    },
+  },
+  {
+    id: 'bug-triage', name: 'Bug triage', category: 'Planning', kanban: true,
+    description: 'New reports in, sorted into confirmed, in progress, fixed or won\u2019t fix, with labels for the kind of work.',
+    build: (b) => {
+      b.kanban('Bug triage', 0, 0, [
+        { name: 'New', stage: 'todo', cards: [{ title: 'Paste a new report here', labels: ['Bug'] }] },
+        { name: 'Confirmed', stage: 'todo', fill: 'orange', cards: [{ title: 'Steps to reproduce written down', labels: ['Bug'] }] },
+        { name: 'In progress', stage: 'doing', wip: 3 },
+        { name: 'Fixed', stage: 'done', fill: 'green' },
+        { name: 'Won\u2019t fix', stage: 'done', fill: 'grey' },
+      ], LABEL_COLORS);
+    },
+  },
+  {
+    id: 'personal-tasks', name: 'Personal tasks', category: 'Planning', kanban: true,
+    description: 'Your own list: what is next, what you are on today, and what you finished.',
+    build: (b) => {
+      b.kanban('My tasks', 0, 0, [
+        { name: 'Next', stage: 'todo', cards: [{ title: 'Something to do this week' }] },
+        { name: 'Today', stage: 'doing', wip: 3, wipMode: 'block', fill: 'yellow' },
+        { name: 'Done', stage: 'done' },
+      ], LABEL_COLORS);
+    },
+  },
 ];
+
+/** The built-in templates offered now: the kanban ones only while making kanbans is on (src/flags.ts). */
+export const availableTemplates = (): TemplateDef[] => TEMPLATES.filter((t) => !t.kanban || kanbanFlag());
 
 /** Template ids with this prefix name a saved template; anything else is a built-in id. */
 export const CUSTOM_PREFIX = 'custom:';
@@ -520,7 +645,7 @@ function templateOrigin(app: BoardApp) {
 }
 
 /** Create the objects in one undo step, replace the flow when `steps` is given, and fly to them. */
-function place(app: BoardApp, objs: Obj[], steps: Step[] | null) {
+function place(app: BoardApp, objs: Obj[], steps: Step[] | null, labels: readonly TemplateLabel[] = []) {
   // while making kanbans is behind its flag, a template makes none (src/flags.ts); its ids are all new
   if (!kanbanFlag()) {
     const r = withoutNewKanbans(objs, () => false);
@@ -530,7 +655,22 @@ function place(app: BoardApp, objs: Obj[], steps: Step[] | null) {
   const zs = app.store.topZs(objs.length);
   objs.forEach((o, i) => (o.z = zs[i]));
   app.store.undo.stopCapturing();
-  app.store.transact(() => objs.forEach((o) => app.store.create(o)));
+  app.store.transact(() => {
+    // the template's labels join the board's by name, and its cards take the board's ids (docs/kanban.md, Templates)
+    const cards = objs.filter((o): o is BaseObj => o.type === 'card' && !!(o as BaseObj).labels?.length);
+    if (cards.length) {
+      const ids = mergeTemplateLabels(app.store, labels);
+      for (const card of cards) {
+        const next = card.labels!.map((id) => ids.get(id)).filter((id): id is Id => !!id);
+        if (next.length) card.labels = next;
+        else {
+          delete card.labels;
+          card.h = cardContentHeight(card, card.w);
+        }
+      }
+    }
+    objs.forEach((o) => app.store.create(o));
+  });
   if (steps) {
     const existing = app.flow.state().steps;
     // A board runs one session at a time; a new template replaces the old flow.
@@ -547,7 +687,8 @@ export function insertTemplate(app: BoardApp, def: TemplateDef) {
   const o = templateOrigin(app);
   const b = new Builder(app, o.x, o.y);
   def.build(b);
-  place(app, b.objs, b.steps);
+  // a template without steps leaves the board's session as it is, as a saved one does
+  place(app, b.objs, b.steps.length ? b.steps : null, b.labels);
   return b;
 }
 
@@ -556,6 +697,6 @@ export function insertCustomTemplate(app: BoardApp, t: CustomTemplate) {
   const { objects, steps } = instantiate(t.content, templateOrigin(app), app.user.id);
   const now = Date.now();
   for (const o of objects) o.updatedAt = now;
-  place(app, objects, steps.length ? steps : null);
+  place(app, objects, steps.length ? steps : null, t.content.labels);
   return objects;
 }

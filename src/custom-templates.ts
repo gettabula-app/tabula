@@ -7,18 +7,27 @@ import { boxBounds, center, rectOfPoints } from './geometry';
 import { sanitizeSvgBody } from './markup';
 import { newId } from './store';
 import { isSafeColor } from '../shared/colors';
-import { isContainerType } from '../shared/containers';
+import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRank, templateKanbanFields, templateLabels } from '../shared/containers';
 import { STICKY_COLORS } from './palette';
 import { OBJ_ENUMS } from './safe-obj';
 
 export const MAX_TEMPLATE_OBJECTS = 2000;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
 
+/** A label a template carries for its cards; merged by name into the board's labels when it is used (docs/kanban.md, Templates). */
+export interface TemplateLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface TemplateContent {
   objects: Obj[];
   steps: Step[];
   bounds: Rect;
   fonts?: { heading: string; body: string };
+  /** The labels its cards use (docs/kanban.md, Templates). */
+  labels?: TemplateLabel[];
 }
 
 export type TemplateScope = 'personal' | 'team' | 'workspace';
@@ -73,6 +82,12 @@ export function remapObjects(
       c.y += offset.y;
       c.parent = c.parent ? idMap.get(c.parent) : undefined;
       delete c.privateStep;
+      // a rank names its parent (docs/kanban.md, Ranks): it follows the new id, and goes with a parent left behind
+      if (c.rank !== undefined) {
+        const split = splitRank(c.rank);
+        if (split && c.parent) c.rank = `${split.key}@${c.parent}`;
+        else delete c.rank;
+      }
     }
     return c;
   });
@@ -80,6 +95,8 @@ export function remapObjects(
 
 export interface ToTemplateOptions {
   fonts?: { heading: string; body: string };
+  /** The board's labels: the ones the cards use go into the template. */
+  labels?: readonly TemplateLabel[];
   /** Keep session steps that have no frame (steps tied to a saved frame are always kept). */
   includeSteps: boolean;
   /** Frames whose steps may be kept; defaults to every object in the selection. */
@@ -126,11 +143,27 @@ export function toTemplateContent(
   const b = rectOfPoints(pts);
 
   const digits = String(objs.length).length;
+  // the labels the cards use, as l1, l2, … (docs/kanban.md, Templates)
+  const labelIds = new Map<Id, string>();
+  const boardLabels = new Map((opts.labels ?? []).map((l) => [l.id, l]));
+  for (const o of objs) {
+    if (o.type !== 'card') continue;
+    for (const id of o.labels ?? []) if (boardLabels.has(id) && !labelIds.has(id)) labelIds.set(id, `l${labelIds.size + 1}`);
+  }
   const objects = remapObjects(objs, idMap, { x: -b.x, y: -b.y }, resolveOutside).map((o, i) => {
     delete o.locked;
     delete o.hidden;
     delete o.createdBy;
     delete o.updatedAt;
+    // a shared template names no people and no dates (docs/kanban.md, Templates); labels stay, renumbered
+    for (const key of TEMPLATE_STRIPPED) delete (o as unknown as Record<string, unknown>)[key];
+    // a sticky that was once a card keeps its card fields for turning back; a template does not (docs/kanban.md)
+    if (o.type !== 'card') for (const key of ['desc', 'labels'] as const) delete (o as unknown as Record<string, unknown>)[key];
+    if (o.type === 'card' && o.labels) {
+      const kept = o.labels.map((id) => labelIds.get(id)).filter((id): id is string => !!id);
+      if (kept.length) o.labels = kept;
+      else delete o.labels;
+    }
     if (o.parent === undefined) delete o.parent;
     o.z = String(i + 1).padStart(digits, '0');
     return o;
@@ -147,11 +180,13 @@ export function toTemplateContent(
     return c;
   });
 
+  const labels = [...labelIds].map(([id, nid]) => { const l = boardLabels.get(id)!; return { id: nid, name: l.name, color: l.color }; });
   return {
     objects,
     steps: outSteps,
     bounds: { x: 0, y: 0, w: b.w, h: b.h },
     ...(opts.fonts ? { fonts: { heading: opts.fonts.heading, body: opts.fonts.body } } : {}),
+    ...(labels.length ? { labels } : {}),
   };
 }
 
@@ -197,7 +232,7 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 /** Check untrusted template content (from a file or a client) and return a safe copy. Throws a readable Error. */
 export function validateContent(c: unknown): TemplateContent {
   if (!isRecord(c)) fail('Template content must be an object.');
-  const { objects: list, steps, bounds, fonts } = c;
+  const { objects: list, steps, bounds, fonts, labels: labelList } = c;
   if (!Array.isArray(list)) fail('Template content needs a list of objects.');
   if (list.length > MAX_TEMPLATE_OBJECTS) {
     fail(`A template can hold at most ${MAX_TEMPLATE_OBJECTS} objects; this one has ${list.length}.`);
@@ -234,7 +269,11 @@ export function validateContent(c: unknown): TemplateContent {
   }
 
   const known = (id: unknown) => typeof id === 'string' && ids.has(id);
-  const objects = list.map((o: Record<string, unknown>) => {
+  // kanbans: every field checked one by one, the same rules as the server's (shared/containers.mjs)
+  const labels = templateLabels(labelList);
+  const kanbanCtx = { types: new Map(list.map((o: Record<string, unknown>) => [o.id as string, o.type as string])), labels: new Set(labels.map((l) => l.id)) };
+  checkTemplateKanbanLimits(list as { id: string; type: string; parent?: unknown }[]);
+  const objects = list.map((o: Record<string, unknown>, i: number) => {
     if (o.type === 'connector') {
       for (const side of ['from', 'to'] as const) {
         const e = o[side];
@@ -254,6 +293,14 @@ export function validateContent(c: unknown): TemplateContent {
     if (o.viewBox !== undefined && !(Array.isArray(o.viewBox) && o.viewBox.length === 4 && o.viewBox.every(isNum))) fail(`Object "${o.id}" has an invalid viewBox.`);
     if (o.points !== undefined && !(Array.isArray(o.points) && o.points.length % 2 === 0 && o.points.every(isNum))) fail(`Object "${o.id}" has invalid points.`);
     if (o.parent !== undefined && !known(o.parent)) fail(`Object "${o.id}" has a parent that is not in the template.`);
+    if (isContainerType(o.type as string)) {
+      // rebuilt from what is accepted: the common fields and the checked kanban ones
+      const out: Record<string, unknown> = { id: o.id, type: o.type, x: o.x, y: o.y, w: o.w, h: o.h, rotation: isNum(o.rotation) ? o.rotation : 0, z: o.z };
+      if (o.parent !== undefined) out.parent = o.parent;
+      if (typeof o.font === 'string') out.font = o.font;
+      return Object.assign(out, templateKanbanFields(o, `Object ${i + 1}`, kanbanCtx));
+    }
+    if (o.parent !== undefined && isContainerType(kanbanCtx.types.get(o.parent as string) ?? '')) fail(`Object "${o.id}" is inside a kanban, where only lanes and cards go.`);
     if (o.type === 'icon' && o.body !== undefined) {
       if (typeof o.body !== 'string') fail(`Icon "${o.id}" has an invalid body.`);
       return { ...o, body: sanitizeSvgBody(o.body) };
@@ -286,5 +333,6 @@ export function validateContent(c: unknown): TemplateContent {
     steps: steps as unknown as Step[],
     bounds: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
     ...(isRecord(fonts) ? { fonts: { heading: fonts.heading as string, body: fonts.body as string } } : {}),
+    ...(labels.length ? { labels } : {}),
   };
 }

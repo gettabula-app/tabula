@@ -82,7 +82,7 @@ export function builtinToCustom(def: TemplateDef, userId: string, now = Date.now
   const b = new Builder(host, 0, 0);
   def.build(b);
   const fonts = { heading: DEFAULT_META.headingFont, body: DEFAULT_META.bodyFont };
-  const content = toTemplateContent(b.objs, b.steps, { includeSteps: true, fonts });
+  const content = toTemplateContent(b.objs, b.steps, { includeSteps: true, fonts, labels: b.labels.map((l, i) => ({ ...l, order: i })) });
   return {
     id: newId(), version: 1, name: copyName(def.name), category: def.category, description: def.description,
     // The builder leaves undefined fields behind; a JSON round trip drops them.

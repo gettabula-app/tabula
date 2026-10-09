@@ -394,3 +394,147 @@ export function wipCheck(lane, cards, moving) {
   const over = limit !== null && count > limit;
   return { ok: !(over && mode === 'block' && incoming > 0), over, count, limit, mode };
 }
+
+// ---------------------------------------------------------------- templates (docs/kanban.md, Templates)
+
+/**
+ * Card fields a template never carries: it names no people and no dates, and the Linear and Jira link is reserved. Saving
+ * a template strips them; a template that has them anyway is refused.
+ */
+export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'due', 'extProvider', 'extKey', 'extUrl']);
+
+const TEMPLATE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// on one line: no control character and no line or paragraph separator
+const LINE_BREAK = /\p{Cc}|[\u2028\u2029]/u;
+/** A control character other than tab, line feed and carriage return. */
+const hasControl = (v) => [...v].some((ch) => {
+  const cp = ch.codePointAt(0);
+  return cp <= 0x08 || cp === 0x0b || cp === 0x0c || (cp >= 0x0e && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f);
+});
+
+class TemplateKanbanError extends Error {}
+const refuse = (message) => {
+  throw new TemplateKanbanError(message);
+};
+
+function line(v, what, max, min = 1) {
+  if (typeof v !== 'string' || v.trim().length < min || v.length > max || LINE_BREAK.test(v)) refuse(`${what} must be text of ${min ? `1 to ${max}` : `at most ${max}`} characters, on one line.`);
+  return v;
+}
+
+function intIn(v, what, min, max) {
+  if (!Number.isInteger(v) || v < min || v > max) refuse(`${what} must be a whole number from ${min} to ${max}.`);
+  return v;
+}
+
+/**
+ * A template's label list (docs/kanban.md, Templates: a small list merged by name into the board's labels when the
+ * template is used), checked and rebuilt: at most 30, each an id, a name of 1 to 40 characters on one line and a
+ * colour `kanbanColor` accepts. Throws an Error naming what is wrong.
+ * @returns {{ id: string, name: string, color: string }[]}
+ */
+export function templateLabels(list) {
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) refuse('content.labels must be a list.');
+  if (list.length > LIMITS.labels) refuse(`A template can hold at most ${LIMITS.labels} labels.`);
+  const ids = new Set();
+  return list.map((l, i) => {
+    const what = `Label ${i + 1}`;
+    if (!l || typeof l !== 'object' || Array.isArray(l)) refuse(`${what} is not an object.`);
+    if (typeof l.id !== 'string' || !TEMPLATE_ID.test(l.id)) refuse(`${what} needs an id of 1 to 64 letters, digits, - or _.`);
+    if (ids.has(l.id)) refuse('Two labels share an id.');
+    ids.add(l.id);
+    const color = kanbanColor(l.color);
+    if (color === null) refuse(`${what} has a colour the board cannot draw.`);
+    return { id: l.id, name: line(l.name, `${what} name`, LIMITS.labelName), color };
+  });
+}
+
+/**
+ * The kanban fields of a container, lane or card in a template, checked one by one and rebuilt (docs/kanban.md,
+ * Templates): a container's layout, name and lane width; a lane's name, rank, stage, colour and WIP limit; a card's
+ * title (one line, at most 200), description (at most 4,000), colour, rank and labels (ids from the template's own label
+ * list, at most 10). A lane sits in a container of the template and a card in a lane of it or nowhere; a rank is a real
+ * key that names its parent. Owners, due dates and the reserved tracker fields are refused. Colours go through
+ * `kanbanColor`. `types` maps the template's ids to types. Throws an Error naming what is wrong.
+ * @param {Record<string, unknown>} o
+ * @param {string} what how the object is named in a message, e.g. `Object 3`
+ * @param {{ types: Map<string, string>, labels: Set<string> }} ctx
+ * @returns {Record<string, unknown>} only the kanban fields to keep (the common ones are the caller's)
+ */
+export function templateKanbanFields(o, what, ctx) {
+  for (const key of TEMPLATE_STRIPPED) if (o[key] !== undefined) refuse(`${what} has ${key === 'due' ? 'a due date' : key.startsWith('owner') ? 'an owner' : `a ${key}`}, which a template cannot hold.`);
+  const parentType = typeof o.parent === 'string' ? ctx.types.get(o.parent) : undefined;
+  const out = {};
+  if (o.fill !== undefined) {
+    const fill = kanbanColor(o.fill);
+    if (fill === null) refuse(`${what} has a colour the board cannot draw.`);
+    out.fill = fill;
+  }
+  const rank = () => {
+    const split = splitRank(o.rank);
+    if (!split || split.parent !== o.parent) refuse(`${what} has a rank that does not name its parent.`);
+    out.rank = o.rank;
+  };
+  if (o.type === 'container') {
+    if (o.parent !== undefined && parentType !== 'frame') refuse(`${what} is a kanban whose parent is not a frame in the template.`);
+    if (!hasLayout(o.layout)) refuse(`${what} has a layout this Tabula does not know.`);
+    out.layout = o.layout;
+    if (o.name !== undefined) out.name = line(o.name, `${what} name`, LIMITS.containerName, 0);
+    if (o.laneW !== undefined) out.laneW = intIn(o.laneW, `${what} lane width`, LIMITS.laneWMin, LIMITS.laneWMax);
+    if (o.rank !== undefined) refuse(`${what} is a kanban, which has no rank.`);
+  } else if (o.type === 'lane') {
+    if (parentType !== 'container') refuse(`${what} is a lane that is not in a kanban of the template.`);
+    rank();
+    if (o.name !== undefined) out.name = line(o.name, `${what} name`, LIMITS.laneName, 0);
+    if (o.stage !== undefined) {
+      if (o.stage !== 'todo' && o.stage !== 'doing' && o.stage !== 'done') refuse(`${what} stage is not one of todo, doing, done.`);
+      out.stage = o.stage;
+    }
+    if (o.wip !== undefined) out.wip = intIn(o.wip, `${what} WIP limit`, LIMITS.wipMin, LIMITS.wipMax);
+    if (o.wipMode !== undefined) {
+      if (o.wipMode !== 'warn' && o.wipMode !== 'block') refuse(`${what} WIP mode is not one of warn, block.`);
+      if (out.wip === undefined) refuse(`${what} has a WIP mode but no limit.`);
+      out.wipMode = o.wipMode;
+    }
+  } else if (o.type === 'card') {
+    if (o.parent !== undefined) {
+      if (parentType !== 'lane') refuse(`${what} is a card whose parent is not a lane in the template.`);
+      rank();
+    } else if (o.rank !== undefined) refuse(`${what} is a loose card, which has no rank.`);
+    if (o.text !== undefined) out.text = line(o.text, `${what} title`, LIMITS.title, 0);
+    if (o.desc !== undefined) {
+      if (typeof o.desc !== 'string' || o.desc.length > LIMITS.description || hasControl(o.desc)) refuse(`${what} description must be text of at most ${LIMITS.description} characters.`);
+      out.desc = o.desc;
+    }
+    if (o.labels !== undefined) {
+      if (!Array.isArray(o.labels) || o.labels.length > LIMITS.labelsPerCard) refuse(`${what} labels must be a list of at most ${LIMITS.labelsPerCard}.`);
+      if (new Set(o.labels).size !== o.labels.length) refuse(`${what} has a label twice.`);
+      for (const id of o.labels) if (typeof id !== 'string' || !ctx.labels.has(id)) refuse(`${what} has a label that is not in the template.`);
+      out.labels = [...o.labels];
+    }
+  } else refuse(`${what} is not a kanban part.`);
+  return out;
+}
+
+/**
+ * The kanban limits over a whole template (docs/kanban.md, Limits): kanbans per board, lanes per kanban, cards per lane
+ * and in all. Throws an Error naming the limit.
+ * @param {Iterable<{ type: string, parent?: unknown }>} objects
+ */
+export function checkTemplateKanbanLimits(objects) {
+  const per = new Map();
+  let containers = 0, cards = 0;
+  for (const o of objects) {
+    if (o.type === 'container') containers++;
+    if (o.type === 'card') cards++;
+    if ((o.type === 'lane' || o.type === 'card') && typeof o.parent === 'string') per.set(o.parent, (per.get(o.parent) ?? 0) + 1);
+  }
+  if (containers > LIMITS.containers) refuse(`A template can hold at most ${LIMITS.containers} kanbans.`);
+  if (cards > LIMITS.cards) refuse(`A template can hold at most ${LIMITS.cards} cards.`);
+  for (const o of objects) {
+    const n = per.get(o.id) ?? 0;
+    if (o.type === 'container' && n > LIMITS.lanes) refuse(`A kanban holds at most ${LIMITS.lanes} lanes.`);
+    if (o.type === 'lane' && n > LIMITS.cardsPerLane) refuse(`A lane holds at most ${LIMITS.cardsPerLane} cards.`);
+  }
+}

@@ -5,7 +5,7 @@ import { ICONS, h, icon } from './dom';
 import { dialog, toast } from './common';
 import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
-import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
+import { availableTemplates, insertCustomTemplate, insertTemplate } from '../templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import { accountId, scopeLabel, splitMine } from '../template-share';
 import { authState } from '../auth';
@@ -374,7 +374,8 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
 }
 
 function templatesTab(app: BoardApp, close: () => void) {
-  const cats = [...new Set(TEMPLATES.map((t) => t.category))];
+  const templates = availableTemplates();
+  const cats = [...new Set(templates.map((t) => t.category))];
   const mine = h('div', null);
   const paintMine = (list: CustomTemplate[]) => {
     const userId = accountId(authState());
@@ -412,7 +413,7 @@ function templatesTab(app: BoardApp, close: () => void) {
     mine,
     ...cats.flatMap((c) => [
       h('div', { class: 'list-label' }, c),
-      ...TEMPLATES.filter((t) => t.category === c).map((t) => h('button', {
+      ...templates.filter((t) => t.category === c).map((t) => h('button', {
         class: 'template-row',
         onclick: () => {
           reopenSession(app.user.id, app.conn.id);
