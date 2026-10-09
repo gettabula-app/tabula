@@ -32,6 +32,15 @@ export function dockTopOf(panel: { top: number } | null, top: number): number | 
   return panel && panel.top > top + 1 ? panel.top : null;
 }
 
+/**
+ * Keeps a bar of width `w` at `x` between `left` and `right` px from the window's edges. On a phone the rail runs the full
+ * height, so `left` is its clearance there: the bar starts right of it instead of covering it.
+ */
+export function clampX(x: number, w: number, viewW: number, left: number, right = 12): number {
+  const max = viewW - w - right;
+  return max < left ? left : Math.max(left, Math.min(max, x));
+}
+
 /** Lifts a bar of height `h` at `y` to sit `gap` above a bottom-docked panel (`dock`), no higher than `top`. */
 export function clearOfDock(y: number, h: number, dock: number | null, top: number, gap = 12): number {
   return dock === null || y + h + gap <= dock ? y : Math.max(top, dock - gap - h);

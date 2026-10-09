@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `templates`, `settings`, and in accounts mode `admin` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `templates`, `settings`, and in accounts mode `admin` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -43,6 +43,7 @@ The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths)
 | `home` | The boards list with three boards (Sprint retro, Roadmap 2026, Meeting notes) and the template strip |
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
+| `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |

@@ -9,7 +9,10 @@ import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
-import { clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
+import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
+
+// the phone layout of styles.css, where the rail runs the full height
+const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
 import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
@@ -58,7 +61,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
     const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
     const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, [...connectorBoxes(), ...aiBarBox()]);
-    bar.style.transform = `translate(${p.x}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
+    const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
+    bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
   }
 

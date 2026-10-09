@@ -4,6 +4,9 @@ All notable changes to Tabula are documented here, newest first. The format foll
 
 ## [Unreleased]
 
+### Fixed
+- Phones (860 px and below): the selection's quick-action bar starts right of the toolbar instead of covering it, and scrolls when it is wider than the room; the properties panel has a fold button that folds it to its title row, so the board shows above it while the selection stays (TAB-187). `npm run visual` has a `board-selected-folded` state.
+
 ### Added
 - Containers, the model under kanban boards (TAB-134, slice 1 of `docs/kanban.md`; nothing draws or creates them yet). New object types `container`, `lane` and `card`: a child belongs to its parent and has a fractional `rank`, and its place comes from a layout of the container, not from stored coordinates. The pure code is in `shared/containers.mjs` (ranks, layout, WIP check), used by the browser and by the MCP reader, so both report the same positions; the Docker image copies `shared/`. The store gets a child index, `Store.geometry` and `Store.placed`, container-first paint order, a board-wide `labels` map (undoable, kept by version history) and a `feature:containers` key in the board's meta, one key per feature so that two clients adding different ones keep both: a client that meets a feature it does not know, or cannot read, opens the board read-only with a banner. Containers, lanes and cards show as a hairline box with their name until they are drawn.
 - Board row actions are 44px targets on touch screens (TAB-17). Checked in headless Chromium with touch emulation at 390 and 1024 px: the delete (and Add to workspace) buttons of a board row already show without hover where the device cannot hover and opened their dialog on a tap, and stay hidden until hover or focus with a mouse. On a coarse pointer the icon buttons are now 44px instead of 32px.
