@@ -16,6 +16,7 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 - [Stickers](stickers.md)
 - [Templates](templates.md)
 - [Themes](themes.md)
+- [Keyboard and screen readers](accessibility.md)
 
 ## Working together
 

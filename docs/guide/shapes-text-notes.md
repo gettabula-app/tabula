@@ -99,9 +99,11 @@ Select something and a small bar appears above it (below, if above would cover a
 - **Delete** (`Del`).
 - **More properties**: opens the properties panel.
 
+In a narrow window (860 pixels wide or less) the bar starts to the right of the toolbar instead of covering it, and scrolls sideways if it is wider than the room.
+
 ## The properties panel
 
-**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it.
+**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it. On a phone the panel has a fold button that folds it down to its title row, so you can see the board above it.
 
 ## Selecting, moving and grouping
 
