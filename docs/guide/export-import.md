@@ -34,6 +34,8 @@ A text file with the board's settings, objects, session steps, comments and poll
 
 Lists each frame as a heading with its notes as bullets, sorted by votes (shown as "3 votes"), followed by revealed poll results. Only items with text inside frames are included.
 
+The summary writes your text literally: a title such as `# heading` or `![x](link)` stays plain text and never turns into a heading, an image or a link. To keep it that way the raw `.md` file may show a backslash before characters such as `#`, `[` or `*`; a Markdown viewer hides them.
+
 Kanbans are listed too: a heading for each kanban, its lanes below it and the cards as bullets. See [Kanban boards](kanban.md#in-the-markdown-summary).
 
 The summary leaves out what is still hidden from you on the board. During a [private writing](sessions.md#private-writing) step it does not list other people's notes until they are revealed, and during a vote it shows no vote counts until the totals are revealed. Counts of a finished vote are included. See [Polls](polls.md).

@@ -58,3 +58,5 @@ Tabula supports Anthropic only. The workspace admin chooses the model for the wo
 You do not choose the model yourself.
 
 > Board content is sent to the chosen provider and processed under its API terms. The dialog shows this notice.
+
+The [AI bar](ai-bar.md), still in preview, is where these features run.
