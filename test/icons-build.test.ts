@@ -12,8 +12,10 @@ const tmp = () => {
   dirs.push(d);
   return d;
 };
+// A build that fails stops at the first error while the other sets in its pool of six are still being written, so the
+// directory it was building in can gain files while it is removed (ENOTEMPTY). Retrying lets the writes finish.
 afterEach(() => {
-  while (dirs.length) fs.rmSync(dirs.pop()!, { recursive: true, force: true });
+  while (dirs.length) fs.rmSync(dirs.pop()!, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const info = (over: Record<string, unknown> = {}) => ({ name: 'Set', license: { title: 'MIT', spdx: 'MIT', url: 'https://example.com/LICENSE' }, author: { name: 'Ada', url: 'https://example.com' }, ...over });
@@ -319,7 +321,8 @@ describe('build over a fixture', () => {
     const source = makeSource({ evil: { prefix: 'evil', info: info(), icons: { bad: { body: '<script/>' } } } });
     const out = path.join(tmp(), 'icons');
     await expect(buildIcons({ source, out, pinned: [] })).rejects.toThrow('evil:bad matches <script');
-    await expect(buildIcons({ source, out, sets: ['nope'], pinned: [] })).rejects.toThrow('nope: not in');
+    // not the same out: the failed build above may still be writing the other sets into it, and the next one clears it first
+    await expect(buildIcons({ source, out: path.join(tmp(), 'icons'), sets: ['nope'], pinned: [] })).rejects.toThrow('nope: not in');
   });
 
   it('writes the pinned bodies in one file and lists them in the manifest', async () => {

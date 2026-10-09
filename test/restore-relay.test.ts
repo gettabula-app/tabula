@@ -8,13 +8,13 @@ import { WebsocketProvider } from 'y-websocket';
 import { SimulatedCrash } from '../server/restore.mjs';
 import { CREDS, HOUR, KEY, MIN, harness, type Harness } from './backup-harness';
 import { backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, seedA } from './restore-harness';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/backups.md, Restoring. The relay as a child process, exactly as `npm start` runs it, next to the fake S3: a whole
 // restore over HTTP, the maintenance window, the exit code, the start that follows, and recovery from a swap that was cut off.
 
-const BASE_PORT = 24000 + Math.floor(Math.random() * 900);
 const CLOUD_TOKEN = 'q'.repeat(48);
-let launched = 0;
 let h: Harness | undefined;
 const running: { proc: ChildProcess }[] = [];
 const sockets = new Set<WebSocket>();
@@ -22,8 +22,8 @@ const providers = new Set<WebsocketProvider>();
 
 type Relay = { port: number; base: string; proc: ChildProcess; out: () => string; err: () => string; exited: Promise<number | null> };
 
-function launch(dir: string, env: Record<string, string>, { waitForStart = true } = {}): Promise<Relay> {
-  const port = BASE_PORT + launched++;
+async function launch(dir: string, env: Record<string, string>, { waitForStart = true } = {}): Promise<Relay> {
+  const port = await freePort();
   const proc = spawn(process.execPath, ['server/relay.mjs'], {
     env: {
       ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com',
@@ -40,7 +40,7 @@ function launch(dir: string, env: Record<string, string>, { waitForStart = true 
   const relay = { port, base: `http://127.0.0.1:${port}`, proc, out: () => out, err: () => err, exited };
   if (!waitForStart) return Promise.resolve(relay);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${err}`)), 15_000);
+    const timer = setTimeout(() => reject(new Error(`relay did not start: ${err}`)), RELAY_START_MS);
     proc.stdout!.on('data', () => {
       if (out.includes('Tabula relay')) {
         clearTimeout(timer);

@@ -7,14 +7,14 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { isWindows } from './platform';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // A room is written a while after its last change (a second by default, SAVE_DEBOUNCE_MS here). A relay that is asked
 // to stop before then must write the room first. Windows cannot deliver SIGTERM (a kill ends the process at once), so
 // the request that works on every system is a message over the IPC channel; the signals are checked where the system
 // has them.
 
-const BASE_PORT = 27000 + Math.floor(Math.random() * 900);
-let nextPort = BASE_PORT;
 
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 type Relay = { child: ChildProcess; dir: string; port: number; exited: Promise<Exit> };
@@ -34,7 +34,7 @@ async function until(test: () => boolean, ms: number, what: string) {
 
 async function startRelay(): Promise<Relay> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-shutdown-'));
-  const port = nextPort++;
+  const port = await freePort();
   const child = spawn(process.execPath, ['server/relay.mjs'], {
     // The save waits longer than any test, so a room on disk can only come from the shutdown, however slow the runner.
     env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', SAVE_DEBOUNCE_MS: '30000' },
@@ -47,7 +47,7 @@ async function startRelay(): Promise<Relay> {
     child.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve());
     child.stderr!.on('data', () => {});
     child.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
   return relay;
 }
@@ -104,7 +104,7 @@ afterEach(async () => {
   }
 });
 
-describe('relay shutdown', { timeout: 30_000 }, () => {
+describe('relay shutdown', { timeout: 60_000 }, () => {
   it('saves a room edited moments ago when asked to stop over the IPC channel, on every system', async () => {
     const relay = await startRelay();
     await editWithoutSaving(relay, 'ipc-room', 'typed just before the stop');

@@ -9,13 +9,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/ai.md, "Live runs": the relay as `npm start` runs it in open mode tells every socket on a board about its AI runs
 // (message type 6): a patch per change, and a snapshot for a socket that joins while runs are open. The provider is a
 // local HTTP server that answers like the Messages API, so nothing leaves the machine and the key is made up.
 
 const RELAY = fileURLToPath(new URL('../server/relay.mjs', import.meta.url));
-const PORT = 28000 + Math.floor(Math.random() * 900);
+const PORT = await freePort();
 const KEY = `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
 const MSG_AI_RUNS = 6;
 
@@ -115,7 +117,7 @@ async function start() {
   });
   relay.stdout!.on('data', (d) => (out += d));
   relay.stderr!.on('data', (d) => (out += d));
-  await until(() => out.includes('Tabula relay'), 15_000).catch(() => {
+  await until(() => out.includes('Tabula relay'), RELAY_START_MS).catch(() => {
     throw new Error(`relay did not start: ${out}`);
   });
 }
@@ -171,5 +173,5 @@ describe('live AI runs through the relay', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(after.runs).toEqual([]);
     expect(provider.state.requests).toBe(1);
-  }, 30_000);
+  }, 60_000);
 });

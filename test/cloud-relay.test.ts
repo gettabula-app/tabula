@@ -11,10 +11,11 @@ import * as encoding from 'lib0/encoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { MSG_WORKSPACE, onWorkspaceHint, resyncRooms } from '../src/sync';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/cloud.md. The relay runs as a child process exactly as `npm start` would, next to a fake control plane.
 
-const BASE_PORT = 22000 + Math.floor(Math.random() * 900);
 const OWNER = 'owner@example.com';
 const TOKEN = 'c'.repeat(48);
 const WORKSPACE = 'ws_test_1';
@@ -60,7 +61,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -99,12 +100,11 @@ afterAll(() => new Promise<void>((resolve) => controlPlane.close(() => resolve()
 // ---------------------------------------------------------------- servers and clients
 
 const servers: Server[] = [];
-let launched = 0;
 
 const CLOUD_ENV = () => ({ TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: controlUrl, TABULA_CLOUD_WORKSPACE_ID: WORKSPACE });
 
 async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-'))): Promise<Server> {
-  const port = BASE_PORT + launched++;
+  const port = await freePort();
   const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
   servers.push(server);
   return server;
@@ -268,9 +268,9 @@ describe('startup', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-cfg-'));
     try {
       const out = spawnSync(process.execPath, ['server/relay.mjs'], {
-        env: { ...baseEnv(BASE_PORT + 800 + launched++, dir), ...env },
+        env: { ...baseEnv(0, dir), ...env },
         encoding: 'utf8',
-        timeout: 15_000,
+        timeout: RELAY_START_MS,
       });
       return { status: out.status, stderr: out.stderr };
     } finally {

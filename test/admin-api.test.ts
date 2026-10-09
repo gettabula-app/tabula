@@ -7,11 +7,12 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { openDirectory } from '../server/directory.mjs';
 import pkg from '../package.json';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/admin.md. The relay runs as a child process in accounts mode (and once in open mode), exactly as `npm start`
 // would: revoking sessions has to close real sockets, and the events that do it only reach the relay in-process.
 
-const BASE_PORT = 21000 + Math.floor(Math.random() * 900);
 const OWNER = 'owner@example.com';
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -58,7 +59,7 @@ const startRelay = (port: number, dir: string, env: Record<string, string>) =>
     p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 
 const stopRelay = (p: ChildProcess) =>
@@ -71,7 +72,7 @@ const stopRelay = (p: ChildProcess) =>
 const servers: Server[] = [];
 
 async function launch(env: Record<string, string> = {}): Promise<Server> {
-  const port = BASE_PORT + servers.length;
+  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-admin-'));
   const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
   servers.push(server);

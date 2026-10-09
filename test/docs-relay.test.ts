@@ -4,8 +4,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
-const PORT = 25000 + Math.floor(Math.random() * 900);
+const PORT = await freePort();
 let root = '';
 let relay: ChildProcess;
 
@@ -41,7 +43,7 @@ beforeAll(async () => {
       env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', DIST_DIR: dist, DATA_DIR: path.join(root, 'data') },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const timer = setTimeout(() => reject(new Error('relay did not start')), 8000);
+    const timer = setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
     relay.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
         clearTimeout(timer);

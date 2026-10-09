@@ -87,8 +87,11 @@ jobs:
       - run: npm run typecheck
       - run: npm audit --audit-level=high
 
+  # Windows runs the tests in two shards (vitest --shard): its jobs took 3 to 6 minutes and growing with two workers on a
+  # shared runner, and the relay tests time out when they starve it (TAB-180). The other systems run one job per node
+  # version, as before. The app build runs once per node version, in the first Windows shard.
   test:
-    name: Test & build (${{ matrix.os }}, node ${{ matrix.node }})
+    name: Test & build (${{ matrix.os }}, node ${{ matrix.node }}${{ matrix.shard && format(', shard {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: changes
@@ -96,8 +99,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24, 26]
+        include:
+          - { os: windows-latest, node: 22, shard: '1/2' }
+          - { os: windows-latest, node: 22, shard: '2/2' }
+          - { os: windows-latest, node: 24, shard: '1/2' }
+          - { os: windows-latest, node: 24, shard: '2/2' }
+          - { os: windows-latest, node: 26, shard: '1/2' }
+          - { os: windows-latest, node: 26, shard: '2/2' }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -107,7 +117,11 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm test
+        if: ${{ !matrix.shard }}
+      - run: npm test -- --shard=${{ matrix.shard }}
+        if: ${{ matrix.shard }}
       - run: npm run build:app
+        if: ${{ matrix.shard != '2/2' }}
       # the icon sets are built once, where the dist artifact is made, and again in the Docker build
       - run: npm run build:icons
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24

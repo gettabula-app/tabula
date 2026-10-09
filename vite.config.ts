@@ -19,9 +19,10 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, '.claude/**'],
     // Many test files spawn a relay process each. On the small CI runners (Windows and macOS above all) running
     // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
-    // test and hook gets room to wait for a relay.
+    // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
+    // a slow start ends in the helper's error, which carries the relay's output, and not in a bare timeout.
     maxWorkers: process.env.CI ? 2 : undefined,
-    testTimeout: 20_000,
-    hookTimeout: 30_000,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

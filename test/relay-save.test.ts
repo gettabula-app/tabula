@@ -6,11 +6,13 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // Room files are saved a second after the last update, but never later than 30 seconds after the first unsaved
 // change: a room that is edited without a pause still gets written. The relay runs as a child process.
 
-const PORT = 24000 + Math.floor(Math.random() * 800);
+const PORT = await freePort();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-save-'));
 let relay: ChildProcess;
 
@@ -25,7 +27,7 @@ beforeAll(async () => {
     p.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve(p));
     p.stderr!.on('data', () => {});
     p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), 15_000);
+    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
   });
 });
 

@@ -7,24 +7,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createKeyRing } from '../server/ai/keys.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import { freePort } from './free-port';
+import { RELAY_START_MS } from './relay-timing';
 
 // docs/ai.md. The relay as `npm start` runs it: how the environment turns AI on in open mode, and what it refuses to start with.
 // The environment of the children is built here and never read from a .env file: the working directory is an empty one.
 
 const RELAY = fileURLToPath(new URL('../server/relay.mjs', import.meta.url));
-const BASE_PORT = 26000 + Math.floor(Math.random() * 800);
 const KEY = `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
 const SECRET = crypto.randomBytes(32).toString('base64');
 
 type Relay = { port: number; proc: ChildProcess; output: () => string };
 const launched: { proc: ChildProcess; dir: string }[] = [];
-let count = 0;
 
 const cleanEnv = () =>
   Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(TABULA|MIRA)_|^ANTHROPIC_|^DATA_DIR$|^PORT$/.test(name)));
 
-function spawnRelay(env: Record<string, string>, existingDir?: string) {
-  const port = BASE_PORT + count++;
+async function spawnRelay(env: Record<string, string>, existingDir?: string) {
+  const port = await freePort();
   const dir = existingDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'ai-relay-'));
   let out = '';
   const proc = spawn(process.execPath, [RELAY], {
@@ -38,10 +38,10 @@ function spawnRelay(env: Record<string, string>, existingDir?: string) {
   return { port, proc, dir, output: () => out };
 }
 
-const launch = (env: Record<string, string> = {}, existingDir?: string) =>
-  new Promise<Relay>((resolve, reject) => {
-    const relay = spawnRelay(env, existingDir);
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${relay.output()}`)), 15_000);
+const launch = async (env: Record<string, string> = {}, existingDir?: string) => {
+  const relay = await spawnRelay(env, existingDir);
+  return new Promise<Relay>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`relay did not start: ${relay.output()}`)), RELAY_START_MS);
     relay.proc.stdout!.on('data', (d) => {
       if (String(d).includes('Tabula relay')) {
         clearTimeout(timer);
@@ -54,6 +54,7 @@ const launch = (env: Record<string, string> = {}, existingDir?: string) =>
       reject(new Error(`relay exited before it was listening: ${relay.output()}`));
     });
   });
+};
 
 const exitOf = (proc: ChildProcess) =>
   new Promise<number | null>((resolve) => {
@@ -234,7 +235,7 @@ describe('a malformed secret', () => {
     ['accounts mode', { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com' }],
   ])('stops the relay from starting in %s, and the message does not print it', async (_name, base) => {
     for (const [name, value] of [['TABULA_AI_SECRET', 'definitely-not-base64-secret'], ['TABULA_AI_SECRET', crypto.randomBytes(16).toString('base64')]]) {
-      const relay = spawnRelay({ ...base, [name]: value });
+      const relay = await spawnRelay({ ...base, [name]: value });
       expect(await exitOf(relay.proc)).not.toBe(0);
       expect(relay.output()).toContain(`${name} must be 32 random bytes encoded as base64`);
       expect(relay.output()).not.toContain(value);
@@ -243,11 +244,11 @@ describe('a malformed secret', () => {
   });
 
   it('also stops it for a malformed previous secret, or a previous one alone', async () => {
-    const bad = spawnRelay({ TABULA_AI_SECRET: SECRET, TABULA_AI_SECRET_PREVIOUS: 'nope-nope-nope' });
+    const bad = await spawnRelay({ TABULA_AI_SECRET: SECRET, TABULA_AI_SECRET_PREVIOUS: 'nope-nope-nope' });
     expect(await exitOf(bad.proc)).not.toBe(0);
     expect(bad.output()).toContain('TABULA_AI_SECRET_PREVIOUS must be 32 random bytes');
     expect(bad.output()).not.toContain('nope-nope-nope');
-    const alone = spawnRelay({ TABULA_AI_SECRET_PREVIOUS: SECRET });
+    const alone = await spawnRelay({ TABULA_AI_SECRET_PREVIOUS: SECRET });
     expect(await exitOf(alone.proc)).not.toBe(0);
     expect(alone.output()).toContain('TABULA_AI_SECRET_PREVIOUS needs TABULA_AI_SECRET');
     expect(alone.output()).not.toContain(SECRET);
