@@ -178,6 +178,12 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .board-actions { opacity: 1; pointer-events: auto; }
 }
 
+/* a finger needs more than 32px: 44px is the usual minimum target */
+@media (pointer: coarse) {
+  .board-actions .icon-btn { width: 44px; height: 44px; }
+  .board-actions { margin: -6px 0; }
+}
+
 @media (max-width: 900px) {
   .tpl-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
