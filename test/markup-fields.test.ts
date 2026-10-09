@@ -32,7 +32,7 @@ function everyField(type: ObjType, bad: unknown): Obj {
   const fields = [
     'x', 'y', 'w', 'h', 'rotation', 'kind', 'name', 'text', 'fill', 'stroke', 'strokeWidth', 'dash', 'opacity', 'font', 'fontWeight',
     'fontSize', 'textColor', 'align', 'valign', 'ref', 'viewBox', 'sticker', 'asset', 'mime', 'nw', 'nh', 'alt', 'points',
-    'stereotype', 'attributes', 'operations', 'layout', 'rank', 'laneW', 'stage', 'wip', 'wipMode', 'desc', 'ownerName', 'due', 'labels',
+    'stereotype', 'attributes', 'operations', 'layout', 'rank', 'laneW', 'stage', 'wip', 'wipMode', 'desc', 'ownerName', 'ownerId', 'ownerKind', 'due', 'link', 'labels',
   ];
   const o: Record<string, unknown> = { id: `o-${type}`, type, x: 10, y: 20, w: 160, h: 120, rotation: 0, z: 'a0', text: 'T', body: '<path d="M0 0h24v24H0z"/>', points: [0, 0, 40, 40] };
   for (const f of fields) o[f] = bad;
@@ -82,6 +82,7 @@ const baseline = (() => {
   const p = parse(markup);
   // presentation attributes of text the kanban draws only for some states (label chips, due dates), never data-driven names
   for (const a of ['letter-spacing', 'text-decoration', 'font-style', 'dominant-baseline']) p.attrs.add(a);
+  p.attrs.add('data-owner-kind');
   return { attrs: p.attrs, names: p.names };
 })();
 
@@ -141,6 +142,20 @@ describe('the sinks one by one', () => {
     expect(o.align).toBeUndefined();
     const c = safeObj(connector({ route: 'r"', startHead: '"', endHead: 1, relation: 'constructor' })) as ConnectorObj;
     expect([c.route, c.startHead, c.endHead, c.relation]).toEqual(['straight', 'none', 'none', undefined]);
+  });
+
+  it('keeps one explicit HTTP(S) card URL and drops unsafe schemes, whitespace tricks and overlong values', () => {
+    const base = goodBox('card') as BaseObj;
+    const longest = `https://example.com/${'a'.repeat(2000 - 'https://example.com/'.length)}`;
+    expect(safeObj({ ...base, link: longest, ownerKind: 'agent' } as Obj)).toMatchObject({ link: longest, ownerKind: 'agent' });
+    for (const link of [
+      'javascript:alert(1)', 'data:text/html,hi', 'ftp://example.com/a', ' https://example.com', 'https://example.com ',
+      'https://example.com/a b', 'https://example.com/\tpath', 'https://example.com/\npath', 'https://example.com/\u200bpath',
+      'https://example.com/\\@evil.example', 'http:///example.com', 'https://example.com/'.padEnd(2001, 'a'),
+    ]) {
+      expect(safeObj({ ...base, link } as unknown as Obj)).not.toHaveProperty('link');
+    }
+    expect(safeObj({ ...base, ownerKind: 'robot' } as unknown as Obj)).not.toHaveProperty('ownerKind');
   });
 
   it('text, members and fonts that are not strings do not break drawing', () => {

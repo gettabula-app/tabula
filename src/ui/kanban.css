@@ -52,6 +52,7 @@
 
 /* the Filter popover: sections on hairlines, 11px uppercase heads, chips as in the card dialog */
 .k-filter-pop { padding: 0; }
+.canvas .k-card-link:focus-visible .k-card-link-focus-ring { stroke: var(--canvas-ink); stroke-width: 1.5; }
 .k-pop-sec { padding: 12px 16px; border-top: 1px solid var(--tray-line); }
 .k-pop-sec:first-child { border-top: 0; }
 .k-pop-h {
