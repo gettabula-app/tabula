@@ -16,3 +16,4 @@ tabula-review/
 pnpm-lock.yaml
 yarn.lock
 test-results.json
+.codex/
