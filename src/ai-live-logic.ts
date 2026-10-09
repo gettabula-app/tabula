@@ -294,6 +294,16 @@ export function acceptedMessage(proposal: AiProposal, owner: string | null): str
   return `Added ${whose}${plural(proposal.objects.length, 'sticky', 'stickies')}.`;
 }
 
+/** What an add says about group members it left where they are because they changed since the proposal came (TAB-213). */
+export function leftOutNote(stale: number): string {
+  if (stale <= 0) return '';
+  return ` ${plural(stale, 'sticky', 'stickies')} that changed since the proposal came ${stale === 1 ? 'was' : 'were'} left where ${stale === 1 ? 'it is' : 'they are'}.`;
+}
+
+/** The toast when an add has nothing to write: nothing ticked, or only members that changed since (TAB-213). */
+export const nothingToAdd = (stale: number): string =>
+  stale > 0 ? 'Every sticky left in this proposal changed since it came, so nothing was moved.' : 'Nothing is selected to add.';
+
 /** The toast after discarding someone's preview. */
 export const discardedMessage = (owner: string | null): string => `Discarded ${owner ? `${owner}'s` : 'the'} preview.`;
 

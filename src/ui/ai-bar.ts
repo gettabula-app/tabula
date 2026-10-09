@@ -1,7 +1,7 @@
 import './ai-bar.css';
 import type { BoardApp } from '../app';
 import { applyProposal, type AiProposal } from '../ai-apply';
-import { settledNotice } from '../ai-live-logic';
+import { leftOutNote, nothingToAdd, settledNotice } from '../ai-live-logic';
 import type { SettledRun } from '../ai-runs';
 import {
   CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON,
@@ -725,8 +725,8 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const p = st.preview;
     if (st.ui !== 'preview' || !p || st.busy) return;
     // a review that kept nothing adds nothing: said before the relay settles the run for everyone
-    const chosen = takeReview(app, p.runId);
-    if (!chosen(p.proposal)) return void toast('Nothing is selected to add.');
+    const taken = takeReview(app, p.runId, p.proposal);
+    if (!taken.choose(p.proposal)) return void toast(nothingToAdd(taken.stale));
     st.busy = true;
     paint();
     // taken before the answer: the stickies land where the ghosts are, whatever the board does meanwhile
@@ -741,7 +741,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     };
     switch (res.kind) {
       case 'ok': {
-        const proposal = res.proposal ? chosen(res.proposal) : null;
+        const proposal = res.proposal ? taken.choose(res.proposal) : null;
         dropRun(app, p.runId);
         if (!proposal) return fail('internal');
         const applied = applyProposal(app, proposal, avoid, proposedBy);
@@ -753,7 +753,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
         st.req = null;
         paint();
         refresh();
-        toast(addedMessage(proposal), TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
+        toast(`${addedMessage(proposal)}${leftOutNote(taken.stale)}`, TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
         if (byKeyboard) input.focus();
         return;
       }

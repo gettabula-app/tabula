@@ -312,7 +312,7 @@ Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray,
 
 **Edits are the reviewer's own.** A review lives in the reviewing app only (`src/ai-review.ts`, kept per run in `src/ui/ai-live.ts`) and is never sent to the relay or written to the document. The ghosts on that screen follow it, so what the person sees is what they add; everyone else keeps seeing the proposal as it came, until it is added or discarded. The relay still settles the run with the first Add or Discard, as in "Live runs", and the person who clicked writes their reviewed version.
 
-**Stale items.** When a group proposal arrives the app notes how each sticky it would move looked (position, size, text, frame, kind, lock). A sticky that has changed since, or is gone, is marked **Changed since**, unticked, and cannot be ticked: it is left where it is. This is judged on the reviewer's screen only.
+**Stale items.** When a group proposal arrives the app notes how each sticky it would move looked (position, size, text, frame, kind, lock). A sticky that has changed since, or is gone, is marked **Changed since**, unticked, and cannot be ticked: it is left where it is. This is judged on the reviewer's screen only. It holds without opening Review too (TAB-213): with no review open, the ghosts and **Add to board** / **Accept** use the review the panel would start with, so a sticky that changed since (or was deleted, locked or turned into another kind) is neither drawn nor moved, and the toast says how many were left ("1 sticky that changed since the proposal came was left where it is."). When every sticky changed, the preview has nothing left to draw or add: Add says so and does not ask the relay.
 
 **One undo step.** Add writes the reviewed proposal with `applyProposal`, one `store.transact`, so one Ctrl+Z takes back the whole subset. The objects are `createdBy` the person who added them and carry `proposedBy`.
 
@@ -332,6 +332,18 @@ Not in this slice, each to follow on the same ghost overlay and resolve flow:
 - **Accepting while offline**, applied on reconnect. Add needs the relay to settle the run, so it needs a connection.
 - **Proposals from MCP agents.** Agents still write through MCP with their own origin; they do not yet propose.
 - **Live shared edits** of a proposal: one person's review changes are not seen by others.
+
+### Checking the review in a browser
+
+`npm run check:ai-review` drives the review panel in headless Chromium, with nothing on the network. It builds the app (`npm run build:app`; `-- --no-build` reuses `dist/`), starts a throwaway relay in open mode (a fresh data folder, a free port, `TABULA_AI_OPEN=1`), and points the relay's Anthropic client at a local stub (`scripts/lib/anthropic-stub.mjs`, 127.0.0.1 only, through `ANTHROPIC_BASE_URL`). The stub streams a canned answer for the feature that asked (five stickies and a frame for generate, two groups for cluster) and records every call, and the check asserts that no other call was made. Nothing from the shell's `TABULA_*` or `ANTHROPIC_*` variables reaches the relay. It needs Chromium once (`npx playwright install chromium`).
+
+It asserts, and prints `PASS` or `FAIL` for each step and a last line `REPORT: PASS=n FAIL=n BLOCKED=n`. The exit code is 1 unless every step passed and nothing was blocked (the app did not build, Chromium is missing, a relay or the stub did not start).
+
+- **At 390 and 1024 wide:** a ready create proposal with the panel closed and open, after one sticky was unticked, one text edited and one colour changed (the ghosts follow), with every item unticked, a cluster proposal where a peer edited one sticky after it arrived ("Changed since", unticked, disabled), and after Add selected (the added objects carry `proposedBy`, and the properties panel reads "Proposed by AI (Generate ideas) for …"). Each state is a screenshot in `tabula-review/ai-review/` (git-ignored; `-- --out <folder>` to move them), taken for a person to look at: the asserts do not judge a layout.
+- **Two people on one board:** A asks and both see the preview; B reviews it and A still sees the original; B adds the subset; both boards then hold the same objects, written once, with `proposedBy`; the preview is gone for A; one Undo for B removes every added object for both.
+- **Every page:** the console and page errors of each browser context are printed (`CONSOLE`, `PAGEERROR`). They are listed, not asserted.
+
+It is never part of `npm test` or CI: it takes about a minute and needs a browser. `test/ai-review-check-config.test.ts` checks that no npm script or workflow runs it, that vitest collects nothing under `scripts/`, that the script names no path of the machine it was written on, that it writes only to `dist/`, `tabula-review/` and a temporary folder, and that the stub answers as described. Run it by hand when the panel, `ai-live.ts` or the resolve flow changes.
 
 ## Not in this slice
 

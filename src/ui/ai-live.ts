@@ -1,11 +1,11 @@
 import './ai-live.css';
 import type { BoardApp } from '../app';
 import { applyProposal, boardOf, type AiProposal, type Layout, type Rect } from '../ai-apply';
-import { fingerprintOf, isStale, refreshStale, reviewed, type Fingerprint, type Review } from '../ai-review';
+import { fingerprintOf, isStale, refreshStale, reviewCounts, reviewed, startReview, type Fingerprint, type Review } from '../ai-review';
 import type { ProposedBy } from '../types';
 import { errorView, resolveAiRun, type ResolveAction } from '../ai-bar-logic';
 import {
-  ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, personColor, placeLabelRows,
+  ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, leftOutNote, nothingToAdd, personColor, placeLabelRows,
   previewBox, previewLabelText, stacked, targetBounds, type LabelRowIn,
 } from '../ai-live-logic';
 import { LiveRuns, avoidFor, presenceLine, previewLayouts, type LiveRun, type SettledRun } from '../ai-runs';
@@ -89,7 +89,7 @@ export function barMoved(app: BoardApp): void {
 export function avoidForRun(app: BoardApp, runId: string): Rect[] {
   const live = lives.get(app);
   if (!live) return [];
-  const list = shownRuns(live);
+  const list = shownRuns(live, app);
   return avoidFor(runId, list, previewLayouts(list, boardOf(app)));
 }
 
@@ -105,10 +105,12 @@ export function dropRun(app: BoardApp, runId: string): void {
 // ---------------------------------------------------------------- review (TAB-160)
 
 /** The runs with each proposal as this person reviewed it: what is drawn here and what an add of it writes. */
-function shownRuns(live: Live): LiveRun[] {
+function shownRuns(live: Live, app: BoardApp): LiveRun[] {
   return live.runs.list().map((r) => {
-    const review = live.reviews.get(r.id);
-    return review && r.proposal ? { ...r, proposal: reviewed(r.proposal, review) } : r;
+    if (!r.proposal) return r;
+    // with no review open the default one stands in (TAB-213): a member that changed since is neither drawn nor added
+    const review = live.reviews.get(r.id) ?? (r.status === 'ready' ? startReview(r.proposal, staleIn(live, app, r.id)) : null);
+    return review ? { ...r, proposal: reviewed(r.proposal, review) } : r;
   });
 }
 
@@ -138,10 +140,18 @@ export const staleFor = (app: BoardApp, runId: string): ((id: string) => boolean
  * The person's review of a run as it is now, as a function from the relay's proposal to what they add. Taken before an add
  * asks the relay: the run's patch can reach the app first and drop the review, and the add must still write what was ticked.
  */
-export function takeReview(app: BoardApp, runId: string): (proposal: AiProposal) => AiProposal | null {
-  const review = lives.get(app)?.reviews.get(runId);
-  const kept = review ? structuredClone(review) : null;
-  return (proposal) => (kept ? reviewed(proposal, kept) : proposal);
+export function takeReview(app: BoardApp, runId: string, proposal: AiProposal | null): TakenReview {
+  const live = lives.get(app);
+  const review = live?.reviews.get(runId);
+  // with no review open the default one is made now, so an add skips the members that changed since as the panel would (TAB-213)
+  const kept = review ? structuredClone(review) : proposal && live ? startReview(proposal, staleIn(live, app, runId)) : null;
+  return { choose: (p) => (kept ? reviewed(p, kept) : p), stale: kept ? reviewCounts(kept).stale : 0 };
+}
+
+/** What takeReview took: the function from the relay's proposal to what is written, and how many members it leaves out as changed. */
+export interface TakenReview {
+  choose: (proposal: AiProposal) => AiProposal | null;
+  stale: number;
 }
 
 /** What an add stamps on the objects it creates: the run's feature and who asked for it. */
@@ -226,8 +236,8 @@ export function mountAiLive(app: BoardApp): void {
   async function settle(run: LiveRun, action: ResolveAction) {
     if (busy.has(run.id) || app.readOnly || destroyed) return;
     // a review that kept nothing adds nothing: say so before the relay settles the run for everyone
-    const chosen = takeReview(app, run.id);
-    if (action === 'accept' && run.proposal && !chosen(run.proposal)) return toast('Nothing is selected to add.');
+    const taken = takeReview(app, run.id, run.proposal);
+    if (action === 'accept' && run.proposal && !taken.choose(run.proposal)) return toast(nothingToAdd(taken.stale));
     const proposedBy = proposedByFor(app, run.id);
     busy.add(run.id);
     markBusy();
@@ -239,13 +249,13 @@ export function mountAiLive(app: BoardApp): void {
     markBusy();
     switch (res.kind) {
       case 'ok': {
-        const proposal = res.proposal ? chosen(res.proposal) : null;
+        const proposal = res.proposal ? taken.choose(res.proposal) : null;
         dropRun(app, run.id);
         if (action === 'discard') return toast(discardedMessage(nameOf(run)));
         if (!proposal) return say('error');
         const applied = applyProposal(app, proposal, avoid, proposedBy);
         if (!applied.ok) return say(applied.reason === 'read_only' ? 'read_only' : 'board_changed');
-        return toast(acceptedMessage(proposal, nameOf(run)), TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
+        return toast(`${acceptedMessage(proposal, nameOf(run))}${leftOutNote(taken.stale)}`, TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
       }
       case 'settled':
         dropRun(app, run.id);
@@ -424,7 +434,7 @@ export function mountAiLive(app: BoardApp): void {
       const next = refreshStale(review, staleIn(live, app, id));
       if (next !== review) live.reviews.set(id, next);
     }
-    const list = shownRuns(live);
+    const list = shownRuns(live, app);
     const me = meId();
     live.layouts = previewLayouts(list, boardOf(app));
     mine = new Set(list.filter((r) => isMine(r, me, live.ownRunId, live.starting)).map((r) => r.id));
