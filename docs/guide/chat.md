@@ -53,7 +53,13 @@ The box grows to six lines. A message can be up to 2,000 characters.
 
 ### Mention someone
 
-Type `@` to see the people who can read this board, and choose one. They are marked in your message and get a badge on their **Chat** button.
+Type `@` to see the people who can read this channel, and choose one. They are marked in your message and get a badge on their **Chat** button. You can mention up to 10 people in one message.
+
+How they hear about it depends on where they are:
+
+- If they have Tabula open but are not looking at that channel, a card says who mentioned them, where, and the first words, with **Open** and **Dismiss**. It goes away on its own after 20 seconds.
+- If they have Tabula open on that channel, they simply see your message.
+- If they have Tabula closed, they get an email after 10 minutes, as long as nobody has opened Tabula or read the message since. See [Notifications](#notifications).
 
 ### Reply, copy, edit and delete
 
@@ -64,9 +70,19 @@ Each message has a menu:
 - **Edit**, for your own messages. The message then shows **edited**.
 - **Delete**, for your own messages. The board's owner can also delete other people's.
 
+### React
+
+Select the actions button on a message (the three dots) and choose **React**, then one of six: 👍 ❤️ 😄 🎉 👀 ✅. The reaction shows as a small count under the message. Select a count to add or remove your own reaction. You can use each reaction once per message. Reactions never send a notice to anyone. You cannot react to a deleted message.
+
 ## Who can write
 
 Everyone who can open the board can read the chat. Owners, editors and commenters can write. People who can only view the board can write only if a workspace admin has allowed it. The box is switched off, with the reason shown, when you cannot write: view-only access, a workspace that is read-only, or access to the board that you have lost.
+
+## Notifications
+
+Under **Chat notifications** in the board menu (or **Notifications** at the bottom of the channel list on the Chat page) you can choose whether to get an email when you are mentioned. It is on until you turn it off.
+
+The email says who mentioned you, in which board, team or workspace, and the first words of the message, with a link. It is sent only if you have not had Tabula open for 10 minutes, and not for a message you have read, or that was deleted or edited so it no longer mentions you. You get at most one email per conversation every 10 minutes and 20 a day, and editing a message never sends it again.
 
 ## Offline
 
@@ -78,6 +94,7 @@ Messages you send while offline wait in a queue, grey, with **Sending…**. They
 
 - Chat is not part of version history, and it is not in exports or board files. A board you export and open elsewhere comes without its conversation.
 - Chat is separate from comments, and neither shows in the other.
+- Mentions in a message you edit later notify the newly mentioned people, not the ones who were mentioned before.
 - Messages are deleted after a time set by an admin: one year unless they choose otherwise.
 
 ## Related
