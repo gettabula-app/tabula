@@ -77,7 +77,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const ownerKinds = h('div', { class: 'k-owner-kinds', role: 'group', 'aria-label': 'Owner type' },
     ...(['person', 'agent'] as const).map((kind) => h('button', {
       class: 'k-owner-kind-btn', type: 'button', 'data-owner-kind': kind, 'aria-pressed': 'false', disabled: kind === 'agent',
-      title: kind === 'agent' ? 'Agent owners are assigned through MCP tokens' : undefined,
+      'aria-label': kind === 'agent' ? 'Agent owner (assigned through MCP tokens)' : undefined,
       onclick: () => {
         if (kind === 'agent') return;
         const card = cardOf();

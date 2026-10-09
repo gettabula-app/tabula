@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { KANBAN, rankBetween, sortedChildren, splitRank } from '../shared/containers.mjs';
 import { createHarness, until, type Account, type Body } from './mcp-harness';
@@ -21,7 +21,16 @@ let owner: Account;
 let viewer: Account;
 let board: string;
 
-const addToken = (name: string) => h.newToken(owner.cookie, { name, scope: 'write' });
+// An account may hold 20 active tokens: the tokens a test made are revoked after it, so a long file never hits the limit.
+const madeTokens: string[] = [];
+const addToken = async (name: string) => {
+  const made = await h.newToken(owner.cookie, { name, scope: 'write' });
+  madeTokens.push(made.id);
+  return made;
+};
+afterEach(async () => {
+  for (const id of madeTokens.splice(0)) await h.api(owner.cookie, 'DELETE', `/api/me/tokens/${id}`);
+});
 
 async function watcher() {
   const client = h.connect(board, owner.cookie);
@@ -177,13 +186,23 @@ describe('kanban MCP card tools', () => {
     expect(assigned.error).toBeUndefined();
     expect(assigned.data.card).toMatchObject({ ownerId: first.id, ownerName: 'first agent', ownerKind: 'agent' });
 
+    const takeover = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerKind: 'agent' });
+    expect(takeover.error).toBe('conflict');
+    const stillFirstAfterTakeover = await h.tool(second.token, 'list_kanban_cards', { boardId: board, kanbanId });
+    expect(stillFirstAfterTakeover.data.cards.find((card: Body) => card.id === cardId)).toMatchObject({ ownerId: first.id, ownerKind: 'agent' });
+
     const nameOnly = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerName: 'second agent' });
-    expect(nameOnly.error).toBe('invalid_input');
+    expect(nameOnly.error).toBe('conflict');
     const stillFirst = await h.tool(second.token, 'list_kanban_cards', { boardId: board, kanbanId });
     expect(stillFirst.data.cards.find((card: Body) => card.id === cardId)).toMatchObject({ ownerId: first.id, ownerKind: 'agent' });
 
     for (const clear of [{ ownerId: null }, { ownerName: null }]) {
-      const cleared = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ...clear });
+      const refused = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ...clear });
+      expect(refused.error).toBe('conflict');
+      const unchanged = await h.tool(first.token, 'list_kanban_cards', { boardId: board, kanbanId });
+      expect(unchanged.data.cards.find((card: Body) => card.id === cardId)).toMatchObject({ ownerId: first.id, ownerKind: 'agent' });
+
+      const cleared = await h.tool(first.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ...clear });
       expect(cleared.error).toBeUndefined();
       expect(cleared.data.card).not.toHaveProperty('ownerId');
       expect(cleared.data.card).not.toHaveProperty('ownerName');
@@ -191,6 +210,7 @@ describe('kanban MCP card tools', () => {
       await h.tool(first.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerKind: 'agent' });
     }
 
+    await h.tool(first.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerName: null });
     const person = await h.tool(second.token, 'update_kanban_card', {
       boardId: board, kanbanId, cardId, ownerKind: 'person', ownerName: 'Morgan',
     });
@@ -248,6 +268,29 @@ describe('kanban MCP card tools', () => {
       expect(result.data.moved).toBe(false);
       expect(Y.encodeStateVector(live.doc)).toEqual(before);
     } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('moves to the first matching lane when another lane has the same stage', async () => {
+    const token = await addToken('repeated stage');
+    const live = await watcher();
+    let card: string | undefined;
+    try {
+      const added = await h.tool(token.token, 'add_kanban_card', {
+        boardId: board, kanbanId, laneId: secondDoingId, title: 'Move to first Doing lane',
+      });
+      expect(added.error).toBeUndefined();
+      card = added.data.card.id as string;
+      const moved = await h.tool(token.token, 'move_kanban_card', { boardId: board, kanbanId, cardId: card, stage: 'doing' });
+      expect(moved.error).toBeUndefined();
+      expect(moved.data).toMatchObject({ moved: true, card: { lane: { id: doingId } } });
+      await until(() => (live.doc.getMap('objects').get(card!) as Y.Map<unknown>)?.get('parent') === doingId);
+    } finally {
+      if (card) {
+        live.doc.getMap('objects').delete(card);
+        await until(() => !h.savedDoc(board).getMap('objects').has(card!));
+      }
       live.provider.destroy();
     }
   });

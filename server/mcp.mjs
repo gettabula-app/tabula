@@ -391,6 +391,9 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     const touched = keys.some((key) => Object.hasOwn(input, key));
     if (!touched) return { sets: {}, unsets: [] };
     const field = (key) => path ? `${path}.${key}` : key;
+    if (current?.ownerKind === 'agent' && current.ownerId !== actor.tokenId) {
+      throw new OpsError('conflict', 'The card is assigned to another agent', field('ownerKind'));
+    }
     const hasNonNullOwnerValue = ['ownerId', 'ownerName'].some((key) => input[key] !== undefined && input[key] !== null && input[key] !== '');
     if (input.ownerKind === null) {
       if (hasNonNullOwnerValue) throw new OpsError('invalid_input', 'Clear the owner fields together, or set ownerKind to person or agent', field('ownerKind'));
@@ -807,9 +810,6 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           const { card, lane: oldLane } = visibleCard(state, cardId);
           if (card.locked === true) throw new OpsError('conflict', 'The object is locked', 'cardId');
           const lane = resolveCardLane(state, args);
-          if (args.stage !== undefined && check.choice(args.stage, STAGES, 'stage') === oldLane.stage) {
-            return { result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [card.id] } };
-          }
           if (lane.id === oldLane.id) return { result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [card.id] } };
           const targetCards = (state.allCardsByLane.get(lane.id) ?? []).filter((item) => item.id !== card.id);
           const wip = wipCheck(lane, targetCards.map((item) => ({ id: item.id })), [card.id]);

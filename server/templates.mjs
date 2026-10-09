@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } from './board-ops.mjs';
 import { cleanColor } from '../shared/colors.mjs';
-import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
+import { checkTemplateKanbanLimits, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
 import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
@@ -250,9 +250,7 @@ function box(o, what, ids, labels) {
     case 'lane':
     case 'card': {
       // every kanban field is checked one by one (docs/kanban.md, Templates); a title is a card's only text
-      const clean = { ...o };
-      for (const key of TEMPLATE_STRIPPED) delete clean[key];
-      const fields = kanban(() => templateKanbanFields(clean, what, { types: ids, labels }));
+      const fields = kanban(() => templateKanbanFields(o, what, { types: ids, labels }));
       delete out.fill;
       if (o.type !== 'card') delete out.text;
       Object.assign(out, fields);
