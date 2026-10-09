@@ -125,3 +125,30 @@ export function inkOn(fill: string): string {
   const onInk = (L + 0.05) / (luminance(STICKY_INK) + 0.05);
   return onWhite > onInk ? '#FFFFFF' : STICKY_INK;
 }
+
+/**
+ * A plain-language name for a colour, for the accessible name of a swatch ("Blue", "Dark grey") where the swatch has no
+ * name of its own. Sticky note and board colours use their own names; everything else is named by hue, saturation and lightness.
+ */
+export function colorName(value: string): string {
+  if (value === CANVAS_INK) return 'Ink';
+  const rgb = parseHex(value);
+  if (!rgb) return value;
+  const hex = normalizeHex(value);
+  const sticky = STICKY_COLORS.find((c) => normalizeHex(c.fill) === hex);
+  if (sticky) return sticky.name;
+  if (hex === normalizeHex(INK)) return 'Ink';
+  if (hex === normalizeHex(GRAPHITE)) return 'Graphite';
+  const [r, g, b] = rgb.map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (l > 0.96) return 'White';
+  if (l < 0.1) return 'Black';
+  if (s < 0.14) return l < 0.35 ? 'Dark grey' : l > 0.75 ? 'Light grey' : 'Grey';
+  let h = d === 0 ? 0 : max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  const hue = h < 15 || h >= 345 ? 'Red' : h < 40 ? (h >= 35 && l < 0.45 ? 'Amber' : 'Orange') : h < 65 ? (l < 0.45 ? 'Amber' : 'Yellow') : h < 165 ? 'Green' : h < 200 ? 'Teal' : h < 245 ? 'Blue' : h < 290 ? 'Violet' : 'Pink';
+  return l < 0.3 ? `Dark ${hue.toLowerCase()}` : l > 0.75 ? `Light ${hue.toLowerCase()}` : hue;
+}

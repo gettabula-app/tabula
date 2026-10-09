@@ -236,7 +236,7 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
     onclick: () => void loadOnline(),
   }, 'Online sets');
   const onlineMsg = h('p', { class: 'muted small' });
-  const grid = h('div', { class: 'icon-grid', role: 'list' });
+  const grid = h('div', { class: 'icon-grid', role: 'group', 'aria-label': 'Icons' });
   const more = h('div', { class: 'icon-more' });
   const note = h('p', { class: 'muted small' });
   const fill = previewFiller(signal);
@@ -263,7 +263,7 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
       const img = h('img', { alt: '', loading: 'lazy', width: 28, height: 28 });
       imgs.set(n, img);
       return draggable(h('button', {
-        class: 'icon-tile', 'data-tip': `${n}. Click to add, or drag onto the board.`, 'aria-label': n, role: 'listitem',
+        class: 'icon-tile', 'data-tip': `${n}. Click to add, or drag onto the board.`, 'aria-label': n,
         onclick: () => dropItem(app, { kind: 'icon', name: n }),
       }, img), { kind: 'icon', name: n });
     }));

@@ -70,7 +70,7 @@ export function previewFiller(signal: AbortSignal) {
 
 export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: StickerDrag) => HTMLElement, signal: AbortSignal) {
   const input = h('input', { type: 'search', class: 'input', placeholder: 'Search stickers', 'aria-label': 'Search stickers' });
-  const grid = h('div', { class: 'sticker-grid', role: 'list' });
+  const grid = h('div', { class: 'sticker-grid', role: 'group', 'aria-label': 'Stickers' });
   const note = h('p', { class: 'stickers-note' });
   let set = (STICKER_SETS.find((s) => s.default) ?? STICKER_SETS[0]).prefix;
   let sets: Record<string, IconSet> = {};
@@ -94,7 +94,7 @@ export function stickersTab(app: BoardApp, draggable: (el: HTMLElement, item: St
     const img = h('img', { alt: '', loading: 'lazy', width: 28, height: 28 });
     imgs.set(name, img);
     return draggable(h('button', {
-      class: 'sticker-tile', 'data-tip': `${name}. Click to add, or drag onto the board.`, 'aria-label': name, role: 'listitem',
+      class: 'sticker-tile', 'data-tip': `${name}. Click to add, or drag onto the board.`, 'aria-label': name,
       onclick: () => placeSticker(app, name),
     }, img), { kind: 'sticker', name });
   };
@@ -159,11 +159,11 @@ export function reactionPicker(app: BoardApp) {
   const imgs = new Map<string, HTMLImageElement>();
   const picker = h('div', { class: 'reactions' },
     h('div', { class: 'stickers-label' }, 'React'),
-    h('div', { class: 'sticker-grid reaction-grid', role: 'list' }, ...REACTIONS.map((name) => {
+    h('div', { class: 'sticker-grid reaction-grid', role: 'group', 'aria-label': 'Reactions' }, ...REACTIONS.map((name) => {
       const img = h('img', { alt: '', width: 28, height: 28 });
       imgs.set(name, img);
       return h('button', {
-        class: 'sticker-tile', 'data-tip': `${name.split(':')[1]}. Click to react.`, 'aria-label': name, role: 'listitem',
+        class: 'sticker-tile', 'data-tip': `${name.split(':')[1]}. Click to react.`, 'aria-label': name,
         onclick: () => {
           closePopover();
           const b = app.r.contentBounds(app.selection);

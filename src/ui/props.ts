@@ -4,7 +4,7 @@ import { isBox, isConnector } from '../types';
 import { isSticker } from '../stickers';
 import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
-import { FILLS, STROKES, TEXT_COLORS } from '../palette';
+import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
 import { SHAPE_GROUPS, SHAPE_KINDS, HEADS } from '../shapes';
 import { RELATIONS } from '../uml';
@@ -184,7 +184,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
           { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
         ], s.valign, (v) => up({ valign: v }, (o) => o.type === 'shape' || o.type === 'sticky'), 'Vertical alignment')));
       }
-      blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: c, value: c })), s.textColor, (v) => up({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
+      blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => up({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
     }
 
     // ---- opacity

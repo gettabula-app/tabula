@@ -1,3 +1,4 @@
+import { rovingRadios } from './focus-scope';
 import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { normalizeHex } from '../palette';
@@ -18,6 +19,7 @@ export function stickyColorField(app: BoardApp, current: string | undefined, onP
       role: 'radio', 'aria-checked': String(on), onclick: () => onPick(c.value),
     }, h('span', { class: 'note', 'aria-hidden': 'true' })));
   }
+  rovingRadios(row, { select: false });
   const isCustom = !!cur && !palette.some((c) => normalizeHex(c.value) === cur);
   const input = h('input', { type: 'color', value: cur ?? '#FFE16B', 'aria-label': 'Choose any colour', tabindex: '-1' });
   const add = h('label', {

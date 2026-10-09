@@ -1,4 +1,5 @@
 import './admin.css';
+import { rovingRadios } from './focus-scope';
 import { ApiError, api, type AdminBoard, type AdminMember, type AdminOverview, type AdminSession, type AuditEntry, type AuditPage, type Me, type Team, type UserRole } from '../api';
 import { setSignedOut, signOut } from '../auth';
 import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logic';
@@ -643,7 +644,9 @@ function auditPanel(): HTMLElement {
   };
   markChips();
   fetchPage();
-  return h('div', null, h('div', { class: 'admin-chips', role: 'radiogroup', 'aria-label': 'Filter by action' }, chips), box, more);
+  const chipRow = h('div', { class: 'admin-chips', role: 'radiogroup', 'aria-label': 'Filter by action' }, chips);
+  rovingRadios(chipRow);
+  return h('div', null, chipRow, box, more);
 }
 
 const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
