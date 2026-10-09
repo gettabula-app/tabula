@@ -1,6 +1,8 @@
 import './ai-live.css';
 import type { BoardApp } from '../app';
-import { applyProposal, boardOf, type Layout, type Rect } from '../ai-apply';
+import { applyProposal, boardOf, type AiProposal, type Layout, type Rect } from '../ai-apply';
+import { fingerprintOf, isStale, refreshStale, reviewed, type Fingerprint, type Review } from '../ai-review';
+import type { ProposedBy } from '../types';
 import { errorView, resolveAiRun, type ResolveAction } from '../ai-bar-logic';
 import {
   ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, personColor, placeLabelRows,
@@ -39,6 +41,12 @@ interface Live {
   starting: { name: string; color: string } | null;
   link: BarLink | null;
   layouts: Map<string, Layout>;
+  /** The person's own review of a run (TAB-160): kept items, edits. Never sent anywhere; the ghosts on this screen follow it. */
+  reviews: Map<string, Review>;
+  /** How the stickies a group proposal moves looked when it arrived here, to tell which changed since. */
+  seen: Map<string, Map<string, Fingerprint | null>>;
+  /** Told after every recompute: the review panel follows the runs and the board. */
+  listeners: Set<() => void>;
   redraw(): void;
   /** Only the places of the label rows and outlines changed (the bar moved, the selection changed). */
   replace(): void;
@@ -81,13 +89,82 @@ export function barMoved(app: BoardApp): void {
 export function avoidForRun(app: BoardApp, runId: string): Rect[] {
   const live = lives.get(app);
   if (!live) return [];
-  const list = live.runs.list();
+  const list = shownRuns(live);
   return avoidFor(runId, list, previewLayouts(list, boardOf(app)));
 }
 
 /** The person's own add or discard was answered: the ghosts go at once, before the relay's patch arrives. */
 export function dropRun(app: BoardApp, runId: string): void {
-  lives.get(app)?.runs.drop(runId);
+  const live = lives.get(app);
+  if (!live) return;
+  live.reviews.delete(runId);
+  live.seen.delete(runId);
+  live.runs.drop(runId);
+}
+
+// ---------------------------------------------------------------- review (TAB-160)
+
+/** The runs with each proposal as this person reviewed it: what is drawn here and what an add of it writes. */
+function shownRuns(live: Live): LiveRun[] {
+  return live.runs.list().map((r) => {
+    const review = live.reviews.get(r.id);
+    return review && r.proposal ? { ...r, proposal: reviewed(r.proposal, review) } : r;
+  });
+}
+
+/** Whether a member of a group proposal changed (or went) since the proposal arrived on this screen. */
+function staleIn(live: Live, app: BoardApp, runId: string): (id: string) => boolean {
+  const then = live.seen.get(runId);
+  return (id) => isStale(then?.get(id), fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string; type?: string; locked?: boolean } | undefined));
+}
+
+export const reviewFor = (app: BoardApp, runId: string): Review | null => lives.get(app)?.reviews.get(runId) ?? null;
+
+/** Sets (or, with null, drops) the person's review of a run; the ghosts redraw from it. */
+export function setReview(app: BoardApp, runId: string, review: Review | null): void {
+  const live = lives.get(app);
+  if (!live) return;
+  if (review) live.reviews.set(runId, review);
+  else live.reviews.delete(runId);
+  live.redraw();
+}
+
+export const staleFor = (app: BoardApp, runId: string): ((id: string) => boolean) => {
+  const live = lives.get(app);
+  return live ? staleIn(live, app, runId) : () => false;
+};
+
+/**
+ * The person's review of a run as it is now, as a function from the relay's proposal to what they add. Taken before an add
+ * asks the relay: the run's patch can reach the app first and drop the review, and the add must still write what was ticked.
+ */
+export function takeReview(app: BoardApp, runId: string): (proposal: AiProposal) => AiProposal | null {
+  const review = lives.get(app)?.reviews.get(runId);
+  const kept = review ? structuredClone(review) : null;
+  return (proposal) => (kept ? reviewed(proposal, kept) : proposal);
+}
+
+/** What an add stamps on the objects it creates: the run's feature and who asked for it. */
+export function proposedByFor(app: BoardApp, runId: string): ProposedBy | undefined {
+  const run = lives.get(app)?.runs.get(runId);
+  return run ? { feature: run.feature, by: { id: run.by.id, name: run.by.name } } : undefined;
+}
+
+export function onLiveChange(app: BoardApp, fn: () => void): () => void {
+  const live = lives.get(app);
+  if (!live) return () => {};
+  live.listeners.add(fn);
+  return () => live.listeners.delete(fn);
+}
+
+/** The opener of the review panel (src/ui/ai-review-panel.ts registers it, so the two do not import each other). */
+let reviewOpener: ((app: BoardApp, runId: string, actions: ReviewActions) => void) | null = null;
+export interface ReviewActions { accept(): void; discard(): void }
+export function setReviewOpener(fn: typeof reviewOpener): void {
+  reviewOpener = fn;
+}
+export function openReview(app: BoardApp, runId: string, actions: ReviewActions): void {
+  reviewOpener?.(app, runId, actions);
 }
 
 const meId = (): string | null => {
@@ -113,7 +190,10 @@ const toRect = (r: DOMRect, origin: DOMRect): Rect => ({ x: r.left - origin.left
 export function mountAiLive(app: BoardApp): void {
   if (lives.has(app)) return;
   const runs = new LiveRuns();
-  const live: Live = { runs, ownRunId: null, starting: null, link: null, layouts: new Map(), redraw: () => scheduleCompute(), replace: () => schedulePlace() };
+  const live: Live = {
+    runs, ownRunId: null, starting: null, link: null, layouts: new Map(), reviews: new Map(), seen: new Map(), listeners: new Set(),
+    redraw: () => scheduleCompute(), replace: () => schedulePlace(),
+  };
   lives.set(app, live);
 
   const layer = h('div', { class: 'ailive' });
@@ -145,6 +225,10 @@ export function mountAiLive(app: BoardApp): void {
   /** Accept or Discard on someone's preview. The relay settles it first; only the app that won writes. */
   async function settle(run: LiveRun, action: ResolveAction) {
     if (busy.has(run.id) || app.readOnly || destroyed) return;
+    // a review that kept nothing adds nothing: say so before the relay settles the run for everyone
+    const chosen = takeReview(app, run.id);
+    if (action === 'accept' && run.proposal && !chosen(run.proposal)) return toast('Nothing is selected to add.');
+    const proposedBy = proposedByFor(app, run.id);
     busy.add(run.id);
     markBusy();
     // taken now, from the board as the ghosts are drawn: the add lands where they are
@@ -155,18 +239,19 @@ export function mountAiLive(app: BoardApp): void {
     markBusy();
     switch (res.kind) {
       case 'ok': {
-        runs.drop(run.id);
+        const proposal = res.proposal ? chosen(res.proposal) : null;
+        dropRun(app, run.id);
         if (action === 'discard') return toast(discardedMessage(nameOf(run)));
-        if (!res.proposal) return say('error');
-        const applied = applyProposal(app, res.proposal, avoid);
+        if (!proposal) return say('error');
+        const applied = applyProposal(app, proposal, avoid, proposedBy);
         if (!applied.ok) return say(applied.reason === 'read_only' ? 'read_only' : 'board_changed');
-        return toast(acceptedMessage(res.proposal, nameOf(run)), TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
+        return toast(acceptedMessage(proposal, nameOf(run)), TOAST_LONG, { label: 'Undo', keyId: 'mod+z', onClick: () => app.store.undo.undo() });
       }
       case 'settled':
-        runs.drop(run.id);
+        dropRun(app, run.id);
         return toast(firstMessage(res.action, res.by, run.by, meId()));
       case 'gone':
-        runs.drop(run.id);
+        dropRun(app, run.id);
         return toast('That preview is gone.');
       case 'forbidden':
         return say('forbidden');
@@ -189,10 +274,12 @@ export function mountAiLive(app: BoardApp): void {
     const whose = nameOf(run);
     const discard = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': whose ? `Discard ${whose}'s preview` : 'Discard the preview', onclick: () => void settle(run, 'discard') }, 'Discard');
     const accept = h('button', { class: 'ailive-btn primary', type: 'button', 'data-tip': whose ? `Add ${whose}'s preview to the board` : 'Add the preview to the board', onclick: () => void settle(run, 'accept') }, 'Accept');
+    // item by item, edited before it is added (TAB-160)
+    const review = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': 'Choose what to add and edit it first', onclick: () => openReview(app, run.id, { accept: () => void settle(run, 'accept'), discard: () => void settle(run, 'discard') }) }, 'Review');
     const el = h('div', { class: `ailive-row${own ? ' mine' : ''}`, role: 'group', 'aria-label': text, style: `--c:${fill};--ink:${ink}` },
       h('span', { class: 'ailive-label' }, text),
-      tray ? h('span', { class: 'tray ailive-tray' }, discard, accept) : null);
-    return { el, sig: '', w: 0, buttons: tray ? [discard, accept] : [] };
+      tray ? h('span', { class: 'tray ailive-tray' }, discard, review, accept) : null);
+    return { el, sig: '', w: 0, buttons: tray ? [discard, review, accept] : [] };
   }
 
   function syncRow(run: LiveRun) {
@@ -319,7 +406,25 @@ export function mountAiLive(app: BoardApp): void {
   /** Everything that depends on the runs or the board's content: the layouts, the label rows, the outlines. */
   function compute() {
     if (destroyed) return;
-    const list = runs.list();
+    const raw = runs.list();
+    // how the stickies of a group proposal looked when it arrived here, and the reviews of runs that are gone
+    for (const r of raw) {
+      if (r.status === 'ready' && r.proposal?.kind === 'group' && !live.seen.has(r.id)) {
+        const ids = r.proposal.groups.flatMap((g) => g.ids);
+        live.seen.set(r.id, new Map(ids.map((id) => [id, fingerprintOf(app.store.get(id) as { x?: number; y?: number; w?: number; h?: number; text?: string; parent?: string; type?: string; locked?: boolean } | undefined)])));
+      }
+    }
+    const open = new Set(raw.map((r) => r.id));
+    for (const id of [...live.reviews.keys(), ...live.seen.keys()]) {
+      if (open.has(id)) continue;
+      live.reviews.delete(id);
+      live.seen.delete(id);
+    }
+    for (const [id, review] of live.reviews) {
+      const next = refreshStale(review, staleIn(live, app, id));
+      if (next !== review) live.reviews.set(id, next);
+    }
+    const list = shownRuns(live);
     const me = meId();
     live.layouts = previewLayouts(list, boardOf(app));
     mine = new Set(list.filter((r) => isMine(r, me, live.ownRunId, live.starting)).map((r) => r.id));
@@ -343,6 +448,13 @@ export function mountAiLive(app: BoardApp): void {
     }
     for (const run of flying) syncOutline(run);
     paint();
+    for (const fn of live.listeners) {
+      try {
+        fn();
+      } catch {
+        /* a failing listener must not stop the drawing */
+      }
+    }
   }
 
   let raf = 0;

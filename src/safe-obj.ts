@@ -6,7 +6,7 @@
 // with a known anchor. What does not fit is dropped (the type's default applies) or replaced by a neutral value. Colours
 // are left to `styleOf` (shared/colors.mjs), which knows each type's default.
 
-import type { Obj } from './types';
+import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
 
@@ -64,6 +64,41 @@ function members(v: unknown) {
     }));
 }
 
+const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
+const PERSON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const PROPOSED_NAME_MAX = 40;
+
+/** Removes control, zero-width, bidirectional and tag characters, the ones that change how text reads but are not seen. Tabs and line breaks stay, for the caller's whitespace collapse. */
+function visibleText(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (cp === 0x09 || cp === 0x0a || cp === 0x0d) {
+      out += ch;
+      continue;
+    }
+    if (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f) || (cp >= 0x200b && cp <= 0x200f) || (cp >= 0x2028 && cp <= 0x202e) || (cp >= 0x2060 && cp <= 0x2069) || cp === 0xfeff || (cp >= 0xe0000 && cp <= 0xe007f)) continue;
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * A stored `proposedBy` (TAB-160) in its one allowed shape, or undefined. Like every stored field it can come from any
+ * collaborator, file or tool: the feature must be one of the three, the id a plain id, the name one line of at most 40
+ * visible characters, shown as text only. Anything else in it is dropped.
+ */
+export function cleanProposedBy(v: unknown): ProposedBy | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  if (typeof r.feature !== 'string' || !PROPOSED_FEATURES.has(r.feature)) return undefined;
+  const by = r.by && typeof r.by === 'object' && !Array.isArray(r.by) ? (r.by as Record<string, unknown>) : {};
+  const id = typeof by.id === 'string' && PERSON_ID_RE.test(by.id) ? by.id : null;
+  const raw = typeof by.name === 'string' ? visibleText(by.name).replace(/\s+/g, ' ').trim() : '';
+  const name = raw ? [...raw].slice(0, PROPOSED_NAME_MAX).join('').trim() || null : null;
+  return { feature: r.feature as ProposedBy['feature'], by: { id, name } };
+}
+
 /**
  * `o` with every field the markup reads in a type-safe form (see the top of this file). A fresh shallow copy each time
  * (not memoised: some callers build an object and change it before drawing it again).
@@ -92,5 +127,10 @@ export function safeObj<T extends Obj>(o: T): T {
   if ('operations' in out) out.operations = members(out.operations);
   if ('labels' in out && !(Array.isArray(out.labels) && out.labels.every((l) => typeof l === 'string'))) delete out.labels;
   for (const k of ['locked', 'sticker', 'hidden']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  if ('proposedBy' in out) {
+    const clean = cleanProposedBy(out.proposedBy);
+    if (clean) out.proposedBy = clean;
+    else delete out.proposedBy;
+  }
   return out as unknown as T;
 }

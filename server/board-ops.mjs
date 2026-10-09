@@ -216,6 +216,14 @@ function endOut(end) {
 
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
+const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
+/** A stored proposedBy as MCP and the AI read show it: `{ feature, name }`, the name cleaned and cut like other names. */
+function proposedOf(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !PROPOSED_FEATURES.has(v.feature)) return null;
+  const name = typeof v.by?.name === 'string' ? cleanForModel(v.by.name.replace(/\s+/g, ' ').trim(), 40).text : '';
+  return name ? { feature: v.feature, name } : { feature: v.feature };
+}
+
 /** @param {boolean} [detail] the extra fields get_objects adds */
 export function summarise(o, textMax, detail = false) {
   if (o.type === 'connector') {
@@ -261,6 +269,9 @@ export function summarise(o, textMax, detail = false) {
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
   if (o.locked === true) out.locked = true;
   if (o.hidden === true) out.hidden = true;
+  // which AI run proposed it (TAB-160): only the feature and a short name reach a model or an agent, as untrusted text
+  const proposed = proposedOf(o.proposedBy);
+  if (proposed) out.proposedBy = proposed;
   if (detail) {
     addDetail(out, o);
     if (typeof o.stereotype === 'string') out.stereotype = cleanForModel(o.stereotype, 100).text;
@@ -838,6 +849,7 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
     fields.z = zs[k];
     fields.createdBy = createdBy;
     fields.updatedAt = now;
+    delete fields.proposedBy; // template content can come from a file; a stored proposedBy never reaches a new board (TAB-160)
     if (o.type === 'connector') {
       fields.from = place(o.from);
       fields.to = place(o.to);

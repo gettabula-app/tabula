@@ -72,6 +72,8 @@ export interface BaseObj extends Partial<StyleFields> {
   z: string;
   parent?: Id;
   locked?: boolean;
+  /** The AI run an added object came from (TAB-160): which feature and who asked. Read through cleanProposedBy. */
+  proposedBy?: ProposedBy;
   /** Hidden for everyone (TAB-198): not drawn, hit, selected or exported; listed dimmed in the layers panel. Not private. */
   hidden?: boolean;
   createdBy?: string;
@@ -139,6 +141,12 @@ export interface ConnectorObj {
 }
 
 export type Obj = BaseObj | ConnectorObj;
+
+/** The AI run behind an added object (TAB-160): stored data, so hostile until cleanProposedBy (src/safe-obj.ts) has read it. */
+export interface ProposedBy {
+  feature: 'generate' | 'summarise' | 'cluster';
+  by: { id: string | null; name: string | null };
+}
 
 export const isConnector = (o: Obj | undefined): o is ConnectorObj => !!o && o.type === 'connector';
 export const isBox = (o: Obj | undefined): o is BaseObj => !!o && o.type !== 'connector';

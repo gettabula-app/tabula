@@ -315,6 +315,7 @@ select.input {
 .dash-sample.dotted { border-top-style: dotted; }
 .font-btn { display: flex; align-items: center; justify-content: space-between; text-align: left; font-size: 15px; }
 .props .btn-row { margin-top: 6px; }
+.props-origin { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--tray-line); color: var(--tray-muted); font-size: 12px; }
 .props .arrange { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); }
 
 /* zoom & minimap */

@@ -302,6 +302,37 @@ Everyone on a board sees its AI runs (TAB-141): while a run is going ("Ana is as
 | Who may add or discard (`RESOLVE_POLICY`) | `'editors'`: anyone who can edit the board | `'runner-first'`: the runner, then any editor 30 s (`RUNNER_FIRST_MS`) after the run is ready |
 | Who sees the prompt (`PROMPT_VISIBILITY`) | `'runner'`: nobody is sent it, since the runner's app has it already | `'everyone'`, `'none'` |
 
+## Reviewing a proposal
+
+Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray, has a **Review** button that opens a panel on the right of the board. It shows every item of the proposal with a box to keep it, and the person can change it before it is added:
+
+- A `create` proposal (generate, summarise): each sticky has its text (up to 2,000 characters) and its colour (one of the sticky colours), and the frame, if there is one, has a title (up to 100) and a box to leave it out. A sticky whose text is emptied is left out; a frame needs at least one sticky.
+- A `group` proposal (cluster): each group has a title and a box, and each sticky it would move has a box. A group needs a title and at least one sticky left.
+- The button reads **Add all (n)** while everything is kept and **Add selected (k)** or **Move selected (k)** when not; **Discard** is the preview's Discard. Add with nothing kept says so and writes nothing.
+
+**Edits are the reviewer's own.** A review lives in the reviewing app only (`src/ai-review.ts`, kept per run in `src/ui/ai-live.ts`) and is never sent to the relay or written to the document. The ghosts on that screen follow it, so what the person sees is what they add; everyone else keeps seeing the proposal as it came, until it is added or discarded. The relay still settles the run with the first Add or Discard, as in "Live runs", and the person who clicked writes their reviewed version.
+
+**Stale items.** When a group proposal arrives the app notes how each sticky it would move looked (position, size, text, frame, kind, lock). A sticky that has changed since, or is gone, is marked **Changed since**, unticked, and cannot be ticked: it is left where it is. This is judged on the reviewer's screen only.
+
+**One undo step.** Add writes the reviewed proposal with `applyProposal`, one `store.transact`, so one Ctrl+Z takes back the whole subset. The objects are `createdBy` the person who added them and carry `proposedBy`.
+
+**`proposedBy`** is `{ feature: 'generate' | 'summarise' | 'cluster', by: { id, name } }` on each object a proposal created: which run it came from and who asked for it. It is a field in the document, so it is read like any other stored data that a collaborator, a file or a tool could have written (TAB-203):
+
+- `cleanProposedBy` (`src/safe-obj.ts`, run by `safeObj`) keeps the one shape: the feature must be one of the three, the id a plain id (`[A-Za-z0-9_-]`, 64 at most), the name one line of at most 40 visible characters with control, zero-width, bidirectional and tag characters removed. Anything else in the value is dropped, and a value that is not an object, or has another feature, is dropped whole.
+- The properties panel shows "Proposed by AI (Summarise) for Ana" from the cleaned value, set as text.
+- MCP (the object lists and `get_objects`) shows only `{ feature, name }`, the name cut to 40 characters like other names a model reads; the id is not shown. An unknown shape shows nothing. MCP cannot write it: `create_objects` takes no such field.
+- Copy, paste and duplicate (`remapObjects`) pass it through `cleanProposedBy` too, so a crafted clipboard or file cannot put another shape on a board. The readable snapshot (`toJson`, which is also `board.json` inside a `.drift` file) writes it in the clean shape or leaves it out. The CRDT state a `.drift` file carries is the document as it is, so it keeps what the document holds, and it is cleaned when read.
+- Templates never keep it: saving one removes it, and using one (in the app, `instantiate`, and on the server, `planUseTemplate`) drops it from content that has it.
+
+### Deferred
+
+Not in this slice, each to follow on the same ghost overlay and resolve flow:
+
+- **Proposals stored in the document**, with the 7-day expiry TAB-160 describes. Toolbar previews stay relay-held and in memory, 10 minutes (Johan's decision of 2026-10-09 on TAB-160).
+- **Accepting while offline**, applied on reconnect. Add needs the relay to settle the run, so it needs a connection.
+- **Proposals from MCP agents.** Agents still write through MCP with their own origin; they do not yet propose.
+- **Live shared edits** of a proposal: one person's review changes are not seen by others.
+
 ## Not in this slice
 
 The board entry points and the proposal preview (slice C), text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.

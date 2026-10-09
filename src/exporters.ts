@@ -10,6 +10,7 @@ import type { FlowState, Store } from './store';
 import { threadVisible, type Comments, type Thread } from './comments';
 import { isWithheld, leaveOutWithheld, updateWithoutWithheld } from './private-select';
 import { answerKey } from './polls';
+import { cleanProposedBy } from './safe-obj';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
 import { customStickyColors } from './palette';
@@ -31,6 +32,14 @@ export interface BoardJson {
   note?: string;
 }
 
+/** The object with `proposedBy` in its one clean shape or not at all: a file never carries what a collaborator wrote there (TAB-160). */
+export function withCleanProposedBy<T extends Obj>(o: T): T {
+  if (!('proposedBy' in o)) return o;
+  const { proposedBy, ...rest } = o as T & { proposedBy?: unknown };
+  const clean = cleanProposedBy(proposedBy);
+  return (clean ? { ...rest, proposedBy: clean } : rest) as T;
+}
+
 /**
  * `leaveOutWithheld` (a file someone hands on) leaves out the notes private writing hides from this person, with the threads
  * and connectors that name them; the board's own backup keeps everything.
@@ -38,7 +47,7 @@ export interface BoardJson {
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list(), opts: { leaveOutWithheld?: boolean } = {}): BoardJson {
   const all = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
   // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
-  const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all).map((o) => app.store.placed(o));
+  const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all).map((o) => withCleanProposedBy(app.store.placed(o)));
   if (opts.leaveOutWithheld) comments = threadsWithoutWithheld(app, comments);
   const json: BoardJson = {
     format: 'driftboard',

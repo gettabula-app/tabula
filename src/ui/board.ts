@@ -43,6 +43,7 @@ import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
 import { aiBarFlag, aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
 import { liveRunsFor, mountAiLive } from './ai-live';
+import './ai-review-panel';
 import { avatarLine, badgeRun } from '../ai-live-logic';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
