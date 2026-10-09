@@ -393,3 +393,109 @@ The model is designed so that each of these is a layout function, a lane or cell
 15. **Shared code folder.** `shared/` is new and the Docker image must copy it. Is that the right way to avoid two copies of the layout, or should the server call the client build?
 16. **Linear and Jira.** Which first, and one way or two? And does the integration belong to the workspace admin (drafted) or to each person with their own token?
 17. **Order of work.** The kanban slices are drafted before tables, grids and timelines. Are those three needed sooner, which would put more weight on slice 1 and less on cards?
+
+## Visual design
+
+The mock is `design/kanban/index.html`: one file, theme blocks copied from `src/themes.ts`, icons from `src/ui/dom.ts`. A reviewer strip switches theme, state, filter, WIP, dragging, width and reduced motion; `?bare=1` hides it for screenshots, and every control is also a URL parameter (`theme`, `state`, `filter`, `wip`, `drag`, `width`, `reduce`). The positions in it come from a layout function over lane and card order, as above. Board objects use the canvas tokens; the popover, menu and phone sheet are chrome and use the admin tokens (`src/ui/admin.css`). Radius 0, no shadows: edges are hairlines and 2px ink rules (the few `box-shadow`s in the mock are inset rules with no blur).
+
+### Anatomy
+
+Sizes are CSS pixels at zoom 1. The layout constants above are unchanged; the layout function also needs a **container header of 48**, an **inner lane padding of 8**, a **drop zone of 56** under the tallest lane, and an **add-lane column** (8 gap, 32 wide) right of the last lane.
+
+| Element | Size | Tokens |
+|---|---|---|
+| Container | lanes + add-lane column + 12 padding, 1px border | `--canvas` fill (opaque, so the dot grid never runs behind text), `--canvas-rule` border |
+| Container header | 48 high, 2px rule under it | Name 17px Cabinet Grotesk 700 `--canvas-ink`; "4 lanes · 9 cards" 11px label in `--k-meta`; **Filter** button 32 high, 1px `--canvas-ink` outline; active filters as 32-high outlined chips with a 30px remove button; **⋯** 32 square |
+| Lane | 280 wide, 16 apart, all lanes as tall as the tallest plus a 56 drop zone | Body `--k-lane` = `color-mix(--canvas-ink 5%, --canvas)`; with a colour, a 4px top bar in the swatch and the body `color-mix(swatch 10%, --k-lane)` |
+| Lane header | 48 high | Name 14px 600 `--canvas-ink`; count 11px label, right; stage `✓ DONE` label for `done` only; **⋯** 28 square |
+| Add lane | 32 square, 8 right of the last lane, level with its header | `+` icon, 1px `--canvas-ink` outline; editors only |
+| WIP count | 20 high | `3 / 3` in `--canvas-ink` at the limit; over: `4 / 3` as `--paper` on `--danger` plus a 2px `--danger` rule under the header; block lanes add a lock icon before the count |
+| Card | lane width − 16, height from the stored `h`, 8 apart | `--paper`, `--ink` text, 1px `--k-edge` hairline; `fill` draws a 4px accent edge on the left |
+| Card rows | padding 8 / 12, 8 between rows | Title 13/18 500, up to 3 lines; label row 16 high; meta row 24 high: due, spacer, comment count, owner |
+| Label chip | 16 high | Swatch from the sticky palette (`--s-*`), `--sticky-ink` 11px label; at most 3 then `+n`, names never clipped |
+| Due | 20 high, 11px label | Normal and done: `--k-card-meta` (done adds a check); soon (today, tomorrow): `--ink` with a 1px `--ink` box; overdue: `--paper` on `--danger` |
+| Owner | 24 square | Initials 10px 700 `--ink` on `--paper` in a 2px ring of the person's colour; a free-text owner gets a hairline ring instead |
+| Add card | 40 high, after the last card | `+ Add card` 13px `--k-meta`; inline input is a card with a 2px `--ink` border |
+| Empty lane | 56 high | Dashed hairline box, "No cards" label |
+
+`--k-meta` is `color-mix(--canvas-ink 82%, --canvas)` and `--k-card-meta` is `color-mix(--ink 72%, --paper)`, the lightest mixes that pass 4.5:1 on every lane tint in every theme.
+
+**Decisions.**
+- **Owner badges are square with ink initials.** The spec says "initials in the person's colour"; the colour is kept as a ring. No single text colour passes 4.5:1 on all eight `USER_COLORS`, and even the per-colour `inkOn` choice gives 4.38:1 on `#D64545`, so the initials are `--ink` on `--paper` everywhere and the colour is a non-text identity cue. Square, not round, by the radius rule; it also keeps a card owner apart from the round presence avatars.
+- **Labels on their own row.** With chips, due, comments and owner on one 240px line, names clipped mid-word. Two rows read cleanly and keep chip names whole.
+- **"Due soon" is today and tomorrow**, an ink box; only overdue uses `--danger`, so red keeps one meaning on the board.
+- **Done lanes mark their stage in the header** (`✓ DONE`), because a lane called "Shipped" does not say it switches off overdue. `todo` and `doing` show nothing, as the spec says. Overdue is a card state, not a lane marker.
+- **Label colours are the eight sticky swatches**, the same in every theme and already readable with `--sticky-ink` (9.3:1 or more). The `labels` map stores the swatch name.
+- **Filter on** uses `--signal` (the active state); active filters show as outlined chips with a remove button to the left of it.
+- **New icons**: `filter` (three bars), `grip` (six squares, the sheet's drag handle) and `kanban` (the tool and **Open as list**). They follow the 24px, 1.75 stroke grid of `ICONS`.
+
+### States
+
+| State | Look |
+|---|---|
+| Container unselected | Header, lanes and cards as above; nothing else |
+| Container selected | The usual 1.5px `--wire` outline and square handles; quick-action bar: **Add lane**, **Filter**, **Export CSV**, lock, **⋯** |
+| Container menu | From the header **⋯**: Rename, Add lane, Labels…, Export cards (CSV), Open as list, Lock, Delete kanban (`--danger`) |
+| Card selected | 1.5px `--wire` outline; quick-action bar with **Open** as the primary (`--signal`), Owner, Due, Labels, Turn into sticky |
+| Adding a card | Inline card input with caret; "Enter adds · Esc stops" label under it |
+| Filter open | Popover under the header: Owner (Mine), Labels (any of), Due, Text, "2 of 9 match" and **Clear** |
+| Filter on | Matching cards full; others at 35 % opacity; comment pins stay full (they belong to the comment layer) |
+| WIP over (warn) | `4 / 3` danger chip and 2px danger rule; dropping still allowed |
+| WIP full (block), dragging over | Lane body outlined 2px dashed `--danger`, a "Full · 2 / 2" label, no drop line; on release the toast "Review is full: 2 of 2" |
+| Dragging | Source slot: a dashed hairline placeholder of the same height, content hidden (no writes, so the layout does not move). Ghost: the card at full opacity with a 2px `--canvas-ink` edge, under the pointer. Drop line: 2px `--canvas-ink` with 8px square ends, centred in the 8px gap |
+| Dragging into an empty lane | Drop line at the top of the body; "No cards" reads "Drop here" |
+| Keyboard move | Wire selection plus a 2px `--canvas-ink` ring 4px out, and a `--signal` tag "Moving · Alt + arrows"; the live region says "Moved to Doing, position 2 of 3" |
+| Zoom below 0.4 | Titles become bars, chips colour only, lane header the name only |
+
+The drop line is `--canvas-ink`, not `--wire`: wire already means "selected" on the canvas, and a 2px ink rule is the house mark for "here". The keyboard ring is `--canvas-ink` for the same contrast reason: `--signal` on a light lane is 1.2:1, so yellow carries only the label.
+
+### Contrast
+
+Computed from `src/themes.ts` with the mock's own `color-mix` expressions. Text needs 4.5:1, indicators 3:1.
+
+| Pair | Min | Default | Ayu | Kanagawa | Matrix | Evergreen |
+|---|---|---|---|---|---|---|
+| Container name, lane name (canvas-ink on canvas / lane) | 4.5 | 13.1 | 8.5 | 10.1 | 13.9 | 11.6 |
+| Container meta (canvas-ink 82% on canvas) | 4.5 | 8.4 | 6.8 | 8.0 | 10.1 | 7.4 |
+| Lane count, Add card, No cards (canvas-ink 82% on lane) | 4.5 | 7.7 | 6.1 | 7.2 | 9.4 | 6.8 |
+| Lane name on a tinted lane, worst of 8 tints at 10% | 4.5 | 12.5 | 6.4 | 7.7 | 11.1 | 11.1 |
+| Lane count on a tinted lane, worst of 8 tints | 4.5 | 7.3 | 4.6 | 5.4 | 7.5 | 6.5 |
+| Card title, owner initials, due soon (ink on paper) | 4.5 | 16.3 | 8.4 | 9.7 | 14.1 | 14.3 |
+| Card meta, due, done date, +n (ink 72% on paper) | 4.5 | 6.5 | 5.1 | 5.8 | 7.6 | 5.8 |
+| Overdue chip, WIP over count, Full label (paper on danger) | 4.5 | 5.2 | 5.6 | 4.6 | 5.7 | 5.2 |
+| Filter on, Moving tag, primary buttons (on-signal on signal) | 4.5 | 11.3 | 10.4 | 9.7 | 14.3 | 7.1 |
+| Popover, sheet, menu text (ink on paper) | 4.5 | 16.3 | 8.4 | 9.7 | 14.1 | 14.3 |
+| Popover and sheet labels (graphite on paper) | 4.5 | 5.9 | 4.6 | 5.8 | 6.0 | 5.9 |
+| Active option (paper on ink) | 4.5 | 16.3 | 8.4 | 9.7 | 14.1 | 14.3 |
+| Toast, quick-action bar (tray-text on tray) | 4.5 | 13.8 | 10.5 | 12.4 | 15.4 | 13.3 |
+| Delete kanban (danger on paper) | 4.5 | 5.2 | 5.6 | 4.6 | 5.7 | 5.2 |
+| Dimmed card title (35% opacity, intentional) | none | 2.1 | 2.3 | 2.5 | 2.7 | 2.0 |
+| WIP over rule (danger on lane) | 3 | 4.2 | 5.7 | 4.8 | 5.7 | 4.2 |
+| Refused drop outline (danger on lane) | 3 | 4.2 | 5.7 | 4.8 | 5.7 | 4.2 |
+| Overdue chip (danger on paper) | 3 | 5.2 | 5.6 | 4.6 | 5.7 | 5.2 |
+| Drop line, ghost edge, keyboard ring (canvas-ink on lane) | 3 | 13.1 | 8.5 | 10.1 | 13.9 | 11.6 |
+| Selection (wire on canvas) | 3 | 4.0 | 9.0 | 5.9 | 11.0 | 4.3 |
+| Container header rule (canvas-ink on canvas) | 3 | 14.3 | 9.5 | 11.3 | 15.0 | 12.7 |
+| Card hairline (canvas-ink 28% on lane, decorative) | none | 1.8 | 2.0 | 2.1 | 2.1 | 1.7 |
+
+Label chips, the same in every theme (`--sticky-ink` on the swatch): yellow 13.4, orange 10.3, pink 9.3, violet 9.8, blue 10.9, teal 11.6, green 12.5, grey 13.9.
+
+Two rows have no minimum on purpose: dimmed cards are the filter's message (the matching cards carry the information, and the filter chips say what is hidden), and the card hairline is decorative (the paper fill and the title identify a card). Not part of this design but found on the way: the existing comment pin puts white letters on the person colour, which is under 4.5:1 for six of the eight colours (2.95 to 4.38).
+
+### Motion
+
+- **Drop**: the 120 ms tween of the derived rectangle from the spec, `ease-out`; never during a local drag.
+- **Ghost**: appears with a 120 ms lift (8px offset and fade in).
+- **Reduced motion** (`prefers-reduced-motion: reduce`): no lift, the ghost is there at once; a drop snaps. Screenshots `drag-lift-default` and `drag-lift-reduced-default` are taken 40 ms into the lift. The mock's **Reduced motion** box simulates it, and **Play a drop** shows both.
+- Nothing pulses or loops.
+
+### Phone
+
+- At 390 the canvas shows the container scaled (31 % for four lanes), so the level-of-detail rule applies. Selecting it gives a quick-action bar with **Open as list** as the primary action, **Filter** and **⋯**.
+- **List sheet**: full width below the top bar, a 2px ink rule on top. Header 56: the name (20px display), "4 lanes · 9 cards", **Filter** (40 high) and close. Lane tabs 48 high, 11px labels with counts (`3 / 3` with a limit, the danger chip when over), the active tab underlined 2px `--ink` as in the admin phone tabs. Card rows: 32px grip, title 15/20 up to 3 lines, the card's chip and meta rows, a 40px **⋯** button; rows on hairlines. The **Add card to Doing** bar is a 48px `--signal` button on a 2px ink rule.
+- **Move to…** is a bottom sheet over a `--tray` scrim: lanes as 48px square radio rows with their colour bar and count, the current lane marked "Current", a full block lane disabled with a lock and "Full"; then **Top** / **Bottom**; then **Cancel** and **Move** (primary).
+- All targets are 40px or more; text in the sheet uses the admin pairs (`--ink`, `--graphite` on `--paper`).
+
+### Open questions
+
+None. Every visual choice the spec left open is decided above with its reason.
