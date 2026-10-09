@@ -240,6 +240,8 @@ Covers CRDT merging of concurrent and offline edits, undo scope, ordering, conne
 
 `npm run visual` needs Chromium once (`npx playwright install chromium`). It starts its own throwaway relay, seeds a fixed board and writes screenshots for every state, theme and width to `tabula-review/<id>/`, so nobody needs the shared Chrome for a look at a change. See [docs/visual-check.md](docs/visual-check.md).
 
+For relay capacity measurements with a simulated class, see [docs/capacity.md](docs/capacity.md).
+
 ### Changelog
 
 Add a fragment for each change and let the person merging to `main` fold it into `CHANGELOG.md`. See [changelog.d/README.md](changelog.d/README.md) for the format and workflow.
