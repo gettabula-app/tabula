@@ -13,6 +13,7 @@
 // HTTP API and decides who may join which room before it touches the room.
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -44,7 +45,9 @@ import { createSourceGate } from './source-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
-try { process.loadEnvFile(); } catch { /* no .env file */ }
+if (process.env.TABULA_SKIP_DOTENV !== '1') {
+  try { process.loadEnvFile(); } catch { /* no .env file */ }
+}
 const env = withLegacyEnv();
 const config = loadConfig(env);
 // Off-site backups (docs/backups.md): null unless TABULA_BACKUP_* is set; half a configuration stops the start here.
@@ -78,6 +81,45 @@ const AI_SWEEP_MS = 30_000;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
+const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
+const GUEST_AWARENESS_STRING_LIMIT = 256;
+
+function cleanAwarenessString(value, limit = GUEST_AWARENESS_STRING_LIMIT) {
+  return [...value.slice(0, limit * 4).normalize('NFC').replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, limit).join('');
+}
+
+function cleanGuestAwarenessValue(value, depth = 0) {
+  if (typeof value === 'string') return cleanAwarenessString(value);
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (depth >= 8) return null;
+  if (Array.isArray(value)) return value.slice(0, 128).map((entry) => cleanGuestAwarenessValue(entry, depth + 1));
+  if (typeof value === 'object') {
+    const safe = Object.create(null);
+    let count = 0;
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      if (count++ >= 128) break;
+      const cleanKey = cleanAwarenessString(key, 64);
+      if (cleanKey) safe[cleanKey] = cleanGuestAwarenessValue(value[key], depth + 1);
+    }
+    return safe;
+  }
+  return null;
+}
+
+function guestPresenceColor(userId) {
+  const index = crypto.createHash('sha256').update(userId).digest()[0] % GUEST_PRESENCE_COLORS.length;
+  return GUEST_PRESENCE_COLORS[index];
+}
+
+function cleanGuestAwarenessState(state, ws) {
+  if (state === null) return null;
+  const cleaned = cleanGuestAwarenessValue(state);
+  const safe = cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned) ? cleaned : Object.create(null);
+  const name = cleanAwarenessString(typeof ws.userName === 'string' ? ws.userName : 'Guest', 40).trim() || 'Guest';
+  safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
+  return safe;
+}
 const CLOSE_NOT_FOUND = 4404;
 const CLOSE_ACCESS_REMOVED = 4410;
 // The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
@@ -178,6 +220,7 @@ let chatHub = null;
 let chatStore = null;
 let chatRetention = null;
 let chatNotifier = null;
+let joinCodeService = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -188,6 +231,10 @@ if (config.authEnabled) {
   ]);
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
   settleVolume(directory);
+  if (config.joinCodes) {
+    const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
+    joinCodeService = createJoinCodeService({ directory, secret: loadJoinCodeSecret(DATA_DIR) });
+  }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
@@ -306,7 +353,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -428,7 +475,7 @@ class Room {
   /** Applies a comments-room sync message as the socket's user, then corrects what their rules forbid. */
   guarded(ws, apply) {
     const user = directory.getUser(ws.userId);
-    const actor = { id: ws.userId, role: ws.role, name: user?.name ?? '' };
+    const actor = { id: ws.userId, role: ws.role, name: user?.name ?? ws.userName ?? '' };
     this.held = [];
     let undone = [];
     try {
@@ -572,7 +619,11 @@ class Room {
         else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
-        awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(dec), ws);
+        const update = decoding.readVarUint8Array(dec);
+        const safeUpdate = ws.guest
+          ? awarenessProtocol.modifyAwarenessUpdate(update, (state) => cleanGuestAwarenessState(state, ws))
+          : update;
+        awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
       }
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
@@ -844,13 +895,17 @@ async function onRequest(req, res) {
       req.socket.destroy();
       return;
     }
-    if (url.pathname === '/mcp' && maintenance) {
+    if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
+      sendJson(res, 403, { error: 'forbidden', message: 'This guest session is limited to one board' });
+    } else if (url.pathname === '/mcp' && maintenance) {
       res.setHeader('retry-after', '30');
       sendJson(res, 503, { error: 'restoring' });
     } else if (url.pathname === '/mcp') {
       // Never the single-page app: /mcp is either the endpoint or a 404.
       if (mcp) await mcp.handle(req, res);
       else sendJson(res, 404, { error: 'not_found' });
+    } else if (url.pathname === '/api/health' && auth?.authenticateGuest(req.headers.cookie)) {
+      sendJson(res, 403, { error: 'forbidden', message: 'This guest session is limited to one board' });
     } else if (url.pathname === '/api/health') {
       sendJson(res, 200, { ok: true, ...liveStats(), ...(maintenance ? { restoring: true } : {}) });
     } else if (url.pathname.startsWith('/api/')) {
@@ -928,6 +983,10 @@ const allSockets = () => [...userSockets.values()].flatMap((set) => [...set]);
 function authorise(req, board) {
   const session = auth.authenticate(req.headers.cookie);
   if (!session) return { code: CLOSE_UNAUTHENTICATED, reason: 'unauthenticated' };
+  if (session.guest) {
+    if (session.boardId !== board) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
+    return { session, role: session.boardRole, deleted: false };
+  }
   const row = directory.getBoard(board);
   if (!row || (row.deletedAt != null && !isWorkspaceAdmin(session.user))) return { code: CLOSE_NOT_FOUND, reason: 'board_not_found' };
   const role = directory.boardRole(board, session.user.id);
@@ -939,7 +998,22 @@ function deny(ws, code, reason) {
   ws.denied = true;
   ws.role = null;
   ws.canWrite = false;
+  if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
+  ws.guestExpiryTimer = null;
   ws.close(code, reason);
+}
+
+function armGuestExpiry(ws) {
+  if (!ws.guest || ws.denied) return;
+  const remaining = ws.sessionExpiresAt - Date.now();
+  ws.guestExpiryTimer = setTimeout(() => {
+    ws.guestExpiryTimer = null;
+    if (ws.readyState !== ws.OPEN) return;
+    if (ws.sessionExpiresAt > Date.now()) return armGuestExpiry(ws);
+    refresh(ws, true);
+    if (!ws.denied) armGuestExpiry(ws);
+  }, Math.max(0, remaining));
+  ws.guestExpiryTimer.unref?.();
 }
 
 // Re-resolves the role of one connection. `force` skips the 5 second throttle (access changes and revocations).
@@ -949,6 +1023,17 @@ function refresh(ws, force) {
   if (!force && now - ws.checkedAt < ROLE_RECHECK_MS) return;
   ws.checkedAt = now;
   try {
+    if (ws.guest) {
+      const guest = auth.authenticateGuest(ws.cookie);
+      if (!guest || guest.sessionId !== ws.sessionId || guest.boardId !== ws.boardId) return deny(ws, CLOSE_ACCESS_REMOVED, 'access_removed');
+      ws.sessionExpiresAt = guest.expiresAt;
+      ws.role = guest.boardRole;
+      ws.userName = guest.user.name;
+      ws.userColor = guestPresenceColor(guest.user.id);
+      ws.deleted = false;
+      ws.canWrite = canWriteRoom(guest.boardRole, ws.roomKind, false);
+      return;
+    }
     const role = directory.boardRole(ws.boardId, ws.userId);
     if (role === null) return deny(ws, CLOSE_ACCESS_REMOVED, 'access_removed');
     if (ws.sessionRevoked) return deny(ws, CLOSE_UNAUTHENTICATED, 'unauthenticated');
@@ -1037,6 +1122,11 @@ server.on('upgrade', (req, socket, head) => {
       socket.destroy();
       return;
     }
+    if (auth?.authenticateGuest(req.headers.cookie)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     chatWss.handleUpgrade(req, socket, head, (ws) => {
       if (maintenance) {
         ws.close(CLOSE_RESTORING, 'restoring');
@@ -1098,6 +1188,7 @@ server.on('upgrade', (req, socket, head) => {
     }
 
     ws.userId = verdict.session.user.id;
+    ws.userName = verdict.session.user.name;
     ws.sessionId = verdict.session.sessionId;
     ws.sessionExpiresAt = verdict.session.expiresAt;
     ws.cookie = req.headers.cookie;
@@ -1105,6 +1196,8 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomName = name;
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
+    ws.guest = verdict.session.guest === true;
+    ws.userColor = ws.guest ? guestPresenceColor(ws.userId) : null;
     ws.deleted = verdict.deleted;
     ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
     ws.checkedAt = Date.now();
@@ -1113,11 +1206,14 @@ server.on('upgrade', (req, socket, head) => {
     const room = openRoom(ws, name);
     if (!room) return;
     track(ws);
+    if (ws.guest) armGuestExpiry(ws);
     ws.on('message', (data) => {
       refresh(ws, false);
       if (!ws.denied) room.onMessage(ws, data);
     });
     ws.on('close', () => {
+      if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
+      ws.guestExpiryTimer = null;
       untrack(ws);
       room.leave(ws);
     });

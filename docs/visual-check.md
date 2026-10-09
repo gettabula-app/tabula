@@ -17,6 +17,7 @@ npx playwright install chromium
 npm run visual -- --id TAB-123
 npm run visual -- --id TAB-123 --states board,settings --themes default,matrix --widths 390,1440
 npm run visual -- --id TAB-123 --mode accounts --states admin --themes default --widths 1024
+VISUAL_HEIGHT=1180 npm run visual -- --id TAB-123 --states touch-targets --themes default,matrix --widths 820 --touch
 ```
 
 `--id` is required and names the folder: the shots go to `tabula-review/<id>/<state>-<theme>-<width>.png`, next to an `index.html` contact sheet that shows every shot with its theme and width. Open it, or open single files. The last line says how many shots were taken, where and how long it took. The script exits with 1 when a shot failed (a `-FAILED.png` shows what the page looked like) and 2 for bad options. The contact sheet lists the shots of the last run only; files from earlier runs stay in the folder, so delete it for a clean one. `tabula-review/` is git-ignored.
@@ -25,10 +26,11 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members` and `chat-object` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `vote-running-touch`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members`, `chat-object`, `chat-session` and `chat-poll` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
+| `--touch` | off | Emulate a touch device at any viewport, including an iPad-sized viewport |
 | `--out <dir>` | `tabula-review` | Parent folder of `<id>` |
 | `--no-build` | build first | Reuse `dist/` when it exists; otherwise `npm run build:app` runs. With `DIST_DIR` set, that folder is served and nothing is built |
 | `--frameable` | off | Starts the throwaway relay with `TABULA_DEV_ALLOW_FRAMING=1` (see below) |
@@ -46,6 +48,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
+| `vote-running-touch` | A running dot vote on the seeded board at phone widths: Remove dots is on, the instruction is collapsed, and the 600 px and wider shots are skipped |
 | `drawer-stickers` | The seeded board with the Stickers drawer open (the icon sets are only there after a full `npm run build`; `build:app` shows the drawer's "could not be loaded" state) |
 | `layers` | The seeded board with the Layers panel open (TAB-198): the Went well frame open, To improve closed, the Backlog rectangle selected |
 | `layers-hidden` | As `layers`, with a note and the diamond hidden: the "2 hidden" count in the header and the dimmed rows with the eye-off glyph |
@@ -56,6 +59,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
+| `touch-targets` | A coarse-pointer state that measures target boxes and text-field font sizes on the boards home, quick bar, properties, font popover, settings dialog and canvas editor. Exceptions: checkboxes and radios use their associated label as the hit area; the canvas editor follows board zoom; the board canvas is a continuous gesture surface. `chat-composer` measures the chat tray when its pointer is coarse. |
 | `kanban` | (open mode only, as are the other `kanban` states) A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
 | `kanban-card` | The same with a card selected |
 | `kanban-drag` | A card held down and dragged into another lane: placeholder, ghost and drop line (the mouse stays down, so the shot is not parked) |
@@ -110,6 +114,8 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `chat-mention` | The Boards page with the card for a mention in the team channel, sent by Ana while the page is open |
 | `chat-members` | The admin Members tab with **Export chat** and **Erase chat messages** on each person |
 | `chat-object` | The board's Chat tab with two object chips (one that goes to a sticky, one whose object is gone) and an object attached to the message being written |
+| `chat-session` | (TAB-243) A running dot vote with the Chat tray open: the session bar waits so the message box stays on screen |
+| `chat-poll` | (TAB-243) A running poll with the Chat tray open: the poll card and facilitator bar wait in place until the tray closes |
 | `chat-notifications` | The **Chat notifications** dialog opened from the Chat page |
 
 A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.

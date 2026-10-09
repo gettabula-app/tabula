@@ -2,7 +2,7 @@ import './admin.css';
 import { rovingRadios } from './focus-scope';
 import { ApiError, api, type AdminBoard, type AdminMember, type AdminOverview, type AdminSession, type AuditEntry, type AuditPage, type Me, type Team, type UserRole } from '../api';
 import { setSignedOut, signOut } from '../auth';
-import { canManageBilling, cloudErrorMessage, freeWorkspaceNote, portalTarget } from '../cloud-logic';
+import { canManageBilling, cloudErrorMessage, freeWorkspaceNote, portalTarget, trialStatusText } from '../cloud-logic';
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { aiAdminPanel } from './ai';
 import { chatAdminPanel } from './chat-admin';
@@ -278,7 +278,8 @@ function overviewView(o: AdminOverview): HTMLElement {
 }
 
 /** Hosted workspaces only (docs/cloud.md): the owner's way into the billing portal. */
-function billingBlock(): HTMLElement {
+function billingBlock(o: AdminOverview): HTMLElement {
+  const trialText = trialStatusText(o.state, o.trialEndsAt);
   const button = h('button', { class: 'btn primary' }, 'Manage billing');
   button.addEventListener('click', async () => {
     button.disabled = true;
@@ -295,8 +296,8 @@ function billingBlock(): HTMLElement {
   });
   return h('div', null,
     h('h3', { class: 'admin-sub' }, 'Billing'),
-    h('p', { class: 'muted' }, 'Change the plan, add seats and update the payment method in the billing portal.'),
-    button);
+    h('p', { class: 'muted' }, 'Change the plan and update the payment method in the billing portal.'),
+    h('div', { class: 'admin-billing-actions' }, button, trialText ? h('span', { class: 'muted' }, trialText) : null));
 }
 
 /** A workspace provided free has no billing portal: the owner reads why instead of a button that cannot work. */
@@ -307,7 +308,7 @@ function freeNote(me: Me): HTMLElement[] {
 
 function overviewPanel(me: Me): HTMLElement {
   const body = h('div', null);
-  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o), ...(canManageBilling(me) ? [billingBlock()] : freeNote(me))));
+  loadList(body, () => api.adminOverview(), (o) => body.replaceChildren(overviewView(o), ...(canManageBilling(me) ? [billingBlock(o)] : freeNote(me))));
   return body;
 }
 

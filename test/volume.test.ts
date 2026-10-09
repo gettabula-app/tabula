@@ -245,6 +245,14 @@ describe('applyVolume', () => {
 
   it('adopting ends every session and sign-in link, clears backup temporaries, writes the audit row and then the marker', () => {
     const { d, directory, session, link } = rig();
+    const owner = directory.getUserByEmail('ana@example.com')!;
+    const board = directory.createBoard({ id: 'guest-board', ownerId: owner.id })!;
+    const code = directory.createJoinCode({
+      boardId: board.id, createdBy: owner.id, codeHash: 'c'.repeat(64), role: 'commenter',
+      createdAt: T0, expiresAt: T0 + 60_000, maxUses: 10,
+    })!;
+    const guestTokenHash = 'd'.repeat(64);
+    directory.createGuestSession(code.id, { tokenHash: guestTokenHash, name: 'Guest', now: T0 });
     writeMarker(d, marker());
     const tmp = 'directory.sqlite.backup-0123456789abcdef.tmp';
     fs.writeFileSync(path.join(d, tmp), 'x');
@@ -256,6 +264,8 @@ describe('applyVolume', () => {
     expect(directory.getSession(session.token)).toBeNull();
     expect(directory.listActiveSessions()).toEqual([]);
     expect(directory.consumeLoginToken(link)).toBeNull();
+    expect(directory.getGuestSession(guestTokenHash, T0)).toBeNull();
+    expect(directory.getJoinCode(code.id)?.revokedAt).not.toBeNull();
     expect(fs.existsSync(path.join(d, tmp))).toBe(false);
     expect(JSON.parse(String(directory.getSetting('backup.status')))).toEqual({ lastManifest: null, bytesStored: 7, running: false, nextRunAt: null });
     const rows = directory.listAudit(10).filter((r: any) => r.action === AUDIT_ACTION);

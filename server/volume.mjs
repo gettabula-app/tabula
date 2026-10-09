@@ -248,7 +248,7 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
   if (plan.action === 'create') log(`volume: marked this volume (${plan.marker.volumeId}) as workspace ${plan.marker.workspaceId ?? '(none)'}, Fly volume ${plan.marker.flyVolumeId ?? '(unknown)'}`);
   if (plan.action === 'adopt') {
     const show = (id) => `workspace ${id.workspaceId ?? '(none)'}, Fly volume ${id.flyVolumeId ?? '(unknown)'}`;
-    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every session was signed out${plan.reason === 'operator' ? ', and every MCP access token and invite link revoked' : ''}`);
+    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every account and guest session was ended, and every join code revoked${plan.reason === 'operator' ? ', with every MCP access token and invite link revoked' : ''}`);
   }
   return plan.action === 'adopt';
 }

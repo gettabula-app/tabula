@@ -32,17 +32,18 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session (the chat states
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
+  --touch            Emulate a touch device (useful for an iPad-sized viewport)
   --out <dir>        Parent folder, default tabula-review (shots go to <dir>/<id>/)
   --no-build         Reuse an existing dist/ instead of running npm run build:app
   --frameable        Start the throwaway relay with TABULA_DEV_ALLOW_FRAMING=1
@@ -795,6 +796,50 @@ async function waitForGroupStyles(page) {
   await page.waitForFunction(() => Boolean(getComputedStyle(document.documentElement).getPropertyValue('--group-line').trim()));
 }
 
+const TOUCH_TARGET_EXCEPTIONS = [
+  'native checkbox/radio: measure the associated label as the 44px hit area',
+  'canvas text editor (.text-editor): it follows board zoom; its focused font size is checked separately',
+  'board canvas: continuous pan/draw surface, not a discrete control',
+];
+
+async function assertTouchTargets(page, stage) {
+  const report = await page.evaluate(() => {
+    const textSelector = "input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='button']):not([type='submit']):not([type='reset']):not([type='image']):not([type='color']):not([type='hidden']), textarea, select, [contenteditable]:not([contenteditable='false'])";
+    const targetSelector = "button, a[href], input:not([type='hidden']), textarea, select, [contenteditable]:not([contenteditable='false']), [role='button'], [role='menuitem'], [role='menuitemradio'], [role='option'], [role='radio'], [role='checkbox'], [role='tab'], [role='switch'], [role='combobox'], [role='spinbutton'], [role='link'], [tabindex]:not([tabindex='-1']), summary";
+    const visible = (el) => {
+      if (!(el instanceof HTMLElement) || el.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const label = (el) => el.getAttribute('aria-label') || el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 36) || el.className?.toString() || el.tagName.toLowerCase();
+    const smallFonts = [...document.querySelectorAll(textSelector)]
+      .filter((el) => visible(el))
+      .map((el) => ({ name: label(el), size: Number.parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((el) => !Number.isFinite(el.size) || el.size < 16);
+    const misses = [];
+    let measured = 0;
+    for (const el of document.querySelectorAll(targetSelector)) {
+      if (!visible(el) || el.matches(':disabled, [aria-disabled="true"]')) continue;
+      if (el.matches('.text-editor')) continue;
+      let target = el;
+      if (el.matches("input[type='checkbox'], input[type='radio']")) target = el.closest('label');
+      if (!target) {
+        misses.push(`${label(el)} has no associated label hit area`);
+        continue;
+      }
+      const rect = target.getBoundingClientRect();
+      measured++;
+      if (rect.width < 43.5 || rect.height < 43.5) misses.push(`${label(el)} ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
+    }
+    return { coarse: matchMedia('(pointer: coarse)').matches, measured, misses, smallFonts };
+  });
+  if (!report.coarse) throw new Error(`touch-target check at ${stage} did not get a coarse pointer`);
+  if (report.smallFonts.length) throw new Error(`touch font-size below 16px at ${stage}: ${JSON.stringify(report.smallFonts)}`);
+  if (report.misses.length) throw new Error(`touch targets below 44px at ${stage}: ${report.misses.join('; ')}`);
+  console.log(`touch-targets ${stage}: ${report.measured} targets at least 44×44px; text fields at least 16px`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -815,6 +860,49 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  async 'touch-targets'(env) {
+    const { page } = env;
+    await page.goto(`${env.base}/#/`);
+    await page.locator('.home-title').waitFor();
+    await page.waitForFunction((n) => document.querySelectorAll('.board-row').length >= n, OTHER_BOARDS.length + 1);
+    await assertTouchTargets(page, 'boards home and search');
+
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.setSelection(['seed-title']));
+    await page.locator('.quickbar.show').waitFor();
+    await assertTouchTargets(page, 'board and quick actions');
+
+    await page.getByRole('button', { name: 'More properties' }).click();
+    await page.locator('.props.show').waitFor();
+    await assertTouchTargets(page, 'properties panel');
+
+    await page.locator('.font-btn').click();
+    await page.locator('.font-picker').waitFor();
+    await page.locator('.font-picker .chip').first().waitFor();
+    await assertTouchTargets(page, 'font popover and chips');
+    await page.keyboard.press('Escape');
+    await page.locator('.font-picker').waitFor({ state: 'detached' });
+
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Board settings' }).click();
+    await page.getByRole('dialog', { name: 'Board settings' }).waitFor();
+    await assertTouchTargets(page, 'settings dialog and close button');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => document.querySelector('.props')?.classList.remove('show'));
+
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.r.flyTo(app.r.contentBounds(['seed-note-1']), 24, 0.9);
+    });
+    await page.waitForFunction(() => window.__board.r.cam.zoom >= 0.31);
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
+    const editorSize = await page.locator('.text-editor').evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize));
+    if (editorSize < 16) throw new Error(`canvas text editor computed to ${editorSize}px on a coarse pointer`);
+    console.log(`touch-target exceptions: ${TOUCH_TARGET_EXCEPTIONS.join('; ')}`);
+    console.log(`touch-targets canvas text editor: ${editorSize}px computed font size at board zoom`);
+    return { keepFocus: true };
   },
   async 'board-selected'(env) {
     await openSeedBoard(env);
@@ -1044,6 +1132,21 @@ const STATES = {
     }
     await env.page.locator('.flow-bar, .flowbar').first().waitFor().catch(() => {});
   },
+  async 'vote-running-touch'(env) {
+    await STATES['vote-running'](env);
+    await env.page.locator('.flowbar.vote-compact').waitFor();
+    await env.page.getByRole('button', { name: 'Remove dots' }).click();
+    await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
+    await env.page.locator('.toast.show').waitFor({ state: 'hidden' });
+    // the compact bar is ONE row: every visible control sits on the same line (the instructions stay folded away)
+    const rows = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.vote-compact');
+      const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
+      return { n: boxes.length, tops: new Set(boxes.map((b) => Math.round(b.top / 4))).size, boxes: boxes.map((b) => `${b.name}:${Math.round(b.left)}-${Math.round(b.right)}`), barW: bar.getBoundingClientRect().width };
+    });
+    console.log('vote-running-touch', JSON.stringify(rows));
+    if (rows.tops !== 1) throw new Error(`vote-running-touch: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+  },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {
     await STATES['board-selected'](env);
@@ -1211,6 +1314,13 @@ const STATES = {
     await env.page.locator('.chat-toggle').click();
     await env.page.getByRole('combobox', { name: 'Message' }).click({ timeout: 5000 });
   },
+  // TAB-243 counterpart: a running poll card and facilitator bar wait while the chat tray is open on a phone.
+  async 'chat-poll'(env) {
+    await resetChatMarker(env);
+    await STATES['flow-poll'](env);
+    await env.page.locator('.chat-toggle').click();
+    await env.page.getByRole('combobox', { name: 'Message' }).waitFor();
+  },
   async 'chat-object'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-object').first().waitFor();
@@ -1240,6 +1350,7 @@ const STATES = {
     await field.click();
     await field.pressSequentially('Thanks @b');
     await env.page.locator('.chat-suggest .chat-option').first().waitFor();
+    if (await env.page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await assertTouchTargets(env.page, 'chat composer');
     // the typeahead closes when the field loses focus, so this shot keeps it
     return { keepFocus: true };
   },
@@ -1535,6 +1646,18 @@ const STATES = {
     await page.goto(`${base}/#/admin`);
     await waitForAdminPanel(page);
   },
+  async 'admin-tokens'({ page, base }) {
+    const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    await page.route('**/api/me', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const res = await route.fetch();
+      return json(route, { ...(await res.json()), mcp: true });
+    });
+    await page.route('**/api/admin/tokens', (route) => json(route, []));
+    await page.goto(`${base}/#/admin/tokens`);
+    await page.getByRole('button', { name: 'Create a token' }).waitFor();
+    await page.getByText('No active access tokens.', { exact: true }).waitFor();
+  },
   async 'backups-list'({ page, base }) {
     await mockBackups(page);
     await page.goto(`${base}/#/admin/backups`);
@@ -1679,11 +1802,11 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -1813,12 +1936,13 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
-async function newPage(browser, { width, theme, mode, base, session }) {
+async function newPage(browser, { width, theme, mode, base, session, touch = false }) {
+  const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
     deviceScaleFactor: 1,
-    isMobile: width <= 500,
-    hasTouch: width <= 500,
+    isMobile: emulateTouch,
+    hasTouch: emulateTouch,
     locale: 'en-US',
     timezoneId: 'UTC',
     reducedMotion: 'reduce',
@@ -1922,7 +2046,7 @@ function readOptions() {
       options: {
         id: { type: 'string' }, mode: { type: 'string', default: 'open' }, states: { type: 'string' }, widths: { type: 'string' },
         themes: { type: 'string' }, out: { type: 'string', default: 'tabula-review' }, 'no-build': { type: 'boolean' },
-        frameable: { type: 'boolean' }, dark: { type: 'boolean' }, light: { type: 'boolean' }, help: { type: 'boolean' },
+        frameable: { type: 'boolean' }, touch: { type: 'boolean' }, dark: { type: 'boolean' }, light: { type: 'boolean' }, help: { type: 'boolean' },
       },
       allowPositionals: false,
     }));
@@ -1954,7 +2078,7 @@ function readOptions() {
 
   return {
     id: values.id, mode: values.mode, states, widths: widths.map(Number), themes: finalThemes, noBuild: values['no-build'] === true,
-    frameable: values.frameable === true, outDir: path.resolve(values.out, values.id),
+    frameable: values.frameable === true, touch: values.touch === true, outDir: path.resolve(values.out, values.id),
   };
 }
 
@@ -2015,7 +2139,7 @@ async function main() {
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
     await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
-    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null };
+    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);
       shared.session = owner.session;

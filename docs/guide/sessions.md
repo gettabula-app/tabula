@@ -79,10 +79,12 @@ Comment pins on hidden notes are hidden as well. See [Comments](comments.md).
 In a **Dot vote** step:
 
 1. Click an outlined item to add a dot. Click again to add more.
-2. Hold `Shift` and click to remove one of your dots.
+2. Hold `Shift` and click to remove one of your dots. On a touch screen there is no `Shift`: switch on **Remove dots** in the bar, then tap an item to take one of your dots back. Switch it off to add dots again. It turns itself off when the vote ends.
 3. The bar shows how many dots you have left. Click it to set **Dots per person** (1, 2, 3, 5, 10, any number, or **No limit**). The change applies to everyone straight away, and dots already placed stay.
 4. Click **Reveal votes** to show the totals.
 5. Click **Copy results** to copy the ranked list as Markdown.
+
+On a phone the vote bar is one compact row: **Reveal votes** (as an eye icon), **Remove dots**, your dots left, **Finish** and an **Info** button that shows the instructions. The step title, the timer and the other step buttons are hidden while a vote runs.
 
 When the session ends, dots stay on the board. The bar shows **Vote results** with **Copy results** and **Clear dots** to remove them.
 

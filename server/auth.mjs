@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { normaliseEmail } from './config.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -11,6 +12,7 @@ export const CSRF_HEADER = 'x-tabula';
 /** Accepted during the rename transition; clients built before it send this one. */
 const LEGACY_CSRF_HEADER = 'x-mira';
 const COOKIE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 /** A new person would need a seat the workspace does not have (hosted workspaces, docs/cloud.md). */
 export class SeatLimitError extends Error {
@@ -177,9 +179,49 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       if (!token) continue;
       const t = now();
       const session = directory.getSession(token, t);
-      if (!session) continue;
-      const setCookie = session.extended ? sessionCookie(token, session.expiresAt - t) : undefined;
-      return { user: session.user, sessionId: session.id, expiresAt: session.expiresAt, setCookie };
+      if (session) {
+        const setCookie = session.extended ? sessionCookie(token, session.expiresAt - t) : undefined;
+        return { user: session.user, sessionId: session.id, expiresAt: session.expiresAt, setCookie };
+      }
+      if (config.joinCodes !== true) continue;
+      const guest = directory.getGuestSession(hashToken(token), t);
+      if (!guest) continue;
+      return {
+        user: {
+          id: `guest_${guest.id}`, email: '', name: guest.name, role: 'guest', guest: true,
+          guestBoardId: guest.boardId, guestBoardRole: guest.role,
+        },
+        sessionId: guest.id,
+        expiresAt: guest.expiresAt,
+        guest: true,
+        boardId: guest.boardId,
+        boardRole: guest.role,
+      };
+    }
+    return null;
+  }
+
+  /** Checks only the one-board guest credential, for HTTP and WebSocket scope gates. */
+  function authenticateGuest(cookieHeader) {
+    if (config.joinCodes !== true || typeof cookieHeader !== 'string' || !cookieHeader) return null;
+    for (const part of cookieHeader.split(';')) {
+      const eq = part.indexOf('=');
+      if (eq < 0 || part.slice(0, eq).trim() !== config.cookieName) continue;
+      const token = part.slice(eq + 1).trim();
+      if (!token || !COOKIE_TOKEN_RE.test(token)) continue;
+      const guest = directory.getGuestSession(hashToken(token), now());
+      if (!guest) continue;
+      return {
+        user: {
+          id: `guest_${guest.id}`, email: '', name: guest.name, role: 'guest', guest: true,
+          guestBoardId: guest.boardId, guestBoardRole: guest.role,
+        },
+        sessionId: guest.id,
+        expiresAt: guest.expiresAt,
+        guest: true,
+        boardId: guest.boardId,
+        boardRole: guest.role,
+      };
     }
     return null;
   }
@@ -188,6 +230,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
     requestLogin,
     verifyLogin,
     authenticate,
+    authenticateGuest,
     sessionCookie,
     clearCookie,
     logout: (sessionId) => directory.revokeSession(sessionId),

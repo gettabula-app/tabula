@@ -6,8 +6,10 @@ import type { Point } from '../types';
 import { authState } from '../auth';
 import { h, icon } from './dom';
 import { announce } from './announce';
+import { guestMark } from './guest-mark';
 import { fmtAgo, segmented, toast } from './common';
 import type { SideTray } from './side-tray';
+import { safeInsets } from './safe-area';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
 type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt' | 'imported' | 'importedBy' | 'legacy'> & { root: boolean };
@@ -67,11 +69,16 @@ function focusSoon(ta: HTMLTextAreaElement) {
 function placeCard(el: HTMLElement, p: Point) {
   const w = el.offsetWidth, hgt = el.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
+  const safe = safeInsets();
+  const left = MARGIN + safe.left;
+  const right = MARGIN + safe.right;
+  const top = MARGIN + safe.top;
+  const bottom = MARGIN + safe.bottom;
   let x = p.x + GAP, y = p.y + GAP;
-  if (x + w > vw - MARGIN) x = p.x - GAP - w;
-  if (y + hgt > vh - MARGIN) y = p.y - GAP - hgt;
-  el.style.left = `${Math.max(MARGIN, Math.min(x, vw - w - MARGIN))}px`;
-  el.style.top = `${Math.max(MARGIN, Math.min(y, vh - hgt - MARGIN))}px`;
+  if (x + w > vw - right) x = p.x - GAP - w;
+  if (y + hgt > vh - bottom) y = p.y - GAP - hgt;
+  el.style.left = `${Math.max(left, Math.min(x, vw - w - right))}px`;
+  el.style.top = `${Math.max(top, Math.min(y, vh - hgt - bottom))}px`;
 }
 
 /** The comment tool's card, the comments panel (the Comments tab of the side tray) and its count badge. */
@@ -108,6 +115,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     return h('button', { class: 'comment-row', onclick: () => openRow(t) },
       avatar(t.authorName, t.authorColor),
       h('span', { class: 'comment-row-body' },
+        t.authorId.startsWith('guest_') ? h('span', { class: 'comment-row-author' }, t.authorName, ' ', guestMark('comment-badge comment-guest')) : null,
         h('span', { class: 'comment-row-text' }, t.text.trim().split('\n')[0]),
         h('span', { class: 'comment-row-meta' }, `${n} repl${n === 1 ? 'y' : 'ies'} · ${fmtAgo(t.createdAt)}`)));
   }
@@ -139,7 +147,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     if (!panelOpen) return;
     const shown = (filter === 'open' ? open : resolved).sort((a, b) => b.createdAt - a.createdAt);
     // Rebuild only when something shown changed: a row removed under the pointer would swallow its click.
-    const key = JSON.stringify([filter, open.length, resolved.length, shown.map((t) => [t.id, t.text, t.replies.length, t.resolved, t.createdAt, t.authorName, t.authorColor])]);
+    const key = JSON.stringify([filter, open.length, resolved.length, shown.map((t) => [t.id, t.authorId, t.text, t.replies.length, t.resolved, t.createdAt, t.authorName, t.authorColor])]);
     if (key === painted) return;
     painted = key;
     panel.replaceChildren(
@@ -298,6 +306,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       const meta = h('div', { class: 'comment-meta' },
         avatar(m.authorName, m.authorColor),
         h('span', { class: 'comment-name' }, m.authorName),
+        m.authorId.startsWith('guest_') ? guestMark('comment-badge comment-guest') : null,
         m.imported ? h('span', { class: 'comment-badge' }, 'imported') : m.legacy ? h('span', { class: 'comment-badge' }, 'legacy') : null,
         h('span', { class: 'comment-time' }, `${fmtAgo(m.createdAt)}${m.editedAt ? ' · edited' : ''}`));
       if (editing === m.id) {

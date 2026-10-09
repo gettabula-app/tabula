@@ -1081,8 +1081,8 @@ describe('a board whose socket the server closed with 4503', () => {
 // ------------------------------------------------------------------ the Overview's billing block (TAB-226)
 
 describe('the Overview of a hosted workspace', () => {
-  async function openOverview(me: Me) {
-    serve({ 'GET /api/admin/overview': json(overview) });
+  async function openOverview(me: Me, payload: AdminOverview = overview) {
+    serve({ 'GET /api/admin/overview': json(payload) });
     renderAdmin(asHtml(root), 'overview', me);
     await flush();
     return panel();
@@ -1091,6 +1091,15 @@ describe('the Overview of a hosted workspace', () => {
   it('offers Manage billing to the owner, as before', async () => {
     await openOverview(owner(hosted()));
     expect(hasControl(panel(), 'Manage billing')).toBe(true);
+    expect(textOf(panel())).toContain('Change the plan and update the payment method in the billing portal.');
+    expect(textOf(panel())).not.toContain('add seats');
+  });
+
+  it('shows the localized trial end beside Manage billing while trialing', async () => {
+    const trialEndsAt = '2026-11-07T15:00:00Z';
+    const date = new Date(trialEndsAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    await openOverview(owner(hosted()), { ...overview, trialEndsAt, state: 'trialing' });
+    expect(textOf(panel())).toContain(`Free trial until ${date}`);
   });
 
   it('offers no Manage billing on a workspace provided free, and says why', async () => {

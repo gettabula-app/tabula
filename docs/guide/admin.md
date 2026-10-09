@@ -34,7 +34,7 @@ Counts for the whole workspace:
 
 Below the counts, **Instance** lists the server address, how email is sent, the version, and whether accounts are on.
 
-On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan, add seats and update the payment method. Admins who are not owners do not see it. A workspace that is provided free (for education or internal use) has nothing to bill, so the owner reads "This workspace is provided free (education or internal). There's nothing to bill." here and in the Backups tab instead of the button.
+On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan and update the payment method. While the workspace is on a free trial, the owner also sees "Free trial until" and the end date beside it. Admins who are not owners do not see it. A workspace that is provided free (for education or internal use) has nothing to bill, so the owner reads "This workspace is provided free (education or internal). There's nothing to bill." here and in the Backups tab instead of the button.
 
 <!-- screenshot: Overview section with the stat tiles and the Instance list -->
 
@@ -75,7 +75,7 @@ Each row is a sign-in: the person, when they signed in, when they were last seen
 
 ## Access tokens
 
-Active [personal access tokens](ai-tools.md) for AI tools, across the workspace: whose it is, its name and access level, which boards it covers, when it was last used and when it expires. **Revoke** stops a token at once. The section appears only when AI tool access is turned on for your server.
+Active [personal access tokens](ai-tools.md) for AI tools, across the workspace: whose it is, its name and access level, which boards it covers, when it was last used and when it expires. **Create a token** at the top makes one for yourself (see [Access tokens and AI tools](ai-tools.md)). **Revoke** stops a token at once. The section appears only when AI tool access is turned on for your server.
 
 ## AI
 

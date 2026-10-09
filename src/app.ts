@@ -902,7 +902,8 @@ export class BoardApp {
           this.openLaneMenu(top.id);
           return;
         }
-        if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
+        const removeVote = this.flow.shouldRemoveDots?.(e.shiftKey) ?? e.shiftKey;
+        if (!this.readOnly && top && this.flow.handleClick(top, removeVote)) return;   // voting still works on locked notes
         const hit = lockedTarget ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
           this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [], moved: false };
@@ -2743,11 +2744,11 @@ export class BoardApp {
     const aw = this.conn.awareness;
     const render = () => {
       const remote: { ids: Id[]; color: string }[] = [];
-      const cursors: { id: number; name: string; color: string; p: Point }[] = [];
+      const cursors: { id: number; name: string; guest: boolean; color: string; p: Point }[] = [];
       aw.getStates().forEach((st, clientId) => {
         if (clientId === aw.clientID || !st.user) return;
         if (Array.isArray(st.sel) && st.sel.length) remote.push({ ids: st.sel, color: personColor(st.user.color) });
-        if (st.cursor) cursors.push({ id: clientId, name: st.user.name, color: personColor(st.user.color), p: st.cursor });
+        if (st.cursor) cursors.push({ id: clientId, name: st.user.name, guest: st.user.guest === true, color: personColor(st.user.color), p: st.cursor });
       });
       this.r.setOverlay({ remote });
       this.renderCursors(cursors);
@@ -2758,7 +2759,7 @@ export class BoardApp {
   }
 
   private cursorEls = new Map<number, HTMLDivElement>();
-  private renderCursors(cs: { id: number; name: string; color: string; p: Point }[]) {
+  private renderCursors(cs: { id: number; name: string; guest: boolean; color: string; p: Point }[]) {
     const seen = new Set<number>();
     for (const c of cs) {
       seen.add(c.id);
@@ -2771,7 +2772,7 @@ export class BoardApp {
         this.cursorEls.set(c.id, el);
       }
       el.style.color = c.color;
-      el.querySelector('span')!.textContent = c.name;
+      el.querySelector('span')!.textContent = c.guest ? `${c.name} · Guest` : c.name;
       (el.querySelector('span') as HTMLSpanElement).style.background = c.color;
       const s = this.r.toScreen(c.p);
       el.style.transform = `translate(${s.x}px, ${s.y}px)`;

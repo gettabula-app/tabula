@@ -131,6 +131,39 @@ describe('listing and previewing backups', () => {
   });
 });
 
+describe('whole restore credential invalidation', () => {
+  it('does not revive backed-up join codes or guest cookies revoked after the backup', async () => {
+    h = await harness({ accounts: true });
+    seedA(h);
+    const directory = h.directory!;
+    const owner = ownerOf(h);
+    const code = directory.createJoinCode({
+      boardId: 'b1', createdBy: owner.id, codeHash: 'c'.repeat(64), role: 'editor',
+      createdAt: h.clock.now, expiresAt: h.clock.now + DAY, maxUses: 10,
+    })!;
+    const guestTokenHash = 'd'.repeat(64);
+    directory.createGuestSession(code.id, { tokenHash: guestTokenHash, name: 'Old guest', now: h.clock.now });
+    const engines = rig(h);
+    const saved = await backupNow(engines.backup);
+    expect(saved.ok).toBe(true);
+
+    h.clock.now += HOUR;
+    becomeB(h);
+    directory.revokeJoinCode(code.id, h.clock.now);
+    expect(directory.getGuestSession(guestTokenHash, h.clock.now)).toBeNull();
+    await engines.restore.restoreWorkspace({ manifest: saved.manifest, confirm: CONFIRM, actor: owner });
+
+    const restored = reopen(h);
+    try {
+      expect(restored.getGuestSession(guestTokenHash, h.clock.now)).toBeNull();
+      expect(restored.getJoinCode(code.id)?.revokedAt).not.toBeNull();
+      expect(await raw(h.dir, 'SELECT COUNT(*) AS n FROM guest_sessions')).toEqual([{ n: 0 }]);
+    } finally {
+      restored.close();
+    }
+  });
+});
+
 describe('a whole restore', () => {
   it('puts the backed up state back, ends every session, keeps the old data aside and leaves with code 75', async () => {
     const s = await scenario();

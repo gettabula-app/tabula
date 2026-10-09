@@ -1,22 +1,50 @@
-import { ApiError, api, type Me, type ServerBoard } from './api';
+import { ApiError, api, type GuestJoin, type Me, type ServerBoard } from './api';
 import { clearChatCache } from './chat-cache';
 import { createMeRefresher, meChanged, type MeRefreshDeps } from './cloud-logic';
 
 export type AuthState =
   | { mode: 'unknown' }
   | { mode: 'open' }
+  | { mode: 'guest'; guest: GuestJoin }
   | { mode: 'signed-out' }
   | { mode: 'signed-in'; me: Me }
   | { mode: 'offline'; me: Me | null };
 
 const ME_KEY = 'driftboard:me';
 const BOARDS_KEY = 'driftboard:server-boards';
+const GUEST_KEY = 'driftboard:guest-session';
 
 let state: AuthState = { mode: 'unknown' };
+let joinCodesEnabled = false;
 const listeners = new Set<(s: AuthState) => void>();
 
 export function authState(): AuthState {
   return state;
+}
+
+export function joinCodesAvailable(): boolean {
+  return joinCodesEnabled;
+}
+
+function readGuestSession(): GuestJoin | null {
+  try {
+    const raw = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(GUEST_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as GuestJoin;
+    if (!value || typeof value.boardId !== 'string' || typeof value.guestId !== 'string' || typeof value.name !== 'string'
+      || (value.role !== 'editor' && value.role !== 'commenter') || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function clearGuestSession() {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(GUEST_KEY);
+  } catch {
+    /* storage is unavailable */
+  }
 }
 
 export function onAuth(fn: (s: AuthState) => void): () => void {
@@ -101,8 +129,11 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
   try {
     const config = await a.config();
     authEnabled = config.authEnabled;
+    joinCodesEnabled = config.joinCodes === true;
     serverImages = config.images === true;
   } catch {
+    const guest = readGuestSession();
+    if (guest) return commit({ mode: 'guest', guest });
     const cached = readJson<Me>(ME_KEY);
     return commit(cached ? { mode: 'offline', me: cached } : { mode: 'open' });
   }
@@ -110,9 +141,12 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
 
   try {
     const me = await a.me();
+    clearGuestSession();
     writeStorage(ME_KEY, JSON.stringify(me));
     return commit({ mode: 'signed-in', me });
   } catch (err) {
+    const guest = readGuestSession();
+    if (guest && err instanceof ApiError && (err.status === 403 || err.status === 0)) return commit({ mode: 'guest', guest });
     if (err instanceof ApiError && err.status === 401) {
       setSignedOut();
       return authState();
@@ -170,11 +204,23 @@ export async function signOut(a: Pick<typeof api, 'logout'> = api): Promise<void
 }
 
 export function setSignedIn(me: Me) {
+  clearGuestSession();
   writeStorage(ME_KEY, JSON.stringify(me));
   commit({ mode: 'signed-in', me });
 }
 
+export function setGuest(guest: GuestJoin) {
+  forgetCaches();
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(GUEST_KEY, JSON.stringify(guest));
+  } catch {
+    /* storage is unavailable: this tab can still open the joined board until it reloads */
+  }
+  commit({ mode: 'guest', guest });
+}
+
 export function setSignedOut() {
+  clearGuestSession();
   forgetCaches();
   commit({ mode: 'signed-out' });
 }

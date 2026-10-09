@@ -7,6 +7,6 @@
 
 /* On a board it is a fixed bar that wraps at large text sizes, and the editing chrome moves down by its height (--banner-h, set in main.ts). */
 .board-root > .workspace-banner {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 12; min-height: 28px; padding: 4px 16px;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 12; min-height: 28px; padding: calc(4px + var(--safe-top)) 16px 4px;
 }
-.board-root.has-banner > .chrome { top: var(--banner-h, 28px); }
+.board-root.has-banner > .chrome { top: calc(var(--banner-h, 28px) - var(--safe-top)); }

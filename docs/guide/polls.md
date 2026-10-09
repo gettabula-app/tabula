@@ -74,6 +74,8 @@ When the session ends, the bar keeps a **Poll results** block for the latest pol
 - **Clear poll** removes the poll, its answers and its step from the board.
 - **Hide** (the x) hides the block on your screen only. It comes back when someone starts a poll or uses the poll tool, and when a newer poll closes.
 
+On a phone, the poll card and its controls wait out of the way while Comments or Chat is open, and come back when you close the tray.
+
 ## Who can do what
 
 - Anyone who can edit the board can start a poll, answer, reveal and clear.

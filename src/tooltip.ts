@@ -162,13 +162,23 @@ export interface TipPlacement {
  * Above the target when there is room, else below, centred on the target and shifted sideways to stay `margin` from the
  * viewport edges. When neither side has room it takes the roomier one: the tooltip may be cut off but never covers the target.
  */
-export function placeTip(target: Box, tip: Size, view: Size, gap = TIP_GAP, margin = TIP_MARGIN): TipPlacement {
-  const roomAbove = target.top - gap - margin;
-  const roomBelow = view.height - margin - (target.top + target.height + gap);
+export function placeTip(
+  target: Box, tip: Size, view: Size, gap = TIP_GAP, margin = TIP_MARGIN,
+  safe: { top?: number; right?: number; bottom?: number; left?: number } = {},
+): TipPlacement {
+  const leftLimit = margin + (safe.left ?? 0);
+  const rightLimit = view.width - margin - (safe.right ?? 0);
+  const topLimit = margin + (safe.top ?? 0);
+  const bottomLimit = view.height - margin - (safe.bottom ?? 0);
+  const roomAbove = target.top - gap - topLimit;
+  const roomBelow = bottomLimit - (target.top + target.height + gap);
   const above = roomAbove >= tip.height || (roomBelow < tip.height && roomAbove >= roomBelow);
-  const top = above ? target.top - gap - tip.height : target.top + target.height + gap;
+  const y = above ? target.top - gap - tip.height : target.top + target.height + gap;
+  const top = above
+    ? (topLimit + tip.height <= target.top - gap ? Math.max(topLimit, y) : y)
+    : (bottomLimit - tip.height >= target.top + target.height + gap ? Math.min(bottomLimit - tip.height, y) : y);
   const centred = target.left + target.width / 2 - tip.width / 2;
-  const left = Math.max(margin, Math.min(centred, view.width - margin - tip.width));
+  const left = Math.max(leftLimit, Math.min(centred, rightLimit - tip.width));
   return { left, top, side: above ? 'above' : 'below' };
 }
 

@@ -13,6 +13,7 @@ import { focusFor } from './focus';
 import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
 import { NOTHING_HIDDEN, escapeHidesBar, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
+import { dotsButtonTip, voteInstructionText } from './flowbar-logic';
 
 const MODE_LABEL: Record<StepMode, string> = {
   write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
@@ -31,6 +32,8 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   let tick = 0;
   let lastBeepKey = '';
   let warnedKey = '';
+  let voteInstructionOpen = false;
+  let voteInstructionStep: string | null = null;
 
   const hidden = () => loadIdleHidden(app.user.id, app.conn.id);
   const update = (change: (cur: IdleHidden) => IdleHidden) => {
@@ -85,12 +88,22 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const rem = app.flow.remainingMs();
     const running = app.flow.timerRunning();
     const pct = f.timer && rem !== null ? 1 - rem / f.timer.durationMs : 0;
+    const voting = step.mode === 'vote';
+    if (!voting || voteInstructionStep !== step.id) {
+      voteInstructionStep = voting ? step.id : null;
+      voteInstructionOpen = false;
+    }
+    const compactVote = voting && typeof matchMedia === 'function' && matchMedia('(max-width: 500px)').matches;
+    const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const instructionText = voteInstructionText(step.instructions, voting && coarsePointer);
+    bar.classList.toggle('vote-compact', compactVote);
+    bar.classList.toggle('vote-instructions-open', compactVote && voteInstructionOpen);
 
     const timer = h('div', { class: `timer${rem !== null && rem <= 60_000 && rem > 0 ? ' warn' : ''}${rem === 0 ? ' done' : ''}`, role: 'timer', 'aria-label': rem !== null ? `${fmt(rem)} remaining` : 'No timer' },
       h('span', { class: 'timer-fill', style: `--p:${Math.min(1, Math.max(0, pct))}` }),
       h('span', { class: 'timer-num' }, rem !== null ? fmt(rem) : '–:––'),
     );
-    const timerBtns = h('div', { class: 'btn-row' },
+    const timerBtns = h('div', { class: 'btn-row flow-timer-buttons' },
       running
         ? h('button', { class: 'icon-btn', 'aria-label': 'Pause timer', disabled: ro, onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
         : h('button', { class: 'icon-btn', 'aria-label': 'Start timer', disabled: ro, onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
@@ -99,27 +112,54 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
 
     const extras: HTMLElement[] = [];
     if ((step.mode === 'private-write' || step.mode === 'vote') && !f.reveal) {
-      extras.push(h('button', { class: 'btn', disabled: ro, onclick: () => app.flow.reveal() }, icon('eye', 16), step.mode === 'vote' ? 'Reveal votes' : 'Reveal notes'));
+      extras.push(h('button', {
+        class: step.mode === 'vote' ? 'btn vote-reveal' : 'btn',
+        disabled: ro,
+        'aria-label': step.mode === 'vote' ? 'Reveal votes' : undefined,
+        onclick: () => app.flow.reveal(),
+      }, icon('eye', 16), step.mode === 'vote' ? 'Reveal votes' : 'Reveal notes'));
     }
     if (step.mode === 'vote') {
+      extras.push(removeDotsButton(app, ro));
       extras.push(dotsButton(app));
       if (f.reveal) extras.push(h('button', { class: 'btn', onclick: () => copyResults(app, step.id) }, 'Copy results'));
     }
     if (step.mode === 'poll' && step.pollId) extras.push(...pollBarControls(app, step.pollId));
 
+    const instruction = compactVote
+      ? h('div', { class: 'vote-instructions', id: 'flow-vote-instructions', hidden: !voteInstructionOpen }, instructionText)
+      : null;
+    const info = compactVote
+      ? h('button', {
+        class: 'icon-btn vote-info',
+        'aria-label': voteInstructionOpen ? 'Hide voting instructions' : 'Show voting instructions',
+        'aria-expanded': String(voteInstructionOpen),
+        'aria-controls': 'flow-vote-instructions',
+        onclick: (e: Event) => {
+          voteInstructionOpen = !voteInstructionOpen;
+          instruction!.hidden = !voteInstructionOpen;
+          bar.classList.toggle('vote-instructions-open', voteInstructionOpen);
+          const button = e.currentTarget as HTMLButtonElement;
+          button.setAttribute('aria-expanded', String(voteInstructionOpen));
+          button.setAttribute('aria-label', voteInstructionOpen ? 'Hide voting instructions' : 'Show voting instructions');
+        },
+      }, 'Info')
+      : null;
+
     bar.replaceChildren(
-      h('button', { class: 'icon-btn', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
+      h('button', { class: 'icon-btn flow-previous', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
       h('button', { class: 'flow-step', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement), 'aria-label': 'All steps' },
         h('span', { class: 'step-count' }, `${f.active + 1}/${f.steps.length}`),
         h('span', { class: 'step-text' },
           h('span', { class: 'flow-title' }, h('span', { class: 'title-text', title: step.title }, step.title), h('span', { class: `mode mode-${step.mode}` }, MODE_LABEL[step.mode])),
-          h('span', { class: 'step-instr' }, step.instructions)),
+          h('span', { class: 'step-instr' }, instructionText)),
       ),
       timer, timerBtns, ...extras,
+      ...(instruction ? [instruction] : []), ...(info ? [info] : []),
       askButton(app),
       f.active < f.steps.length - 1
         ? h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
-        : h('button', { class: 'btn primary', disabled: ro, onclick: () => finish(app) }, 'Finish'),
+        : h('button', { class: `btn primary${voting ? ' vote-finish' : ''}`, disabled: ro, onclick: () => finish(app) }, 'Finish'),
     );
 
   };
@@ -226,7 +266,7 @@ const ASK_LABEL = 'Ask everyone to look here';
  */
 function askButton(app: BoardApp): HTMLElement {
   const focus = focusFor(app);
-  const b = h('button', { class: 'icon-btn', 'aria-label': ASK_LABEL }, icon('focus', 18));
+  const b = h('button', { class: 'icon-btn flow-ask', 'aria-label': ASK_LABEL }, icon('focus', 18));
   let timer = 0;
   const paint = () => {
     const left = focus?.cooldownLeft() ?? 0;
@@ -247,6 +287,19 @@ function askButton(app: BoardApp): HTMLElement {
   paint();
   countdown();
   return b;
+}
+
+function removeDotsButton(app: BoardApp, readOnly: boolean): HTMLElement {
+  const enabled = app.flow.isRemoveDotsMode();
+  return h('button', {
+    class: 'btn remove-dots-toggle',
+    disabled: readOnly,
+    'aria-pressed': String(enabled),
+    onclick: () => {
+      const next = !app.flow.isRemoveDotsMode();
+      if (app.flow.setRemoveDotsMode(next)) announce(next ? 'Remove dots on' : 'Remove dots off');
+    },
+  }, icon('minus', 16), 'Remove dots');
 }
 
 function finish(app: BoardApp) {
@@ -286,9 +339,9 @@ function dotsButton(app: BoardApp): HTMLElement {
   const b = h('button', {
     class: `votes-left${left === 0 ? ' none' : ''}`,
     disabled: app.readOnly,
-    'data-tip': 'Click a note to add a dot, shift-click to remove one. Click here to change how many dots each person gets.',
+    'data-tip': dotsButtonTip(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches),
     'aria-label': `${unlimited ? 'No dot limit' : `${left} of ${limit} dots left`}. Change dots per person`,
-  }, ...body, icon('chevron', 14));
+  }, ...body, h('span', { class: 'vote-compact-count', 'aria-hidden': 'true' }, unlimited ? '∞' : String(left)), icon('chevron', 14));
   b.addEventListener('click', () => openDotLimit(app, b));
   return b;
 }
@@ -297,7 +350,8 @@ function dotsButton(app: BoardApp): HTMLElement {
 export function startVote(app: BoardApp, scope: VoteScope) {
   app.flow.quickVote(UNLIMITED, scope);
   const n = app.flow.eligible(scope).length;
-  toast(`Dot vote started on ${n} ${n === 1 ? 'item' : 'items'}, no limit. Click one to add a dot.`);
+  const addVerb = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click';
+  toast(`Dot vote started on ${n} ${n === 1 ? 'item' : 'items'}, no limit. ${addVerb} one to add a dot.`);
 }
 
 /** The step before a quick dot vote: what can be voted on, with a count and a default (TAB-232). */

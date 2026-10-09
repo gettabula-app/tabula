@@ -22,6 +22,10 @@ export interface Workspace {
   seatsUsed: number;
   /** False for a workspace that is provided free (education, internal): no subscription, no billing portal. Absent on older servers. */
   billing?: boolean;
+  /** Present only for owners and admins on cloud instances. */
+  trialEndsAt?: string | null;
+  /** Present only for owners and admins on cloud instances. Unknown lifecycle values are allowed. */
+  state?: string | null;
 }
 
 export interface Me {
@@ -36,6 +40,30 @@ export interface Me {
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
   chat?: boolean;
+  /** Present only when the relay has one-board guest join codes enabled. */
+  joinCodes?: true;
+}
+
+export interface JoinCodeInfo {
+  id: string;
+  role: 'commenter' | 'editor';
+  createdAt: number;
+  expiresAt: number;
+  maxUses: number;
+  uses: number;
+  revokedAt: number | null;
+}
+
+export interface CreatedJoinCode extends Omit<JoinCodeInfo, 'revokedAt'> {
+  code: string;
+}
+
+export interface GuestJoin {
+  boardId: string;
+  role: 'commenter' | 'editor';
+  name: string;
+  guestId: string;
+  expiresAt: number;
 }
 
 /** A chat message as the API and the /chat socket show it (docs/chat.md, API). Text is plain; never HTML. */
@@ -257,6 +285,10 @@ export interface AdminOverview {
   signIns7d: number;
   live: { rooms: number; connections: number };
   instance: { authEnabled: true; baseUrl: string; mail: 'log' | 'file' | 'webhook' | 'smtp'; version: string };
+  /** Present only when a control plane runs this instance. */
+  trialEndsAt?: string | null;
+  /** Present only when a control plane runs this instance. */
+  state?: string | null;
 }
 
 export interface AdminMember {
@@ -631,7 +663,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
   };
 
   return {
-    config: () => call<{ authEnabled: boolean; images?: boolean }>('GET', '/api/config'),
+    config: () => call<{ authEnabled: boolean; images?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
     requestLogin: (email: string, invite?: string) =>
@@ -672,6 +704,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
       call<void>('POST', `/api/boards/${seg(boardId)}/shares`, grant),
     unshare: (boardId: string, principalType: PrincipalType, principalId: string) =>
       call<void>('DELETE', `/api/boards/${seg(boardId)}/shares/${seg(principalType)}/${seg(principalId)}`),
+    joinWithCode: (code: string, name: string) => call<GuestJoin>('POST', '/api/join', { code, name }),
+    joinCodes: (boardId: string) => call<JoinCodeInfo[]>('GET', `/api/boards/${seg(boardId)}/join-codes`),
+    createJoinCode: (boardId: string, input: { role: 'commenter' | 'editor'; expiresInHours?: number; maxUses?: number }) =>
+      call<CreatedJoinCode>('POST', `/api/boards/${seg(boardId)}/join-codes`, input),
+    revokeJoinCode: (boardId: string, id: string) => call<void>('DELETE', `/api/boards/${seg(boardId)}/join-codes/${seg(id)}`),
 
     listTemplates: () => call<ServerTemplateInfo[]>('GET', '/api/templates', undefined, TEMPLATE_TIMEOUT_MS),
     getTemplate: (id: string) => call<ServerTemplate>('GET', `/api/templates/${seg(id)}`, undefined, TEMPLATE_TIMEOUT_MS),

@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// TAB-208: on a phone the Comments and Chat tray, like a drawer, covers the board, so the selection's quick bar and the
-// properties sheet wait (kept in place, hidden) instead of drawing over it. Read as text, as css-a11y.test.ts does.
+// TAB-208 and TAB-243: on a phone the Comments and Chat tray, like a drawer, covers the board, so the selection's quick
+// bar, properties sheet, session bar and poll card wait (kept in place, hidden) instead of drawing over it. Read as text,
+// as css-a11y.test.ts does.
 
 const css = readFileSync(fileURLToPath(new URL('../src/styles.css', import.meta.url)), 'utf8');
 
@@ -20,7 +21,7 @@ function phoneBlock(): string {
 
 describe('quick bar and properties sheet beside an open tray (phone width)', () => {
   const block = phoneBlock();
-  const rule = block.split('\n').find((l) => /\.quickbar, \.props(?:, \.flowbar)?\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
+  const rule = block.split('\n').find((l) => /\.quickbar, \.props, \.flowbar, \.poll-card\)\s*\{\s*visibility:\s*hidden/.test(l)) ?? '';
   const hides = (opener: string) => new RegExp(`:has\\(>[^{]*${opener}[^{]*\\.show`).test(rule);
 
   it('are hidden while the Comments and Chat tray is open', () => {
@@ -28,8 +29,9 @@ describe('quick bar and properties sheet beside an open tray (phone width)', () 
     expect(hides('\\.side-tray')).toBe(true);
   });
 
-  it('and the session bar waits too, so it cannot sit over the chat composer (TAB-243)', () => {
-    expect(rule).toMatch(/\.flowbar/);
+  it('and a running poll card and facilitator bar wait in place until it closes', () => {
+    expect(rule).toMatch(/\.flowbar, \.poll-card/);
+    expect(hides('\\.side-tray')).toBe(true);
   });
 
   it('still wait for an open drawer', () => {
@@ -50,7 +52,7 @@ describe('quick bar width on a phone', () => {
 
   it('is capped to the room right of the rail by a rule that outranks the base rule', () => {
     expect(capRule).toMatch(/\.chrome\s*>\s*\.quickbar/);
-    expect(capRule).toContain('calc(100% - var(--rail-clear) - 12px)');
+    expect(capRule).toContain('calc(100% - var(--rail-clear) - 12px - var(--safe-right))');
   });
 
   it('scrolls sideways and fades the edge with more behind it', () => {

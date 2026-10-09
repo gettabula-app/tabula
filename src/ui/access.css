@@ -1,6 +1,6 @@
 .access-banner {
-  position: fixed; top: 68px; left: 50%; transform: translateX(-50%); z-index: 30;
-  width: max-content; max-width: min(560px, calc(100% - 24px));
+  position: fixed; top: calc(68px + var(--safe-top)); left: 50%; transform: translateX(-50%); z-index: 30;
+  width: max-content; max-width: min(560px, calc(100% - 24px - var(--safe-left) - var(--safe-right)));
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   padding: 10px 12px 10px 16px; border-radius: 0;
   background: var(--tray); color: var(--tray-text);

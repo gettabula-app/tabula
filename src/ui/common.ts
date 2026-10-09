@@ -1,5 +1,6 @@
 import { h, icon } from './dom';
 import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
+import { safeInsets } from './safe-area';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
@@ -17,13 +18,18 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   const place = () => {
     const a = anchor.getBoundingClientRect();
     const r = el.getBoundingClientRect();
+    const safe = safeInsets();
+    const left = safe.left;
+    const right = safe.right;
+    const top = safe.top;
+    const bottom = safe.bottom;
     const side = opts.side ?? 'bottom';
     let x = a.left, y = a.bottom + 8;
     if (side === 'right') { x = a.right + 10; y = a.top; }
     if (side === 'left') { x = a.left - r.width - 10; y = a.top; }
     if (side === 'top') { x = a.left + a.width / 2 - r.width / 2; y = a.top - r.height - 10; }
-    x = Math.max(8, Math.min(window.innerWidth - r.width - 8, x));
-    y = Math.max(8, Math.min(window.innerHeight - r.height - 8, y));
+    x = Math.max(8 + left, Math.min(window.innerWidth - right - r.width - 8, x));
+    y = Math.max(8 + top, Math.min(window.innerHeight - bottom - r.height - 8, y));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   };
@@ -90,7 +96,8 @@ export function toast(msg: string, ms = 2600, action?: { label: string; onClick:
   box.classList.toggle('has-action', !!action);
   // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
   const bar = document.querySelector('.flowbar.show');
-  const base = bar ? `${Math.max(TOAST_BOTTOM, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM}px`;
+  const safeBottom = safeInsets().bottom;
+  const base = bar ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
   box.style.bottom = `max(${base}, var(--ai-top, 0px))`;
   box.classList.add('show');
   clearTimeout(toastTimer);

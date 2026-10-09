@@ -11,6 +11,7 @@ const templateEdit = (id: string): Route => ({ name: 'template-edit', id });
 const board = (id: string): Route => ({ name: 'board', id });
 const verify = (token: string): Route => ({ name: 'verify', token });
 const invite = (token: string): Route => ({ name: 'invite', token });
+const join = (code = ''): Route => ({ name: 'join', code });
 const admin = (tab: AdminTab): Route => ({ name: 'admin', tab });
 
 describe('parseRoute', () => {
@@ -71,6 +72,8 @@ describe('parseRoute', () => {
     ['#/signin/verify?other=1', signin],
     ['#/signin/verify', signin],
     ['#/invite/tok_en-1', invite('tok_en-1')],
+    ['#/join', join()],
+    ['#/join?c=ABCD2345', join('ABCD2345')],
     ['#/invite/', home],
     ['#/invite/a/b', home],
     ['#/unknown', home],
@@ -118,6 +121,10 @@ describe('resolveRoute', () => {
   ])('%s: %j', (mode, hash, route) => {
     expect(resolveRoute(hash, mode)).toEqual(route);
   });
+
+  it('reads a direct /join path and its query code', () => {
+    expect(resolveRoute('', 'signed-out', '/join', '?c=ABCD2345')).toEqual(join('ABCD2345'));
+  });
 });
 
 describe('needsSignIn', () => {
@@ -129,12 +136,14 @@ describe('needsSignIn', () => {
     ['signin', signin],
     ['verify', verify('abc')],
     ['invite', invite('abc')],
+    ['join', join('ABCD2345')],
     ['admin', admin('members')],
     ['chat', { name: 'chat' }],
   ];
   const gated: Record<Mode, string[]> = {
     unknown: [],
     open: [],
+    guest: [],
     offline: [],
     'signed-in': [],
     'signed-out': ['home', 'templates', 'template-edit', 'board', 'admin', 'chat'],

@@ -45,12 +45,17 @@ describe('remote class load script', () => {
         TARGET_CONFIRM: '127.0.0.1',
         TARGET_COOKIES: owner.cookie,
         USERS: '3',
-        SECONDS: '5',
+        SECONDS: '2',
+        LOAD_CLASS_BURST_MS: '500',
+        LOAD_CLASS_SEED_SETTLE_MS: '0',
+        LOAD_CLASS_RESULT_SETTLE_MS: '0',
+        LOAD_CLASS_SAMPLE_INTERVAL_MS: '100',
         CHAT: 'off',
         OUT: cookieOut,
       });
       expect(cookieRun.code, `${cookieRun.stdout}\n${cookieRun.stderr}`).toBe(0);
       expect(cookieRun.stdout).toContain('1 account(s) for 3 users');
+      expect(cookieRun.stdout).toContain('after a 0.5 second join burst');
       expect(cookieRun.stdout).toContain('| n/a | n/a |');
       expect(cookieRun.stdout).toContain('relay CPU and memory: read them from Fly (see docs/capacity.md)');
       expect(cookieRun.stdout).toContain('3 users: OK');
@@ -60,6 +65,8 @@ describe('remote class load script', () => {
       expect(cookieReport.target).toEqual({ host: '127.0.0.1', remote: true, accounts: 1, usersPerAccount: 3 });
       expect(cookieReport.steps[0].connectedUsers).toBe(3);
       expect(cookieReport.steps[0].verdict).toBe('OK');
+      expect(cookieReport.steps[0].joinBurstSeconds).toBe(0.5);
+      expect(cookieReport.configuration.joinBurstSeconds).toBe(0.5);
       expect(cookieReport.steps[0].relay).toEqual({
         rssPeakBytes: null,
         rssEndBytes: null,
@@ -85,7 +92,11 @@ describe('remote class load script', () => {
         TARGET_CONFIRM: '127.0.0.1',
         TARGET_LOGIN_TOKENS: token,
         USERS: '1',
-        SECONDS: '1',
+        SECONDS: '2',
+        LOAD_CLASS_BURST_MS: '500',
+        LOAD_CLASS_SEED_SETTLE_MS: '0',
+        LOAD_CLASS_RESULT_SETTLE_MS: '0',
+        LOAD_CLASS_SAMPLE_INTERVAL_MS: '100',
         CHAT: 'off',
         OUT: tokenOut,
       });
@@ -95,6 +106,7 @@ describe('remote class load script', () => {
       const tokenReport = JSON.parse(tokenReportText);
       expect(tokenReport.target).toEqual({ host: '127.0.0.1', remote: true, accounts: 1, usersPerAccount: 1 });
       expect(tokenReport.steps[0].verdict).toBe('OK');
+      expect(tokenReport.configuration.joinBurstSeconds).toBe(0.5);
       expect(`${tokenRun.stdout}\n${tokenRun.stderr}\n${tokenReportText}`).not.toContain(owner.cookie);
       expect(`${tokenRun.stdout}\n${tokenRun.stderr}\n${tokenReportText}`).not.toContain(token);
     } finally {

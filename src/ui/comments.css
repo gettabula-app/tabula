@@ -1,6 +1,6 @@
 /* comment card (floating, next to a pin or a click) */
 .comment-card {
-  position: fixed; z-index: 40; width: 320px; max-width: min(340px, calc(100vw - 24px)); padding: 12px; box-sizing: border-box;
+  position: fixed; z-index: 40; width: 320px; max-width: min(340px, calc(100vw - 24px - var(--safe-left) - var(--safe-right))); padding: 12px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px;
 }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
@@ -10,6 +10,7 @@
 .comment-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .comment-time, .comment-row-meta { color: var(--tray-muted); font-size: 12px; white-space: nowrap; }
 .comment-badge { padding: 2px 7px; border-radius: 0; background: var(--tray-2); color: var(--tray-muted); font-size: 11.5px; font-weight: 600; }
+.comment-guest { background: var(--signal); color: var(--on-signal); }
 .comment-avatar {
   width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
   display: grid; place-items: center; font: 700 11px var(--ui);
@@ -42,12 +43,12 @@
 :root .chrome > .side-tray.tray,
 :root:not([data-theme='default']) .chrome > .side-tray.tray { border-radius: 0; box-shadow: none; }
 .side-tray {
-  position: absolute; right: 12px; top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px));
-  max-height: calc(100% - var(--panel-top) - 84px); display: none; flex-direction: column; box-sizing: border-box;
+  position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px - var(--safe-right)));
+  max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); display: none; flex-direction: column; box-sizing: border-box;
   border: 1px solid var(--tray-line);
 }
 .side-tray.show { display: flex; }
-.side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px); }
+.side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); }
 .side-tray-head {
   flex: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 16px;
   border-bottom: 2px solid var(--tray-text);
@@ -77,5 +78,6 @@
 }
 .comment-row:hover { background: var(--tray-hover); }
 .comment-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.comment-row-author { font-size: 11.5px; color: var(--tray-muted); }
 .comment-row-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .comments-empty { padding: 16px 8px; text-align: center; }

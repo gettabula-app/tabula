@@ -16,6 +16,12 @@ Select **Share** at the top right of a board (or the sync status next to the boa
 - With sign-in, the dialog tells you that only people with access can open the link. Send the link to people who already have access.
 - If you own the board (workspace owners and admins count as owners of every board), the dialog also has a **People with access** list. See [Give a person or team a role](#give-a-person-or-team-a-role).
 
+### Join a board with a code
+
+Your server can turn on join codes (it is off by default; ask whoever runs the server). Then an **Owner** or **Editor** sees **Join code** in the **Share** dialog. Choose the guest's role (**Commenter** or **Editor**), how long the code lasts (3 hours by default, up to 24) and how many people can use it (100 by default, up to 1,000), then create it. The code is shown once, with a link to copy: keep it private, because anyone who has it can join until it expires or is revoked.
+
+A guest opens the link, types a display name and joins that one board without an account. They can reach nothing else in the workspace. Guests are marked **Guest** next to their names in presence and comments. Select **Revoke** on a code to end it and every guest session made from it. If join codes are turned off on the server, guests are signed out.
+
 ### Give a person or team a role
 
 1. Open **Share** on the board.
@@ -26,6 +32,12 @@ Select **Share** at the top right of a board (or the sync status next to the boa
 Each row has a role menu that saves when you change it, and a **Remove** button (select it twice to confirm). Changes reach people who already have the board open at once. Someone whose access is removed sees a banner and keeps their copy on their own device.
 
 Adding a team gives every member of that team the role, unless they already have a higher one. To invite someone who is not in your workspace yet, send a team invite instead (see below).
+
+### Let a guest join with a code
+
+Workspaces can enable **Join code** in the Share dialog for board editors and owners. The server operator turns it on with `TABULA_JOIN_CODES=on`; it is off by default. Create a code for a **Commenter** or **Editor**, then choose its expiry (up to 24 hours) and number of uses. The code appears once, with a link you can copy. Send it only to the people you want on that board.
+
+The guest opens **Join with a code**, enters a display name, and joins without an account. Their session expires with the code and is limited to that board. A commenter can read and comment; an editor can edit and add images within the board's normal image limits. They cannot open other boards or use workspace, admin, chat, AI or MCP APIs. Revoking a code ends sessions that joined with it and closes their open board connections. See [Join codes](../join-codes.md) for the security and limits.
 
 ![The Share this board dialog showing the team Design as Editor and Ana as Commenter, with the Add a person or team row below](images/share-roles.png)
 

@@ -21,6 +21,9 @@ import { DEMO } from './demo';
 
 const DEMO_IMPORT_COMPRESSED_LIMIT = 20 * 1024 * 1024;
 const DEMO_IMPORT_UNCOMPRESSED_LIMIT = 100 * 1024 * 1024;
+const FONT_FETCH_TIMEOUT_MS = 8000;
+const FONT_CSS_LIMIT_BYTES = 256 * 1024;
+const EMBEDDED_FONT_LIMIT_BYTES = 1_500_000;
 
 export interface BoardJson {
   format: 'driftboard';
@@ -337,13 +340,7 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
   };
   const body = objs.map((o) => objectMarkup(app.store.placed(o), ctx)).join('\n');
-  let style = opts.fontCss ?? '';
-  if (!opts.fontCss) {
-    style = [...usedFonts(objs)].flatMap(([slug, ws]) => {
-      const url = cssUrl(slug, [...ws]);
-      return url ? [`@import url("${url}");`] : [];
-    }).join('\n');
-  }
+  const style = opts.fontCss ?? '';
   const bg = opts.background === false ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#FFFFFF"/>`;
   const svg = resolveColorMix(resolveCssVars(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(w)}" height="${Math.ceil(h)}" viewBox="${x} ${y} ${w} ${h}"><defs>${SVG_DEFS}<style><![CDATA[
 ${style.replace(/]]>/g, '')}
@@ -351,10 +348,11 @@ ${style.replace(/]]>/g, '')}
   return { svg, w, h };
 }
 
-/** The SVG of the board (or of `ids`) with its pictures inlined, so the file stands on its own. */
+/** The SVG of the board (or of `ids`) with its pictures and available fonts inlined, so the file stands on its own. */
 export async function exportSvgFile(app: BoardApp, ids?: Id[]): Promise<string> {
   const objs = ids?.length ? gatherForExport(app, ids) : app.store.shown();
-  return exportSvg(app, ids, { images: await imageDataUrls(app, objs) }).svg;
+  const fontCss = await inlineFontCss(objs);
+  return exportSvg(app, ids, { fontCss, images: await imageDataUrls(app, objs) }).svg;
 }
 
 function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
@@ -379,53 +377,149 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
   return app.store.shown().filter((o) => set.has(o.id));
 }
 
-/** fetch that gives up after `ms`, so an unreachable font never stalls an export. */
-async function fetchWithin(url: string, ms = 8000): Promise<Response> {
+/** Fetch and consume a response within `ms`, so a slow font never stalls an export. */
+async function fetchWithin<T>(url: string, read: (res: Response) => Promise<T>, ms = FONT_FETCH_TIMEOUT_MS, signal?: AbortSignal): Promise<T> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
+  let timer: ReturnType<typeof setTimeout>;
+  let rejectAbort!: (error: Error) => void;
+  const aborted = signal ? new Promise<T>((_, reject) => { rejectAbort = reject; }) : null;
+  const onAbort = () => {
+    ctrl.abort();
+    rejectAbort(new Error(`Font fetch deadline exceeded: ${url}`));
+  };
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort, { once: true });
+  const timedOut = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort();
+      reject(new Error(`Font fetch timed out: ${url}`));
+    }, ms);
+  });
   try {
-    return await fetch(url, { signal: ctrl.signal });
+    const request = (async () => {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`Font fetch failed (${res.status}): ${url}`);
+      return read(res);
+    })();
+    return await Promise.race([request, timedOut, ...(aborted ? [aborted] : [])]);
   } finally {
-    clearTimeout(t);
+    clearTimeout(timer!);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
-async function toDataUrl(url: string): Promise<string> {
-  const res = await fetchWithin(url);
-  const blob = await res.blob();
-  return await new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = reject;
-    r.readAsDataURL(blob);
-  });
+async function responseBytes(res: Response, maxBytes: number): Promise<Uint8Array> {
+  const contentLength = res.headers.get('content-length');
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
+    try { await res.body?.cancel(); } catch { /* the response may already be closed */ }
+    throw new Error(`Font response exceeds ${maxBytes} bytes`);
+  }
+  if (!res.body) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new Error(`Font response exceeds ${maxBytes} bytes`);
+    return bytes;
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (size + value.byteLength > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Font response exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } catch (error) {
+    try { await reader.cancel(); } catch { /* the stream may already be closed */ }
+    throw error;
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function toDataUrl(url: string, maxBytes: number, signal: AbortSignal): Promise<{ dataUrl: string; bytes: number }> {
+  return fetchWithin(url, async (res) => {
+    const bytes = await responseBytes(res, maxBytes);
+    if (!bytes.byteLength) throw new Error('Font response was empty');
+    return { dataUrl: `data:font/woff2;base64,${bytesToBase64(bytes)}`, bytes: bytes.byteLength };
+  }, FONT_FETCH_TIMEOUT_MS, signal);
+}
+
+function faceUsesWeight(face: string, weights: Set<number>): boolean {
+  const declaration = face.match(/\bfont-weight\s*:\s*([^;}]+)/i)?.[1];
+  const range = declaration?.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  if (range.length === 1) return weights.has(range[0]);
+  if (range.length === 2) return [...weights].some((weight) => weight >= range[0] && weight <= range[1]);
+  return false;
 }
 
 /**
- * Fonts referenced by a board, inlined as data URLs so the rasteriser (which
- * cannot load external resources) draws the real typefaces. The data stays in
- * this browser; only the resulting pixels are exported.
+ * Fonts referenced by a board, inlined as data URLs. Fonts are fetched only
+ * while exporting; the SVG and PNG then work without a Fontshare request.
  */
 async function inlineFontCss(objs: Obj[]): Promise<string> {
   const parts: string[] = [];
-  for (const [slug, ws] of usedFonts(objs)) {
-    try {
+  let embeddedBytes = 0;
+  const deadline = new AbortController();
+  const deadlineTimer = setTimeout(() => deadline.abort(), FONT_FETCH_TIMEOUT_MS);
+  try {
+    for (const [slug, ws] of usedFonts(objs)) {
+      if (deadline.signal.aborted || embeddedBytes >= EMBEDDED_FONT_LIMIT_BYTES) break;
       const url = cssUrl(slug, [...ws]);
       if (!url) continue;
-      const css = await (await fetchWithin(url)).text();
-      const name = fontName(slug).toLowerCase();
-      // The endpoint sometimes returns faces of other families too; keep only ours.
-      const faces = (css.match(/@font-face\s*{[^}]*}/g) || []).filter((f) => f.toLowerCase().includes(`'${name}'`) || f.toLowerCase().includes(`"${name}"`));
-      for (const face of faces) {
-        const woff2 = face.match(/url\(['"]?([^'")]+?)['"]?\)\s*format\(['"]woff2['"]\)/);
-        if (!woff2) continue;
-        const href = woff2[1].startsWith('//') ? 'https:' + woff2[1] : woff2[1];
-        const data = await toDataUrl(href);
-        parts.push(face.replace(/src:[^;]+;/, `src: url(${data}) format('woff2');`));
+      let css: string;
+      try {
+        css = await fetchWithin(url, async (res) => new TextDecoder().decode(await responseBytes(res, FONT_CSS_LIMIT_BYTES)), FONT_FETCH_TIMEOUT_MS, deadline.signal);
+      } catch {
+        continue; // offline, blocked or malformed response: use the system fallback
       }
-    } catch {
-      /* offline and not cached: falls back to system fonts */
+
+      const name = fontName(slug).toLowerCase();
+      const faces = css.match(/@font-face\s*{[^}]*}/gi) ?? [];
+      for (const face of faces) {
+        if (deadline.signal.aborted || embeddedBytes >= EMBEDDED_FONT_LIMIT_BYTES) break;
+        const family = face.match(/\bfont-family\s*:\s*([^;}]+)/i)?.[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+        if (family?.toLowerCase() !== name || !faceUsesWeight(face, ws)) continue;
+        const woff2 = face.match(/url\(\s*(['"]?)([^'")]+)\1\s*\)\s*format\(\s*(['"])woff2\3\s*\)/i);
+        const src = face.match(/\bsrc\s*:[^;]*;?/i);
+        if (!woff2 || !src) continue;
+        let href: string;
+        try {
+          const parsed = new URL(woff2[2], url);
+          if (parsed.protocol !== 'https:' || parsed.hostname !== 'cdn.fontshare.com') continue;
+          href = parsed.href;
+        } catch {
+          continue;
+        }
+        try {
+          const font = await toDataUrl(href, EMBEDDED_FONT_LIMIT_BYTES - embeddedBytes, deadline.signal);
+          embeddedBytes += font.bytes;
+          parts.push(face.replace(src[0], `src: url("${font.dataUrl}") format("woff2");`));
+        } catch {
+          /* a failed or over-cap face uses the system fallback */
+        }
+      }
     }
+  } finally {
+    clearTimeout(deadlineTimer);
   }
   return parts.join('\n');
 }

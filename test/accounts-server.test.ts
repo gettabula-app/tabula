@@ -219,7 +219,7 @@ describe('accounts mode server', () => {
 
   describe('sign-in', () => {
     it('is public for config and health, and bootstraps the owner from TABULA_OWNER_EMAIL', async () => {
-      expect((await api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: true });
+      expect((await api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: true, images: true });
       const health = await api(undefined, 'GET', '/api/health');
       expect(health.body.ok).toBe(true);
       expect((await api(undefined, 'GET', '/api/me')).status).toBe(401);
@@ -348,6 +348,13 @@ describe('accounts mode server', () => {
   });
 
   describe('request handling', () => {
+    it('keeps join-code routes and config hidden when the setting is off', async () => {
+      expect((await api(owner.cookie, 'GET', '/api/config')).body).toEqual({ authEnabled: true, images: true });
+      expect((await api(undefined, 'POST', '/api/join', { code: 'ABCD2345', name: 'Guest' })).status).toBe(404);
+      expect((await api(owner.cookie, 'POST', '/api/boards/board123/join-codes', { role: 'editor' })).status).toBe(404);
+      expect((await api(owner.cookie, 'GET', '/api/boards/board123/join-codes')).status).toBe(404);
+    });
+
     it('answers every /api path in JSON, never with the app, and marks it uncacheable', async () => {
       const missing = await api(owner.cookie, 'GET', '/api/nope/at/all');
       expect(missing.status).toBe(404);

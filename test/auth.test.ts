@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -7,8 +8,10 @@ import type { AddressInfo } from 'node:net';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import { hashJoinCode, loadJoinCodeSecret } from '../server/join-codes.mjs';
 import nodemailer from 'nodemailer';
 import { createMailer } from '../server/mailer.mjs';
+import { isWindows } from './platform';
 
 type Mail = { to: string; subject: string; text: string };
 type Ctx = ReturnType<typeof setup>;
@@ -155,6 +158,48 @@ describe('requestLogin', () => {
     expect(await throwing.requestLogin({ email: 'known@example.com', ip: '1.1.1.2' })).toEqual({ ok: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(errors).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('guest session authentication', () => {
+  it('rejects existing guest credentials when join codes are disabled in both auth paths', () => {
+    const enabled = setup({ TABULA_JOIN_CODES: 'on' });
+    const owner = enabled.d.createUser({ email: OWNER, role: 'owner' })!;
+    const board = enabled.d.createBoard({ id: 'guest-auth-board', ownerId: owner.id })!;
+    const code = enabled.d.createJoinCode({
+      boardId: board.id, createdBy: owner.id, codeHash: 'a'.repeat(64), role: 'editor',
+      createdAt: T0, expiresAt: T0 + HOUR, maxUses: 10,
+    })!;
+    const token = 'existing-guest-cookie-token';
+    enabled.d.createGuestSession(code.id, {
+      tokenHash: crypto.createHash('sha256').update(token).digest('hex'), name: 'Guest', now: T0,
+    });
+    const cookieHeader = `${enabled.config.cookieName}=${token}`;
+    expect(enabled.auth.authenticate(cookieHeader)?.guest).toBe(true);
+    expect(enabled.auth.authenticateGuest(cookieHeader)?.guest).toBe(true);
+
+    const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_JOIN_CODES: 'off', PORT: '8787' });
+    const disabled = createAuth({ directory: enabled.d, config, mailer: { send: async () => {} }, now: () => T0 });
+    expect(disabled.authenticate(cookieHeader)).toBeNull();
+    expect(disabled.authenticateGuest(cookieHeader)).toBeNull();
+  });
+});
+
+describe('join-code secret storage', () => {
+  it('stores the code digest as an HMAC keyed by the private per-instance file', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-join-code-secret-'));
+    tmpDirs.push(dataDir);
+    const secret = loadJoinCodeSecret(dataDir);
+    const code = 'ABCD2345';
+    const digest = hashJoinCode(code, secret);
+
+    expect(secret).toHaveLength(32);
+    // POSIX permission bits do not exist on Windows (the file reports 0o666), so the owner-only mode can only be checked on POSIX systems
+    expect(isWindows ? 0o600 : fs.statSync(path.join(dataDir, 'join-code.secret')).mode & 0o777).toBe(0o600);
+    expect(digest).toBe(crypto.createHmac('sha256', secret).update(code).digest('hex'));
+    expect(digest).not.toBe(crypto.createHash('sha256').update(code).digest('hex'));
+    expect(hashJoinCode(code, loadJoinCodeSecret(dataDir))).toBe(digest);
+    expect(hashJoinCode(code, crypto.randomBytes(32))).not.toBe(digest);
   });
 });
 
@@ -731,6 +776,16 @@ describe('loadConfig', () => {
     expect(loadConfig({ MIRA_AUTH: 'on', TABULA_AUTH: 'off' }, warn).authEnabled).toBe(false);
     expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER }, warn).authEnabled).toBe(true);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps join codes off by default and only enables them with accounts mode', () => {
+    expect(loadConfig({}).joinCodes).toBeUndefined();
+    expect(loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_JOIN_CODES: 'on' }).joinCodes).toBe(true);
+    const warnings: string[] = [];
+    const open = loadConfig({ TABULA_JOIN_CODES: 'on' }, (warning) => warnings.push(warning));
+    expect(open.joinCodes).toBeUndefined();
+    expect(warnings).toContain('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
+    expect(() => loadConfig({ TABULA_JOIN_CODES: 'yes' })).toThrow('TABULA_JOIN_CODES must be on or off');
   });
 
   it('names the TABULA_ variables in the half-set cloud error, also when they were set as MIRA_', () => {

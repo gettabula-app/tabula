@@ -49,7 +49,9 @@ import { avatarLine, badgeRun } from '../ai-live-logic';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
-import { canManageShares } from './share-logic';
+import { mountJoinCodes } from './join-codes';
+import { guestMark } from './guest-mark';
+import { canManageJoinCodes, canManageShares } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
@@ -127,7 +129,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
     // who arrived and who left since the last time, said once the first list is known
-    const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, p.user.name]));
+    const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, `${p.user.name}${p.user.guest ? ' · Guest' : ''}`]));
     if (knownPeople) {
       for (const [id, who] of now) if (!knownPeople.has(id)) announce(`${who} joined`, { key: 'presence', delay: 700, merge: true });
       for (const [id, who] of knownPeople) if (!now.has(id)) announce(`${who} left`, { key: 'presence', delay: 700, merge: true });
@@ -137,11 +139,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     people.replaceChildren(...ps.slice(0, 6).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
-      const tip = busy ? avatarLine(busy) : p.isMe ? `${p.user.name} (you)` : `Go to ${p.user.name}`;
+      const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
+      const tip = busy ? `${avatarLine(busy)} · ${name}` : p.isMe ? `${name} (you)` : `Go to ${name}`;
       return h('button', {
         class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': tip,
         onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)),
-      }, initials(p.user.name), busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null);
+      }, initials(p.user.name), p.user.guest ? guestMark('avatar-guest') : null,
+      busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null);
     }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
   };
   app.on('presence', renderPeople);
@@ -157,7 +161,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     scratch || demo ? null : people,
     scratch ? null : comments.button,
     chat?.button,
-    scratch || demo ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
 
@@ -627,6 +631,7 @@ function openShare(app: BoardApp) {
   const accounts = auth.mode === 'signed-in' || (auth.mode === 'offline' && auth.me !== null);
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   const manage = me !== null && canManageShares(app.role, accounts);
+  const canCreateJoinCode = canManageJoinCodes(me, app.role);
   dialog('Share this board', h('div', { class: 'stack' },
     h('p', null, accounts
       ? `Only people with access to this board can open this link: members of the board's team, and anyone it has been shared with. ${manage ? 'Give people or teams access below.' : 'Add people from a team on the home screen, or share the board from there.'}`
@@ -637,6 +642,7 @@ function openShare(app: BoardApp) {
           : 'Sync is turned off, so this board is only on your device. Turn on a relay in Board settings to collaborate.'),
     h('div', { class: 'copy-row' }, input, h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Link copied'), () => { input.select(); }) }, icon('link', 16), 'Copy link')),
     me && manage ? mountSharePeople(app.conn.id, me) : null,
+    canCreateJoinCode ? mountJoinCodes(app.conn.id) : null,
     h('p', { class: 'muted small' }, relay ? `Relay: ${relay.replace(/^ws/, 'http')}` : 'Relay: off'),
   ), [{ label: 'Done', primary: true }]);
 }

@@ -152,6 +152,32 @@ export const MIGRATIONS = [
   `,
   // The model of an AI key whose provider has no fixed list of them (docs/ai.md, OpenAI-compatible).
   AI_KEYS_MODEL_MIGRATION,
+  // One-board guest entry codes and their bounded guest sessions (TAB-144).
+  `
+  CREATE TABLE join_codes (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    code_hash TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('commenter', 'editor')),
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    max_uses INTEGER NOT NULL,
+    uses INTEGER NOT NULL DEFAULT 0,
+    revoked_at INTEGER
+  );
+  CREATE INDEX join_codes_board ON join_codes(board_id, created_at DESC);
+  CREATE TABLE guest_sessions (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    join_code_id TEXT NOT NULL REFERENCES join_codes(id) ON DELETE CASCADE,
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX guest_sessions_expiry ON guest_sessions(expires_at);
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -490,14 +516,75 @@ export function openDirectory(file) {
     return run('UPDATE sessions SET revoked = 1 WHERE user_id = ? AND revoked = 0', userId);
   }
 
+  // Join codes are one-use-to-create-guest-session credentials; their secret and guest cookies are stored only as hashes.
+  function createJoinCode({ boardId, createdBy, codeHash, role, createdAt, expiresAt, maxUses }) {
+    const id = newId();
+    run('INSERT INTO join_codes (id, board_id, created_by, code_hash, role, created_at, expires_at, max_uses, uses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
+      id, boardId, createdBy, codeHash, role, createdAt, expiresAt, maxUses);
+    return getJoinCode(id);
+  }
+
+  const toJoinCode = (r) => ({
+    id: r.id, boardId: r.board_id, createdBy: r.created_by, codeHash: r.code_hash, role: r.role,
+    createdAt: r.created_at, expiresAt: r.expires_at, maxUses: r.max_uses, uses: r.uses, revokedAt: r.revoked_at,
+  });
+
+  function getJoinCode(id) {
+    const row = typeof id === 'string' ? get('SELECT * FROM join_codes WHERE id = ?', id) : undefined;
+    return row ? toJoinCode(row) : null;
+  }
+
+  function findJoinCodeByHash(codeHash) {
+    const row = typeof codeHash === 'string' ? get('SELECT * FROM join_codes WHERE code_hash = ?', codeHash) : undefined;
+    return row ? toJoinCode(row) : null;
+  }
+
+  function listJoinCodes(boardId) {
+    return all('SELECT * FROM join_codes WHERE board_id = ? ORDER BY created_at DESC, id', boardId).map(toJoinCode);
+  }
+
+  function revokeJoinCode(id, now = Date.now()) {
+    const row = getJoinCode(id);
+    if (!row) return null;
+    if (row.revokedAt === null) run('UPDATE join_codes SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL', now, id);
+    return getJoinCode(id);
+  }
+
+  /** Atomically spends one use and creates a guest cookie whose expiry is the code's expiry. */
+  function createGuestSession(joinCodeId, { tokenHash, name, now = Date.now() }) {
+    const row = getJoinCode(joinCodeId);
+    if (!row || row.revokedAt !== null || row.expiresAt <= now || row.uses >= row.maxUses) return null;
+    const changed = run('UPDATE join_codes SET uses = uses + 1 WHERE id = ? AND revoked_at IS NULL AND expires_at > ? AND uses < max_uses', joinCodeId, now);
+    if (changed !== 1) return null;
+    const id = newId();
+    run('DELETE FROM guest_sessions WHERE expires_at <= ?', now - DAY_MS);
+    run('INSERT INTO guest_sessions (id, token_hash, join_code_id, board_id, name, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id, tokenHash, joinCodeId, row.boardId, name, now, row.expiresAt);
+    return { id, boardId: row.boardId, name, role: row.role, expiresAt: row.expiresAt };
+  }
+
+  function getGuestSession(tokenHash, now = Date.now()) {
+    if (typeof tokenHash !== 'string') return null;
+    const row = get(
+      `SELECT s.id, s.board_id, s.name, s.expires_at, c.role
+         FROM guest_sessions s JOIN join_codes c ON c.id = s.join_code_id
+         JOIN boards b ON b.id = s.board_id
+        WHERE s.token_hash = ? AND s.expires_at > ? AND c.revoked_at IS NULL AND c.expires_at > ? AND b.deleted_at IS NULL`,
+      tokenHash, now, now,
+    );
+    return row ? { id: row.id, boardId: row.board_id, name: row.name, role: row.role, expiresAt: row.expires_at } : null;
+  }
+
   /**
-   * Every session ends and every sign-in link stops working (server/volume.mjs, adopting a volume: tokens issued on
-   * the volume a snapshot was taken of must not work on the copy). Returns how many of each there were.
+   * Every account and guest session ends, every join code is revoked and every sign-in link stops working
+   * (server/volume.mjs, adopting a volume: credentials issued on the source volume must not work on the copy).
    */
-  function revokeAllSessions() {
+  function revokeAllSessions(now = Date.now()) {
     return transaction(() => ({
       sessions: run('UPDATE sessions SET revoked = 1 WHERE revoked = 0'),
       loginTokens: run('DELETE FROM login_tokens'),
+      guestSessions: run('DELETE FROM guest_sessions'),
+      joinCodes: run('UPDATE join_codes SET revoked_at = ? WHERE revoked_at IS NULL', now),
     }));
   }
 
@@ -941,6 +1028,13 @@ export function openDirectory(file) {
     consumeLoginToken,
     createSession,
     getSession,
+    createJoinCode,
+    getJoinCode,
+    findJoinCodeByHash,
+    listJoinCodes,
+    revokeJoinCode,
+    createGuestSession,
+    getGuestSession,
     revokeSession,
     revokeUserSessions,
     revokeAllSessions,

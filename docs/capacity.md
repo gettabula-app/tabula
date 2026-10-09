@@ -6,6 +6,8 @@ Run `node scripts/load-class.mjs` or `npm run load:class` from the repository. `
 
 The harness starts a throwaway accounts-mode relay and one team board per step. The teacher owns each board; the other participants sign in through a team invite and receive editor access from team membership. Each board starts with 150 sticky notes. Participants join over a 10-second burst, then run the activity for the requested duration. The simulated clients use real y-websocket providers, awareness cursors, document edits, and board chat sockets and posts.
 
+For fast remote-mode tests against a local relay only, set `LOAD_CLASS_BURST_MS`, `LOAD_CLASS_SEED_SETTLE_MS`, `LOAD_CLASS_RESULT_SETTLE_MS`, or `LOAD_CLASS_SAMPLE_INTERVAL_MS` to non-negative whole numbers of milliseconds. Defaults are 10000, 250, 100, and 500 respectively. These overrides are ignored when `TARGET_URL` is absent and refused for non-local targets; they are intended for local automated tests, not capacity measurements. `SECONDS` still controls activity duration.
+
 The summary reports relay RSS and CPU, sync-marker latency, time to first sync, generator event-loop lag, sign-in and socket failures, chat 429/5xx responses, relay stderr and relay exit. CPU is shown as a percentage of one local core. A Fly `shared-cpu-1x` gets a fraction of a core with burst capacity, so local CPU percentages are a lower bound on pressure there. A generator lag p95 over 50 ms makes that step's latency untrustworthy; the clients already run in worker threads, so distribute the clients over a second process and rerun.
 
 This is a local relay measurement, not a Fly benchmark: the laptop CPU does not match a Fly shared CPU, the run has no TLS or proxy, and there are no real browsers or rendering costs. Rendering is client-side and is not measured here. The laptop output alone cannot justify a Fly machine size; run the 30, 60 and 100-user cases on a staging machine with the candidate Fly CPU and memory to make that recommendation. A short local smoke run only checks that the harness works.
@@ -73,3 +75,29 @@ This is a runbook for a later, approved run. It has not been run against Fly. Th
 | 100 | 262 | 68 / 91 % | 9 / 291 / 1,535 | 30 | 0 |
 
 The generator's own lag stayed under 10 ms p95, so the latencies are the relay's. CPU is what runs out first: the relay is one Node thread, and at 100 people it uses most of a whole fast core while latency p95 climbs from 15 ms to 291 ms. Memory grows with the people on the board (about 1 MB each) and is the second limit. The workload (cursors every 50 ms half of the time, a note every 8-12 s, a move every 4 s, a chat message every 30 s per person) is an estimate of a lively class, not a measurement of one.
+
+## Local baseline (TAB-227, 2026-10-09 and 10)
+
+What the local load test says about a class on one board, for the education copy. **It is a laptop result, not a Fly result**: the relay ran on one core of an Apple M1 Pro (10 cores, 32 GB) with Node's heap capped at 384 MB to mimic the 512 MB machine (`--max-old-space-size=384`), without TLS or a proxy, with no real browsers (so no rendering cost). A Fly `shared-cpu-1x` has a small share of a core and will be slower; the Fly run in the runbook above is what sizes the machine.
+
+Setup of every run: accounts mode with chat on, one team board of 150 notes, everyone joins in a 10 s burst, then 60 s of activity per person (cursors about 20 times a second while moving, a note every 8 to 12 s, a move every 4 s, a chat message every 30 s). Sync latency is a marker write by one person arriving at the others, measured in the load generator.
+
+| People | Code | Sync p50 / p95 / max (ms) | Relay RSS peak (MB) | CPU of one core, avg / peak 5 s (%) | Generator lag p95 (ms) | Errors | Verdict |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 30 | main e288a33, three runs | 1 / 6 to 18 / 155 to 166 | 115 to 122 | 10 to 11 / 14 to 17 | 3 to 7 | 0 | OK in all three |
+| 60 | main e288a33, quiet run | 1 / 8 / 70 | 163 | 28 / 35 | 2 | 0 | OK |
+| 60 | older code (9a2cf6a), quiet run | 1 / 8 / 67 | 159 | 27 / 33 | 2 | 0 | OK |
+| 100 | main e288a33, quiet run | 8 / 212 / 1,040 | 254 | 71 / 89 | 7 | 0 | OK |
+| 100 | older code (9a2cf6a), quiet run | 25 / 458 / 1,302 | 263 | 72 / 93 | 8 | 0 | OK, close to the 500 ms line |
+
+A "quiet run" started with the machine's load average under 8 and the generator's own lag at 2 to 8 ms, so the latencies are the relay's. Other runs were disturbed by other work on the same laptop (load average 20 to 110, generator lag 30 to 350 ms) and are not used: they showed 60 people at p95 1.1 to 3.2 s and 100 people at p95 2.5 to 21 s, which is what an overloaded machine looks like, and the script flags them as untrustworthy. The first run of this test (code from 4 October, quiet) gave 4 ms at 30 people, 15 ms at 60 and 291 ms at 100.
+
+What this supports, and what it does not:
+
+- **A class of 30 on one board** runs with sync under 20 ms at p95, a relay using about a tenth of a core and about 120 MB, no errors. This holds in every run.
+- **60 people** is also comfortable (p95 8 ms, a third of a core, 160 MB).
+- **100 people** works on a full fast core (p95 0.2 to 0.5 s, 71 % of the core on average and 89 to 93 % at the peaks), but with little headroom: it is the point where the relay's single thread is nearly full. Do not promise 100 on one board without a dedicated CPU.
+- The current code is no slower than the code of 4 October (the old and new runs agree within the run-to-run spread; the new run was even lower at 100).
+- **Not shown:** anything about `shared-cpu-1x`, real network latency, TLS, browsers' own rendering, or several busy boards at once. Memory grows by about 1 MB per person and stays well under 512 MB at 100.
+
+A claim that can be defended today: "a class of 30 works on one board in our tests; 60 is comfortable; 100 is possible on dedicated hardware". Anything larger or any statement about the cheapest machine waits for the Fly run.

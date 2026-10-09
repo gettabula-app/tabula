@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardRole, Member, Share, Team, TeamMember } from '../src/api';
-import { DEFAULT_SHARE_ROLE, SHARE_ROLES, buildCandidates, canManageShares, shareRoleLabel, sortShares } from '../src/ui/share-logic';
+import type { BoardRole, Me, Member, Share, Team, TeamMember } from '../src/api';
+import { DEFAULT_SHARE_ROLE, SHARE_ROLES, buildCandidates, canManageJoinCodes, canManageShares, shareRoleLabel, sortShares } from '../src/ui/share-logic';
 
 const team = (id: string, name: string, memberCount = 2, archived = false): Team => ({ id, name, role: 'member', memberCount, archived });
 const tm = (userId: string, name: string, email = `${userId}@example.com`): TeamMember => ({ userId, name, email, role: 'member' });
@@ -33,6 +33,20 @@ describe('canManageShares', () => {
     ['viewer', false, false],
   ] as [BoardRole | null, boolean, boolean][])('role %s with accounts %s gives %s', (role, accounts, expected) => {
     expect(canManageShares(role, accounts)).toBe(expected);
+  });
+});
+
+describe('canManageJoinCodes', () => {
+  it.each([
+    [null, 'owner', false],
+    [{ joinCodes: false }, 'owner', false],
+    [{ joinCodes: true }, 'owner', true],
+    [{ joinCodes: true }, 'editor', true],
+    [{ joinCodes: true }, 'commenter', false],
+    [{ joinCodes: true }, 'viewer', false],
+    [{ joinCodes: true }, null, false],
+  ] as [Pick<Me, 'joinCodes'> | null, BoardRole | null, boolean][])('setting %s and board role %s gives %s', (me, role, expected) => {
+    expect(canManageJoinCodes(me, role)).toBe(expected);
   });
 });
 
