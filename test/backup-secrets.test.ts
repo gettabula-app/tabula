@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createBackup, deriveKeys, loadBackupConfig } from '../server/backup.mjs';
-import { CREDS, HOUR, KEY, KEY_OTHER, KEY_PREVIOUS, VERSION_A, docBytes, envFor, harness, type Harness } from './backup-harness';
+import fs from 'node:fs';
+import path from 'node:path';
+import { RestoreError } from '../server/restore.mjs';
+import { CREDS, HOUR, KEY, KEY_OTHER, KEY_PREVIOUS, MIN, VERSION_A, docBytes, envFor, harness, type Harness } from './backup-harness';
+import { CONFIRM, backupNow, becomeB, databaseOf, forge, ownerOf, rig, seedA } from './restore-harness';
 
 // docs/backups.md. The canary test: recognisable secrets go in, every way the engine can fail is provoked, and the
 // logs, the status, the stored status, the audit rows, the results, the thrown errors and the bucket are searched
@@ -228,5 +232,132 @@ describe('nothing the engine says contains a secret', () => {
     await engine.runNow();
     const manifest = await engine.readManifest((await engine.listManifests())[0].name);
     for (const f of manifest.files as { path: string }[]) expect(f.path).toMatch(/^[A-Za-z0-9_~./-]+$/);
+  });
+});
+
+describe('nothing the restore says contains a secret', () => {
+  it('through failures at every stage, hostile storage answers, tampering, board copies and a restore that succeeds', async () => {
+    h = await harness({ accounts: true, env: { TABULA_BACKUP_KEY_PREVIOUS: KEY_PREVIOUS.toString('hex') } });
+    seedA(h);
+    const real = globalThis.fetch;
+    const authorizations: string[] = [];
+    const outputs: string[] = [];
+    const record = (label: string, value: unknown) => {
+      outputs.push(`${label}: ${typeof value === 'string' ? value : JSON.stringify(value, value instanceof Error ? Object.getOwnPropertyNames(value) : undefined)}`);
+    };
+    const hostile = `key=${spellings(KEY).join(' ')} previous=${spellings(KEY_PREVIOUS).join(' ')} secret=${CREDS.secretKey} access=${CREDS.accessKey}`;
+    let behaviour: 'normal' | 'hostile-error' | 'hostile-put' | 'throws' = 'normal';
+    const wrapped = async (url: string, init: RequestInit) => {
+      const auth = (init.headers as Record<string, string>)?.authorization;
+      if (auth) authorizations.push(auth);
+      if (behaviour === 'throws') throw Object.assign(new TypeError(`fetch failed ${hostile} ${auth}`), { cause: Object.assign(new Error(hostile), { code: 'ECONNRESET' }) });
+      if ((behaviour === 'hostile-error' && init.method !== 'HEAD') || (behaviour === 'hostile-put' && init.method === 'PUT')) {
+        return new Response(`<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>${hostile}</Message><RequestId>${auth}</RequestId></Error>`, { status: 403 });
+      }
+      return real(url, init);
+    };
+    const r = rig(h, { backup: h.engine({ fetch: wrapped }) });
+    const first = await backupNow(h.engine());
+    h.clock.now += HOUR;
+    becomeB(h);
+    h.clock.now += MIN;
+    const actor = ownerOf(h);
+    const attempt = async (label: string, fn: () => Promise<unknown>) => {
+      const failure = await fn().then(
+        (done) => {
+          record(label, done as object);
+          return null;
+        },
+        (err) => err as RestoreError,
+      );
+      expect(failure === null || failure instanceof RestoreError, `${label} failed with something else`).toBe(true);
+      if (failure) record(label, { message: failure.message, code: failure.code, extra: failure.extra });
+      h.clock.now += 11 * MIN;
+    };
+    const whole = (manifest: string) => () => r.restore.restoreWorkspace({ manifest, confirm: CONFIRM, actor });
+    const board = (manifest: string, boardId = 'b1') => () => r.restore.restoreBoardCopy({ manifest, boardId, actor });
+
+    // 1. the stages of a whole restore that fail
+    behaviour = 'hostile-put';
+    await attempt('safety backup with a hostile answer', whole(first.manifest));
+    behaviour = 'hostile-error';
+    await attempt('manifest with a hostile answer', whole(first.manifest));
+    await attempt('listing with a hostile answer', () => r.restore.listBackups());
+    await attempt('preview with a hostile answer', () => r.restore.previewManifest(first.manifest));
+    behaviour = 'throws';
+    await attempt('network exception', whole(first.manifest));
+    await attempt('board copy over a broken network', board(first.manifest));
+    behaviour = 'normal';
+    await attempt('statfs', async () => rig(h, { statfs: async () => Promise.reject(new Error(hostile)) }).restore.restoreWorkspace({ manifest: first.manifest, confirm: CONFIRM, actor }));
+    await attempt('wrong confirmation', async () => r.restore.restoreWorkspace({ manifest: first.manifest, confirm: hostile, actor }));
+    await attempt('bad manifest name', async () => r.restore.restoreWorkspace({ manifest: hostile, confirm: CONFIRM, actor }));
+
+    // 2. what is in the bucket is wrong
+    const database = await databaseOf(h);
+    const files = [{ path: 'directory.sqlite', data: database }, { path: 'b1.yjs', data: docBytes('CANARY-BOARD-CONTENT-ONE') }, { path: 'b2.yjs', data: docBytes('CANARY-BOARD-CONTENT-TWO') }];
+    const tampered = forge(h, files, { at: Date.UTC(2026, 9, 9) });
+    const stored = h.fake.objects.get(`tabula/objects/${tampered.entries[1].objectId}`)!;
+    stored.body[stored.body.length - 20] ^= 1;
+    await attempt('flipped bit', whole(tampered.name));
+    await attempt('flipped bit in a board copy', board(tampered.name));
+    const stranger = forge(h, files, { at: Date.UTC(2026, 9, 10), key: KEY_OTHER });
+    await attempt('another key', whole(stranger.name));
+    await attempt('another key, preview', () => r.restore.previewManifest(stranger.name));
+    const missing = forge(h, files, { at: Date.UTC(2026, 9, 11) });
+    h.fake.objects.delete(`tabula/objects/${missing.entries[2].objectId}`);
+    await attempt('missing object', whole(missing.name));
+    const wrongPath = forge(h, [...files, { path: 'notes.txt', data: Buffer.from('x') }], { at: Date.UTC(2026, 9, 12) });
+    await attempt('unexpected file', whole(wrongPath.name));
+    const garbage = forge(h, [{ path: 'directory.sqlite', data: Buffer.from('CANARY-NOT-SQLITE') }, files[1]], { at: Date.UTC(2026, 9, 13) });
+    await attempt('database that is not a database', whole(garbage.name));
+    await attempt('board copy from it', board(garbage.name));
+
+    // 3. board copies that work, and one that cannot be found
+    await attempt('board copy', board(first.manifest));
+    await attempt('board copy of a board that is not there', board(first.manifest, 'nope'));
+
+    // 4. the restore that succeeds, then everything it left behind
+    await attempt('restore', whole(first.manifest));
+    expect(await r.exited).toBe(75);
+
+    record('logs', h.logs.join('\n'));
+    record('status', r.restore.status());
+    record('journal', fs.readFileSync(path.join(h.dir, 'restore.json'), 'utf8'));
+    record('names in the directory', fs.readdirSync(h.dir));
+    const { openDirectory } = await import('../server/directory.mjs');
+    const restored = openDirectory(path.join(h.dir, 'directory.sqlite'));
+    try {
+      record('audit of the restored workspace', restored.listAudit(500));
+      record('settings of the restored workspace', ['restore.status', 'restore.keep', 'backup.protected'].map((k) => restored.getSetting(k)));
+    } finally {
+      restored.close();
+    }
+    const text = outputs.join('\n');
+
+    // The test is only worth something if the secrets were in use and the failures really happened.
+    expect(authorizations.length).toBeGreaterThan(30);
+    for (const a of authorizations) expect(a).toContain(`Credential=${CREDS.accessKey}/`);
+    expect(text).toContain('safety_backup_failed');
+    expect(text).toContain('S3 PUT failed (status 403, AccessDenied)');
+    expect(text).toContain('tamper');
+    expect(text).toContain('unknown_key');
+    expect(text).toContain('unexpected_file');
+    expect(text).toContain('backup_incomplete');
+    expect(text).toContain('integrity_check_failed');
+    expect(text).toContain('board_not_in_backup');
+    expect(text).toContain('restore.done');
+    expect(text.length).toBeGreaterThan(5000);
+
+    const signatures = authorizations.map((a) => /Signature=([0-9a-f]{64})/.exec(a)![1]);
+    const keys = deriveKeys(KEY);
+    const objectIds = [...tampered.entries, ...missing.entries, ...stranger.entries.map(() => ({ objectId: '' }))].map((e) => e.objectId).filter(Boolean);
+    const forbidden = [
+      ...spellings(KEY), ...spellings(KEY_PREVIOUS), ...spellings(KEY_OTHER), CREDS.secretKey, CREDS.accessKey, ...signatures, ...authorizations,
+      keys.encKey.toString('hex'), keys.nameKey.toString('hex'), 'X-Amz-Signature', 'Signature=', 'AWS4-HMAC-SHA256', 'Credential=', ...objectIds,
+      `127.0.0.1:${new URL(h.fake.url).port}`, 'tabula/objects/', 'tabula/manifests/',
+    ];
+    for (const secret of forbidden) expect(text.includes(secret), `output contains ${secret.slice(0, 14)}...`).toBe(false);
+    expect(text).not.toMatch(/[0-9a-f]{64}/);
+    for (const content of ['CANARY-NOT-SQLITE', 'CANARY-BOARD-CONTENT', 'A: board one', 'B: board one', 'A: comments of one']) expect(text).not.toContain(content);
   });
 });

@@ -136,6 +136,11 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
     for (const run of runs.values()) if (run.boardId === boardId) runs.delete(run.id);
   }
 
+  /** Every run ends without a broadcast: the server is about to be replaced (a restore), so nobody is left to tell. A run whose provider call is still out finds its run gone, and ready() and fail() leave a gone run alone. */
+  function dropAll() {
+    runs.clear();
+  }
+
   /**
    * What one person is sent about one run, or null when they may not see it.
    * @param {{ role: string | null, userId: string | null }} viewer
@@ -170,5 +175,5 @@ export function createLiveRuns({ now = Date.now, newId = () => crypto.randomByte
     return () => listeners.delete(fn);
   }
 
-  return { start, ready, fail, get, resolve, dropBoard, sweep, viewFor, snapshotFor, patchFor, onChange, openRuns: (boardId) => (sweep(), openRuns(boardId)) };
+  return { start, ready, fail, get, resolve, dropBoard, dropAll, sweep, viewFor, snapshotFor, patchFor, onChange, openRuns: (boardId) => (sweep(), openRuns(boardId)) };
 }

@@ -44,6 +44,8 @@ GET  /api/admin/audit?limit=50&before=<id>&action=<prefix>
   (`limit` 1..200, default 50; `before` pages by `id` descending; `action` matches by prefix, e.g. `board.` or `member.update`; `next` is the id to pass as `before`, null at the end. `actorName`/`actorEmail` are null for system rows or deleted users.)
 ```
 
+Backups (workspace **owner** only, not admins; the screen for them comes later): `GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` and `POST /api/admin/backups/restore` list the backups, preview one, restore one board as a copy and restore the whole workspace. They follow the same API rules (CSRF header on the POSTs, an audit row for each call), answer `409 backups_off` when backups are not set up, and are described in [backups.md](backups.md#restoring).
+
 Teams: the dashboard uses the existing `GET /api/teams` (workspace admins already see every team, including archived) and `PATCH /api/teams/:id {archived}`.
 
 ## Client

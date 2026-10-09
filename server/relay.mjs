@@ -28,6 +28,7 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
+import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { saveDelay } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
@@ -71,12 +72,30 @@ const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
 const CLOSE_NOT_FOUND = 4404;
 const CLOSE_ACCESS_REMOVED = 4410;
+// The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
+// socket that connects, until the server restarts on the restored data.
+const CLOSE_RESTORING = 4503;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
+
+// An interrupted restore is finished or undone before anything opens the data directory (docs/backups.md). A journal
+// that cannot be trusted stops the start: guessing could mix old and new data.
+let recovery = { action: 'none' };
+try {
+  recovery = recoverOnStart({ dataDir: DATA_DIR, log });
+} catch (err) {
+  console.error(err instanceof RestoreError ? err.message : `The restore recovery failed (${err?.code ?? 'error'}), so the server will not start.`);
+  process.exit(1);
+}
+
+// A restore has taken the server over: `maintenance` answers 503 and refuses sockets, `roomsFrozen` stops every save, so
+// nothing the old rooms hold can be written into the restored data.
+let maintenance = false;
+let roomsFrozen = false;
 
 // A room name is `<boardId>` or `<boardId>~comments` (the `~` cannot occur in a board id).
 function parseRoom(name) {
@@ -118,6 +137,7 @@ let directory = null;
 let auth = null;
 let api = null;
 let cloud = null;
+let buildApi = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -130,15 +150,14 @@ if (config.authEnabled) {
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
-  // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = createApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive } });
+  buildApi = createApi; // created below, once the restore engine exists
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
 
 // Backups need the directory (accounts mode only) and, like liveStats, are asked for per request, so they are created below.
 function backupStatus() {
-  return backup ? backup.status() : { enabled: false };
+  return backup ? { ...backup.status(), ...(restore ? { restore: restore.status() } : {}) } : { enabled: false };
 }
 // The state of a room that is open, including what is not saved yet; any other room the backup reads from its file.
 const openRoomState = (name) => {
@@ -146,6 +165,23 @@ const openRoomState = (name) => {
   return room ? Y.encodeStateAsUpdate(room.doc) : null;
 };
 const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
+
+// Restore (docs/backups.md, Restoring): null without backups or accounts. The hooks are what only the relay can do.
+const restore = createRestore({
+  backup,
+  directory,
+  config: backupConfig,
+  dataDir: DATA_DIR,
+  log,
+  hooks: { enterMaintenance },
+  exit: (code) => process.exit(code),
+  // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
+  exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
+});
+if (buildApi) {
+  // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive } });
+}
 
 // ---------------------------------------------------------------- rooms
 
@@ -155,6 +191,39 @@ const rooms = new Map();
 // Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
 function liveStats() {
   return { rooms: rooms.size, connections: [...rooms.values()].reduce((n, r) => n + r.conns.size, 0) };
+}
+
+// Every open room to its file; the one place both shutdown and a restore do it.
+function saveAllRooms() {
+  if (roomsFrozen) return;
+  for (const r of rooms.values()) r.save();
+}
+
+// A restore is about to replace the data directory. The order matters: sockets first (they stop editing), then every
+// room is saved for the last time, then nothing may save again, then the timers that use the database stop. The restore
+// engine stops the backups and closes the database next.
+async function enterMaintenance() {
+  maintenance = true;
+  for (const ws of wss.clients) {
+    ws.removeAllListeners('message');
+    ws.denied = true; // the role check that runs every second leaves it alone
+    ws.close(CLOSE_RESTORING, 'restoring');
+  }
+  saveAllRooms();
+  roomsFrozen = true;
+  for (const room of rooms.values()) {
+    clearTimeout(room.saveTimer);
+    clearTimeout(room.unloadTimer);
+    room.saveTimer = null;
+    room.unloadTimer = null;
+    room.doc.destroy();
+  }
+  rooms.clear();
+  // The live AI runs belong to rooms that are gone. A provider call still out finds its run dropped and changes nothing;
+  // nothing else of the AI path survives, because the API answers 503 and the sockets are closed.
+  aiLive.dropAll();
+  cloud?.close();
+  history.close();
 }
 
 class Room {
@@ -251,6 +320,7 @@ class Room {
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
+    if (roomsFrozen) return;
     this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
@@ -356,6 +426,7 @@ class Room {
 }
 
 function getRoom(name) {
+  if (roomsFrozen) throw new Error('the workspace is being restored');
   let r = rooms.get(name);
   if (!r) {
     r = new Room(name);
@@ -594,12 +665,15 @@ function sendJson(res, status, body) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/mcp') {
+    if (url.pathname === '/mcp' && maintenance) {
+      res.setHeader('retry-after', '30');
+      sendJson(res, 503, { error: 'restoring' });
+    } else if (url.pathname === '/mcp') {
       // Never the single-page app: /mcp is either the endpoint or a 404.
       if (mcp) await mcp.handle(req, res);
       else sendJson(res, 404, { error: 'not_found' });
     } else if (url.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, ...liveStats() });
+      sendJson(res, 200, { ok: true, ...liveStats(), ...(maintenance ? { restoring: true } : {}) });
     } else if (url.pathname.startsWith('/api/')) {
       // Anything under /api/ is answered here and never falls through to the single-page app.
       if (api) {
@@ -768,6 +842,11 @@ server.on('upgrade', (req, socket, head) => {
     ws.on('pong', () => (ws.isAlive = true));
     ws.on('error', () => ws.close());
 
+    if (maintenance) {
+      ws.close(CLOSE_RESTORING, 'restoring');
+      return;
+    }
+
     if (!config.authEnabled) {
       ws.canWrite = true;
       const room = getRoom(name);
@@ -835,7 +914,8 @@ async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
   const stopping = backup?.stop();
-  for (const r of rooms.values()) r.save();
+  saveAllRooms();
+  restore?.stop();
   history.close();
   if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
   directory?.close();
@@ -858,5 +938,8 @@ if (process.send) {
 
 server.listen(PORT, HOST, () => {
   backup?.start();
+  restore?.start();
+  // The people in a restored workspace are not the ones the control plane last heard about.
+  if (recovery.action === 'completed') events.emit('usage-changed');
   log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}${backup ? '  (backups on)' : ''}`);
 });

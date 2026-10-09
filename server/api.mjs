@@ -13,6 +13,7 @@ import {
 import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { describeError } from './ai/errors.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
+import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -132,7 +133,9 @@ function compile(method, pattern, options, handler) {
 
 // `ai` carries what the relay shares with the AI routes (canWriteRoom, readRoom) and can replace the provider factory
 // (docs/ai.md); the tests do, so no request leaves the machine.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), mailer = createMailer(config), ai = {} }) {
+// `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
+// restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {} }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -186,6 +189,34 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const requireAdmin = (user) => {
     if (!isAdmin(user)) throw forbidden('Only workspace admins can do that');
   };
+
+  // Backups and restores belong to the workspace owner alone, not to admins.
+  const requireOwner = (user) => {
+    if (user.role !== 'owner') throw forbidden('Only the workspace owner can do that');
+  };
+
+  // The restore engine, or the refusal that backups are not set up. Checked after who the caller is.
+  function restoreEngine() {
+    if (!restore) throw conflict('backups_off', 'Backups are not set up on this server');
+    return restore;
+  }
+
+  const RESTORE_FIELDS = { 'admin/backups/restore': ['manifest', 'confirm'], 'admin/backups/restore-board': ['manifest', 'boardId'] };
+
+  function restoreBody(route, body) {
+    for (const key of Object.keys(body)) {
+      if (!RESTORE_FIELDS[route].includes(key)) throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+    }
+    return body;
+  }
+
+  // A refusal or failure of the restore engine as a response; anything else is a real error for dispatch to log.
+  function restoreReply(err, res) {
+    if (!(err instanceof RestoreError)) throw err;
+    if (typeof err.extra?.retryAfter === 'number') res.setHeader('retry-after', String(err.extra.retryAfter));
+    const { retryAfter: _retryAfter, ...facts } = err.extra ?? {};
+    return [RESTORE_STATUS[err.code] ?? 500, { error: err.code, message: err.message, ...facts }];
+  }
 
   // The users and teams a caller may learn about: themselves, their teams and the people in them.
   function visiblePrincipals(user) {
@@ -787,6 +818,62 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       ];
     }),
 
+    // ---------------------------------------------------------- backups and restore (docs/backups.md, Restoring)
+
+    compile('GET', 'admin/backups', {}, async ({ res, user }) => {
+      requireOwner(user);
+      const engine = restoreEngine();
+      try {
+        const listing = await engine.listBackups();
+        audit(user, 'backup.list', {});
+        return [200, { ...listing, restore: engine.status() }];
+      } catch (err) {
+        return restoreReply(err, res);
+      }
+    }),
+    compile('GET', 'admin/backups/:name', {}, async ({ res, user, params }) => {
+      requireOwner(user);
+      const engine = restoreEngine();
+      try {
+        const preview = await engine.previewManifest(params.name);
+        audit(user, 'backup.preview', { manifest: params.name });
+        return [200, preview];
+      } catch (err) {
+        return restoreReply(err, res);
+      }
+    }),
+    // Both POSTs stay open while a hosted workspace is read-only: an owner locked out for billing may need them. A board
+    // copy writes, so it is refused while read-only; a whole restore replaces everything and is not.
+    compile('POST', 'admin/backups/restore-board', { body: true, readOnlyOk: true }, async ({ res, user, body }) => {
+      requireOwner(user);
+      const engine = restoreEngine();
+      const { manifest, boardId } = restoreBody('admin/backups/restore-board', body);
+      if (typeof manifest !== 'string' || typeof boardId !== 'string') throw badRequest('manifest and boardId must be strings');
+      if (cloud?.limits().readOnly) throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
+      try {
+        return [200, await engine.restoreBoardCopy({ manifest, boardId, actor: user })];
+      } catch (err) {
+        return restoreReply(err, res);
+      }
+    }),
+    compile('POST', 'admin/backups/restore', { body: true, readOnlyOk: true }, async ({ res, user, body }) => {
+      requireOwner(user);
+      const engine = restoreEngine();
+      const { manifest, confirm } = restoreBody('admin/backups/restore', body);
+      if (typeof manifest !== 'string' || typeof confirm !== 'string') throw badRequest('manifest and confirm must be strings');
+      // The server leaves once this response is out (or the caller is gone): see restoreWorkspace.
+      const responseDone = new Promise((resolve) => {
+        res.once('finish', resolve);
+        res.once('close', resolve);
+      });
+      try {
+        const done = await engine.restoreWorkspace({ manifest, confirm, actor: user, responseDone });
+        return [202, { ok: true, restarting: true, keepOldFor: done.keepOldFor }];
+      } catch (err) {
+        return restoreReply(err, res);
+      }
+    }),
+
     // ---------------------------------------------------------- version history (docs/history.md)
 
     ...(history ? history.routes({ compile, boardFor, audit, errors: { HttpError, forbidden } }) : []),
@@ -1007,6 +1094,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
+    if (maintenance() && !(pathname === '/api/internal/backup-status' && String(req.method).toUpperCase() === 'GET')) {
+      res.setHeader('retry-after', '30');
+      send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      return true;
+    }
     try {
       await dispatch(req, res, pathname, query);
     } catch (err) {

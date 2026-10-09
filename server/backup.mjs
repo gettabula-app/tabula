@@ -43,6 +43,8 @@ const GC_GRACE_MS = HOUR_MS;
 const FIRST_RUN_MIN_MS = MINUTE_MS;
 const FIRST_RUN_SPAN_MS = 4 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
+/** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
+export const PROTECTED_KEY = 'backup.protected';
 const MAX_PREVIOUS_KEYS = 8;
 const ERROR_MAX = 200;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -360,6 +362,41 @@ export function validateRelPath(value) {
   return value;
 }
 
+/**
+ * Whether `rel` is a path the engine itself writes: directory.sqlite, a top-level room file, or a board's history index
+ * or version file. Restore accepts nothing else from a manifest.
+ * @param {unknown} rel
+ */
+export function isBackupPath(rel) {
+  if (typeof rel !== 'string') return false;
+  if (rel === 'directory.sqlite' || ROOM_FILE_RE.test(rel)) return true;
+  const parts = rel.split('/');
+  if (parts.length !== 3 || parts[0] !== 'history' || !BOARD_ID_RE.test(parts[1])) return false;
+  if (parts[2] === 'index.json') return true;
+  return parts[2].endsWith('.yjs.gz') && VERSION_ID_RE.test(parts[2].slice(0, -'.yjs.gz'.length));
+}
+
+/**
+ * The protections in a stored `backup.protected` value: manifest name to expiry (ms). `active` holds the ones that have
+ * not expired at `nowMs`; `changed` says whether the stored value holds anything else (expired or malformed entries).
+ * Throws when the value is not a JSON object at all, so a caller can fail closed.
+ * @param {string | null | undefined} stored
+ * @param {number} nowMs
+ * @returns {{ active: Record<string, number>, changed: boolean }}
+ */
+export function parseProtections(stored, nowMs) {
+  if (stored === null || stored === undefined || stored === '') return { active: {}, changed: false };
+  const value = JSON.parse(stored);
+  if (!isObject(value)) throw new Error('not an object');
+  const active = {};
+  let changed = false;
+  for (const [name, until] of Object.entries(value)) {
+    if (parseManifestName(name) !== null && Number.isFinite(until) && until > nowMs) active[name] = until;
+    else changed = true;
+  }
+  return { active, changed };
+}
+
 /** '20261008T193000Z.json.enc' for a time in ms. */
 export function formatManifestName(ms) {
   return `${new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, '')}.json.enc`;
@@ -377,17 +414,19 @@ export function parseManifestName(name) {
 /**
  * Which manifests a backup keeps: the newest per UTC hour while younger than `keepHourlyHours`, the newest per UTC day
  * while younger than `keepDailyDays`, and always the newest. Everything else is `drop`. Names that are not manifest
- * names are never dropped.
+ * names are never dropped, and neither are the `protectedNames` (the safety backups of a restore).
  * @param {string[]} names
  * @param {number} nowMs
- * @param {{ keepHourlyHours: number, keepDailyDays: number }} limits
+ * @param {{ keepHourlyHours: number, keepDailyDays: number, protectedNames?: Iterable<string> }} limits
  */
-export function pruneManifests(names, nowMs, { keepHourlyHours, keepDailyDays }) {
+export function pruneManifests(names, nowMs, { keepHourlyHours, keepDailyDays, protectedNames = [] }) {
   const items = names
     .map((name) => ({ name, at: parseManifestName(name) }))
     .filter((item) => item.at !== null)
     .sort((a, b) => b.at - a.at || (a.name < b.name ? 1 : -1));
   const keep = new Set(items.length ? [items[0].name] : []);
+  const known = new Set(items.map((item) => item.name));
+  for (const name of protectedNames) if (known.has(name)) keep.add(name);
   const hours = new Set();
   const days = new Set();
   for (const { name, at } of items) {
@@ -1206,6 +1245,21 @@ export function createBackup({
     };
   }
 
+  /**
+   * The manifests a restore has protected from pruning (restore.mjs writes them): names whose protection has not run out.
+   * The ones that ran out are dropped from the stored value. null when the value cannot be read, which stops the prune.
+   */
+  function activeProtections(nowMs) {
+    if (!directory) return [];
+    try {
+      const { active, changed } = parseProtections(directory.getSetting(PROTECTED_KEY), nowMs);
+      if (changed) directory.setSetting(PROTECTED_KEY, JSON.stringify(active));
+      return Object.keys(active);
+    } catch {
+      return null;
+    }
+  }
+
   /** Old manifests first, then objects nothing refers to (older than an hour), and only on complete knowledge. */
   async function prune(newestName, nowMs) {
     const outcome = { at: nowMs, manifestsDeleted: 0, objectsDeleted: 0, gcSkipped: null, error: null, manifests: null, objects: null };
@@ -1216,7 +1270,13 @@ export function createBackup({
         outcome.gcSkipped = 'inconsistent_listing';
         return outcome;
       }
-      const { drop } = pruneManifests(listed.map((m) => m.name), nowMs, config);
+      const protectedNames = activeProtections(nowMs);
+      if (protectedNames === null) {
+        outcome.gcSkipped = 'unreadable_protection';
+        say('the list of protected backups could not be read, so nothing is deleted this time');
+        return outcome;
+      }
+      const { drop } = pruneManifests(listed.map((m) => m.name), nowMs, { keepHourlyHours: config.keepHourlyHours, keepDailyDays: config.keepDailyDays, protectedNames });
       for (const name of drop) {
         if (name === newestName) continue;
         await s3.del(manifestKey(name));
