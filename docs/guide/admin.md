@@ -138,6 +138,12 @@ Only for a server you run yourself. Backups are on when these five settings are 
 
 **Lose the key and the backups cannot be read by anyone.** Keep a copy somewhere that is not the server. The other settings (how often, how long to keep backups, a key change) are described in the server documentation, `docs/backups.md` in the Tabula repository.
 
+### When backups run
+
+Backups run on a schedule (how often is shown in the status). They also run shortly after people stop editing: about two minutes after the last change, and at the latest ten minutes after the first change that is not yet in a backup. When the server is asked to stop, for example when an idle hosted workspace shuts down, it takes a last quick backup of what changed. So a short visit is no longer lost between two scheduled backups.
+
+A crash, or a stop without warning, can still lose the last couple of minutes of changes from the backups. The data on the server is not affected.
+
 ### Status and list
 
 The top of the section shows the last backup and whether it worked, how many in a row have failed, when the next one runs, how often they run, the key's short id and how much is stored. A sentence below says how the last restore ended and when.
