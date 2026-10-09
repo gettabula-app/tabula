@@ -134,6 +134,33 @@ Any other value refuses startup; `TABULA_CLIENT_IP_HEADER` without `TABULA_TRUST
 
 Only addresses come back: header values are cut at 300 and 64 characters and nothing else of the request is echoed. The tests (`test/proxy.test.ts`) run a fake Fly edge with a replay hop and show both settings: with `fly-client-ip` each visitor is limited alone, with the default every visitor shares the hop's limit.
 
+## Source policy
+
+On Fly every app of an organisation shares one private network (6PN), so a machine of one customer's workspace can open a connection to another workspace's instance directly (`tabula-ws-<other>.internal:8787`), skipping the edge. The application still checks every request, but the network does not separate tenants (TAB-103; the Fly spike is in tabula-cloud `docs/internal-network.md`, section 7). `TABULA_SOURCE_POLICY=proxy` closes that at the instance:
+
+| Variable | Value | Meaning |
+| --- | --- | --- |
+| `TABULA_SOURCE_POLICY` | `off` (the default) | No check. Self-hosters and every other setup. |
+| | `proxy` | A connection is served only when its peer address is in the list below. Any other peer is reset (HTTP request or WebSocket upgrade) and the first refusal of each address is logged as `source policy: refused a connection from <address>`. `GET /api/health` is answered whatever the peer, because the platform's own check may not come from either range. |
+| `TABULA_ALLOW_SOURCES` | comma list of addresses and CIDRs | Replaces the default list; read only with `proxy`. Default: `127.0.0.0/8, ::1/128, 172.16.0.0/12`. |
+
+Why that list: what Fly's proxy forwards (visitors, `fly-replay` from the edge, Flycast calls of the control plane) arrives from the proxy's private IPv4 range (172.16.x.x was observed in the spike), direct 6PN traffic from another app arrives from its own `fdaa:` address, and the Machines API's exec path runs on loopback. Any other value of `TABULA_SOURCE_POLICY` refuses startup, as does a bad entry in `TABULA_ALLOW_SOURCES`.
+
+**Turning it on for hosted workspaces.** The control plane puts `TABULA_SOURCE_POLICY=proxy` in every workspace machine's environment (`src/provision.mjs` in tabula-cloud; existing machines get it with the next config update). It is not baked into the image, so a self-hosted container of the same image stays open.
+
+**Recovery first.** If a workspace becomes unreachable after turning it on, set `TABULA_SOURCE_POLICY=off` in the machine's environment (or `fly machine update` with the env change) and restart it; nothing else changes. Visitors come through the proxy, so they are never refused; what is refused is a peer on 6PN.
+
+**Checking it (proof steps, with Johan's go on a throwaway Fly workspace pair).** Two workspaces A and B, both created with the policy on:
+
+1. From your machine: `curl -fsS https://<A host>/api/health` answers, and the workspace loads in a browser (the edge's replay arrives from the proxy range).
+2. From a console on B (`fly ssh console --app tabula-ws-<b>`): `curl -m 5 -sS http://tabula-ws-<a>.internal:8787/api/health` answers (health stays open); `curl -m 5 -sS -o /dev/null -w '%{http_code}\n' http://tabula-ws-<a>.internal:8787/api/me` must fail with a reset (curl error 52 or 56), not `401` or `200`.
+3. The same from B to `http://tabula-ws-<a>.internal:8787/` (the page) and a WebSocket attempt (for example `curl -m 5 -i -H 'Connection: Upgrade' -H 'Upgrade: websocket' ...`) must fail the same way.
+4. On A, `fly logs --app tabula-ws-<a>` shows `source policy: refused a connection from fdaa:...` with B's address.
+5. The control plane still reaches A: `GET /admin/workspaces/<id>` through the operator proxy, then a usage pull or `PUT /api/internal/limits` from the control plane succeeds (Flycast calls arrive through the proxy). If the control plane moves to the exec path, it runs on loopback and is unaffected.
+6. **(unverified until measured)** that the proxy's range is `172.16.0.0/12` in every region and that a request replayed from another machine arrives from it. If step 1 fails, read the refused address in the log and widen `TABULA_ALLOW_SOURCES`.
+
+Not covered: the control plane's own listeners (tabula-cloud `INTERNAL_SOURCE_POLICY`), and a request from inside the proxy range that is not Fly's proxy (the check is as strong as Fly's isolation of those addresses).
+
 ## Read-only
 
 While `readOnly` is true:

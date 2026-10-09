@@ -694,6 +694,7 @@ describe('loadConfig', () => {
       port: 8787,
       trustProxy: false,
       clientIpHeader: 'x-forwarded-for',
+      sourcePolicy: { mode: 'off', sources: [] },
       mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },
       // the secrets and the operator key of the AI features are not enumerable, so they are not in a printed config
       ai: { provider: 'anthropic', model: 'claude-opus-5-5', baseUrl: null },
