@@ -58,10 +58,11 @@ New fields, flat on the object as everything else is, so concurrent edits to dif
 | `fill` | lane, card | Existing style field. Lane tint, card accent. |
 | `text` | card | The title (first line is shown; at most 200 characters). |
 | `desc` | card | Description, plain text, at most 4,000 characters. |
-| `ownerId`, `ownerName`, `ownerKind` | card | See [Owners](#owners); an absent `ownerKind` means `person`. |
+| `ownerId`, `ownerName`, `ownerKind` | card | See [Owners](#owners); an absent `ownerKind` means `person`; MCP agent owners (`ownerKind: 'agent'`) use the access token id as `ownerId`. |
 | `due` | card | `YYYY-MM-DD`, a date with no time zone. |
 | `link` | card | One HTTP or HTTPS URL, at most 2,000 characters. |
 | `labels` | card | Array of label ids, at most 10. |
+| `link` | card | Optional http or https URL, at most 2,000 characters. |
 
 `parent` already exists on `BaseObj` (`src/types.ts:73`) and keeps its meaning: "belongs to". `ObjType` gains `'container' | 'lane' | 'card'`. `childrenOf` (`src/store.ts:206`) is a linear scan of the cache today; containers add an index (parent id to child ids) kept in the same observer that maintains the connector index, because the layout asks for the children of every lane on every change.
 
@@ -251,17 +252,13 @@ Cards are ordinary boxes for the facilitation tools in these ways: **dot voting*
 
 ## MCP and the other AI tools
 
-The current MCP surface is twelve tools (`server/mcp.mjs`), and `create_objects` accepts only `sticky`, `shape`, `text`, `frame` and `connector` (`mcp.mjs:95`). The board reader gives each object a short summary (`summarise`, `server/board-ops.mjs:191`).
+The MCP endpoint has dedicated card tools; `create_objects` still accepts only `sticky`, `shape`, `text`, `frame` and `connector`. `get_board` and `get_objects` keep their general object summaries. `list_kanban_cards` returns card-specific fields, including owner ids and kinds, and filters hidden or unrevealed private cards.
 
-- **Reads**: `get_board` and `get_objects` return containers, lanes and cards. Summaries add, for a card, `lane` (id and name), `position`, `stage`, `owner` (name only; `ownerId` is not returned, as the AI reader sends no author names today), `due` and `labels` (names). Positions come from the shared layout, so x and y are correct. All text (titles, descriptions, lane names, label names, owner names) is cleaned and fenced like every other board text, because a card description is an obvious place to plant instructions. `get_board` gains a `containerId` filter, as it has `frameId`.
-- **New tools** (write token, editor role, the same checks as `update_objects`, one Yjs transaction each):
-  - `create_kanban { name, lanes: [{ name, stage?, wip? }], x?, y? }`
-  - `add_cards { laneId, cards: [{ title, description?, owner?, due?, labels?: [name] }], position?: 'top' | 'bottom' }` (up to 30 per call; labels are created if missing, within the limit)
-  - `move_cards { cardIds, laneId, position?: 'top' | 'bottom' | { before: id } | { after: id } }`
-  - `update_cards { cards: [{ id, title?, description?, owner?, due?, labels?, laneId? }] }`
-  - These use `shared/containers.mjs`, so ranks and the WIP check match the browser. A `block` lane over its limit returns `wip_limit` with the lane and counts and writes nothing.
-- `create_objects` is unchanged. `update_objects` can move a container, rename it and lock it; it cannot write `rank` or `parent` of laid-out children (those keys are not in `UPDATABLE` for the new types), so an agent cannot produce an inconsistent order by hand.
-- **AI features** (TAB-97, `docs/ai.md`): *Summarise* and *Cluster* read the board through the same reader and see cards as text with their lane, so "summarise this board" can say what is in each column and what is overdue (dates are sent as dates; today's date is part of the fenced context). *Generate* (stickies from a prompt) is unchanged in v1; a later "generate cards into this lane" is a proposal of `add_cards` shape and the preview is the existing proposal UI. Owners are not sent to the model in v1 (the AI reader sends no names).
+- **Read**: `list_kanban_cards { boardId, kanbanId, limit?, cursor? }` returns cards in lane and card rank order, with `lane` (id and name), `stage`, `ownerId`, `ownerName`, `ownerKind`, `due`, label ids, `link`, title and description. Results are cleaned and fenced like other board text.
+- **Writes** (write token, editor role, one Yjs transaction each): `add_kanban_card` adds one card, `update_kanban_card` changes its title, description, due date, labels, link or owner, and `move_kanban_card` moves one card to a lane. Add and move accept exactly one of `laneId` or `stage`. A stage selects the first visible lane with that stage in lane rank order; the tools never create lanes and return `not_found` when no lane matches. A card owner uses `ownerKind: 'person' | 'agent'`; assigning `agent` ties the owner id and name to the calling token. `link` accepts only http or https URLs up to 2,000 characters.
+- **Limits and safety**: the tools enforce the 2,000-card board limit, 500-card lane limit, existing-label ids, and the shared block-lane WIP rule. Locked cards cannot be updated or moved. Hidden cards and cards in hidden lanes are absent from reads and appear not found on writes. New and moved cards append using shared fractional ranks; a move never repairs or rewrites other cards.
+- `update_objects` still cannot write `rank` or `parent` of laid-out children, so an agent cannot create inconsistent card order through the generic object tools.
+- **AI features** (TAB-97, `docs/ai.md`): *Summarise* and *Cluster* read the board through the same reader and see cards as text with their lane, so "summarise this board" can say what is in each column and what is overdue (dates are sent as dates; today's date is part of the fenced context). *Generate* (stickies from a prompt) is unchanged in v1; future card proposals can use `add_kanban_card` after a preview. Owners are not sent to the model in v1 (the AI reader sends no names).
 - Limits and the audit rows follow the existing MCP rules; new audit sentences are not needed (the board writes are not audited individually today).
 
 ## Linear and Jira later

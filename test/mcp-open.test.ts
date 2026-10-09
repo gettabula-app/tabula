@@ -99,7 +99,7 @@ describe('with the default scope (read)', () => {
 
   it('lists the read tools only, with no board list', async () => {
     const tools = (await h.call(SHARED, 'tools/list')).body.result.tools.map((t: Body) => t.name).sort();
-    expect(tools).toEqual(['get_board', 'get_objects', 'list_comments', 'whoami']);
+    expect(tools).toEqual(['get_board', 'get_objects', 'list_comments', 'list_kanban_cards', 'whoami']);
     expect((await h.call(SHARED, 'tools/call', { name: 'list_boards', arguments: {} })).body.error.code).toBe(-32602);
     const who = await h.tool(SHARED, 'whoami');
     expect(who.data).toMatchObject({ mode: 'open', user: null, token: { name: 'AI tool', scope: 'read' }, workspaceReadOnly: false });
