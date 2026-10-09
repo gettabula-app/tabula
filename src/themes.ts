@@ -95,7 +95,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#3A3A4A',
       '--canvas-ink': '#DCD7BA',
       '--canvas-rule': '#54546D',
-      '--guide': '#D27E99',
+      '--guide': '#FF5D8F',
     },
   },
   {

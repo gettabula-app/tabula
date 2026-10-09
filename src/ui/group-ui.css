@@ -11,7 +11,7 @@
 }
 
 :root[data-scheme='dark'] {
-  --group-dim: color-mix(in srgb, var(--canvas) 75%, transparent);
+  --group-dim: color-mix(in srgb, var(--canvas) 88%, transparent);
 }
 
 /* Keep the transformed canvas below chrome while promoted comment pins can cross the chip row. */
