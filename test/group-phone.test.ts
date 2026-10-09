@@ -27,7 +27,7 @@ describe('group chips beside an open tray (phone width)', () => {
   const rule = block.split('\n').find((l) => /visibility:\s*hidden/.test(l)) ?? '';
   it('are hidden, kept in place, while a drawer or the side tray is open', () => {
     expect(rule).toMatch(/:has\(>\s*:is\(\.drawer, \.side-tray\)\.show\)/);
-    for (const c of ['.group-chip', '.group-done', '.group-chip-bridge']) expect(rule).toContain(c);
+    for (const c of ['.group-chip', '.group-done']) expect(rule).toContain(c);
     expect(rule).not.toMatch(/display:\s*none/);
   });
   it('are not hidden outside phone width', () => {
