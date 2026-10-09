@@ -6,7 +6,7 @@ import { LABEL_FONT, labelBox, labelPill, layoutText, styleOf, textHeight } from
 import { fontFamily } from './fonts';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
-import { KANBAN } from '../shared/containers';
+import { KANBAN, LIMITS } from '../shared/containers';
 import { safeColor } from '../shared/colors';
 
 type EditMode = 'text' | 'class' | 'frame' | 'label';
@@ -201,7 +201,11 @@ export class TextEditor {
         if (o.type === 'text') s.update(o.id, { h: textHeight({ ...(o as BaseObj), text: v }) });
       });
     } else if (this.mode === 'frame') {
-      s.transact(() => s.update(o.id, { name: v }));
+      // lane and kanban names have limits (docs/kanban.md, Limits: 60 and 80 characters); a frame's name has none
+      const max = o.type === 'lane' ? LIMITS.laneName : o.type === 'container' ? LIMITS.containerName : Infinity;
+      const name = v.length > max ? v.slice(0, max) : v;
+      if (name !== v) this.ta.value = name;
+      s.transact(() => s.update(o.id, { name }));
     } else if (this.mode === 'label') {
       s.transact(() => s.update(o.id, { label: v || undefined }));
       this.reposition(); // the pill grows and wraps with the text

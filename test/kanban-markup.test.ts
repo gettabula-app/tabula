@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { cardContentHeight, objectMarkup, type MarkupCtx } from '../src/markup';
+import { cardContentHeight, kanbanHeaderControls, objectMarkup, type MarkupCtx } from '../src/markup';
 import { Store } from '../src/store';
 import { addCard, newKanban } from '../src/containers';
 import type { BaseObj, Id } from '../src/types';
@@ -298,5 +298,74 @@ describe('kanbanColor', () => {
     expect(validLabel({ id: 'a', name: 'A', color: 'url(//x)', order: 1 })).toEqual({ id: 'a', name: 'A', color: 'grey', order: 1 });
     expect(validLabel({ id: 'a', name: 'x'.repeat(41), color: 'blue' })).toBeNull();
     expect(validLabel('bug')).toBeNull();
+  });
+});
+
+describe('slice 4: header controls, the lane ⋯, the add-lane + and dimming', () => {
+  const chips = [{ key: 'mine', text: 'Mine' }, { key: 'label:bug', text: 'Bug' }];
+
+  it('an editor gets Filter, the ⋯ and the +; a viewer gets Filter only; an export gets none', () => {
+    const { store, container, lanes } = board();
+    const ed = draw(store, container, { filterChips: () => [] });
+    expect(ed).toContain('k-filter');
+    expect(ed).toContain('k-menu');
+    expect(ed).toContain('k-addlane');
+    expect(draw(store, lanes[0])).toContain('k-menu');
+    const viewer = draw(store, container, { filterChips: () => [], editable: false });
+    expect(viewer).toContain('k-filter');
+    expect(viewer).not.toContain('k-menu');
+    expect(viewer).not.toContain('k-addlane');
+    expect(draw(store, lanes[0], { editable: false })).not.toContain('k-menu');
+    const file = draw(store, container, { editable: false });
+    expect(file).not.toContain('k-filter');
+  });
+
+  it('an active filter: chips with remove buttons and Filter · n; none of it below zoom 0.4', () => {
+    const { store, container } = board();
+    const svg = draw(store, container, { filterChips: () => chips });
+    expect(svg).toContain('FILTER · 2');
+    expect(svg.match(/k-fchip/g)).toHaveLength(2);
+    expect(svg).toContain('>MINE<');
+    expect(draw(store, container, { filterChips: () => chips, zoom: 0.3 })).not.toContain('k-filter');
+  });
+
+  it('chips that do not fit are left out, Filter still counts them; the name stops before the controls', () => {
+    const { store, container } = board();
+    const o = store.getPlaced(container) as BaseObj;
+    const many = Array.from({ length: 12 }, (_, i) => ({ key: `label:${i}`, text: `A long label name ${i}` }));
+    const c = kanbanHeaderControls(o, many, true);
+    expect(c.chips.length).toBeLessThan(12);
+    expect(c.filter!.text).toBe('Filter · 12');
+    expect(c.left).toBeGreaterThanOrEqual(o.w / 2);
+    for (const chip of c.chips) expect(chip.rect.x + chip.rect.w).toBeLessThanOrEqual(c.filter!.rect.x);
+    expect(c.menu!.x + c.menu!.w).toBe(o.w - 12);
+  });
+
+  it('a dimmed card draws at 35%, others at full strength', () => {
+    const { store, ids } = board();
+    expect(draw(store, ids[0], { dimmed: (o) => o.id === ids[0] })).toContain('opacity="0.35"');
+    expect(draw(store, ids[1], { dimmed: (o) => o.id === ids[0] })).not.toContain('opacity=');
+  });
+
+  it('the open control draws pressed', () => {
+    const { store, container, lanes } = board();
+    const closed = draw(store, container, { filterChips: () => [] });
+    const open = draw(store, container, { filterChips: () => [], openControl: { id: container, kind: 'menu' } });
+    expect(open).not.toBe(closed);
+    expect(draw(store, lanes[0], { openControl: { id: lanes[0], kind: 'menu' } })).not.toBe(draw(store, lanes[0]));
+  });
+
+  it('no hard-coded colours in any of it', () => {
+    const { store, container, lanes, ids } = board();
+    store.transact(() => store.update(lanes[1], { wip: 1, wipMode: 'block' }));
+    addCard(store, lanes[1], 'Full', { createdBy: 'me' });
+    const svg = [
+      draw(store, container, { filterChips: () => chips, openControl: { id: container, kind: 'filter' } }),
+      draw(store, container, { filterChips: () => [], openControl: { id: container, kind: 'menu' } }),
+      draw(store, lanes[1], { openControl: { id: lanes[1], kind: 'menu' } }),
+      draw(store, ids[0], { dimmed: () => true }),
+    ].join('');
+    expect(svg).toContain('k-add-full');
+    expect(outsideVars(svg)).not.toMatch(HEX);
   });
 });

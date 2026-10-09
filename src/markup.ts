@@ -11,11 +11,11 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, kanbanColor, validLabel, type ContainerLayout } from '../shared/containers';
+import { hasLayout, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
 import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
-import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, localToday, lowDetail } from './ui/kanban-logic';
+import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -48,6 +48,15 @@ export interface MarkupCtx {
   commentCount?: (id: string) => number;
   /** The viewer's date as YYYY-MM-DD, for due chips; today when absent. */
   today?: string;
+  /**
+   * This viewer's active filter on a kanban, as the header's chips. Without it (an export) the header draws no Filter
+   * button and no chips: a filter is a view, not content (docs/kanban.md, Export).
+   */
+  filterChips?: (containerId: string) => FilterChip[] | null;
+  /** Whether this viewer's filter dims a card to 35% (docs/kanban.md, Filters). Without it nothing is dimmed. */
+  dimmed?: (card: BaseObj) => boolean;
+  /** The kanban control whose menu or popover is open, drawn pressed. */
+  openControl?: { id: string; kind: 'menu' | 'filter' } | null;
 }
 
 const n = (v: number) => Math.round(v * 100) / 100;
@@ -286,6 +295,9 @@ function kIcon(path: string, x: number, y: number, size: number, color: string) 
 const ICON_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const ICON_CHECK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
 const ICON_LOCK = '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>';
+const ICON_FILTER = '<path d="M4 6h16M7 12h10M10 18h4"/>';
+const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
+const ICON_DOTS = '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>';
 const ICON_COMMENT = '<path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/>';
 
 /** `text` cut to fit `max` pixels, with an ellipsis when it had to be cut. */
@@ -322,26 +334,108 @@ export function cardContentHeight(o: BaseObj, w: number): number {
   return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o) });
 }
 
+export interface HeaderControls {
+  /** The left edge of the leftmost control (the name and the meta stop before it). */
+  left: number;
+  /** The ⋯ button (editors only). */
+  menu: Rect | null;
+  /** The Filter button, with its text ("Filter" or "Filter · 2"); null where there is no filter (an export). */
+  filter: { rect: Rect; text: string; on: boolean } | null;
+  /** The active filter chips that fit, each with its remove button. */
+  chips: { key: string; text: string; rect: Rect; remove: Rect }[];
+}
+
+/**
+ * Where a kanban header's controls sit, in the container's own coordinates (docs/kanban.md, Visual design: Filter 32
+ * high, chips 32 high with a 30px remove button, ⋯ 32 square, 8 apart, 12 from the right edge). The drawing and the hit
+ * test both read it, so they cannot disagree. Chips that do not fit in the right half are left out (the Filter button
+ * still counts them).
+ */
+export function kanbanHeaderControls(o: BaseObj, chips: FilterChip[] | null, editable: boolean): HeaderControls {
+  const y = 8, size = 32;
+  let x = o.w - 12;
+  let menu: Rect | null = null;
+  if (editable) {
+    x -= size;
+    menu = { x, y, w: size, h: size };
+    x -= 8;
+  }
+  let filter: HeaderControls['filter'] = null;
+  const placed: HeaderControls['chips'] = [];
+  if (chips) {
+    const text = chips.length ? `Filter · ${chips.length}` : 'Filter';
+    const fw = 10 + 16 + 6 + lblWidth(text, o.font) + 10;
+    x -= fw;
+    filter = { rect: { x, y, w: fw, h: size }, text, on: chips.length > 0 };
+    const widths = chips.map((c) => 8 + lblWidth(c.text, o.font) + 2 + 30);
+    const room = x - 8 - o.w / 2;
+    let count = chips.length;
+    while (count && widths.slice(0, count).reduce((a, b) => a + b + 8, 0) > room) count--;
+    let cx = x - 8 - widths.slice(0, count).reduce((a, b) => a + b + 8, 0) + 8;
+    for (let i = 0; i < count; i++) {
+      const rect = { x: cx, y, w: widths[i], h: size };
+      placed.push({ key: chips[i].key, text: chips[i].text, rect, remove: { x: cx + widths[i] - 31, y: y + 1, w: 30, h: 30 } });
+      cx += widths[i] + 8;
+    }
+    if (count) x = placed[0].rect.x;
+  }
+  return { left: x, menu, filter, chips: placed };
+}
+
+function headerControlsMarkup(o: BaseObj, c: HeaderControls, open: MarkupCtx['openControl']) {
+  let out = '';
+  for (const chip of c.chips) {
+    const r = chip.rect;
+    out += `<g class="k-fchip"><rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`;
+    out += label(chip.text, r.x + 8, r.y + 20, K.canvasInk, o.font);
+    out += kIcon(ICON_CLOSE, chip.remove.x + 9, chip.remove.y + 9, 12, K.canvasInk) + '</g>';
+  }
+  if (c.filter) {
+    const { rect: r, text, on } = c.filter;
+    const pressed = on || (open?.id === o.id && open.kind === 'filter');
+    const ink = on ? 'var(--on-signal, #18212B)' : pressed ? K.canvas : K.canvasInk;
+    out += `<g class="k-filter">`;
+    out += on ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle('var(--signal, #FFD23F)')}/>`
+      : pressed ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle(K.canvasInk)}/>`
+      : `<rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`;
+    out += kIcon(ICON_FILTER, r.x + 10, r.y + 8, 16, ink) + label(text, r.x + 32, r.y + 20, ink, o.font) + '</g>';
+  }
+  if (c.menu) {
+    const r = c.menu;
+    const pressed = open?.id === o.id && open.kind === 'menu';
+    if (pressed) out += `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle(K.canvasInk)}/>`;
+    out += `<g class="k-menu" ${fillStyle(pressed ? K.canvas : K.canvasInk)} transform="translate(${n(r.x + 6)} ${n(r.y + 6)}) scale(${n(20 / 24)})">${ICON_DOTS}</g>`;
+  }
+  return out;
+}
+
 function kanbanContainerMarkup(o: BaseObj, ctx: MarkupCtx) {
   const w = o.w, h = o.h;
   const low = lowDetail(ctx.zoom ?? 1);
   const name = o.name || 'Kanban';
   let inner = `<rect x="0.5" y="0.5" width="${n(Math.max(0, w - 1))}" height="${n(Math.max(0, h - 1))}" style="fill:${K.canvas};stroke:${K.rule}" stroke-width="1"/>`;
   inner += `<rect x="0" y="46" width="${n(w)}" height="2" ${fillStyle(K.canvasInk)}/>`;
+  // the header's controls and the add-lane +, at full detail only (below 0.4 they would be a few pixels across)
+  const controls = low ? null : kanbanHeaderControls(o, ctx.filterChips?.(o.id) ?? null, !!ctx.editable);
+  const layout = ctx.containerLayout?.(o.id);
+  if (controls) inner += headerControlsMarkup(o, controls, ctx.openControl);
+  if (!low && ctx.editable && layout?.addLane) {
+    const a = layout.addLane;
+    const ax = a.x - o.x, ay = a.y - o.y;
+    inner += `<g class="k-addlane"><title>Add lane</title><rect x="${n(ax + 0.5)}" y="${n(ay + 0.5)}" width="${n(a.w - 1)}" height="${n(a.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>${kIcon(ICON_PLUS, ax + 6, ay + 6, 20, K.canvasInk)}</g>`;
+  }
   if (ctx.editingId === o.id) return wrapG(o, inner, 1);
   const size = low ? 40 : 17;
   const font = fontCss(o.font, size, 700);
-  const nameText = clip(name, font, w - 24);
+  const right = controls ? controls.left - 12 : w - 12;
+  const nameText = clip(name, font, Math.max(24, right - 12));
   inner += `<text x="12" y="${low ? 38 : 30}" font-family="${escapeXml(fontFamily(o.font))}" font-size="${size}" font-weight="700" letter-spacing="${low ? -0.4 : -0.17}" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
-  if (!low) {
-    const layout = ctx.containerLayout?.(o.id);
-    if (layout) {
-      const lanes = layout.lanes.length;
-      const cards = [...layout.cards.values()].reduce((s, ids) => s + ids.length, 0);
-      const meta = `${lanes} ${lanes === 1 ? 'lane' : 'lanes'} · ${cards} ${cards === 1 ? 'card' : 'cards'}`;
-      const x = 12 + measure(nameText, font) + 12;
-      if (x + lblWidth(meta, o.font) < w - 12) inner += label(meta, x, 28.5, K.meta, o.font);
-    }
+  if (!low && layout) {
+    const lanes = layout.lanes.length;
+    const cards = [...layout.cards.values()].reduce((s, ids) => s + ids.length, 0);
+    const meta = `${lanes} ${lanes === 1 ? 'lane' : 'lanes'} · ${cards} ${cards === 1 ? 'card' : 'cards'}`;
+    const x = 12 + measure(nameText, font) + 12;
+    if (x + lblWidth(meta, o.font) < right) inner += label(meta, x, 28.5, K.meta, o.font);
   }
   return wrapG(o, inner, 1);
 }
@@ -363,10 +457,17 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
     if (ctx.editingId !== o.id) inner += `<text x="12" y="38" font-family="${fam}" font-size="28" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(clip(o.name || 'Lane', font, w - 24))}</text>`;
     return wrapG(o, inner, 1);
   }
-  // the count, right-aligned in the header, as a danger chip when over the limit
+  // the ⋯ menu (editors only), then the count right-aligned before it, as a danger chip when over the limit
   const mid = 26;
   const countW = lblWidth(count.text, o.font) + (count.block ? 16 : 0);
   let right = w - 12;
+  if (ctx.editable) {
+    const m = laneMenuRect({ x: 0, y: 0, w, h });
+    const pressed = ctx.openControl?.id === o.id;
+    if (pressed) inner += `<rect x="${n(m.x)}" y="${n(m.y)}" width="${m.w}" height="${m.h}" ${fillStyle(K.canvasInk)}/>`;
+    inner += `<g class="k-menu" ${fillStyle(pressed ? K.canvas : K.canvasInk)} transform="translate(${n(m.x + 5)} ${n(m.y + 5)}) scale(${n(18 / 24)})">${ICON_DOTS}</g>`;
+    right = m.x - 8;
+  }
   if (count.state === 'over') {
     inner += `<rect x="${n(right - countW - 6)}" y="${mid - 10}" width="${n(countW + 12)}" height="20" ${fillStyle(K.danger)}/>`;
   }
@@ -397,7 +498,11 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   if (ctx.editable && ctx.addingLane !== o.id) {
     const r = addRow(local, cards);
     const cy = r.y + r.h / 2;
-    inner += `<g class="k-add">${kIcon(ICON_PLUS, r.x + 8, cy - 8, 16, K.meta)}<text x="${n(r.x + 30)}" y="${n(cy + 4.5)}" font-family="${fam}" font-size="13" font-weight="500" ${fillStyle(K.meta)}>Add card</text></g>`;
+    // a full block lane takes no new card: the row is disabled, with a lock and the limit in its tooltip (Slice 4 notes)
+    const full = count.block && count.state !== '';
+    inner += full
+      ? `<g class="k-add k-add-full" opacity="0.5"><title>${escapeXml(wipFullMessage(o.name, ids.length, o.wip!))}</title>${kIcon(ICON_LOCK, r.x + 8, cy - 8, 16, K.meta)}<text x="${n(r.x + 30)}" y="${n(cy + 4.5)}" font-family="${fam}" font-size="13" font-weight="500" ${fillStyle(K.meta)}>Add card</text></g>`
+      : `<g class="k-add">${kIcon(ICON_PLUS, r.x + 8, cy - 8, 16, K.meta)}<text x="${n(r.x + 30)}" y="${n(cy + 4.5)}" font-family="${fam}" font-size="13" font-weight="500" ${fillStyle(K.meta)}>Add card</text></g>`;
   }
   return wrapG(o, inner, 1);
 }
@@ -408,7 +513,8 @@ function cardMarkup(o: BaseObj, ctx: MarkupCtx) {
     // the slot it leaves: a dashed hairline of the same size, nothing inside
     return wrapG(o, `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" style="fill:none;stroke:color-mix(in srgb, var(--canvas-ink, #18212B) 55%, transparent)" stroke-width="1" stroke-dasharray="4 3"/>`, 1);
   }
-  return wrapG(o, cardBody(o, ctx), 1);
+  // a card this viewer's filter does not match draws at 35%: dimmed, never hidden, so the layout stays shared
+  return wrapG(o, cardBody(o, ctx), ctx.dimmed?.(o) ? 0.35 : 1);
 }
 
 /** A card's drawing in its own coordinates, without the group that places it: the board draws it, and so does the drag ghost. */

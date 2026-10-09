@@ -1,7 +1,7 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
 import { isContainerType, validLabel } from '../shared/containers';
-import { lowDetail } from './ui/kanban-logic';
+import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
@@ -46,6 +46,8 @@ export interface KanbanOverlay {
   line?: Rect | null;
   /** A card being moved by keyboard: a ring 4px out and the "Moving" tag. */
   moving?: Rect | null;
+  /** A block lane that refuses the cards dragged over it: its body outlined in dashed danger, and the "Full" label at `at`. */
+  full?: { body: Rect; at: Point; text: string } | null;
 }
 
 /** Kanban state the drawing of lanes and cards depends on (docs/kanban.md, Dragging and Adding a card). */
@@ -53,6 +55,8 @@ export interface KanbanDrawState {
   dragging: ReadonlySet<Id>;
   dropLane: Id | null;
   addingLane: Id | null;
+  /** The kanban control whose menu or popover is open (docs/kanban.md, slice 4), drawn pressed. */
+  open?: { id: Id; kind: 'menu' | 'filter' } | null;
 }
 
 export const emptyOverlay = (): Overlay => ({
@@ -137,6 +141,12 @@ export class Renderer {
   ownerColor: (o: BaseObj) => string | undefined = () => undefined;
   /** How many comments an object has, for the count on a card; set by the app. */
   commentCount: (id: Id) => number = () => 0;
+  /**
+   * This viewer's filter chips on a kanban, and whether it dims a card; set by the app (docs/kanban.md, Filters). Null,
+   * as in a renderer that is not the board's own (the version preview), draws no Filter button.
+   */
+  filterChips: (containerId: Id) => FilterChip[] | null = () => null;
+  dimmed: (card: BaseObj) => boolean = () => false;
   private kanbanState: KanbanDrawState = { dragging: new Set(), dropLane: null, addingLane: null };
   // the container each drawn lane or card belonged to, so a card that leaves a lane redraws the lane it left
   private kanbanOf = new Map<Id, Id>();
@@ -196,12 +206,15 @@ export class Renderer {
       label: (id) => { const l = validLabel(this.store.labels.get(id)); return l && l.id === id ? l : undefined; },
       ownerColor: (o) => this.ownerColor(o),
       commentCount: (id) => this.commentCount(id),
+      filterChips: (id) => this.filterChips(id),
+      dimmed: (o) => this.dimmed(o),
     };
     // live values, read at each draw (an export spreads the ctx and so takes them as they are then)
     Object.defineProperties(this.ctx, {
       zoom: { get: () => this.cam.zoom, enumerable: true },
       dropLane: { get: () => this.kanbanState.dropLane, enumerable: true },
       addingLane: { get: () => this.kanbanState.addingLane, enumerable: true },
+      openControl: { get: () => this.kanbanState.open ?? null, enumerable: true },
       editable: { get: () => !this.readOnly, enumerable: true },
     });
 
@@ -261,6 +274,16 @@ export class Renderer {
       this.markDirty(cid);
       for (const lane of this.store.containerLayout(cid)?.lanes ?? []) this.markDirty(lane);
     }
+    // a lane's cards draw from its fields too (a done stage changes their due chips): redraw them with it
+    if (o?.type === 'lane' && now) for (const card of this.store.containerLayout(now)?.cards.get(o.id) ?? []) this.markDirty(card);
+  }
+
+  /** Redraws a kanban with its lanes and cards: this viewer's filter on it changed (nothing in the board did). */
+  invalidateKanban(containerId: Id) {
+    const layout = this.store.containerLayout(containerId);
+    this.markDirty(containerId);
+    for (const id of layout?.order ?? []) this.markDirty(id);
+    this.schedule();
   }
 
   /** Changes what a drag or the inline add-card input shows in the board's own drawing, redrawing only what it touches. */
@@ -268,7 +291,7 @@ export class Renderer {
     const prev = this.kanbanState;
     const next = { ...prev, ...patch };
     for (const id of new Set([...prev.dragging, ...next.dragging])) if (prev.dragging.has(id) !== next.dragging.has(id)) this.markDirty(id);
-    for (const id of [prev.dropLane, next.dropLane, prev.addingLane, next.addingLane]) if (id) this.markDirty(id);
+    for (const id of [prev.dropLane, next.dropLane, prev.addingLane, next.addingLane, prev.open?.id, next.open?.id]) if (id) this.markDirty(id);
     this.kanbanState = next;
     this.schedule();
   }
@@ -701,6 +724,15 @@ export class Renderer {
       const e = px(8);
       out += `<g style="fill:var(--canvas-ink, #18212B)"><rect x="${l.x}" y="${l.y + l.h / 2 - px(1)}" width="${l.w}" height="${px(2)}"/>` +
         `<rect x="${l.x - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/><rect x="${l.x + l.w - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/></g>`;
+    }
+    if (k?.full) {
+      // a block lane at its limit: no drop line, its body outlined in dashed danger and "Full · n / n" (Visual design, States)
+      const b = k.full.body;
+      out += `<rect x="${b.x + px(1)}" y="${b.y + px(1)}" width="${Math.max(0, b.w - px(2))}" height="${Math.max(0, b.h - px(2))}" style="fill:none;stroke:var(--danger, #D41E24)" stroke-width="${px(2)}" stroke-dasharray="${px(6)} ${px(4)}"/>`;
+      const text = k.full.text.toUpperCase();
+      const tw = px(text.length * 6.9 + 16);
+      out += `<g class="k-full-tag"><rect x="${k.full.at.x - tw / 2}" y="${k.full.at.y}" width="${tw}" height="${px(20)}" style="fill:var(--danger, #D41E24)"/>` +
+        `<text x="${k.full.at.x}" y="${k.full.at.y + px(14)}" text-anchor="middle" font-size="${px(11)}" font-weight="600" letter-spacing="${px(0.66)}" style="fill:var(--paper, #FFFFFF)" font-family="Switzer, system-ui, sans-serif">${escapeXml(text)}</text></g>`;
     }
     if (k?.moving) {
       const m = k.moving;

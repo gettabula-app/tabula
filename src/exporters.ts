@@ -268,6 +268,10 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     dropLane: null,
     addingLane: null,
     editable: false,
+    // a filter is a view, not content: dimmed cards export at full strength and the header has no Filter (docs/kanban.md)
+    filterChips: undefined,
+    dimmed: undefined,
+    openControl: null,
     // an image is its data URL here, or a placeholder when its bytes were not found: never a link that only works on screen
     imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
   };
