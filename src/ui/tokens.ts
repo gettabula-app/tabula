@@ -69,7 +69,7 @@ function codeBlock(label: string, text: string, what: string): HTMLElement {
 }
 
 /** The "AI tool access" dialog: the person's own tokens, a form for a new one, and the one-time view of its secret. */
-export function openTokensDialog(me: Me): void {
+export function openTokensDialog(me: Me, onCreated?: () => void): void {
   const body = h('div', { class: 'tokens' });
   const { box, close } = dialog('AI tool access', body);
   box.classList.add('tokens-dialog');
@@ -226,7 +226,9 @@ export function openTokensDialog(me: Me): void {
       if (draftProblem(me.user.role, draft) !== null) return;
       create.disabled = true;
       try {
-        showCreated(await api.createAccessToken(toRequest(draft)));
+        const made = await api.createAccessToken(toRequest(draft));
+        onCreated?.();
+        showCreated(made);
       } catch (e) {
         toast(describe(e));
         refresh();
@@ -283,6 +285,7 @@ export interface AdminKit {
 /** The body of the admin dashboard's Access tokens tab: every active token, with a revoke button each. */
 export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let tokens: AdminAccessToken[] = [];
+  let reload: () => void = () => {};
   const box = h('div', { class: 'admin-box', style: '--cols: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) auto' });
   const actor = { id: me.user.id, role: me.user.role };
 
@@ -318,10 +321,19 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
         kit.armable('Revoke', 'Click again to revoke', () => revoke(t), { disabled: !verdict.allowed, title: verdict.reason })));
   };
 
-  kit.loadList(box, () => api.adminAccessTokens(), (list) => {
+  const create = h('button', {
+    class: 'btn primary', type: 'button', onclick: () => {
+      create.focus();
+      openTokensDialog(me, reload);
+    },
+  }, 'Create a token');
+  reload = kit.loadList(box, () => api.adminAccessTokens(), (list) => {
     tokens = list;
     paint();
   });
-  return box;
+  return h('div', { class: 'admin-token-panel' },
+    h('div', { class: 'admin-token-create' },
+      h('p', { class: 'muted admin-note' }, 'Connect AI tools like Claude Code to this workspace over MCP.'),
+      create),
+    box);
 }
-

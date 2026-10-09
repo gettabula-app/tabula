@@ -163,6 +163,8 @@
 .admin .input[type='search'] { min-width: 0; width: 100%; }
 .admin .icon-btn { border-radius: 0; }
 .admin .icon-btn:hover { background: var(--ink); color: var(--paper); }
+.admin-token-create { display: grid; justify-items: start; gap: 12px; min-width: 0; margin-bottom: 24px; }
+.admin-token-create .admin-note { width: 100%; min-width: 0; margin: 0; }
 
 @media (max-width: 900px) {
   .admin-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
