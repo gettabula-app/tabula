@@ -62,6 +62,8 @@ Each step can have minutes. The timer starts paused when a step begins. Click **
 
 In a **Private writing** step, notes you create are visible only to you. Other people do not see what you wrote. Click **Reveal notes** on the bar to show everyone's notes at once. Moving to another step turns the reveal off again, but notes that were already revealed stay visible.
 
+Other people's hidden notes are also left out of everything you can do with a selection: Select all, a drag selection, copy, duplicate, align, Arrange, recolouring, saving as a template, the AI bar and exports (board file, JSON, Mermaid). They come back after the reveal.
+
 Comment pins on hidden notes are hidden as well. See [Comments](comments.md).
 
 ## Dot voting
