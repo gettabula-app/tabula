@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileTimes, overBudget, summary, testTimes } from '../scripts/test-timings.mjs';
+import { MAX_RECHECKS, fileTimes, overBudget, recheck, summary, testTimes } from '../scripts/test-timings.mjs';
 
 const report = (rows: { name: string; startTime?: number; endTime?: number; status?: string }[]) => ({ testResults: rows });
 
@@ -72,5 +72,39 @@ describe('the per-test timing budget', () => {
     expect(() => overBudget([], { maxTestSeconds: 0 })).toThrow(/maxTestSeconds/);
     expect(() => overBudget([], { maxTestSeconds: 30, exempt: [{ file: 'a', test: 'b', maxSeconds: 40 }] })).toThrow(/reason/);
     expect(() => overBudget([], { maxTestSeconds: 30, exempt: [{ file: 'a', test: 'b', maxSeconds: 0, reason: 'x' }] })).toThrow(/maxSeconds/);
+  });
+});
+
+describe('measuring the tests over budget once more', () => {
+  const row = (test: string, seconds: number) => ({ file: 'test/restore-guards.test.ts', test, seconds, limit: 30 });
+
+  it('counts a test that is within its limit the second time as a stalled sample, with both times', () => {
+    const asked: string[][] = [];
+    const out = recheck([row('one restore at a time', 31.3)], (file: string, test: string) => (asked.push([file, test]), 0.4));
+    expect(asked).toEqual([['test/restore-guards.test.ts', 'one restore at a time']]);
+    expect(out.confirmed).toEqual([]);
+    expect(out.stalled).toEqual([{ ...row('one restore at a time', 31.3), again: 0.4 }]);
+  });
+
+  it('keeps a test that is over its limit the second time too', () => {
+    const out = recheck([row('slow', 44), row('also slow', 35)], (_file: string, test: string) => (test === 'slow' ? 33 : 2));
+    expect(out.confirmed).toEqual([{ ...row('slow', 44), again: 33 }]);
+    expect(out.stalled.map((t) => (t as { test: string }).test)).toEqual(['also slow']);
+  });
+
+  it('keeps a test that could not be measured again, and one exactly at its limit is within it', () => {
+    expect(recheck([row('gone', 40)], () => null).confirmed).toEqual([{ ...row('gone', 40), again: null }]);
+    expect(recheck([row('edge', 40)], () => 30).stalled).toHaveLength(1);
+  });
+
+  it('measures each test once, and not at all when more than a few are over: that is a pattern, not a stall', () => {
+    let calls = 0;
+    const many = Array.from({ length: MAX_RECHECKS + 1 }, (_, i) => row(`t${i}`, 40));
+    const out = recheck(many, () => (calls++, 1));
+    expect(calls).toBe(0);
+    expect(out.confirmed).toHaveLength(MAX_RECHECKS + 1);
+    expect(out.stalled).toEqual([]);
+    recheck(many.slice(0, MAX_RECHECKS), () => (calls++, 1));
+    expect(calls).toBe(MAX_RECHECKS);
   });
 });
