@@ -3,9 +3,9 @@ import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
 import { Renderer } from '../src/render';
 import { Store } from '../src/store';
-import { KANBANS_LEFT_OUT, addCard, addCardRefusal, addLane, newKanban } from '../src/containers';
+import { addCard, addCardRefusal, addLane, newKanban } from '../src/containers';
 import { CardInput } from '../src/ui/kanban';
-import { TEMPLATES, availableTemplates, insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
+import { TEMPLATES, insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
 import type { CustomTemplate } from '../src/custom-templates';
 import { KANBAN, LIMITS, ranksBetween } from '../shared/containers';
 import { EMPTY_FILTER, addRow, laneCards, laneMenuRect, type FilterChip } from '../src/ui/kanban-logic';
@@ -52,12 +52,7 @@ type Harness = BoardApp & Record<string, unknown>;
 
 const commentsReadOnly = { value: false };
 const openCard = vi.fn<(id: Id, focus?: string) => void>();
-/** The kanban flag (src/flags.ts), by the URL or by localStorage. */
 const storage = new Map<string, string>();
-function flagOn(by: 'url' | 'storage' = 'url') {
-  if (by === 'url') vi.stubGlobal('location', { search: '?debug&kanban' });
-  else storage.set('driftboard:flag:kanban', '1');
-}
 
 function harness() {
   const store = new Store(new Y.Doc());
@@ -213,7 +208,8 @@ describe('what a click hits', () => {
 describe('the kanban tool', () => {
   it('puts the kanban’s top-left corner where a drag started, whichever way it went', () => {
     const { app, store } = harness();
-    flagOn();
+    app.setTool({ kind: 'kanban' });
+    expect(app.tool.kind).toBe('kanban');
     const start = { x: 400, y: 300 };
     const e = { altKey: true, shiftKey: false };
     call(app, 'finishCreate', { mode: 'create', start, tool: { kind: 'kanban' } }, { x: 100, y: 120 }, e);
@@ -272,53 +268,47 @@ const press = (app: Harness, k: string, extra: Record<string, unknown> = {}) => 
   listeners.forEach((fn) => fn(key(k, extra)));
 };
 
-describe('the kanban flag (src/flags.ts)', () => {
-  it('off: no Kanban tool, no kanban from a selection, no loose cards; existing kanbans still edit', () => {
-    const { app, store, ids, container, lanes } = harness();
-    app.setTool({ kind: 'kanban' });
-    expect(app.tool.kind).toBe('select');
-    expect(app.createKanban({ x: 0, y: 0 })).toBeNull();
-    addSticky(store, 's1', { x: 3000, y: 3000 });
-    addSticky(store, 's2', { x: 3300, y: 3000 });
-    app.setSelection(['s1', 's2']);
-    expect(app.kanbanCreation).toBe(false);
-    expect(app.makeKanbanFromSelection()).toBeNull();
-    expect(app.canTurnIntoCards()).toBe(false);
-    expect(app.turnIntoCards()).toBe(false);
-    expect(store.get('s1')!.type).toBe('sticky');
-    expect([...store.cache.values()].filter((o) => o.type === 'container')).toHaveLength(1);
-    // a sticky over a lane still becomes a card there, and the kanban edits as before
-    addSticky(store, 's3', centre(store, lanes[1], 0.3));
-    expect(app.canTurnIntoCards(['s3'])).toBe(true);
-    expect(app.turnIntoCards(['s3'])).toBe(true);
-    expect(store.containerLayout(container)!.cards.get(lanes[1])).toEqual(['s3']);
-    app.setSelection([ids[0]]);
-    expect(app.openCardDialog(ids[0])).toBe(true);
-  });
-
-  it('on by ?kanban: the tool, Make kanban and loose cards are there', () => {
+describe('creating and converting kanbans', () => {
+  it('lets an editor choose the Kanban tool and create a board', () => {
     const { app, store } = harness();
-    flagOn('url');
     app.setTool({ kind: 'kanban' });
     expect(app.tool.kind).toBe('kanban');
-    app.setTool({ kind: 'select' });
+    const id = app.createKanban({ x: 3000, y: 3000 });
+    expect(store.get(id!)?.type).toBe('container');
+  });
+
+  it('makes a kanban from the selected stickies', () => {
+    const { app, store } = harness();
     addSticky(store, 's1', { x: 3000, y: 3000 });
     addSticky(store, 's2', { x: 3300, y: 3000 });
     app.setSelection(['s1', 's2']);
-    expect(app.kanbanCreation).toBe(true);
-    expect(app.canTurnIntoCards()).toBe(true);
     const id = app.makeKanbanFromSelection();
     expect(store.get(id!)?.type).toBe('container');
     expect(store.get('s1')!.type).toBe('card');
   });
 
-  it('on by localStorage driftboard:flag:kanban = 1', () => {
+  it('turns a sticky away from a lane into a loose card', () => {
     const { app, store } = harness();
-    flagOn('storage');
     addSticky(store, 's1', { x: 3000, y: 3000 });
+    expect(app.canTurnIntoCards(['s1'])).toBe(true);
     expect(app.turnIntoCards(['s1'])).toBe(true);
     expect(store.get('s1')).toMatchObject({ type: 'card' });
     expect(store.isLaidOut(store.get('s1')!)).toBe(false);
+  });
+
+  it('keeps creation and conversion unavailable on a read-only board', () => {
+    const { app, store } = harness();
+    addSticky(store, 's1', { x: 3000, y: 3000 });
+    addSticky(store, 's2', { x: 3300, y: 3000 });
+    store.setReadOnly(true);
+    app.setTool({ kind: 'kanban' });
+    app.setSelection(['s1', 's2']);
+    expect(app.tool.kind).toBe('select');
+    expect(app.createKanban({ x: 0, y: 0 })).toBeNull();
+    expect(app.makeKanbanFromSelection()).toBeNull();
+    expect(app.canTurnIntoCards()).toBe(false);
+    expect(app.turnIntoCards()).toBe(false);
+    expect(store.get('s1')!.type).toBe('sticky');
   });
 });
 
@@ -395,7 +385,6 @@ describe('dropping a sticky on a lane', () => {
 describe('someone else\'s private notes during a running private step', () => {
   function withPrivate() {
     const h = harness();
-    flagOn();
     // as Flow decides it (src/flow.ts): a note of a private step that is not revealed is hidden from everyone but its author
     Object.assign(h.app.flow, { isHidden: (o: BaseObj) => !!o.privateStep && o.createdBy !== 'me' });
     h.store.transact(() => h.store.create({ id: 'secret', type: 'sticky', x: 3000, y: 3000, w: 192, h: 192, rotation: 0, z: 'a6', fill: '#FFE16B', text: 'Secret', privateStep: 'step1', createdBy: 'other', updatedAt: 0 } as BaseObj));
@@ -444,24 +433,30 @@ describe('someone else\'s private notes during a running private step', () => {
   });
 });
 
-describe('pasting, duplicating and importing while the kanban flag is off', () => {
+describe('pasting, duplicating and importing kanbans', () => {
   const foreign = () => [
     { id: 'kx', type: 'container', layout: 'kanban', name: 'From elsewhere', x: 0, y: 0, w: 900, h: 400, rotation: 0, z: 'a0', createdBy: 'x', updatedAt: 0 },
-    { id: 'cx', type: 'card', text: 'Loose', x: 0, y: 500, w: 264, h: 34, rotation: 0, z: 'a1', createdBy: 'x', updatedAt: 0 },
-    { id: 'sx', type: 'sticky', text: 'Note', x: 400, y: 500, w: 192, h: 192, rotation: 0, z: 'a2', createdBy: 'x', updatedAt: 0 },
-    { id: 'lx', type: 'connector', from: { kind: 'bound', id: 'cx', anchor: 'auto' }, to: { kind: 'bound', id: 'sx', anchor: 'auto' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'a3', createdBy: 'x', updatedAt: 0 },
+    { id: 'lane-x', type: 'lane', parent: 'kx', rank: ranksBetween(null, null, 1, 'kx')[0], name: 'Backlog', stage: 'todo', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1', createdBy: 'x', updatedAt: 0 },
+    { id: 'cx', type: 'card', parent: 'lane-x', rank: ranksBetween(null, null, 1, 'lane-x')[0], text: 'Foreign card', x: 0, y: 0, w: 264, h: 72, rotation: 0, z: 'a2', createdBy: 'x', updatedAt: 0 },
+    { id: 'sx', type: 'sticky', text: 'Note', x: 400, y: 500, w: 192, h: 192, rotation: 0, z: 'a3', createdBy: 'x', updatedAt: 0 },
+    { id: 'conn-x', type: 'connector', from: { kind: 'bound', id: 'cx', anchor: 'auto' }, to: { kind: 'bound', id: 'sx', anchor: 'auto' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'a4', createdBy: 'x', updatedAt: 0 },
   ] as unknown as BaseObj[];
   const count = (store: Store, type: string) => [...store.cache.values()].filter((o) => o.type === type).length;
 
-  it('leaves out kanbans and cards that are not copies of ones on this board, with their connectors, and says so', () => {
+  it('pastes a kanban, its lane and card, and their connector from another board', () => {
     const { app, store, notify } = harness();
-    const before = { containers: count(store, 'container'), cards: count(store, 'card') };
-    const out = app.insertObjects(foreign(), { x: 0, y: 2000 });
-    expect(out.map((o) => o.type)).toEqual(['sticky']);
-    expect(count(store, 'container')).toBe(before.containers);
-    expect(count(store, 'card')).toBe(before.cards);
-    expect(count(store, 'connector')).toBe(0);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Kanbans'));
+    app.pasteText(JSON.stringify({ driftboard: 1, objects: foreign() }));
+    expect(count(store, 'container')).toBe(2);
+    expect([...store.cache.values()].filter((o) => o.type === 'lane')).toHaveLength(4);
+    expect(count(store, 'card')).toBe(4);
+    expect(count(store, 'connector')).toBe(1);
+    const imported = [...store.cache.values()].find((o) => o.type === 'container' && (o as BaseObj).name === 'From elsewhere') as BaseObj;
+    const layout = store.containerLayout(imported.id)!;
+    const card = [...layout.cards.values()].flat()[0];
+    expect(store.get(card)).toMatchObject({ type: 'card', text: 'Foreign card' });
+    const connector = [...store.cache.values()].find((o) => o.type === 'connector') as BaseObj & { from: { id: Id } };
+    expect(connector.from.id).toBe(card);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('still duplicates a kanban that is on this board', () => {
@@ -471,17 +466,9 @@ describe('pasting, duplicating and importing while the kanban flag is off', () =
     expect(count(store, 'container')).toBe(2);
   });
 
-  it('lets everything through with the flag', () => {
-    const { app, store } = harness();
-    flagOn();
-    app.insertObjects(foreign(), { x: 0, y: 2000 });
-    expect(count(store, 'container')).toBe(2);
-    expect(count(store, 'connector')).toBe(1);
-  });
 });
 
-describe('placing a template while the kanban flag is off (src/templates.ts)', () => {
-  // A template's ids are all new, so none is a copy of something on this board: without the flag every container goes.
+describe('placing templates with kanbans', () => {
   // Lanes and cards cannot be in a template until slice 5 (the validator refuses them), so a container is enough here.
   const kanbanTemplate = (): TemplateDef => ({
     id: 'test-kanban', name: 'Kanban test', category: 'Planning', description: '',
@@ -503,31 +490,13 @@ describe('placing a template while the kanban flag is off (src/templates.ts)', (
   const withFlow = (app: Harness) => Object.assign(app.flow, { state: () => ({ steps: [] }), setSteps() {}, end() {} });
   const count = (store: Store, type: string) => [...store.cache.values()].filter((o) => o.type === type).length;
 
-  it('a built-in template leaves its kanbans out and says so; the rest is placed', () => {
+  it('built-in and saved templates keep their kanbans and the rest of their objects', () => {
     const { app, store, notify } = harness();
     withFlow(app);
-    insertTemplate(app, kanbanTemplate());
-    expect(count(store, 'container')).toBe(1);
-    expect(count(store, 'sticky')).toBe(1);
-    expect(notify).toHaveBeenCalledWith(KANBANS_LEFT_OUT);
-  });
-
-  it('a saved template does the same', () => {
-    const { app, store, notify } = harness();
-    withFlow(app);
-    insertCustomTemplate(app, custom());
-    expect(count(store, 'container')).toBe(1);
-    expect(count(store, 'sticky')).toBe(1);
-    expect(notify).toHaveBeenCalledWith(KANBANS_LEFT_OUT);
-  });
-
-  it('with the flag on, both keep their kanbans and say nothing', () => {
-    const { app, store, notify } = harness();
-    withFlow(app);
-    flagOn();
     insertTemplate(app, kanbanTemplate());
     insertCustomTemplate(app, custom());
     expect(count(store, 'container')).toBe(3);
+    expect(count(store, 'sticky')).toBe(2);
     expect(notify).not.toHaveBeenCalled();
   });
 });
@@ -974,16 +943,14 @@ describe('kanban templates and copies (slice 5)', () => {
   const withFlow = (app: Harness) => Object.assign(app.flow, { state: () => ({ steps: [] }), setSteps: vi.fn<() => void>(), end() {} });
   const containers = (store: Store) => [...store.cache.values()].filter((o) => o.type === 'container').map((o) => o.id);
 
-  it('offers the four kanban templates only with the flag on', () => {
-    expect(availableTemplates().filter((t) => t.kanban)).toEqual([]);
-    flagOn();
-    expect(availableTemplates().filter((t) => t.kanban).map((t) => t.name)).toEqual(['Kanban', 'Sprint board', 'Bug triage', 'Personal tasks']);
+  it('includes all four kanban templates', () => {
+    expect(TEMPLATES.filter((t) => ['kanban', 'sprint-board', 'bug-triage', 'personal-tasks'].includes(t.id)).map((t) => t.name))
+      .toEqual(['Kanban', 'Sprint board', 'Bug triage', 'Personal tasks']);
   });
 
   it('places the Sprint board with its labels merged by name, in one undo step, leaving the session alone', () => {
     const { app, store } = harness();
     const flow = withFlow(app);
-    flagOn();
     const feature = createLabel(store, 'FEATURE', 'teal')!;
     store.undo.clear();
     insertTemplate(app, TEMPLATES.find((t) => t.id === 'sprint-board')!);

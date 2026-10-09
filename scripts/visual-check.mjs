@@ -1253,7 +1253,7 @@ const STATES = {
     return { noPark: true };
   },
   async 'kanban-templates'({ page, base }) {
-    await page.goto(`${base}/?kanban#/templates`);
+    await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
     await page.getByRole('button', { name: 'Planning', exact: true }).click();
     await page.getByRole('heading', { name: 'Sprint board' }).waitFor();

@@ -120,7 +120,7 @@ describe.each(validators)('%s template validator', (_name, validate) => {
   });
 
   it('accepts every built-in kanban template', () => {
-    for (const def of TEMPLATES.filter((t) => t.kanban)) {
+    for (const def of TEMPLATES.filter((t) => ['kanban', 'sprint-board', 'bug-triage', 'personal-tasks'].includes(t.id))) {
       const t = builtinToCustom(def, 'me', 1);
       const out = validate(t.content);
       expect(out.objects.some((o) => o.type === 'container')).toBe(true);
