@@ -34,7 +34,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread (the chat states turn on TABULA_CHAT)
+                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     chat-home, chat-admin (the chat states turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -280,6 +281,8 @@ async function resetChatMarker({ chat, dataDir }) {
   if (!chat) throw new Error('the chat states need --mode accounts');
   await withChatDb(dataDir, (db) => {
     db.prepare('UPDATE chat_reads SET last_id = ? WHERE user_id = ? AND kind = ? AND ref = ?').run(chat.readUpTo, chat.ownerId, 'board', BOARD_ID);
+    // the team and workspace channels start unread in every shot
+    db.prepare("UPDATE chat_reads SET last_id = 0 WHERE user_id = ? AND kind IN ('team', 'workspace')").run(chat.ownerId);
   });
 }
 
@@ -359,11 +362,26 @@ async function seedChat(relay, ownerCookie) {
   await apiJson(base, 'DELETE', `chat/messages/${willDo}`, undefined, ben);
   await apiJson(base, 'PUT', `chat/board/${BOARD_ID}/read`, { lastId: answer }, ownerCookie);
 
+  // the team channel and the workspace channel (the Chat page): the owner is caught up first, so what is said next is unread
+  await apiJson(base, 'GET', 'chat/channels', undefined, ownerCookie);
+  // a pause before each, so the per-person posting limit (a burst of five) never answers 429
+  const sayIn = async (route, cookie, text) => {
+    await sleep(700);
+    return (await apiJson(base, 'POST', route, { clientId: `visual-seed-${++n}`, text }, cookie)).message.id;
+  };
+  const teamRoute = `chat/team/${team.id}/messages`;
+  const workspaceRoute = 'chat/workspace/main/messages';
+  at(await sayIn(teamRoute, ana, 'The design review moved to Thursday at 14:00.'), NOW - 3 * HOUR);
+  at(await sayIn(teamRoute, ben, 'I can present the checkout flow.'), NOW - 2 * HOUR - 40 * MINUTE);
+  at(await sayIn(teamRoute, ana, `@{${ids.owner}} can you confirm the room?`), NOW - 25 * MINUTE);
+  at(await sayIn(workspaceRoute, ben, 'The office is closed on Friday for the offsite.'), NOW - DAY - 2 * HOUR);
+  at(await sayIn(workspaceRoute, ana, 'Reminder: expense reports are due this week.'), NOW - 5 * HOUR);
+
   await withChatDb(relay.dataDir, (db) => {
     const move = db.prepare('UPDATE chat_messages SET created_at = ?, edited_at = CASE WHEN edited_at IS NULL THEN NULL ELSE ? END, deleted_at = CASE WHEN deleted_at IS NULL THEN NULL ELSE ? END WHERE id = ?');
     for (const t of times) move.run(t.time, t.edited ?? t.time, t.time + MINUTE, t.id);
   });
-  return { ownerId: ids.owner, readUpTo: answer, count: times.length };
+  return { ownerId: ids.owner, readUpTo: answer, count: times.length - 5, teamId: team.id };
 }
 
 
@@ -551,6 +569,28 @@ const STATES = {
   async chat(env) {
     await openSeedChat(env);
   },
+  // the Chat page (TAB-132 slice 3): the list and the conversation; on a phone the list first, then a conversation
+  async 'chat-page'(env) {
+    await resetChatMarker(env);
+    await env.page.goto(`${env.base}/#/chat`);
+    await env.page.locator('.chat-row').first().waitFor();
+    if (await env.page.locator('.chat-conv.open').count()) await env.page.locator('.chat-conv.open .chat-msg').first().waitFor();
+  },
+  async 'chat-page-team'(env) {
+    await resetChatMarker(env);
+    await env.page.goto(`${env.base}/#/chat/team/${env.chat.teamId}`);
+    await env.page.locator('.chat-conv.open .chat-msg').first().waitFor();
+    await env.page.locator('.chat-new').waitFor();
+  },
+  async 'chat-home'(env) {
+    await resetChatMarker(env);
+    await env.page.goto(`${env.base}/#/`);
+    await env.page.locator('.topbar-badge.show').waitFor();
+  },
+  async 'chat-admin'({ page, base }) {
+    await page.goto(`${base}/#/admin/chat`);
+    await page.getByRole('radio', { name: '1 year' }).waitFor();
+  },
   async 'chat-composer'(env) {
     await openSeedChat(env);
     const field = env.page.getByRole('combobox', { name: 'Message' });
@@ -678,7 +718,7 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

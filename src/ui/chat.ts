@@ -2,7 +2,7 @@ import './chat.css';
 import type { BoardApp } from '../app';
 import type { ChatMessage } from '../api';
 import { authState } from '../auth';
-import { boardUnread, onChatBadge, openBoardChat, type ChatView } from '../chat';
+import { boardUnread, onChatBadge, openBoardChat, type BoardChat, type ChatView } from '../chat';
 import { USER_COLORS } from '../palette';
 import { h, icon } from './dom';
 import { announce } from './announce';
@@ -76,43 +76,36 @@ function avatar(id: string | null, name: string): HTMLElement {
   return a;
 }
 
+/** What one conversation needs to be drawn: the channel, the element to draw in and who is looking. */
+export interface ConversationOptions {
+  chat: BoardChat;
+  /** Makes DOM ids unique (the people list of the composer). */
+  id: string;
+  panel: HTMLElement;
+  signal: AbortSignal;
+  meId: string;
+  meName: string;
+  /** Called with every new view, open or not (the board's button paints its badge from it). */
+  onView?: (view: ChatView) => void;
+}
+
+export interface Conversation {
+  /** The conversation is on screen (or not): it subscribes, loads, marks read and announces only while it is. */
+  setOpen(open: boolean): void;
+  /** Focuses the composer once the channel says whether this person may write; the list when they may not. */
+  focusComposer(): void;
+}
+
 /**
- * Board chat: the Chat button with its unread badge in the top bar, and the Chat tab of the side tray (docs/chat.md,
- * Interface). Messages are plain text; every node is built with textContent.
+ * One channel's messages and composer in `panel`: the list with its rows, scrolling and read marker, the composer with
+ * mentions, replies, edit and delete. Board chat draws it in the side tray; the Chat page draws it beside the channel list.
  */
-export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonElement } {
-  const boardId = app.conn.id;
-  const signal = app.lifetime.signal;
-  const chat = openBoardChat(boardId, signal);
-  const auth = authState();
-  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
-  const myId = me?.user.id ?? '';
-  const myName = me?.user.name ?? 'You';
-  const openKey = chatOpenKey(myId, boardId);
-  tray.setAvailable('chat', true);
+export function mountConversation(opts: ConversationOptions): Conversation {
+  const { chat, panel, signal } = opts;
+  const boardId = opts.id;
+  const myId = opts.meId;
+  const myName = opts.meName;
 
-  // ---------------------------------------------------------------- button
-  const badge = h('span', { class: 'chat-count', 'aria-hidden': 'true' });
-  const button = h('button', {
-    class: 'icon-btn chat-toggle', 'aria-label': 'Chat', 'aria-pressed': 'false', 'aria-keyshortcuts': 'M', 'data-tip-key': 'm', onclick: () => tray.toggle('chat'),
-  }, icon('chat', 18), badge);
-
-  let badgeSeen: number | null = null;
-  function paintBadge(v: { unread: number; mentions: number }) {
-    // with the tab closed only counts arrive: say that there is something new, never what
-    if (!open && badgeSeen !== null && v.unread > badgeSeen) {
-      announce(`${v.unread} unread in board chat${v.mentions ? ', you were mentioned' : ''}`, { key: 'chat-badge', delay: 600 });
-    }
-    badgeSeen = v.unread;
-    badge.textContent = v.unread > 99 ? '99+' : String(v.unread);
-    badge.classList.toggle('show', v.unread > 0);
-    badge.classList.toggle('mention', v.mentions > 0);
-    const extra = v.unread ? `, ${v.unread} unread${v.mentions ? `, ${v.mentions} mentioning you` : ''}` : '';
-    button.setAttribute('aria-label', `Chat${extra}`);
-  }
-
-  // ---------------------------------------------------------------- panel
-  const panel = tray.slot('chat');
   const status = h('p', { class: 'chat-status', role: 'status' });
   const older = h('div', { class: 'chat-older' });
   // A log by role, but silent itself (a re-drawn or older row would be read out again): new messages from others are said
@@ -601,7 +594,7 @@ export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonEl
 
   function render() {
     view = chat.view();
-    paintBadge(view);
+    opts.onView?.(view);
     if (!open) return;
     announceArrivals();
     if (editing && !view.messages.some((m) => m.id === editing?.id && !m.deleted)) editing = null;
@@ -626,6 +619,67 @@ export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonEl
   }
 
   chat.onChange(render);
+
+  render();
+  return {
+    setOpen(now) {
+      if (now === open) return;
+      open = now;
+      if (open) stick = true;
+      else {
+        saidUpTo = null;
+        closeSuggest();
+        editing = null;
+        focusWhenReady = false;
+      }
+      chat.setVisible(open);
+      render();
+    },
+    focusComposer() {
+      if (view.access) requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
+      else focusWhenReady = true;
+    },
+  };
+}
+
+/**
+ * Board chat: the Chat button with its unread badge in the top bar, and the Chat tab of the side tray (docs/chat.md,
+ * Interface). Messages are plain text; every node is built with textContent.
+ */
+export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonElement } {
+  const boardId = app.conn.id;
+  const signal = app.lifetime.signal;
+  const chat = openBoardChat(boardId, signal);
+  const auth = authState();
+  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+  const myId = me?.user.id ?? '';
+  const myName = me?.user.name ?? 'You';
+  const openKey = chatOpenKey(myId, boardId);
+  tray.setAvailable('chat', true);
+  let open = false;
+
+  // ---------------------------------------------------------------- button
+  const badge = h('span', { class: 'chat-count', 'aria-hidden': 'true' });
+  const button = h('button', {
+    class: 'icon-btn chat-toggle', 'aria-label': 'Chat', 'aria-pressed': 'false', 'aria-keyshortcuts': 'M', 'data-tip-key': 'm', onclick: () => tray.toggle('chat'),
+  }, icon('chat', 18), badge);
+
+  let badgeSeen: number | null = null;
+  function paintBadge(v: { unread: number; mentions: number }) {
+    // with the tab closed only counts arrive: say that there is something new, never what
+    if (!open && badgeSeen !== null && v.unread > badgeSeen) {
+      announce(`${v.unread} unread in board chat${v.mentions ? ', you were mentioned' : ''}`, { key: 'chat-badge', delay: 600 });
+    }
+    badgeSeen = v.unread;
+    badge.textContent = v.unread > 99 ? '99+' : String(v.unread);
+    badge.classList.toggle('show', v.unread > 0);
+    badge.classList.toggle('mention', v.mentions > 0);
+    const extra = v.unread ? `, ${v.unread} unread${v.mentions ? `, ${v.mentions} mentioning you` : ''}` : '';
+    button.setAttribute('aria-label', `Chat${extra}`);
+  }
+
+  // ---------------------------------------------------------------- panel
+  const conversation = mountConversation({ chat, id: boardId, panel: tray.slot('chat'), signal, meId: myId, meName: myName, onView: paintBadge });
   const offBadge = onChatBadge(() => {
     if (!open) paintBadge(boardUnread(boardId));
   });
@@ -638,30 +692,18 @@ export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonEl
     button.classList.toggle('on', open);
     button.setAttribute('aria-pressed', String(open));
     writeFlag(openKey, open);
-    if (open) stick = true;
-    else {
-      saidUpTo = null;
-      closeSuggest();
-      editing = null;
-      focusWhenReady = false;
-    }
-    chat.setVisible(open);
-    render();
+    conversation.setOpen(open);
   });
 
   app.toggleChat = () => {
     const opening = tray.current() !== 'chat';
     tray.toggle('chat');
-    if (!opening) return;
-    // asked for with the key: the field takes focus once the channel says whether this person may write
-    if (view.access) requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
-    else focusWhenReady = true;
+    if (opening) conversation.focusComposer();
   };
   signal.addEventListener('abort', () => {
     app.toggleChat = null;
   }, { once: true });
 
-  render();
   if (readFlag(openKey)) tray.show('chat');
   return { button };
 }

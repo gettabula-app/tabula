@@ -37,6 +37,13 @@
 }
 .topbar-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-family: inherit; cursor: pointer; }
+/* the Chat link's unread count (docs/chat.md): ink on paper, outlined in red when someone mentioned you */
+.topbar-badge {
+  display: none; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; box-sizing: border-box;
+  background: var(--ink); color: var(--paper); font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 16px;
+}
+.topbar-badge.show { display: inline-flex; }
+.topbar-badge.mention { outline: 2px solid var(--danger); outline-offset: 0; }
 .topbar-link.on { color: var(--ink); border-bottom-color: var(--ink); text-decoration: none; }
 .topbar-end { display: flex; align-items: center; gap: 16px; margin-left: auto; min-width: 0; }
 .topbar-me { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -89,9 +96,15 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   position: relative; display: grid; grid-template-columns: var(--cols); column-gap: 24px; align-items: center;
   padding: 12px 0; border-bottom: 1px solid var(--rule);
 }
-.board-link { display: block; min-width: 0; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none; }
+.board-link { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none; }
 .board-link::after { content: ''; position: absolute; inset: 0; }
-.board-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-title { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-chat {
+  flex: none; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; background: var(--ink); color: var(--paper);
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.board-chat[hidden] { display: none; }
+.board-chat.mention { outline: 2px solid var(--danger); outline-offset: 0; }
 .board-row:hover .board-title { text-decoration: underline; text-underline-offset: 3px; }
 .board-sub { display: contents; }
 .board-edited { color: var(--graphite); font-size: 13px; white-space: nowrap; }

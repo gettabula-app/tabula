@@ -1,0 +1,91 @@
+/* The Chat page (docs/chat.md, Interface): the channel list on the left, the open conversation on the right. Swiss, as the
+   admin dashboard and the home page: flush-left type, 2px ink rules, 1px hairlines, radius 0, theme variables only. The
+   conversation reuses the board chat's rows and composer (chat.css), which are drawn with the tray's variables, so the page
+   maps those to its own palette. */
+
+.chat-page {
+  --tray: var(--paper);
+  --tray-2: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  --tray-line: var(--rule);
+  --tray-text: var(--ink);
+  --tray-muted: var(--graphite);
+  --tray-hover: color-mix(in srgb, var(--ink) 6%, transparent);
+  display: grid; grid-template-columns: 320px minmax(0, 1fr);
+  flex: 1 1 auto; min-height: 0; width: 100%; box-sizing: border-box; max-width: 1120px; margin: 0 auto;
+  border-left: 1px solid var(--rule); border-right: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink);
+}
+/* the page fills the window under the top bar, whatever height the bar has (it wraps on a phone) */
+.home-root:has(> .chat-page) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+.chat-page :focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+/* ---- the list */
+.chat-list { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; border-right: 1px solid var(--rule); scrollbar-width: thin; }
+.chat-list-body { flex: none; }
+.chat-section-title {
+  margin: 0; padding: 16px 16px 8px; color: var(--graphite);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; line-height: 16px;
+}
+.chat-rows { margin: 0; padding: 0; list-style: none; }
+.chat-row {
+  display: flex; align-items: center; gap: 8px; min-height: 56px; box-sizing: border-box; padding: 8px 16px 8px 12px;
+  border-top: 1px solid var(--rule); border-left: 4px solid transparent; color: var(--ink); text-decoration: none;
+}
+.chat-row:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.chat-row.on { border-left-color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.chat-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-row-name { font-size: 14px; font-weight: 600; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row-meta { color: var(--graphite); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row-badge {
+  display: none; flex: none; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box;
+  background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+}
+.chat-row-badge.show { display: block; }
+.chat-row-badge.mention { outline: 2px solid var(--danger); outline-offset: 0; }
+.chat-list-status { margin: 0; padding: 16px; color: var(--graphite); font-size: 13px; line-height: 20px; }
+.chat-list-status[hidden] { display: none; }
+
+/* ---- the conversation */
+.chat-conv { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-conv-head { flex: none; display: flex; align-items: center; gap: 16px; padding: 16px 24px 12px; border-bottom: 2px solid var(--ink); }
+.chat-conv-head[hidden] { display: none; }
+.chat-conv-titles { flex: 1; min-width: 0; }
+.chat-conv-title { margin: 0; font: 800 20px/24px var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; outline-offset: 4px; }
+.chat-conv-sub { margin: 2px 0 0; color: var(--graphite); font-size: 12px; line-height: 16px; }
+.chat-open-board.btn { flex: none; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.chat-open-board.btn:hover { background: var(--ink); color: var(--paper); }
+.chat-open-board[hidden] { display: none; }
+.chat-back { display: none; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 8px 0 0; color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.chat-back:hover { text-decoration: underline; text-underline-offset: 3px; }
+.chat-page-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.chat-page-panel[hidden] { display: none; }
+.chat-conv-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--graphite); }
+.chat-conv-empty[hidden] { display: none; }
+.chat-page .chat-composer { padding-left: 24px; padding-right: 24px; }
+.chat-page .chat-older, .chat-page .chat-status { padding-left: 24px; padding-right: 24px; }
+.chat-page .chat-msg { padding-left: 24px; padding-right: 12px; }
+.chat-page .chat-day, .chat-page .chat-new { margin-left: 24px; margin-right: 24px; }
+.chat-page .chat-send.btn { border: 0; background: var(--signal); color: var(--on-signal); }
+.chat-page .chat-send.btn:disabled { background: color-mix(in srgb, var(--ink) 14%, var(--paper)); color: var(--graphite); opacity: 1; }
+.chat-page .chat-input { background: var(--paper); color: var(--ink); border: 1px solid var(--ink); }
+.chat-page .chat-jump { background: var(--paper); color: var(--ink); border: 1px solid var(--ink); }
+
+/* ---- a phone: the list is one screen, the conversation the next */
+@media (max-width: 860px) {
+  .chat-page { grid-template-columns: minmax(0, 1fr); border-left: 0; border-right: 0; }
+  .chat-list { border-right: 0; }
+  .chat-list.away { display: none; }
+  .chat-conv { display: none; }
+  .chat-conv.open { display: flex; }
+  .chat-back { display: inline-flex; }
+  .chat-conv-head { gap: 8px; padding: 12px 16px; flex-wrap: wrap; }
+  .chat-page .chat-composer { padding-left: 16px; padding-right: 16px; }
+  .chat-page .chat-older, .chat-page .chat-status { padding-left: 16px; padding-right: 16px; }
+  .chat-page .chat-msg { padding-left: 16px; }
+  .chat-page .chat-day, .chat-page .chat-new { margin-left: 16px; margin-right: 16px; }
+}
+
+@media (forced-colors: active) {
+  .chat-row.on { outline: 2px solid Highlight; outline-offset: -2px; }
+  .chat-row-badge { border: 1px solid CanvasText; }
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatMessage } from '../src/api';
+import type { ChatChannelEntry, ChatMessage } from '../src/api';
 import {
-  GROUP_MS, applyDelete, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
+  GROUP_MS, applyDelete, atBottom, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
   findLinks, fromTokens, initials, insertMention, mentionLabel, mentionQuery, mergeMessages, newer, outboxItem, quoteText, segments,
   timeLabel, toTokens, trimOldest, type ChatAccess,
 } from '../src/ui/chat-logic';
@@ -262,5 +262,71 @@ describe('what the person may do', () => {
 
   it('remembers open or closed per person and board under the driftboard prefix', () => {
     expect(chatOpenKey('u1', 'board-1')).toBe('driftboard:chat:u1:board-1');
+  });
+});
+
+// ---------------------------------------------------------------- the Chat page's channel list
+
+describe('the channel list', () => {
+  const NOW = Date.UTC(2026, 9, 9, 12);
+  const entry = (kind: 'board' | 'team' | 'workspace', ref: string, name: string, extra: Partial<ChatChannelEntry> = {}): ChatChannelEntry =>
+    ({ kind, ref, name, write: true, unread: 0, mentions: 0, lastId: 0, lastAt: null, ...extra });
+
+  it('groups into workspace, teams, other teams and boards, and leaves empty sections out', () => {
+    const sections = groupChannels([
+      entry('board', 'b1', 'Roadmap', { lastAt: NOW }),
+      entry('team', 't2', 'Zeta', { member: true }),
+      entry('workspace', 'main', 'Workspace'),
+      entry('team', 't1', 'Alpha', { member: true }),
+      entry('team', 't3', 'Elsewhere', { member: false }),
+    ]);
+    expect(sections.map((s) => s.id)).toEqual(['workspace', 'teams', 'other-teams', 'boards']);
+    expect(sections.map((s) => s.title)).toEqual(['Workspace', 'Teams', 'Other teams', 'Boards']);
+    expect(groupChannels([entry('team', 't1', 'Alpha')]).map((s) => s.id)).toEqual(['teams']);
+    expect(groupChannels([])).toEqual([]);
+  });
+
+  it('puts recent teams first, archived ones last, and sorts by name when nothing has been said', () => {
+    const teams = groupChannels([
+      entry('team', 'old', 'Old', { archived: true, lastAt: NOW }),
+      entry('team', 'b', 'Beta'),
+      entry('team', 'a', 'alpha'),
+      entry('team', 'c', 'Gamma', { lastAt: NOW - 1000 }),
+      entry('team', 'd', 'Delta', { lastAt: NOW }),
+    ])[0].entries;
+    expect(teams.map((t) => t.ref)).toEqual(['d', 'c', 'a', 'b', 'old']);
+  });
+
+  it('lists boards by their latest message', () => {
+    const boards = groupChannels([entry('board', 'x', 'X', { lastAt: 1 }), entry('board', 'y', 'Y', { lastAt: 3 }), entry('board', 'z', 'Z', { lastAt: 2 })])[0].entries;
+    expect(boards.map((b) => b.ref)).toEqual(['y', 'z', 'x']);
+  });
+
+  it('picks the channel with a mention, then the most unread, then the first', () => {
+    const sections = groupChannels([entry('workspace', 'main', 'Workspace'), entry('team', 't1', 'A'), entry('team', 't2', 'B')]);
+    const counts: Record<string, { unread: number; mentions: number }> = { main: { unread: 0, mentions: 0 }, t1: { unread: 5, mentions: 0 }, t2: { unread: 1, mentions: 1 } };
+    const of = (e: ChatChannelEntry) => counts[e.ref];
+    expect(defaultChannel(sections, of)?.ref).toBe('t2');
+    counts.t2 = { unread: 1, mentions: 0 };
+    expect(defaultChannel(sections, of)?.ref).toBe('t1');
+    counts.t1 = { unread: 0, mentions: 0 };
+    counts.t2 = { unread: 0, mentions: 0 };
+    expect(defaultChannel(sections, of)?.ref).toBe('main');
+    expect(defaultChannel([], of)).toBeNull();
+  });
+
+  it('writes badges, labels and meta lines', () => {
+    expect(badgeText(7)).toBe('7');
+    expect(badgeText(100)).toBe('99+');
+    expect(channelHash('team', 't1')).toBe('#/chat/team/t1');
+    const t = entry('team', 't1', 'Design', { member: true });
+    expect(channelLabel(t, { unread: 0, mentions: 0 })).toBe('Design, Team');
+    expect(channelLabel(t, { unread: 3, mentions: 1 })).toBe('Design, Team, 3 unread, 1 mentioning you');
+    expect(channelLabel(entry('team', 'o', 'Old', { archived: true }), { unread: 0, mentions: 0 })).toBe('Old, Team, archived');
+    expect(channelMeta(entry('workspace', 'main', 'Workspace'), NOW)).toBe('Everyone');
+    expect(channelMeta(entry('team', 't', 'T', { member: false }), NOW)).toBe('Team, not a member');
+    expect(channelMeta(entry('board', 'b', 'B', { lastAt: NOW - 86_400_000 }), NOW)).toBe('Board · yesterday');
+    expect(channelMeta(entry('board', 'b', 'B', { lastAt: NOW - 3 * 86_400_000 }), NOW)).toBe('Board · 3 days ago');
+    expect(channelMeta(entry('team', 't', 'T', { archived: true, lastAt: NOW - 86_400_000 }), NOW)).toBe('Team · archived · yesterday');
   });
 });

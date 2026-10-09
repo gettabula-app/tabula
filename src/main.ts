@@ -9,6 +9,7 @@ import { cardContentHeight } from './markup';
 import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
+import { renderChatPage } from './ui/chat-page';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
@@ -23,7 +24,7 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, onAuth, refreshMeSoon, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
@@ -46,6 +47,8 @@ let pending: { id: string; template?: string; custom?: CustomTemplate; imported?
 let registering = false;
 let desktop: Desktop | null = null;
 let routeSeq = 0;
+/** What to call when the page on screen is left (the Chat page closes its conversation and its listeners). */
+let leavePage: (() => void) | null = null;
 
 function saveReturn(hash: string) {
   const target = returnHash(hash);
@@ -196,6 +199,8 @@ async function route() {
   releaseWorkspace = null;
   current?.destroy();
   current = null;
+  leavePage?.();
+  leavePage = null;
 
   const auth = authState();
   const r = resolveRoute(location.hash, auth.mode);
@@ -213,6 +218,16 @@ async function route() {
     }
     root.className = 'admin-root';
     renderAdmin(root, r.tab, me);
+    return;
+  }
+
+  if (r.name === 'chat') {
+    if (!chatAvailable()) {
+      location.replace('#/');
+      return;
+    }
+    root.className = 'home-root';
+    leavePage = renderChatPage(root, { kind: r.kind, ref: r.ref });
     return;
   }
 

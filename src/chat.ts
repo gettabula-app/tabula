@@ -5,7 +5,7 @@
 // person), and closed on sign-out. A board's channel is subscribed only while its Chat tab is open; with the tab
 // closed the badge comes from the `hello` summary and the `unread` frames, which carry counts and never text.
 
-import { ApiError, api, type ChatChannelInfo, type ChatMessage } from './api';
+import { ApiError, api, type ChatChannelEntry, type ChatChannelInfo, type ChatMessage } from './api';
 import { authState, chatAvailable, onAuth } from './auth';
 import * as cache from './chat-cache';
 import {
@@ -14,7 +14,8 @@ import {
   type ChatAccess, type OutboxItem,
 } from './ui/chat-logic';
 
-const KIND = 'board';
+export type ChatKind = 'board' | 'team' | 'workspace';
+const KINDS: readonly ChatKind[] = ['board', 'team', 'workspace'];
 const PING_MS = 25_000;
 const PONG_WAIT_MS = 10_000;
 const READ_THROTTLE_MS = 2000;
@@ -49,6 +50,7 @@ export interface ChatView {
 
 interface Channel {
   key: string;
+  kind: ChatKind;
   ref: string;
   messages: ChatMessage[];
   next: number | null;
@@ -88,10 +90,13 @@ let flushAttempt = 0;
 /** Bumped by resetChat, so an answer that arrives after sign-out changes nothing. */
 let generation = 0;
 let windowHooked = false;
+/** Pages that want the badges without a channel open (the Boards page, the Chat page): the socket stays up for them. */
+let watchers = 0;
 /** A hello after an earlier one means a reconnect: open channels catch up on what was said meanwhile. */
 let helloSeen = false;
 
-const keyOf = (ref: string) => `${KIND}/${ref}`;
+const keyOf = (kind: string, ref: string) => `${kind}/${ref}`;
+const isKind = (k: unknown): k is ChatKind => typeof k === 'string' && (KINDS as readonly string[]).includes(k);
 
 function meId(): string {
   const auth = authState();
@@ -136,7 +141,7 @@ function hookWindow() {
   if (windowHooked || typeof window === 'undefined') return;
   windowHooked = true;
   window.addEventListener('online', () => {
-    if (socketState === 'idle' && channels.size) {
+    if (socketState === 'idle' && (channels.size || watchers)) {
       attempt = 0;
       connect();
     }
@@ -184,7 +189,7 @@ function connect() {
     if (e.code === 4401) {
       socketState = 'stopped';
       signedOut = true;
-    } else if (channels.size) {
+    } else if (channels.size || watchers) {
       scheduleReconnect(e.code === 4429 ? CROWDED_MS : backoffMs(attempt++));
     }
     emit();
@@ -207,12 +212,12 @@ function onFrame(f: Record<string, unknown>) {
     workspaceReadOnly = f.readOnly === true;
     unread.clear();
     for (const c of Array.isArray(f.channels) ? f.channels : []) {
-      if (c && c.kind === KIND && typeof c.ref === 'string') unread.set(keyOf(c.ref), { unread: Number(c.unread) || 0, mentions: Number(c.mentions) || 0, lastId: Number(c.lastId) || 0 });
+      if (c && isKind(c.kind) && typeof c.ref === 'string') unread.set(keyOf(c.kind, c.ref), { unread: Number(c.unread) || 0, mentions: Number(c.mentions) || 0, lastId: Number(c.lastId) || 0 });
     }
     for (const ch of channels.values()) {
       if (ch.info) ch.info = { ...ch.info, access: withReadOnly(ch.info.access, workspaceReadOnly) };
       if (!ch.visible) continue;
-      sendFrame({ t: 'sub', kind: KIND, ref: ch.ref });
+      sendFrame({ t: 'sub', kind: ch.kind, ref: ch.ref });
       if (ch.loading) continue;
       if (!ch.fetchOk) void load(ch);
       else if (reconnect) void catchUp(ch);
@@ -221,8 +226,8 @@ function onFrame(f: Record<string, unknown>) {
     emit();
     return;
   }
-  if (f.kind !== KIND || typeof f.ref !== 'string') return;
-  const key = keyOf(f.ref);
+  if (!isKind(f.kind) || typeof f.ref !== 'string') return;
+  const key = keyOf(f.kind, f.ref);
   const ch = channels.get(key);
   if (t === 'unread') {
     unread.set(key, { ...unread.get(key), unread: Number(f.unread) || 0, mentions: Number(f.mentions) || 0 });
@@ -285,7 +290,7 @@ function saveChannel(ch: Channel) {
 async function refreshInfo(ch: Channel) {
   const gen = generation;
   try {
-    const info = await api.chatChannel(KIND, ch.ref);
+    const info = await api.chatChannel(ch.kind, ch.ref);
     if (gen !== generation) return;
     ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
     ch.lost = false;
@@ -310,8 +315,8 @@ async function load(ch: Channel) {
   }
   try {
     const [info, page, summary] = await Promise.all([
-      api.chatChannel(KIND, ch.ref),
-      api.chatMessages(KIND, ch.ref, { limit: PAGE }),
+      api.chatChannel(ch.kind, ch.ref),
+      api.chatMessages(ch.kind, ch.ref, { limit: PAGE }),
       api.chatUnread().catch(() => null),
     ]);
     if (gen !== generation) return;
@@ -323,7 +328,7 @@ async function load(ch: Channel) {
     ch.fetchOk = true;
     ch.savedOnly = false;
     ch.lost = false;
-    const entry = summary?.channels.find((c) => c.kind === KIND && c.ref === ch.ref);
+    const entry = summary?.channels.find((c) => c.kind === ch.kind && c.ref === ch.ref);
     if (entry) unread.set(ch.key, { unread: entry.unread, mentions: entry.mentions, lastId: entry.lastId });
     else unread.set(ch.key, { unread: 0, mentions: 0, lastId: newestId(ch.messages) });
     ch.lastRead = entry ? entry.lastId : newestId(ch.messages);
@@ -361,7 +366,7 @@ async function catchUp(ch: Channel) {
     let next: number | null = null;
     let before: number | undefined;
     for (let i = 0; i < CATCH_UP_PAGES; i++) {
-      const page = await api.chatMessages(KIND, ch.ref, { limit: PAGE, before });
+      const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before });
       if (gen !== generation) return;
       fetched = mergeMessages(fetched, page.messages);
       next = page.next;
@@ -479,7 +484,12 @@ async function flush() {
 
 /** Unread and mentions of one board's chat, for its button. */
 export function boardUnread(boardId: string): { unread: number; mentions: number } {
-  const key = keyOf(boardId);
+  return channelUnread('board', boardId);
+}
+
+/** Unread and mentions of any channel, from what is open or from the counts the server sent. */
+export function channelUnread(kind: ChatKind, ref: string): { unread: number; mentions: number } {
+  const key = keyOf(kind, ref);
   const ch = channels.get(key);
   if (ch?.visible && ch.fetchOk && ch.lastRead !== null) {
     const me = meId();
@@ -508,9 +518,14 @@ export interface BoardChat {
 }
 
 export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
-  const key = keyOf(boardId);
+  return openChat('board', boardId, signal);
+}
+
+/** One channel of any kind: the same store, subscription, outbox and read marker as board chat. */
+export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): BoardChat {
+  const key = keyOf(kind, ref);
   const ch: Channel = channels.get(key) ?? {
-    key, ref: boardId, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, loadingOlder: false,
+    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, loadingOlder: false,
     savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, readPut: 0, readTimer: null, listeners: new Set(),
   };
   channels.set(key, ch);
@@ -518,7 +533,7 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
   connect();
 
   signal.addEventListener('abort', () => {
-    if (ch.visible) sendFrame({ t: 'unsub', kind: KIND, ref: ch.ref });
+    if (ch.visible) sendFrame({ t: 'unsub', kind: ch.kind, ref: ch.ref });
     ch.visible = false;
     if (ch.readTimer) clearTimeout(ch.readTimer);
     ch.listeners.clear();
@@ -536,17 +551,17 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
     ch.lastRead = Math.max(ch.lastRead ?? 0, newest);
     unread.set(key, { unread: 0, mentions: 0, lastId: ch.lastRead });
     emit(ch);
-    api.chatRead(KIND, ch.ref, newest).catch(() => undefined);
+    api.chatRead(ch.kind, ch.ref, newest).catch(() => undefined);
   }
 
   return {
     view() {
       const me = meId();
-      const counts = boardUnread(boardId);
+      const counts = channelUnread(kind, ref);
       return {
         meId: me,
         messages: ch.messages,
-        pending: outbox.filter((o) => o.kind === KIND && o.ref === ch.ref),
+        pending: outbox.filter((o) => o.kind === ch.kind && o.ref === ch.ref),
         access: ch.info?.access ?? null,
         people: ch.info?.people ?? [],
         loading: ch.loading,
@@ -571,10 +586,10 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
       ch.visible = visible;
       if (visible) {
         connect();
-        sendFrame({ t: 'sub', kind: KIND, ref: ch.ref });
+        sendFrame({ t: 'sub', kind: ch.kind, ref: ch.ref });
         void load(ch);
       } else {
-        sendFrame({ t: 'unsub', kind: KIND, ref: ch.ref });
+        sendFrame({ t: 'unsub', kind: ch.kind, ref: ch.ref });
         ch.newAfter = null;
         if (ch.readTimer) clearTimeout(ch.readTimer);
         ch.readTimer = null;
@@ -587,7 +602,7 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
       ch.loadingOlder = true;
       emit(ch);
       try {
-        const page = await api.chatMessages(KIND, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined });
+        const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined });
         if (gen !== generation) return;
         ch.messages = mergeMessages(ch.messages, page.messages);
         ch.next = page.next;
@@ -601,7 +616,7 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
       }
     },
     send(text, replyTo) {
-      const item = outboxItem({ clientId: newClientId(), kind: KIND, ref: ch.ref, text, replyTo, createdLocal: Date.now() });
+      const item = outboxItem({ clientId: newClientId(), kind: ch.kind, ref: ch.ref, text, replyTo, createdLocal: Date.now() });
       outbox = enqueue(outbox, item);
       persist(item);
       emit();
@@ -642,7 +657,59 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
   };
 }
 
-/** Badge changes for any board (the Chat button listens while its tab is closed). */
+/** The sum of unread messages and mentions over every channel this tab knows of, for the top bar's Chat link. */
+export function totalUnread(): { unread: number; mentions: number } {
+  const keys = new Set([...unread.keys(), ...channels.keys()]);
+  let u = 0;
+  let m = 0;
+  for (const key of keys) {
+    const slash = key.indexOf('/');
+    const kind = key.slice(0, slash);
+    if (!isKind(kind)) continue;
+    const c = channelUnread(kind, key.slice(slash + 1));
+    u += c.unread;
+    m += c.mentions;
+  }
+  return { unread: u, mentions: m };
+}
+
+/** Whether a channel with unread messages is missing from `listed` (keys `kind/ref`): a page showing the list should refetch it. */
+export function hasUnlisted(listed: ReadonlySet<string>): boolean {
+  for (const [key, c] of unread) if (c.unread > 0 && !listed.has(key)) return true;
+  return false;
+}
+
+/**
+ * Keeps the socket up while a page that shows badges is open, so the counts arrive without a channel being open. The
+ * page calls it once with its own signal. Without chat (open mode, the feature off) it does nothing.
+ */
+export function watchChat(signal: AbortSignal): void {
+  if (!chatAvailable() || signal.aborted) return;
+  watchers++;
+  connect();
+  signal.addEventListener('abort', () => {
+    watchers = Math.max(0, watchers - 1);
+  }, { once: true });
+}
+
+/**
+ * The channel list of the Chat page. The counts it carries become what the badges show for channels that are not open
+ * (the page's own open channel keeps counting from its messages), so the list, the top bar and the board rows agree.
+ */
+export async function fetchChannels(): Promise<ChatChannelEntry[]> {
+  const gen = generation;
+  const { channels: list } = await api.chatChannels();
+  if (gen !== generation) return [];
+  for (const c of list) {
+    const key = keyOf(c.kind, c.ref);
+    if (channels.get(key)?.visible) continue;
+    unread.set(key, { unread: c.unread, mentions: c.mentions, lastId: c.lastId });
+  }
+  emit();
+  return list;
+}
+
+/** Badge changes for any channel (the Chat button listens while its tab is closed). */
 export function onChatBadge(fn: () => void): () => void {
   badgeListeners.add(fn);
   return () => badgeListeners.delete(fn);
