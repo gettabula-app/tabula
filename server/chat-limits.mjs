@@ -41,8 +41,8 @@ export function createWindow({ max, windowMs }, now = Date.now) {
     wait(key) {
       const t = now();
       const list = recent(key, t);
+      if (list.length > 0) keep(key, list);
       if (list.length < max) return 0;
-      keep(key, list);
       return Math.max(1, Math.ceil((list[0] + windowMs - t) / 1000));
     },
     record(key) {

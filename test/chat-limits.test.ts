@@ -112,6 +112,23 @@ describe('the chat limits', () => {
     for (let i = 0; i < 4; i++) expect(limits.post('ana', `board/other${i}`)).toBe(0);
   });
 
+  it('keeps an active channel count when another window refuses the request and the map fills up', () => {
+    const { c, now } = clock();
+    const limits = createChatLimits({ now, limits: {
+      ...CHAT_LIMITS,
+      postPerChannel: { max: 2, windowMs: 60_000 },
+      postBurst: { max: 1, windowMs: 2_000 },
+    } });
+    expect(limits.post('ana', 'board/b1')).toBe(0);
+    for (let i = 0; i < 49_999; i++) limits.post(`person${i}`, 'board/b1');
+    expect(limits.post('ana', 'board/b1')).toBe(2);
+    expect(limits.post('fresh', 'board/b1')).toBe(0);
+    c.now += 2_000;
+    expect(limits.post('ana', 'board/b1')).toBe(0);
+    c.now += 2_000;
+    expect(limits.post('ana', 'board/b1')).toBe(56);
+  });
+
   it('allow 20 edits and deletes a minute', () => {
     const { c, now } = clock();
     const limits = createChatLimits({ now });
