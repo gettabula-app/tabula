@@ -68,6 +68,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `kanban-sheet-adding` | The list's Add card bar with a title typed |
 | `kanban-sheet-full` | The list on a full block lane: the Add card bar refused, with the lock |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
+| `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |
 | `kanban-moveto-full` | **Move to…** with a full block lane disabled ("Full") |
 | `kanban-templates` | `/?kanban#/templates` (the flag on) on the Planning category: the four kanban templates and their thumbnails |

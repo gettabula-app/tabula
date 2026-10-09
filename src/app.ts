@@ -17,12 +17,12 @@ import {
 } from './geometry';
 import { cardBody, kanbanHeaderControls, objectMarkup, textHeight } from './markup';
 import {
-  KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
+  KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
   cardsToStickies, containerOf, laneOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
-  dropLine, keyboardMove, laneCards, lowDetail, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
+  dropLine, keyboardMove, laneCards, laneDropIndex, laneDropLine, lowDetail, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
   EMPTY_FILTER, addRow, cardMatches, cleanFilter, filterChips, filterParts, filterStorageKey, inRect, localToday, wipFullLabel, withoutChip,
   type FilterChip, type FilterViewer, type KanbanFilter,
 } from './ui/kanban-logic';
@@ -75,6 +75,8 @@ type Drag =
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
   // (`armed`: a touch long press started it, so it lifts at once, docs/kanban.md, Phone and touch)
+  // a lane dragged by its header to another place among its kanban's lanes: nothing is written until the drop
+  | { mode: 'lane'; start: Point; lane: Id; container: Id; moved: boolean; to: number | null }
   | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null; armed?: boolean };
 
 /** The field the card dialog starts on. */
@@ -308,7 +310,7 @@ export class BoardApp {
 
   get dragging(): boolean {
     const d = this.drag;
-    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || ((d.mode === 'move' || d.mode === 'cards') && d.moved));
+    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || ((d.mode === 'move' || d.mode === 'cards' || d.mode === 'lane') && d.moved));
   }
 
   get readOnly(): boolean {
@@ -748,6 +750,8 @@ export class BoardApp {
           // on a touch screen a card lifts after a long press (600 ms), so a finger that only taps or scrolls moves nothing
           if (hit.type === 'card' && e.pointerType === 'touch' && !hit.locked) this.armLongPress(hit.id, e, () => this.liftCard(hit.id, p));
           else if (hit.type === 'card') this.beginCardDrag(hit.id, p);
+          // a lane's header takes it to another place among the lanes (a finger there pans; touch has Move left and right)
+          else if (hit.type === 'lane' && !e.shiftKey && e.pointerType !== 'touch' && this.laneRegion(hit.id, p) === 'header' && this.beginLaneDrag(hit.id, p)) return;
           else this.beginMove(p);
         }
         return;
@@ -1317,6 +1321,40 @@ export class BoardApp {
     this.drag = { mode: 'cards', start: p, ids: movingOrder(this.store, ids), lead: id, grab: { x: p.x - lead.x, y: p.y - lead.y }, moved: false, target: null, frame: null };
   }
 
+  /** Starts dragging a lane by its header. False when it cannot be moved (locked, in a locked kanban, or alone). */
+  private beginLaneDrag(laneId: Id, p: Point): boolean {
+    const lane = this.store.get(laneId);
+    const layout = lane?.parent ? this.store.containerLayout(lane.parent) : null;
+    if (!lane?.parent || !layout || layout.lanes.length < 2 || laneReorderRefusal(this.store, laneId, null)) return false;
+    this.drag = { mode: 'lane', start: p, lane: laneId, container: lane.parent, moved: false, to: null };
+    return true;
+  }
+
+  private doLaneDrag(d: Extract<Drag, { mode: 'lane' }>, p: Point) {
+    if (!d.moved && Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
+    const layout = this.store.containerLayout(d.container);
+    if (!layout || !layout.rects.has(d.lane)) return this.cancelCardDrag();
+    if (!d.moved) {
+      d.moved = true;
+      this.emit('drag');
+      this.cardInput.stop();
+      this.r.setOverlay({ hover: null, anchorsFor: null, anchorHot: null });
+    }
+    d.to = laneDropIndex(layout.lanes, layout.rects, d.lane, p.x);
+    this.r.setOverlay({ kanban: { laneFrom: layout.rects.get(d.lane)!, laneLine: laneDropLine(layout.lanes, layout.rects, d.lane, d.to) } });
+  }
+
+  private finishLaneDrag(d: Extract<Drag, { mode: 'lane' }>) {
+    this.r.setOverlay({ kanban: null });
+    if (!d.moved || d.to === null) return;
+    const lane = this.store.get(d.lane) as BaseObj | undefined;
+    const refused = laneReorderRefusal(this.store, d.lane, d.to);
+    if (refused) return this.notify(refused);
+    if (!moveLaneTo(this.store, d.lane, d.to)) return;
+    const lanes = this.store.containerLayout(d.container)?.lanes ?? [];
+    this.announce(`Moved ${lane?.name || 'lane'} to position ${lanes.indexOf(d.lane) + 1} of ${lanes.length}`);
+  }
+
   /** A card drag started by a long press on a touch screen: the ghost lifts where the finger is, before it moves. */
   private liftCard(id: Id, p: Point) {
     if (this.readOnly || this.drag) return;
@@ -1396,6 +1434,12 @@ export class BoardApp {
 
   /** A card drag that is given up (Esc, a pinch, the board turning read-only): nothing is written. */
   private cancelCardDrag() {
+    if (this.drag?.mode === 'lane') {
+      this.drag = null;
+      this.r.setOverlay({ kanban: null });
+      this.emit('drag');
+      return;
+    }
     if (this.drag?.mode !== 'cards') return;
     this.drag = null;
     this.endCardDrag();
@@ -1464,6 +1508,8 @@ export class BoardApp {
         return this.doMove(d, p, e);
       case 'cards':
         return this.doCardDrag(d, p);
+      case 'lane':
+        return this.doLaneDrag(d, p);
       case 'resize':
         return this.doResize(d, p, e);
       case 'rotate': {
@@ -1683,7 +1729,7 @@ export class BoardApp {
   }
 
   private onCancel(e: PointerEvent) {
-    if (this.drag?.mode === 'cards') return this.cancelCardDrag();
+    if (this.drag?.mode === 'cards' || this.drag?.mode === 'lane') return this.cancelCardDrag();
     this.onUp(e);
   }
 
@@ -1712,6 +1758,9 @@ export class BoardApp {
         break;
       case 'cards':
         this.finishCardDrag(d, p);
+        break;
+      case 'lane':
+        this.finishLaneDrag(d);
         break;
       case 'marquee':
         this.emitSelection();

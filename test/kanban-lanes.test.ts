@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { Store } from '../src/store';
 import {
-  addCard, addLane, addLaneRefusal, editLane, laneDeleteIds, laneFields, moveCards, moveLane, moveLaneRefusal, moveRefusal, newKanban, newLaneName, planKanbanDelete,
+  addCard, addLane, addLaneRefusal, editLane, laneDeleteIds, laneFields, moveCards, moveLane, moveLaneRefusal, moveLaneTo, laneReorderRefusal, moveRefusal, newKanban, newLaneName, planKanbanDelete,
   stickiesToCards, wipRefusal,
 } from '../src/containers';
 import {
-  EMPTY_FILTER, cardMatches, cleanFilter, dueBuckets, filterChips, filterParts, filterStorageKey, laneMoveIndex, matchText, parseWip,
+  laneDropIndex, laneDropLine, EMPTY_FILTER, cardMatches, cleanFilter, dueBuckets, filterChips, filterParts, filterStorageKey, laneMoveIndex, matchText, parseWip,
   stageRedrawsCards, wipFullLabel, wipFullMessage, withoutChip, type FilterViewer, type KanbanFilter,
 } from '../src/ui/kanban-logic';
 import { LIMITS, splitRank } from '../shared/containers';
@@ -415,5 +415,46 @@ describe('review fixes', () => {
     expect('ids' in planKanbanDelete(store, [lanes[0], ...cards])).toBe(true);
     editLane(store, lanes[1], { wipMode: 'warn' });
     expect('ids' in planKanbanDelete(store, [lanes[0]])).toBe(true);
+  });
+});
+
+describe('dragging a lane to a place (slice 5, part 2)', () => {
+  const names = (b: ReturnType<typeof board>) => b.store.containerLayout(b.container)!.lanes.map((l) => (b.store.get(l) as BaseObj).name);
+
+  it('writes one rank in one undo step, to any place among the others', () => {
+    const b = board();
+    expect(moveLaneTo(b.store, b.lanes[0], 2)).toBe(true);
+    expect(names(b)).toEqual(['Doing', 'Done', 'To do']);
+    b.store.undo.undo();
+    expect(names(b)).toEqual(['To do', 'Doing', 'Done']);
+    expect(moveLaneTo(b.store, b.lanes[2], 0)).toBe(true);
+    expect(names(b)).toEqual(['Done', 'To do', 'Doing']);
+  });
+
+  it('does nothing for its own place, a place out of range, a locked lane or a locked kanban', () => {
+    const b = board();
+    expect(moveLaneTo(b.store, b.lanes[1], 1)).toBe(false);
+    expect(moveLaneTo(b.store, b.lanes[1], 3)).toBe(false);
+    expect(moveLaneTo(b.store, b.lanes[1], -1)).toBe(false);
+    b.store.transact(() => b.store.update(b.lanes[0], { locked: true }));
+    expect(moveLaneTo(b.store, b.lanes[0], 2)).toBe(false);
+    expect(laneReorderRefusal(b.store, b.lanes[0], 2)).toBe('This lane is locked. Unlock it to change it.');
+    b.store.transact(() => b.store.update(b.container, { locked: true }));
+    expect(moveLaneTo(b.store, b.lanes[1], 2)).toBe(false);
+    expect(names(b)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
+  it('finds the place from the pointer and draws the drop line in the gap', () => {
+    const b = board();
+    const layout = b.store.containerLayout(b.container)!;
+    const rect = (i: number) => layout.rects.get(layout.lanes[i])!;
+    expect(laneDropIndex(layout.lanes, layout.rects, b.lanes[0], rect(2).x + rect(2).w)).toBe(2);
+    expect(laneDropIndex(layout.lanes, layout.rects, b.lanes[0], rect(1).x + 1)).toBe(0);
+    expect(laneDropIndex(layout.lanes, layout.rects, b.lanes[2], rect(0).x - 50)).toBe(0);
+    const end = laneDropLine(layout.lanes, layout.rects, b.lanes[0], 2)!;
+    expect(end.x).toBeGreaterThan(rect(2).x + rect(2).w);
+    const first = laneDropLine(layout.lanes, layout.rects, b.lanes[2], 0)!;
+    expect(first.x).toBeLessThan(rect(0).x);
+    expect(first.h).toBe(rect(2).h);
   });
 });

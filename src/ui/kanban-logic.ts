@@ -413,6 +413,30 @@ export function laneMoveIndex(lanes: readonly string[], laneId: string, dir: 'le
   return to < 0 || to >= lanes.length ? null : to;
 }
 
+/**
+ * Where a dragged lane header would drop: how many of the other lanes (left to right) have their middle left of the
+ * pointer, which is the lane's new place among them. `rects` holds the lanes' rectangles as laid out.
+ */
+export function laneDropIndex(lanes: readonly string[], rects: ReadonlyMap<string, Rect>, moving: string, x: number): number {
+  let i = 0;
+  for (const id of lanes) {
+    const r = id === moving ? undefined : rects.get(id);
+    if (r && r.x + r.w / 2 < x) i++;
+  }
+  return i;
+}
+
+/** The vertical drop line for a lane dropped at `index` among the others: in the gap before the lane there, or after the last one. */
+export function laneDropLine(lanes: readonly string[], rects: ReadonlyMap<string, Rect>, moving: string, index: number): Rect | null {
+  const own = rects.get(moving);
+  const others = lanes.filter((id) => id !== moving).map((id) => rects.get(id)).filter((r): r is Rect => !!r);
+  if (!own || !others.length) return null;
+  const at = Math.min(Math.max(index, 0), others.length);
+  const half = KANBAN.laneGap / 2;
+  const x = at < others.length ? others[at].x - half : others[at - 1].x + others[at - 1].w + half;
+  return { x: x - 1, y: own.y, w: 2, h: own.h };
+}
+
 /** A WIP limit as typed: a whole number from 1 to 99, '' for no limit, or null when it is neither. */
 export function parseWip(text: string): number | '' | null {
   const t = text.trim();

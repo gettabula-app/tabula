@@ -44,6 +44,9 @@ export interface Overlay {
 export interface KanbanOverlay {
   /** The 2px drop line with square ends. */
   line?: Rect | null;
+  /** A lane dragged by its header: where it came from (a dashed outline) and the vertical drop line between lanes. */
+  laneFrom?: Rect | null;
+  laneLine?: Rect | null;
   /** A card being moved by keyboard: a ring 4px out and the "Moving" tag. */
   moving?: Rect | null;
   /** A block lane that refuses the cards dragged over it: its body outlined in dashed danger, and the "Full" label at `at`. */
@@ -724,6 +727,16 @@ export class Renderer {
       const e = px(8);
       out += `<g style="fill:var(--canvas-ink, #18212B)"><rect x="${l.x}" y="${l.y + l.h / 2 - px(1)}" width="${l.w}" height="${px(2)}"/>` +
         `<rect x="${l.x - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/><rect x="${l.x + l.w - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/></g>`;
+    }
+    if (k?.laneFrom) {
+      const f = k.laneFrom;
+      out += `<rect x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" style="fill:none;stroke:var(--canvas-ink, #18212B)" stroke-width="${px(2)}" stroke-dasharray="${px(6)} ${px(4)}"/>`;
+    }
+    if (k?.laneLine) {
+      const l = k.laneLine;
+      const e = px(8);
+      out += `<g style="fill:var(--canvas-ink, #18212B)"><rect x="${l.x + l.w / 2 - px(1)}" y="${l.y}" width="${px(2)}" height="${l.h}"/>` +
+        `<rect x="${l.x + l.w / 2 - e / 2}" y="${l.y - e / 2}" width="${e}" height="${e}"/><rect x="${l.x + l.w / 2 - e / 2}" y="${l.y + l.h - e / 2}" width="${e}" height="${e}"/></g>`;
     }
     if (k?.full) {
       // a block lane at its limit: no drop line, its body outlined in dashed danger and "Full · n / n" (Visual design, States)
