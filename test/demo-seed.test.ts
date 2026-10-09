@@ -138,11 +138,15 @@ describe('demo board seed', () => {
     expect(seededVotes.map(({ userId, itemId }) => [userId, itemId])).toEqual([
       ['demo-jonas', 'demo-well-3'], ['demo-marta', 'demo-well-2'],
     ]);
+    expect(Object.fromEntries(seededVotes.map((vote) => {
+      const item = app.store.get(vote.itemId);
+      return [vote.itemId, item && 'text' in item ? item.text : undefined];
+    }))).toEqual({ 'demo-well-2': 'Try it', 'demo-well-3': 'Calm' });
     for (const vote of seededVotes) {
       const item = app.store.get(vote.itemId);
       expect(item).toMatchObject({ type: 'sticky', parent: 'demo-well-frame' });
       const text = item && 'text' in item ? item.text : undefined;
-      expect(text?.length ?? Infinity).toBeLessThanOrEqual(12);
+      expect(text?.length ?? Infinity).toBeLessThanOrEqual(6);
     }
     expect([...flow.summary(voteStep.id).values()].every((v) => v.total === null)).toBe(true);
 
@@ -156,10 +160,15 @@ describe('demo board seed', () => {
     expect(threads).toHaveLength(3);
     expect(threads.every((t) => ['demo-marta', 'demo-jonas'].includes(t.authorId))).toBe(true);
     expect(threads.every((t) => app.store.get(t.anchor.obj))).toBe(true);
-    expect(threads.map((t) => t.anchor.obj).sort()).toEqual(['demo-flow-decision', 'demo-well-1', 'demo-well-4']);
+    expect(threads.map((t) => t.anchor.obj).sort()).toEqual(['demo-flow-frame', 'demo-improve-frame', 'demo-well-frame']);
+    const anchorPositions: Record<string, readonly [number, number]> = {
+      'demo-flow-frame': [0.65, 0.05], 'demo-improve-frame': [0.32, 0.05], 'demo-well-frame': [0.94, 0.05],
+    };
     for (const thread of threads) {
-      expect(thread.anchor.fx).toBeCloseTo(0.9);
-      expect(thread.anchor.fy).toBeCloseTo(0.08);
+      const expected = anchorPositions[thread.anchor.obj!]!;
+      expect(thread.anchor.fx).toBeCloseTo(expected[0], 2);
+      expect(thread.anchor.fy).toBeCloseTo(expected[1], 2);
+      expect(app.store.get(thread.anchor.obj!)?.type).toBe('frame');
     }
     expect(threads.flatMap((t) => t.replies).every((r) => ['demo-marta', 'demo-jonas'].includes(r.authorId))).toBe(true);
     expect(new Set([...threads.map((t) => t.authorId), ...threads.flatMap((t) => t.replies.map((r) => r.authorId))]))
@@ -188,8 +197,8 @@ describe('demo board seed', () => {
     seedDemo(app);
 
     expect(app.store.get('demo-well-frame')).toMatchObject({ x: 40, y: 145, w: 530, h: 185 });
-    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 345, w: 530, h: 185 });
-    expect(app.store.get('demo-flow-frame')).toMatchObject({ x: 40, y: 545, w: 530, h: 130 });
+    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 390, w: 530, h: 170 });
+    expect(app.store.get('demo-flow-frame')).toMatchObject({ x: 40, y: 590, w: 530, h: 130 });
     expect(app.r.contentBounds).toHaveBeenCalledWith([
       'demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame', 'demo-flow-frame',
     ]);
