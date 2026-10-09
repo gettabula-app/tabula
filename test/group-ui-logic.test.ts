@@ -3,12 +3,14 @@ import {
   clampGroupChipPosition,
   doneChipText,
   groupActionForSelection,
+  groupChipAvoidBox,
   groupChipText,
   groupPathLabel,
   placeEnteredGroupChips,
   showSelectedGroupChip,
   truncateMiddle,
 } from '../src/ui/group-ui-logic';
+import { placeBar } from '../src/ui/quickbar-layout';
 
 describe('group labels', () => {
   it('uses the direct member count until a group has a name', () => {
@@ -74,5 +76,24 @@ describe('group chip visibility and placement', () => {
     expect(placement.name).toEqual({ x: 158, y: 336 });
     expect(placement.done).toEqual({ x: 260, y: 336 });
     expect(placement.done.x).toBeGreaterThanOrEqual(placement.name.x + 94 + 8);
+  });
+});
+
+describe('keeping the quick bar off a selected group chip', () => {
+  it('is a box round the chip, and null where the chip is not drawn', () => {
+    const box = groupChipAvoidBox(200, 300, 'Group · 3', 1)!;
+    expect(box.x).toBeLessThan(200);
+    expect(box.y).toBeLessThan(300 - 26);
+    expect(box.y + box.h).toBeGreaterThan(300 - 12);
+    expect(groupChipAvoidBox(200, 300, 'Group · 3', 0.2)).toBeNull();
+  });
+
+  it('makes the bar flip below the group when above would cover the chip', () => {
+    const target = { x: 200, y: 300, w: 200, h: 120 };
+    const bar = { w: 260, h: 44 };
+    const view = { w: 1280, h: 800 };
+    expect(placeBar(target, bar, view).below).toBe(false);
+    const chip = groupChipAvoidBox(target.x, target.y, 'Group · 3', 1)!;
+    expect(placeBar(target, bar, view, 0, undefined, 64, undefined, [chip]).below).toBe(true);
   });
 });
