@@ -4,6 +4,16 @@ TAB-149. Status: audit only. No product code was changed.
 
 This page records what an automated and static audit of Tabula found on 2026-10-09 (main at `1e09821`), ranks the findings, and proposes fixes in slices. It covers keyboard reachability, focus visibility, screen-reader names and live regions, contrast in all five themes, reduced motion, and 200% zoom. Target: WCAG 2.2 level AA.
 
+## Progress
+
+| Slice | State |
+|---|---|
+| 1. Dialog and popover focus (C2, S1, S2, N3) | Done on `fix/tab-149-s1-focus`. Re-run of the audit on the touched screens: all six dialogs and popovers trap Tab (no Tab-out), return focus to the opener, and are named; axe `aria-dialog-name` and `aria-required-parent` no longer reported. |
+| 3. Live regions | Next |
+| 2. Radiogroups | After 3 |
+| 4 to 6 | Not started |
+| 7. Canvas keyboard (C1) | Parked: needs a spec and a decision from Johan (see Slice 7) |
+
 ## How it was done
 
 - **Runtime harness**: `scripts/a11y-audit.mjs`, headless Playwright (the pinned 1.64.0, no new dependency). It opens nine screens (home, templates, board, board with a selection, board menu, shapes drawer, comments panel, share dialog, settings dialog) in each of the five themes. Per screen it does a Tab sweep (counts tab stops, detects traps, screenshots with and without focus to see whether a ring appears), lists accessible names, computes contrast, and runs axe. It also opens each dialog and checks focus on open, Escape and focus on close, and probes the canvas, `prefers-reduced-motion`, and 200% and 400% zoom.

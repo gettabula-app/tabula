@@ -124,12 +124,11 @@ async function probeKeyboard(page, { max = 140, pixelCheck = true } = {}) {
       const clip = { x: Math.max(0, info.rect[0] - pad), y: Math.max(0, info.rect[1] - pad), width: Math.min(info.rect[2] + pad * 2, 600), height: Math.min(info.rect[3] + pad * 2, 200) };
       if (clip.width > 0 && clip.height > 0 && info.inView) {
         const withFocus = await page.screenshot({ clip, animations: 'disabled' }).catch(() => null);
-        await page.evaluate(() => document.activeElement?.blur?.());
+        await page.evaluate(() => { window.__a11yFocused = document.activeElement; document.activeElement?.blur?.(); });
         const without = await page.screenshot({ clip, animations: 'disabled' }).catch(() => null);
         if (withFocus && without && withFocus.equals(without)) noFocusRing.push({ el: info.el, name: info.name });
-        // put the focus back where it was by tabbing from the element before it
-        await page.keyboard.press('Shift+Tab');
-        await page.keyboard.press('Tab');
+        // put the focus back on the element (tabbing back from the page would restart inside a focus trap)
+        await page.evaluate(() => window.__a11yFocused?.focus());
       }
     }
   }
@@ -300,7 +299,7 @@ async function probeDialog(page, d) {
     const dlg = document.querySelector('[role=dialog], .modal, .popover, .menu');
     if (!dlg) return null;
     const a = document.activeElement;
-    return { role: dlg.getAttribute('role'), modal: dlg.getAttribute('aria-modal'), label: dlg.getAttribute('aria-label') || dlg.getAttribute('aria-labelledby'), focusInside: dlg.contains(a), focusOn: a ? `${a.tagName.toLowerCase()}${a.getAttribute('aria-label') ? `[${a.getAttribute('aria-label')}]` : ''}` : null };
+    return { role: dlg.getAttribute('role'), modal: dlg.getAttribute('aria-modal'), label: dlg.getAttribute('aria-label') || document.getElementById(dlg.getAttribute('aria-labelledby') || '')?.textContent || null, focusInside: dlg.contains(a), focusOn: a ? `${a.tagName.toLowerCase()}${a.getAttribute('aria-label') ? `[${a.getAttribute('aria-label')}]` : ''}` : null };
   });
   if (!state) return { id: d.id, opened: false };
   // does Tab stay inside?

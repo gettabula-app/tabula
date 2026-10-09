@@ -5,6 +5,7 @@ All notable changes to Tabula are documented here, newest first. The format foll
 ## [Unreleased]
 
 ### Fixed
+- Dialogs and popovers handle keyboard focus (TAB-149, slice 1 of `docs/accessibility-audit.md`). A dialog keeps Tab and Shift+Tab inside itself, makes the page behind it inert while open (the toast stays announced), is named by its heading (`aria-labelledby`), starts on its first field or main button (or its Close button when it has neither), and gives focus back to the control that opened it when it closes. A popover is named after its opener (or an explicit `label`), moves focus to its first control, keeps Tab inside, returns focus on Escape or a pick, and sets `aria-haspopup` and `aria-expanded` on a button that opens it. The theme choices in the board menu are a labelled radio group (`role="radio"`), which fixes axe's `aria-required-parent`. New `src/ui/focus-scope.ts`; test `test/dialog-focus.test.ts`. `scripts/a11y-audit.mjs` no longer uses `eval`.
 - Phones (860 px and below): the selection's quick-action bar starts right of the toolbar instead of covering it, and scrolls when it is wider than the room; the properties panel has a fold button that folds it to its title row, so the board shows above it while the selection stays (TAB-187). `npm run visual` has a `board-selected-folded` state.
 
 ### Added

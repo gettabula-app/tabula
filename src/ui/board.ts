@@ -444,7 +444,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const sel = app.selection.length ? app.selection : undefined;
   const themeRows = THEMES.map((t) => {
     const check = h('span', { class: 'theme-check' });
-    const row = h('button', { class: 'menu-item theme-item', role: 'menuitemradio', onclick: () => { setTheme(t.id); paintThemes(); } },
+    const row = h('button', { class: 'menu-item theme-item', role: 'radio', 'aria-checked': 'false', onclick: () => { setTheme(t.id); paintThemes(); } },
       h('div', { class: 'theme-preview', 'aria-hidden': 'true', style: `--c:${t.vars['--canvas']};--t:${t.vars['--tray']};--a:${t.vars['--signal']}` }),
       h('span', null, t.name),
       check);
@@ -506,7 +506,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
         glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
     ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
-    themeRows.map((r) => r.row),
+    h('div', { role: 'radiogroup', 'aria-label': 'Theme' }, themeRows.map((r) => r.row)),
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
     item('download', 'PNG image', async () => {
       toast('Preparing image…');
