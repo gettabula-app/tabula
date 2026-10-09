@@ -196,7 +196,7 @@ export const safeName = (s: string) => (s || 'board').replace(/[^\w\- ]+/g, '').
  * kanban, or the kanban of a selected lane or card), else every kanban on the board, in paint order.
  */
 export function csvKanbans(app: BoardApp, ids?: readonly Id[]): Id[] {
-  const all = app.store.ordered().filter((o) => o.type === 'container' && app.store.containerLayout(o.id)).map((o) => o.id);
+  const all = app.store.shown().filter((o) => o.type === 'container' && app.store.containerLayout(o.id)).map((o) => o.id);
   const wanted = new Set((ids ?? app.selection).map((id) => containerOf(app.store, app.store.get(id))).filter((c): c is Id => !!c));
   const picked = all.filter((id) => wanted.has(id));
   return picked.length || ids ? picked : all;

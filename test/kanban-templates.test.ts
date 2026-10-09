@@ -152,6 +152,20 @@ describe('saving a template with a kanban', () => {
     expect(() => validateTemplateContent(JSON.parse(JSON.stringify(c)))).not.toThrow();
   });
 
+  it('leaves out a hidden kanban, what is inside it, and connectors bound to it, so a template never un-hides them', () => {
+    const sticky = { id: 'S', type: 'sticky', text: 'Note', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a0' } as unknown as Obj;
+    const link = { id: 'X', type: 'connector', from: { kind: 'bound', id: 'K' }, to: { kind: 'bound', id: 'S' }, z: 'a0' } as unknown as Obj;
+    const objs = [...board(), sticky, link];
+    (objs[0] as BaseObj).hidden = true;
+    const c = toTemplateContent(objs, [], { includeSteps: false, labels });
+    expect(c.objects.map((o) => (o as BaseObj).text)).toEqual(['Note']);
+    expect(c.labels).toBeUndefined();
+    // a hidden card goes alone
+    const only = board();
+    (only[3] as BaseObj).hidden = true;
+    expect(toTemplateContent(only, [], { includeSteps: false, labels }).objects.map((o) => (o as BaseObj).text)).toEqual([undefined, undefined, 'Task']);
+  });
+
   it('drops the card fields a sticky kept from when it was a card', () => {
     const sticky = { id: 'S', type: 'sticky', text: 'Note', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a0', ownerName: 'Ada', due: '2026-10-09', desc: 'more', labels: ['B1'] } as unknown as Obj;
     const c = toTemplateContent([sticky], [], { includeSteps: false, labels });

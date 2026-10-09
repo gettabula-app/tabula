@@ -12,8 +12,12 @@ export const CSV_COLUMNS = [
 /** The byte order mark the file starts with (docs/kanban.md: one format, for Excel). */
 export const BOM = '﻿';
 
-/** What a spreadsheet would read as a formula: a cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return. */
-const FORMULA = /^[=+\-@\t\r]/;
+/**
+ * What a spreadsheet would read as a formula: a cell whose first real character is `=`, `+`, `-` or `@` (full-width forms too,
+ * which some locales run), or that starts with a tab or a carriage return. White space, control and invisible characters
+ * in front do not hide it.
+ */
+const FORMULA = /^[\t\r]|^[\s\p{Cc}\p{Cf}\p{Z}]*[=+\-@＝＋－＠]/u;
 
 /** One cell: the formula guard first (so quoting cannot undo it), then quoted when it holds a comma, a quote or a line break. */
 export function csvCell(value: string | number | null | undefined): string {

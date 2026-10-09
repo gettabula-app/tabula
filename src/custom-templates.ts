@@ -103,6 +103,18 @@ export interface ToTemplateOptions {
   frameIds?: Set<Id>;
 }
 
+/** `objs` without what Layers hides (TAB-198), what is inside a hidden frame or kanban, and connectors bound to either: a template never un-hides them. */
+function leaveOutHidden(objs: Obj[]): Obj[] {
+  const byId = new Map(objs.map((o) => [o.id, o]));
+  const hidden = (o: Obj): boolean => {
+    for (let p: Obj | undefined = o, n = 0; p && n < 64; p = p.parent ? byId.get(p.parent) : undefined, n++) if (p.hidden === true) return true;
+    return false;
+  };
+  const out = new Set(objs.filter(hidden).map((o) => o.id));
+  if (!out.size) return objs;
+  return objs.filter((o) => !out.has(o.id) && !(isConnector(o) && [o.from, o.to].some((e) => e.kind === 'bound' && out.has(e.id))));
+}
+
 /**
  * Normalise a gathered selection into template content. `objs` must already hold
  * frame children and inner connectors (BoardApp.gather) in paint order; that order
@@ -116,7 +128,7 @@ export function toTemplateContent(
   opts: ToTemplateOptions,
   lookup?: (id: Id) => Obj | undefined,
 ): TemplateContent {
-  objs = objs.filter((o) => o.type !== 'image');
+  objs = leaveOutHidden(objs.filter((o) => o.type !== 'image'));
   const idMap = new Map<Id, Id>();
   objs.forEach((o, i) => idMap.set(o.id, `o${i + 1}`));
   const resolveOutside = (id: Id): Point | null => {

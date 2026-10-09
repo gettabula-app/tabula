@@ -240,9 +240,20 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
       const list = radios;
       const i = list.indexOf(e.target as HTMLButtonElement);
       if (i < 0) return;
-      const to = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? (i + 1) % list.length : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? (i - 1 + list.length) % list.length : -1;
-      if (to < 0) return;
+      const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
       e.preventDefault();
+      // a lane that refuses the card is skipped; the one arrived at is chosen, as a click chooses it
+      let to = i;
+      for (let n = 1; n < list.length; n++) {
+        const at = (i + step * n + list.length * n) % list.length;
+        if (list[at].getAttribute('aria-disabled') !== 'true') {
+          to = at;
+          break;
+        }
+      }
+      if (to === i) return;
+      list[to].click();
       for (const r of list) r.setAttribute('tabindex', r === list[to] ? '0' : '-1');
       list[to].focus();
     });
@@ -303,7 +314,7 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
   function render() {
     const c = obj(containerId);
     const at = layout();
-    if (!c || c.type !== 'container' || !at) return close();
+    if (!c || c.type !== 'container' || !at || !store.isShown(c)) return close();
     if (dragging) return;
     const r = rights();
     const keep = keyOf(document.activeElement) ?? focusKey;

@@ -39,6 +39,7 @@
 
 /* card rows: grip, title with its chip and meta rows, ⋯; rows on hairlines */
 .ks-panel { position: relative; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+.ks-panel:has(+ .ks-add[hidden]) { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ks-rows { margin: 0; padding: 0; list-style: none; }
 .ks-row {
   display: grid; grid-template-columns: 32px minmax(0, 1fr) 40px; align-items: start; gap: 4px; padding: 12px 8px 12px 4px;

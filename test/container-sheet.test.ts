@@ -241,6 +241,27 @@ describe('Move to…', () => {
     expect(titles(s, s.doing)).toEqual(['D']);
   });
 
+  it('chooses the lane arrowed to, skipping one that refuses the card', () => {
+    const s = setup();
+    s.store.transact(() => s.store.update(s.doing, { wip: 1, wipMode: 'block' }));
+    addCard(s.store, s.doing, 'D', { createdBy: 'me' });
+    open(s);
+    const box = openMoveTo(s, 0);
+    const radios = box.querySelectorAll('[role="radio"]');
+    const at = (lane: Id) => radios.find((r) => r.dataset.lane === lane)!;
+    // starts on Done (Doing is full); arrow down wraps past Todo, the card's own lane, which is allowed to be chosen
+    key(at(s.done), 'ArrowDown');
+    expect(at(s.todo).getAttribute('aria-checked')).toBe('true');
+    key(at(s.todo), 'ArrowDown');
+    // Doing refuses the card, so the arrow lands on Done
+    expect(at(s.done).getAttribute('aria-checked')).toBe('true');
+    key(at(s.done), 'ArrowUp');
+    expect(at(s.todo).getAttribute('aria-checked')).toBe('true');
+    key(at(s.todo), 'ArrowDown');
+    button(box, 'Move').click();
+    expect(titles(s, s.done)).toEqual(['A']);
+  });
+
   it('moves to the top when asked', () => {
     const s = setup();
     addCard(s.store, s.doing, 'D', { createdBy: 'me' });
@@ -292,6 +313,16 @@ describe('Move to…', () => {
     s.store.setReadOnly(true);
     s.app.emit('readonly');
     expect(moveSheet()).toBeNull();
+  });
+});
+
+describe('a hidden kanban', () => {
+  it('closes the sheet when Layers hides its kanban', () => {
+    const s = setup();
+    open(s);
+    expect(sheet()).not.toBeNull();
+    s.store.transact(() => s.store.update(s.container, { hidden: true }));
+    expect(sheet()).toBeNull();
   });
 });
 

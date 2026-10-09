@@ -26,6 +26,19 @@ describe('a CSV cell', () => {
     expect(csvCell('\r=1')).toBe('"\'\r=1"');
   });
 
+  it.each([
+    ['full-width equals', '＝HYPERLINK("https://evil.example","x")'],
+    ['full-width plus', '＋1'],
+    ['full-width minus', '－2'],
+    ['full-width at', '＠SUM(1)'],
+    ['a space in front', ' =1+1'],
+    ['a line feed in front', '\n=1+1'],
+    ['a zero-width space in front', '\u200b=1+1'],
+    ['a byte order mark in front', '\ufeff@SUM(1)'],
+  ])('guards %s', (_name, input) => {
+    expect(csvCell(input).replace(/^"/, '').startsWith("'")).toBe(true);
+  });
+
   it('leaves ordinary text, a date and a number alone', () => {
     expect(csvCell('Write the guide')).toBe('Write the guide');
     expect(csvCell('2026-10-09')).toBe('2026-10-09');
@@ -116,6 +129,13 @@ describe('which kanbans are exported', () => {
     expect(csvKanbans(app(s, [s.d]))).toEqual([s.k2]);
     expect(csvKanbans(app(s, [s.doing]))).toEqual([s.k1]);
     expect(csvKanbans(app(s, [s.k2, s.a]))).toEqual([s.k1, s.k2]);
+  });
+
+  it('never a kanban Layers hides', () => {
+    const s = board();
+    s.store.transact(() => s.store.update(s.k1, { hidden: true }));
+    expect(csvKanbans(app(s, []))).toEqual([s.k2]);
+    expect(csvKanbans(app(s, []), [s.k1])).toEqual([]);
   });
 
   it('the ones asked for, from a kanban menu', () => {
