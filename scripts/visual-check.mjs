@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -180,6 +180,25 @@ async function openSeedBoard({ page, base }, query = '?debug') {
     app.zoomToFit();
   });
 }
+
+/**
+ * Hands the page a message of the relay's AI runs (6 is MSG_AI_RUNS), through the handler the page registered for it, so the
+ * live layer draws another person's runs without a model or a second browser. Needs `?debug&aibar`.
+ */
+async function handAiRuns(page, runs) {
+  await page.evaluate((list) => {
+    const bytes = new TextEncoder().encode(JSON.stringify({ kind: 'snapshot', runs: list }));
+    const arr = new Uint8Array(bytes.length + 5);
+    let n = bytes.length, i = 0;
+    while (n > 127) { arr[i++] = (n & 127) | 128; n >>>= 7; }
+    arr[i++] = n;
+    arr.set(bytes, i);
+    window.__board.conn.provider.messageHandlers[6](null, { arr, pos: 0, len: i + bytes.length });
+  }, runs);
+}
+
+// someone else's run, in amber: the person colour with the least contrast on a light canvas (docs/ai-toolbar.md, "Colour")
+const ANA = { id: 'visual-ana', name: 'Ana', color: '#C98A00' };
 
 // TAB-198: the layers panel on the seed board with one frame closed and the other open
 async function openLayers(env, hide = []) {
@@ -1114,6 +1133,32 @@ const STATES = {
     await page.locator('.aireview').first().waitFor();
     await settle(page);
   },
+  // TAB-141: another person's AI run in flight, outlined in their colour around what it reads (docs/ai-toolbar.md, "Multiplayer")
+  async 'ai-live-remote-ring'(env) {
+    const { page } = env;
+    await openSeedBoard(env, '?debug&aibar');
+    await handAiRuns(page, [{ id: 'visual-run', feature: 'cluster', status: 'running', private: false, startedAt: 1, readyAt: null, cut: false, by: ANA, target: { ids: ['seed-note-1', 'seed-note-2'] }, proposal: null }]);
+    await page.locator('.ailive-run:not([hidden])').first().waitFor();
+    await settle(page);
+  },
+  // TAB-141: another person's ready preview, with its label row, outline and ghost frame title. zoomToFit fits what is on the board,
+  // not a preview beside it, so the view is fitted to the board and the room right of it, where the preview lands.
+  async 'ai-live-remote-preview'(env) {
+    const { page } = env;
+    await openSeedBoard(env, '?debug&aibar');
+    await handAiRuns(page, [{
+      id: 'visual-run', feature: 'generate', status: 'ready', private: false, startedAt: 1, readyAt: 2, cut: false, by: ANA, target: null,
+      proposal: { kind: 'create', objects: [{ text: 'Pilot with five teams', color: 'Yellow' }, { text: 'Write the migration guide', color: 'Pink' }, { text: 'Decide the pricing copy', color: 'Blue' }], frame: { title: 'Ideas' } },
+    }]);
+    await page.locator('.ailive-row:not([hidden])').first().waitFor();
+    await page.evaluate(() => {
+      const app = window.__board;
+      const b = app.r.contentBounds();
+      app.r.fit({ x: b.x, y: b.y, w: b.w + 760, h: b.h }, 60, 2);
+    });
+    await page.locator('.ailive-row:not([hidden])').first().waitFor();
+    await settle(page);
+  },
   async 'backups-off'({ page, base }) {
     await page.goto(`${base}/#/admin/backups`);
     await page.getByText('Not set up', { exact: true }).waitFor();
@@ -1125,7 +1170,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'ai-review': ['open'], 'ai-preview-empty': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
