@@ -13,6 +13,14 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { errorCount, percentile, summaryRows, verdict } from './lib/load-class-stats.mjs';
+import {
+  assignAccountsToUsers,
+  parseTargetOptions,
+  redactTargetSecrets,
+  targetPlanText,
+  targetRunDecision,
+  validateTargetOptions,
+} from './lib/load-class-target.mjs';
 
 // every y-websocket client adds an exit listener to process
 process.setMaxListeners(0);
@@ -42,7 +50,7 @@ function parseOptions() {
   const out = process.env.OUT
     ? path.resolve(process.cwd(), process.env.OUT)
     : path.join(os.tmpdir(), `tabula-load-class-${process.pid}-${Date.now()}.json`);
-  return { users, seconds, chat: chat === 'on', nodeArgs, out };
+  return { users, seconds, chat: chat === 'on', chatExplicit: process.env.CHAT !== undefined, nodeArgs, out };
 }
 
 async function freePort() {
@@ -142,9 +150,11 @@ function startRelay({ root, dir, port, chat, nodeArgs, stderrLines }) {
 async function request(base, cookie, method, route, body, headers = {}) {
   const response = await fetch(`${base}${route}`, {
     method,
+    redirect: 'error',
     headers: {
       'x-mira': '1',
       'x-tabula': '1',
+      origin: new URL(base).origin,
       ...(cookie ? { cookie } : {}),
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...headers,
@@ -199,15 +209,39 @@ async function bootstrapAccounts({ base, dir, maxUsers }) {
   return { owner, team, students, signInFailures };
 }
 
+async function bootstrapTargetAccounts({ base, target }) {
+  const accounts = [];
+  for (const [index, credential] of target.credentials.entries()) {
+    const ordinal = index + 1;
+    let cookie = credential.value;
+    if (credential.kind === 'token') {
+      let token;
+      try {
+        token = decodeURIComponent(credential.value);
+      } catch {
+        throw new Error(`Target account ${ordinal} login token could not be decoded`);
+      }
+      const verified = await request(base, undefined, 'POST', '/api/auth/verify', { token });
+      if (verified.status !== 200) throw new Error(`Target account ${ordinal} login token exchange failed (HTTP ${verified.status})`);
+      const setCookie = verified.headers.getSetCookie?.()[0] ?? verified.headers.get('set-cookie');
+      if (!setCookie) throw new Error(`Target account ${ordinal} login token exchange did not return a session`);
+      cookie = setCookie.split(';')[0];
+    }
+
+    const checked = await request(base, cookie, 'GET', '/api/me');
+    if (checked.status !== 200 || !checked.body?.user?.id) {
+      throw new Error(`Target account ${ordinal} failed GET /api/me (HTTP ${checked.status})`);
+    }
+    accounts.push({ cookie, user: checked.body.user });
+  }
+  return { owner: accounts[0], accounts, signInFailures: [] };
+}
+
 function boardIdFor(step, users) {
   return `class-${step + 1}-${users}-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 }
 
-async function seedBoard({ base, dir, owner, team, step, users }) {
-  const id = boardIdFor(step, users);
-  const created = await request(base, owner.cookie, 'POST', '/api/boards', { id, title: `Class load ${users}`, teamId: team.id });
-  if (created.status !== 201) throw new Error(`board creation failed with ${created.status}`);
-  const doc = new Y.Doc();
+function populateSeedObjects(doc, owner) {
   const objects = doc.getMap('objects');
   for (let i = 0; i < 150; i++) {
     const objectId = `seed-${String(i).padStart(3, '0')}`;
@@ -234,6 +268,104 @@ async function seedBoard({ base, dir, owner, team, step, users }) {
       updatedAt: Date.now(),
     })));
   }
+}
+
+async function waitForSync(provider, description, timeoutMs = 10_000) {
+  if (provider.synced) return;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      provider.off('sync', onSync);
+      reject(new Error(`Timed out waiting for ${description} to sync within ${timeoutMs / 1000} seconds`));
+    }, timeoutMs);
+    const onSync = (synced) => {
+      if (!synced) return;
+      clearTimeout(timer);
+      provider.off('sync', onSync);
+      resolve();
+    };
+    provider.on('sync', onSync);
+    if (provider.synced) onSync(true);
+  });
+}
+
+function connectBoardProvider({ base, boardId, cookie, doc }) {
+  const wsBase = base.replace(/^http/, 'ws');
+  const AuthWebSocket = class extends WebSocket {
+    constructor(url, protocols) {
+      super(url, protocols, { headers: { Origin: new URL(base).origin, ...(cookie ? { Cookie: cookie } : {}) } });
+    }
+  };
+  return new WebsocketProvider(`${wsBase}/sync`, boardId, doc, {
+    WebSocketPolyfill: AuthWebSocket,
+    disableBc: true,
+    connect: false,
+  });
+}
+
+async function seedRemoteBoard({ base, boardId, owner }) {
+  const doc = new Y.Doc();
+  const provider = connectBoardProvider({ base, boardId, cookie: owner.cookie, doc });
+  let observerDoc;
+  let observer;
+  try {
+    provider.connect();
+    await waitForSync(provider, 'board owner');
+    const markerKey = `load-seed-${randomUUID()}`;
+    const markerValue = randomUUID();
+    doc.transact(() => {
+      populateSeedObjects(doc, owner);
+      doc.getMap('loadSeed').set(markerKey, markerValue);
+    });
+
+    const ackDeadline = performance.now() + 10_000;
+    observerDoc = new Y.Doc();
+    observer = connectBoardProvider({ base, boardId, cookie: owner.cookie, doc: observerDoc });
+    observer.connect();
+    try {
+      await waitForSync(observer, 'seed acknowledgement observer', Math.max(1, ackDeadline - performance.now()));
+    } catch {
+      throw new Error('Timed out waiting for the board seed update to be acknowledged within 10 seconds');
+    }
+    const observerMarker = observerDoc.getMap('loadSeed');
+    while (observerMarker.get(markerKey) !== markerValue || observerDoc.getMap('objects').size !== 150) {
+      if (performance.now() >= ackDeadline) throw new Error('Timed out waiting for the board seed update to be acknowledged within 10 seconds');
+      await sleep(25);
+    }
+    await sleep(250);
+  } finally {
+    observer?.destroy();
+    provider.destroy();
+    observerDoc?.destroy();
+    doc.destroy();
+  }
+}
+
+async function seedBoard({ base, dir, owner, team, accounts, remote, step, users, createdBoards }) {
+  const id = boardIdFor(step, users);
+  const body = { id, title: `Class load ${users}` };
+  if (!remote) body.teamId = team.id;
+  const created = await request(base, owner.cookie, 'POST', '/api/boards', body);
+  if (created.status !== 201) throw new Error(`board creation failed with ${created.status}`);
+  createdBoards?.push(id);
+
+  if (remote) {
+    const shared = new Set([owner.user.id]);
+    for (const [index, account] of accounts.entries()) {
+      if (shared.has(account.user.id)) continue;
+      const result = await request(base, owner.cookie, 'POST', `/api/boards/${id}/shares`, {
+        principalType: 'user',
+        principalId: account.user.id,
+        role: 'editor',
+      });
+      if (result.status !== 201) throw new Error(`sharing board with target account ${index + 1} failed (HTTP ${result.status})`);
+      shared.add(account.user.id);
+    }
+    await seedRemoteBoard({ base, boardId: id, owner });
+    return id;
+  }
+
+  const doc = new Y.Doc();
+  doc.transact(() => populateSeedObjects(doc, owner));
   fs.writeFileSync(path.join(dir, `${id}.yjs`), Y.encodeStateAsUpdate(doc));
   doc.destroy();
   return id;
@@ -330,9 +462,9 @@ function lagMonitor() {
   };
 }
 
-function startWorker(users, { base, boardId, durationMs, chat }) {
+function startWorker(users, { base, boardId, durationMs, chat, remote = false }) {
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { users, base, boardId, durationMs, chat },
+    workerData: { users, base, boardId, durationMs, chat, remote },
   });
   let readyResolve;
   let readyReject;
@@ -366,34 +498,37 @@ function startWorker(users, { base, boardId, durationMs, chat }) {
   return { worker, ready, status, done: result };
 }
 
-async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seconds, relay }) {
-  const signInFailures = accounts.signInFailures.filter((failure) => failure.ordinal < users);
-  const signedStudents = accounts.students.filter((student) => Number(student.email.match(/student(\d+)/)?.[1]) < users);
-  const participants = [accounts.owner, ...signedStudents];
-  const boardId = await seedBoard({ base, dir, owner: accounts.owner, team, step: stepIndex, users });
+async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seconds, relay, remote = false, createdBoards }) {
+  const signInFailures = remote ? [] : accounts.signInFailures.filter((failure) => failure.ordinal < users);
+  const signedStudents = remote ? [] : accounts.students.filter((student) => Number(student.email.match(/student(\d+)/)?.[1]) < users);
+  const participants = remote ? assignAccountsToUsers(accounts.accounts, users) : [accounts.owner, ...signedStudents];
+  if (remote && accounts.accounts.length < users) {
+    console.log(`*** REMOTE ACCOUNT REUSE: ${accounts.accounts.length} account(s) for ${users} users. Simulated users reuse accounts round-robin; this is one person with many tabs, and per-person limits are not multiplied. ***`);
+  }
+  const boardId = await seedBoard({ base, dir, owner: accounts.owner, team, accounts: accounts.accounts, remote, step: stepIndex, users, createdBoards });
   const workerCount = Math.min(MAX_WORKERS, Math.max(1, participants.length));
   const buckets = Array.from({ length: workerCount }, () => []);
   participants.forEach((person, index) => buckets[index % workerCount].push(person));
-  const workers = buckets.map((bucket) => startWorker(bucket, { base, boardId, durationMs: seconds * 1000, chat }));
+  const workers = buckets.map((bucket) => startWorker(bucket, { base, boardId, durationMs: seconds * 1000, chat, remote }));
   try {
     await Promise.all(workers.map((item) => item.ready));
-    const sampler = new RelaySampler(relay.proc.pid);
+    const sampler = relay ? new RelaySampler(relay.proc.pid) : null;
     const generatorLag = lagMonitor();
     const startEpochMs = epochNow() + 400;
-    await sampler.sample();
+    if (sampler) await sampler.sample();
     for (const item of workers) item.worker.postMessage({ type: 'start', startEpochMs });
     const allDone = Promise.all(workers.map((item) => item.done));
     const timeoutAt = performance.now() + BURST_MS + seconds * 1000 + SYNC_TIMEOUT_MS + 15_000;
     let relayExit = null;
     while (true) {
       const outcome = await Promise.race([allDone.then((metrics) => ({ metrics })), sleep(SAMPLE_MS).then(() => ({ tick: true }))]);
-      await sampler.sample();
+      if (sampler) await sampler.sample();
       if (outcome.metrics) {
         const workerMetrics = outcome.metrics;
         generatorLag.stop();
         await Promise.allSettled(workers.map((item) => item.worker.terminate()));
         await sleep(100);
-        await sampler.sample();
+        if (sampler) await sampler.sample();
         const lagSamples = [...generatorLag.samples, ...workerMetrics.flatMap((metric) => metric.lagSamples)];
         const perThreadLagP95Ms = [percentile(generatorLag.samples, 95), ...workerMetrics.map((metric) => percentile(metric.lagSamples, 95))];
         const latencies = workerMetrics.flatMap((metric) => metric.latencySamples);
@@ -413,9 +548,9 @@ async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seco
           neverSyncedWithin30s: 0,
           relayStderrLines: 0,
         });
-        const stderr = relay.stderrLines();
-        errors.relayStderrLines = unexpectedStderrCount(stderr);
-        const currentExit = relay.exit();
+        const stderr = relay?.stderrLines() ?? [];
+        errors.relayStderrLines = relay ? unexpectedStderrCount(stderr) : 0;
+        const currentExit = relay?.exit() ?? null;
         if (currentExit && !currentExit.expected) relayExit = { code: currentExit.code, signal: currentExit.signal };
         const syncLatencyMs = { p50: percentile(latencies, 50), p95: percentile(latencies, 95), max: maxValue(latencies), samples: latencies.length };
         const joinMs = { p50: percentile(joins, 50), p95: percentile(joins, 95), samples: joins.length };
@@ -439,7 +574,13 @@ async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seco
           activitySeconds: seconds,
           joinBurstSeconds: BURST_MS / 1000,
           chat,
-          relay: sampler.result(),
+          relay: sampler?.result() ?? {
+            rssPeakBytes: null,
+            rssEndBytes: null,
+            cpuAveragePct: null,
+            cpuPeak5sPct: null,
+            samples: 0,
+          },
           syncLatencyMs,
           joinMs,
           generatorLagMs,
@@ -451,7 +592,7 @@ async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seco
         step.verdict = verdict({ errors: outcomeErrors, relayExit, latencyP95Ms: syncLatencyMs.p95, generatorLagP95Ms: generatorLagMs.p95 });
         return step;
       }
-      if (relay.exit() && !relayExit) {
+      if (relay?.exit() && !relayExit) {
         const exit = relay.exit();
         if (!exit.expected) {
           relayExit = { code: exit.code, signal: exit.signal };
@@ -486,49 +627,120 @@ function unexpectedStderrCount(lines) {
   ).length;
 }
 
-function printSummary(steps, out, chat, seconds) {
-  console.log(`Class load: chat=${chat ? 'on' : 'off'}, ${seconds}s activity after a 10s join burst`);
+function printSummary(steps, out, chat, seconds, target = null) {
+  console.log(`Class load: ${target ? `target=${target.host} (includes network round trips), ` : ''}chat=${chat ? 'on' : 'off'}, ${seconds}s activity after a 10s join burst`);
   console.log('Users (connected) | Relay RSS MB peak/end | CPU % avg/peak-5s | Sync ms p50/p95/max | Join p95 ms | Generator lag p95 ms | Chat posts attempted/sent | Errors | Verdict');
   for (const [index, row] of summaryRows(steps).entries()) {
     const step = steps[index];
-    console.log(`${row.users} (${row.connectedUsers}) | ${format(row.relayPeakRssMb, 1)}/${format(row.relayEndRssMb, 1)} | ${format(row.cpuAveragePct, 1)}/${format(row.cpuPeak5sPct, 1)} | ${format(step.syncLatencyMs.p50)}/${format(step.syncLatencyMs.p95)}/${format(step.syncLatencyMs.max)} | ${format(step.joinMs.p95)} | ${format(step.generatorLagMs.p95)} | ${step.chatPosts.attempted}/${step.chatPosts.sent} | ${row.errors} | ${row.verdict}`);
+    const relayRss = target ? 'n/a' : `${format(row.relayPeakRssMb, 1)}/${format(row.relayEndRssMb, 1)}`;
+    const relayCpu = target ? 'n/a' : `${format(row.cpuAveragePct, 1)}/${format(row.cpuPeak5sPct, 1)}`;
+    console.log(`${row.users} (${row.connectedUsers}) | ${relayRss} | ${relayCpu} | ${format(step.syncLatencyMs.p50)}/${format(step.syncLatencyMs.p95)}/${format(step.syncLatencyMs.max)} | ${format(step.joinMs.p95)} | ${format(step.generatorLagMs.p95)} | ${step.chatPosts.attempted}/${step.chatPosts.sent} | ${row.errors} | ${row.verdict}`);
     console.log(`${row.users} users: ${row.verdict}`);
     if (step.generatorLagMs.p95 !== null && step.generatorLagMs.p95 > 50) {
       console.log(`!!! WARNING: generator lag p95 is ${format(step.generatorLagMs.p95, 1)} ms (>50 ms); this step's latency is not trustworthy. Clients already use ${MAX_WORKERS} worker_threads; split them across a second process and rerun.`);
     }
   }
-  console.log('Relay CPU is percent of one local core. A Fly shared-cpu-1x receives a fraction of a core with burst capacity, so local CPU percentages are a lower bound on its pressure.');
+  if (target) console.log('relay CPU and memory: read them from Fly (see docs/capacity.md)');
+  else console.log('Relay CPU is percent of one local core. A Fly shared-cpu-1x receives a fraction of a core with burst capacity, so local CPU percentages are a lower bound on its pressure.');
   console.log(`JSON results: ${out}`);
 }
 
+async function deleteRemoteBoards({ base, owner, boardIds }) {
+  const leftBehind = [];
+  if (!owner) return boardIds;
+  for (const id of boardIds) {
+    try {
+      const deleted = await request(base, owner.cookie, 'DELETE', `/api/boards/${id}`);
+      if (deleted.status !== 204) leftBehind.push(id);
+    } catch {
+      leftBehind.push(id);
+    }
+  }
+  return leftBehind;
+}
+
+let targetForRedaction = null;
+
 async function main() {
   const options = parseOptions();
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-load-class-'));
-  const port = await freePort();
-  const stderrLines = [];
-  const relay = startRelay({ root, dir, port, chat: options.chat, nodeArgs: options.nodeArgs, stderrLines });
-  const steps = [];
-  try {
-    await relay.ready;
-    const accounts = await bootstrapAccounts({ base: relay.base, dir, maxUsers: Math.max(...options.users) });
-    for (const [stepIndex, users] of options.users.entries()) {
-      steps.push(await runStep({ stepIndex, users, accounts, base: relay.base, dir, team: accounts.team, chat: options.chat, seconds: options.seconds, relay }));
+  const target = parseTargetOptions();
+  targetForRedaction = target;
+  if (target.remote) {
+    validateTargetOptions(target, options.users);
+    const hasReuse = options.users.some((users) => users > target.accountCount);
+    if (hasReuse && !options.chatExplicit) options.chat = false;
+    const plan = targetPlanText(target, options.users, options.seconds);
+    console.log(plan);
+    const decision = targetRunDecision(target);
+    if (!decision.run) {
+      if (decision.reason === 'confirmation') console.log(`To proceed, add this line:\n${decision.confirmationLine}`);
+      process.exitCode = decision.exitCode;
+      return;
     }
-    const report = {
-      generatedAt: new Date().toISOString(),
-      relayBase: relay.base,
-      configuration: { users: options.users, seconds: options.seconds, chat: options.chat, joinBurstSeconds: BURST_MS / 1000, maxWorkerThreads: MAX_WORKERS },
-      accountSetup: { studentsCreated: accounts.students.length, signInFailures: accounts.signInFailures },
-      steps,
-    };
-    fs.mkdirSync(path.dirname(options.out), { recursive: true });
-    fs.writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`);
-    printSummary(steps, options.out, options.chat, options.seconds);
-  } finally {
-    await relay.stop();
-    fs.rmSync(dir, { recursive: true, force: true });
+    if (hasReuse && !options.chatExplicit) {
+      console.log('*** CHAT DEFAULTED OFF: fewer accounts than users; set CHAT=on explicitly to include chat. ***');
+    } else if (hasReuse && options.chat) {
+      console.log('*** CHAT ON WITH REUSED ACCOUNTS: per-person chat limits will count as chatRateLimited. ***');
+    }
   }
+
+  const steps = [];
+  const createdBoards = [];
+  let accounts;
+  let relay;
+  let dir;
+  let boardsLeftBehind = [];
+  try {
+    if (target.remote) {
+      accounts = await bootstrapTargetAccounts({ base: target.origin, target });
+      for (const [stepIndex, users] of options.users.entries()) {
+        steps.push(await runStep({
+          stepIndex, users, accounts, base: target.origin, chat: options.chat, seconds: options.seconds,
+          remote: true, createdBoards,
+        }));
+      }
+    } else {
+      const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-load-class-'));
+      const port = await freePort();
+      const stderrLines = [];
+      relay = startRelay({ root, dir, port, chat: options.chat, nodeArgs: options.nodeArgs, stderrLines });
+      await relay.ready;
+      accounts = await bootstrapAccounts({ base: relay.base, dir, maxUsers: Math.max(...options.users) });
+      for (const [stepIndex, users] of options.users.entries()) {
+        steps.push(await runStep({ stepIndex, users, accounts, base: relay.base, dir, team: accounts.team, chat: options.chat, seconds: options.seconds, relay }));
+      }
+    }
+  } finally {
+    if (target.remote) {
+      boardsLeftBehind = await deleteRemoteBoards({ base: target.origin, owner: accounts?.owner, boardIds: createdBoards });
+      if (boardsLeftBehind.length) console.log(`boards left behind: ${boardsLeftBehind.join(', ')}`);
+    } else if (relay) {
+      await relay.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    ...(target.remote ? {
+      target: {
+        host: target.host,
+        remote: true,
+        accounts: accounts.accounts.length,
+        usersPerAccount: Math.ceil(Math.max(...options.users) / accounts.accounts.length),
+      },
+    } : { relayBase: relay.base }),
+    configuration: { users: options.users, seconds: options.seconds, chat: options.chat, joinBurstSeconds: BURST_MS / 1000, maxWorkerThreads: MAX_WORKERS },
+    accountSetup: target.remote
+      ? { accountsValidated: accounts.accounts.length, failedSignIns: 0 }
+      : { studentsCreated: accounts.students.length, signInFailures: accounts.signInFailures },
+    ...(target.remote ? { boardsLeftBehind } : {}),
+    steps,
+  };
+  fs.mkdirSync(path.dirname(options.out), { recursive: true });
+  fs.writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`);
+  printSummary(steps, options.out, options.chat, options.seconds, target.remote ? target : null);
 }
 
 function runWorker(config) {
@@ -641,7 +853,7 @@ function runWorker(config) {
       const probe = client.doc.getMap('probe');
       const writeProbe = () => {
         if (!client.closed && client.syncedAt !== null) {
-          probe.set(client.probeKey, JSON.stringify({ stamp: epochNow(), writer: client.user.user.id }));
+          probe.set(client.probeKey, JSON.stringify({ stamp: epochNow(), writer: config.remote ? client.probeKey : client.user.user.id }));
         }
       };
       scheduleClientTimer(client, () => {
@@ -704,7 +916,8 @@ function runWorker(config) {
           chatPostsAttempted++;
           const response = await fetch(`${config.base}/api/chat/board/${config.boardId}/messages`, {
             method: 'POST',
-            headers: { cookie: client.user.cookie, 'content-type': 'application/json', 'x-tabula': '1' },
+            redirect: 'error',
+            headers: { origin: new URL(config.base).origin, cookie: client.user.cookie, 'content-type': 'application/json', 'x-mira': '1', 'x-tabula': '1' },
             body: JSON.stringify({ clientId: randomUUID(), text: `Class message from ${client.user.user.name}` }),
           });
           if (response.status === 429) errors.chatRateLimited++;
@@ -727,7 +940,7 @@ function runWorker(config) {
         ordinal,
         timers: new Set(),
         noteIds: [],
-        probeKey: `load-probe-${user.user.id}`,
+        probeKey: config.remote ? `load-probe-${user.user.id}-${ordinal}-${randomUUID().slice(0, 8)}` : `load-probe-${user.user.id}`,
         provider: null,
         chatSocket: null,
         connectStarted: performance.now(),
@@ -753,7 +966,7 @@ function runWorker(config) {
           if (typeof raw !== 'string') continue;
           try {
             const marker = JSON.parse(raw);
-            if (marker.writer !== user.user.id && Number.isFinite(marker.stamp)) {
+            if ((config.remote ? marker.writer !== client.probeKey : marker.writer !== user.user.id) && Number.isFinite(marker.stamp)) {
               const latency = epochNow() - marker.stamp;
               if (latency >= 0) latencySamples.push(latency);
             }
@@ -870,8 +1083,9 @@ function runWorker(config) {
 
 if (isMainThread) {
   main().catch((error) => {
-    console.error(`Class load harness failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-    process.exitCode = 1;
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.error(`Class load harness failed: ${redactTargetSecrets(message, targetForRedaction ?? [])}`);
+    process.exitCode = error?.exitCode ?? 1;
   });
 } else {
   runWorker({ ...workerData, wsBase: workerData.base.replace(/^http/, 'ws') }).catch((error) => {
