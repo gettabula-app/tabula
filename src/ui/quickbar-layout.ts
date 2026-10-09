@@ -11,11 +11,11 @@ const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y <
  */
 export function placeBar(
   target: Box, bar: { w: number; h: number }, view: { w: number; h: number }, lift = 0, margin = 12, topInset = 64, gap = 12,
-  avoid: Box[] = [],
+  avoid: Box[] = [], left = margin,
 ): { x: number; y: number; below: boolean } {
   const maxX = view.w - bar.w - margin;
   const cx = target.x + target.w / 2 - bar.w / 2;
-  const x = maxX >= margin ? Math.max(margin, Math.min(maxX, cx)) : margin;
+  const x = maxX >= left ? Math.max(left, Math.min(maxX, cx)) : left;
   const yAbove = target.y - gap - lift - bar.h;
   const yBelow = target.y + target.h + gap;
   const aboveFits = yAbove >= topInset;

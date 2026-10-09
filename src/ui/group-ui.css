@@ -105,6 +105,12 @@
   }
 }
 
+/* TAB-253: like the quick bar (styles.css, TAB-243), the chips wait, kept in place, while a drawer or the Comments and Chat tray
+   covers the board on a phone; closing it brings them back, so Done is never lost. */
+@media (max-width: 860px) {
+  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.group-chip, .group-done, .group-chip-bridge) { visibility: hidden; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .group-dim-wash { transition: none; }
 }

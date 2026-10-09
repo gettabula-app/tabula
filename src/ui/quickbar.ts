@@ -68,20 +68,27 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
     const selectedGroup = sel.length === 1 && sel[0].type === 'group';
     const gap = selectedGroup ? GROUP_BAR_GAP : undefined;
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a)]);
+    // on a phone the bar starts right of the rail, so it is placed (and checked against the chip) from there
     const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a, top)], railClear);
     bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
     cue();
   }
 
   /** A selected group's name chip (TAB-106): the bar clears it, flipping below the group when above would cover it. */
-  function groupChipBoxes(corner: { x: number; y: number }): Box[] {
+  function groupChipBoxes(corner: { x: number; y: number }, topInset: number): Box[] {
     const sel = app.selected();
     const group = sel.length === 1 && sel[0].type === 'group' ? sel[0] : null;
     if (!group) return [];
     const text = groupChipText((group as { name?: unknown }).name, app.store.childrenOf(group.id).filter((c) => c.parent === group.id).length);
-    const box = groupChipAvoidBox(corner.x, corner.y, text, app.zoom);
+    const viewport = parent.getBoundingClientRect();
+    const chip = parent.querySelector<HTMLElement>('.group-chip:not(.group-path-chip)');
+    const box = groupChipAvoidBox(corner.x, corner.y, text, app.zoom, {
+      viewport: { width: viewport.width || window.innerWidth, height: viewport.height || window.innerHeight },
+      topInset,
+      width: chip?.offsetWidth || undefined,
+    });
     return box ? [box] : [];
   }
 

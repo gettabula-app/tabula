@@ -13,7 +13,8 @@ import { parseArgs } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1440];
-const heightFor = (width) => (width <= 500 ? 844 : 800);
+// VISUAL_HEIGHT=390 npm run visual ... forces one window height for every width (a short landscape phone: --widths 844)
+const heightFor = (width) => Number(process.env.VISUAL_HEIGHT) || (width <= 500 ? 844 : 800);
 const BOARD_ID = 'visual-seed';
 const OWNER_EMAIL = 'owner@example.test';
 const USER = { id: 'visual-user', name: 'Visual QA', color: '#2F6FED' };
@@ -31,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -767,6 +768,29 @@ async function ensureVisualGroups(page) {
   });
 }
 
+/**
+ * A real touch long press (CDP touch events, so pointerType is touch) on the screen point `x` px from the left where `memberId` is
+ * moved to; waits for the menu and lifts the finger. `select` re-selects that object first (a group). The menu stays open for the shot.
+ */
+async function longPressMember(page, memberId, select, x = 70) {
+  const at = await page.evaluate(({ memberId, select, x }) => {
+    const app = window.__board;
+    if (select) app.setSelection([select]);
+    const b = app.r.bounds(app.store.get(memberId));
+    const s = app.r.toScreen({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    const z = app.r.cam.zoom;
+    app.r.setCamera({ x: app.r.cam.x + (s.x - x) / z, y: app.r.cam.y + (s.y - 360) / z });
+    return { x, y: 360 };
+  }, { memberId, select, x });
+  await page.waitForTimeout(200);
+  const cdp = await page.context().newCDPSession(page);
+  const pt = [{ x: at.x, y: at.y, id: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt });
+  await page.locator('.ctx-menu').waitFor({ timeout: 3000 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(150);
+}
+
 async function waitForGroupStyles(page) {
   await page.waitForFunction(() => Boolean(getComputedStyle(document.documentElement).getPropertyValue('--group-line').trim()));
 }
@@ -853,6 +877,51 @@ const STATES = {
     }, outerId);
     await env.page.waitForFunction(() => window.__board.r.cam.zoom >= 0.31);
     await env.page.waitForTimeout(500);
+  },
+  // TAB-253: a group selected and the Comments tray open on a phone: the quick bar, the properties panel and the group chips all wait
+  async 'group-selected-tray'(env) {
+    await STATES['group-selected-zoom'](env);
+    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.side-tray.show').waitFor();
+    await env.page.waitForTimeout(150);
+  },
+  async 'group-entered-tray'(env) {
+    await STATES['group-entered-zoom'](env);
+    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.side-tray.show').waitFor();
+    await env.page.waitForTimeout(150);
+  },
+  // TAB-253: a touch long press on the selection opens the context menu (Group, Ungroup). With the tray open the board shows only in the
+  // 12px gutters beside it, so the member is moved under the left one (x 70) before the press
+  async 'group-menu-tray'(env) {
+    await STATES['group-selected-tray'](env);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await longPressMember(env.page, 'seed-note-3', outerId);
+  },
+  async 'group-multi-menu-tray'(env) {
+    await STATES['group-multi'](env);
+    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.side-tray.show').waitFor();
+    await longPressMember(env.page, 'seed-note-1');
+  },
+  // the same press with no tray open
+  async 'group-menu'(env) {
+    await STATES['group-selected-zoom'](env);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await longPressMember(env.page, 'seed-note-3', outerId, 200);
+  },
+  // TAB-253: Undo and Redo stay at the foot of the rail; the rail is scrolled to its top, where they used to be off screen
+  async 'rail-end'(env) {
+    await openSeedBoard(env);
+    const m = await env.page.evaluate(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const rail = box('.rail');
+      const redo = box('.rail [aria-label="Redo"]');
+      const el = document.querySelector('.rail');
+      return { scrolls: el.scrollHeight > el.clientHeight + 1, railBottom: rail.bottom, redoBottom: redo.bottom, vh: innerHeight };
+    });
+    console.log(`rail-end ${JSON.stringify(m)}`);
+    if (m.redoBottom > m.railBottom + 0.5 || m.redoBottom > m.vh) throw new Error(`Redo is out of reach: ${JSON.stringify(m)}`);
   },
   async 'group-hover'(env) {
     await openSeedBoard(env);
