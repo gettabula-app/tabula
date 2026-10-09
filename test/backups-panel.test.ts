@@ -1091,6 +1091,8 @@ describe('the Overview of a hosted workspace', () => {
   it('offers Manage billing to the owner, as before', async () => {
     await openOverview(owner(hosted()));
     expect(hasControl(panel(), 'Manage billing')).toBe(true);
+    expect(textOf(panel())).toContain('Change the plan and update the payment method in the billing portal.');
+    expect(textOf(panel())).not.toContain('add seats');
   });
 
   it('offers no Manage billing on a workspace provided free, and says why', async () => {
