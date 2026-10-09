@@ -113,8 +113,10 @@ export interface BaseObj extends Partial<StyleFields> {
   desc?: string;
   ownerId?: string;
   ownerName?: string;
+  ownerKind?: 'person' | 'agent';
   due?: string;
   labels?: Id[];
+  link?: string;
 }
 
 export interface ConnectorObj {
