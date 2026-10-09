@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -840,6 +840,23 @@ async function assertTouchTargets(page, stage) {
   console.log(`touch-targets ${stage}: ${report.measured} targets at least 44×44px; text fields at least 16px`);
 }
 
+/** The compact phone vote bar is ONE row, nothing sticks out of it, and the instructions stay folded away. */
+async function voteBarOneRow(env, label) {
+  await env.page.locator('.flowbar.vote-compact').waitFor();
+  await env.page.getByRole('button', { name: 'Remove dots' }).click();
+  await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
+  await env.page.locator('.toast.show').waitFor({ state: 'hidden' }).catch(() => {});
+  const rows = await env.page.evaluate(() => {
+    const bar = document.querySelector('.flowbar.vote-compact');
+    const b = bar.getBoundingClientRect();
+    const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
+    return { n: boxes.length, tops: new Set(boxes.map((x) => Math.round(x.top / 4))).size, out: boxes.filter((x) => x.right > b.right + 0.5 || x.left < b.left - 0.5).map((x) => x.name), boxes: boxes.map((x) => `${x.name}:${Math.round(x.left)}-${Math.round(x.right)}`), barW: b.width };
+  });
+  console.log(label, JSON.stringify(rows));
+  if (rows.tops !== 1) throw new Error(`${label}: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+  if (rows.out.length) throw new Error(`${label}: controls stick out of the vote bar: ${rows.out.join(', ')}`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -1134,18 +1151,17 @@ const STATES = {
   },
   async 'vote-running-touch'(env) {
     await STATES['vote-running'](env);
-    await env.page.locator('.flowbar.vote-compact').waitFor();
-    await env.page.getByRole('button', { name: 'Remove dots' }).click();
-    await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
-    await env.page.locator('.toast.show').waitFor({ state: 'hidden' });
-    // the compact bar is ONE row: every visible control sits on the same line (the instructions stay folded away)
-    const rows = await env.page.evaluate(() => {
-      const bar = document.querySelector('.flowbar.vote-compact');
-      const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
-      return { n: boxes.length, tops: new Set(boxes.map((b) => Math.round(b.top / 4))).size, boxes: boxes.map((b) => `${b.name}:${Math.round(b.left)}-${Math.round(b.right)}`), barW: bar.getBoundingClientRect().width };
+    await voteBarOneRow(env, 'vote-running-touch');
+  },
+  // the same bar when the vote is one step of a session: Next step takes the place of Finish and must still fit the row
+  async 'vote-running-touch-steps'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vs1', title: 'Vote', instructions: 'Click any note or shape to add a dot.', mode: 'vote' }, { id: 'vs2', title: 'Discuss', instructions: '', mode: 'discuss' }]);
+      f.goto(0);
     });
-    console.log('vote-running-touch', JSON.stringify(rows));
-    if (rows.tops !== 1) throw new Error(`vote-running-touch: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+    await voteBarOneRow(env, 'vote-running-touch-steps');
   },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {
@@ -1802,7 +1818,7 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));

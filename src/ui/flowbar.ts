@@ -158,7 +158,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
       ...(instruction ? [instruction] : []), ...(info ? [info] : []),
       askButton(app),
       f.active < f.steps.length - 1
-        ? h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
+        ? h('button', { class: 'btn primary flow-next', 'aria-label': 'Next step', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
         : h('button', { class: `btn primary${voting ? ' vote-finish' : ''}`, disabled: ro, onclick: () => finish(app) }, 'Finish'),
     );
 
