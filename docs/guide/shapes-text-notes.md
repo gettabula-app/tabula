@@ -133,9 +133,11 @@ A group bundles items so you can select them as one. It has no picture of its ow
 - **Double-click** an item to enter the group. The rest of the board dims, the group gets a dashed outline and its name, and you can select, edit and move the items inside. Press `Esc`, click **Done**, or click empty canvas to leave. Groups can hold groups; `Esc` leaves one level at a time, and **Ungroup** takes apart only the outer one.
 - Choosing a colour or other style for a group changes every item in it that has one.
 - On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar and double-tap to enter. The **Done** chip leaves the group.
-- During a dot vote a click gives a dot to the item you click, not to its group.
+- During a dot vote a click gives a dot to the item you click, not to its group, and double-clicking an item still casts its votes without entering the group.
 
-Some things do not work on a whole group yet: moving, resizing and rotating it, copying and pasting it, and deleting or locking it as one. For now, enter the group to move or edit its items.
+Deleting or cutting a group removes the group and everything in it in one step. Notes that private writing is hiding from you are kept and moved out of the group instead. A group whose last item is deleted disappears too.
+
+Some things do not work on a whole group yet: moving, resizing and rotating it, copying and pasting it, and locking it as one. For now, enter the group to move or edit its items.
 
 ## Locking
 
