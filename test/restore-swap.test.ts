@@ -86,6 +86,7 @@ describe('a crash at every boundary of the swap', () => {
     expect(points.length).toBeGreaterThan(20);
   });
 
+  // Temporary stopgap until TAB-209 slims it: this walk took up to 57 s on a Windows shard, near the 60 s default.
   it('leaves the data wholly old or wholly new, whichever boundary the server stops at', async () => {
     expect(points.length).toBeGreaterThan(0);
     const outcomes: string[] = [];
@@ -156,7 +157,7 @@ describe('a crash at every boundary of the swap', () => {
     } finally {
       await f.h.close();
     }
-  });
+  }, 120_000);
 });
 
 describe('a crash inside the recovery itself', () => {

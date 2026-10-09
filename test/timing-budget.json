@@ -5,8 +5,8 @@
     {
       "file": "restore-swap.test.ts",
       "test": "a crash at every boundary of the swap leaves the data wholly old or wholly new",
-      "maxSeconds": 50,
-      "reason": "Walks every crash boundary of the swap: median 20.5 s, worst 44.6 s on Windows. To be slimmed by the restore owner; then this exemption goes."
+      "maxSeconds": 75,
+      "reason": "Temporary stopgap until TAB-209 slims it. Walks every crash boundary of the swap: median 20.5 s over five runs, then 57.4 s on a Windows shard (CI on 28ffc5a); it has its own 120 s test timeout meanwhile."
     },
     {
       "file": "relay-save.test.ts",
