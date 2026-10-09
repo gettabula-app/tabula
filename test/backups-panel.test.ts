@@ -333,6 +333,13 @@ describe('backups that are off', () => {
     expect(browser.location.assign).toHaveBeenCalledWith('https://billing.example.test/session/abc');
   });
 
+  it('on a workspace provided free says so instead of offering billing (TAB-226)', async () => {
+    await open(owner({ ...hosted()!, billing: false }), off);
+    expect(hasControl(panel(), 'Add backups')).toBe(false);
+    expect(textOf(panel())).toContain("This workspace is provided free (education or internal). There's nothing to bill.");
+    expect(asked('POST', '/api/billing/portal')).toHaveLength(0);
+  });
+
   it('does not follow a billing address that is not https', async () => {
     await open(owner(hosted()), { ...off, 'POST /api/billing/portal': json({ url: 'http://billing.example.test/x' }) });
     control(panel(), 'Add backups').click();
@@ -1068,5 +1075,27 @@ describe('a board whose socket the server closed with 4503', () => {
     b.deny(reason);
     expect(restoringShown()).toBe(false);
     expect(textOf(need(root, '.access-banner'))).toMatch(words);
+  });
+});
+
+// ------------------------------------------------------------------ the Overview's billing block (TAB-226)
+
+describe('the Overview of a hosted workspace', () => {
+  async function openOverview(me: Me) {
+    serve({ 'GET /api/admin/overview': json(overview) });
+    renderAdmin(asHtml(root), 'overview', me);
+    await flush();
+    return panel();
+  }
+
+  it('offers Manage billing to the owner, as before', async () => {
+    await openOverview(owner(hosted()));
+    expect(hasControl(panel(), 'Manage billing')).toBe(true);
+  });
+
+  it('offers no Manage billing on a workspace provided free, and says why', async () => {
+    await openOverview(owner({ ...hosted()!, billing: false }));
+    expect(hasControl(panel(), 'Manage billing')).toBe(false);
+    expect(textOf(panel())).toContain("This workspace is provided free (education or internal). There's nothing to bill.");
   });
 });

@@ -11,9 +11,13 @@ export const HINT_COALESCE_MS = 150;
 
 const READ_ONLY_BANNER = 'This workspace is read-only.';
 
+/** Said where Manage billing would be on a workspace provided free (`billing: false`). */
+export const FREE_WORKSPACE_TEXT = "This workspace is provided free (education or internal). There's nothing to bill.";
+
 const ERROR_TEXT = new Map([
   ['seat_limit', 'All seats are in use. Remove or disable someone, or ask the workspace owner to add seats.'],
   ['read_only', 'This workspace is read-only right now. Ask the workspace owner to check billing.'],
+  ['no_billing', FREE_WORKSPACE_TEXT],
 ]);
 
 /** The workspace limits the server reported for the signed-in user; null in open mode and on plain accounts servers. */
@@ -51,9 +55,14 @@ export function boardAccess(role: BoardRole | null | undefined, workspace: Works
   };
 }
 
-/** Only the owner of a workspace that a control plane runs has a billing portal. */
+/** Only the owner of a workspace that a control plane runs has a billing portal, and not when the workspace is provided free. */
 export function canManageBilling(me: Me | null | undefined): boolean {
-  return me?.workspace !== undefined && me.user.role === 'owner';
+  return me?.workspace !== undefined && me.workspace.billing !== false && me.user.role === 'owner';
+}
+
+/** What the owner of a workspace provided free (`billing: false`) reads where Manage billing would be; null otherwise. */
+export function freeWorkspaceNote(me: Me | null | undefined): string | null {
+  return me?.workspace?.billing === false && me.user.role === 'owner' ? FREE_WORKSPACE_TEXT : null;
 }
 
 /** A readable text for the errors that only hosted workspaces produce; null for any other error. */

@@ -364,7 +364,7 @@ describe('a hosted workspace', () => {
       expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome' } });
 
       const me = await c.api(owner.cookie, 'GET', '/api/me');
-      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1 });
+      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true });
 
       const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.');
       expect(audit.body.entries[0]).toMatchObject({
@@ -677,6 +677,20 @@ describe('a hosted workspace', () => {
       expect(portalCalls()[0]).toMatchObject({ method: 'POST', url: `/v1/workspaces/${WORKSPACE}/portal`, authorization: `Bearer ${TOKEN}` });
     });
 
+    it('answers 409 no_billing, without asking the control plane, on a workspace provided free, and says so in /api/me (TAB-226)', async () => {
+      await c.internal('PUT', '/api/internal/limits', { billing: false });
+      try {
+        const before = portalCalls().length;
+        const res = await c.api(owner.cookie, 'POST', '/api/billing/portal');
+        expect(res).toMatchObject({ status: 409, body: { error: 'no_billing' } });
+        expect(portalCalls()).toHaveLength(before);
+        expect((await c.api(owner.cookie, 'GET', '/api/me')).body.workspace).toMatchObject({ billing: false });
+      } finally {
+        await c.internal('PUT', '/api/internal/limits', { billing: true });
+      }
+      expect((await c.api(owner.cookie, 'POST', '/api/billing/portal')).status).toBe(200);
+    });
+
     it('is for the owner only and answers 502 for a bad answer from the control plane', async () => {
       const team = await c.newTeam(owner.cookie);
       const member = await c.joinTeam(owner.cookie, team.id);
@@ -728,7 +742,7 @@ describe('a hosted workspace', () => {
       const b = client(second);
       const again = await b.signIn(OWNER);
       expect(again.user.id).toBe(who.user.id);
-      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1 });
+      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true });
       expect((await b.api(again.cookie, 'POST', '/api/teams', { name: 'x' })).status).toBe(402);
     });
   });

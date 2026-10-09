@@ -20,6 +20,8 @@ export interface Workspace {
   banner: string | null;
   seatLimit: number | null;
   seatsUsed: number;
+  /** False for a workspace that is provided free (education, internal): no subscription, no billing portal. Absent on older servers. */
+  billing?: boolean;
 }
 
 export interface Me {
