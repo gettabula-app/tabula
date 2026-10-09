@@ -84,7 +84,7 @@ In a **Dot vote** step:
 4. Click **Reveal votes** to show the totals.
 5. Click **Copy results** to copy the ranked list as Markdown.
 
-On a phone the vote bar is one compact row: the step name, **Reveal votes** (as an eye icon), **Remove dots**, your dots left, **Finish** and an **Info** button that shows the instructions. The timer and the other step buttons are hidden while a vote runs.
+On a phone the vote bar is one compact row: **Reveal votes** (as an eye icon), **Remove dots**, your dots left, **Finish** and an **Info** button that shows the instructions. The step title, the timer and the other step buttons are hidden while a vote runs.
 
 When the session ends, dots stay on the board. The bar shows **Vote results** with **Copy results** and **Clear dots** to remove them.
 
