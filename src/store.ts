@@ -77,6 +77,8 @@ export class Store {
   private readOnlyListeners = new Set<(v: boolean) => void>();
   /** Object ids touched by the current undo/redo transaction; consumed by the app's stack-item handler. */
   private undoChangedIds = new Set<Id>();
+  /** Cleanup work is keyed to object transactions so ordinary edits do not scan the board. */
+  private emptyGroupCleanupHints = new WeakMap<Y.Transaction, { scan: boolean; groups: Set<Id> }>();
   private _readOnly = false;
   private orderDirty = true;
   private orderCache: Obj[] = [];
@@ -112,12 +114,27 @@ export class Store {
 
     this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
+      let scanForEmptyGroups = false;
+      const createdGroups = new Set<Id>();
       for (const e of events) {
         if (e.target === this.objects) {
-          for (const k of e.changes.keys.keys()) changed.add(k);
+          for (const [id, change] of e.changes.keys) {
+            changed.add(id);
+            if (change.action === 'delete') scanForEmptyGroups = true;
+            if (change.action === 'add' || change.action === 'update') {
+              if (this.objects.get(id)?.get('type') === 'group') createdGroups.add(id);
+            }
+          }
         } else if (e.path.length > 0) {
           changed.add(String(e.path[0]));
+          if (transaction.changed.get(e.target)?.has('parent')) scanForEmptyGroups = true;
         }
+      }
+      if (scanForEmptyGroups || createdGroups.size) {
+        const hint = this.emptyGroupCleanupHints.get(transaction) ?? { scan: false, groups: new Set<Id>() };
+        hint.scan ||= scanForEmptyGroups;
+        createdGroups.forEach((id) => hint.groups.add(id));
+        this.emptyGroupCleanupHints.set(transaction, hint);
       }
       // Keep only direct object-map changes here. The `changed` set below is also expanded with derived group and
       // layout changes for rendering, which are not part of the objects written by undo/redo.
@@ -159,13 +176,18 @@ export class Store {
       this.listeners.forEach((l) => l(changed));
     });
 
-    // A remote merge can move every member out of a group. Local Store.remove and update calls clean those up in
-    // their existing transaction; this catches empty groups that arrive through Yjs sync, then broadcasts one
-    // idempotent cleanup transaction to the other clients.
+    // Only deletions and parent changes can empty an existing group. Local Store.remove and update calls handle those
+    // in their own transaction; this catches empty groups from remote merges. A newly created group is checked as a
+    // candidate so the long-standing empty-group creation cleanup does not require a board-wide scan.
     this.doc.on('afterTransaction', (transaction) => {
-      const changedTypes = transaction.changedParentTypes as unknown as Map<unknown, unknown>;
-      if (changedTypes.has(this.objects) && this.emptyGroupIds().length) {
-        this.doc.transact(() => this.removeEmptyGroups(), EMPTY_GROUP_CLEANUP);
+      if (transaction.origin === EMPTY_GROUP_CLEANUP) return;
+      const hint = this.emptyGroupCleanupHints.get(transaction);
+      if (!hint) return;
+      if (hint.scan) {
+        const empty = this.emptyGroupIds();
+        if (empty.length) this.doc.transact(() => this.removeEmptyGroups(empty), EMPTY_GROUP_CLEANUP);
+      } else if (hint.groups.size) {
+        this.doc.transact(() => this.removeEmptyGroupCandidates(hint.groups), EMPTY_GROUP_CLEANUP);
       }
     });
 
@@ -396,10 +418,10 @@ export class Store {
   }
 
   /** Removes structurally empty groups, including ancestors made empty by removing nested groups. */
-  private removeEmptyGroups(): Id[] {
+  private removeEmptyGroups(firstPass = this.emptyGroupIds()): Id[] {
     const removed: Id[] = [];
+    let empty = firstPass;
     for (;;) {
-      const empty = this.emptyGroupIds();
       if (!empty.length) return removed;
       for (const id of empty) {
         if (this.objects.has(id)) {
@@ -407,7 +429,36 @@ export class Store {
           removed.push(id);
         }
       }
+      empty = this.emptyGroupIds();
     }
+  }
+
+  /** Checks newly created groups and any ancestors they leave empty, without scanning unrelated groups. */
+  private removeEmptyGroupCandidates(candidates: Iterable<Id>): Id[] {
+    const childCounts = new Map<Id, number>();
+    const childCount = (id: Id) => childCounts.get(id) ?? this.childIndex.get(id)?.size ?? 0;
+    const pending = [...candidates];
+    const checked = new Set<Id>();
+    const removed: Id[] = [];
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (checked.has(id)) continue;
+      checked.add(id);
+      const group = this.objects.get(id);
+      if (group?.get('type') !== 'group' || childCount(id) > 0) continue;
+      const parent = group.get('parent');
+      this.objects.delete(id);
+      removed.push(id);
+      if (typeof parent === 'string') {
+        const remaining = childCount(parent) - 1;
+        if (remaining > 0) childCounts.set(parent, remaining);
+        else {
+          childCounts.delete(parent);
+          if (this.objects.get(parent)?.get('type') === 'group') pending.push(parent);
+        }
+      }
+    }
+    return removed;
   }
 
   /** Direct children count even when they are hidden; groups are removed only when structurally empty. */

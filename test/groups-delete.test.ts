@@ -85,6 +85,17 @@ function groupSelection(store: Store, id: Id, members: readonly Id[]) {
 }
 
 describe('group deletion and empty-group cleanup', () => {
+  it('does not scan 10,000 objects during 100 transactions without parent changes', () => {
+    const store = new Store(new Y.Doc());
+    const internals = store as unknown as { emptyGroupIds: () => Id[] };
+    const scan = vi.spyOn(internals, 'emptyGroupIds');
+    store.transact(() => {
+      for (let i = 0; i < 10_000; i++) store.create(note(`note-${i}`, `a${i}`));
+    });
+    for (let i = 0; i < 100; i++) store.transact(() => store.update(`note-${i}`, { x: i + 1 }));
+    expect(scan).not.toHaveBeenCalled();
+  });
+
   it('deletes the last member and its empty group in the same undoable transaction, keeping one-member groups', () => {
     const store = new Store(new Y.Doc());
     store.transact(() => {
