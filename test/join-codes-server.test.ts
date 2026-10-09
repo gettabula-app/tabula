@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import WebSocket from 'ws';
@@ -91,7 +92,12 @@ describe('join-code creation and storage', () => {
     expect(made.body.code).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
     expect(made.body).toMatchObject({ role: 'commenter', maxUses: 100, uses: 0 });
     expect(made.body.expiresAt - made.body.createdAt).toBe(3 * 60 * 60 * 1000);
-    const digest = crypto.createHash('sha256').update(made.body.code).digest('hex');
+    const secretPath = path.join(h.dir, 'join-code.secret');
+    expect(fs.existsSync(secretPath)).toBe(true);
+    const secret = fs.readFileSync(secretPath);
+    expect(secret).toHaveLength(32);
+    expect(fs.statSync(secretPath).mode & 0o777).toBe(0o600);
+    const digest = crypto.createHmac('sha256', secret).update(made.body.code).digest('hex');
     const db = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
     try {
       const stored = db.prepare('SELECT code_hash FROM join_codes WHERE id = ?').get(made.body.id) as { code_hash: string };
@@ -293,5 +299,40 @@ describe('guest scope and role enforcement', () => {
     const saved = (commentsObserver.doc.getMap('threads').get('guest-comment') as Y.Map<unknown>).toJSON();
     expect(saved).toMatchObject({ authorId: guest.body.guestId, authorName: 'Guest', text: 'A guest comment' });
     expect((await upload(guest.cookie!, board, makePng())).status).toBe(403);
+  });
+
+  it('replaces guest awareness identity and sanitises every guest string before broadcasting', async () => {
+    const made = await newCode(owner.cookie, { role: 'commenter' });
+    const guest = await join(made.body.code, 'Trusted Guest');
+    const observer = h.connect(board, owner.cookie);
+    const guestConn = h.connect(board, guest.cookie);
+    await Promise.all([observer.synced(), guestConn.synced()]);
+
+    guestConn.provider.awareness.setLocalState({
+      user: { id: owner.user.id, name: owner.user.name, color: '#FFFFFF', extra: '\u202e' + 'x'.repeat(300) },
+      label: '\u0000' + 'L'.repeat(300), nested: { note: 'safe\u0007\u200b text' },
+    });
+    await until(() => [...observer.provider.awareness.getStates().values()].some((state) => state.user?.id === guest.body.guestId));
+    const state = [...observer.provider.awareness.getStates().values()].find((candidate) => candidate.user?.id === guest.body.guestId)!;
+    expect(state.user).toMatchObject({ id: guest.body.guestId, name: 'Trusted Guest', guest: true });
+    expect(state.user.color).toMatch(/^#[0-9A-F]{6}$/);
+    expect(state.user.color).not.toBe('#FFFFFF');
+    expect(state.user.extra).toBeUndefined();
+    expect(state.label).toBe('L'.repeat(256));
+    expect(state.nested.note).toBe('safe text');
+  });
+});
+
+describe('disabling join codes', () => {
+  it('rejects existing guest cookies after a restart with the feature off', async () => {
+    const made = await newCode(owner.cookie, { role: 'editor' });
+    const guest = await join(made.body.code);
+    expect((await h.api(guest.cookie, 'GET', `/api/boards/${board}/versions`)).status).toBe(200);
+
+    await h.stop();
+    await h.start({ TABULA_JOIN_CODES: 'off' });
+    expect([401, 403]).toContain((await h.api(guest.cookie, 'GET', `/api/boards/${board}/versions`)).status);
+    const socket = rawRoom(board, guest.cookie!);
+    expect(await socket.closed).toBe(4401);
   });
 });

@@ -168,11 +168,12 @@ select.input {
 .top-right { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px; }
 .people { display: flex; padding-right: 4px; }
 .avatar {
-  width: 30px; height: 30px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
+  position: relative; width: 30px; height: 30px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
   color: #fff; font: 700 11px var(--ui); display: grid; place-items: center; padding: 0;
 }
 .avatar:first-child { margin-left: 0; }
 .avatar.more { background: var(--tray-2); color: var(--tray-muted); }
+.avatar-guest { position: absolute; z-index: 2; top: -8px; right: -12px; padding: 1px 3px; border: 1px solid var(--tray); background: var(--signal); color: var(--on-signal); font: 700 7px/1 var(--ui); }
 
 .rail { position: absolute; left: 12px; top: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px); overflow: hidden; scrollbar-width: none; }
 @media (max-height: 820px) {

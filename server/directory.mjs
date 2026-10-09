@@ -576,13 +576,15 @@ export function openDirectory(file) {
   }
 
   /**
-   * Every session ends and every sign-in link stops working (server/volume.mjs, adopting a volume: tokens issued on
-   * the volume a snapshot was taken of must not work on the copy). Returns how many of each there were.
+   * Every account and guest session ends, every join code is revoked and every sign-in link stops working
+   * (server/volume.mjs, adopting a volume: credentials issued on the source volume must not work on the copy).
    */
-  function revokeAllSessions() {
+  function revokeAllSessions(now = Date.now()) {
     return transaction(() => ({
       sessions: run('UPDATE sessions SET revoked = 1 WHERE revoked = 0'),
       loginTokens: run('DELETE FROM login_tokens'),
+      guestSessions: run('DELETE FROM guest_sessions'),
+      joinCodes: run('UPDATE join_codes SET revoked_at = ? WHERE revoked_at IS NULL', now),
     }));
   }
 

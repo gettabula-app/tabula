@@ -1,5 +1,7 @@
-// One-board guest links (TAB-144). The clear code is returned once; only its SHA-256 digest reaches the directory.
+// One-board guest links (TAB-144). The clear code is returned once; only its server-keyed HMAC reaches the directory.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const JOIN_CODE_LENGTH = 8;
@@ -12,9 +14,46 @@ export const JOIN_CODE_ERROR = 'This join code is not valid. Ask the board owner
 const DUMMY_DIGEST = Buffer.alloc(32, 0xa5);
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest();
 const digestBuffer = (hex) => typeof hex === 'string' && /^[\da-f]{64}$/i.test(hex) ? Buffer.from(hex, 'hex') : DUMMY_DIGEST;
+export const JOIN_CODE_SECRET_FILE = 'join-code.secret';
 
-export function hashJoinCode(code) {
-  return sha256(code).toString('hex');
+/** Creates a persistent per-instance key beside directory.sqlite, never inside it. */
+export function loadJoinCodeSecret(dataDir) {
+  if (typeof dataDir !== 'string' || !dataDir) throw new TypeError('dataDir is required');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const file = path.join(dataDir, JOIN_CODE_SECRET_FILE);
+  try {
+    fs.lstatSync(file);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+    const temp = path.join(dataDir, `${JOIN_CODE_SECRET_FILE}.tmp-${crypto.randomBytes(8).toString('hex')}`);
+    let fd;
+    try {
+      fd = fs.openSync(temp, 'wx', 0o600);
+      fs.writeFileSync(fd, crypto.randomBytes(32));
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      try {
+        fs.linkSync(temp, file);
+      } catch (linkError) {
+        if (linkError?.code !== 'EEXIST') throw linkError;
+      }
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+      fs.rmSync(temp, { force: true });
+    }
+  }
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('The join-code secret must be a regular file');
+  if ((stat.mode & 0o777) !== 0o600) fs.chmodSync(file, 0o600);
+  const secret = fs.readFileSync(file);
+  if (secret.length !== 32) throw new Error('The join-code secret must contain exactly 32 bytes');
+  return secret;
+}
+
+export function hashJoinCode(code, secret) {
+  if (!Buffer.isBuffer(secret) || secret.length !== 32) throw new TypeError('a 32-byte join-code secret is required');
+  return crypto.createHmac('sha256', secret).update(code).digest('hex');
 }
 
 export function generateJoinCode() {
@@ -72,14 +111,16 @@ function createAttemptLimiter(now) {
   };
 }
 
-export function createJoinCodeService({ directory, now = Date.now } = {}) {
+export function createJoinCodeService({ directory, secret, now = Date.now } = {}) {
   if (!directory) throw new TypeError('directory is required');
+  if (!Buffer.isBuffer(secret) || secret.length !== 32) throw new TypeError('a 32-byte join-code secret is required');
   const limiter = createAttemptLimiter(now);
+  const hashCode = (code) => hashJoinCode(code, secret);
 
   function join({ code, name, source }) {
     const normalized = typeof code === 'string' ? code.trim().toUpperCase() : '';
     const syntaxOk = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6,8}$/.test(normalized);
-    const candidate = sha256(normalized);
+    const candidate = Buffer.from(hashCode(normalized), 'hex');
     if (!limiter.hit(source, candidate.toString('hex'))) return { limited: true };
     const displayName = sanitiseGuestName(name);
     if (displayName === null) return { badName: true };
@@ -105,5 +146,5 @@ export function createJoinCodeService({ directory, now = Date.now } = {}) {
     });
   }
 
-  return { join };
+  return { join, hashCode };
 }

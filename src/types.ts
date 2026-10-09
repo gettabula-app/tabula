@@ -251,6 +251,6 @@ export interface BoardMeta {
 export interface Point { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }
 
-export interface User { id: string; name: string; color: string }
+export interface User { id: string; name: string; color: string; guest?: boolean }
 
 export const SCHEMA_VERSION = 1;

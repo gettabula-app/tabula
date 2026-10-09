@@ -4,7 +4,7 @@ Join codes let someone enter one board without creating a workspace account. The
 
 ## Enable the feature
 
-Set `TABULA_JOIN_CODES=on` on the relay. It defaults to `off`; when off, join-code API routes return `404` and the Share dialog does not show the feature. Open mode does not support join codes because it has no account based board roles.
+Set `TABULA_JOIN_CODES=on` on the relay. It defaults to `off`; when off, join-code API routes return `404`, the Share dialog does not show the feature, and existing guest credentials are rejected. If the feature is enabled again before a guest session expires or its code is revoked, that session can be used again. Open mode does not support join codes because it has no account based board roles.
 
 ## Create and manage codes
 
@@ -14,7 +14,7 @@ In a board's **Share** dialog, an **Owner** or **Editor** sees **Join code**. Ch
 - The default expiry is 3 hours. Choose up to 24 hours.
 - The default use limit is 100; the maximum is 1,000.
 - The server generates an 8-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, which omits easily confused characters. The code is shown once, in large type, with a copyable `/join?c=CODE` link.
-- The code is stored as a SHA-256 hash. It is not included in the list endpoint, audit rows or server logs. Keep the one-time display private: anyone holding an active code can join until it expires, is revoked or runs out of uses.
+- The code is stored as a server-keyed HMAC-SHA-256 digest. The per-instance key is `<DATA_DIR>/join-code.secret`, a separate 32-byte file created with `0600` permissions. Keep that file with the data directory across restarts and protect it like other instance secrets; it is outside `directory.sqlite` and is not included in backup exports. A database-only copy cannot check guesses without this key. Codes created by older versions that stored plain SHA-256 hashes must be replaced after upgrading; existing guest sessions continue until expiry or revocation. The code itself is not included in the list endpoint, audit rows or server logs. Keep the one-time display private: anyone holding an active code can join until it expires, is revoked or runs out of uses.
 
 The list shows each code's role, use count, expiry and revocation state. Select **Revoke** to end the code and all guest sessions created from it. A code that reaches its use limit cannot create more sessions, but sessions already created remain active until the code expires or is revoked.
 
@@ -23,6 +23,8 @@ The list shows each code's role, use count, expiry and revocation state. Select 
 The guest opens `/join?c=CODE`, enters a display name, and receives a host-only `HttpOnly` session cookie. The name is NFC-normalised, has control and invisible formatting characters removed, whitespace collapsed, and must be 1 to 40 characters after sanitising. The guest session ends at the exact expiry time of the code.
 
 The relay checks the session's board scope and role before opening a sync room and rechecks it while the connection is open. The session can open only that board's board and comments rooms. An **Editor** can write the board, comment, read board images and upload images within the server's existing file, board and server limits. A **Commenter** can read the board and write comments; image uploads, including claims from another board, are refused.
+
+The relay binds guest presence to the guest session and sanitises guest awareness strings. Guest names are marked **Guest** in presence and comments, so a guest who chooses the same display name as a member is still identified as a guest.
 
 Guest HTTP access is intentionally narrow. Guests may read images belonging to their board. Editors may also read that board's version history and upload an image to that board. The join page may submit a code, and the app may read public configuration. All other API requests, including boards lists, other board resources, sharing, admin, chat, AI, and MCP, are refused. `/api/health` is also refused while a valid guest cookie is present.
 

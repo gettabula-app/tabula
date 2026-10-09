@@ -961,8 +961,13 @@ export function createRestore({
       const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
       db.exec('BEGIN IMMEDIATE');
       try {
-        removed = { sessions: count('sessions'), loginTokens: count('login_tokens') };
+        removed = {
+          sessions: count('sessions'), loginTokens: count('login_tokens'),
+          guestSessions: count('guest_sessions'), joinCodes: count('join_codes'),
+        };
         db.exec('DELETE FROM sessions; DELETE FROM login_tokens');
+        if (has('guest_sessions')) db.exec('DELETE FROM guest_sessions');
+        if (has('join_codes')) db.prepare('UPDATE join_codes SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
         if (has('access_tokens')) db.prepare('UPDATE access_tokens SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
         if (has('invites')) db.exec('UPDATE invites SET revoked = 1 WHERE revoked = 0');
         db.exec("DELETE FROM settings WHERE key = 'backup.status' OR key LIKE 'cloud.%'");
@@ -985,7 +990,8 @@ export function createRestore({
           nowMs,
           info.actorId,
           'restore.done',
-          JSON.stringify({ kind: 'workspace', manifest: info.manifest, files: info.files, bytes: info.bytes, boards: info.boards, users: info.users, sessionsRemoved: removed.sessions, keepOldFor: info.keepOldFor }),
+          JSON.stringify({ kind: 'workspace', manifest: info.manifest, files: info.files, bytes: info.bytes, boards: info.boards, users: info.users,
+            sessionsRemoved: removed.sessions, guestSessionsRemoved: removed.guestSessions, joinCodesRevoked: removed.joinCodes, keepOldFor: info.keepOldFor }),
         );
         db.exec('COMMIT');
       } catch (err) {

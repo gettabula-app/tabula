@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -7,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import { hashJoinCode, loadJoinCodeSecret } from '../server/join-codes.mjs';
 import nodemailer from 'nodemailer';
 import { createMailer } from '../server/mailer.mjs';
 
@@ -155,6 +157,47 @@ describe('requestLogin', () => {
     expect(await throwing.requestLogin({ email: 'known@example.com', ip: '1.1.1.2' })).toEqual({ ok: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(errors).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('guest session authentication', () => {
+  it('rejects existing guest credentials when join codes are disabled in both auth paths', () => {
+    const enabled = setup({ TABULA_JOIN_CODES: 'on' });
+    const owner = enabled.d.createUser({ email: OWNER, role: 'owner' })!;
+    const board = enabled.d.createBoard({ id: 'guest-auth-board', ownerId: owner.id })!;
+    const code = enabled.d.createJoinCode({
+      boardId: board.id, createdBy: owner.id, codeHash: 'a'.repeat(64), role: 'editor',
+      createdAt: T0, expiresAt: T0 + HOUR, maxUses: 10,
+    })!;
+    const token = 'existing-guest-cookie-token';
+    enabled.d.createGuestSession(code.id, {
+      tokenHash: crypto.createHash('sha256').update(token).digest('hex'), name: 'Guest', now: T0,
+    });
+    const cookieHeader = `${enabled.config.cookieName}=${token}`;
+    expect(enabled.auth.authenticate(cookieHeader)?.guest).toBe(true);
+    expect(enabled.auth.authenticateGuest(cookieHeader)?.guest).toBe(true);
+
+    const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_JOIN_CODES: 'off', PORT: '8787' });
+    const disabled = createAuth({ directory: enabled.d, config, mailer: { send: async () => {} }, now: () => T0 });
+    expect(disabled.authenticate(cookieHeader)).toBeNull();
+    expect(disabled.authenticateGuest(cookieHeader)).toBeNull();
+  });
+});
+
+describe('join-code secret storage', () => {
+  it('stores the code digest as an HMAC keyed by the private per-instance file', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-join-code-secret-'));
+    tmpDirs.push(dataDir);
+    const secret = loadJoinCodeSecret(dataDir);
+    const code = 'ABCD2345';
+    const digest = hashJoinCode(code, secret);
+
+    expect(secret).toHaveLength(32);
+    expect(fs.statSync(path.join(dataDir, 'join-code.secret')).mode & 0o777).toBe(0o600);
+    expect(digest).toBe(crypto.createHmac('sha256', secret).update(code).digest('hex'));
+    expect(digest).not.toBe(crypto.createHash('sha256').update(code).digest('hex'));
+    expect(hashJoinCode(code, loadJoinCodeSecret(dataDir))).toBe(digest);
+    expect(hashJoinCode(code, crypto.randomBytes(32))).not.toBe(digest);
   });
 });
 

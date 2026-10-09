@@ -21,7 +21,7 @@ import { createChatLimits } from './chat-limits.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
-  generateJoinCode, hashJoinCode,
+  generateJoinCode,
 } from './join-codes.mjs';
 
 const MAX_BODY = 64 * 1024;
@@ -710,7 +710,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             const createdAt = now();
             const entry = directory.transaction(() => {
               const saved = directory.createJoinCode({
-                boardId: board.id, createdBy: user.id, codeHash: hashJoinCode(code), role,
+                boardId: board.id, createdBy: user.id, codeHash: joinCodeService.hashCode(code), role,
                 createdAt, expiresAt: createdAt + hours * 60 * 60 * 1000, maxUses,
               });
               audit(user, 'join-code.created', { boardId: board.id, joinCodeId: saved.id, role, expiresAt: saved.expiresAt, maxUses });

@@ -25,12 +25,12 @@ afterEach(() => {
 
 const author: Author = { id: 'visual-qa', name: 'Visual QA', color: '#2F6FED' };
 
-function mountThread() {
+function mountThread(commentAuthor: Author = author) {
   const chromeElement = browser.document.createElement('div');
   browser.document.body.appendChild(chromeElement);
   const chrome = chromeElement as unknown as HTMLElement;
   const comments = new Comments(new Y.Doc());
-  const threadId = comments.addThread(author, { x: 100, y: 100 }, 'Root message');
+  const threadId = comments.addThread(commentAuthor, { x: 100, y: 100 }, 'Root message');
   if (!threadId) throw new Error('could not seed the comment thread');
 
   const listeners = new Map<string, Set<() => void>>();
@@ -93,5 +93,11 @@ describe('comment thread card', () => {
     expect(head.children[0].className).toBe('comment-badge');
     expect(head.children[0].textContent).toBe('Resolved');
     expect(head.children[1].getAttribute('aria-label')).toBe('Close');
+  });
+
+  it('marks a guest comment even when its name matches a member name', () => {
+    const { card } = mountThread({ id: 'guest_session123', name: 'Visual QA', color: '#2F6FED' });
+    expect(need(card, '.comment-name').textContent).toBe('Visual QA');
+    expect(need(card, '.comment-guest').textContent).toBe('Guest');
   });
 });

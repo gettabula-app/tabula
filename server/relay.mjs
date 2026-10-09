@@ -13,6 +13,7 @@
 // HTTP API and decides who may join which room before it touches the room.
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -78,6 +79,45 @@ const AI_SWEEP_MS = 30_000;
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
+const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
+const GUEST_AWARENESS_STRING_LIMIT = 256;
+
+function cleanAwarenessString(value, limit = GUEST_AWARENESS_STRING_LIMIT) {
+  return [...value.slice(0, limit * 4).normalize('NFC').replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, limit).join('');
+}
+
+function cleanGuestAwarenessValue(value, depth = 0) {
+  if (typeof value === 'string') return cleanAwarenessString(value);
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (depth >= 8) return null;
+  if (Array.isArray(value)) return value.slice(0, 128).map((entry) => cleanGuestAwarenessValue(entry, depth + 1));
+  if (typeof value === 'object') {
+    const safe = Object.create(null);
+    let count = 0;
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      if (count++ >= 128) break;
+      const cleanKey = cleanAwarenessString(key, 64);
+      if (cleanKey) safe[cleanKey] = cleanGuestAwarenessValue(value[key], depth + 1);
+    }
+    return safe;
+  }
+  return null;
+}
+
+function guestPresenceColor(userId) {
+  const index = crypto.createHash('sha256').update(userId).digest()[0] % GUEST_PRESENCE_COLORS.length;
+  return GUEST_PRESENCE_COLORS[index];
+}
+
+function cleanGuestAwarenessState(state, ws) {
+  if (state === null) return null;
+  const cleaned = cleanGuestAwarenessValue(state);
+  const safe = cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned) ? cleaned : Object.create(null);
+  const name = cleanAwarenessString(typeof ws.userName === 'string' ? ws.userName : 'Guest', 40).trim() || 'Guest';
+  safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
+  return safe;
+}
 const CLOSE_NOT_FOUND = 4404;
 const CLOSE_ACCESS_REMOVED = 4410;
 // The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
@@ -189,8 +229,8 @@ if (config.authEnabled) {
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
   settleVolume(directory);
   if (config.joinCodes) {
-    const { createJoinCodeService } = await import('./join-codes.mjs');
-    joinCodeService = createJoinCodeService({ directory });
+    const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
+    joinCodeService = createJoinCodeService({ directory, secret: loadJoinCodeSecret(DATA_DIR) });
   }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
@@ -557,7 +597,11 @@ class Room {
         else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
-        awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(dec), ws);
+        const update = decoding.readVarUint8Array(dec);
+        const safeUpdate = ws.guest
+          ? awarenessProtocol.modifyAwarenessUpdate(update, (state) => cleanGuestAwarenessState(state, ws))
+          : update;
+        awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
       }
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
@@ -952,6 +996,7 @@ function refresh(ws, force) {
       ws.sessionExpiresAt = guest.expiresAt;
       ws.role = guest.boardRole;
       ws.userName = guest.user.name;
+      ws.userColor = guestPresenceColor(guest.user.id);
       ws.deleted = false;
       ws.canWrite = canWriteRoom(guest.boardRole, ws.roomKind, false);
       return;
@@ -1118,6 +1163,7 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
     ws.guest = verdict.session.guest === true;
+    ws.userColor = ws.guest ? guestPresenceColor(ws.userId) : null;
     ws.deleted = verdict.deleted;
     ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
     ws.checkedAt = Date.now();

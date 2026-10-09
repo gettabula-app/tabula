@@ -177,6 +177,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         const setCookie = session.extended ? sessionCookie(token, session.expiresAt - t) : undefined;
         return { user: session.user, sessionId: session.id, expiresAt: session.expiresAt, setCookie };
       }
+      if (config.joinCodes !== true) continue;
       const guest = directory.getGuestSession(hashToken(token), t);
       if (!guest) continue;
       return {
@@ -196,7 +197,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
 
   /** Checks only the one-board guest credential, for HTTP and WebSocket scope gates. */
   function authenticateGuest(cookieHeader) {
-    if (typeof cookieHeader !== 'string' || !cookieHeader) return null;
+    if (config.joinCodes !== true || typeof cookieHeader !== 'string' || !cookieHeader) return null;
     for (const part of cookieHeader.split(';')) {
       const eq = part.indexOf('=');
       if (eq < 0 || part.slice(0, eq).trim() !== config.cookieName) continue;

@@ -10,6 +10,7 @@
 .comment-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .comment-time, .comment-row-meta { color: var(--tray-muted); font-size: 12px; white-space: nowrap; }
 .comment-badge { padding: 2px 7px; border-radius: 0; background: var(--tray-2); color: var(--tray-muted); font-size: 11.5px; font-weight: 600; }
+.comment-guest { background: var(--signal); color: var(--on-signal); }
 .comment-avatar {
   width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
   display: grid; place-items: center; font: 700 11px var(--ui);
