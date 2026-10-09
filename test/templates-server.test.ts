@@ -117,6 +117,15 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
   });
 
+  it('checks the group depth of a deep frame chain quickly (a lookup per step, not a scan of every object)', () => {
+    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const groups = Array.from({ length: 500 }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
+    const started = performance.now();
+    expect(validateTemplateContent(content([...frames, ...groups])).objectCount).toBe(2000);
+    // about a tenth of a second; scanning the objects at every step took well over a second
+    expect(performance.now() - started).toBeLessThan(700);
+  });
+
   it('accepts the colours the board writes', () => {
     for (const fill of ['#FFE16B', '#fff', '#11223344', 'none', 'transparent', 'var(--canvas-ink, #18212B)']) {
       expect(at(fill, problem(content([sticky('s1', { fill, textColor: fill, stroke: fill })])))).toEqual(at(fill, null));
