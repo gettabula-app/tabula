@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { THEMES, type Theme } from '../src/themes';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -60,10 +61,65 @@ function scan(file: string): string[] {
   return violations;
 }
 
+type RGB = [number, number, number];
+
+function hexRgb(value: string): RGB {
+  const match = /^#([\da-f]{6})$/i.exec(value);
+  if (!match) throw new Error(`expected a six-digit theme colour, got ${value}`);
+  return [0, 2, 4].map((offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16)) as RGB;
+}
+
+function resolveThemeToken(value: string, theme: Theme): RGB {
+  const match = /^var\((--[\w-]+)\)$/.exec(value);
+  if (!match) throw new Error(`expected a theme variable for a group outline, got ${value}`);
+  return hexRgb(theme.vars[match[1] as keyof Theme['vars']]);
+}
+
+function luminance(rgb: RGB): number {
+  const linear = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(a: RGB, b: RGB): number {
+  const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function colorDistance(a: RGB, b: RGB): number {
+  return Math.hypot(...a.map((channel, i) => channel - b[i]));
+}
+
+function rootToken(name: string): string {
+  const css = stripComments(readFileSync(join(ROOT, 'src/ui/group-ui.css'), 'utf8'));
+  const root = css.match(/:root\s*\{([^}]+)\}/)?.[1];
+  const value = root?.match(new RegExp(`(?:^|\\n)\\s*${name}:\\s*([^;]+);`))?.[1]?.trim();
+  if (!value) throw new Error(`missing ${name} in group UI theme tokens`);
+  return value;
+}
+
 describe('css colours', () => {
   it('uses theme variables instead of literal colours outside the allowlist', () => {
     const files = cssFiles(join(ROOT, 'src'));
     expect(files.length).toBeGreaterThan(0);
     expect(files.flatMap(scan)).toEqual([]);
+  });
+
+  it('keeps group hover and member outlines high-contrast across every theme', () => {
+    const hoverToken = rootToken('--group-hover');
+    const memberToken = rootToken('--group-member-line');
+    for (const theme of THEMES) {
+      const canvas = hexRgb(theme.vars['--canvas']);
+      const paper = hexRgb(theme.vars['--paper']);
+      const wire = hexRgb(theme.vars['--wire']);
+      const hover = resolveThemeToken(hoverToken, theme);
+      const member = resolveThemeToken(memberToken, theme);
+      expect(contrastRatio(hover, canvas), `${theme.id} group hover`).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(member, canvas), `${theme.id} group members`).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(member, paper), `${theme.id} group members on paper`).toBeGreaterThanOrEqual(3);
+      expect(colorDistance(hover, wire), `${theme.id} hover differs from selection`).toBeGreaterThan(50);
+    }
   });
 });

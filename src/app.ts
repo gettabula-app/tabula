@@ -2127,6 +2127,8 @@ export class BoardApp {
   }
 
   private onDblClick(e: MouseEvent) {
+    // During a dot vote, the two pointer clicks already cast votes; double-click must not also enter a group or edit.
+    if (this.flow.isVoting()) return;
     const p = this.worldOf(e);
     // a double click on a pin must not edit the object underneath or add a text box
     if ((this.tool.kind === 'select' || this.tool.kind === 'comment') && pinAt(this.r.pins, p, this.zoom)) return;

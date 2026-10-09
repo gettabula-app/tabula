@@ -19,8 +19,8 @@ Defined once, on the board's root (`.chrome` or `:root`, wherever `--guide` is r
 ```css
 :root {
   --group-line:       var(--wire);                                       /* selected outline, handles' stroke, entered dashes */
-  --group-line-soft:  color-mix(in srgb, var(--wire) 45%, transparent);  /* the members' own outlines inside a selected group */
-  --group-hover:      color-mix(in srgb, var(--wire) 70%, transparent);  /* hover outline of what a click would select */
+  --group-member-line: var(--graphite);                                  /* high-contrast member outlines inside a selected group */
+  --group-hover:      var(--guide);                                      /* hover outline, distinct from the selected wire outline */
   --group-handle:     var(--paper);                                      /* handle fill (today a literal #fff) */
   --group-dim:        color-mix(in srgb, var(--canvas) 62%, transparent);/* the board outside an entered group */
   --group-locked:     var(--graphite);                                   /* hover outline of a locked group */
@@ -30,9 +30,9 @@ Defined once, on the board's root (`.chrome` or `:root`, wherever `--guide` is r
 }
 ```
 
-Contrast of the lines against each theme's canvas (non-text UI needs 3:1; WCAG 1.4.11): `--wire` default 4.0, ayu 9.0, kanagawa 5.9, matrix 11.0, evergreen 4.3; `--graphite` 5.2, 5.2, 6.7, 6.4, 5.2. The chips use the tray pair (10.5 to 15.4:1). The soft member outline (45%) is decoration, not information, and is not held to 3:1.
+Contrast of the group lines against each theme's canvas (non-text UI needs 3:1; WCAG 1.4.11): `--wire` is 4.0 in default, 9.0 in ayu, 5.9 in kanagawa, 11.0 in matrix, and 4.3 in evergreen; `--graphite` is 5.2, 5.2, 6.7, 6.4, and 5.2; `--guide` is 4.2, 6.6, 5.6, 6.6, and 4.2. Member outlines use `--graphite` and group hover uses `--guide`, so both clear 3:1 and hover remains distinct from selection. The chips use the tray pair (10.5 to 15.4:1).
 
-**Not in slice 2: the single-item selection.** `render.ts` draws every selection, handle and hover with the constant `WIRE = '#2F6FED'` and white handles, in every theme. `--wire` is defined in all five themes and equals `#2F6FED` in default, so the group overlay reads `var(--wire)` and `var(--group-handle)` and looks the same as a single item there; in Ayu, Kanagawa, Matrix and Evergreen it follows the theme while single items keep the old blue until the follow-up below. That interim difference is accepted: copying the constant into the group tokens would bake the Matrix problem (a fixed blue on a green board) into the new feature.
+**Not in slice 2: the single-item selection.** `render.ts` still draws a single item's selection outline and handles with the constant `WIRE = '#2F6FED'` and white handles, in every theme. Its hover outline now uses the same theme-aware `--group-hover` token as a group's hover. `--wire` is defined in all five themes and equals `#2F6FED` in default, so the group selection reads `var(--wire)` and `var(--group-handle)` and looks the same as a single-item selection there; in Ayu, Kanagawa, Matrix and Evergreen the group follows the theme while single-item selections keep the old blue until the follow-up below. That interim difference is accepted: copying the constant into the group tokens would bake the Matrix problem (a fixed blue on a green board) into the new feature.
 
 ## 1. Selected: item, several items, group
 
@@ -40,7 +40,7 @@ Contrast of the lines against each theme's canvas (non-text UI needs 3:1; WCAG 1
 
 | | One item (as today) | Several items (as today) | A group (new) |
 |---|---|---|---|
-| Outline | 1.5 px solid `--group-line` round the item | dashed 1 px (5 4) box 6 px out, plus every member outlined 1.5 px solid | **solid 1.5 px** box 6 px out round the derived rectangle, members outlined **1 px in `--group-line-soft`** |
+| Outline | 1.5 px solid `--group-line` round the item | dashed 1 px (5 4) box 6 px out, plus every member outlined 1.5 px solid | **solid 1.5 px** box 6 px out round the derived rectangle, members outlined **1 px in `--group-member-line`** |
 | Handles | 8 squares, 9 px, 2 px radius, fill `--group-handle`, stroke 1.5 px `--group-line`; rotate circle 10 px above | corner and edge squares on the dashed box, no rotate | the same 8 squares and rotate circle on the solid box |
 | Label | none | none | **name chip** at the outline's top-left, 6 px above it: `Group · 3` (the group's `name` once it has one, else "Group" and the member count), tray colours, 11 px, 600 weight, 20 px high, no radius |
 
@@ -52,7 +52,7 @@ On touch (`pointer: coarse`) handles are 16 px (as `render.ts` already does for 
 
 `hover.png`.
 
-Hovering any member outlines the **whole group** a click would select: 1.5 px solid `--group-hover` round the derived rectangle, 6 px out, and nothing round the member itself. A single item (today) keeps its 1.5 px outline at the same 70% (`render.ts` uses 0.6; use `--group-hover` for both so they match). No chip on hover: it would flash as the pointer crosses a board, and the outline is enough to say what the click picks. While a dot vote runs the hover goes back to the single item, because a click votes for the item ([groups.md](groups.md), Selecting).
+Hovering any member outlines the **whole group** a click would select: 1.5 px solid `--group-hover` (`--guide`) round the derived rectangle, 6 px out, and nothing round the member itself. The guide color has at least 3:1 contrast in every theme and differs from the solid `--group-line` used for selection, so hover cannot be mistaken for selection. A single item uses the same theme-aware hover color. No chip on hover: it would flash as the pointer crosses a board, and the outline is enough to say what the click picks. While a dot vote runs the hover goes back to the single item, because a click votes for the item ([groups.md](groups.md), Selecting).
 
 ## 3. Inside a group
 
@@ -93,7 +93,7 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 | Where | Change |
 |---|---|
 | `src/ui/group-ui.css` (new) | the tokens above; `.group-chip`, `.group-done` (the Done chip as an HTML button over the board, positioned from the bounds like the quick bar); 44 px `.group-done` under `(pointer: coarse)` |
-| `src/render.ts` | `WIRE` to `'var(--wire, #2F6FED)'` for outlines and handles; handle fill `var(--group-handle, #fff)`; group selection: solid box plus members at `--group-line-soft` plus chip; hover: `--group-hover` on the group's rectangle; entered: dim wash between outside and members plus dashed bounds; locked hover: `--group-locked` and the tray-coloured badge |
+| `src/render.ts` | `WIRE` to `'var(--wire, #2F6FED)'` for outlines and handles; handle fill `var(--group-handle, #fff)`; group selection: solid box plus members at `--group-member-line` plus chip; hover: `--group-hover` on the group's rectangle; entered: dim wash between outside and members plus dashed bounds; locked hover: `--group-locked` and the tray-coloured badge |
 | `src/ui/quickbar.ts`, `src/ui/icons.ts` | Group and Ungroup buttons and the two icons |
 | `test/css-colors.test.ts` | no new allowlist entries: every colour here is a variable (the SVG strings in `render.ts` are outside that test, so add a small test that the group overlay contains no `#` literal) |
 | `scripts/visual-check.mjs` | states `group-selected`, `group-hover`, `group-entered`, `group-locked` (and the touch bar at 360 and 390), across the five themes |

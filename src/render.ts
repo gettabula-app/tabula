@@ -681,7 +681,7 @@ export class Renderer {
       if (o?.type === 'group') {
         const b = this.bounds(o);
         if (b) out += this.groupOutline(b, px, 'var(--group-hover)', 1.5, undefined, true);
-      } else if (o) out += this.outline(o, px(1.5), 0.6);
+      } else if (o) out += this.outline(o, px(1.5), 1, 'var(--group-hover)');
     }
     if (ov.lockedHover) {
       const candidate = get(ov.lockedHover);
@@ -883,21 +883,21 @@ export class Renderer {
       });
       if (hiddenEnd) return '';
       const g = connectorGeom(this.safeGet, safeObj(raw), this.connectorLayout());
-      return g ? `<path d="${g.d}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+      return g ? `<path d="${g.d}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
     }
     if (isBox(raw) && this.isHidden(raw)) return '';
     if (raw.type === 'group') {
       const b = this.bounds(raw);
-      return b ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
+      return b ? `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>` : '';
     }
     const o = safeObj(this.store.placed(raw));
     const c = center(o);
     const deg = ((o.rotation || 0) * 180) / Math.PI;
     if (o.type === 'path') {
       const b = boxBounds(o);
-      return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+      return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>`;
     }
-    return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="var(--group-line-soft)" stroke-width="${px(1)}" pointer-events="none"/>`;
+    return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="var(--group-member-line)" stroke-width="${px(1)}" pointer-events="none"/>`;
   }
 
   private lockBadge(b: Rect, px: (v: number) => number, padded: boolean) {
