@@ -652,6 +652,8 @@ export class BoardApp {
   }
 
   private onDown(e: PointerEvent) {
+    // another pointer going down (a pinch, a second device) gives up a lane drag, overlay and all
+    if (this.drag?.mode === 'lane') this.cancelCardDrag();
     this.cancelLongPress();
     if (this.editor.active) this.editor.commit();
     this.clearMoving();
@@ -1344,13 +1346,17 @@ export class BoardApp {
     this.r.setOverlay({ kanban: { laneFrom: layout.rects.get(d.lane)!, laneLine: laneDropLine(layout.lanes, layout.rects, d.lane, d.to) } });
   }
 
-  private finishLaneDrag(d: Extract<Drag, { mode: 'lane' }>) {
+  private finishLaneDrag(d: Extract<Drag, { mode: 'lane' }>, p: Point) {
     this.r.setOverlay({ kanban: null });
-    if (!d.moved || d.to === null) return;
+    if (!d.moved) return;
+    // the place is read again from the lanes as they are now and where the pointer is now: lanes may have come or gone, or the view moved, since the last move
+    const layout = this.store.containerLayout(d.container);
+    if (!layout || !layout.rects.has(d.lane)) return;
+    const to = laneDropIndex(layout.lanes, layout.rects, d.lane, p.x);
     const lane = this.store.get(d.lane) as BaseObj | undefined;
-    const refused = laneReorderRefusal(this.store, d.lane, d.to);
+    const refused = laneReorderRefusal(this.store, d.lane, to);
     if (refused) return this.notify(refused);
-    if (!moveLaneTo(this.store, d.lane, d.to)) return;
+    if (!moveLaneTo(this.store, d.lane, to)) return;
     const lanes = this.store.containerLayout(d.container)?.lanes ?? [];
     this.announce(`Moved ${lane?.name || 'lane'} to position ${lanes.indexOf(d.lane) + 1} of ${lanes.length}`);
   }
@@ -1760,7 +1766,7 @@ export class BoardApp {
         this.finishCardDrag(d, p);
         break;
       case 'lane':
-        this.finishLaneDrag(d);
+        this.finishLaneDrag(d, p);
         break;
       case 'marquee':
         this.emitSelection();

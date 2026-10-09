@@ -444,6 +444,16 @@ describe('dragging a lane to a place (slice 5, part 2)', () => {
     expect(names(b)).toEqual(['To do', 'Doing', 'Done']);
   });
 
+  it('refuses a lane, or a kanban, that Layers hides', () => {
+    const b = board();
+    b.store.transact(() => b.store.update(b.lanes[0], { hidden: true }));
+    expect(moveLaneTo(b.store, b.lanes[0], 1)).toBe(false);
+    expect(laneReorderRefusal(b.store, b.lanes[0], 1)).toBe('This lane is gone.');
+    b.store.transact(() => b.store.update(b.lanes[0], { hidden: false }));
+    b.store.transact(() => b.store.update(b.container, { hidden: true }));
+    expect(moveLaneTo(b.store, b.lanes[1], 2)).toBe(false);
+  });
+
   it('finds the place from the pointer and draws the drop line in the gap', () => {
     const b = board();
     const layout = b.store.containerLayout(b.container)!;

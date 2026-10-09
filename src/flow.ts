@@ -24,6 +24,15 @@ export function imageLine(o: BaseObj): string {
   return `Image (${o.mime ?? 'image'}, ${w} x ${h})`;
 }
 
+/**
+ * User text as one line of Markdown that reads as typed: line breaks (NEL and the Unicode separators too) fold to a space,
+ * the characters that start emphasis, code, links, images, HTML, tables or a character reference are escaped, and so is a
+ * leading `#`, `>`, `-`, `+` or `1.` that would make a block of a bullet's text.
+ */
+export function mdText(t: string | undefined): string {
+  return (t ?? '').replace(/[\s\u0085\u2028\u2029]+/g, ' ').trim().replace(/[\\`*_[\]<>|~&]/g, '\\$&').replace(/^(#|>|-|\+)/, '\\$1').replace(/^(\d+)([.)])/, '$1\\$2');
+}
+
 export class Flow {
   private lastActive = -2;
   readonly polls: Polls;
@@ -432,7 +441,7 @@ export class Flow {
    */
   private kanbanLines(totals: Map<Id, number>): string[] {
     const s = this.app.store;
-    const line = (t: string | undefined) => (t ?? '').replace(/\s+/g, ' ').trim();
+    const line = mdText;
     const out: string[] = [];
     for (const c of s.shown()) {
       if (c.type !== 'container') continue;

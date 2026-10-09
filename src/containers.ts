@@ -634,7 +634,7 @@ export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boole
  */
 export function moveLaneTo(store: Store, laneId: Id, to: number): boolean {
   const lane = store.get(laneId);
-  if (lane?.type !== 'lane' || !lane.parent || lane.locked || structureRefusal(store, lane.parent)) return false;
+  if (lane?.type !== 'lane' || !lane.parent || lane.locked || structureRefusal(store, lane.parent) || !store.isShown(lane)) return false;
   const layout = store.containerLayout(lane.parent);
   if (!layout || !Number.isInteger(to) || to < 0 || to >= layout.lanes.length || to === layout.lanes.indexOf(laneId)) return false;
   const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
@@ -656,7 +656,8 @@ export function moveLaneTo(store: Store, laneId: Id, to: number): boolean {
  */
 export function laneReorderRefusal(store: Store, laneId: Id, to: number | null): string | null {
   const lane = store.get(laneId);
-  if (lane?.type !== 'lane' || !lane.parent) return 'This lane is gone.';
+  // a lane or kanban that Layers hides (TAB-198) is not on the board to be moved
+  if (lane?.type !== 'lane' || !lane.parent || !store.isShown(lane)) return 'This lane is gone.';
   const refused = structureRefusal(store, lane.parent) ?? laneEditRefusal(store, laneId);
   if (refused) return refused;
   const layout = store.containerLayout(lane.parent);

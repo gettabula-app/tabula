@@ -61,3 +61,36 @@ describe('the Markdown summary of a kanban', () => {
     expect(md).not.toContain('Visible');
   });
 });
+
+describe('Markdown in a kanban summary (injection)', () => {
+  const lineBreaks = ['\r', '\u0085', '\u2028', '\u2029'];
+
+  it('keeps titles, names and owners literal: no links, images, HTML, code, headings, lists or tables', () => {
+    const s = setup();
+    s.store.transact(() => {
+      s.store.update(s.container, { name: '# Board [x](javascript:alert(1))' });
+      s.store.update(s.todo, { name: '`lane` <b>x</b> | y' });
+    });
+    const a = addCard(s.store, s.todo, '![i](https://evil.example/p.png) and [click](javascript:alert(1)) <img src=x onerror=1>', { createdBy: 'me' })!;
+    addCard(s.store, s.todo, '# not a heading', { createdBy: 'me' });
+    addCard(s.store, s.todo, '- nested\u0085## two\u2028> quote\r1. one', { createdBy: 'me' });
+    addCard(s.store, s.todo, '1. numbered', { createdBy: 'me' });
+    s.store.transact(() => s.store.update(a, { ownerName: '*Ada* _x_ [o](u)' }));
+    const md = s.md();
+    const lines = md.split('\n');
+    // every line is one of the shapes the summary writes: a heading it wrote, or a bullet, never one the text made
+    expect(lines.filter((l) => l.startsWith('- '))).toHaveLength(4);
+    // the headings are the three the summary wrote, however the names read
+    expect(lines.filter((l) => l.startsWith('#')).map((l) => l.split(' ')[0])).toEqual(['#', '##', '###', '###', '###']);
+    expect(md).toContain('- !\\[i\\](https://evil.example/p.png) and \\[click\\](javascript:alert(1)) \\<img src=x onerror=1\\>');
+    for (const ch of lineBreaks) expect(md).not.toContain(ch);
+    for (const l of lines.filter((x) => x.startsWith('- '))) {
+      const bare = l.replace(/\\./g, '');
+      for (const ch of ['<', '[', '`', '|', '*', '_']) expect(bare).not.toContain(ch);
+    }
+    expect(md).toContain('- \\# not a heading');
+    expect(md).toContain('- 1\\. numbered');
+    expect(md).toContain('\\- nested');
+    expect(md).toContain('(\\*Ada\\* \\_x\\_ \\[o\\]');
+  });
+});

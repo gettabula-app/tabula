@@ -1089,6 +1089,38 @@ describe('dragging a lane header (slice 5, part 2)', () => {
     expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
   });
 
+  it('writes nothing, and leaves no marks, when the lane or its kanban is hidden before the drop', () => {
+    for (const hide of ['lane', 'kanban'] as const) {
+      const { app, store, r, container, lanes } = harness();
+      drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
+      store.transact(() => store.update(hide === 'lane' ? lanes[0] : container, { hidden: true }));
+      call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+      store.transact(() => store.update(hide === 'lane' ? lanes[0] : container, { hidden: false }));
+      expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+      expect(r.overlay.kanban).toBeNull();
+    }
+  });
+
+  it('reads the place again at the drop: a lane that went since the last move, or a view that moved, does not misplace it', () => {
+    const { app, store, r, container, lanes } = harness();
+    const last = addLane(store, container, { createdBy: 'me' })!;
+    drag(app, r, header(store, lanes[0]), header(store, last, 60));
+    // the last lane goes (an undo or a remote delete) before the pointer lets go: the pointer is now past every lane
+    store.transact(() => store.remove([last]));
+    call(app, 'onUp', pointer(r, header(store, lanes[2], 60), 'pointerup'));
+    expect(laneNames(store, container)).toEqual(['Doing', 'Done', 'To do']);
+  });
+
+  it('gives the drag up, marks and all, when a second pointer goes down', () => {
+    const { app, store, r, container, lanes } = harness();
+    drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60), 'pen');
+    expect(r.overlay.kanban?.laneLine).toBeTruthy();
+    call(app, 'onDown', { ...pointer(r, header(store, lanes[1])), pointerType: 'touch', pointerId: 2 });
+    expect(r.overlay.kanban).toBeNull();
+    expect((app as unknown as { drag: { mode: string } | null }).drag?.mode).not.toBe('lane');
+    expect(laneNames(store, container)).toEqual(['To do', 'Doing', 'Done']);
+  });
+
   it('is given up when the board turns read-only mid-drag', () => {
     const { app, store, r, container, lanes } = harness();
     drag(app, r, header(store, lanes[0]), header(store, lanes[2], 60));
