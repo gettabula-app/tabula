@@ -2,7 +2,7 @@
 
 AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: each plan includes credits, and more can be bought.
 
-Status: **slices A and B of phase 1 are built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints and their admin and account screens (A), and `POST /api/ai/run` with the three features, the limits and the audit rows (B).** The board entry points, the proposal preview and everything in phase 2 are not built yet (slice C). "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
+Status: **slices A and B of phase 1 are built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints and their admin and account screens (A), and `POST /api/ai/run` with the three features, the limits and the audit rows (B).** Slice C, the bar, its entry points and live previews, is built behind `?aibar`; remove the flag after a smoke run with a real key. Phase 2 is still pending. "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
 
 ## Summary
 
@@ -347,7 +347,7 @@ It is never part of `npm test` or CI: it takes about a minute and needs a browse
 
 ## Not in this slice
 
-The board entry points and the proposal preview (slice C), text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.
+Text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.
 
 ## Recommended answers to TAB-99
 

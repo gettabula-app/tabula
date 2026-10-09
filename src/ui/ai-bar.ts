@@ -7,7 +7,7 @@ import {
   CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON,
   addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos, contextAfterSelection, contextLabel, contextMenu,
   disclosure, dockBottom, dragPos, errorView, estimateFor, formatPos, formatWait, isAdminRole, modelChipLabel, modelChipText,
-  nearestIds, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi, runTarget,
+  nearestIds, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi, runTarget, showSetUpAi,
   runTip, runningText, serializeHistory, settledMessage, stepHistory, thisRunText, toggleArmed, HISTORY_SHOWN,
   type AiContext, type AiFailure, type BarUi, type ErrorView, type Facts, type Pos, type RunBody,
 } from '../ai-bar-logic';
@@ -126,9 +126,11 @@ export interface AiBarControl {
 
 const controls = new WeakMap<BoardApp, AiBarControl>();
 const watchers = new WeakMap<BoardApp, Set<(why: 'mount' | 'layout') => void>>();
+const setupItems = new WeakMap<BoardApp, boolean>();
 let shown = 0;
 
 export const aiBarFor = (app: BoardApp): AiBarControl | null => controls.get(app) ?? null;
+export const aiSetupFor = (app: BoardApp): boolean => aiBarFlag() && (setupItems.get(app) ?? false);
 
 /** The bar came or went ('mount': the entry points show or hide), or changed size or place ('layout': the quick bar makes way). */
 export function onAiBarChange(app: BoardApp, fn: (why: 'mount' | 'layout') => void): () => void {
@@ -145,7 +147,7 @@ const announce = (app: BoardApp, why: 'mount' | 'layout') => {
 export const aiBarShown = (): boolean => shown > 0;
 
 /**
- * The bar is behind a flag until the canvas previews (TAB-123 step 3) are in: `?aibar` in the URL, or
+ * The bar is behind a flag until a smoke run with a real key: `?aibar` in the URL, or
  * localStorage `driftboard:flag:aibar` set to `1`. Without it nothing of the bar exists, not even its shortcut.
  */
 export function aiBarFlag(): boolean {
@@ -164,8 +166,20 @@ export function mountAiBar(app: BoardApp, chrome: HTMLElement): void {
   let loading = false;
   let gone = false;
 
+  const account = () => {
+    const a = authState();
+    return a.mode === 'signed-in' || a.mode === 'offline' ? a.me : null;
+  };
+  const updateSetup = () => {
+    const next = showSetUpAi({ flag: aiBarFlag(), config, role: account()?.user.role });
+    const previous = setupItems.get(app) ?? false;
+    setupItems.set(app, next);
+    if (next !== previous) announce(app, 'mount');
+  };
+
   const evaluate = () => {
     if (gone) return;
+    updateSetup();
     if (config?.enabled && !app.readOnly) {
       if (bar) bar.setConfig(config);
       else bar = createBar(app, chrome, config);
@@ -175,9 +189,9 @@ export function mountAiBar(app: BoardApp, chrome: HTMLElement): void {
     }
   };
   const load = () => {
-    if (loading || gone || app.readOnly) return;
+    if (loading || gone || (app.readOnly && !isAdminRole(account()?.user.role))) return;
     loading = true;
-    // a refusal (signed out, no access, no such route) takes the bar away; a connection that failed does not
+    // The config also decides whether an admin gets Set up AI on a view-only board. A refusal takes the bar away; a connection failure does not.
     void api.aiConfig().then(
       (c) => { config = c; },
       (e: unknown) => {

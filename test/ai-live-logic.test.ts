@@ -121,6 +121,24 @@ describe('ghost markup', () => {
     expect(svg).not.toContain('var(--signal');
   });
 
+  it("draws a dark under-stroke before another person's dashed area outline", () => {
+    const own = ghostMarkup(createLayout(['one']), { color: null }, env());
+    expect(own).not.toContain('stroke="#18212B" stroke-opacity="0.55" stroke-width="4"');
+
+    for (const scale of [1, 0.25]) {
+      const svg = ghostMarkup(createLayout(['one']), { color: '#C98A00' }, env({ px: (v) => v * scale }));
+      const rects = [...svg.matchAll(/<rect\b[^>]*>/g)].slice(0, 2).map(([rect]) => rect);
+      expect(rects).toHaveLength(2);
+      expect(rects[0]).toContain('fill="none" stroke="#18212B" stroke-opacity="0.55"');
+      expect(rects[0]).not.toContain('stroke-dasharray');
+      expect(rects[1]).toContain('stroke="#C98A00"');
+      expect(rects[1]).toContain('stroke-dasharray="');
+      const width = (rect: string) => Number(rect.match(/stroke-width="([^"]+)"/)?.[1]);
+      expect(width(rects[0]) - width(rects[1])).toBeCloseTo(2 * scale);
+      expect(svg.indexOf(rects[0])).toBeLessThan(svg.indexOf(rects[1]));
+    }
+  });
+
   it('scales strokes and dashes with the zoom, not the stickies', () => {
     const layout = createLayout(['one']);
     const at1 = ghostMarkup(layout, { color: null }, env());
