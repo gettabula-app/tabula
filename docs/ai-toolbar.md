@@ -395,27 +395,27 @@ The prefix is `driftboard:` like every other key, as the project's rename left i
 
 ## Multiplayer (TAB-141)
 
-Boards are shared, so AI runs are too. Others see a run while it happens and see its preview, and any editor can finish it. The one exception is a private run on a personal key. Examples use Ana, another editor, in her cursor colour; "you" are the person looking.
+Boards are shared, so AI runs are too. Others see a run while it happens and see its preview, and any editor can finish it. The one exception is a private run on a personal key. Examples use Ana, another editor, in their cursor colour; "you" are the person looking.
 
 ### Someone else's run in flight
 
-- **Target outline.** A 2px outline in Ana's colour, 6px radius, 8px outside the bounds of what she ran on (her selection, or the frame). A 4px halo of her colour at 18% sits around it. The outline pulses slowly between 35% and 100% opacity over 2.4s. Under `prefers-reduced-motion` it does not pulse: it is a static, fully opaque dashed outline with no halo. "Visible area" and "Whole board" runs have no outline (there is nothing useful to circle), and "Prompt only" runs have no target at all.
+- **Target outline.** A 2px outline in Ana's colour, 6px radius, 8px outside the bounds of what they ran on (their selection, or the frame). A 4px halo of their colour at 18% sits around it. The outline pulses slowly between 35% and 100% opacity over 2.4s. Under `prefers-reduced-motion` it does not pulse: it is a static, fully opaque dashed outline with no halo. "Visible area" and "Whole board" runs have no outline (there is nothing useful to circle), and "Prompt only" runs have no target at all.
 - **Presence line.** "Ana is asking AI: Summarise…" in two places:
-  1. as a label on the outline's top-left corner: her colour as the fill, 11px/600, sentence case, the same shape as the cursor name tags. It is drawn above the canvas objects but does not pulse;
-  2. as the tooltip and accessible name of her avatar in the presence tray (top right). While she has a run or a preview, the avatar gets a 14px `--signal` badge with the spark glyph.
+  1. as a label on the outline's top-left corner: their colour as the fill, 11px/600, sentence case, the same shape as the cursor name tags. It is drawn above the canvas objects but does not pulse;
+  2. as the tooltip and accessible name of their avatar in the presence tray (top right). While they have a run or a preview, the avatar gets a 14px `--signal` badge with the spark glyph.
 - **Why not near the bar.** The bar is your own tool, not a feed. Viewers and commenters have no bar but still need to know why the board is about to change. A collapsed bar has nowhere to put a line, and on a phone the bar already fills the width. The presence tray is where the board already says who is here, and the outline label puts the line on the thing that will change. Nothing new appears in the chrome, nothing moves, nothing is announced out loud. When the target is off-screen, only the avatar badge shows.
 - **The prompt is never shown.** The line names the action ("Summarise", "Cluster", "Generate ideas"), never what Ana typed. A prompt can be private in a way a board edit is not.
 - The line and the outline go away when the run ends: on a preview, on an error, on Stop, or when Ana leaves.
 
 ### Someone else's preview
 
-- Drawn exactly like your own preview (full-colour ghost stickies with dashed edges, a dashed area outline over a wash), but in **her colour**: a 2px dashed `--ana` outline over an 8% `--ana` wash, with the ghosts' dashed edges mixed from her colour.
-- **Label**: "Ana's AI preview", in her colour, in the same uppercase label style as your "Preview". When another person's preview is on the board, yours reads "Your AI preview", so neither label is ambiguous.
+- Drawn exactly like your own preview (full-colour ghost stickies with dashed edges, a dashed area outline over a wash), but in **their colour**: a 2px dashed `--ana` outline over an 8% `--ana` wash, with the ghosts' dashed edges mixed from their colour.
+- **Label**: "Ana's AI preview", in their colour, in the same uppercase label style as your "Preview". When another person's preview is on the board, yours reads "Your AI preview", so neither label is ambiguous.
 - **Actions for editors.** A small tray on the label row, right of the label: **Discard** and **Accept** (`--signal`, primary), 20px buttons. They are on the ghost area, not in your bar: your bar keeps working on your own run, and the tray says whose preview it is. Accept writes Ana's proposal as one undo step on **your** undo stack. It is applied with your role (`store.transact`, the same validation as Add), and the toast says "Added Ana's 4 stickies." with Undo. Discard writes nothing; the toast says "Discarded Ana's preview."
 - **Viewers and commenters** see the preview and its label, read-only. There is no tray.
-- **Ana's own bar** stays in preview state with Add to board, Discard and Retry. When someone else accepts or discards, her bar returns to idle and a toast says "Ben added your preview." or "Ben discarded your preview."
-- **First action wins.** Ana, Ben and you can act on the same preview within the same second. The relay settles it: the first `resolve` wins (see "Protocol"), and only the app that made it writes. Anyone else whose click arrives later writes nothing, the preview disappears for them, and they get a toast naming who acted and how: "Ana added her preview first." / "Ana discarded her preview first. Nothing was added." / "Ben added Ana's preview first." The mock shows this with "Ana acts first" (`other-preview-race-default.png`).
-- **A preview outlives its owner's connection.** If Ana leaves, her preview stays, still labelled "Ana's AI preview", and any editor can accept or discard it until it expires 10 minutes after it was ready (or the board's room unloads). Her avatar badge goes with her; the label row carries her name.
+- **Ana's own bar** stays in preview state with Add to board, Discard and Retry. When someone else accepts or discards, Ana's bar returns to idle and a toast says "Ben added your preview." or "Ben discarded your preview."
+- **First action wins.** Ana, Ben and you can act on the same preview within the same second. The relay settles it: the first `resolve` wins (see "Protocol"), and only the app that made it writes. Anyone else whose click arrives later writes nothing, the preview disappears for them, and they get a toast naming who acted and how: "Ana added their preview first." / "Ana discarded their preview first. Nothing was added." / "Ben added Ana's preview first." The mock shows this with "Ana acts first" (`other-preview-race-default.png`).
+- **A preview outlives its owner's connection.** If Ana leaves, their preview stays, still labelled "Ana's AI preview", and any editor can accept or discard it until it expires 10 minutes after it was ready (or the board's room unloads). Their avatar badge goes with their; the label row carries their name.
 
 ### Two previews at once
 
@@ -498,7 +498,7 @@ A person's colour is their cursor colour (`USER_COLORS` in `src/palette.ts`). Th
 
 ### Mock
 
-Reviewer controls: **Other person (Ana)**: none, running, preview. **Two previews**: off, side by side, overlapping. **Private run (your key)**, which also sets the key source to "your key". **Ana acts first**: Accept or Discard on her preview then loses the race. **Role** is the existing control (viewer and commenter see her preview without the tray). Parameters: `other`, `two=side|overlap`, `private=1`, `anawins=1`.
+Reviewer controls: **Other person (Ana)**: none, running, preview. **Two previews**: off, side by side, overlapping. **Private run (your key)**, which also sets the key source to "your key". **Ana acts first**: Accept or Discard on their preview then loses the race. **Role** is the existing control (viewer and commenter see their preview without the tray). Parameters: `other`, `two=side|overlap`, `private=1`, `anawins=1`.
 
 ## What the build needs
 
