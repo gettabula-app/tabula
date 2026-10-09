@@ -74,5 +74,11 @@ export const HOSTILE_SVG: [string, string][] = [
   ['a null byte', '<path d="M0 0"/>\u0000'],
   ['a line separator', '<text>a b</text>'],
   ['an attribute that breaks out', '<path d="M0 0" fill="red"><script>x</script>"/>'],
+  // a browser skips only ASCII whitespace before a value: after any other space the value is unquoted and the handler is real
+  ['a handler hidden by a no-break space', '<path title=\u00a0"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by an em space', '<path title=\u2003"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by a byte order mark', '<path title=\ufeff"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by an ideographic space', '<path title=\u3000"x onclick=alert(1) y" d="M0 0"/>'],
+  ['an animation handler hidden by a no-break space', '<animate attributeName="x" dur="1s" to=\u00a0"1 onbegin=alert(1) y"/>'],
   ['a longer-than-allowed body', `<path d="${'M0 0'.repeat(MAX_SVG_BODY)}"/>`],
 ];

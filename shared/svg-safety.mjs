@@ -31,8 +31,11 @@ const ANIMATABLE = new Set([
 ]);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'))?)*)\s*(\/?)>/y;
-const ATTR_RE = /\s+([A-Za-z_:][A-Za-z0-9_:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
+// Inside a tag only the whitespace both the HTML and the XML parser skip ([\t\n\r ]; form feed is refused as a control
+// character). `\s` would also take U+00A0 and the other Unicode spaces, which a browser reads as the start of an unquoted
+// value: `title=\u00a0"x onclick=alert(1) y"` is one quoted attribute to `\s` and an onclick to the browser.
+const TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:[\t\n\r ]+[A-Za-z_:][A-Za-z0-9_:.-]*(?:[\t\n\r ]*=[\t\n\r ]*(?:"[^"<>]*"|'[^'<>]*'))?)*)[\t\n\r ]*(\/?)>/y;
+const ATTR_RE = /[\t\n\r ]+([A-Za-z_:][A-Za-z0-9_:.-]*)(?:[\t\n\r ]*=[\t\n\r ]*(?:"([^"]*)"|'([^']*)'))?/g;
 // Character classes by code point, not by regular expression (as in board-ops.mjs).
 const isSvgControl = (cp) => cp <= 0x08 || cp === 0x0b || cp === 0x0c || (cp >= 0x0e && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029;
 // whitespace, control and invisible characters a browser ignores inside a URL scheme
