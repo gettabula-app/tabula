@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
+import { Flow } from '../src/flow';
 import { LOCAL, Store } from '../src/store';
 import type { BaseObj, Id, Obj } from '../src/types';
 import { FakeElement, installFakeBrowser, type FakeBrowser } from './fake-dom';
@@ -54,6 +55,18 @@ function harness(store: Store): Harness {
     isPinching: () => false,
   });
   return app;
+}
+
+function identityFlow(store: Store, userId: string): Flow {
+  const app = {
+    store,
+    user: { id: userId, name: userId, color: '#000' },
+    r: { invalidateAll() {}, setOverlay() {}, flyTo() {}, flyToCenter() {}, viewport: () => ({ x: 0, y: 0, w: 100, h: 100 }) },
+    zoom: 1,
+    emit() {},
+    participants: () => [],
+  };
+  return new Flow(app as never);
 }
 
 function bindKeys(app: Harness) {
@@ -135,6 +148,45 @@ describe('group deletion and empty-group cleanup', () => {
     expect(store.undo.undoStack).toHaveLength(1);
     const expectedClipboard = key.key === 'x' ? ['outer', 'inner', 'a', 'b'] : [];
     expect(new Set((app['clipboard'] as Obj[]).map((o) => o.id))).toEqual(new Set(expectedClipboard));
+    store.undo.undo();
+    expect(objects(store)).toEqual(before);
+  });
+
+  it.each([
+    ['Delete', { key: 'Delete', code: 'Delete' }],
+    ['Cut', { key: 'x', code: 'KeyX', ctrlKey: true }],
+  ] as const)('%s preserves another person’s private note and undo restores the group', (_name, key) => {
+    const store = new Store(new Y.Doc());
+    store.transact(() => {
+      store.create(group('outer', 'a0'));
+      store.create(group('g', 'a1', 'outer'));
+      store.create({ ...note('frame', 'a2'), type: 'frame', parent: 'g' });
+      store.create({ ...note('visible', 'a3'), parent: 'g' });
+      store.create({ ...note('secret', 'a4'), parent: 'frame', privateStep: 'step', createdBy: 'ana' });
+    });
+    store.undo.clear();
+    const before = objects(store);
+    const secret = store.get('secret') as BaseObj;
+    const authorFlow = identityFlow(store, 'ana');
+    const viewerFlow = identityFlow(store, 'ben');
+    expect(authorFlow.isHidden(secret)).toBe(false);
+    expect(viewerFlow.isHidden(secret)).toBe(true);
+
+    const app = harness(store);
+    Object.assign(app, { flow: viewerFlow, user: { id: 'ben', name: 'Ben', color: 'blue' } });
+    app.selection = ['g'];
+    bindKeys(app);
+    keydown(key);
+
+    expect(store.get('g')).toBeUndefined();
+    expect(store.get('frame')).toBeUndefined();
+    expect(store.get('visible')).toBeUndefined();
+    expect(store.get('secret')).toMatchObject({ parent: 'outer', text: 'secret' });
+    expect(store.childrenOf('outer').map((o) => o.id)).toEqual(['secret']);
+    const expectedClipboard = key.key === 'x' ? ['g', 'frame', 'visible'] : [];
+    expect(new Set((app['clipboard'] as Obj[]).map((o) => o.id))).toEqual(new Set(expectedClipboard));
+    expect(store.undo.undoStack).toHaveLength(1);
+
     store.undo.undo();
     expect(objects(store)).toEqual(before);
   });
