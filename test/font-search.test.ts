@@ -50,3 +50,15 @@ describe('searchFonts', () => {
     expect(searchFonts('vintage slab', fonts)).toEqual([]);
   });
 });
+
+describe('font search word boundaries', () => {
+  it('does not match sans-serif fonts for "serif"', async () => {
+    const { searchFonts } = await import('../src/fonts');
+    const fonts = [
+      { slug: 'a', name: 'Alpha Sans', category: 'Sans Serif', tags: [] },
+      { slug: 'b', name: 'Beta Text', category: 'Serif', tags: [] },
+    ] as never;
+    expect(searchFonts('serif', fonts).map((f: { slug: string }) => f.slug)).toEqual(['b']);
+    expect(searchFonts('sans', fonts).map((f: { slug: string }) => f.slug)).toEqual(['a']);
+  });
+});

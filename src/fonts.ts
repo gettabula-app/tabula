@@ -25,15 +25,16 @@ const FONT_KEYWORD_ALIASES = [
   ['geometric', 'geometric sans', 'geometric sans serif'],
 ] as const;
 
+// "sans serif" is one word for matching, so "serif" never matches a sans-serif font
 const normalizeFontSearch = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
-  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\bsans serif\b/g, 'sansserif');
 
 function fontKeywords(font: FontEntry): string[] {
   const keywords = [font.category, ...font.tags].map(normalizeFontSearch).filter(Boolean);
   const expanded = new Set(keywords);
   for (const keyword of keywords) {
     for (const aliases of FONT_KEYWORD_ALIASES) {
-      if (aliases.some((alias) => keyword.includes(normalizeFontSearch(alias)))) {
+      if (aliases.some((alias) => { const a = normalizeFontSearch(alias); return keyword === a || keyword.startsWith(`${a} `); })) {
         aliases.forEach((alias) => expanded.add(normalizeFontSearch(alias)));
       }
     }
@@ -51,7 +52,8 @@ export function searchFonts(query: string, fonts: readonly FontEntry[] = catalog
     const nameAndSlug = [name, normalizeFontSearch(font.slug)];
     const nameMatch = tokens.every((token) => nameAndSlug.some((value) => value.includes(token)));
     const metadata = fontKeywords(font);
-    const metadataMatch = tokens.every((token) => metadata.some((value) => value.includes(token)));
+    // metadata matches at word starts, so "serif" does not match "sans serif"
+    const metadataMatch = tokens.every((token) => metadata.some((value) => value.split(' ').some((word) => word.startsWith(token))));
     if (name !== normalizedQuery && !nameMatch && !metadataMatch) return [];
     const rank = name === normalizedQuery ? 0 : nameMatch ? 1 : 2;
     return [{ font, index, rank }];
