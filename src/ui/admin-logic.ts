@@ -99,6 +99,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'volume.adopt',
+  'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -113,6 +114,7 @@ export function auditActor(entry: AuditEntry): string {
 const text = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 const flag = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 const quote = (s: string) => `“${s}”`;
+const clip = (s: string, max: number) => ([...s].length > max ? `${[...s].slice(0, max - 1).join('')}…` : s);
 
 /**
  * One audit row as a sentence. Details hold ids, so names come from `lookup` when the caller has them.
@@ -262,6 +264,21 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} added an AI proposal to ${boardLabel}`;
     case 'ai.run.discard':
       return `${who} discarded an AI proposal on ${boardLabel}`;
+    // AI tool access (docs/mcp.md): the token's name is the person's own text, cut short; never its secret, which is not in the row
+    case 'mcp.token.create': {
+      const name = text(d.name);
+      const scope = ({ read: ' (read only)', comment: ' (read and comment)', write: ' (read and edit)' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
+      return `${who} created an AI tool access token${name ? ` ${quote(clip(name, 60))}` : ''}${scope}`;
+    }
+    case 'mcp.token.revoke': {
+      const name = text(d.name);
+      const label = name ? ` ${quote(clip(name, 60))}` : '';
+      return d.by === 'admin' ? `${who} revoked the AI tool access token${label} of ${member}` : `${who} revoked their AI tool access token${label}`;
+    }
+    case 'mcp.token.revoke_all': {
+      const count = typeof d.count === 'number' ? d.count : null;
+      return `${who} revoked all of their AI tool access tokens${count === null ? '' : ` (${count})`}`;
+    }
     case 'asset.upload':
       return `${who} added an image to ${boardLabel}`;
     case 'assets.gc': {
@@ -296,7 +313,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'backup.run': {
       const files = typeof d.files === 'number' ? d.files : null;
       const uploaded = typeof d.uploaded === 'number' ? d.uploaded : null;
-      const detail = [files === null ? null : countLabel(files, 'file', 'files'), uploaded === null ? null : `${uploaded} new`].filter(Boolean).join(', ');
+      const repaired = typeof d.repaired === 'number' && d.repaired > 0 ? d.repaired : null;
+      const detail = [files === null ? null : countLabel(files, 'file', 'files'), uploaded === null ? null : `${uploaded} new`, repaired === null ? null : `${repaired} repaired`].filter(Boolean).join(', ');
       return `${who} backed up the workspace${detail ? ` (${detail})` : ''}`;
     }
     case 'backup.failed': {
@@ -341,7 +359,7 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const to = idsOf(d.to);
       if (d.reason === 'operator') {
         const ws = from.workspaceId ? ` of workspace ${from.workspaceId}` : '';
-        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out`;
+        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out, and every AI tool access token and invite link was revoked`;
       }
       if (d.reason === 'restored-copy') {
         const vols = from.flyVolumeId && to.flyVolumeId ? ` (Fly volume ${from.flyVolumeId} → ${to.flyVolumeId})` : '';
