@@ -59,6 +59,7 @@ describe('parseRoute', () => {
     ['#/admin/teams', admin('teams')],
     ['#/admin/boards', admin('boards')],
     ['#/admin/sessions', admin('sessions')],
+    ['#/admin/settings', admin('settings')],
     ['#/admin/audit', admin('audit')],
     ['#/admin/bogus', admin('overview')],
     ['#/admin/members/x', home],

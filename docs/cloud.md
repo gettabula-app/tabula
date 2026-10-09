@@ -24,10 +24,11 @@ The endpoints below sit under `/api/internal/`. They need the bearer token and n
 
 ```
 GET /api/internal/usage
-  -> { seats, guests, members }
+  -> { seats, guests, members, updates: { auto: boolean } }
 ```
 
 `seats` counts people with the role `owner`, `admin` or `member` who are not disabled. `guests` counts guests who are not disabled. `members` is everyone with an account, disabled people included.
+`updates.auto` is whether other automatic updates are enabled. It defaults to `true`; security updates are always applied. It is reported here whether the setting is explicit or still at its default.
 
 ```
 GET /api/internal/stats
@@ -68,10 +69,11 @@ Which data volume the instance runs on (`docs/backups.md`, Volumes and restores)
 
 ```
 GET /api/internal/version
-  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy } }
+  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy }, updates: { auto: boolean } }
 ```
 
 The release label (`null` if `TABULA_VERSION` was not set), process start time in milliseconds, the schema generations and rollback limits this build declares, and the generations and legacy status of its database files. Each nested schema field has `directory` and `chat` values; chat is `null` when it is off. This endpoint contains no secrets. See [migrations.md](migrations.md) for the reader rule and release contract.
+`updates.auto` is the current automatic update setting, defaulting to `true`; security updates are always applied.
 
 **Contract for an adopt-volume action.** When the control plane swaps a machine's mount to another volume (a Tier 1 restore from a snapshot, or a move), it should:
 
@@ -215,11 +217,16 @@ POST /api/billing/portal            (workspace owner only; 404 without cloud mod
 The instance calls `POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/portal` and returns its `url`. Anything but an `https://` URL, an error status, an unreadable answer or a timeout is `502 bad_gateway`. Other roles get `403`.
 
 ```
-POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests, autoUpgrade? }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/settings   { autoUpgrade }
 ```
 
 Sent 30 seconds after the last change to the people in the workspace (an account created through an invite, a role change, disable or enable, a removal). A burst of changes is one report, with the counts read when it is sent, and a report that would repeat the last successful one is skipped. A failure is logged (without the token or the answer) and never reaches the request that caused the change; the control plane also pulls `GET /api/internal/usage` now and then. Reports that are still waiting when the process stops are not sent.
 
+When the owner changes **Automatic updates** in Admin → Settings, the instance sends the setting to `POST .../settings` immediately as `{ autoUpgrade: boolean }`. It expects `200 { autoUpgrade: boolean, securityAlwaysApplied: true }`; any other answer is treated as a failure. The value is saved locally first and is not rolled back on failure. Retries happen after 30 seconds, 2 minutes, 10 minutes and every 30 minutes after that, without a limit; a newer change replaces the pending retry. On boot, an explicitly stored value is sent again after about 5 seconds. Closing the instance cancels the retry timer. Usage pushes also include `autoUpgrade` only after the owner has explicitly set the setting; it is left out while the default is in effect. The push debounce skips repeats only when counts and this optional value are unchanged.
+
+The hosted setting is stored in the instance settings table under `updates.auto`: `1` means on, `0` means off, and no row means on by default. Turning off applies only to other updates; security updates are always installed. Self-hosted instances have no setting or admin route for this feature. On hosted instances, `GET /api/admin/updates` is available to owners and admins; `PUT /api/admin/updates { auto: boolean }` is owner-only and refused while read-only. Both answer `{ auto, synced, securityAlwaysApplied: true }`; `synced` is true before the setting has ever been explicitly set, and afterwards means the current value has been accepted by the control plane.
+
 ## Tests
 
-`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal, the usage reports and the trial-ending notice (owners only, the duplicate guard, partial and total mail failure) in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints (including the trial-ending notice through the real mail setting), the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules, including the coalescing of hints and the unlock watcher, and `test/workspace-hint.test.ts` runs a board's chain from hint to refresh to reconnect with fake providers. The hint on the wire, who gets it, that clients cannot send it and that a reconnect sends what was typed during the lock are in `test/cloud-relay.test.ts`.
+`test/cloud.test.ts` covers configuration, validation, the seat rules, the portal, the usage reports, automatic update saves and retry timing, and the trial-ending notice (owners only, the duplicate guard, partial and total mail failure) in process, with a fake `fetch` and hand-driven timers (both are injectable in `createCloud`). `test/cloud-relay.test.ts` starts the relay next to a fake control plane and covers the endpoints (including the trial-ending notice through the real mail setting), the 402 rule, sockets that are open when the lock changes, the seat limit through the real sign-in flow, the portal and persistence across a restart. `test/cloud-logic.test.ts` covers the client rules, including the coalescing of hints and the unlock watcher, and `test/workspace-hint.test.ts` runs a board's chain from hint to refresh to reconnect with fake providers. The hint on the wire, who gets it, that clients cannot send it and that a reconnect sends what was typed during the lock are in `test/cloud-relay.test.ts`.

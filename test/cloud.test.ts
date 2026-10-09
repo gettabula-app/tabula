@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { createApi } from '../server/api.mjs';
 import { SeatLimitError, createAuth } from '../server/auth.mjs';
 import { CloudError, addsSeat, createCloud, validateLimits, validateNotify } from '../server/cloud.mjs';
@@ -499,6 +500,23 @@ describe('createCloud', () => {
       expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 1 });
     });
 
+    it('includes an explicitly set update value and re-pushes when only that value changes', async () => {
+      const c = setup();
+      seed(c.directory, OWNER, 'owner');
+      c.directory.setSetting('updates.auto', '0');
+      changed(c);
+      c.timers.advance(30_000);
+      await settle();
+      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: false });
+
+      c.directory.setSetting('updates.auto', '1');
+      changed(c);
+      c.timers.advance(30_000);
+      await settle();
+      expect(c.fetchFn).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: true });
+    });
+
     it('logs a failure, never throws, and tries again at the next change', async () => {
       let healthy = false;
       const c = setup({}, async () => (healthy ? new Response(null, { status: 204 }) : Promise.reject(new TypeError('fetch failed'))));
@@ -556,6 +574,56 @@ describe('createCloud', () => {
       expect(fetchFn).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('automatic update sync at boot', () => {
+    it('does not push the default, and re-pushes an explicit value after five seconds', async () => {
+      const c = setup();
+      c.timers.advance(5_000);
+      expect(c.fetchFn).not.toHaveBeenCalled();
+
+      c.cloud!.close();
+      c.directory.setSetting('updates.auto', '0');
+      const fetchFn = vi.fn<Fetch>(async (_url, init) => {
+        const { autoUpgrade } = JSON.parse(init.body as string) as { autoUpgrade: boolean };
+        return json({ autoUpgrade, securityAlwaysApplied: true });
+      });
+      const cloud = createCloud({
+        config: c.config.cloud,
+        directory: c.directory,
+        events: c.events,
+        fetch: fetchFn,
+        setTimeout: c.timers.setTimeout,
+        clearTimeout: c.timers.clearTimeout,
+      });
+      c.timers.advance(4_999);
+      expect(fetchFn).not.toHaveBeenCalled();
+      c.timers.advance(1);
+      await settle();
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect(fetchFn.mock.calls[0][0]).toBe('https://cloud.example.com/v1/workspaces/ws_123/settings');
+      expect(JSON.parse(fetchFn.mock.calls[0][1].body as string)).toEqual({ autoUpgrade: false });
+      expect(cloud!.updates()).toEqual({ auto: false, synced: true, securityAlwaysApplied: true });
+      cloud!.close();
+    });
+
+    it('cancels the boot re-push when closed', () => {
+      const c = setup();
+      c.cloud!.close();
+      c.directory.setSetting('updates.auto', '1');
+      const fetchFn = vi.fn<Fetch>(async () => json({ autoUpgrade: true, securityAlwaysApplied: true }));
+      const cloud = createCloud({
+        config: c.config.cloud,
+        directory: c.directory,
+        events: c.events,
+        fetch: fetchFn,
+        setTimeout: c.timers.setTimeout,
+        clearTimeout: c.timers.clearTimeout,
+      });
+      cloud!.close();
+      c.timers.advance(5_000);
+      expect(fetchFn).not.toHaveBeenCalled();
     });
   });
 });
@@ -626,6 +694,45 @@ describe('sign-in with a seat limit', () => {
 describe('API in cloud mode', () => {
   type Res = { status: number; body: any; headers: Headers };
   type Opts = { method?: string; cookie?: string; token?: string | null; body?: unknown; headers?: Record<string, string> };
+
+  function directApi(c: ReturnType<typeof setup>) {
+    const mailer = { send: async () => {} };
+    const auth = createAuth({ directory: c.directory, config: c.config, mailer, seatsAvailable: c.cloud?.seatsAvailable });
+    const api = createApi({ directory: c.directory, auth, config: c.config, roomExists: () => false, events: c.events, cloud: c.cloud as never, mailer });
+    const login = (userId: string) => `${c.config.cookieName}=${c.directory.createSession(userId, { ttlMs: 3_600_000 }).token}`;
+    const person = (email: string, role: Role) => {
+      const user = seed(c.directory, email, role);
+      return { user, cookie: login(user.id) };
+    };
+    async function call(path: string, opts: Opts = {}): Promise<Res> {
+      const { method = 'GET', cookie, token, body, headers = {} } = opts;
+      const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]) as Readable & { url: string; method: string; headers: Record<string, string> };
+      req.url = path;
+      req.method = method;
+      req.headers = {
+        ...(cookie ? { cookie } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(method === 'GET' ? {} : { 'x-tabula': '1' }),
+        ...headers,
+      };
+      const response = {
+        headersSent: false,
+        status: 0,
+        body: '',
+        values: new Map<string, string>(),
+        setHeader(name: string, value: string) { this.values.set(name.toLowerCase(), value); },
+        writeHead(status: number, more?: Record<string, string>) {
+          this.status = status;
+          this.headersSent = true;
+          for (const [name, value] of Object.entries(more ?? {})) this.values.set(name.toLowerCase(), value);
+        },
+        end(text?: string) { this.body = text ?? ''; },
+      };
+      await api.handle(req as never, response as never);
+      return { status: response.status, body: response.body ? JSON.parse(response.body) : undefined, headers: new Headers(Object.fromEntries(response.values)) };
+    }
+    return { call, person };
+  }
 
   const tokenOf = (m: Mail) => decodeURIComponent(/token=([^\s&]+)/.exec(m.text)![1]);
 
@@ -711,6 +818,8 @@ describe('API in cloud mode', () => {
       expect((await s.call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { readOnly: true } })).status).toBe(404);
       expect((await s.call('/api/billing/portal', { method: 'POST', cookie: owner.cookie })).status).toBe(404);
       expect((await s.notify()).status).toBe(404);
+      expect((await s.call('/api/admin/updates', { cookie: owner.cookie })).status).toBe(404);
+      expect((await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } })).status).toBe(404);
       expect(s.sent).toEqual([]);
       expect((await s.call('/api/me', { cookie: owner.cookie })).body).not.toHaveProperty('workspace');
     });
@@ -758,14 +867,14 @@ describe('API in cloud mode', () => {
 
     it('report seats, guests and members', async () => {
       const s = await serve();
-      expect((await s.call('/api/internal/usage', { token: TOKEN })).body).toEqual({ seats: 0, guests: 0, members: 0 });
+      expect((await s.call('/api/internal/usage', { token: TOKEN })).body).toEqual({ seats: 0, guests: 0, members: 0, updates: { auto: true } });
       seed(s.directory, OWNER, 'owner');
       seed(s.directory, 'a@example.com', 'admin');
       seed(s.directory, 'm@example.com', 'member');
       seed(s.directory, 'off@example.com', 'member', true);
       seed(s.directory, 'g@example.com', 'guest');
       seed(s.directory, 'goff@example.com', 'guest', true);
-      expect((await s.call('/api/internal/usage', { token: TOKEN })).body).toEqual({ seats: 3, guests: 1, members: 6 });
+      expect((await s.call('/api/internal/usage', { token: TOKEN })).body).toEqual({ seats: 3, guests: 1, members: 6, updates: { auto: true } });
     });
 
     it('only allow GET on usage and PUT on limits', async () => {
@@ -1217,6 +1326,154 @@ describe('API in cloud mode', () => {
       await s.put({ seatLimit: 1 });
       const res = await s.patchMember(admin.cookie, guest.user.id, { role: 'owner' });
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('automatic updates', () => {
+    const settingsCalls = (s: { fetchFn: ReturnType<typeof setup>['fetchFn'] }) => s.fetchFn.mock.calls.filter(([url]) => url.endsWith('/settings'));
+
+    it('has no update routes without hosted cloud mode', async () => {
+      const c = setup({ TABULA_CLOUD_TOKEN: '', TABULA_CLOUD_URL: '', TABULA_CLOUD_WORKSPACE_ID: '' });
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      expect((await s.call('/api/admin/updates', { cookie: owner.cookie })).status).toBe(404);
+      expect((await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } })).status).toBe(404);
+      expect(s.directory.getSetting('updates.auto')).toBeNull();
+      expect(s.fetchFn).not.toHaveBeenCalled();
+    });
+
+    it('lets owners change the setting, pushes only autoUpgrade and audits the actor', async () => {
+      const c = setup({}, async (_url, init) => {
+        const { autoUpgrade } = JSON.parse(init.body as string) as { autoUpgrade: boolean };
+        return json({ autoUpgrade, securityAlwaysApplied: true });
+      });
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      const admin = s.person('admin@example.com', 'admin');
+      expect((await s.call('/api/admin/updates', { cookie: admin.cookie })).body).toEqual({ auto: true, synced: true, securityAlwaysApplied: true });
+
+      const off = await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } });
+      expect(off).toMatchObject({ status: 200, body: { auto: false, synced: true, securityAlwaysApplied: true } });
+      expect(s.directory.getSetting('updates.auto')).toBe('0');
+      const [url, init] = settingsCalls(s)[0];
+      expect(url).toBe('https://cloud.example.com/v1/workspaces/ws_123/settings');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json', accept: 'application/json' },
+        redirect: 'error',
+      });
+      expect(JSON.parse(init.body as string)).toEqual({ autoUpgrade: false });
+      expect(s.directory.listAudit()[0]).toMatchObject({ actorId: owner.user.id, action: 'updates.auto', detail: { from: true, to: false } });
+
+      expect((await s.call('/api/admin/updates', { cookie: admin.cookie })).body).toEqual({ auto: false, synced: true, securityAlwaysApplied: true });
+      const on = await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: true } });
+      expect(on.body).toEqual({ auto: true, synced: true, securityAlwaysApplied: true });
+      expect(s.directory.getSetting('updates.auto')).toBe('1');
+      expect(settingsCalls(s)).toHaveLength(2);
+      expect(s.directory.listAudit()[0]).toMatchObject({ actorId: owner.user.id, action: 'updates.auto', detail: { from: false, to: true } });
+    });
+
+    it('refuses admin changes and invalid bodies before saving or pushing', async () => {
+      const c = setup();
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      const admin = s.person('admin@example.com', 'admin');
+      expect((await s.call('/api/admin/updates', { method: 'PUT', cookie: admin.cookie, body: { auto: false } })).status).toBe(403);
+      for (const body of [{ auto: 'false' }, { auto: null }, { auto: false, extra: true }, {}]) {
+        expect((await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body })).status).toBe(400);
+      }
+      expect(s.directory.getSetting('updates.auto')).toBeNull();
+      expect(settingsCalls(s)).toHaveLength(0);
+      expect(s.directory.listAudit()).toEqual([]);
+    });
+
+    it('keeps the saved value after failed pushes and retries at 30 seconds, 2 minutes, 10 minutes, then 30 minutes', async () => {
+      let settingsAttempt = 0;
+      const c = setup({}, async (url) => {
+        if (!url.endsWith('/settings')) return new Response(null, { status: 204 });
+        settingsAttempt++;
+        if (settingsAttempt === 1) throw new TypeError('fetch failed');
+        if (settingsAttempt === 2 || settingsAttempt === 4) return json({}, 500);
+        if (settingsAttempt === 3) return json({ autoUpgrade: false, securityAlwaysApplied: 'true' });
+        return json({ autoUpgrade: false, securityAlwaysApplied: true });
+      });
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      const saved = await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } });
+      expect(saved.body).toEqual({ auto: false, synced: false, securityAlwaysApplied: true });
+      expect(s.directory.getSetting('updates.auto')).toBe('0');
+
+      s.timers.advance(29_999);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(1);
+      s.timers.advance(1);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(2);
+
+      s.timers.advance(119_999);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(2);
+      s.timers.advance(1);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(3);
+
+      s.timers.advance(599_999);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(3);
+      s.timers.advance(1);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(4);
+
+      s.timers.advance(1_799_999);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(4);
+      s.timers.advance(1);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(5);
+      expect((await s.call('/api/admin/updates', { cookie: owner.cookie })).body).toEqual({ auto: false, synced: true, securityAlwaysApplied: true });
+    });
+
+    it('replaces a pending retry when the owner changes the value again', async () => {
+      let settingsAttempt = 0;
+      const c = setup({}, async (url, init) => {
+        if (!url.endsWith('/settings')) return new Response(null, { status: 204 });
+        settingsAttempt++;
+        if (settingsAttempt === 1) throw new TypeError('fetch failed');
+        const { autoUpgrade } = JSON.parse(init.body as string) as { autoUpgrade: boolean };
+        return json({ autoUpgrade, securityAlwaysApplied: true });
+      });
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } });
+      await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: true } });
+      expect(settingsCalls(s)).toHaveLength(2);
+      s.timers.advance(30_000);
+      await settle();
+      expect(settingsCalls(s)).toHaveLength(2);
+      expect(settingsCalls(s).map(([, init]) => JSON.parse(init.body as string))).toEqual([{ autoUpgrade: false }, { autoUpgrade: true }]);
+      expect((await s.call('/api/admin/updates', { cookie: owner.cookie })).body).toEqual({ auto: true, synced: true, securityAlwaysApplied: true });
+    });
+
+    it('refuses updates while read-only but keeps the setting readable', async () => {
+      const c = setup();
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      await s.call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { readOnly: true } });
+      expect((await s.call('/api/admin/updates', { cookie: owner.cookie })).body).toEqual({ auto: true, synced: true, securityAlwaysApplied: true });
+      expect((await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } })).status).toBe(402);
+      expect(s.directory.getSetting('updates.auto')).toBeNull();
+    });
+
+    it('echoes the setting in internal usage and version reports', async () => {
+      const c = setup({}, async (_url, init) => {
+        const { autoUpgrade } = JSON.parse(init.body as string) as { autoUpgrade: boolean };
+        return json({ autoUpgrade, securityAlwaysApplied: true });
+      });
+      const s = { ...c, ...directApi(c) };
+      const owner = s.person(OWNER, 'owner');
+      await s.call('/api/admin/updates', { method: 'PUT', cookie: owner.cookie, body: { auto: false } });
+      expect((await s.call('/api/internal/usage', { token: TOKEN })).body).toMatchObject({ updates: { auto: false } });
+      expect((await s.call('/api/internal/version', { token: TOKEN })).body).toMatchObject({ updates: { auto: false } });
     });
   });
 

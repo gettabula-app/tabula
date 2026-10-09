@@ -38,6 +38,10 @@ On a hosted workspace, the owner also sees **Manage billing**. It opens the bill
 
 <!-- screenshot: Overview section with the stat tiles and the Instance list -->
 
+## Settings
+
+On a hosted workspace, the **Settings** tab shows **Automatic updates**. They are on by default. The owner can turn off other updates; admins can see the setting but cannot change it. **Security updates are always installed**, even when other automatic updates are off. After saving, the page says whether the setting was saved and whether Tabula Cloud could be reached.
+
 ## Members
 
 A searchable list of everyone with an account: name, email, role, last activity, active sessions, number of boards they own, and teams.

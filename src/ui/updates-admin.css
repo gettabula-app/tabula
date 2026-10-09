@@ -1,0 +1,10 @@
+/* The hosted workspace's owner controlled automatic update setting. */
+.updates-admin { min-width: 0; max-width: 720px; }
+.updates-note,
+.updates-security { margin: 0 0 16px; color: var(--graphite); font-size: 13px; line-height: 1.5; }
+.updates-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 32px; font-weight: 600; }
+.updates-toggle input { width: 18px; height: 18px; accent-color: var(--ink); }
+.updates-toggle input:disabled { opacity: 0.55; }
+.updates-owner-note { margin: 8px 0 0 28px; }
+.updates-security { margin: 24px 0 0; }
+.updates-outcome { min-height: 20px; margin: 16px 0 0; font-size: 13px; line-height: 1.5; }

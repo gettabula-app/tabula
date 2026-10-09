@@ -341,7 +341,7 @@ describe('a hosted workspace', () => {
       expect((await c.api(owner.cookie, 'GET', '/api/internal/usage')).status).toBe(401);
       const usage = await c.internal('GET', '/api/internal/usage');
       expect(usage.status).toBe(200);
-      expect(usage.body).toEqual({ seats: 1, guests: 0, members: 1 });
+      expect(usage.body).toEqual({ seats: 1, guests: 0, members: 1, updates: { auto: true } });
     });
 
     it('report the client address the limits see, for checking a deploy (TAB-71)', async () => {

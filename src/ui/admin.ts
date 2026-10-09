@@ -8,6 +8,7 @@ import { aiAdminPanel } from './ai';
 import { chatAdminPanel } from './chat-admin';
 import { download } from '../exporters';
 import { backupsAdminPanel } from './backups';
+import { updatesAdminPanel } from './updates-admin';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
 import { centredScroll, trackMore } from './scroll-cue';
@@ -27,6 +28,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   ai: 'AI',
   chat: 'Chat',
   backups: 'Backups',
+  settings: 'Settings',
   audit: 'Audit log',
 };
 
@@ -46,6 +48,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'AI tool access', prefix: 'mcp.token.' },
   { label: 'Images', prefix: 'asset.' },
   { label: 'Chat', prefix: 'chat.' },
+  { label: 'Updates', prefix: 'updates.' },
   // The audit filter is one literal prefix, so backups and restores each get a chip.
   { label: 'Backups', prefix: 'backup.' },
   { label: 'Restores', prefix: 'restore.' },
@@ -694,13 +697,14 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   ai: () => aiAdminPanel({ head, loadList, change, armable, emptyLine }),
   chat: () => chatAdminPanel({ head, loadList, change, armable, emptyLine }),
   backups: (me) => backupsAdminPanel(me, { head, loadList, change, armable, emptyLine }),
+  settings: (me) => updatesAdminPanel(me),
   audit: () => auditPanel(),
 };
 
 /** The admin dashboard. The caller has checked that `me` is an owner or admin. */
 export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): void {
   document.title = 'Admin - Tabula';
-  const tabs = visibleAdminTabs(ADMIN_TABS, me.mcp, me.user.role, me.chat);
+  const tabs = visibleAdminTabs(ADMIN_TABS, me.mcp, me.user.role, me.chat, me.workspace !== undefined);
   const tab = tabs.includes(requested) ? requested : 'overview';
   clearTimeout(statusTimer);
   statusLine = h('p', { class: 'admin-status', role: 'status', 'aria-live': 'polite' });

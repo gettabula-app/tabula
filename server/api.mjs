@@ -157,6 +157,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       startedAt,
       build: { schema: pair((r) => r.build.schema), maxReader: pair((r) => r.build.maxReader) },
       disk: { schema: pair((r) => r.disk.schema), minReader: pair((r) => r.disk.minReader), legacy: pair((r) => r.disk.legacy) },
+      ...(cloud ? { updates: { auto: cloud.autoUpgrade?.() ?? true } } : {}),
     };
   }
 
@@ -1082,7 +1083,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ...(cloud
       ? [
           // Called by the control plane with the bearer token (`internal`), never by a browser.
-          compile('GET', 'internal/usage', { internal: true }, () => [200, cloud.seatUsage()]),
+          compile('GET', 'internal/usage', { internal: true }, () => [200, { ...cloud.seatUsage(), updates: { auto: cloud.autoUpgrade?.() ?? true } }]),
           // TAB-229: counts only, with no account, board or chat details.
           compile('GET', 'internal/stats', { internal: true }, () => [200, statsReport()]),
           // TAB-71: which address the rate limits see for this request, to check the proxy setup on a deploy
@@ -1093,6 +1094,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/volume', { internal: true }, () => [200, volumeStatus()]),
           // TAB-225: which build this is and which schema it and its files are on (docs/migrations.md); never a secret.
           compile('GET', 'internal/version', { internal: true }, () => [200, versionReport()]),
+          compile('GET', 'admin/updates', {}, ({ user }) => {
+            requireAdmin(user);
+            return [200, cloud.updates()];
+          }),
+          compile('PUT', 'admin/updates', { body: true }, async ({ user, body }) => {
+            requireOwner(user);
+            for (const key of Object.keys(body)) {
+              if (key !== 'auto') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+            }
+            if (typeof body.auto !== 'boolean') throw badRequest('auto must be a boolean');
+            return [200, await cloud.setAutoUpgrade(body.auto, user)];
+          }),
           compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {
             const checked = validateLimits(body);
             if (checked.error) throw badRequest(checked.error);
