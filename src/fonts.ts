@@ -3,15 +3,10 @@
 // worker caches them on this device for offline use. They are never embedded
 // in board files or served by the relay (ITF Free Font License).
 
-export interface FontEntry {
-  name: string;
-  slug: string;
-  category: string;
-  weights: number[];
-  italic: boolean;
-  variable: boolean;
-  tags: string[];
-}
+import { DEMO } from './demo';
+import { BUILTIN_FONTS, DEMO_FONT_ALLOWLIST, type FontEntry } from './font-policy';
+
+export type { FontEntry } from './font-policy';
 
 const API = 'https://api.fontshare.com/v2';
 const CACHE_KEY = 'driftboard:fontshare-catalogue';
@@ -20,21 +15,55 @@ const DAY = 86_400_000;
 export const SYSTEM = 'system';
 export const SYSTEM_STACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+const FONT_KEYWORD_ALIASES = [
+  ['sans', 'sans serif', 'sans-serif', 'sansserif'],
+  ['mono', 'monospace', 'monospaced', 'fixed width', 'fixed-width', 'typewriter', 'code', 'coding'],
+  ['serif', 'serif typeface'],
+  ['handwriting', 'handwritten', 'hand writing', 'script', 'cursive'],
+  ['display', 'decorative', 'headline'],
+  ['rounded', 'round'],
+  ['geometric', 'geometric sans', 'geometric sans serif'],
+] as const;
+
+// "sans serif" is one word for matching, so "serif" never matches a sans-serif font
+const normalizeFontSearch = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\bsans serif\b/g, 'sansserif');
+
+function fontKeywords(font: FontEntry): string[] {
+  const keywords = [font.category, ...font.tags].map(normalizeFontSearch).filter(Boolean);
+  const expanded = new Set(keywords);
+  for (const keyword of keywords) {
+    for (const aliases of FONT_KEYWORD_ALIASES) {
+      if (aliases.some((alias) => { const a = normalizeFontSearch(alias); return keyword === a || keyword.startsWith(`${a} `); })) {
+        aliases.forEach((alias) => expanded.add(normalizeFontSearch(alias)));
+      }
+    }
+  }
+  return [...expanded];
+}
+
+/** Search font names and style metadata, with exact family names ranked first. */
+export function searchFonts(query: string, fonts: readonly FontEntry[] = catalogue): FontEntry[] {
+  const normalizedQuery = normalizeFontSearch(query);
+  if (!normalizedQuery) return [];
+  const tokens = normalizedQuery.split(' ');
+  const ranked = fonts.flatMap((font, index) => {
+    const name = normalizeFontSearch(font.name);
+    const nameAndSlug = [name, normalizeFontSearch(font.slug)];
+    const nameMatch = tokens.every((token) => nameAndSlug.some((value) => value.includes(token)));
+    const metadata = fontKeywords(font);
+    // metadata matches at word starts, so "serif" does not match "sans serif"
+    const metadataMatch = tokens.every((token) => metadata.some((value) => value.split(' ').some((word) => word.startsWith(token))));
+    if (name !== normalizedQuery && !nameMatch && !metadataMatch) return [];
+    const rank = name === normalizedQuery ? 0 : nameMatch ? 1 : 2;
+    return [{ font, index, rank }];
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.index - b.index).map(({ font }) => font);
+}
+
 // A small built-in list so the picker and defaults work before the catalogue
 // has ever been fetched (first run offline).
-const BUILTIN: FontEntry[] = [
-  { name: 'Satoshi', slug: 'satoshi', category: 'Sans', weights: [300, 400, 500, 700, 900], italic: true, variable: true, tags: [] },
-  { name: 'General Sans', slug: 'general-sans', category: 'Sans', weights: [200, 300, 400, 500, 600, 700], italic: true, variable: true, tags: [] },
-  { name: 'Cabinet Grotesk', slug: 'cabinet-grotesk', category: 'Sans', weights: [100, 200, 300, 400, 500, 700, 800, 900], italic: false, variable: true, tags: [] },
-  { name: 'Switzer', slug: 'switzer', category: 'Sans', weights: [100, 200, 300, 400, 500, 600, 700, 800, 900], italic: true, variable: true, tags: [] },
-  { name: 'Clash Display', slug: 'clash-display', category: 'Display', weights: [200, 300, 400, 500, 600, 700], italic: false, variable: true, tags: [] },
-  { name: 'Gambetta', slug: 'gambetta', category: 'Serif', weights: [300, 400, 500, 600, 700], italic: true, variable: true, tags: [] },
-  { name: 'Boska', slug: 'boska', category: 'Serif', weights: [200, 300, 400, 500, 700, 900], italic: true, variable: true, tags: [] },
-  { name: 'Tabular', slug: 'tabular', category: 'Sans', weights: [300, 400, 500, 600, 700], italic: true, variable: true, tags: ['Code'] },
-  { name: 'Comico', slug: 'comico', category: 'Handwritten', weights: [400], italic: false, variable: false, tags: [] },
-];
-
-let catalogue: FontEntry[] = readCached()?.fonts ?? BUILTIN;
+let catalogue: FontEntry[] = DEMO ? BUILTIN_FONTS : readCached()?.fonts ?? BUILTIN_FONTS;
 const bySlug = new Map<string, FontEntry>();
 const indexCatalogue = () => {
   bySlug.clear();
@@ -75,6 +104,11 @@ export function parseCatalogue(json: { fonts: ApiFont[] }): FontEntry[] {
 
 /** Fetch the catalogue at most once a day; fall back to the cached copy offline. */
 export async function loadCatalogue(force = false): Promise<FontEntry[]> {
+  if (DEMO) {
+    catalogue = BUILTIN_FONTS;
+    indexCatalogue();
+    return catalogue;
+  }
   const cached = readCached();
   if (!force && cached && Date.now() - cached.at < DAY) {
     catalogue = cached.fonts;
@@ -103,14 +137,16 @@ export const getCatalogue = () => catalogue;
 
 export function fontName(slug: string | undefined): string {
   if (!slug || slug === SYSTEM) return 'System';
-  const f = bySlug.get(slug);
+  const safeSlug = DEMO && !DEMO_FONT_ALLOWLIST.has(slug) ? 'satoshi' : slug;
+  const f = bySlug.get(safeSlug);
   if (f) return f.name;
-  return slug.split('-').map((w) => w[0]?.toUpperCase() + w.slice(1)).join(' ');
+  return safeSlug.split('-').map((w) => w[0]?.toUpperCase() + w.slice(1)).join(' ');
 }
 
 export function fontFamily(slug: string | undefined): string {
   if (!slug || slug === SYSTEM) return SYSTEM_STACK;
-  return `"${fontName(slug)}", ${SYSTEM_STACK}`;
+  const safeSlug = DEMO && !DEMO_FONT_ALLOWLIST.has(slug) ? 'satoshi' : slug;
+  return `"${fontName(safeSlug)}", ${SYSTEM_STACK}`;
 }
 
 const requested = new Set<string>();   // slug@weight
@@ -120,7 +156,12 @@ export const onFontLoaded = (fn: () => void) => {
   return () => listeners.delete(fn);
 };
 
-export function cssUrl(slug: string, weights: number[]): string {
+export function fontIsAllowed(slug: string): boolean {
+  return !DEMO || DEMO_FONT_ALLOWLIST.has(slug);
+}
+
+export function cssUrl(slug: string, weights: number[]): string | null {
+  if (!fontIsAllowed(slug)) return null;
   return `${API}/css?f[]=${encodeURIComponent(slug)}@${weights.join(',')}&display=swap`;
 }
 
@@ -136,13 +177,15 @@ export function nearestWeight(slug: string, w: number): number {
  * once the browser has the faces (or immediately if they were requested before).
  */
 export function ensureFont(slug: string | undefined, weights: number[] = [400]): Promise<void> {
-  if (!slug || slug === SYSTEM || typeof document === 'undefined') return Promise.resolve();
+  if (!slug || slug === SYSTEM || !fontIsAllowed(slug) || typeof document === 'undefined') return Promise.resolve();
   const want = [...new Set(weights.map((w) => nearestWeight(slug, w)))].filter((w) => !requested.has(`${slug}@${w}`));
   if (!want.length) return Promise.resolve();
+  const url = cssUrl(slug, want);
+  if (!url) return Promise.resolve();
   want.forEach((w) => requested.add(`${slug}@${w}`));
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = cssUrl(slug, want);
+  link.href = url;
   link.dataset.fontshare = slug;
   document.head.appendChild(link);
   const name = fontName(slug);

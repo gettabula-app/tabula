@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { buildSet, browseOrder, canonicalJson, checkSet, gateBody, gzip, licenceTier, licensesText, packShards } from '../scripts/lib/icons-build.mjs';
-import { CURATED_SETS, EXCLUDED_SETS, buildIcons, runPool } from '../scripts/build-icons.mjs';
+import { CURATED_SETS, DEMO_EMOJI_NAMES, DEMO_SETS, EXCLUDED_SETS, PINNED, buildIcons, iconOutputDir, runPool } from '../scripts/build-icons.mjs';
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -344,6 +344,58 @@ describe('build over a fixture', () => {
     expect(CURATED_SETS.filter((p: string) => EXCLUDED_SETS.includes(p))).toEqual([]);
     expect(new Set(CURATED_SETS).size).toBe(CURATED_SETS.length);
   });
+
+  it('keeps the demo set list small and its output path rooted at the repository', () => {
+    expect(DEMO_SETS).toEqual(['lucide', 'fluent-emoji-flat']);
+    expect(new Set(DEMO_SETS).size).toBe(DEMO_SETS.length);
+    expect(iconOutputDir('')).toBe(path.resolve('dist/icons'));
+    expect(iconOutputDir('relative-icons')).toBe(path.resolve('relative-icons'));
+    expect(iconOutputDir(path.join(os.tmpdir(), 'icons-out'))).toBe(path.join(os.tmpdir(), 'icons-out'));
+  });
+});
+
+describe('static demo icon build', () => {
+  it('writes only the curated plain JSON sets under the 3 MB raw budget', async () => {
+    const out = path.join(tmp(), 'icons');
+    await buildIcons({
+      sets: DEMO_SETS,
+      out,
+      plain: true,
+      includeIcons: { 'fluent-emoji-flat': DEMO_EMOJI_NAMES },
+    });
+    const files = (dir: string, base = dir): { path: string; bytes: number }[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const file = path.join(dir, entry.name);
+      return entry.isDirectory()
+        ? files(file, base)
+        : [{ path: path.relative(base, file).replaceAll('\\', '/'), bytes: fs.statSync(file).size }];
+    });
+    const all = files(out);
+    const manifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8'));
+    expect(manifest.sets.map((set: { p: string }) => set.p)).toEqual(DEMO_SETS);
+    expect(manifest.sets.map((set: { n: number }) => set.n)).toEqual([1941, expect.any(Number)]);
+    expect(manifest.sets[1].n).toBeGreaterThanOrEqual(300);
+    expect(manifest.sets[1].n).toBeLessThan(400);
+    expect(manifest.sets[0].lic.tier).toBe('notice');
+    expect(manifest.sets[1].lic.tier).toBe('notice');
+    expect(manifest.pin.names).toEqual(PINNED);
+    expect(Object.keys(JSON.parse(fs.readFileSync(path.join(out, `pin.${manifest.pin.f}.json`), 'utf8'))).sort()).toEqual([...PINNED].sort());
+    expect(fs.readFileSync(path.join(out, 'LICENSES.txt'), 'utf8')).toContain('Fluent Emoji Flat (fluent-emoji-flat)');
+    expect(fs.readFileSync(path.join(out, 'LICENSES.txt'), 'utf8')).toContain('Lucide (lucide)');
+    expect(all.every((file) => !file.path.endsWith('.gz'))).toBe(true);
+    expect(all.some((file) => file.path === 'manifest.json')).toBe(true);
+    expect(all.some((file) => file.path === 'LICENSES.txt')).toBe(true);
+    expect(Math.max(...all.map((file) => file.bytes))).toBeLessThanOrEqual(1024 * 1024);
+    expect(all.reduce((n, file) => n + file.bytes, 0)).toBeLessThanOrEqual(3 * 1024 * 1024);
+
+    const secondOut = path.join(tmp(), 'icons');
+    await buildIcons({ sets: DEMO_SETS, out: secondOut, plain: true, includeIcons: { 'fluent-emoji-flat': DEMO_EMOJI_NAMES } });
+    const firstNames = all.map((file) => file.path).sort();
+    const secondNames = files(secondOut).map((file) => file.path).sort();
+    expect(secondNames).toEqual(firstNames);
+    expect(firstNames.map((name) => fs.readFileSync(path.join(out, name)).toString())).toEqual(
+      firstNames.map((name) => fs.readFileSync(path.join(secondOut, name)).toString()),
+    );
+  }, 60_000);
 });
 
 // A failed build used to reject while the other sets were still being written (CI on 1efc844: ENOTEMPTY when the

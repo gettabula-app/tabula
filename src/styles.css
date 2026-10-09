@@ -64,6 +64,16 @@ hr { border: 0; }
 /* ------------------------------------------------------------- board */
 
 .board-root { position: fixed; inset: 0; overflow: hidden; background: var(--canvas); }
+.demo-banner {
+  position: fixed; z-index: 30; top: 0; left: 0; right: 0; min-height: 36px;
+  display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 12px;
+  background: var(--tray); color: var(--tray-text); font-size: 12px; font-weight: 600; line-height: 1.25;
+}
+.demo-banner-short-copy { display: none; }
+.demo-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.demo-board > .chrome .top-left { top: 46px; }
+.demo-board > .chrome .top-right { top: 46px; }
+.demo-board > .chrome .rail { top: 108px; max-height: calc(100% - 132px); }
 /* only the canvas takes touch gestures itself; elsewhere the browser's pinch zoom stays available */
 .board-surface, .canvas { touch-action: none; }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--graphite); }
@@ -164,15 +174,20 @@ select.input {
 .avatar:first-child { margin-left: 0; }
 .avatar.more { background: var(--tray-2); color: var(--tray-muted); }
 
-.rail { position: absolute; left: 12px; top: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px); overflow-y: auto; scrollbar-width: none; }
+.rail { position: absolute; left: 12px; top: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px); overflow: hidden; scrollbar-width: none; }
 @media (max-height: 820px) {
   .rail { gap: 1px; }
   .rail .rail-btn { width: 34px; height: 34px; }
   .rail hr { margin: 3px 0; }
 }
 .rail-btn { width: 40px; height: 40px; position: relative; }
-/* TAB-253: the separator, Undo and Redo. Part of the rail's flow on a wide screen; see the phone block for how it stays in reach */
-.rail-end { display: contents; }
+/* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
+.rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.rail-end { display: flex; flex: none; flex-direction: column; align-items: center; gap: inherit; }
+/* Tall desktop rails fit their contents; flatten the wrappers there to preserve the original flow. */
+@media (min-width: 861px) and (min-height: 981px) {
+  .rail-tools, .rail-end { display: contents; }
+}
 .rail-btn[data-tool='sticky']::after {
   content: ''; position: absolute; right: 8px; bottom: 8px; width: 8px; height: 8px; border-radius: 0; background: var(--sticky, #FFE16B);
 }
@@ -531,6 +546,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   :root { --panel-top: 120px; } /* a fallback: board.ts measures the bars (src/ui/panel-top.ts) */
   .top-left { max-width: calc(100% - 24px); }
   .top-right { top: 64px; }
+  .demo-board > .chrome .top-right { top: 100px; }
+  .demo-board > .chrome .rail { top: 144px; max-height: calc(100% - 168px); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
   /* folded to its title row, so the board shows above the selection while it stays selected */
@@ -546,12 +563,16 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
   .drawer { width: calc(100% - 88px); }
-  /* TAB-253: the rail scrolls on a phone (21 buttons in 844px or less), which pushed Undo and Redo, its last two, out of reach: they stay at its foot while the tools scroll under them. The negative margin takes the rail's bottom padding into the pinned box so nothing shows beneath it. */
-  .rail-end { display: flex; flex-direction: column; align-items: center; gap: inherit; position: sticky; bottom: 0; z-index: 1; padding-bottom: 6px; margin-bottom: -6px; background: var(--tray); }
   /* an open drawer or the Comments and Chat tray takes the board: the selection's quick bar, the properties panel and the session bar (TAB-243: it sat over the chat composer) wait, kept in place, until it closes */
   .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar) { visibility: hidden; }
   /* the rail runs the full height here: the hint is centred in the room right of it, not under it */
   .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px)); }
+}
+
+@media (max-width: 500px) {
+  .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
+  .demo-banner-wide-copy { display: none; }
+  .demo-banner-short-copy { display: block; }
 }
 
 /* quick actions */

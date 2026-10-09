@@ -1,6 +1,6 @@
 import { h, icon } from './dom';
 import { popover } from './common';
-import { SYSTEM, fontFamily, getCatalogue, loadCatalogue, previewFont, type FontEntry } from '../fonts';
+import { SYSTEM, fontFamily, getCatalogue, loadCatalogue, previewFont, searchFonts, type FontEntry } from '../fonts';
 
 export interface FontPickerOptions {
   pinned?: string[];
@@ -81,11 +81,12 @@ export function openFontPicker(anchor: HTMLElement, current: string | undefined,
   };
 
   const render = () => {
-    const q = search.value.trim().toLowerCase();
+    const q = search.value.trim();
     const all = getCatalogue();
     const categories = ['All', ...new Set(all.map((f) => f.category))].slice(0, 8);
     cats.replaceChildren(...categories.map((c) => h('button', { class: `chip${c === cat ? ' on' : ''}`, onclick: () => { cat = c; render(); } }, c)));
-    const filtered = all.filter((f) => (cat === 'All' || f.category === cat) && (!q || f.name.toLowerCase().includes(q) || f.tags.some((t) => t.toLowerCase().includes(q))));
+    const matching = q ? searchFonts(q, all) : all;
+    const filtered = matching.filter((f) => cat === 'All' || f.category === cat);
     const pinned = (opts.pinned ?? []).map((s) => all.find((f) => f.slug === s)).filter(Boolean) as FontEntry[];
     const rest = filtered.filter((f) => !pinned.includes(f));
     const children: HTMLElement[] = [];

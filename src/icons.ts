@@ -4,9 +4,11 @@
 import { licenceTier, type LicenceTier } from './icon-licences';
 import { searchSets, type SearchSet } from './icon-search';
 import { sanitizeSvgBody } from './markup';
+import { DEMO } from './demo';
 
 const HOSTS = ['https://api.iconify.design', 'https://api.simplesvg.com', 'https://api.unisvg.com'];
 let host = HOSTS[0];
+export const iconAssetUrl = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
 
 export interface IconSet {
   prefix: string; name: string; total: number; license: string; licenseUrl?: string; attribution: boolean; category?: string;
@@ -97,6 +99,7 @@ function autoRetryWait(f: IconFailure): number | null {
 
 /** Fetch from the Iconify API, failing over to its backup hosts after 750 ms. A caller's abort ends the request without failover. */
 async function api(path: string, signal?: AbortSignal): Promise<unknown> {
+  if (DEMO) throw new Error('This icon set is not included in the demo.');
   const hosts = custom() ? [custom()!] : [host, ...HOSTS.filter((h) => h !== host)];
   let failure: IconFailure = { kind: 'other' };
   signal?.throwIfAborted();
@@ -133,7 +136,7 @@ export async function local(path: string, signal?: AbortSignal): Promise<unknown
   signal?.throwIfAborted();
   let res: Response;
   try {
-    res = await fetch(`/icons/${path}`, { signal });
+    res = await fetch(iconAssetUrl(`icons/${path}`), { signal });
   } catch (e) {
     if (signal?.aborted) throw e;
     throw new IconError(classifyIconFailure({ error: e, online: isOnline() }));
@@ -382,7 +385,7 @@ export async function hostedSets(signal?: AbortSignal): Promise<{ prefix: string
 /** The URLs of a hosted set's index and of every shard in it. */
 export async function setFiles(prefix: string, signal?: AbortSignal): Promise<string[]> {
   const ix = await loadIndex(prefix, signal);
-  return [`/icons/i/${prefix}.${ix.set.idx}.json`, ...ix.sh.map(([hash], n) => `/icons/s/${prefix}.${n}.${hash}.json`)];
+  return [iconAssetUrl(`icons/i/${prefix}.${ix.set.idx}.json`), ...ix.sh.map(([hash], n) => iconAssetUrl(`icons/s/${prefix}.${n}.${hash}.json`))];
 }
 
 // ---------------------------------------------------------------- the Iconify API, for sets we do not host
@@ -394,6 +397,7 @@ type Collection = { name: string; total: number; hidden?: boolean; author?: { na
  * them, because opening the list is the first request to Iconify.
  */
 export async function onlineIconSets(signal?: AbortSignal): Promise<Record<string, IconSet>> {
+  if (DEMO) return {};
   await loadManifest(signal);
   const raw = (await api('/collections', signal)) as Record<string, Collection>;
   const out: Record<string, IconSet> = {};
@@ -455,7 +459,7 @@ const BACKGROUND_BATCH = 24;
 export async function searchIcons(query: string, prefix?: string, limit = 96, signal?: AbortSignal, onUpdate?: (names: string[]) => void): Promise<string[]> {
   const q = query.trim();
   if (prefix) {
-    if (!(await isHosted(prefix, signal))) return apiSearch(q, prefix, limit, signal);
+    if (!(await isHosted(prefix, signal))) return DEMO ? [] : apiSearch(q, prefix, limit, signal);
     const ix = await loadIndex(prefix, signal);
     return searchSets([ix.search], q, { limit });
   }
@@ -499,7 +503,7 @@ export async function searchIcons(query: string, prefix?: string, limit = 96, si
 
 /** The first `limit` icons of a set in its browse order, as `prefix:name`. */
 export async function collectionIcons(prefix: string, limit = 160, signal?: AbortSignal): Promise<string[]> {
-  if (!(await isHosted(prefix, signal))) return apiCollection(prefix, limit, signal);
+  if (!(await isHosted(prefix, signal))) return DEMO ? [] : apiCollection(prefix, limit, signal);
   const ix = await loadIndex(prefix, signal);
   return ix.n.slice(0, limit).map((n) => `${prefix}:${n}`);
 }
@@ -509,6 +513,7 @@ export async function iconData(full: string, signal?: AbortSignal): Promise<Icon
   const hit = dataCache.get(full) ?? pins.get(full);
   if (hit) return hit;
   const [prefix, name] = split(full);
+  if (DEMO && !(await isHosted(prefix, signal))) throw new Error('This icon set is not included in the demo.');
   const d = (await isHosted(prefix, signal))
     ? await withRefresh(prefix, signal, async () => {
       const ix = await loadIndex(prefix, signal);
@@ -588,6 +593,7 @@ export async function loadPreviews(names: string[], signal?: AbortSignal, onIcon
 
 /** Preview URL for the picker grid: a data URL once `loadPreviews` has run for a hosted icon, Iconify's image for any other. */
 export const previewUrl = (full: string): string => {
+  if (DEMO) return '';
   const hit = previews.get(full);
   if (hit) return hit;
   const [prefix, name] = split(full);

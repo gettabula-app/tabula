@@ -213,6 +213,9 @@ export class FakeElement extends FakeNode {
   get href() {
     return this.attrs.get('href') ?? '';
   }
+  set href(v: string) {
+    this.attrs.set('href', String(v));
+  }
   set innerHTML(v: string) {
     this.html = v;
     this.replaceChildren();

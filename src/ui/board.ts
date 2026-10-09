@@ -51,6 +51,8 @@ import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { canManageShares } from './share-logic';
 import { trackPanelTop } from './panel-top';
+import { DEMO } from '../demo';
+import { demoWorkspaceItems } from './demo-workspace';
 
 type IconName = keyof typeof ICONS;
 
@@ -58,8 +60,9 @@ type IconName = keyof typeof ICONS;
  * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
  * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
  */
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean } = {}) {
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean } = {}) {
   const scratch = opts.scratch === true;
+  const demo = opts.demo === true || DEMO;
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
@@ -114,8 +117,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const homeLabel = scratch ? 'Back to templates' : 'All boards';
   const topLeft = h('div', { class: 'tray top-left', role: 'region', 'aria-label': 'Board' },
     heading,
-    h('button', { class: 'icon-btn', 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
-    scratch ? null : name, scratch ? null : status, badge,
+    demo ? null : h('button', { class: 'icon-btn', 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
+    scratch ? null : name, scratch || demo ? null : status, badge,
   );
 
   // ---------------------------------------------------------------- top right
@@ -144,17 +147,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('presence', renderPeople);
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
-  const history = scratch ? null : mountHistory(app, chrome);
-  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch, () => library.open('layers')));
+  const history = scratch || demo ? null : mountHistory(app, chrome);
+  menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch, demo, () => library.open('layers')));
   // Comments and, where the server has chat (docs/chat.md), Chat share one right-hand tray
   const sideTray = mountSideTray(chrome);
   const comments = mountComments(app, chrome, sideTray);
-  const chat = !scratch && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
+  const chat = !scratch && !demo && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
-    scratch ? null : people,
+    scratch || demo ? null : people,
     scratch ? null : comments.button,
     chat?.button,
-    scratch ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch || demo ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
 
@@ -179,9 +182,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
   // Images (docs/images.md): hidden when the server says it keeps none
   const imageBtn = h('button', { class: 'rail-btn', 'aria-label': 'Image', 'data-tip': 'Add an image', onclick: () => pickImages(app) }, icon('image', 22));
-  imageBtn.hidden = !imagesAvailable();
-  app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
-  app.onImageFiles = (files) => void addImages(app, files);
+  imageBtn.hidden = demo || !imagesAvailable();
+  if (!demo) app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
+  app.onImageFiles = demo ? null : (files) => void addImages(app, files);
   app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
   // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
@@ -215,26 +218,28 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
-    toolBtn('Select', 'select', { kind: 'select' }, 'V'),
-    toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
-    h('hr'),
-    stickyBtn,
-    toolBtn('Text', 'text', { kind: 'text' }, 'T'),
-    shapesBtn,
-    toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
-    toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
-    toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
-    imageBtn,
-    commentBtn,
-    h('hr'),
-    drawerBtn('UML', 'uml', 'uml'),
-    drawerBtn('Icons', 'icons', 'icons'),
-    drawerBtn('Stickers', 'stickers', 'stickers'),
-    drawerBtn('Templates and team exercises', 'templates', 'templates'),
-    layersBtn,
-    voteBtn,
-    pollBtn,
-    // TAB-253: the last group is one box so a phone can pin it to the bottom of a rail that scrolls (display: contents elsewhere)
+    h('div', { class: 'rail-tools' },
+      toolBtn('Select', 'select', { kind: 'select' }, 'V'),
+      toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
+      h('hr'),
+      stickyBtn,
+      toolBtn('Text', 'text', { kind: 'text' }, 'T'),
+      shapesBtn,
+      toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
+      toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
+      toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+      imageBtn,
+      commentBtn,
+      h('hr'),
+      drawerBtn('UML', 'uml', 'uml'),
+      drawerBtn('Icons', 'icons', 'icons'),
+      drawerBtn('Stickers', 'stickers', 'stickers'),
+      drawerBtn('Templates and team exercises', 'templates', 'templates'),
+      layersBtn,
+      voteBtn,
+      pollBtn,
+    ),
+    // TAB-272: these controls are a sibling of the scroll region, so no scrolling tool can pass under them.
     h('div', { class: 'rail-end' },
       h('hr'),
       h('button', { class: 'rail-btn', 'aria-label': 'Undo', 'data-tip-key': 'mod+z', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
@@ -323,18 +328,18 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   trackPanelTop(chrome, [topLeft, topRight]);
   renderStickyTray();
   const props = mountProps(app, chrome);
-  mountQuickbar(app, chrome, props);
+  mountQuickbar(app, chrome, props, { demo });
   mountGroupUI(app, chrome);
   mountTouchMenu(app);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)
-  if (!scratch && aiBarFlag()) {
+  if (!scratch && !demo && aiBarFlag()) {
     mountAiLive(app);
     liveRunsFor(app)?.onChange(renderPeople);
   }
-  if (!scratch) mountAiBar(app, chrome);
-  if (!scratch) firstRunHint(app, chrome);
+  if (!scratch && !demo) mountAiBar(app, chrome);
+  if (!scratch && !demo) firstRunHint(app, chrome);
 
   // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
   const syncReadOnly = () => {
@@ -372,6 +377,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     // pictures go on the board where they were dropped; a board file still opens as before
     const pictures = files.filter((f) => f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name));
     if (pictures.length) {
+      if (demo) return;
       if (!imagesAvailable()) toast('This server does not store images.');
       else await addImages(app, pictures, app.r.clientToWorld(e.clientX, e.clientY));
       return;
@@ -493,7 +499,7 @@ function minimap(app: BoardApp) {
 
 // ---------------------------------------------------------------- menus & dialogs
 
-function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, openLayers: () => void) {
+function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, demo: boolean, openLayers: () => void) {
   const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
     h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
   // Items that change the board are disabled while it is view only.
@@ -562,11 +568,14 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const pop = popover(anchor, h('div', { class: 'menu' },
     account,
     h('div', { class: 'list-label' }, 'Board'),
-    writeItem('grid', 'Board settings', () => openSettings(app)),
-    scratch ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
-    openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    writeItem('grid', 'Board settings', () => openSettings(app, demo)),
+    scratch || demo ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
+    demo ? [
+      h('div', { class: 'list-label' }, 'Workspace features'),
+      demoWorkspaceItems(),
+    ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
-    item('user', 'Your name and colour', () => openProfile(app)),
+    demo ? null : item('user', 'Your name and colour', () => openProfile(app)),
     mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
     scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
@@ -604,7 +613,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     }),
     h('div', { class: 'list-label' }, 'Help'),
     item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
-    item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab'),
+    !DEMO && !demo ? item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab') : null,
     fileInput,
   ), { side: 'bottom' });
 }
@@ -677,7 +686,7 @@ function openProfile(app: BoardApp) {
   }]);
 }
 
-function openSettings(app: BoardApp) {
+function openSettings(app: BoardApp, demo = false) {
   const m = app.store.getMeta();
   const grid = segmented<GridType>([
     { value: 'dots', label: 'Dots' }, { value: 'lines', label: 'Lines' }, { value: 'iso', label: 'Isometric' }, { value: 'none', label: 'None' },
@@ -695,19 +704,19 @@ function openSettings(app: BoardApp) {
     }));
     return b;
   };
-  const relay = h('input', { class: 'input', value: getRelaySetting(), placeholder: 'auto, off, or wss://relay.example.com/sync', 'aria-label': 'Relay' });
+  const relay = demo ? null : h('input', { class: 'input', value: getRelaySetting(), placeholder: 'auto, off, or wss://relay.example.com/sync', 'aria-label': 'Relay' });
   dialog('Board settings', h('div', { class: 'stack' },
     field('Grid', grid),
     h('div', { class: 'row2' }, field('Grid size', size), field('Snap to grid', h('label', { class: 'check' }, snap, 'Snap while moving and resizing'))),
     h('div', { class: 'row2' }, field('Heading font', fontBtn('headingFont')), field('Body font', fontBtn('bodyFont'))),
     h('p', { class: 'muted small' }, 'New notes, shapes and frames use these fonts. Hold Alt while dragging to place things off the grid.'),
-    field('Relay', relay),
-    h('p', { class: 'muted small' }, isDesktop()
+    demo ? null : field('Relay', relay!),
+    demo ? null : h('p', { class: 'muted small' }, isDesktop()
       ? '“auto” and “off” keep every board on this computer only. To collaborate, enter the address of a relay. Changing it reloads the board.'
       : '“auto” uses the relay that serves this app. “off” keeps every board on this device only. Changing it reloads the board.'),
   ), [{ label: 'Close', primary: true, onClick: () => {
-    const v = relay.value.trim() || 'auto';
-    if (v !== getRelaySetting()) {
+    const v = relay?.value.trim() || 'auto';
+    if (!demo && v !== getRelaySetting()) {
       setRelaySetting(v);
       location.reload();
     }

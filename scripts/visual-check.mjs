@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -922,6 +922,72 @@ const STATES = {
     });
     console.log(`rail-end ${JSON.stringify(m)}`);
     if (m.redoBottom > m.railBottom + 0.5 || m.redoBottom > m.vh) throw new Error(`Redo is out of reach: ${JSON.stringify(m)}`);
+  },
+  async 'rail-overlap'(env) {
+    await openSeedBoard(env);
+    const m = await env.page.evaluate(() => {
+      const rail = document.querySelector('.rail');
+      // on a rail without the .rail-tools wrapper (the TAB-253 layout) the rail itself scrolls: the check must catch that bug too
+      const scroller = rail?.querySelector('.rail-tools') ?? rail;
+      const undo = rail?.querySelector('[aria-label="Undo"]');
+      const redo = rail?.querySelector('[aria-label="Redo"]');
+      const failures = [];
+      const bounds = (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+      };
+      const insideViewport = (r) => r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+      const hitTarget = (target, name, position) => {
+        const r = bounds(target);
+        const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        if (hit !== target && !target.contains(hit)) failures.push(`${position}:${name} centre hit ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
+      };
+      if (!rail || !scroller || !undo || !redo) {
+        return { failures: ['rail, scroller, Undo or Redo is missing'], maxScroll: 0, positions: [] };
+      }
+      for (const [name, button] of [['Undo', undo], ['Redo', redo]]) {
+        if (!rail.contains(button)) failures.push(`${name} is outside the rail`);
+        if (!insideViewport(bounds(button))) failures.push(`${name} is outside the viewport`);
+      }
+      const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const stops = [['top', 0], ['middle', maxScroll / 2], ['bottom', maxScroll]];
+      const positions = [];
+      for (const [position, requestedTop] of stops) {
+        scroller.scrollTop = requestedTop;
+        const clip = bounds(scroller);
+        const pinned = [['Undo', bounds(undo)], ['Redo', bounds(redo)]];
+        let visibleButtons = 0;
+        let fullyVisibleButtons = 0;
+        for (const button of scroller.querySelectorAll('.rail-btn')) {
+          const r = bounds(button);
+          if (r.width <= 0 || r.height <= 0) continue;
+          const visible = {
+            left: Math.max(r.left, clip.left),
+            top: Math.max(r.top, clip.top),
+            right: Math.min(r.right, clip.right),
+            bottom: Math.min(r.bottom, clip.bottom),
+          };
+          if (visible.left >= visible.right || visible.top >= visible.bottom) continue;
+          visibleButtons++;
+          for (const [label, pin] of pinned) {
+            if (visible.left < pin.right && visible.right > pin.left && visible.top < pin.bottom && visible.bottom > pin.top) {
+              failures.push(`${position}:${button.getAttribute('aria-label')} overlaps ${label}`);
+            }
+          }
+          const full = r.left >= clip.left && r.top >= clip.top && r.right <= clip.right && r.bottom <= clip.bottom && insideViewport(r);
+          if (full) {
+            fullyVisibleButtons++;
+            hitTarget(button, button.getAttribute('aria-label') ?? 'unnamed tool', position);
+          }
+        }
+        for (const [label, button] of [['Undo', undo], ['Redo', redo]]) hitTarget(button, label, position);
+        positions.push({ name: position, scrollTop: scroller.scrollTop, visibleButtons, fullyVisibleButtons });
+      }
+      scroller.scrollTop = 0;
+      return { failures, maxScroll, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight, positions };
+    });
+    console.log(`rail-overlap ${JSON.stringify(m)}`);
+    if (m.failures.length) throw new Error(`Rail overlap or hit-test failure: ${JSON.stringify(m.failures)}`);
   },
   async 'group-hover'(env) {
     await openSeedBoard(env);
