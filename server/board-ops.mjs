@@ -216,15 +216,15 @@ function endOut(end) {
 
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
-/** @param {boolean} [detail] the extra fields get_objects adds */
 const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
 /** A stored proposedBy as MCP and the AI read show it: `{ feature, name }`, the name cleaned and cut like other names. */
 function proposedOf(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v) || !PROPOSED_FEATURES.has(v.feature)) return null;
-  const name = typeof v.by?.name === 'string' ? cleanForModel(v.by.name, 40).text : '';
+  const name = typeof v.by?.name === 'string' ? cleanForModel(v.by.name.replace(/\s+/g, ' ').trim(), 40).text : '';
   return name ? { feature: v.feature, name } : { feature: v.feature };
 }
 
+/** @param {boolean} [detail] the extra fields get_objects adds */
 export function summarise(o, textMax, detail = false) {
   if (o.type === 'connector') {
     const out = {
@@ -849,6 +849,7 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
     fields.z = zs[k];
     fields.createdBy = createdBy;
     fields.updatedAt = now;
+    delete fields.proposedBy; // template content can come from a file; a stored proposedBy never reaches a new board (TAB-160)
     if (o.type === 'connector') {
       fields.from = place(o.from);
       fields.to = place(o.to);

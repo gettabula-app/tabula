@@ -104,7 +104,7 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
     const list = h('ol', { class: 'aireview-list' });
     if (r.frame) {
       const title = h('input', { class: 'input', type: 'text', maxlength: String(TITLE_MAX), 'aria-label': 'Frame title', value: r.frame.title });
-      title.addEventListener('input', () => change((x) => (x.kind === 'create' && x.frame ? ((x.frame.title = title.value), x) : x)));
+      title.addEventListener('input', () => change((x) => (x.kind === 'create' && x.frame ? { ...x, frame: { ...x.frame, title: title.value } } : x)));
       list.appendChild(h('li', { class: 'aireview-frame' },
         checkbox('Put the stickies in a frame', r.frame.keep, (v) => change((x) => (x.kind === 'create' && x.frame ? ((x.frame.keep = v), x) : x))),
         h('span', { class: 'aireview-kind' }, 'Frame'), title));
@@ -137,7 +137,7 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
     const list = h('ol', { class: 'aireview-list' });
     r.groups.forEach((g, gi) => {
       const title = h('input', { class: 'input', type: 'text', maxlength: String(TITLE_MAX), 'aria-label': `Group ${gi + 1} title`, value: g.title });
-      title.addEventListener('input', () => change((x) => (x.kind === 'group' ? ((x.groups[gi].title = title.value), x) : x)));
+      title.addEventListener('input', () => change((x) => (x.kind === 'group' ? { ...x, groups: x.groups.map((g2, k) => (k === gi ? { ...g2, title: title.value } : g2)) } : x)));
       const members = h('ul', { class: 'aireview-members' },
         ...g.members.map((m, mi) => h('li', { class: `aireview-member${m.stale ? ' stale' : ''}` },
           checkbox(`Move “${memberLabel(app, m.id)}”`, m.keep && !m.stale, (v) => change((x) => (x.kind === 'group' ? ((x.groups[gi].members[mi].keep = v), x) : x)), m.stale),

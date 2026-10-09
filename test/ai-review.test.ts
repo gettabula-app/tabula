@@ -107,7 +107,7 @@ describe('proposedBy is read as hostile data', () => {
   it('cleans and caps the name, refuses an odd id, and drops everything else', () => {
     const out = cleanProposedBy({
       feature: 'cluster',
-      by: { id: 'x" onload="alert(1)', name: `  <img src=x onerror=alert(1)>‮\u0000\n${'n'.repeat(80)}`, email: 'a@b.c' },
+      by: { id: 'x" onload="alert(1)', name: `  <img src=x onerror=alert(1)>\u202e\u0000\n${'n'.repeat(80)}`, email: 'a@b.c' },
       extra: { script: true },
     })!;
     expect(out).toEqual({ feature: 'cluster', by: { id: null, name: expect.any(String) } });
@@ -120,6 +120,6 @@ describe('proposedBy is read as hostile data', () => {
   it('goes through safeObj: a bad value is dropped from what is drawn, a good one is cleaned', () => {
     const base: BaseObj = { id: 's', type: 'sticky', x: 0, y: 0, w: 1, h: 1, rotation: 0, z: 'a0' };
     expect(safeObj({ ...base, proposedBy: { feature: 'evil' } } as unknown as BaseObj)).not.toHaveProperty('proposedBy');
-    expect(safeObj({ ...base, proposedBy: { feature: 'generate', by: { name: 'Ana‮', id: 'u1', role: 'admin' } } } as unknown as BaseObj).proposedBy).toEqual({ feature: 'generate', by: { id: 'u1', name: 'Ana' } });
+    expect(safeObj({ ...base, proposedBy: { feature: 'generate', by: { name: 'Ana\u202e', id: 'u1', role: 'admin' } } } as unknown as BaseObj).proposedBy).toEqual({ feature: 'generate', by: { id: 'u1', name: 'Ana' } });
   });
 });

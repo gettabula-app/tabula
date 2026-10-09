@@ -165,7 +165,7 @@ export function toTemplateContent(
   const objects = remapObjects(objs, idMap, { x: -b.x, y: -b.y }, resolveOutside).map((o, i) => {
     delete o.locked;
     delete o.hidden;
-    delete o.proposedBy;
+    delete (o as { proposedBy?: unknown }).proposedBy;
     delete o.createdBy;
     delete o.updatedAt;
     // a shared template names no people and no dates (docs/kanban.md, Templates); labels stay, renumbered
@@ -208,7 +208,11 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
   const idMap = new Map<Id, Id>();
   for (const o of content.objects) idMap.set(o.id, newId());
   const objects = remapObjects(content.objects, idMap, origin, () => null);
-  for (const o of objects) o.createdBy = userId;
+  for (const o of objects) {
+    o.createdBy = userId;
+    // template content can come from a file: a stored proposedBy is never carried onto a new board (TAB-160)
+    delete (o as { proposedBy?: unknown }).proposedBy;
+  }
   const steps = content.steps.map((s): Step => {
     const c: Step = { ...s, id: newId() };
     const frameId = s.frameId ? idMap.get(s.frameId) : undefined;
