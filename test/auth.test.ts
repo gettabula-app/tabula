@@ -11,6 +11,7 @@ import { openDirectory } from '../server/directory.mjs';
 import { hashJoinCode, loadJoinCodeSecret } from '../server/join-codes.mjs';
 import nodemailer from 'nodemailer';
 import { createMailer } from '../server/mailer.mjs';
+import { isWindows } from './platform';
 
 type Mail = { to: string; subject: string; text: string };
 type Ctx = ReturnType<typeof setup>;
@@ -193,7 +194,8 @@ describe('join-code secret storage', () => {
     const digest = hashJoinCode(code, secret);
 
     expect(secret).toHaveLength(32);
-    expect(fs.statSync(path.join(dataDir, 'join-code.secret')).mode & 0o777).toBe(0o600);
+    // POSIX permission bits do not exist on Windows (the file reports 0o666), so the owner-only mode can only be checked on POSIX systems
+    expect(isWindows ? 0o600 : fs.statSync(path.join(dataDir, 'join-code.secret')).mode & 0o777).toBe(0o600);
     expect(digest).toBe(crypto.createHmac('sha256', secret).update(code).digest('hex'));
     expect(digest).not.toBe(crypto.createHash('sha256').update(code).digest('hex'));
     expect(hashJoinCode(code, loadJoinCodeSecret(dataDir))).toBe(digest);
