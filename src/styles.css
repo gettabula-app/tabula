@@ -408,6 +408,7 @@ select.input {
   .step-list li > :nth-child(6) { grid-area: 3 / 2 / 4 / 6; min-width: 0; }
   .step-list li > :nth-child(6):empty { display: none; }
   .step-list li input, .step-list li select { min-width: 0; }
+}
 
 /* popovers, menus, dialogs, toast */
 .popover { position: fixed; z-index: 50; max-height: calc(100vh - 16px); overflow: auto; }
