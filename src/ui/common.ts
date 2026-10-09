@@ -52,19 +52,38 @@ let toastTimer = 0;
 /** The toast's distance from the bottom of the window, as in styles.css; it moves up past a session bar. */
 const TOAST_BOTTOM = 76;
 
-export function toast(msg: string, ms = 2600) {
+/**
+ * A short message. With `action` it also carries one button (such as Undo), which is why it should stay longer: pass `ms`.
+ * The AI bar publishes `--ai-top` on the page, how far it reaches up from the bottom, and the toast stays above it.
+ */
+export function toast(msg: string, ms = 2600, action?: { label: string; onClick: () => void; keyId?: string }) {
   let el = document.querySelector<HTMLDivElement>('.toast');
   if (!el) {
     el = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite' });
     document.body.appendChild(el);
   }
-  el.textContent = msg;
+  const box = el;
+  if (action) {
+    box.replaceChildren(
+      h('span', null, msg),
+      h('button', {
+        class: 'toast-action', type: 'button', 'data-tip': action.label, ...(action.keyId ? { 'data-tip-key': action.keyId } : {}),
+        onclick: () => {
+          clearTimeout(toastTimer);
+          box.classList.remove('show');
+          action.onClick();
+        },
+      }, action.label),
+    );
+  } else box.textContent = msg;
+  box.classList.toggle('has-action', !!action);
   // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
   const bar = document.querySelector('.flowbar.show');
-  el.style.bottom = bar ? `${Math.max(TOAST_BOTTOM, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : '';
-  el.classList.add('show');
+  const base = bar ? `${Math.max(TOAST_BOTTOM, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM}px`;
+  box.style.bottom = `max(${base}, var(--ai-top, 0px))`;
+  box.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el!.classList.remove('show'), ms);
+  toastTimer = window.setTimeout(() => box.classList.remove('show'), ms);
 }
 
 /** Open dialogs, oldest first: Escape closes only the last one. */

@@ -28,6 +28,7 @@ import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
+import { aiBarShown, mountAiBar } from './ai-bar';
 import { openTokensDialog } from './tokens';
 import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
@@ -243,6 +244,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   mountQuickbar(app, chrome, props);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
+  if (!scratch) mountAiBar(app, chrome);
   if (!scratch) firstRunHint(app, chrome);
 
   // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
@@ -581,10 +583,12 @@ function openSettings(app: BoardApp) {
 }
 
 function openShortcuts() {
-  const groups = [...new Set(SHORTCUTS.map((s) => s.group))];
+  // the Ask AI row only for people who have the bar
+  const listed = SHORTCUTS.filter((s) => aiBarShown() || !s.ids.includes('mod+k'));
+  const groups = [...new Set(listed.map((s) => s.group))];
   const rows = groups.flatMap((group) => [
     h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
-    ...SHORTCUTS.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
   ]);
   dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }
