@@ -16,7 +16,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'path' | 'connector' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'image' | 'path' | 'connector' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -84,6 +84,13 @@ export interface BaseObj extends Partial<StyleFields> {
   body?: string;
   viewBox?: [number, number, number, number];
   sticker?: boolean;
+  // image: the content hash of the uploaded file, or `pending:<id>` while the bytes are only on this device
+  asset?: string;
+  mime?: string;
+  /** Natural size in pixels, for the aspect ratio and the placeholder. */
+  nw?: number;
+  nh?: number;
+  alt?: string;
   // path
   points?: number[]; // flat [x0,y0,x1,y1,...] relative to x,y
   // uml-class

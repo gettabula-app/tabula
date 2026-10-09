@@ -21,7 +21,11 @@ Johan went with the recommendations on every open question, which changes this p
 
 ### Built so far (slice 2, server)
 
-`server/image-header.mjs` (type by magic bytes, size from the header), `server/image-strip.mjs` (metadata removal), `server/assets.mjs` (the store, both forms of its index, the upload limiter, the body reader and the response headers), `server/asset-routes.mjs` (the handlers, shared by both modes, and the open-mode routes), the `assets` migration, `TABULA_ASSETS`, the routes in `server/api.mjs`, the `images` flag in `/api/me` and `/api/config`, the `asset.upload` audit action. Open mode keeps its index in `<DATA_DIR>/assets/index.json` because it has no database. Still to do: the client, the garbage collector, the backup walk, templates guard, MCP types, export and the guide (slices 1, 3 and 4).
+`server/image-header.mjs` (type by magic bytes, size from the header), `server/image-strip.mjs` (metadata removal), `server/assets.mjs` (the store, both forms of its index, the upload limiter, the body reader and the response headers), `server/asset-routes.mjs` (the handlers, shared by both modes, and the open-mode routes), the `assets` migration, `TABULA_ASSETS`, the routes in `server/api.mjs`, the `images` flag in `/api/me` and `/api/config`, the `asset.upload` audit action. Open mode keeps its index in `<DATA_DIR>/assets/index.json` because it has no database. Still to do: the garbage collector, the backup walk, the `.drift` and JSON handling, the Markdown line and the guide (slices 3 and 4).
+
+### Built so far (slice 1, client)
+
+`src/images.ts` (pure: file kinds by bytes, the encoding plan, placement, references), `src/asset-store.ts` (the IndexedDB blob cache and the upload queue), `src/image-loader.ts` (what the renderer draws and why not), `src/board-images.ts` (both, per board; the cache is cleared on sign-out), `src/ui/image-add.ts` (paste, drop, the **Image** button, downscaling to 2560 px, SVG rasterised to PNG, GIFs passed through), the `image` object type, its markup and placeholder, **100%** and **Alt text** in the quick-action bar, aspect-locked resize, images left out of templates (the server validator and the client both refuse them), and PNG and SVG export with the pictures inlined. Deviations from the plan above: the page's own blob cache serves offline viewing, so the service worker has no `assets` runtime cache; the object is created with a `pending:` key and rewritten to the hash after the upload (not the other way round); the `.drift` zip does not carry assets yet.
 
 ## Summary
 

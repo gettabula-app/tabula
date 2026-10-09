@@ -62,12 +62,28 @@ function readJson<T>(key: string): T | null {
 function forgetCaches() {
   writeStorage(ME_KEY, null);
   writeStorage(BOARDS_KEY, null);
+  // the bytes of images are private to the signed-in person (docs/images.md); loaded on demand so auth stays light
+  void import('./board-images').then((m) => m.clearAssetCache()).catch(() => undefined);
+}
+
+/** What the server said about images (docs/images.md): true, false, or null while it has not answered (then adding one stays possible, on this device). */
+let serverImages: boolean | null = null;
+
+/**
+ * Whether the **Image** button should show. A server that answered and does not list `images` (off, or older than this
+ * feature) hides it; a server that has not answered, or a board kept only on this device, keeps it.
+ */
+export function imagesAvailable(): boolean {
+  const me = state.mode === 'signed-in' || state.mode === 'offline' ? state.me : null;
+  return me ? me.images === true : serverImages !== false;
 }
 
 export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Promise<AuthState> {
   let authEnabled: boolean;
   try {
-    authEnabled = (await a.config()).authEnabled;
+    const config = await a.config();
+    authEnabled = config.authEnabled;
+    serverImages = config.images === true;
   } catch {
     const cached = readJson<Me>(ME_KEY);
     return commit(cached ? { mode: 'offline', me: cached } : { mode: 'open' });

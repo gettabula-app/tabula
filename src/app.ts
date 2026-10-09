@@ -1,3 +1,4 @@
+import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
@@ -121,6 +122,10 @@ export class BoardApp {
   /** Aborted when the board closes; removes window listeners. */
   readonly lifetime = new AbortController();
   private disposers: (() => void)[] = [];
+  /** Where the pixels of image objects come from and how new ones reach the relay (src/board-images.ts). */
+  readonly images: BoardImages;
+  /** Set by the board UI: gets image files pasted from the clipboard. */
+  onImageFiles: ((files: File[]) => void) | null = null;
 
   constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement) {
     this.store = conn.store;
@@ -130,6 +135,7 @@ export class BoardApp {
     this.editor = new TextEditor(this);
     this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
+    this.images = new BoardImages(this);
 
     const meta = this.store.getMeta();
     this.r.gridType = meta.gridType;
@@ -842,7 +848,7 @@ export class BoardApp {
     if (h.includes('e')) r = lp.x;
     if (h.includes('n')) t = lp.y;
     if (h.includes('s')) b = lp.y;
-    const keepAspect = (e.shiftKey || o0.type === 'icon' || o0.type === 'uml-actor') && h.length === 2;
+    const keepAspect = (e.shiftKey || o0.type === 'icon' || o0.type === 'image' || o0.type === 'uml-actor') && h.length === 2;
     if (keepAspect) {
       const ratio = o0.w / Math.max(o0.h, 1);
       const w = Math.abs(r - l), hh = Math.abs(b - t);
@@ -1095,7 +1101,7 @@ export class BoardApp {
       return;
     }
     if (hit) {
-      if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
+      if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'image' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
         if (hit.type === 'frame') this.editor.start(hit.id);
         return;
       }
@@ -1198,6 +1204,12 @@ export class BoardApp {
     window.addEventListener('paste', (e) => {
       const tgt = e.target as HTMLElement;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (files.length && this.onImageFiles) {
+        e.preventDefault();
+        this.onImageFiles(files);
+        return;
+      }
       const text = e.clipboardData?.getData('text/plain') ?? '';
       if (!text) return;
       e.preventDefault();

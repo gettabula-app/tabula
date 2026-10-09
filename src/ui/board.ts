@@ -1,3 +1,4 @@
+import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
@@ -13,13 +14,13 @@ import { mountComments } from './comments';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
-import { download, exportPng, exportSvg, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
+import { download, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
-import { authState, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
+import { authState, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
 import { boxBounds } from '../geometry';
@@ -127,6 +128,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
+  // Images (docs/images.md): hidden when the server says it keeps none
+  const imageBtn = h('button', { class: 'rail-btn', 'aria-label': 'Image', 'data-tip': 'Add an image', onclick: () => pickImages(app) }, icon('image', 22));
+  imageBtn.hidden = !imagesAvailable();
+  app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
+  app.onImageFiles = (files) => void addImages(app, files);
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
@@ -154,6 +160,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
     toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
     toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+    imageBtn,
     commentBtn,
     h('hr'),
     drawerBtn('UML', 'uml', 'uml'),
@@ -276,11 +283,18 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
   });
   root.addEventListener('drop', async (e) => {
-    const file = e.dataTransfer?.files?.[0];
-    if (!file) return;
+    const files = [...(e.dataTransfer?.files ?? [])];
+    if (!files.length) return;
     e.preventDefault();
     if (app.readOnly) return;
-    await importInto(app, file);
+    // pictures go on the board where they were dropped; a board file still opens as before
+    const pictures = files.filter((f) => f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name));
+    if (pictures.length) {
+      if (!imagesAvailable()) toast('This server does not store images.');
+      else await addImages(app, pictures, app.r.clientToWorld(e.clientX, e.clientY));
+      return;
+    }
+    await importInto(app, files[0]);
   });
 }
 
@@ -467,7 +481,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
         toast((e as Error).message);
       }
     }),
-    item('download', 'SVG vector', () => download(exportSvg(app, sel).svg, `${name()}.svg`, 'image/svg+xml')),
+    item('download', 'SVG vector', async () => download(await exportSvgFile(app, sel), `${name()}.svg`, 'image/svg+xml')),
     item('download', 'Board file (.drift)', () => download(toDrift(app), `${name()}.drift`, 'application/zip'), 'Board with its sync data'),
     item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),

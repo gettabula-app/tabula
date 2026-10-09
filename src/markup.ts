@@ -1,6 +1,7 @@
 // Pure SVG markup for board objects. Used by the live renderer and by SVG/PNG export.
 
 import type { BaseObj, ConnectorObj, Obj, Point, VAlign } from './types';
+import { FAILED_LABEL, type ImageState } from './image-loader';
 import { isConnector } from './types';
 import { connectorGeom, pathPoints, type ConnectorLayout } from './geometry';
 import { headMarkup, shapeDecor, shapePath, textBox } from './shapes';
@@ -18,6 +19,8 @@ export interface MarkupCtx {
   editingId?: string | null;
   /** Where each connector end sits among the ends on the same side of its shape; called only when a connector is drawn. */
   layout?: () => ConnectorLayout;
+  /** What there is to draw for an image object: its pixels, or why not yet (src/image-loader.ts). Without it an image draws as its placeholder. */
+  imageState?: (o: BaseObj) => ImageState;
 }
 
 const n = (v: number) => Math.round(v * 100) / 100;
@@ -214,6 +217,25 @@ function frameMarkup(o: BaseObj) {
   );
 }
 
+/** An image: its pixels through `<image>` (never as markup, so nothing in the file can run), or a placeholder that says why not. */
+function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const state: ImageState = ctx.imageState?.(o) ?? { kind: 'loading' };
+  const w = n(o.w);
+  const h = n(o.h);
+  const title = o.alt ? `<title>${escapeXml(o.alt)}</title>` : '';
+  if (state.kind === 'ok') {
+    return wrapG(o, `${title}<image href="${escapeXml(state.url)}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none"/>`, 1);
+  }
+  const label = state.kind === 'loading' ? 'Loading' : FAILED_LABEL[state.why];
+  const size = o.nw && o.nh ? `${Math.round(o.nw)} × ${Math.round(o.nh)}` : '';
+  const fs = Math.max(10, Math.min(14, o.w / 12));
+  const lines = [label, size].filter(Boolean);
+  const text = o.w >= 80 && o.h >= 40
+    ? lines.map((t, i) => `<text x="${n(o.w / 2)}" y="${n(o.h / 2 + (i - (lines.length - 1) / 2) * fs * 1.4)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs)}" style="fill:var(--graphite, #5B6672)">${escapeXml(t)}</text>`).join('')
+    : '';
+  return wrapG(o, `${title}<rect x="0" y="0" width="${w}" height="${h}" style="fill:color-mix(in srgb, var(--graphite, #5B6672) 12%, var(--paper, #FFFFFF));stroke:var(--rule, #D5DBE2)" stroke-width="1" stroke-dasharray="4 3"/>${text}`, 1);
+}
+
 function iconMarkup(o: BaseObj) {
   const s = styleOf(o);
   const vb = o.viewBox || [0, 0, 24, 24];
@@ -399,6 +421,7 @@ export function objectMarkup(o: Obj, ctx: MarkupCtx): string {
     case 'text': return textMarkup(o, ctx);
     case 'frame': return frameMarkup(o);
     case 'icon': return iconMarkup(o);
+    case 'image': return imageMarkup(o, ctx);
     case 'path': return pathMarkup(o);
     default:
       if (o.type.startsWith('uml-')) return umlMarkup(o, ctx);

@@ -95,6 +95,7 @@ export function toTemplateContent(
   opts: ToTemplateOptions,
   lookup?: (id: Id) => Obj | undefined,
 ): TemplateContent {
+  objs = objs.filter((o) => o.type !== 'image');
   const idMap = new Map<Id, Id>();
   objs.forEach((o, i) => idMap.set(o.id, `o${i + 1}`));
   const resolveOutside = (id: Id): Point | null => {
@@ -166,11 +167,15 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
 }
 
 const OBJ_TYPES: Record<ObjType, true> = {
-  shape: true, sticky: true, text: true, frame: true, icon: true, path: true, connector: true,
+  shape: true, sticky: true, text: true, frame: true, icon: true, image: true, path: true, connector: true,
   'uml-class': true, 'uml-actor': true, 'uml-usecase': true, 'uml-lifeline': true, 'uml-note': true,
   'uml-package': true, 'uml-state': true, 'uml-initial': true, 'uml-final': true, 'uml-component': true,
 };
-const TYPE_NAMES = new Set<string>(Object.keys(OBJ_TYPES));
+// A template never holds an image: its bytes are readable only through the board that has them (docs/images.md, Templates).
+const TYPE_NAMES = new Set<string>(Object.keys(OBJ_TYPES).filter((t) => t !== 'image'));
+
+/** How many of these objects a template would leave out because they are images. */
+export const imagesLeftOut = (objs: Obj[]) => objs.filter((o) => o.type === 'image').length;
 
 const STEP_MODES: Record<StepMode, true> = {
   write: true, 'private-write': true, cluster: true, vote: true, discuss: true, poll: true,
