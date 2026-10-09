@@ -40,6 +40,7 @@ import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './a
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
+import { createSourceGate } from './source-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -803,6 +804,13 @@ function noteOpenWrite(req, res) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
+    // TAB-103: with TABULA_SOURCE_POLICY=proxy only loopback and Fly's proxy range may talk to this instance. The health
+    // check is left open, because the platform's own check may not come from either.
+    if (!sourceGate.allows(req.socket.remoteAddress) && !(req.method === 'GET' && url.pathname === '/api/health')) {
+      sourceGate.refused(req.socket.remoteAddress);
+      req.socket.destroy();
+      return;
+    }
     if (url.pathname === '/mcp' && maintenance) {
       res.setHeader('retry-after', '30');
       sendJson(res, 503, { error: 'restoring' });
@@ -845,6 +853,7 @@ async function onRequest(req, res) {
   }
 }
 
+const sourceGate = createSourceGate(config.sourcePolicy, { log });
 const server = http.createServer(onRequest);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
 // The /chat socket (docs/chat.md): small JSON frames only, so a much smaller limit than the Yjs rooms.
@@ -971,6 +980,11 @@ if (config.authEnabled) {
 }
 
 server.on('upgrade', (req, socket, head) => {
+  if (!sourceGate.allows(socket.remoteAddress)) {
+    sourceGate.refused(socket.remoteAddress);
+    socket.destroy();
+    return;
+  }
   // Before anything else: a page on another origin (for example a sibling workspace subdomain) must not ride the cookie.
   if (config.authEnabled && req.headers.origin !== config.origin) {
     socket.on('error', () => socket.destroy());

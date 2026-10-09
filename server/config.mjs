@@ -1,3 +1,4 @@
+import { loadSourcePolicy } from './source-policy.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withLegacyEnv } from './env.mjs';
@@ -243,6 +244,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',
     clientIpHeader: loadClientIpHeader(env, warn),
+    sourcePolicy: loadSourcePolicy(env),
     cookieName: secureCookies ? '__Host-tabula_session' : 'tabula_session',
     sessionMs,
     loginTokenMs: 15 * 60 * 1000,
