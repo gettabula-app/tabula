@@ -29,4 +29,9 @@ describe('the session bar on a phone (TAB-240, TAB-241)', () => {
     expect(rule('.flowbar .flow-step')).toMatch(/flex: 1 1 100%[^}]*min-width: 0/);
     expect(rule('.flowbar .step-instr')).toContain('white-space: normal');
   });
+
+  it('puts the poll question and the answered counter on rows of their own (poll steps)', () => {
+    expect(rule('.flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary')).toContain('flex-basis: 100%');
+    expect(css).toMatch(/\.flowbar > \.flow-idle, \.flowbar > \.flow-results, \.flowbar > \.poll-summary \{[^}]*min-width: 0/);
+  });
 });
