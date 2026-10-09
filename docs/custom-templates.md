@@ -29,8 +29,11 @@ interface TemplateContent {
   steps: Step[];              // session steps whose frameId points into `objects`, or none
   bounds: Rect;               // bounding box of `objects`, after normalising (x = y = 0)
   fonts?: { heading: string; body: string };  // board fonts at save time, applied only to a new board
+  labels?: { id: string; name: string; color: string }[];  // the labels its kanban cards use (docs/kanban.md, Templates)
 }
 ```
+
+Kanbans (`container`, `lane`, `card`, docs/kanban.md) are checked field by field on both sides by one shared function (`templateKanbanFields` in `shared/containers.mjs`): a lane sits in a kanban of the template and a card in a lane of it or nowhere, each rank names its parent, card labels come from the template's `labels`, colours go through `kanbanColor`, text has the kanban limits, and owners, due dates and the reserved tracker fields are refused. Saving strips those, keeps the labels the cards use (renumbered `l1`, `l2`, …), and on use the labels merge by name into the board's (an existing label with the same name wins) in the same undo step as the objects.
 
 The objects use the board's own `Obj` shape, so rendering, export and paste need no new code paths.
 
