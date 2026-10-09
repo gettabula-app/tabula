@@ -51,7 +51,7 @@ export const CHAT_MIGRATIONS = [
 ];
 
 // Workspace settings for chat live in the directory's `settings` table with the others (docs/chat.md, Interface).
-export const CHAT_SETTING_KEYS = Object.freeze({ viewersMayPost: 'chat.viewersMayPost', retentionDays: 'chat.retentionDays' });
+export const CHAT_SETTING_KEYS = Object.freeze({ viewersMayPost: 'chat.viewersMayPost', retentionDays: 'chat.retentionDays', workspaceChannel: 'chat.workspaceChannel' });
 /** Keep chat messages: one year unless an administrator chooses otherwise. null is "forever". */
 export const RETENTION_CHOICES = [365, 90, 30, null];
 export const DEFAULT_RETENTION_DAYS = 365;
@@ -62,6 +62,8 @@ export function readChatSettings(directory) {
   const days = retention === 'forever' ? null : Number(retention);
   return {
     viewersMayPost: directory.getSetting(CHAT_SETTING_KEYS.viewersMayPost) === '1',
+    // the workspace channel is on until an administrator turns it off
+    workspaceChannel: directory.getSetting(CHAT_SETTING_KEYS.workspaceChannel) !== '0',
     retentionDays: retention === null || !RETENTION_CHOICES.includes(days) ? DEFAULT_RETENTION_DAYS : days,
   };
 }
@@ -318,6 +320,37 @@ export function openChat(file) {
     });
   }
 
+  /**
+   * One batch of the retention job (docs/chat.md, Retention): deletes up to `limit` messages created before `cutoff`
+   * (milliseconds since the epoch) with their mentions and reactions, oldest first. Returns how many went, so the caller
+   * can go on until it is 0, with a pause between batches so it never holds the database for long.
+   */
+  function purgeBefore(cutoff, limit = 1000) {
+    return transaction(() => {
+      const ids = all('SELECT id FROM chat_messages WHERE created_at < ? ORDER BY id LIMIT ?', cutoff, limit).map((r) => Number(r.id));
+      if (ids.length === 0) return 0;
+      const marks = ids.map(() => '?').join(', ');
+      db.prepare(`DELETE FROM chat_mentions WHERE message_id IN (${marks})`).run(...ids);
+      db.prepare(`DELETE FROM chat_reactions WHERE message_id IN (${marks})`).run(...ids);
+      db.prepare(`DELETE FROM chat_messages WHERE id IN (${marks})`).run(...ids);
+      return ids.length;
+    });
+  }
+
+  /**
+   * The newest message time and id of each channel of one kind that has any (deleted ones do not count), for sorting the
+   * channel list. `since` leaves out channels whose newest message is older.
+   * @returns {Map<string, { lastAt: number, top: number }>}
+   */
+  function activity(kind, since = 0) {
+    const rows = all(
+      `SELECT ref, MAX(created_at) AS last_at, MAX(id) AS top FROM chat_messages
+        WHERE kind = ? AND deleted_at IS NULL GROUP BY ref HAVING MAX(created_at) >= ?`,
+      kind, since,
+    );
+    return new Map(rows.map((r) => [r.ref, { lastAt: Number(r.last_at), top: Number(r.top) }]));
+  }
+
   return {
     close() {
       if (closed) return;
@@ -336,5 +369,7 @@ export function openChat(file) {
     markRead,
     channelUnread,
     unreadSummary,
+    purgeBefore,
+    activity,
   };
 }

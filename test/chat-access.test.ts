@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatAccess } from '../server/chat-access.mjs';
+import { WORKSPACE_REF, boundAccess, chatAccess } from '../server/chat-access.mjs';
 
 // docs/chat.md, "Channels and who may do what", for board channels. The directory is a table here: boardRole answers
 // what the real directory would for each person (workspace owners and admins are owners of every board, guests only
@@ -104,9 +104,8 @@ describe('channels that do not exist', () => {
     ['a board id that is not a string', 'board', 42],
     ['an unknown kind', 'room', BOARD],
     ['a kind that is not a string', null, BOARD],
-    // team and workspace channels are a later slice: they do not exist yet for anyone
-    ['a team channel', 'team', 'team1'],
-    ['the workspace channel', 'workspace', ''],
+    ['a team channel when the directory knows no teams', 'team', 'team1'],
+    ['the workspace channel under a ref it does not have', 'workspace', ''],
   ])('%s is null even for the workspace owner', (_name, kind, ref) => {
     expect(chatAccess(owner, kind, ref, deps())).toBeNull();
   });
@@ -122,5 +121,129 @@ describe('channels that do not exist', () => {
     const counting = { ...deps(), getBoard: () => (asked++, { deletedAt: null }), boardRole: () => (asked++, 'owner' as const) };
     chatAccess(owner, 'board', '../etc', counting);
     expect(asked).toBe(0);
+  });
+});
+
+// ------------------------------------------------------------------ team channels
+
+const TEAM = 'team1';
+const ARCHIVED = 'old1';
+const teamRoles: Record<string, string | null> = { 'u-tadmin': 'admin', 'u-tmember': 'member', 'u-guest-t': 'member' };
+const teamDeps = (extra: { readOnly?: boolean } = {}) => ({
+  ...deps(),
+  getTeam: (id: string) => (id === TEAM ? { archived: false } : id === ARCHIVED ? { archived: true } : null),
+  teamRole: (teamId: string, userId: string) => (teamId === TEAM || teamId === ARCHIVED ? (teamRoles[userId] ?? null) : null),
+  ...extra,
+});
+const team = (user: Person, extra?: { readOnly?: boolean }, ref = TEAM) => {
+  const a = chatAccess(user, 'team', ref, teamDeps(extra));
+  return a ? { read: a.read, write: a.write, moderate: a.moderate } : null;
+};
+const who = (id: string, role = 'member', disabled = false): Person => ({ id, role, ...(disabled ? { disabled } : {}) });
+
+describe('chatAccess on a team channel', () => {
+  it('lets members read and write, and team admins moderate', () => {
+    expect(team(who('u-tmember'))).toEqual(RW);
+    expect(team(who('u-tadmin'))).toEqual(RWM);
+  });
+
+  it('lets a guest who is a member of the team take part', () => {
+    expect(team(who('u-guest-t', 'guest'))).toEqual(RW);
+  });
+
+  it('lets workspace owners and admins read and moderate without writing unless they belong to the team', () => {
+    expect(team(who('u-owner', 'owner'))).toEqual({ read: true, write: false, moderate: true });
+    expect(team(who('u-admin', 'admin'))).toEqual({ read: true, write: false, moderate: true });
+  });
+
+  it('lets a workspace admin who is a team member write', () => {
+    teamRoles['u-admin-member'] = 'member';
+    expect(team(who('u-admin-member', 'admin'))).toEqual(RWM);
+    delete teamRoles['u-admin-member'];
+  });
+
+  it('hides the channel from people who are not in the team, and from guests who are not members', () => {
+    expect(team(who('u-outsider'))).toBeNull();
+    expect(team(who('u-guest-x', 'guest'))).toBeNull();
+  });
+
+  it('is gone for a disabled person, even a workspace owner', () => {
+    expect(team(who('u-tmember', 'member', true))).toBeNull();
+    expect(team(who('u-owner', 'owner', true))).toBeNull();
+  });
+
+  it('is read-only for everyone when the team is archived, and moderators can still remove messages', () => {
+    expect(team(who('u-tmember'), undefined, ARCHIVED)).toEqual(R);
+    expect(team(who('u-tadmin'), undefined, ARCHIVED)).toEqual({ read: true, write: false, moderate: true });
+  });
+
+  it('keeps reading and refuses writing and moderating in a read-only workspace', () => {
+    expect(team(who('u-tmember'), { readOnly: true })).toEqual(R);
+    expect(team(who('u-tadmin'), { readOnly: true })).toEqual(R);
+    expect(team(who('u-owner', 'owner'), { readOnly: true })).toEqual(R);
+  });
+
+  it('does not exist for an unknown team or a malformed id', () => {
+    expect(team(who('u-owner', 'owner'), undefined, 'nope')).toBeNull();
+    expect(team(who('u-owner', 'owner'), undefined, 'a/b')).toBeNull();
+    expect(team(who('u-owner', 'owner'), undefined, '')).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ the workspace channel
+
+const workspace = (user: Person, extra: { readOnly?: boolean; workspaceChannel?: boolean } = {}, ref: unknown = WORKSPACE_REF) => {
+  const a = chatAccess(user, 'workspace', ref, { ...deps(), ...extra });
+  return a ? { read: a.read, write: a.write, moderate: a.moderate } : null;
+};
+
+describe('chatAccess on the workspace channel', () => {
+  it.each<[string, string, Expect]>([
+    ['owner', 'owner', RWM],
+    ['admin', 'admin', RWM],
+    ['member', 'member', RW],
+    ['guest', 'guest', null],
+  ])('%s', (_name, role, expected) => {
+    expect(workspace(who('u1', role))).toEqual(expected);
+  });
+
+  it('is gone when an administrator has switched it off', () => {
+    expect(workspace(who('u1', 'owner'), { workspaceChannel: false })).toBeNull();
+    expect(workspace(who('u1', 'member'), { workspaceChannel: false })).toBeNull();
+  });
+
+  it('is on unless the setting says otherwise', () => {
+    expect(workspace(who('u1', 'member'), { workspaceChannel: true })).toEqual(RW);
+  });
+
+  it('is read-only in a read-only workspace', () => {
+    expect(workspace(who('u1', 'member'), { readOnly: true })).toEqual(R);
+    expect(workspace(who('u1', 'owner'), { readOnly: true })).toEqual(R);
+  });
+
+  it('is gone for a disabled person and under any ref but its own', () => {
+    expect(workspace(who('u1', 'owner', true))).toBeNull();
+    expect(workspace(who('u1', 'owner'), {}, '')).toBeNull();
+    expect(workspace(who('u1', 'owner'), {}, 'other')).toBeNull();
+    expect(workspace(who('u1', 'owner'), {}, 5)).toBeNull();
+  });
+});
+
+describe('boundAccess', () => {
+  const directory = {
+    getBoard: () => null,
+    boardRole: () => null,
+    getTeam: (id: string) => (id === TEAM ? { archived: false } : null),
+    getTeamRole: (_team: string, userId: string) => (userId === 'u-tmember' ? 'member' : null),
+  };
+
+  it('asks the directory and the settings afresh each time', () => {
+    let channel = true;
+    const access = boundAccess({ directory, settings: () => ({ viewersMayPost: false, workspaceChannel: channel }) });
+    expect(access(who('u-tmember'), 'team', TEAM)?.write).toBe(true);
+    expect(access(who('u-outsider'), 'team', TEAM)).toBeNull();
+    expect(access(who('u-tmember'), 'workspace', WORKSPACE_REF)?.write).toBe(true);
+    channel = false;
+    expect(access(who('u-tmember'), 'workspace', WORKSPACE_REF)).toBeNull();
   });
 });

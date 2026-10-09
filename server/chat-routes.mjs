@@ -3,7 +3,7 @@
 // dispatch. Author, time and order come from the session and the server; a request body names only the text and
 // what it points at. A channel the caller cannot read is a 404, never a 403.
 
-import { CHAT_KINDS } from './chat-access.mjs';
+import { CHAT_KINDS, WORKSPACE_REF } from './chat-access.mjs';
 import { CHAT_SETTING_KEYS, RETENTION_CHOICES, readChatSettings } from './chat.mjs';
 import { checkText, isClientId, isObjectId, resolveMentions } from './chat-text.mjs';
 
@@ -11,7 +11,10 @@ export const CHAT_BODY_LIMIT = 16 * 1024;
 const PAGE_DEFAULT = 50;
 const PAGE_MAX = 100;
 const ID_RE = /^[1-9]\d{0,14}$/;
-const SETTINGS_FIELDS = ['viewersMayPost', 'retentionDays'];
+const SETTINGS_FIELDS = ['viewersMayPost', 'retentionDays', 'workspaceChannel'];
+/** Boards show in the channel list while their chat has had a message this recently. */
+export const RECENT_BOARD_MS = 14 * 24 * 60 * 60 * 1000;
+const WORKSPACE_NAME = 'Workspace';
 const FORMER_MEMBER = 'Former member';
 
 const TEXT_ERRORS = {
@@ -30,9 +33,10 @@ const TEXT_ERRORS = {
  * @param {Function} deps.compile
  * @param {Function} deps.audit
  * @param {Function} deps.requireAdmin
+ * @param {(name: string, payload?: object) => void} [deps.emit] the API's event emitter (access-changed after a setting)
  * @param {{ HttpError: any, badRequest: Function, forbidden: Function, notFound: Function, conflict: Function }} deps.errors
  */
-export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, errors }) {
+export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, emit = () => {}, errors }) {
   const { HttpError, badRequest, forbidden, notFound, conflict } = errors;
   const hidden = () => notFound('Channel not found');
 
@@ -232,7 +236,16 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
     compile('GET', 'chat/unread', {}, ({ res, user }) => {
       const wait = limits.unread(user.id);
       if (wait) throw limited(res, wait);
-      return [200, { channels: unreadSummary({ directory, store, user }) }];
+      return [200, { channels: unreadSummary({ directory, store, user, access }) }];
+    }),
+
+    // The channels this person can talk in, for the Chat page (docs/chat.md, API): the workspace channel, their teams (and,
+    // for workspace owners and admins, the others), and boards whose chat has had a message in the last 14 days, each with
+    // its unread counts and when it last had a message. Names only; nothing in it the person could not already read.
+    compile('GET', 'chat/channels', {}, ({ res, user }) => {
+      const wait = limits.unread(user.id);
+      if (wait) throw limited(res, wait);
+      return [200, { channels: channelList({ directory, store, access, user }) }];
     }),
 
     compile('GET', 'admin/chat', {}, ({ user }) => {
@@ -253,19 +266,77 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
         if (!RETENTION_CHOICES.includes(body.retentionDays)) throw badRequest('retentionDays must be 365, 90, 30 or null (forever)');
         patch.retentionDays = body.retentionDays;
       }
+      if (body.workspaceChannel !== undefined) {
+        if (typeof body.workspaceChannel !== 'boolean') throw badRequest('workspaceChannel must be a boolean');
+        patch.workspaceChannel = body.workspaceChannel;
+      }
       if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
       directory.transaction(() => {
         if (patch.viewersMayPost !== undefined) directory.setSetting(CHAT_SETTING_KEYS.viewersMayPost, patch.viewersMayPost ? '1' : '0');
         if (patch.retentionDays !== undefined) directory.setSetting(CHAT_SETTING_KEYS.retentionDays, patch.retentionDays ?? 'forever');
+        if (patch.workspaceChannel !== undefined) directory.setSetting(CHAT_SETTING_KEYS.workspaceChannel, patch.workspaceChannel ? '1' : '0');
         audit(user, 'chat.settings', patch);
       });
+      // switching the workspace channel off or on changes who may read it: sockets look again
+      if (patch.workspaceChannel !== undefined) emit('access-changed', {});
       return [200, readChatSettings(directory)];
     }),
   ];
 }
 
-/** The unread summary of a person: board channels they can read with something unread. Shared with the hub. */
-export function unreadSummary({ directory, store, user }) {
-  const refs = directory.listBoardsFor(user).map((b) => b.id);
-  return store().unreadSummary(user.id, 'board', refs);
+/** The channels of a person that can have unread messages: board chats they can read, their teams, the workspace channel. */
+function readableChannels({ directory, access, user }) {
+  const out = directory.listBoardsFor(user).map((b) => ({ kind: 'board', ref: b.id }));
+  for (const team of directory.listTeamsFor(user.id)) out.push({ kind: 'team', ref: team.id });
+  if (access?.(user, 'workspace', WORKSPACE_REF)?.read) out.push({ kind: 'workspace', ref: WORKSPACE_REF });
+  return out;
+}
+
+/** The unread summary of a person: channels they can read with something unread. Shared with the hub. */
+export function unreadSummary({ directory, store, user, access = null }) {
+  const byKind = new Map();
+  for (const { kind, ref } of readableChannels({ directory, access, user })) {
+    if (!byKind.has(kind)) byKind.set(kind, []);
+    byKind.get(kind).push(ref);
+  }
+  const out = [];
+  for (const [kind, refs] of byKind) out.push(...store().unreadSummary(user.id, kind, refs));
+  return out;
+}
+
+/**
+ * What the Chat page lists (GET /api/chat/channels). `member` is false for a team a workspace owner or admin may read
+ * without belonging to it. Boards appear only while their chat is recent, so the list stays short.
+ */
+export function channelList({ directory, store, access, user, now = Date.now() }) {
+  const s = store();
+  const channels = [];
+  const add = (kind, ref, extra) => {
+    const can = access(user, kind, ref);
+    if (!can?.read) return;
+    const state = s.channelUnread(user.id, kind, ref);
+    channels.push({ kind, ref, ...extra, write: can.write, unread: state.unread, mentions: state.mentions, lastId: state.lastId });
+  };
+  const teamActivity = s.activity('team');
+  const workspaceActivity = s.activity('workspace');
+  if (access(user, 'workspace', WORKSPACE_REF)?.read) {
+    add('workspace', WORKSPACE_REF, { name: WORKSPACE_NAME, lastAt: workspaceActivity.get(WORKSPACE_REF)?.lastAt ?? null });
+  }
+  const mine = new Set();
+  for (const team of directory.listTeamsFor(user.id)) {
+    mine.add(team.id);
+    add('team', team.id, { name: team.name, archived: team.archived, member: true, lastAt: teamActivity.get(team.id)?.lastAt ?? null });
+  }
+  if (user.role === 'owner' || user.role === 'admin') {
+    for (const team of directory.listAllTeams(user.id)) {
+      if (mine.has(team.id)) continue;
+      add('team', team.id, { name: team.name, archived: team.archived, member: false, lastAt: teamActivity.get(team.id)?.lastAt ?? null });
+    }
+  }
+  const recent = s.activity('board', now - RECENT_BOARD_MS);
+  for (const board of directory.listBoardsFor(user)) {
+    const a = recent.get(board.id);
+    if (a) add('board', board.id, { name: board.title || 'Untitled board', lastAt: a.lastAt });
+  }
+  return channels;
 }

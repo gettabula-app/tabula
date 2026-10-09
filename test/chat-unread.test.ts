@@ -149,12 +149,17 @@ describe('chat settings', () => {
   const dir = (values: Record<string, string>) => ({ getSetting: (key: string) => values[key] ?? null });
 
   it('default to viewers reading only and keeping messages for a year', () => {
-    expect(readChatSettings(dir({}))).toEqual({ viewersMayPost: false, retentionDays: 365 });
+    expect(readChatSettings(dir({}))).toEqual({ viewersMayPost: false, retentionDays: 365, workspaceChannel: true });
+  });
+
+  it('keep the workspace channel on until it is switched off', () => {
+    expect(readChatSettings(dir({ 'chat.workspaceChannel': '0' })).workspaceChannel).toBe(false);
+    expect(readChatSettings(dir({ 'chat.workspaceChannel': '1' })).workspaceChannel).toBe(true);
   });
 
   it('read what was stored, and fall back on a value that is not a choice', () => {
-    expect(readChatSettings(dir({ 'chat.viewersMayPost': '1', 'chat.retentionDays': '30' }))).toEqual({ viewersMayPost: true, retentionDays: 30 });
-    expect(readChatSettings(dir({ 'chat.retentionDays': 'forever' }))).toEqual({ viewersMayPost: false, retentionDays: null });
-    expect(readChatSettings(dir({ 'chat.retentionDays': '7' }))).toEqual({ viewersMayPost: false, retentionDays: 365 });
+    expect(readChatSettings(dir({ 'chat.viewersMayPost': '1', 'chat.retentionDays': '30' }))).toEqual({ viewersMayPost: true, retentionDays: 30, workspaceChannel: true });
+    expect(readChatSettings(dir({ 'chat.retentionDays': 'forever' }))).toEqual({ viewersMayPost: false, retentionDays: null, workspaceChannel: true });
+    expect(readChatSettings(dir({ 'chat.retentionDays': '7' }))).toEqual({ viewersMayPost: false, retentionDays: 365, workspaceChannel: true });
   });
 });

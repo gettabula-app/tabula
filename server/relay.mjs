@@ -145,6 +145,7 @@ let buildApi = null;
 let chat = null;
 let chatHub = null;
 let chatStore = null;
+let chatRetention = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -159,11 +160,12 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
       import('./chat-routes.mjs'),
+      import('./chat-retention.mjs'),
     ]);
     const store = () => {
       if (maintenance) throw new Error('the workspace is being restored');
@@ -174,13 +176,15 @@ if (config.authEnabled) {
       auth,
       directory,
       access,
-      summary: (user) => unreadSummary({ directory, store, user }),
+      summary: (user) => unreadSummary({ directory, store, user, access }),
       channelUnread: (userId, kind, ref) => store().channelUnread(userId, kind, ref),
       events,
       readOnly: cloud?.limits().readOnly === true,
       log,
     });
     chat = { store, access, hub: chatHub };
+    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
+    chatRetention.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
@@ -294,6 +298,7 @@ async function enterMaintenance() {
   // Chat sockets go too, and chat.sqlite is closed so the restore can move it (Windows will not move an open file).
   chatHub?.closeAll(CLOSE_RESTORING, 'restoring');
   chatHub?.stop();
+  chatRetention?.stop();
   closeChat();
   saveAllRooms();
   roomsFrozen = true;
@@ -1044,6 +1049,7 @@ async function stopRelay() {
   restore?.stop();
   history.close();
   chatHub?.stop();
+  chatRetention?.stop();
   if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
   closeChat();
   directory?.close();
