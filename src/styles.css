@@ -9,6 +9,8 @@
   --rule: #D5DBE2;
   --signal: #FFD23F;
   --wire: #2F6FED;
+  --selection-handle-fill: var(--paper);
+  --selection-handle-stroke: var(--wire);
   --danger: #D41E24;
   --on-signal: #18212B;
   --canvas-ink: #18212B;

@@ -33,6 +33,11 @@ const sticky = (id: Id, z: string, parent: Id, x: number): Obj => ({
   id, type: 'sticky', x, y: 20, w: 80, h: 60, rotation: 0, z, parent, text: id,
 });
 
+function expectThemePaints(out: string) {
+  const paints = [...out.matchAll(/\b(?:fill|stroke)="([^"]+)"/g)].map((match) => match[1]);
+  expect(paints.filter((paint) => paint !== 'none' && !/^var\(--[\w-]+\)$/.test(paint))).toEqual([]);
+}
+
 describe('group renderer overlays', () => {
   let store: Store;
   let renderer: Renderer;
@@ -99,6 +104,26 @@ describe('group renderer overlays', () => {
     drawOverlay();
     expect(svg()).toContain('stroke="var(--group-hover)"');
     expect(svg()).not.toContain('#');
+  });
+
+  it('uses theme tokens for single-item selection outlines and handles', () => {
+    renderer.setOverlay({ selection: ['a'] });
+    drawOverlay();
+    const out = svg();
+    expect(out).toContain('stroke="var(--wire)"');
+    expect(out).toContain('stroke="var(--selection-handle-stroke)"');
+    expect(out).toContain('fill="var(--selection-handle-fill)"');
+    expectThemePaints(out);
+  });
+
+  it('uses theme tokens for connection anchors', () => {
+    renderer.setOverlay({ anchorsFor: 'a', anchorHot: 'a:top' });
+    drawOverlay();
+    const out = svg();
+    expect(out).toContain('fill="var(--wire)"');
+    expect(out).toContain('fill="var(--selection-handle-fill)"');
+    expect(out).toContain('stroke="var(--wire)"');
+    expectThemePaints(out);
   });
 
   it('lifts a lock hover to the outermost locked group and uses the tray badge tokens', () => {
