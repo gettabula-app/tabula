@@ -26,14 +26,18 @@ Facts here come from `tabula-cloud/docs/spec.md` and `first-deploy.md`, and from
 
 The checkout URLs go live after the next control-plane deploy. Until then Checkout still returns to the workspace address; note which it does and do not file it as a bug.
 
-The site's form posts to `POST API/v1/signup` with `{email, workspaceName, slug, region, interval?, seats?}` and asks `GET API/v1/slugs/<slug>` while you type. Its fields are workspace name, an editable slug, email, plan (month or year), seats (at least 3) and region (eu or us). Confirm the exact labels with designer once the site is up. The sign-in mail goes to the owner email used at signup.
+The site's form posts to `POST API/v1/signup` with `{email, workspaceName, slug, region, interval?, seats?}` and asks `GET API/v1/slugs/<slug>` while you type. Its fields are workspace name, an editable slug, email, plan (month or year), seats (with a minimum) and region (eu or us). Confirm the exact labels with designer once the site is up. The sign-in mail goes to the owner email used at signup.
+
+## Before T1: smoke the site
+
+Run the headless smoke of `SITE` first (`/`, `/signup`, `/docs`, `/privacy` at 1280 and 390 px; type slugs in the form but do not submit). Check there are no console errors or failed requests, in particular no CORS error on the live slug check (TAB-235: the control plane has to answer `OPTIONS` and send `Access-Control-Allow-Origin: https://gettabula.app` on `/v1/signup` and `/v1/slugs/*`). If the slug check shows "We could not check the address just now" for a free slug, stop and report: the signup post will fail the same way.
 
 ## T1. Happy path
 
 Needs permission to create one workspace.
 
 1. Open `SITE` at 1280 px wide. Check: the page loads over https, has one clear sign-up action, prices and the 7-day trial are stated, no console errors, no failed requests.
-2. Choose the sign-up action. Check: the form asks for workspace name, an editable slug, email, plan (month or year), seats and region (eu or us). Seats start at 3 and cannot go below 3. Typing a workspace name proposes a slug that you can edit.
+2. Choose the sign-up action. Check: the form asks for workspace name, an editable slug, email, plan (month or year), seats and region (eu or us). Seats start at the plan's minimum (2 at the time of writing; pricing and the minimum may change) and cannot go below it, and the page, the form and Checkout agree on that number. Typing a workspace name proposes a slug that you can edit.
 3. Type the slug slowly. Check: the form tells you live whether it is free (it asks `GET /v1/slugs/:slug`), and the message names the rule when it is not.
 4. Fill in: owner email, workspace name, slug `e2e-<date>`, region EU. Submit. Check: you go to a Stripe Checkout page (a `checkout.stripe.com` address in test mode, with the test-mode badge), not an error. The page shows a 7-day trial, the seat quantity and the amount due now (0 for the trial).
 5. Pay with the test card. Check: Checkout returns you to `SITE/signup/success?slug=<slug>` (before the next control-plane deploy: to `WS/`), a page that says the workspace is being set up, not a blank page or an error.
