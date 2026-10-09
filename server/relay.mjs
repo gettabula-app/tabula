@@ -280,7 +280,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -432,8 +432,11 @@ class Room {
     const bytes = Y.encodeStateAsUpdate(this.doc);
     fs.writeFileSync(tmp, bytes);
     fs.renameSync(tmp, this.file);
-    if (directory && this.kind === 'board' && this.dirty) {
-      this.dirty = false;
+    // `changed`: something was edited since the last save. A save that only rewrites the same state (a room that is
+    // unloaded, the save at shutdown) is not a change for the backups.
+    const changed = this.dirty;
+    this.dirty = false;
+    if (directory && this.kind === 'board' && changed) {
       try {
         const title = this.doc.getMap('meta').get('name');
         directory.touchBoard(this.name, typeof title === 'string' && title.trim() ? { title } : {});
@@ -442,6 +445,7 @@ class Room {
       }
     }
     history.onSave(this, bytes);
+    if (changed) backup?.noteChange();
   }
 
   join(ws) {
@@ -768,6 +772,12 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// Open mode has no api.mjs to notice a write: its image and version-history routes tell the backups themselves.
+function noteOpenWrite(req, res) {
+  const method = String(req.method).toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && res.statusCode < 400) backup?.noteChange();
+}
+
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
@@ -794,7 +804,10 @@ async function onRequest(req, res) {
         await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
       } else if (openAssets && (await openAssets(req, res, url))) {
         // answered: an image upload or download of open mode
-      } else if (!(await history.handleOpen(req, res))) {
+        noteOpenWrite(req, res);
+      } else if (await history.handleOpen(req, res)) {
+        noteOpenWrite(req, res);
+      } else {
         sendJson(res, 404, { error: 'not_found' });
       }
     } else if (url.pathname.startsWith('/icons/')) {
@@ -1053,14 +1066,21 @@ const pinger = setInterval(() => {
   }
 }, PING_MS);
 
-// A backup run in progress is told to stop first and given a moment to let go of the database before it is closed;
-// the rooms are saved while it winds down, and the wait is short so a supervisor's kill timeout is never reached.
+// The rooms are saved first, so the files and the backup's view of the open rooms are final. Then the backup gets
+// TABULA_BACKUP_SHUTDOWN_SECONDS to finish a run in progress and to back up what changed since the last one (a restore
+// holds maintenance and stops the backups itself). Whatever is still running after that is told to stop and given a
+// moment to let go of the database before it is closed; both waits are short, so a supervisor's kill timeout is not reached.
 const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
-  const stopping = backup?.stop();
   saveAllRooms();
+  if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
+    await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
+    // people were still editing while it ran
+    saveAllRooms();
+  }
+  const stopping = backup?.stop();
   restore?.stop();
   history.close();
   chatHub?.stop();

@@ -391,7 +391,7 @@ describe('GET /api/admin/backups/:name/boards', () => {
 });
 
 describe('the engine status in GET /api/admin/backups', () => {
-  const FIELDS = ['bytesStored', 'consecutiveFailures', 'intervalMinutes', 'keyId', 'lastFailureAt', 'lastFailureError', 'lastSuccessAt', 'manifests', 'nextRunAt', 'objects', 'running'];
+  const FIELDS = ['bytesStored', 'consecutiveFailures', 'dirty', 'intervalMinutes', 'keyId', 'lastFailureAt', 'lastFailureError', 'lastSuccessAt', 'lastTrigger', 'manifests', 'nextRunAt', 'objects', 'running'];
 
   it('holds the sanitised fields of the backup status and nothing else', async () => {
     const s = await served();
@@ -400,7 +400,7 @@ describe('the engine status in GET /api/admin/backups', () => {
     const shown = body.status;
     expect(Object.keys(shown).sort()).toEqual(FIELDS);
     expect(shown).toMatchObject({
-      running: false, intervalMinutes: 60, keyId: s.backup.keyId, consecutiveFailures: 0, lastFailureAt: null, lastFailureError: null, nextRunAt: null, manifests: 1,
+      running: false, intervalMinutes: 60, keyId: s.backup.keyId, consecutiveFailures: 0, lastFailureAt: null, lastFailureError: null, nextRunAt: null, manifests: 1, dirty: false, lastTrigger: 'manual',
     });
     expect(shown.lastSuccessAt).toBe(T0);
     expect(shown.bytesStored).toBeGreaterThan(0);
