@@ -17,6 +17,7 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { clientIpOf, clientIpReport } from './client-ip.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -151,17 +152,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
   const audit = (user, action, detail) => directory.audit(user.id, action, detail);
 
-  function clientIp(req) {
-    if (config.trustProxy) {
-      const header = req.headers['x-forwarded-for'];
-      const entries = String(Array.isArray(header) ? header.join(',') : (header ?? ''))
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (entries.length) return entries[entries.length - 1];
-    }
-    return req.socket.remoteAddress ?? 'unknown';
-  }
+  const clientIp = (req) => clientIpOf(req, config);
 
   // Teams a caller cannot see do not exist for them (404); visible but not manageable is 403.
   function teamFor(user, id, { manage = false } = {}) {
@@ -1059,6 +1050,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       ? [
           // Called by the control plane with the bearer token (`internal`), never by a browser.
           compile('GET', 'internal/usage', { internal: true }, () => [200, cloud.seatUsage()]),
+          // TAB-71: which address the rate limits see for this request, to check the proxy setup on a deploy
+          compile('GET', 'internal/client-ip', { internal: true }, ({ req }) => [200, clientIpReport(req, config)]),
           // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {

@@ -38,6 +38,7 @@ import { createLiveRuns } from './ai/live.mjs';
 import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
+import { clientIpOf } from './client-ip.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -238,14 +239,7 @@ const restore = createRestore({
 });
 // Images on a board (docs/images.md): the files are shared by both modes; the index of who may read which is the directory
 // database with accounts and a small JSON file without.
-function clientIp(req) {
-  if (config.trustProxy) {
-    const header = req.headers['x-forwarded-for'];
-    const entries = String(Array.isArray(header) ? header.join(',') : (header ?? '')).split(',').map((v) => v.trim()).filter(Boolean);
-    if (entries.length) return entries[entries.length - 1];
-  }
-  return req.socket.remoteAddress ?? 'unknown';
-}
+const clientIp = (req) => clientIpOf(req, config);
 const assets = config.assets
   ? (() => {
       const dir = path.join(DATA_DIR, 'assets');

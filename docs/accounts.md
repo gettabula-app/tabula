@@ -24,6 +24,7 @@ Tabula was called Mira before. The old `MIRA_<X>` variable names are deprecated 
 | `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `TABULA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
+| `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`, the header that holds the client address: `x-forwarded-for` (rightmost entry) or `fly-client-ip` (Fly; `docs/cloud.md`, Client addresses). Any other value refuses startup |
 
 The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer). Version history is kept as files under `<DATA_DIR>/history/<boardId>/` in both modes (`docs/history.md`).
 

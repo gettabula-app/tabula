@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
+import { clientIpOf } from './client-ip.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
   addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, getObjectsDetail, hiddenIds,
@@ -169,17 +170,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   const lastTouch = new Map();
   const openDigest = open ? sha256(config.mcp.token) : null;
 
-  function clientIp(req) {
-    if (config.trustProxy) {
-      const header = req.headers['x-forwarded-for'];
-      const entries = String(Array.isArray(header) ? header.join(',') : (header ?? ''))
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (entries.length) return entries[entries.length - 1];
-    }
-    return req.socket.remoteAddress ?? 'unknown';
-  }
+  const clientIp = (req) => clientIpOf(req, config);
 
   // ------------------------------------------------------------ who is calling
 

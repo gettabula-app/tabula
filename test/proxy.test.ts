@@ -90,7 +90,15 @@ type ProxyOptions = {
   forwardedProto: 'https' | null;
   /** When false, Host is rewritten to the relay's own address, as nginx does unless told otherwise. */
   preserveHost: boolean;
+  /**
+   * Behave like Fly's edge followed by a `fly-replay` hop (TAB-71): Fly-Client-IP is set to the client (a client's own
+   * value is replaced), and X-Forwarded-For ends with the replaying machine's address, not the client's.
+   */
+  fly?: boolean;
 };
+
+/** The address a `fly-replay` hop appends in the fake Fly setup. */
+const REPLAY_HOP = '172.19.4.2';
 
 /**
  * The address the proxy reports as the client is whatever the test puts in `x-test-client` (the test only ever
@@ -111,6 +119,10 @@ async function startProxy(initial: ProxyOptions) {
     const client = typeof seen === 'string' ? seen : (req.socket.remoteAddress ?? 'unknown');
     delete headers['x-test-client'];
     headers['x-forwarded-for'] = headers['x-forwarded-for'] ? `${headers['x-forwarded-for']}, ${client}` : client;
+    if (options.fly) {
+      headers['fly-client-ip'] = client;
+      headers['x-forwarded-for'] = `${headers['x-forwarded-for']}, ${REPLAY_HOP}`;
+    }
     headers['x-forwarded-host'] = req.headers.host;
     if (options.forwardedProto) headers['x-forwarded-proto'] = options.forwardedProto;
     else delete headers['x-forwarded-proto'];
@@ -479,6 +491,27 @@ describe('behind the same proxy without TABULA_TRUST_PROXY', { timeout: 60_000 }
       loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, ...(value === undefined ? {} : { TABULA_TRUST_PROXY: value }) }, () => {}).trustProxy;
     expect(trust('1')).toBe(true);
     for (const value of [undefined, '', '0', 'true', 'yes', 'on', ' 1']) expect(trust(value)).toBe(false);
+  });
+});
+
+describe('behind Fly with fly-replay (TAB-71)', { timeout: 60_000 }, () => {
+  const ask = (stack: Stack, client: string, headers: Record<string, string> = {}) =>
+    browser(stack.proxy.port, client)('POST', '/api/auth/request', { body: { email: nextEmail() }, headers });
+
+  it('with TABULA_CLIENT_IP_HEADER=fly-client-ip, limits each visitor by the address Fly saw, whatever they send', async () => {
+    const stack = await launch({ ...PROXIED, TABULA_CLIENT_IP_HEADER: 'fly-client-ip' }, { fly: true });
+    const abuser = nextClient();
+    const bystander = nextClient();
+    for (let i = 0; i < 20; i++) expect((await ask(stack, abuser, { 'fly-client-ip': `7.7.7.${i}`, 'x-forwarded-for': `8.8.8.${i}` })).status).toBe(200);
+    expect((await ask(stack, abuser)).status).toBe(429);
+    // the replay hop is in X-Forwarded-For for both, and does not tie them together
+    expect((await ask(stack, bystander, { 'fly-client-ip': abuser })).status).toBe(200);
+  });
+
+  it('with the default X-Forwarded-For, every visitor shares the replay hop\'s address: why the option exists', async () => {
+    const stack = await launch({ ...PROXIED }, { fly: true });
+    for (let i = 0; i < 20; i++) expect((await ask(stack, nextClient())).status).toBe(200);
+    expect((await ask(stack, nextClient())).status).toBe(429);
   });
 });
 
