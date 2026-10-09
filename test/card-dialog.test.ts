@@ -1,0 +1,242 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
+import type { BoardApp } from '../src/app';
+import { Store } from '../src/store';
+import { addCard, cardsToStickies, newKanban } from '../src/containers';
+import { createLabel, listLabels } from '../src/labels';
+import { openCardDialog } from '../src/ui/card-dialog';
+import { openLabelsDialog } from '../src/ui/labels-dialog';
+import type { BaseObj, Id, Label } from '../src/types';
+import { FakeElement, FakeEvent, installFakeBrowser, textOf, type FakeBrowser } from './fake-dom';
+
+// docs/kanban.md, slice 3: the card dialog and the Labels dialog, rendered into the fake DOM (test/fake-dom.ts) over a
+// real store. Fields save as they are left; commenters read; stored strings reach the page as text and values only.
+
+const EVIL = '"><img src=x onerror=alert(1)><script>alert(1)</script>';
+const EVIL_COLOR = 'red;background:url(https://evil.example/x)';
+
+let browser: FakeBrowser;
+let keyListeners: ((e: unknown) => void)[];
+beforeEach(() => {
+  browser = installFakeBrowser();
+  keyListeners = [];
+  vi.stubGlobal('window', {
+    setTimeout, clearTimeout, innerWidth: 1024, innerHeight: 800,
+    addEventListener: (t: string, fn: (e: unknown) => void) => { if (t === 'keydown') keyListeners.push(fn); },
+    removeEventListener: (t: string, fn: (e: unknown) => void) => { keyListeners = keyListeners.filter((f) => f !== fn); },
+  });
+  vi.stubGlobal('requestAnimationFrame', (fn: () => void) => { fn(); return 0; });
+});
+afterEach(() => browser.uninstall());
+
+type Role = 'editor' | 'commenter' | 'viewer';
+
+function setup(role: Role = 'editor') {
+  const store = new Store(new Y.Doc());
+  const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'me' });
+  store.transact(() => [container, ...lanes].forEach((o) => store.create(o)));
+  const card = addCard(store, lanes[1].id, 'Fix the login loop', { createdBy: 'me' })!;
+  const bug = createLabel(store, 'Bug', 'pink')!;
+  const ui = createLabel(store, 'Frontend', 'teal')!;
+  store.undo.clear();
+  if (role !== 'editor') store.setReadOnly(true);
+  const app = {
+    store,
+    get readOnly() { return store.readOnly; },
+    comments: { readOnly: () => role === 'viewer' },
+    canOpenCard: () => !store.readOnly || role === 'commenter',
+    user: { id: 'me', name: 'Visual QA', color: '#326DD3' },
+    participants: () => [{ clientId: 2, isMe: false, user: { id: 'u2', name: 'Marta Ruiz', color: '#D3332D' } }],
+    notify: vi.fn<(m: string) => void>(),
+    openLabels: vi.fn<() => void>(),
+    commentOnCard: vi.fn<(id: Id) => boolean>(),
+    turnIntoStickies: vi.fn<(ids: Id[]) => boolean>(),
+    setSelection: vi.fn<(ids: Id[]) => void>(),
+    deleteSelection: vi.fn<() => void>(),
+  };
+  return { store, app, card, bug, ui, lanes: lanes.map((l) => l.id) };
+}
+
+const open = (app: unknown, id: Id, focus?: 'owner' | 'due' | 'labels') => openCardDialog(app as BoardApp, id, focus);
+const box = () => browser.document.body.querySelector('[role="dialog"]') as FakeElement | null;
+const byLabel = (label: string) => box()!.querySelectorAll('input, textarea, select').find((e) => e.getAttribute('aria-label') === label)!;
+const button = (name: string) => box()!.querySelectorAll('button').find((b) => textOf(b) === name || b.getAttribute('aria-label') === name);
+function change(el: FakeElement, value: string) {
+  el.value = value;
+  el.dispatchEvent(new FakeEvent('change'));
+}
+const bo = (store: Store, id: Id) => store.get(id) as BaseObj;
+const steps = (store: Store) => (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;
+
+/** Every element under `root` (for checking that nothing a person wrote became markup). */
+function all(root: FakeElement): FakeElement[] {
+  return [root, ...root.querySelectorAll('*')];
+}
+
+describe('the card dialog, for an editor', () => {
+  it('shows the card and saves each field as it is left, one undo step each', () => {
+    const { store, app, card, bug } = setup();
+    open(app, card);
+    expect(textOf(box()!.querySelector('h2'))).toBe('Card in Doing');
+    expect(byLabel('Title').value).toBe('Fix the login loop');
+    change(byLabel('Title'), 'Fix the Safari login loop');
+    change(byLabel('Description'), 'Steps:\n1. Open Safari 17');
+    change(byLabel('Due date'), '2026-01-16');
+    change(byLabel('Owner'), 'id:u2');
+    button('Bug')!.click();
+    expect(bo(store, card)).toMatchObject({ text: 'Fix the Safari login loop', desc: 'Steps:\n1. Open Safari 17', due: '2026-01-16', ownerId: 'u2', ownerName: 'Marta Ruiz', labels: [bug] });
+    expect(steps(store)).toBe(5);
+    expect(button('Bug')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('offers me, the people here and those already named, plus a free-text owner', () => {
+    const { store, app, card } = setup();
+    open(app, card);
+    const owner = byLabel('Owner');
+    expect(owner.querySelectorAll('option').map((o) => textOf(o))).toEqual(['No owner', 'Visual QA (you)', 'Marta Ruiz', 'Someone else…']);
+    change(owner, '__other');
+    const name = byLabel('Owner\'s name');
+    expect(name.hidden).toBe(false);
+    change(name, 'Lea Brandt');
+    expect(bo(store, card)).toMatchObject({ ownerName: 'Lea Brandt' });
+    expect(bo(store, card).ownerId).toBeUndefined();
+    change(byLabel('Owner'), '');
+    expect(bo(store, card).ownerName).toBeUndefined();
+  });
+
+  it('puts back what the store has when a field is refused', () => {
+    const { store, app, card } = setup();
+    open(app, card);
+    change(byLabel('Title'), '   ');
+    expect(bo(store, card).text).toBe('Fix the login loop');
+    expect(byLabel('Title').value).toBe('Fix the login loop');
+  });
+
+  it('follows changes made elsewhere, and closes when the card is gone or turned into a sticky', () => {
+    const { store, app, card } = setup();
+    open(app, card);
+    store.transact(() => store.update(card, { desc: 'Written by someone else' }));
+    expect(byLabel('Description').value).toBe('Written by someone else');
+    cardsToStickies(store, [card], () => undefined);
+    expect(box()).toBeNull();
+  });
+
+  it('keeps its keys: Delete on a focused button does not reach the board', () => {
+    const { app, card } = setup();
+    open(app, card);
+    const board = vi.fn<() => void>();
+    browser.document.body.addEventListener('keydown', board);
+    const e = new FakeEvent('keydown');
+    Object.assign(e, { key: 'Delete' });
+    button('Turn into sticky')!.dispatchEvent(e);
+    expect(board).not.toHaveBeenCalled();
+    const tab = new FakeEvent('keydown');
+    Object.assign(tab, { key: 'Tab' });
+    button('Turn into sticky')!.dispatchEvent(tab);
+    expect(board).toHaveBeenCalledTimes(1);
+  });
+
+  it('has Comment, Turn into sticky and Delete, each closing the dialog first', () => {
+    const { app, card } = setup();
+    open(app, card);
+    button('Comment')!.click();
+    expect(box()).toBeNull();
+    expect(app.commentOnCard).toHaveBeenCalledWith(card);
+    open(app, card);
+    button('Turn into sticky')!.click();
+    expect(app.turnIntoStickies).toHaveBeenCalledWith([card]);
+    open(app, card);
+    button('Delete')!.click();
+    expect(app.setSelection).toHaveBeenCalledWith([card]);
+    expect(app.deleteSelection).toHaveBeenCalled();
+    open(app, card);
+    button('Edit labels')!.click();
+    expect(app.openLabels).toHaveBeenCalled();
+  });
+});
+
+describe('the card dialog, by role', () => {
+  it('is read-only for commenters, who keep the comment button', () => {
+    const { store, app, card } = setup('commenter');
+    open(app, card);
+    expect(byLabel('Title').readOnly).toBe(true);
+    expect(byLabel('Description').readOnly).toBe(true);
+    expect(byLabel('Owner').disabled).toBe(true);
+    expect(byLabel('Due date').disabled).toBe(true);
+    expect(button('Comment')).toBeTruthy();
+    expect(button('Turn into sticky')).toBeUndefined();
+    expect(button('Delete')).toBeUndefined();
+    expect(button('Edit labels')).toBeUndefined();
+    expect(textOf(box()!)).toContain('Only editors can change it');
+    // even a change event that gets through writes nothing
+    change(byLabel('Title'), 'Changed');
+    expect(bo(store, card).text).toBe('Fix the login loop');
+  });
+
+  it('does not open for viewers', () => {
+    const { app, card } = setup('viewer');
+    expect(open(app, card)).toBeNull();
+    expect(box()).toBeNull();
+  });
+});
+
+describe('stored strings in the dialogs are text', () => {
+  it('a title, description, owner and label name with markup in them are values and text, never markup', () => {
+    const { store, app, card } = setup();
+    const evil = createLabel(store, EVIL.slice(0, 40), EVIL_COLOR)!;
+    store.transact(() => store.update(card, { text: EVIL, desc: EVIL, ownerName: EVIL, labels: [evil] }));
+    // another client writes a label with a colour that is not one
+    store.transact(() => store.labels.set('raw', { id: 'raw', name: EVIL.slice(0, 40), color: EVIL_COLOR, order: 9 } as Label));
+    open(app, card);
+    expect(byLabel('Title').value).toBe(EVIL);
+    expect(byLabel('Description').value).toBe(EVIL);
+    expect(textOf(byLabel('Owner'))).toContain(EVIL);
+    expect(textOf(box()!)).toContain(EVIL.slice(0, 40).toString());
+    for (const el of all(box()!)) {
+      expect(el.tagName).not.toBe('IMG');
+      expect(el.tagName).not.toBe('SCRIPT');
+      expect(el.innerHTML).not.toContain('onerror');
+      for (const v of Object.values(el.style)) expect(String(v)).not.toContain('evil');
+    }
+    // the chips' colours are swatches of palette keys only
+    const swatches = box()!.querySelectorAll('.k-chip-swatch').map((s) => s.style['--c']);
+    expect(swatches.every((c) => c === undefined || /^var\(--s-[a-z]+, #[0-9A-F]{6}\)$/.test(c))).toBe(true);
+  });
+
+  it('the Labels dialog shows names as input values and never takes a colour that is not one', () => {
+    const { store, app } = setup();
+    store.transact(() => store.labels.set('raw', { id: 'raw', name: EVIL.slice(0, 40), color: EVIL_COLOR, order: 9 } as Label));
+    openLabelsDialog(app as unknown as BoardApp);
+    const inputs = box()!.querySelectorAll('input');
+    expect(inputs.some((i) => i.value === EVIL.slice(0, 40))).toBe(true);
+    for (const el of all(box()!)) {
+      expect(el.tagName).not.toBe('IMG');
+      expect(el.innerHTML).not.toContain('onerror');
+      for (const v of Object.values(el.style)) expect(String(v)).not.toContain('evil');
+    }
+  });
+});
+
+describe('the Labels dialog', () => {
+  it('creates, renames, recolours, reorders and deletes', () => {
+    const { store, app, bug, ui } = setup();
+    openLabelsDialog(app as unknown as BoardApp);
+    const name = box()!.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'New label name')!;
+    name.value = 'Docs';
+    box()!.querySelectorAll('button').find((b) => textOf(b) === 'Add')!.click();
+    expect(listLabels(store).map((l) => l.name)).toEqual(['Bug', 'Frontend', 'Docs']);
+    change(box()!.querySelectorAll('input').find((i) => i.dataset.label === bug)!, 'Defect');
+    box()!.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Move Frontend up')!.click();
+    const colours = box()!.querySelectorAll('[role="radiogroup"]').find((g) => g.getAttribute('aria-label') === 'Colour of Frontend')!;
+    colours.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Violet')!.click();
+    box()!.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Delete Docs')!.click();
+    expect(listLabels(store).map((l) => `${l.name}:${l.color}`)).toEqual(['Frontend:violet', 'Defect:pink']);
+    expect(listLabels(store)[0].id).toBe(ui);
+    expect(textOf(box()!)).toContain('2 of 30 labels');
+  });
+
+  it('is for editors only', () => {
+    const { app } = setup('commenter');
+    expect(openLabelsDialog(app as unknown as BoardApp)).toBeNull();
+  });
+});

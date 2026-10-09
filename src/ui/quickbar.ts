@@ -147,6 +147,31 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, 'aria-label': label, 'data-tip-key': key, onclick: onClick }, icon(name, 18));
   }
 
+  /**
+   * Kanban entries (docs/kanban.md, States): a card gets Open as the primary action, then Owner, Due and Labels (each
+   * opens the card dialog on that field) and Turn into sticky; stickies get Turn into card and, two or more, Make kanban;
+   * a kanban gets its Labels.
+   */
+  function kanbanActions(sel: Obj[]): HTMLElement[] {
+    const out: HTMLElement[] = [];
+    const cards = sel.filter((o) => o.type === 'card');
+    const stickies = sel.filter(isSticky);
+    if (cards.length === 1 && sel.length === 1) {
+      const id = cards[0].id;
+      out.push(
+        h('button', { class: 'icon-btn qb-text on', type: 'button', 'aria-label': 'Open card', 'data-tip-key': 'enter', onclick: () => app.openCardDialog(id) }, 'Open'),
+        action('user', 'Owner', () => app.openCardDialog(id, 'owner')),
+        action('calendar', 'Due date', () => app.openCardDialog(id, 'due')),
+        action('tag', 'Labels', () => app.openCardDialog(id, 'labels')),
+      );
+    }
+    if (cards.length && cards.length === sel.length) out.push(action('sticky', cards.length === 1 ? 'Turn into sticky' : 'Turn into stickies', () => app.turnIntoStickies(), '', 'k'));
+    if (stickies.length && app.canTurnIntoCards()) out.push(action('card', stickies.length === 1 ? 'Turn into card' : 'Turn into cards', () => app.turnIntoCards(), '', 'k'));
+    if (stickies.length >= 2 && app.kanbanCreation) out.push(action('kanban', 'Make kanban from selection', () => app.makeKanbanFromSelection()));
+    if (sel.length === 1 && sel[0].type === 'container') out.push(action('tag', 'Labels', () => app.openLabels?.()));
+    return out;
+  }
+
   function build() {
     paints = [];
     lock = undefined;
@@ -160,6 +185,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const same = sel.every((o) => o.type === first.type);
     const boxes = sel.filter(isBox).length;
     const groups: HTMLElement[][] = [];
+    groups.push(kanbanActions(sel));
 
     const style: HTMLElement[] = [];
     if (same && first.type === 'sticky') {

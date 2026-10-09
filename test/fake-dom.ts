@@ -22,8 +22,10 @@ export class FakeEvent {
   preventDefault() {
     this.defaultPrevented = true;
   }
+  propagationStopped = false;
   stopPropagation() {
     this.bubbles = false;
+    this.propagationStopped = true;
   }
 }
 
@@ -280,6 +282,7 @@ export class FakeElement extends FakeNode {
     for (const at of chain) {
       event.currentTarget = at;
       for (const fn of at.listeners.get(event.type) ?? []) fn(event);
+      if (event.propagationStopped) break;
     }
     return !event.defaultPrevented;
   }
@@ -311,6 +314,10 @@ export class FakeElement extends FakeNode {
   }
   getBoundingClientRect() {
     return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  }
+  /** A canvas with no 2D context: text is measured by the fallback estimate (src/text.ts). */
+  getContext() {
+    return null;
   }
 }
 

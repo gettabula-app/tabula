@@ -16,6 +16,9 @@ import { closeOpenCombo, combo, numberField } from './controls';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
 import { safeColor } from '../../shared/colors';
+import { LABEL_COLORS, LIMITS, kanbanColor } from '../../shared/containers';
+import { editCards } from '../containers';
+import { kanbanSwatch } from '../markup';
 
 const TYPE_LABEL: Record<string, string> = {
   shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
@@ -124,6 +127,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
 
     if (sel.every(isConnector)) blocks.push(...connectorFields(app, sel as ConnectorObj[]));
+    blocks.push(...kanbanFields(app, sel));
 
     // ---- fill & stroke
     if (sel.some(HAS_FILL)) {
@@ -299,5 +303,42 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
       for (const o of sel) app.store.update(o.id, { from: o.to, to: o.from, startHead: o.endHead, endHead: o.startHead });
     });
   } }, 'Reverse direction'));
+  return out;
+}
+
+/**
+ * Kanban entries (docs/kanban.md): a card's Open and accent colour and Turn into sticky; stickies' Turn into card and
+ * Make kanban; a kanban's name and its Labels. Accent colours are palette keys, written through kanbanColor.
+ */
+function kanbanFields(app: BoardApp, sel: Obj[]): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const cards = sel.filter((o): o is BaseObj => o.type === 'card');
+  const stickies = sel.filter((o) => o.type === 'sticky');
+  if (cards.length === sel.length && cards.length) {
+    if (cards.length === 1) out.push(h('button', { class: 'btn wide', onclick: () => app.openCardDialog(cards[0].id) }, 'Open card'));
+    const cur = cards.every((c) => kanbanColor(c.fill) === kanbanColor(cards[0].fill)) ? kanbanColor(cards[0].fill) ?? 'none' : undefined;
+    const colours = [{ name: 'None', value: 'none' }, ...LABEL_COLORS.map((k) => ({ name: k[0].toUpperCase() + k.slice(1), value: kanbanSwatch(k)! }))];
+    out.push(field('Accent', swatches(colours, cur === undefined ? undefined : cur === 'none' ? 'none' : kanbanSwatch(cur), (v) => {
+      const key = v === 'none' ? null : LABEL_COLORS.find((k) => kanbanSwatch(k) === v) ?? null;
+      editCards(app.store, cards.map((c) => c.id), { fill: key });
+    }, { label: 'Card accent colour' })));
+    out.push(h('button', { class: 'btn wide', onclick: () => app.turnIntoStickies() }, cards.length === 1 ? 'Turn into sticky' : 'Turn into stickies'));
+  }
+  if (stickies.length && stickies.length === sel.length) {
+    if (app.canTurnIntoCards()) out.push(h('button', { class: 'btn wide', onclick: () => app.turnIntoCards() }, stickies.length === 1 ? 'Turn into card' : 'Turn into cards'));
+    if (stickies.length >= 2 && app.kanbanCreation) out.push(h('button', { class: 'btn wide', onclick: () => app.makeKanbanFromSelection() }, 'Make kanban from selection'));
+  }
+  if (sel.length === 1 && sel[0].type === 'container') {
+    const c = sel[0] as BaseObj;
+    const name = h('input', { class: 'input', maxlength: LIMITS.containerName, 'aria-label': 'Kanban name' });
+    name.value = c.name ?? '';
+    name.addEventListener('change', () => {
+      const v = name.value.replace(/\s+/g, ' ').trim().slice(0, LIMITS.containerName);
+      if (v && !c.locked) app.updateSelected({ name: v }, (o) => o.type === 'container');
+      else name.value = c.name ?? '';
+    });
+    out.push(field('Name', name));
+    out.push(h('button', { class: 'btn wide', onclick: () => app.openLabels?.() }, 'Labels…'));
+  }
   return out;
 }

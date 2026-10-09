@@ -16,7 +16,9 @@ import {
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
 import { cardBody, objectMarkup, textHeight } from './markup';
-import { containerOf, dropLoose, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete } from './containers';
+import {
+  cardsToStickies, containerOf, dropLoose, kanbanFromStickies, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
+} from './containers';
 import { CardInput } from './ui/kanban';
 import {
   dropLine, keyboardMove, laneCards, lowDetail, laneRegionAt, laneTargetAt, moveAnnouncement, type LaneTarget, type MoveKey,
@@ -28,6 +30,7 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
+import { kanbanFlag } from './flags';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 function loadStickyColor(): string {
@@ -67,6 +70,9 @@ type Drag =
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
   | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null };
+
+/** The field the card dialog starts on. */
+export type CardFocus = 'title' | 'owner' | 'due' | 'labels';
 
 type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments';
 
@@ -146,6 +152,10 @@ export class BoardApp {
   private disposers: (() => void)[] = [];
   /** Where the pixels of image objects come from and how new ones reach the relay (src/board-images.ts). */
   readonly images: BoardImages;
+  /** Set by the board UI: opens the card dialog (src/ui/card-dialog.ts), focused on one of its fields. */
+  openCard: ((id: Id, focus?: CardFocus) => void) | null = null;
+  /** Set by the board UI: opens the Labels dialog (src/ui/labels-dialog.ts). */
+  openLabels: (() => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
@@ -361,7 +371,7 @@ export class BoardApp {
   /** On a read-only board only select and hand (and, where comments are writable, the comment tool) are allowed; anything else falls back to select. */
   setTool(t: Tool) {
     // Select and hand always work; the comment tool needs a writable comments document (commenters have a read-only board); everything else needs a writable board.
-    const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly);
+    const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly && (t.kind !== 'kanban' || kanbanFlag()));
     const next: Tool = allowed ? t : { kind: 'select' };
     this.cancelLongPress();
     this.tool = next;
@@ -765,7 +775,7 @@ export class BoardApp {
 
   /** A new kanban with To do, Doing and Done, its top-left at `at`, with the add-card input open in its first lane. */
   createKanban(at: Point) {
-    if (this.readOnly) return null;
+    if (this.readOnly || !kanbanFlag()) return null;
     const meta = this.store.getMeta();
     const size = newKanbanSize();
     const frame = this.frameAt({ x: at.x + size.w / 2, y: at.y + size.h / 2 });
@@ -778,6 +788,156 @@ export class BoardApp {
     // the spec's "one empty card in edit mode": the add-card input, so that nothing is left behind when it is not used
     this.cardInput.start(lanes[0].id);
     return container.id;
+  }
+
+  /** The lane a point is over, topmost kanban first, with the insertion index among its cards that are not `moving`. */
+  private laneTarget(p: Point, moving: ReadonlySet<Id> = new Set()): LaneTarget | null {
+    const containers = this.store.ordered().filter((o) => o.type === 'container').flatMap((o) => {
+      const layout = this.store.containerLayout(o.id);
+      return layout ? [{ id: o.id, layout }] : [];
+    });
+    return laneTargetAt(containers, p, moving);
+  }
+
+  // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
+
+  /** Who may open the card dialog: editors, and commenters read-only (docs/kanban.md, Permissions). Viewers may not. */
+  canOpenCard(): boolean {
+    return !this.readOnly || !this.comments.readOnly();
+  }
+
+  /** Opens the card dialog for a card, when this person may. Returns whether it opened. */
+  openCardDialog(id: Id, focus?: CardFocus): boolean {
+    if (this.store.get(id)?.type !== 'card' || !this.canOpenCard() || !this.openCard) return false;
+    this.cardInput.stop();
+    this.openCard(id, focus);
+    return true;
+  }
+
+  /**
+   * Turns the selected stickies (or `ids`) into cards in place (docs/kanban.md, Sticky to card and back): one that sits
+   * over a lane joins it where it is, the others become loose cards. One undo step.
+   */
+  turnIntoCards(ids: Id[] = this.selection): boolean {
+    if (this.readOnly) return false;
+    // without the kanban flag only stickies over a lane become cards: nothing makes a loose card (src/flags.ts)
+    const stickies = ids.filter((id) => this.store.get(id)?.type === 'sticky' && (kanbanFlag() || this.cardTargetOf(id)));
+    if (!stickies.length) return false;
+    const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id));
+    if (r.refused) {
+      this.notify(r.refused);
+      return false;
+    }
+    if (!r.done.length) return false;
+    this.announce(r.done.length === 1 ? 'Turned into a card' : `Turned ${r.done.length} stickies into cards`);
+    this.setSelection(r.done);
+    return true;
+  }
+
+  /** The lane a sticky would join as a card: the one under its middle, at that place among its cards. */
+  private cardTargetOf(id: Id): { lane: Id; index: number } | null {
+    const o = this.store.get(id);
+    if (!o) return null;
+    const b = this.store.geometry(o);
+    const t = this.laneTarget({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    return t ? { lane: t.id, index: t.index } : null;
+  }
+
+  /** Whether Turn into card does anything for the selection: always with the kanban flag, else only over a lane. */
+  canTurnIntoCards(ids: Id[] = this.selection): boolean {
+    if (this.readOnly) return false;
+    return ids.some((id) => this.store.get(id)?.type === 'sticky' && (kanbanFlag() || !!this.cardTargetOf(id)));
+  }
+
+  /** Whether making kanbans is on (src/flags.ts). */
+  get kanbanCreation(): boolean {
+    return kanbanFlag() && !this.readOnly;
+  }
+
+  /** Turns the selected cards (or `ids`) back into stickies where they are drawn. One undo step. */
+  turnIntoStickies(ids: Id[] = this.selection): boolean {
+    if (this.readOnly) return false;
+    const done = cardsToStickies(this.store, ids, (p, skip) => this.frameAt(p, skip)?.id, this.store.getMeta().stickyColors);
+    if (!done.length) return false;
+    this.announce(done.length === 1 ? 'Turned into a sticky note' : `Turned ${done.length} cards into sticky notes`);
+    this.setSelection(done);
+    return true;
+  }
+
+  /** The K key: stickies in the selection become cards; a selection of cards only becomes stickies. */
+  private toggleCards() {
+    const sel = this.selected();
+    if (sel.some((o) => o.type === 'sticky')) this.turnIntoCards();
+    else if (sel.length && sel.every((o) => o.type === 'card')) this.turnIntoStickies();
+  }
+
+  /** A kanban from the selected stickies, with them as cards in its first lane in reading order. One undo step. */
+  makeKanbanFromSelection(): Id | null {
+    if (this.readOnly || !kanbanFlag()) return null;
+    const meta = this.store.getMeta();
+    const stickies = this.selection.filter((id) => this.store.get(id)?.type === 'sticky');
+    if (!stickies.length) return null;
+    const first = this.store.get(stickies[0]) as BaseObj;
+    const r = kanbanFromStickies(this.store, stickies, { z: this.store.topZ(), createdBy: this.user.id, headingFont: meta.headingFont, bodyFont: meta.bodyFont, parent: first.parent && this.store.get(first.parent)?.type === 'frame' ? first.parent : undefined });
+    if (r.refused) this.notify(r.refused);
+    if (!r.id) return null;
+    this.announce(`Made a kanban with ${stickies.length} ${stickies.length === 1 ? 'card' : 'cards'}`);
+    this.setSelection([r.id]);
+    return r.id;
+  }
+
+  /** Opens the composer for a new comment pinned to a card's top right corner, which follows the card wherever it is drawn. */
+  commentOnCard(id: Id): boolean {
+    const card = this.store.getPlaced(id);
+    if (card?.type !== 'card' || this.comments.readOnly()) return false;
+    const b = card as BaseObj;
+    const at = { x: b.x + b.w - 14, y: b.y + 14 };
+    const anchor = anchorFor(at, b);
+    this.closeThread();
+    this.setDraftPin(anchor);
+    const s = this.r.toScreen(at);
+    const box = this.r.svg.getBoundingClientRect();
+    this.onOpenComment?.({ anchor, screen: { x: box.left + s.x, y: box.top + s.y } });
+    return true;
+  }
+
+  /**
+   * Stickies dropped on a lane become cards there (docs/kanban.md, Sticky to card and back), as their own undo step
+   * after the move. Only selected stickies count, not the children of a frame that moved with it.
+   */
+  private dropStickiesInLane(ids: Id[], p: Point) {
+    const stickies = ids.filter((id) => this.selection.includes(id) && this.store.get(id)?.type === 'sticky');
+    if (!stickies.length) return;
+    const t = this.laneTarget(p);
+    if (!t) return;
+    const order = [...stickies].sort((a, b) => { const ra = this.store.geometry(this.store.get(a)!), rb = this.store.geometry(this.store.get(b)!); return ra.y - rb.y || ra.x - rb.x; });
+    const r = stickiesToCards(this.store, order, () => ({ lane: t.id, index: t.index }));
+    if (r.refused) return this.notify(r.refused);
+    if (!r.done.length) return;
+    const lane = this.store.get(t.id) as BaseObj | undefined;
+    const list = this.store.containerLayout(t.container)?.cards.get(t.id) ?? [];
+    this.announce(moveAnnouncement(lane?.name ?? '', list.indexOf(r.done[0]) + 1, list.length));
+    this.setSelection(r.done);
+  }
+
+  /** While stickies are moved over a lane: the drop line where they would land as cards. */
+  private showStickyDrop(ids: Id[], p: Point): boolean {
+    const t = ids.some((id) => this.selection.includes(id) && this.store.get(id)?.type === 'sticky') ? this.laneTarget(p) : null;
+    const was = this.r.overlay.kanban?.line;
+    if (!t) {
+      if (was) this.clearStickyDrop();
+      return false;
+    }
+    const layout = this.store.containerLayout(t.container)!;
+    const line = dropLine(layout.rects.get(t.id)!, laneCards(layout, t.id), t.index);
+    this.r.setKanbanState({ dropLane: t.id });
+    this.r.setOverlay({ kanban: { ...this.r.overlay.kanban, line } });
+    return true;
+  }
+
+  private clearStickyDrop() {
+    this.r.setKanbanState({ dropLane: null });
+    this.r.setOverlay({ kanban: this.r.overlay.kanban?.moving ? { moving: this.r.overlay.kanban.moving } : null });
   }
 
   /** Cards that a drag starting on `id` takes: the selected cards that are not locked, or just `id`. */
@@ -801,11 +961,7 @@ export class BoardApp {
     }
     this.r.moveGhost({ x: p.x - d.grab.x, y: p.y - d.grab.y });
     const moving = new Set(d.ids);
-    const containers = this.store.ordered().filter((o) => o.type === 'container').flatMap((o) => {
-      const layout = this.store.containerLayout(o.id);
-      return layout ? [{ id: o.id, layout }] : [];
-    });
-    const t = laneTargetAt(containers, p, moving);
+    const t = this.laneTarget(p, moving);
     d.target = t;
     let line = null;
     if (t) {
@@ -1049,7 +1205,9 @@ export class BoardApp {
       else if (this.snapOn(e)) dy = snapTo(b.y + dy, this.grid()) - b.y;
       guides.push(...sn.guides, ...sn.gaps);
     }
-    const frame = d.ids.length && this.store.get(d.ids[0])?.type !== 'frame'
+    // over a lane, selected stickies would become cards there: the drop line says where, and no frame is the target
+    const overLane = this.showStickyDrop(d.ids, p);
+    const frame = !overLane && d.ids.length && this.store.get(d.ids[0])?.type !== 'frame'
       ? this.frameAt({ x: d.bounds.x + d.bounds.w / 2 + dx, y: d.bounds.y + d.bounds.h / 2 + dy }, new Set(d.ids))
       : undefined;
     this.r.setOverlay({ guides, dropTarget: frame?.id ?? null });
@@ -1153,7 +1311,12 @@ export class BoardApp {
     const p = this.worldOf(e);
     switch (d.mode) {
       case 'move':
-        if (d.moved) this.reparent(d.ids);
+        if (d.moved) {
+          this.clearStickyDrop();
+          this.reparent(d.ids);
+          this.store.undo.stopCapturing();
+          this.dropStickiesInLane(d.ids, p);
+        }
         else if (!e.shiftKey) {
           // plain click on an already-selected item inside a multi-selection selects just it
           const hit = this.hit(p);
@@ -1344,6 +1507,8 @@ export class BoardApp {
     const hit = this.hit(p);
     if (this.readOnly) {
       if (hit) this.setSelection([hit.id]);
+      // commenters read a card in its dialog, read-only (docs/kanban.md, Permissions)
+      if (hit?.type === 'card') this.openCardDialog(hit.id);
       return;
     }
     if (hit?.type === 'lane' && this.laneRegion(hit.id, p) !== 'header') {
@@ -1351,9 +1516,10 @@ export class BoardApp {
       this.cardInput.start(hit.id);
       return;
     }
-    // the card dialog is slice 3 of docs/kanban.md: until then a double-click selects the card
+    // the card dialog is the one editor of a card (docs/kanban.md, Cards)
     if (hit?.type === 'card') {
       this.setSelection([hit.id]);
+      this.openCardDialog(hit.id);
       return;
     }
     if (hit) {
@@ -1438,7 +1604,12 @@ export class BoardApp {
         this.setTool({ kind: 'select' });
         return;
       }
-      if (k === 'enter' && this.selection.length === 1) { e.preventDefault(); if (!ro && this.store.get(this.selection[0])?.type !== 'card') this.editor.start(this.selection[0]); return; }
+      if (k === 'enter' && this.selection.length === 1) {
+        e.preventDefault();
+        if (this.store.get(this.selection[0])?.type === 'card') this.openCardDialog(this.selection[0]);
+        else if (!ro) this.editor.start(this.selection[0]);
+        return;
+      }
       if (k.startsWith('arrow') && this.selection.length) {
         e.preventDefault();
         if (ro) return;
@@ -1452,6 +1623,8 @@ export class BoardApp {
       }
       if (k === ']') { if (!ro) this.bringToFront(); return; }
       if (k === '[') { if (!ro) this.sendToBack(); return; }
+      // stickies to cards and back (docs/kanban.md, Sticky to card and back)
+      if (k === 'k' && !e.altKey) { if (!ro) this.toggleCards(); return; }
       // board chat (docs/chat.md): set by the board UI only where chat is available, for every role
       if (k === 'm' && !e.altKey && this.toggleChat) { e.preventDefault(); this.toggleChat(); return; }
       // commenters have a read-only board but may still use the comment tool; setTool checks the comments document

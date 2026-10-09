@@ -265,6 +265,8 @@ function swatch(key: string | undefined): string | undefined {
   const s = STICKY_COLORS.find((x) => x.name.toLowerCase() === c);
   return s ? `var(--s-${c}, ${s.fill})` : c;
 }
+/** The CSS colour of a label or card accent, for the dialogs: the same swatch the board draws, or nothing. */
+export const kanbanSwatch = swatch;
 
 const fillStyle = (c: string) => `style="fill:${escapeXml(c)}"`;
 const strokeStyle = (c: string) => `style="fill:none;stroke:${escapeXml(c)}"`;

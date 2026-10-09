@@ -102,8 +102,13 @@ const openDialogs: object[] = [];
 let dialogSeq = 0;
 
 /** Modal dialog. Resolves when closed. */
-export function dialog(title: string, body: HTMLElement, actions: { label: string; primary?: boolean; onClick?: () => void | boolean | Promise<void | boolean> }[] = []) {
-  const back = h('div', { class: 'modal-back' });
+export function dialog(
+  title: string,
+  body: HTMLElement,
+  actions: { label: string; primary?: boolean; onClick?: () => void | boolean | Promise<void | boolean> }[] = [],
+  opts: { className?: string; onClose?: () => void } = {},
+) {
+  const back = h('div', { class: `modal-back${opts.className ? ` ${opts.className}` : ''}` });
   const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close() }, icon('close', 18));
   const titleId = `dialog-title-${++dialogSeq}`;
   const box = h('div', { class: 'modal tray', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
@@ -133,13 +138,17 @@ export function dialog(title: string, body: HTMLElement, actions: { label: strin
   back.addEventListener('pointerdown', (e) => {
     if (e.target === back) close();
   });
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
     window.removeEventListener('keydown', onKey);
     const i = openDialogs.indexOf(self);
     if (i >= 0) openDialogs.splice(i, 1);
     back.remove();
     releasePage();
     restoreFocus(opener);
+    opts.onClose?.();
   }
   // the first field, or the main button; a dialog with neither (a notice) starts on its close button
   requestAnimationFrame(() => focusFirst(box, (box.querySelector('input, textarea, button.primary') as HTMLElement | null) ?? closeBtn));

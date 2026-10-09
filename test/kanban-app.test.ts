@@ -39,6 +39,15 @@ class FakeEl {
 
 type Harness = BoardApp & Record<string, unknown>;
 
+const commentsReadOnly = { value: false };
+const openCard = vi.fn<(id: Id, focus?: string) => void>();
+/** The kanban flag (src/flags.ts), by the URL or by localStorage. */
+const storage = new Map<string, string>();
+function flagOn(by: 'url' | 'storage' = 'url') {
+  if (by === 'url') vi.stubGlobal('location', { search: '?debug&kanban' });
+  else storage.set('driftboard:flag:kanban', '1');
+}
+
 function harness() {
   const store = new Store(new Y.Doc());
   const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'me' });
@@ -54,12 +63,13 @@ function harness() {
     store, r, selection: [], tool: { kind: 'select' }, drag: null, longPress: null, pendingFrame: 0, queuedFn: null,
     kbMoving: null, cursorTimer: 1, listeners: new Map(), spaceDown: false, lastPointer: { x: 0, y: 0 }, notify,
     user: { id: 'me', name: 'Me', color: '#326DD3' },
-    conn: { awareness: { setLocalStateField() {}, getStates: () => new Map(), clientID: 1 } },
+    conn: { awareness: { setLocalStateField() {}, getStates: () => new Map(), clientID: 1 }, comments: { readOnly: () => commentsReadOnly.value, list: () => [] } },
     cardInput: { start: startInput, stop() {} },
     announce: vi.fn<(msg: string) => void>(),
     editor: { active: false, commit() {}, start() {} },
     flow: { handleClick: () => false, isHidden: () => false, isVoting: () => false, activeStep: () => null },
     isPinching: () => false,
+    openCard: openCard,
   });
   return { app, store, r, notify, startInput, container: container.id, lanes: lanes.map((l) => l.id), ids };
 }
@@ -80,6 +90,11 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
   vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  vi.stubGlobal('location', { search: '' });
+  vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem() {}, removeItem() {} });
+  storage.clear();
+  commentsReadOnly.value = false;
+  openCard.mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -180,6 +195,7 @@ describe('what a click hits', () => {
 describe('the kanban tool', () => {
   it('puts the kanban’s top-left corner where a drag started, whichever way it went', () => {
     const { app, store } = harness();
+    flagOn();
     const start = { x: 400, y: 300 };
     const e = { altKey: true, shiftKey: false };
     call(app, 'finishCreate', { mode: 'create', start, tool: { kind: 'kanban' } }, { x: 100, y: 120 }, e);
@@ -220,5 +236,140 @@ describe('deleting', () => {
     expect(notify).toHaveBeenCalledTimes(2);
     expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'C']);
     expect(store.get(container)).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------- slice 3: cards
+
+/** A sticky beside the kanban, or over one of its lanes. */
+function addSticky(store: Store, id: Id, at: Point, text = 'Note') {
+  store.transact(() => store.create({ id, type: 'sticky', x: at.x - 96, y: at.y - 96, w: 192, h: 192, rotation: 0, z: 'a5', fill: '#FFE16B', text, createdBy: 'me', updatedAt: 0 } as BaseObj));
+}
+const key = (k: string, extra: Record<string, unknown> = {}) => ({ key: k, code: '', target: null, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, preventDefault() {}, ...extra });
+const press = (app: Harness, k: string) => {
+  const listeners: ((e: unknown) => void)[] = [];
+  vi.stubGlobal('window', { addEventListener: (t: string, fn: (e: unknown) => void) => { if (t === 'keydown') listeners.push(fn); }, removeEventListener() {} });
+  Object.assign(app, { lifetime: new AbortController() });
+  call(app, 'bindKeys');
+  listeners.forEach((fn) => fn(key(k)));
+};
+
+describe('the kanban flag (src/flags.ts)', () => {
+  it('off: no Kanban tool, no kanban from a selection, no loose cards; existing kanbans still edit', () => {
+    const { app, store, ids, container, lanes } = harness();
+    app.setTool({ kind: 'kanban' });
+    expect(app.tool.kind).toBe('select');
+    expect(app.createKanban({ x: 0, y: 0 })).toBeNull();
+    addSticky(store, 's1', { x: 3000, y: 3000 });
+    addSticky(store, 's2', { x: 3300, y: 3000 });
+    app.setSelection(['s1', 's2']);
+    expect(app.kanbanCreation).toBe(false);
+    expect(app.makeKanbanFromSelection()).toBeNull();
+    expect(app.canTurnIntoCards()).toBe(false);
+    expect(app.turnIntoCards()).toBe(false);
+    expect(store.get('s1')!.type).toBe('sticky');
+    expect([...store.cache.values()].filter((o) => o.type === 'container')).toHaveLength(1);
+    // a sticky over a lane still becomes a card there, and the kanban edits as before
+    addSticky(store, 's3', centre(store, lanes[1], 0.3));
+    expect(app.canTurnIntoCards(['s3'])).toBe(true);
+    expect(app.turnIntoCards(['s3'])).toBe(true);
+    expect(store.containerLayout(container)!.cards.get(lanes[1])).toEqual(['s3']);
+    app.setSelection([ids[0]]);
+    expect(app.openCardDialog(ids[0])).toBe(true);
+  });
+
+  it('on by ?kanban: the tool, Make kanban and loose cards are there', () => {
+    const { app, store } = harness();
+    flagOn('url');
+    app.setTool({ kind: 'kanban' });
+    expect(app.tool.kind).toBe('kanban');
+    app.setTool({ kind: 'select' });
+    addSticky(store, 's1', { x: 3000, y: 3000 });
+    addSticky(store, 's2', { x: 3300, y: 3000 });
+    app.setSelection(['s1', 's2']);
+    expect(app.kanbanCreation).toBe(true);
+    expect(app.canTurnIntoCards()).toBe(true);
+    const id = app.makeKanbanFromSelection();
+    expect(store.get(id!)?.type).toBe('container');
+    expect(store.get('s1')!.type).toBe('card');
+  });
+
+  it('on by localStorage driftboard:flag:kanban = 1', () => {
+    const { app, store } = harness();
+    flagOn('storage');
+    addSticky(store, 's1', { x: 3000, y: 3000 });
+    expect(app.turnIntoCards(['s1'])).toBe(true);
+    expect(store.get('s1')).toMatchObject({ type: 'card' });
+    expect(store.isLaidOut(store.get('s1')!)).toBe(false);
+  });
+});
+
+describe('opening a card', () => {
+  it('opens the dialog on double-click and on Enter, for editors', () => {
+    const { app, store, r, ids } = harness();
+    call(app, 'onDblClick', { ...client(r, centre(store, ids[1])) });
+    expect(openCard).toHaveBeenLastCalledWith(ids[1], undefined);
+    expect(app.selection).toEqual([ids[1]]);
+    app.setSelection([ids[0]]);
+    press(app, 'Enter');
+    expect(openCard).toHaveBeenLastCalledWith(ids[0], undefined);
+  });
+
+  it('opens it for commenters (read-only in the dialog), and not for viewers', () => {
+    const { app, store, r, ids } = harness();
+    store.setReadOnly(true);
+    call(app, 'onDblClick', { ...client(r, centre(store, ids[1])) });
+    expect(openCard).toHaveBeenCalledTimes(1);
+    commentsReadOnly.value = true;
+    call(app, 'onDblClick', { ...client(r, centre(store, ids[1])) });
+    expect(app.openCardDialog(ids[0])).toBe(false);
+    expect(openCard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('K', () => {
+  it('turns a sticky over a lane into a card there, and the card back into a sticky, one undo step each', () => {
+    const { app, store, container, lanes } = harness();
+    addSticky(store, 's1', centre(store, lanes[2], 0.3), 'Title\n\nMore');
+    store.undo.clear();
+    app.setSelection(['s1']);
+    press(app, 'k');
+    expect(store.get('s1')).toMatchObject({ type: 'card', text: 'Title', desc: 'More', parent: lanes[2] });
+    expect(store.containerLayout(container)!.cards.get(lanes[2])).toEqual(['s1']);
+    expect(app.selection).toEqual(['s1']);
+    press(app, 'k');
+    expect(store.get('s1')).toMatchObject({ type: 'sticky', text: 'Title\n\nMore' });
+    store.undo.undo();
+    expect(store.get('s1')).toMatchObject({ type: 'card' });
+    store.undo.undo();
+    expect(store.get('s1')).toMatchObject({ type: 'sticky', text: 'Title\n\nMore' });
+  });
+
+  it('does nothing on a read-only board', () => {
+    const { app, store, lanes } = harness();
+    addSticky(store, 's1', centre(store, lanes[2], 0.3));
+    store.setReadOnly(true);
+    app.setSelection(['s1']);
+    press(app, 'k');
+    expect(store.get('s1')!.type).toBe('sticky');
+  });
+});
+
+describe('dropping a sticky on a lane', () => {
+  it('moves it, then makes it a card at the drop place as its own undo step', () => {
+    const { app, store, r, container, lanes, ids } = harness();
+    addSticky(store, 's1', { x: 2000, y: 200 });
+    store.undo.clear();
+    const from = centre(store, 's1');
+    const to = centre(store, ids[1], 0.3);
+    call(app, 'onDown', pointer(r, from));
+    for (let i = 1; i <= 4; i++) call(app, 'onMove', pointer(r, { x: from.x + ((to.x - from.x) * i) / 4, y: from.y + ((to.y - from.y) * i) / 4 }, 'pointermove'));
+    expect(r.overlay.kanban?.line).toBeTruthy();
+    call(app, 'onUp', pointer(r, to, 'pointerup'));
+    expect(r.overlay.kanban?.line).toBeFalsy();
+    expect(store.get('s1')).toMatchObject({ type: 'card', parent: lanes[0] });
+    expect(store.containerLayout(container)!.cards.get(lanes[0])).toEqual([ids[0], 's1', ids[1], ids[2]]);
+    store.undo.undo();
+    expect(store.get('s1')!.type).toBe('sticky');
   });
 });

@@ -326,15 +326,24 @@ export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Parti
  * Returns whether anything changed. A locked card, a read-only board and a refused patch write nothing.
  */
 export function editCard(store: Store, id: Id, patch: CardPatch): boolean {
-  const card = store.get(id);
-  if (card?.type !== 'card' || card.locked || store.readOnly) return false;
-  const fields = cardFields(store, card as BaseObj, patch);
-  if (!fields) return false;
-  const cur = card as BaseObj;
-  const changed = (Object.keys(fields) as (keyof BaseObj)[]).some((k) => JSON.stringify(fields[k]) !== JSON.stringify(cur[k]));
-  if (!changed) return false;
+  return editCards(store, [id], patch);
+}
+
+/** The same edit to several cards (the accent from the properties panel): one transaction and one undo step. */
+export function editCards(store: Store, ids: Id[], patch: CardPatch): boolean {
+  if (store.readOnly) return false;
+  const writes: { id: Id; fields: Partial<BaseObj> }[] = [];
+  for (const id of ids) {
+    const card = store.get(id);
+    if (card?.type !== 'card' || card.locked) continue;
+    const fields = cardFields(store, card as BaseObj, patch);
+    if (!fields) continue;
+    const cur = card as BaseObj;
+    if ((Object.keys(fields) as (keyof BaseObj)[]).some((k) => JSON.stringify(fields[k]) !== JSON.stringify(cur[k]))) writes.push({ id, fields });
+  }
+  if (!writes.length) return false;
   store.undo.stopCapturing();
-  store.transact(() => store.update(id, fields));
+  store.transact(() => writes.forEach((w) => store.update(w.id, w.fields)));
   store.undo.stopCapturing();
   return true;
 }

@@ -1,0 +1,59 @@
+/* The card dialog and the Labels dialog (docs/kanban.md, Cards and Labels). Chrome, so tray tokens as every dialog; theme
+   variables only, radius 0, hairlines, 11px uppercase labels. A label's swatch colour is set inline (--c) from the label's
+   palette key, so it is never a stored string. At phone width the card dialog is a bottom sheet: the head stays, the
+   body scrolls, at most 85% of the view high. */
+
+.k-card-dialog .modal, .k-labels-dialog .modal { width: min(600px, 100%); }
+.k-card-form .field:first-child { margin-top: 0; }
+.k-card-form .field-label { display: block; }
+.k-desc { min-height: 96px; resize: vertical; }
+.k-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.k-stack { display: grid; gap: 8px; }
+.k-due { display: flex; gap: 8px; align-items: center; }
+.k-due .input { flex: 1 1 auto; min-width: 0; }
+.k-due .btn[hidden], .k-owner-name[hidden] { display: none; }
+.modal .k-card-form .input[readonly] { border-style: dashed; }
+.modal .k-card-form .input:disabled { opacity: 1; border-style: dashed; color: var(--tray-text); }
+.k-note { padding: 8px 0 8px 12px; border-left: 2px solid var(--tray-text); color: var(--tray-text); }
+
+.k-label-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.modal .k-label-head .btn { height: 28px; padding: 0 4px; font-size: 13px; letter-spacing: normal; text-transform: none; }
+.k-labels { display: flex; flex-wrap: wrap; gap: 8px; }
+.k-chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 8px;
+  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.k-chip:not(:disabled):hover { border-color: var(--tray-text); }
+.k-chip.on { border-color: var(--tray-text); background: var(--tray-text); color: var(--tray); }
+.k-chip:disabled { cursor: default; }
+.k-chip:disabled:not(.on) { display: none; }
+.k-chip-swatch { flex: none; width: 14px; height: 14px; background: var(--c, var(--tray-muted)); box-shadow: inset 0 0 0 1px var(--tray-line); }
+.k-chip-name { overflow-wrap: anywhere; }
+.k-empty { margin: 0; color: var(--tray-muted); }
+
+.k-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--tray-line); }
+.k-actions .btn.danger { margin-left: auto; }
+
+/* Labels dialog: one row per label, rules between them */
+.k-label-list { margin: 0; padding: 0; list-style: none; border-top: 2px solid var(--tray-text); border-bottom: 1px solid var(--tray-line); }
+.k-label-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line); }
+.k-label-list > :first-child { border-top: 0; }
+.k-label-row .k-swatches { grid-column: 1 / -1; }
+.k-label-tools { display: flex; gap: 4px; }
+.k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.k-swatch {
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--tray-line); border-radius: 0; background: var(--c);
+}
+.k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }
+.k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+@media (max-width: 860px) {
+  .modal-back.k-card-dialog { align-items: end; padding: 0; }
+  .k-card-dialog .modal { width: 100%; max-height: 85vh; border-top: 2px solid var(--tray-text); }
+  .k-row2 { grid-template-columns: 1fr; }
+  .k-card-form .input, .k-card-form .btn { min-height: 40px; }
+  .k-chip { height: 40px; }
+}
+.k-up .ico svg { transform: rotate(180deg); }
