@@ -30,6 +30,17 @@ export function doneChipText(coarsePointer: boolean): string {
   return coarsePointer ? 'Done' : 'Done · Esc';
 }
 
+/**
+ * The screen rectangle the quick-action bar keeps off while a group is selected: the chip sits 6px above the outline, which is 6px
+ * out, 20px high; `x` and `y` are the screen position of the group's top-left corner. Null when the chip is not drawn.
+ */
+export function groupChipAvoidBox(x: number, y: number, text: string, zoom: number): { x: number; y: number; w: number; h: number } | null {
+  if (!showSelectedGroupChip(true, false, false, zoom)) return null;
+  const pad = 4;
+  const w = Math.max(42, 12 + text.length * 7);
+  return { x: x - 6 - pad, y: y - 32 - pad, w: w + 2 * pad, h: 20 + 12 + 2 * pad };
+}
+
 export function showSelectedGroupChip(selectedGroup: boolean, dragging: boolean, resizing: boolean, zoom: number): boolean {
   return selectedGroup && !dragging && !resizing && zoom >= 0.3;
 }

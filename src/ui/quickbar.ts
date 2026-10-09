@@ -20,7 +20,7 @@ import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
-import { groupActionForSelection } from './group-ui-logic';
+import { groupActionForSelection, groupChipAvoidBox, groupChipText } from './group-ui-logic';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -66,11 +66,21 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
     const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, [...connectorBoxes(), ...aiBarBox()]);
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a)]);
     const railClear = isPhone() ? parseFloat(getComputedStyle(bar).getPropertyValue('--rail-clear')) || 76 : 12;
     bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
     cue();
+  }
+
+  /** A selected group's name chip (TAB-106): the bar clears it, flipping below the group when above would cover it. */
+  function groupChipBoxes(corner: { x: number; y: number }): Box[] {
+    const sel = app.selected();
+    const group = sel.length === 1 && sel[0].type === 'group' ? sel[0] : null;
+    if (!group) return [];
+    const text = groupChipText((group as { name?: unknown }).name, app.store.childrenOf(group.id).filter((c) => c.parent === group.id).length);
+    const box = groupChipAvoidBox(corner.x, corner.y, text, app.zoom);
+    return box ? [box] : [];
   }
 
   /** The AI bar (or its button) is one more thing the quick bar keeps off: it flips above the selection instead of landing under it. */
