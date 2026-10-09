@@ -56,6 +56,8 @@ const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'))
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
 const SAVE_MAX_WAIT_MS = 30_000;
+// After a failed write (disk full, permissions), the next attempt
+const SAVE_RETRY_MS = Number(process.env.SAVE_RETRY_MS) > 0 ? Number(process.env.SAVE_RETRY_MS) : 5_000;
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
@@ -371,10 +373,24 @@ class Room {
     this.firstUnsavedAt = null;
 
     if (fs.existsSync(this.file)) {
+      // A file that cannot be read now (EIO, EMFILE) throws: the room does not open, so nothing overwrites the file.
+      const saved = fs.readFileSync(this.file);
       try {
-        Y.applyUpdate(this.doc, fs.readFileSync(this.file));
+        Y.applyUpdate(this.doc, saved);
       } catch (err) {
-        log(`room ${name}: could not read saved state`, err);
+        // A file that cannot be decoded is set aside before the room starts empty, as history.mjs does with an index:
+        // the next save would otherwise replace it. People who still have the board offline bring it back by syncing.
+        log(`room ${name}: the saved state is unreadable and was set aside`, err?.message);
+        try {
+          fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
+        } catch (renameErr) {
+          throw new Error(`room ${name}: could not set aside an unreadable file (${renameErr?.message})`);
+        }
+        this.awareness.destroy();
+        this.doc.destroy();
+        this.doc = new Y.Doc({ gc: true });
+        this.awareness = new awarenessProtocol.Awareness(this.doc);
+        this.awareness.setLocalState(null);
       }
     }
 
@@ -446,15 +462,24 @@ class Room {
     this.saveTimer = setTimeout(() => this.save(), delay);
   }
 
+  /** Writes the room to its file. False when the write failed: the edits stay in memory and the save is tried again. */
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (roomsFrozen) return;
-    this.firstUnsavedAt = null;
+    if (roomsFrozen) return true;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
-    fs.writeFileSync(tmp, bytes);
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.writeFileSync(tmp, bytes);
+      fs.renameSync(tmp, this.file);
+    } catch (err) {
+      // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
+      log(`room ${this.name}: could not save, trying again in ${SAVE_RETRY_MS / 1000} s`, err?.message);
+      this.firstUnsavedAt = Date.now();
+      this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
+      return false;
+    }
+    this.firstUnsavedAt = null;
     // `changed`: something was edited since the last save. A save that only rewrites the same state (a room that is
     // unloaded, the save at shutdown) is not a change for the backups.
     const changed = this.dirty;
@@ -469,6 +494,7 @@ class Room {
     }
     history.onSave(this, bytes);
     if (changed) backup?.noteChange();
+    return true;
   }
 
   join(ws) {
@@ -509,7 +535,10 @@ class Room {
     clearTimeout(this.unloadTimer);
     this.unloadTimer = setTimeout(() => {
       if (this.conns.size === 0) {
-        this.save();
+        if (!this.save()) {
+          this.releaseIfIdle();
+          return;
+        }
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);
@@ -555,6 +584,17 @@ class Room {
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
     }
+  }
+}
+
+/** The room for a new socket, or null when it cannot be opened (its file cannot be read): the socket is closed. */
+function openRoom(ws, name) {
+  try {
+    return getRoom(name);
+  } catch (err) {
+    log(`room ${name}: could not open`, err?.message);
+    ws.close(1011, 'internal_error');
+    return null;
   }
 }
 
@@ -1044,7 +1084,8 @@ server.on('upgrade', (req, socket, head) => {
 
     if (!config.authEnabled) {
       ws.canWrite = true;
-      const room = getRoom(name);
+      const room = openRoom(ws, name);
+      if (!room) return;
       ws.on('message', (data) => room.onMessage(ws, data));
       ws.on('close', () => room.leave(ws));
       room.join(ws);
@@ -1076,9 +1117,9 @@ server.on('upgrade', (req, socket, head) => {
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
+    const room = openRoom(ws, name);
+    if (!room) return;
     track(ws);
-
-    const room = getRoom(name);
     ws.on('message', (data) => {
       refresh(ws, false);
       if (!ws.denied) room.onMessage(ws, data);
