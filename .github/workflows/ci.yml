@@ -8,10 +8,12 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths-ignore: ['**.md', 'docs/**', 'design/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
+  # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
+  # the release workflow calls it, so the gates run once per tag, and the Docker job below still publishes the semver tags to ghcr.
+  workflow_call:
 
 permissions:
   contents: read
