@@ -3,14 +3,14 @@ import { demoViewInsets, initialDemoView, type ViewRect, type ViewportSize } fro
 
 const PAD = 12;
 
-function expectFits(viewport: ViewportSize, bounds: ViewRect, flowbarTop: number) {
+function expectFits(viewport: ViewportSize, bounds: ViewRect, flowbarTop: number, minimumZoom = 0.5) {
   const insets = demoViewInsets(viewport, flowbarTop);
   const view = initialDemoView(viewport, bounds, insets);
   const left = (bounds.x - view.x) * view.zoom;
   const top = (bounds.y - view.y) * view.zoom;
   const right = left + bounds.w * view.zoom;
   const bottom = top + bounds.h * view.zoom;
-  expect(view.zoom).toBeGreaterThanOrEqual(0.5);
+  expect(view.zoom).toBeGreaterThanOrEqual(minimumZoom);
   expect(view.zoom).toBeLessThanOrEqual(1);
   expect(left).toBeGreaterThanOrEqual(insets.left + PAD - 0.01);
   expect(top).toBeGreaterThanOrEqual(insets.top + PAD - 0.01);
@@ -21,17 +21,18 @@ function expectFits(viewport: ViewportSize, bounds: ViewRect, flowbarTop: number
 
 describe('demo initial camera', () => {
   it.each([
-    [{ w: 1280, h: 800 }, { x: 40, y: 25, w: 1110, h: 525 }, 698],
-    [{ w: 900, h: 560 }, { x: 40, y: 25, w: 1110, h: 525 }, 416],
-    [{ w: 390, h: 844 }, { x: 40, y: 25, w: 530, h: 715 }, 541],
-  ] as const)('fits the intro bounds at %s', (viewport, bounds, flowbarTop) => {
-    const view = expectFits(viewport, bounds, flowbarTop);
-    expect(view.zoom).toBeGreaterThanOrEqual(0.5);
+    [{ w: 1280, h: 800 }, { x: 40, y: 25, w: 1110, h: 525 }, 698, 0.5],
+    [{ w: 900, h: 560 }, { x: 40, y: 25, w: 1110, h: 525 }, 416, 0.5],
+    [{ w: 390, h: 844 }, { x: 40, y: 25, w: 530, h: 650 }, 541, 0.5],
+    [{ w: 360, h: 740 }, { x: 40, y: 25, w: 530, h: 650 }, 426, 0.4],
+  ] as const)('fits the intro frames and flowchart at %s', (viewport, bounds, flowbarTop, minimumZoom) => {
+    const view = expectFits(viewport, bounds, flowbarTop, minimumZoom);
+    expect(view.zoom).toBeGreaterThanOrEqual(minimumZoom);
   });
 
   it('centres the intro within the area clear of the phone vote bar', () => {
     const viewport = { w: 390, h: 844 };
-    const bounds = { x: 40, y: 25, w: 530, h: 715 };
+    const bounds = { x: 40, y: 25, w: 530, h: 650 };
     const insets = demoViewInsets(viewport, 541);
     const view = initialDemoView(viewport, bounds, insets);
     const screenCenterX = ((bounds.x + bounds.w / 2) - view.x) * view.zoom;
@@ -42,16 +43,15 @@ describe('demo initial camera', () => {
 });
 
 describe('a small phone', () => {
-  it('goes below 50% (to 40% at most) so the whole intro stays above the vote bar', () => {
+  it('keeps the intro frames and flowchart above the vote bar at 40% zoom or more', () => {
     const viewport = { w: 360, h: 740 };
-    const insets = demoViewInsets(viewport);
-    const bounds = { x: 0, y: 0, w: 560, h: 700 };
+    const insets = demoViewInsets(viewport, 426);
+    const bounds = { x: 40, y: 25, w: 530, h: 650 };
     const view = initialDemoView(viewport, bounds, insets);
-    expect(view.zoom).toBeLessThan(0.5);
     expect(view.zoom).toBeGreaterThanOrEqual(0.4);
-    const bottom = (bounds.y + bounds.h - view.y) * view.zoom;
     const top = (bounds.y - view.y) * view.zoom;
-    expect(bottom).toBeLessThanOrEqual(viewport.h - insets.bottom);
-    expect(top).toBeGreaterThanOrEqual(insets.top);
+    const bottom = (bounds.y + bounds.h - view.y) * view.zoom;
+    expect(top).toBeGreaterThanOrEqual(insets.top + PAD - 0.01);
+    expect(bottom).toBeLessThanOrEqual(viewport.h - insets.bottom - PAD + 0.01);
   });
 });
