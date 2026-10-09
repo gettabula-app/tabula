@@ -696,8 +696,8 @@ export class Renderer {
       // right of the card, or left of it when the view ends there, or above it when neither side has room
       const vp = this.viewport();
       let tx = m.x + m.w + px(8), ty = m.y + m.h / 2 - px(10);
-      if (tx + tw > vp.x + vp.w) tx = m.x - px(8) - tw;
-      if (tx < vp.x) {
+      if (tx + tw > vp.x + vp.w - px(16)) tx = m.x - px(8) - tw;
+      if (tx < vp.x + px(16)) {
         tx = Math.max(vp.x, m.x);
         ty = m.y - g - px(24);
       }
