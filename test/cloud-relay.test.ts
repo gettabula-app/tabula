@@ -344,6 +344,18 @@ describe('a hosted workspace', () => {
       expect(usage.body).toEqual({ seats: 1, guests: 0, members: 1 });
     });
 
+    it('report the client address the limits see, for checking a deploy (TAB-71)', async () => {
+      for (const token of [null, 'nope']) expect((await c.internal('GET', '/api/internal/client-ip', undefined, token)).status).toBe(401);
+      expect((await c.api(owner.cookie, 'GET', '/api/internal/client-ip')).status).toBe(401);
+      const res = await c.api(undefined, 'GET', '/api/internal/client-ip', undefined, { authorization: `Bearer ${TOKEN}`, 'fly-client-ip': '198.51.100.4', 'x-forwarded-for': '6.6.6.6' });
+      expect(res.status).toBe(200);
+      // this relay trusts its proxy and reads X-Forwarded-For (the default): the report shows that, and both headers as sent
+      expect(res.body).toEqual({
+        address: '6.6.6.6', trustProxy: true, header: 'x-forwarded-for',
+        seen: { connection: expect.stringMatching(/127\.0\.0\.1$/), xForwardedFor: '6.6.6.6', flyClientIp: '198.51.100.4' },
+      });
+    });
+
     it('validate strictly and answer with what is stored, leaving an audit row with no actor', async () => {
       for (const body of [{}, { seatLimit: 0 }, { readOnly: 'yes' }, { banner: 'a\nb' }, { nope: 1 }]) {
         expect((await c.internal('PUT', '/api/internal/limits', body)).status).toBe(400);

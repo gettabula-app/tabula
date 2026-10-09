@@ -692,6 +692,7 @@ describe('loadConfig', () => {
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
+      clientIpHeader: 'x-forwarded-for',
       mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },
       // the secrets and the operator key of the AI features are not enumerable, so they are not in a printed config
       ai: { provider: 'anthropic', model: 'claude-opus-5-5' },
@@ -712,6 +713,7 @@ describe('loadConfig', () => {
       origin: 'https://tabula.example.com',
       cookieName: '__Host-tabula_session',
       trustProxy: true,
+      clientIpHeader: 'x-forwarded-for',
       sessionMs: 7 * DAY,
     });
     expect(cfg.mail.mode).toBe('file');

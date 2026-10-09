@@ -62,7 +62,7 @@ Claude Desktop's built-in connector UI uses OAuth, which is not in this slice; D
 
 ## Authentication
 
-Every `/mcp` request needs `Authorization: Bearer <token>`. A missing, malformed, unknown, revoked or expired token, and the token of a disabled user, all answer `401 {error: 'invalid_token', message: 'The token is unknown, expired or revoked.'}` with `WWW-Authenticate: Bearer`, so the answer reveals nothing about which. Wrong tokens are limited to 20 per minute per client IP (`429`, `Retry-After`), using the same `clientIp` rule as `api.mjs` (the rightmost `X-Forwarded-For` entry when `TABULA_TRUST_PROXY=1`). Only wrong tokens count, and a good token is never held back by them: somebody behind the same address (an office, a proxy) must not be able to lock the owner of a token out.
+Every `/mcp` request needs `Authorization: Bearer <token>`. A missing, malformed, unknown, revoked or expired token, and the token of a disabled user, all answer `401 {error: 'invalid_token', message: 'The token is unknown, expired or revoked.'}` with `WWW-Authenticate: Bearer`, so the answer reveals nothing about which. Wrong tokens are limited to 20 per minute per client IP (`429`, `Retry-After`), using the same client address as every other limit (`server/client-ip.mjs`: with `TABULA_TRUST_PROXY=1`, the header `TABULA_CLIENT_IP_HEADER` names). Only wrong tokens count, and a good token is never held back by them: somebody behind the same address (an office, a proxy) must not be able to lock the owner of a token out.
 
 ### Accounts mode: personal access tokens
 

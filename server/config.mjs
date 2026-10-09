@@ -4,6 +4,7 @@ import { withLegacyEnv } from './env.mjs';
 import { DEFAULT_MODEL, MODELS } from './ai/anthropic.mjs';
 import { PROVIDERS } from './ai/providers.mjs';
 import { parseSecret } from './ai/keys.mjs';
+import { CLIENT_IP_HEADERS } from './client-ip.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -151,6 +152,18 @@ function loadCloud(env, authEnabled) {
   return { token, url: `${url.origin}${url.pathname}`.replace(/\/+$/, ''), workspaceId };
 }
 
+/**
+ * Which header holds the client's address behind a proxy (server/client-ip.mjs, docs/cloud.md "Client addresses"):
+ * `x-forwarded-for` (the default, its rightmost entry) or `fly-client-ip`. Read only with TABULA_TRUST_PROXY=1.
+ */
+function loadClientIpHeader(env, warn) {
+  const raw = (env.TABULA_CLIENT_IP_HEADER ?? '').trim().toLowerCase();
+  if (!raw) return 'x-forwarded-for';
+  if (!CLIENT_IP_HEADERS.includes(raw)) throw new Error(`TABULA_CLIENT_IP_HEADER must be one of ${CLIENT_IP_HEADERS.join(', ')} (got "${raw.slice(0, 40)}")`);
+  if (env.TABULA_TRUST_PROXY !== '1') warn('TABULA_CLIENT_IP_HEADER is ignored without TABULA_TRUST_PROXY=1: rate limits count by the connection address');
+  return raw;
+}
+
 export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const env = withLegacyEnv(rawEnv, warn);
   const authEnabled = env.TABULA_AUTH === 'on';
@@ -207,6 +220,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',
+    clientIpHeader: loadClientIpHeader(env, warn),
     cookieName: secureCookies ? '__Host-tabula_session' : 'tabula_session',
     sessionMs,
     loginTokenMs: 15 * 60 * 1000,

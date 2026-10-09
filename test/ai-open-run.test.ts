@@ -160,6 +160,17 @@ describe('when AI is on', () => {
     expect((await post(generate(), ip(2))).status).toBe(200);
   });
 
+  it('counts by Fly-Client-IP with TABULA_CLIENT_IP_HEADER=fly-client-ip, where X-Forwarded-For ends with the replay hop (TAB-71)', async () => {
+    const w = world();
+    (w.config as any).clientIpHeader = 'fly-client-ip';
+    const post = await serve(w);
+    const behindFly = (n: number) => ({ 'fly-client-ip': `198.51.100.${n}`, 'x-forwarded-for': `198.51.100.${n}, 172.19.4.2` });
+    for (let i = 0; i < 20; i++) expect((await post(generate(), behindFly(1))).status).toBe(200);
+    expect((await post(generate(), behindFly(1))).status).toBe(429);
+    // another visitor through the same replay hop is counted on their own
+    expect((await post(generate(), behindFly(2))).status).toBe(200);
+  });
+
   it('keeps one global count for the whole instance, 200 an hour', async () => {
     const w = world();
     const post = await serve(w);

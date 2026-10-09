@@ -17,6 +17,7 @@ import { createLiveRuns } from './live.mjs';
 import { canResolve, canSeeRun } from './policy.mjs';
 import { createProvider as defaultCreateProvider } from './providers.mjs';
 import { DEFAULT_LIMITS, aiEnabledFor, personalKeysFor } from './settings.mjs';
+import { clientIpOf } from '../client-ip.mjs';
 
 export const RUN_TIMEOUT_MS = 120_000;
 /** Runs at once on a shared key (the workspace key, or the operator's key in open mode); a personal key runs one at a time. */
@@ -491,17 +492,7 @@ function readJsonBody(req, limit = RUN_BODY_LIMIT) {
 export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, createProvider, live, log = console.log, now, timeoutMs }) {
   const runner = createRunner({ HttpError: OpenHttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs, ...(live ? { live } : {}) });
 
-  function clientIp(req) {
-    if (config.trustProxy) {
-      const header = req.headers['x-forwarded-for'];
-      const entries = String(Array.isArray(header) ? header.join(',') : (header ?? ''))
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (entries.length) return entries[entries.length - 1];
-    }
-    return req.socket.remoteAddress ?? 'unknown';
-  }
+  const clientIp = (req) => clientIpOf(req, config);
 
   const sendError = (res, err) => {
     if (res.headersSent) return void res.end();

@@ -64,6 +64,32 @@ Asks the instance to mail the workspace owners: every account with the role `own
 - A call that mailed someone writes an audit row `cloud.notify` with no actor (the dashboard shows "System") and `{template, count}`. Addresses are never stored there.
 - Like the limits, this endpoint stays reachable while the workspace is read-only.
 
+## Client addresses
+
+Every rate limit (sign-in links, MCP tokens, the AI routes, uploads) counts by the client's address. On Fly the instance never sees the visitor's connection: the edge does, and with `fly-replay` the request may pass through another machine before it arrives. So the instance must be told which header to believe (`server/client-ip.mjs`, TAB-71):
+
+| Variable | Value | Meaning |
+| --- | --- | --- |
+| `TABULA_TRUST_PROXY` | `1` | Believe the header below at all. Without it the connection's address counts and both headers are ignored, so every visitor behind the edge shares one limit |
+| `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly sets it itself, a visitor's own value does not survive the edge, and it stays the visitor's address through `fly-replay` |
+| | `x-forwarded-for` (the default) | The rightmost `X-Forwarded-For` entry, for a single reverse proxy (Caddy, nginx) that appends the client address. Behind Fly with `fly-replay`, the rightmost entry can be the replaying machine, and then every visitor would share its limit |
+
+Any other value refuses startup; `TABULA_CLIENT_IP_HEADER` without `TABULA_TRUST_PROXY=1` is ignored with a warning. A header value that is not an IP address falls back to the connection's address. **Recommended for hosted workspaces: `TABULA_TRUST_PROXY=1` and `TABULA_CLIENT_IP_HEADER=fly-client-ip`.**
+
+**Checking it on the first deploy.** `GET /api/internal/client-ip` (bearer token, like the other internal calls, also while read-only) answers what the instance saw for that very request:
+
+```json
+{ "address": "203.0.113.7", "trustProxy": true, "header": "fly-client-ip",
+  "seen": { "connection": "fdaa:0:…", "xForwardedFor": "203.0.113.7, 172.19.4.2", "flyClientIp": "203.0.113.7" } }
+```
+
+1. From your own machine, through the public address (not `fly ssh`), call it: `curl -s -H "Authorization: Bearer $TOKEN" https://<workspace host>/api/internal/client-ip`.
+2. Compare `address` with your public address (`curl -s https://ifconfig.me`). They must be equal.
+3. Look at `seen`: `flyClientIp` should be your address. If `xForwardedFor`'s last entry is not your address (it is a machine address when the request was replayed), `x-forwarded-for` would be wrong for this setup; that is the case TAB-71 was opened for.
+4. Call it from a second network (a phone off Wi-Fi): a different `address`. Then rate limits are per visitor.
+
+Only addresses come back: header values are cut at 300 and 64 characters and nothing else of the request is echoed. The tests (`test/proxy.test.ts`) run a fake Fly edge with a replay hop and show both settings: with `fly-client-ip` each visitor is limited alone, with the default every visitor shares the hop's limit.
+
 ## Read-only
 
 While `readOnly` is true:

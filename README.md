@@ -74,6 +74,7 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
+| `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`: which header holds the client address, `x-forwarded-for` (its rightmost entry) or `fly-client-ip` (on Fly, see `docs/cloud.md`, Client addresses) |
 
 ### Behind a reverse proxy
 
