@@ -65,6 +65,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `kanban-wip` | A fourth card in the lane with a limit of three: the danger count and rule |
 | `kanban-lowdetail` | The kanban at zoom 0.3: titles as bars, chips as colour, lane headers as names |
 | `kanban-labels-colour` | The Labels dialog with the first label's colour list open |
+| (phone only) | `kanban-sheet-filter`, `kanban-sheet-adding`, `kanban-moveto` and `kanban-moveto-full` drive the list sheet that only exists under 600 px, so a width of 600 or more skips them |
 | (phone zoom) | Under 600 px wide the states `kanban-filter-on`, `kanban-wip-block`, `kanban-wip-refused` and `kanban-addlane` fit the view to one lane (Doing, Doing and Review side by side at about 50% with a card of Doing held, and the new lane) at about 100% (the WIP ones about 50%) instead of the whole kanban at 16 to 23%, so the dimming, the Full outline, the toast and the name field can be judged on a phone |
 | `kanban-sheet` | Slice 5: the kanban as a list on the Doing lane (a side panel on a wide window) |
 | `kanban-sheet-filter` | The list with a filter on and the Filter popover open from its header |
