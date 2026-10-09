@@ -38,7 +38,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
                      kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session (the chat states
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -1211,6 +1211,13 @@ const STATES = {
     await env.page.locator('.chat-toggle').click();
     await env.page.getByRole('combobox', { name: 'Message' }).click({ timeout: 5000 });
   },
+  // TAB-243 counterpart: a running poll card and facilitator bar wait while the chat tray is open on a phone.
+  async 'chat-poll'(env) {
+    await resetChatMarker(env);
+    await STATES['flow-poll'](env);
+    await env.page.locator('.chat-toggle').click();
+    await env.page.getByRole('combobox', { name: 'Message' }).waitFor();
+  },
   async 'chat-object'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-object').first().waitFor();
@@ -1692,7 +1699,7 @@ const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
