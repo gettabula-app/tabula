@@ -17,6 +17,7 @@ export const CHAT_LIMITS = Object.freeze({
   channelInfo: { max: 60, windowMs: MINUTE_MS },
   unread: { max: 60, windowMs: MINUTE_MS },
   read: { max: 60, windowMs: MINUTE_MS },
+  react: { max: 60, windowMs: MINUTE_MS },
 });
 
 /** One sliding window per key. `wait(key)` is 0 when a hit fits, else the seconds until it would. */
@@ -66,6 +67,7 @@ export function createChatLimits({ now = Date.now, limits = CHAT_LIMITS } = {}) 
   const channelInfo = createWindow(limits.channelInfo, now);
   const unread = createWindow(limits.unread, now);
   const read = createWindow(limits.read, now);
+  const react = createWindow(limits.react, now);
   return {
     /** A new message from `userId` in the channel `channel` ("kind/ref"). */
     post: (userId, channel) => hitAll([[perChannel, `${userId} ${channel}`], [overall, userId], [burst, userId]]),
@@ -77,5 +79,7 @@ export function createChatLimits({ now = Date.now, limits = CHAT_LIMITS } = {}) 
     unread: (userId) => hitAll([[unread, userId]]),
     /** PUT of a read marker by `userId`, in any channel. */
     read: (userId) => hitAll([[read, userId]]),
+    /** A reaction switched on or off by `userId`. */
+    react: (userId) => hitAll([[react, userId]]),
   };
 }

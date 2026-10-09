@@ -137,6 +137,15 @@ export const MIGRATIONS = [
   AI_KEYS_MIGRATION,
   // Which board may read which image file (docs/images.md).
   ASSETS_MIGRATION,
+  // Per-person preferences (docs/chat.md, Mentions): one row per person and key. The `settings` table is instance-wide.
+  `
+  CREATE TABLE user_prefs (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+  );
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -795,6 +804,15 @@ export function openDirectory(file) {
     ).map((r) => ({ principalType: r.principal_type, principalId: r.principal_id, name: r.name, role: r.role }));
   }
 
+  // per-person preferences
+
+  const getPref = (userId, key) => get('SELECT value FROM user_prefs WHERE user_id = ? AND key = ?', userId, key)?.value ?? null;
+
+  function setPref(userId, key, value) {
+    if (!getUser(userId)) throw new Error('user not found');
+    run('INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value', userId, key, String(value));
+  }
+
   // settings
 
   const getSetting = (key) => get('SELECT value FROM settings WHERE key = ?', key)?.value ?? null;
@@ -865,6 +883,8 @@ export function openDirectory(file) {
     countOwners,
     listOwnerEmails,
     updateUser,
+    getPref,
+    setPref,
     removeUser,
     createLoginToken,
     consumeLoginToken,

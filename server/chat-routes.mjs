@@ -4,7 +4,8 @@
 // what it points at. A channel the caller cannot read is a 404, never a 403.
 
 import { CHAT_KINDS, WORKSPACE_REF } from './chat-access.mjs';
-import { CHAT_SETTING_KEYS, RETENTION_CHOICES, readChatSettings } from './chat.mjs';
+import { CHAT_SETTING_KEYS, REACTIONS, RETENTION_CHOICES, readChatSettings } from './chat.mjs';
+import { PREF_EMAIL_MENTIONS, emailsMentions } from './chat-notify.mjs';
 import { checkText, isClientId, isObjectId, resolveMentions } from './chat-text.mjs';
 
 export const CHAT_BODY_LIMIT = 16 * 1024;
@@ -33,10 +34,11 @@ const TEXT_ERRORS = {
  * @param {Function} deps.compile
  * @param {Function} deps.audit
  * @param {Function} deps.requireAdmin
+ * @param {ReturnType<typeof import('./chat-notify.mjs').createChatNotifier> | null} [deps.notifier] mention notices and emails
  * @param {(name: string, payload?: object) => void} [deps.emit] the API's event emitter (access-changed after a setting)
  * @param {{ HttpError: any, badRequest: Function, forbidden: Function, notFound: Function, conflict: Function }} deps.errors
  */
-export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, emit = () => {}, errors }) {
+export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, notifier = null, emit = () => {}, errors }) {
   const { HttpError, badRequest, forbidden, notFound, conflict } = errors;
   const hidden = () => notFound('Channel not found');
 
@@ -102,6 +104,7 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
         replyTo: m.replyTo,
         objectId: m.objectId,
         mentions: deleted ? [] : m.mentions.map((id) => ({ id, name: nameOf(id) })),
+        reactions: deleted ? [] : m.reactions.map((r) => ({ emoji: r.emoji, userIds: r.userIds })),
         createdAt: m.createdAt,
         editedAt: m.editedAt,
         deleted,
@@ -118,6 +121,31 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       console.error('chat: could not deliver an event:', err?.code ?? err?.message ?? 'error');
     }
   };
+
+  /** In-app notices and queued emails for the people a message mentions; a failure never fails the send. */
+  function notifyMentions(message, added) {
+    if (!notifier || added.length === 0) return;
+    try {
+      notifier.mentioned({ message, added });
+    } catch (err) {
+      console.error('chat: could not notify mentioned people:', err?.code ?? err?.message ?? 'error');
+    }
+  }
+
+  /** One reaction switched on or off on a message the caller can write in; the answer is the message's reactions. */
+  function react(res, user, params, on) {
+    const { message, can } = messageFor(user, params.id);
+    if (!REACTIONS.includes(params.emoji)) throw badRequest('not a reaction');
+    if (message.deletedAt !== null) throw conflict('deleted', 'This message was deleted');
+    requireWrite(can);
+    const wait = limits.react(user.id);
+    if (wait) throw limited(res, wait);
+    const result = store().setReaction(message.id, user.id, params.emoji, on);
+    if (!result) throw conflict('deleted', 'This message was deleted');
+    const reactions = result.reactions.map((r) => ({ emoji: r.emoji, userIds: r.userIds }));
+    if (result.changed) publish(message.kind, message.ref, { t: 'reaction', kind: message.kind, ref: message.ref, id: message.id, emoji: params.emoji, userId: user.id, on, reactions });
+    return reactions;
+  }
 
   function parseLimit(raw) {
     if (raw === null || raw === '') return PAGE_DEFAULT;
@@ -183,7 +211,10 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
         kind, ref, authorId: user.id, authorName: user.name, body: text, replyTo, objectId, clientId: body.clientId, mentions,
       });
       const shown = view(message);
-      if (created) publish(kind, ref, { t: 'message', kind, ref, message: shown }, { authorId: user.id });
+      if (created) {
+        publish(kind, ref, { t: 'message', kind, ref, message: shown }, { authorId: user.id });
+        notifyMentions(message, message.mentions);
+      }
       return [created ? 201 : 200, { message: shown }];
     }),
 
@@ -198,6 +229,9 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       if (wait) throw limited(res, wait);
       const edited = store().editMessage(message.id, text, mentions);
       const shown = view(edited);
+      // a mention added by the edit notifies; one taken away withdraws a mail still waiting; nothing already sent is sent again
+      notifyMentions(edited, edited.mentions.filter((id) => !message.mentions.includes(id)));
+      notifier?.withdraw(message.id, message.mentions.filter((id) => !edited.mentions.includes(id)));
       publish(message.kind, message.ref, { t: 'edit', kind: message.kind, ref: message.ref, message: shown }, { authorId: user.id });
       return [200, { message: shown }];
     }),
@@ -210,11 +244,24 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       const wait = limits.change(user.id);
       if (wait) throw limited(res, wait);
       store().deleteMessage(message.id, user.id);
+      notifier?.withdraw(message.id, message.mentions);
       // A moderator's delete is on the record; an author removing their own words is not. Ids only, never text.
       if (!own) audit(user, 'chat.delete', { kind: message.kind, ref: message.ref, messageId: message.id, authorId: message.authorId });
       const by = own ? 'author' : 'moderator';
       publish(message.kind, message.ref, { t: 'delete', kind: message.kind, ref: message.ref, id: message.id, by }, { authorId: message.authorId });
       return [204];
+    }),
+
+    compile('PUT', 'chat/messages/:id/reactions/:emoji', {}, ({ res, user, params }) => [200, { id: Number(params.id), reactions: react(res, user, params, true) }]),
+    compile('DELETE', 'chat/messages/:id/reactions/:emoji', {}, ({ res, user, params }) => [200, { id: Number(params.id), reactions: react(res, user, params, false) }]),
+
+    // The person's own chat preferences. Their own state, not workspace content, so they work while the workspace is read-only.
+    compile('GET', 'me/prefs', {}, ({ user }) => [200, { emailMentions: emailsMentions(directory, user.id) }]),
+    compile('PUT', 'me/prefs', { body: true, readOnlyOk: true }, ({ user, body }) => {
+      for (const key of Object.keys(body)) if (key !== 'emailMentions') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      if (typeof body.emailMentions !== 'boolean') throw badRequest('emailMentions must be a boolean');
+      directory.setPref(user.id, PREF_EMAIL_MENTIONS, body.emailMentions ? '1' : '0');
+      return [200, { emailMentions: body.emailMentions }];
     }),
 
     // A read marker is the person's own state, not workspace content, so it works while the workspace is read-only.
