@@ -136,10 +136,12 @@ function compile(method, pattern, options, handler) {
 
 // `ai` carries what the relay shares with the AI routes (canWriteRoom, readRoom) and can replace the provider factory
 // (docs/ai.md); the tests do, so no request leaves the machine.
+// `onChange` is told after every API call that wrote and succeeded (any method but GET, HEAD and OPTIONS, status below 400):
+// the backups use it to take a settle backup shortly after the activity stops (docs/backups.md, When it runs).
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -222,7 +224,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
-  const OWNER_STATUS_FIELDS = ['lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests'];
+  const OWNER_STATUS_FIELDS = ['lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger'];
 
   function ownerBackupStatus() {
     const status = backupStatus() ?? {};
@@ -1172,6 +1174,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // a streaming route (POST /api/ai/run) has written and ended the response itself
     if (route.stream) return;
     const [status, payload, headers] = answer;
+    if (status < 400 && !READ_METHODS.has(method)) onChange();
     send(res, status, payload, headers);
   }
 

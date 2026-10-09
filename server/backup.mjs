@@ -42,6 +42,12 @@ const BACKOFF_MS = [500, 2_000, 8_000];
 const GC_GRACE_MS = HOUR_MS;
 const FIRST_RUN_MIN_MS = MINUTE_MS;
 const FIRST_RUN_SPAN_MS = 4 * MINUTE_MS;
+const DEFAULT_SETTLE_SECONDS = 120;
+const DEFAULT_SHUTDOWN_SECONDS = 4;
+/** A workspace that never goes quiet is still backed up this long after its first change that is not in a backup (or one settle time, if that is longer). */
+const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
+/** The longest wait between two settle attempts while the bucket keeps failing. */
+const SETTLE_RETRY_CAP_MS = 30 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
 /** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
 export const PROTECTED_KEY = 'backup.protected';
@@ -133,6 +139,8 @@ function keySpellings(raw, bytes) {
  * @property {string} region
  * @property {boolean} pathStyle
  * @property {number} intervalMinutes
+ * @property {number} settleSeconds quiet time after the last change before a backup is taken; 0 turns settle backups off
+ * @property {number} shutdownSeconds how long a graceful shutdown may spend on a final backup; 0 turns it off
  * @property {number} keepHourlyHours
  * @property {number} keepDailyDays
  * @property {string} accessKey not enumerable
@@ -211,6 +219,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   }
 
   const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', 60, 5, 10_080);
+  const settleSeconds = wholeNumber(env, 'SETTLE_SECONDS', DEFAULT_SETTLE_SECONDS, 0, 3_600);
+  const shutdownSeconds = wholeNumber(env, 'SHUTDOWN_SECONDS', DEFAULT_SHUTDOWN_SECONDS, 0, 25);
   const keepHourlyHours = wholeNumber(env, 'KEEP_HOURLY_HOURS', 48, 0, 8_760);
   const keepDailyDays = wholeNumber(env, 'KEEP_DAILY_DAYS', 30, 0, 3_650);
 
@@ -221,6 +231,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     region,
     pathStyle,
     intervalMinutes,
+    settleSeconds,
+    shutdownSeconds,
     keepHourlyHours,
     keepDailyDays,
   };
@@ -886,6 +898,9 @@ const tooLarge = (rel, size, limit) => new BackupError('too_large', `${rel} is $
  * The backup engine. Returns null when backups are off. Nothing here throws out of a timer: a failed run is recorded
  * in the status (and the audit log in accounts mode) and tried again at the next interval.
  *
+ * Besides the interval schedule (the heartbeat), `noteChange()` starts a settle timer: a backup shortly after activity
+ * stops, and `finish({ budgetMs })` takes a final bounded one on a graceful shutdown (docs/backups.md, When it runs).
+ *
  * @param {object} options
  * @param {BackupConfig | null} options.config
  * @param {string} options.dataDir
@@ -952,6 +967,9 @@ export function createBackup({
   });
 
   const intervalMs = config.intervalMinutes * MINUTE_MS;
+  const settleMs = (config.settleSeconds ?? DEFAULT_SETTLE_SECONDS) * 1000;
+  const settleCapMs = Math.max(SETTLE_MAX_WAIT_MS, settleMs);
+  const trackChanges = settleMs > 0 || (config.shutdownSeconds ?? DEFAULT_SHUTDOWN_SECONDS) > 0;
   const prefix = config.prefix;
   const objectKey = (id) => `${prefix}/objects/${id}`;
   const manifestKey = (name) => `${prefix}/manifests/${name}`;
@@ -960,10 +978,21 @@ export function createBackup({
   let running = false;
   let started = false;
   let stopped = false;
+  let finishing = false;
+  let finishPromise = null;
   let timer = null;
   let nextRunAt = null;
   let inFlight = null;
   let tempFile = null;
+  // Settle: the first change not in a backup yet (null: nothing to back up), the last change, and a counter that tells
+  // whether anything was noted while a run was going (clocks can stand still, a counter cannot).
+  let dirtySince = null;
+  let lastChangeAt = null;
+  let changeSeq = 0;
+  let firstChangeInRun = null;
+  let retryNotBefore = 0;
+  let settleTimer = null;
+  let lastTrigger = null;
   /** Objects this process has seen in the bucket, so an unchanged file is not asked about again every run. */
   let verified = new Set();
   /** Objects uploaded by a run that did not get as far as its manifest: asked about before they are uploaded again. */
@@ -1418,28 +1447,52 @@ export function createBackup({
     return message;
   }
 
-  async function run() {
+  /** The wait before the next settle attempt after `failures` runs in a row failed: the settle time, doubling up to half an hour. */
+  const retryDelay = (failures) => Math.min(settleMs * 2 ** Math.max(0, failures - 1), Math.max(settleMs, SETTLE_RETRY_CAP_MS));
+
+  /**
+   * @param {'interval' | 'settle' | 'shutdown' | 'manual'} trigger why this run starts
+   */
+  async function run(trigger) {
     if (stopped) return { ok: false, aborted: true };
     if (running) return { ok: false, skipped: 'running' };
     running = true;
     const startedAt = now();
+    const seqAtStart = changeSeq;
+    firstChangeInRun = null;
+    let failed = false;
     try {
       const summary = await execute(startedAt);
       const pruned = await prune(summary.manifestName, now());
+      lastTrigger = trigger;
       recordSuccess(startedAt, summary, pruned);
+      // What was noted while this run read the files may or may not be in it, so only a quiet run clears the mark.
+      retryNotBefore = 0;
+      if (changeSeq === seqAtStart) {
+        dirtySince = null;
+        lastChangeAt = null;
+      } else {
+        dirtySince = firstChangeInRun ?? dirtySince;
+      }
       return { ok: true, changed: summary.changed, manifest: summary.manifestName, files: summary.files, uploaded: summary.uploaded };
     } catch (err) {
       if (err?.code === 'aborted') return { ok: false, aborted: true };
+      failed = true;
+      lastTrigger = trigger;
       return { ok: false, error: recordFailure(startedAt, err) };
     } finally {
       running = false;
+      if (failed && settleMs > 0) retryNotBefore = now() + retryDelay(state.consecutiveFailures);
+      afterRun();
     }
   }
 
   /** Runs a backup now unless one is running. Never rejects. */
-  function runNow() {
-    const promise = run().catch((err) => ({ ok: false, error: describe(err) }));
-    inFlight = promise;
+  function runNow(trigger = 'manual') {
+    const wasRunning = running;
+    const promise = run(trigger).catch((err) => ({ ok: false, error: describe(err) }));
+    // A call that finds a run going must not replace the promise of that run: stop() and finish() wait for it.
+    if (!wasRunning && !stopped) inFlight = promise;
     return promise;
   }
 
@@ -1455,13 +1508,94 @@ export function createBackup({
   async function tick() {
     timer = null;
     nextRunAt = null;
+    if (stopped || finishing) return;
     try {
-      await runNow();
+      await runNow('interval');
     } catch (err) {
       say(`unexpected failure (${describe(err)})`);
     } finally {
-      if (started && !stopped) schedule(intervalMs);
+      if (started && !stopped && !finishing) schedule(intervalMs);
     }
+  }
+
+  // ------------------------------------------------------------ settle
+
+  function cancelSettle() {
+    if (settleTimer !== null) clearTimer(settleTimer);
+    settleTimer = null;
+  }
+
+  /** The settle timer: quiet for settleMs after the last change, but no later than settleCapMs after the first one, and not before a retry backoff has passed. */
+  function armSettle() {
+    cancelSettle();
+    if (settleMs <= 0 || !started || stopped || finishing || dirtySince === null) return;
+    const t = now();
+    const due = Math.max(Math.min(lastChangeAt + settleMs, dirtySince + settleCapMs), retryNotBefore, t);
+    settleTimer = setTimer(onSettle, due - t);
+    settleTimer?.unref?.();
+  }
+
+  function onSettle() {
+    settleTimer = null;
+    if (stopped || finishing || dirtySince === null) return;
+    // A run is going: when it ends, afterRun() arms the timer again if something was noted after it started.
+    if (running) return;
+    void runNow('settle');
+  }
+
+  /** After every run: arm the settle timer when there is still something to back up, drop it when there is not. */
+  function afterRun() {
+    if (dirtySince === null) cancelSettle();
+    else armSettle();
+  }
+
+  /** Stops everything at once, without waiting for the run in progress to unwind. */
+  function halt() {
+    stopped = true;
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+    nextRunAt = null;
+    cancelSettle();
+    stop.abort();
+    if (tempFile) removeTemp(tempFile);
+  }
+
+  async function runFinal(budgetMs) {
+    const outcome = { ran: false, ok: true, timedOut: false };
+    finishing = true;
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+    nextRunAt = null;
+    cancelSettle();
+    if (stopped || !(budgetMs > 0)) return outcome;
+    if (!running && dirtySince === null) return outcome;
+
+    // One timer for the whole budget, raced against both steps, so the total can never be longer than the budget.
+    let expired = false;
+    let budgetTimer = null;
+    const budget = new Promise((resolve) => {
+      budgetTimer = setTimer(() => {
+        expired = true;
+        resolve(undefined);
+      }, budgetMs);
+    });
+    try {
+      if (running && inFlight) await Promise.race([inFlight, budget]);
+      if (!expired && !stopped && dirtySince !== null) {
+        outcome.ran = true;
+        const result = await Promise.race([runNow('shutdown'), budget]);
+        outcome.ok = result?.ok === true;
+      }
+      if (expired && (running || dirtySince !== null)) {
+        outcome.timedOut = true;
+        outcome.ok = false;
+        say('the final backup did not finish in time and was stopped');
+        halt();
+      }
+    } finally {
+      if (budgetTimer !== null) clearTimer(budgetTimer);
+    }
+    return outcome;
   }
 
   return {
@@ -1474,17 +1608,55 @@ export function createBackup({
     },
     /** Cancels the schedule and aborts a run in progress; resolves once it has stopped. */
     async stop() {
-      stopped = true;
-      if (timer !== null) clearTimer(timer);
-      timer = null;
-      nextRunAt = null;
-      stop.abort();
-      if (tempFile) removeTemp(tempFile);
+      halt();
       await inFlight?.catch(() => {});
+    },
+    /**
+     * Something in the data directory changed (a room was saved, an API call wrote). Marks the workspace dirty and arms
+     * the settle timer; nothing else. Cheap, synchronous, never throws, and nothing at all once stopped or when both
+     * the settle and the shutdown backup are off.
+     */
+    noteChange() {
+      try {
+        if (!started || stopped || !trackChanges) return;
+        const t = now();
+        changeSeq++;
+        lastChangeAt = t;
+        dirtySince ??= t;
+        if (running) firstChangeInRun ??= t;
+        armSettle();
+      } catch {
+        /* a change that cannot be noted is found by the next interval run */
+      }
+    },
+    /**
+     * Graceful shutdown: waits for a run in progress and, if anything changed since the last backup, takes one more,
+     * all within `budgetMs`. When the budget ends the run is aborted (the manifest comes last, so nothing half written is
+     * ever visible). Resolves within the budget and never throws; nothing is requested from the bucket when nothing changed.
+     * The caller still calls stop().
+     * @param {{ budgetMs?: number }} [options]
+     * @returns {Promise<{ ran: boolean, ok: boolean, timedOut: boolean }>}
+     */
+    finish({ budgetMs } = {}) {
+      finishPromise ??= runFinal(Number(budgetMs)).catch((err) => {
+        say(`the final backup failed (${describe(err)})`);
+        return { ran: false, ok: false, timedOut: false };
+      });
+      return finishPromise;
     },
     runNow,
     status() {
-      return { enabled: true, running, keyId: keys.keyId, intervalMinutes: config.intervalMinutes, ...state, nextRunAt };
+      return {
+        enabled: true,
+        running,
+        keyId: keys.keyId,
+        intervalMinutes: config.intervalMinutes,
+        settleSeconds: settleMs / 1000,
+        dirty: dirtySince !== null,
+        lastTrigger,
+        ...state,
+        nextRunAt,
+      };
     },
     listManifests,
     readManifest,

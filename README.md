@@ -136,6 +136,8 @@ Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted o
 | `TABULA_BACKUP_REGION` | `auto` | Signing region |
 | `TABULA_BACKUP_PATH_STYLE` | `on` | `off` for virtual hosted style (`bucket.endpoint`) |
 | `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between backups, 5 to 10080 |
+| `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Also back up this long after the last change (1 to 3600; `0`: only on the interval) |
+| `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | Time a graceful shutdown may spend on a final backup (1 to 25; `0`: none). Keep it under the platform's stop timeout (Fly: 5 seconds) |
 | `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep one backup per hour for this long (`0`: none) |
 | `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep one backup per day for this long (`0`: none) |
 

@@ -43,6 +43,8 @@ Backups are on when the five required variables are set. Some but not all of the
 | `TABULA_BACKUP_REGION` | `auto` | The signing region. `auto` is right for Tigris and R2; AWS needs the bucket's region |
 | `TABULA_BACKUP_PATH_STYLE` | `on` | `on`: `https://endpoint/bucket/key`. `off`: `https://bucket.endpoint/key` (needs a DNS name, not an IP address) |
 | `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between runs, 5 to 10080 |
+| `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Quiet time after the last change before a backup is taken, 1 to 3600. `0`: no settle backups (see [When it runs](#when-it-runs)) |
+| `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | How long a graceful shutdown may spend on a final backup, 1 to 25. `0`: no final backup. Keep it under the time the platform waits before it kills the process (5 seconds on Fly) |
 | `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep the newest backup of every hour for this long. `0`: no hourly points |
 | `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep the newest backup of every day (UTC) for this long. `0`: no daily points |
 
@@ -52,7 +54,19 @@ Give the credentials the least they need on that bucket (or prefix): put, get, h
 
 ## When it runs
 
-The first run starts a random one to five minutes after the server starts (so a restart loop does not hit the bucket every few seconds), then another one interval after each run ends. A run never overlaps another: a tick that arrives during a run is skipped. A failed run is tried again at the next interval; nothing a backup does can stop the relay or slow a board, with one exception: copying the database is a synchronous SQLite call that holds the server for as long as it takes to copy it (milliseconds for a directory of a few MB). Measured on a development laptop (TAB-126), with a database made mostly of audit rows: 3 MB took 43 ms, 15 MB took 232 ms and 75 MB took 671 ms, of which the second step (removing the engine's own rows and vacuuming the copy, which keeps an unchanged database unchanged) is about three quarters. A small shared-CPU virtual machine will be several times slower, so expect seconds, not milliseconds, for a database of tens of MB; every websocket message waits for that long. The fix, if a workspace gets there, is to take the copy in a worker thread; until then it only matters for very large directories.
+A backup starts for one of four reasons, which the status calls the **trigger** (`lastTrigger`): `interval`, `settle`, `shutdown`, or `manual` (a restore takes a safety backup first).
+
+**The interval run** is the heartbeat. The first run starts a random one to five minutes after the server starts (so a restart loop does not hit the bucket every few seconds), then another one interval after each run ends. It runs whether or not anything changed, so it also finds what no signal told the server about, for example after a crash. A run never overlaps another: a tick that arrives during a run is skipped.
+
+**The settle run** closes the gap between two interval runs. A hosted workspace machine stops when it is idle, and a visit shorter than the next interval (edit, close the tab, the machine stops) would otherwise be lost to the schedule and not backed up at all until someone woke the machine again, which for a workspace nobody opens is no limit at all. So every change starts a timer: a room that is saved (boards and comments), an API call that wrote and succeeded (boards, members, sessions, settings, images, version history, everything in the directory) and, in open mode where there is no accounts API, an image or version-history write. Reads and refused calls change nothing, and a websocket message is not a change by itself: a room is saved a second after its last edit, and that save is the signal. When nothing has changed for `TABULA_BACKUP_SETTLE_SECONDS` (default 2 minutes) a backup runs. Every new change starts the wait again, but a workspace that never goes quiet is still backed up 10 minutes after its first change that is not in a backup yet (or one settle time, if that is longer). A change made while a run is going is not lost: when the run ends and something was noted after it started, the timer starts again, and a backup only clears the "changed" mark when nothing was noted since it started. A run that fails leaves the mark and tries again after one settle time, then twice as long each time up to half an hour, so a bucket that is down is retried and not hammered. `TABULA_BACKUP_SETTLE_SECONDS=0` turns settle runs off; the interval schedule is the same either way.
+
+**The shutdown run** is a last bounded backup when the server is asked to stop (SIGINT, SIGTERM, SIGHUP, SIGBREAK or an IPC `shutdown` message; this is what Fly sends when it stops an idle machine). The order is: save every open room, then the backup, then close the databases and exit. If a run is going the server waits for it, and if anything changed since the last backup it takes one more; nothing is requested from the bucket when nothing changed. All of it must fit in `TABULA_BACKUP_SHUTDOWN_SECONDS` (default **4**). When that time is up the run is stopped. Because the manifest is written last, a stopped run leaves no half-written backup visible, only objects the next run reuses or the cleanup removes. The server then waits up to 2 more seconds for the stopped run to let go of the database, so the longest a shutdown takes because of backups is the budget plus those 2 seconds, and in practice the stop takes milliseconds. **The default is 4 because Fly stops a machine with SIGINT and kills it after 5 seconds by default**, and the control plane's provisioning sets no `stop_config`, so there is nothing longer to use yet. A longer wait (and with it a larger `TABULA_BACKUP_SHUTDOWN_SECONDS`) is a separate change in tabula-cloud: `kill_timeout` in the machine's `stop_config`. `TABULA_BACKUP_SHUTDOWN_SECONDS=0` turns it off. A restore that holds the server in maintenance mode stops the backups itself, and the shutdown run is skipped.
+
+**What is still not guaranteed.** A crash, an out-of-memory kill or any kill without a signal between a change and its settle run (default 2 minutes) loses that change from the backups; the data on the volume is still there, and the next interval run after the restart takes it. A change made while the stop is already running is saved to disk but may miss the final backup. A bucket that does not answer within the budget leaves the last good backup as the newest.
+
+**What it costs.** A run that finds nothing different writes no manifest, but it still asks the bucket for the manifest list and the newest manifest, checks the objects it knows and prunes: about ten requests. Settle runs only follow real changes, so a busy workspace costs at most one such run every 10 minutes and a quiet one none; with the defaults the extra cost is a few dozen requests a day for a workspace that is used a few times a day. The shutdown run adds one when something changed. Settle and shutdown runs are audited like the others, and only when they did something (below); a timer that fires is not audited.
+
+A failed run is tried again by the next settle attempt or interval, whichever comes first; nothing a backup does can stop the relay or slow a board, with one exception: copying the database is a synchronous SQLite call that holds the server for as long as it takes to copy it (milliseconds for a directory of a few MB). Measured on a development laptop (TAB-126), with a database made mostly of audit rows: 3 MB took 43 ms, 15 MB took 232 ms and 75 MB took 671 ms, of which the second step (removing the engine's own rows and vacuuming the copy, which keeps an unchanged database unchanged) is about three quarters. A small shared-CPU virtual machine will be several times slower, so expect seconds, not milliseconds, for a database of tens of MB; every websocket message waits for that long. The fix, if a workspace gets there, is to take the copy in a worker thread; until then it only matters for very large directories.
 
 One run:
 
@@ -154,7 +168,7 @@ All need a signed-in **owner** (401 signed out, 403 for anyone else, admins incl
 GET  /api/admin/backups
   -> { backups: [{name, createdAt, files, bytes, keyId, protected, protectedUntil, readable, error?}],
        truncated, status: {lastSuccessAt, lastFailureAt, lastFailureError, consecutiveFailures, nextRunAt,
-       running, intervalMinutes, keyId, bytesStored, objects, manifests},
+       running, intervalMinutes, keyId, bytesStored, objects, manifests, dirty, lastTrigger},
        restore: {inProgress, maintenance, last, protectedBackups, oldData} }
 GET  /api/admin/backups/:name
   -> { name, createdAt, appVersion, keyId, files, bytes, boards, protected, confirmWord: 'RESTORE',
@@ -203,7 +217,7 @@ In a hosted workspace (see [cloud.md](cloud.md)) the control plane reads the sta
 ```
 GET /api/internal/backup-status
   -> { enabled: false }                                    backups are off
-  -> { enabled: true, running, keyId, intervalMinutes,
+  -> { enabled: true, running, keyId, intervalMinutes, settleSeconds, dirty, lastTrigger,
        lastRunAt, lastSuccessAt, lastError,
        lastFailureAt, lastFailureError, consecutiveFailures,
        lastManifest, bytesStored, objects, manifests, nextRunAt, prune,
@@ -215,11 +229,12 @@ Times are milliseconds since the epoch (UTC) or `null`.
 - `lastRunAt` is when the latest run started, `lastSuccessAt` when the latest successful run ended. A run that finds nothing changed is a success. `lastError` is the error of the latest run (`null` after a success); `lastFailureAt` and `lastFailureError` are the latest failure ever and stay after a later success; `consecutiveFailures` counts failed runs since the last success. Errors are short and contain a status and an S3 error code at most, never a header, a URL, a key or a file's contents. A stopped run (shutdown) is not a failure.
 - `lastManifest` is the newest manifest; `bytesStored` is the stored (encrypted) size of the objects it refers to, counting a shared object once; `manifests` is how many manifests are kept and `objects` how many objects the bucket holds under the prefix after the last cleanup.
 - `prune` is `{at, manifestsDeleted, objectsDeleted, gcSkipped, error}` for the latest cleanup. `gcSkipped` is `unreadable_manifest`, `unreadable_protection` or `inconsistent_listing` when objects were deliberately not deleted. A cleanup that fails (`error`) does not fail the backup.
-- `nextRunAt` is the scheduled time of the next run, `null` while a scheduled run is in progress or when stopped; `running` is true during any run.
+- `nextRunAt` is the scheduled time of the next interval run, `null` while a scheduled run is in progress or when stopped; `running` is true during any run. A pending settle run does not move it.
+- `dirty` is true while the workspace has changed since the latest backup that could have contained the change, and `lastTrigger` is why the latest run started: `interval`, `settle`, `shutdown`, `manual`, or `null` before the first run of this process. Neither is stored: after a restart `dirty` is false and the interval heartbeat covers what was missed. `settleSeconds` is `TABULA_BACKUP_SETTLE_SECONDS`. None of them holds a secret.
 
 A sensible alert: `lastSuccessAt` older than three intervals, or `consecutiveFailures` of two or more. The status is kept in the directory's `settings` table (`backup.status`), so it survives a restart. In open mode (no directory) it lives in memory and there is no endpoint.
 
-Each successful run writes an audit row `backup.run` (no actor; only counts: `changed`, `files`, `uploaded`, `bytes`, `skipped`, `manifestsDeleted`, `objectsDeleted`) and each failed run `backup.failed` (the short error). At an hourly interval that is 24 rows a day.
+Each successful run that did something writes an audit row `backup.run` (no actor; only counts: `changed`, `files`, `uploaded`, `bytes`, `skipped`, `manifestsDeleted`, `objectsDeleted`) and each failed run `backup.failed` (the short error). The trigger is not in the row. A run that found nothing to do is in the status but not in the audit log, whatever started it, and a settle timer that fires is never audited. With nobody editing, the hourly heartbeat adds no rows at all.
 
 ## Limits and caveats
 
