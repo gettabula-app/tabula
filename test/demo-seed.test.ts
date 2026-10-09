@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function fakeApp(userId = 'demo-visitor', viewport = { w: 1280, h: 800 }): BoardApp {
   const bounds = viewport.w <= 500
-    ? { x: 40, y: 25, w: 530, h: 715 }
+    ? { x: 40, y: 25, w: 530, h: 650 }
     : { x: 40, y: 25, w: 1110, h: 525 };
   return {
     store: new Store(new Y.Doc()),
@@ -134,6 +134,20 @@ describe('demo board seed', () => {
     expect(flow.isVoting()).toBe(true);
     expect(flow.myVotesLeft()).toBe(3);
     expect([...app.store.votes.values()].map((v) => v.userId).sort()).toEqual(['demo-jonas', 'demo-marta']);
+    const seededVotes = [...app.store.votes.values()].sort((a, b) => a.userId.localeCompare(b.userId));
+    expect(seededVotes.map(({ userId, itemId }) => [userId, itemId])).toEqual([
+      ['demo-jonas', 'demo-well-3'], ['demo-marta', 'demo-well-2'],
+    ]);
+    expect(Object.fromEntries(seededVotes.map((vote) => {
+      const item = app.store.get(vote.itemId);
+      return [vote.itemId, item && 'text' in item ? item.text : undefined];
+    }))).toEqual({ 'demo-well-2': 'Try it', 'demo-well-3': 'Calm' });
+    for (const vote of seededVotes) {
+      const item = app.store.get(vote.itemId);
+      expect(item).toMatchObject({ type: 'sticky', parent: 'demo-well-frame' });
+      const text = item && 'text' in item ? item.text : undefined;
+      expect(text?.length ?? Infinity).toBeLessThanOrEqual(6);
+    }
     expect([...flow.summary(voteStep.id).values()].every((v) => v.total === null)).toBe(true);
 
     const poll = app.store.polls.get('demo-next-poll')!;
@@ -146,6 +160,16 @@ describe('demo board seed', () => {
     expect(threads).toHaveLength(3);
     expect(threads.every((t) => ['demo-marta', 'demo-jonas'].includes(t.authorId))).toBe(true);
     expect(threads.every((t) => app.store.get(t.anchor.obj))).toBe(true);
+    expect(threads.map((t) => t.anchor.obj).sort()).toEqual(['demo-flow-frame', 'demo-improve-frame', 'demo-well-frame']);
+    const anchorPositions: Record<string, readonly [number, number]> = {
+      'demo-flow-frame': [0.65, 0.05], 'demo-improve-frame': [0.32, 0.05], 'demo-well-frame': [0.94, 0.05],
+    };
+    for (const thread of threads) {
+      const expected = anchorPositions[thread.anchor.obj!]!;
+      expect(thread.anchor.fx).toBeCloseTo(expected[0], 2);
+      expect(thread.anchor.fy).toBeCloseTo(expected[1], 2);
+      expect(app.store.get(thread.anchor.obj!)?.type).toBe('frame');
+    }
     expect(threads.flatMap((t) => t.replies).every((r) => ['demo-marta', 'demo-jonas'].includes(r.authorId))).toBe(true);
     expect(new Set([...threads.map((t) => t.authorId), ...threads.flatMap((t) => t.replies.map((r) => r.authorId))]))
       .toEqual(new Set(['demo-marta', 'demo-jonas']));
@@ -167,13 +191,17 @@ describe('demo board seed', () => {
     }
   });
 
-  it('stacks the intro frames on phones so both fit at 50% zoom or more', () => {
+  it('stacks the intro frames and flowchart on phones so they all fit above the vote bar', () => {
     withAnimationFrame();
     const app = fakeApp('demo-visitor', { w: 390, h: 844 });
     seedDemo(app);
 
-    expect(app.store.get('demo-well-frame')).toMatchObject({ x: 40, y: 180, w: 530, h: 270 });
-    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 470, w: 530, h: 270 });
+    expect(app.store.get('demo-well-frame')).toMatchObject({ x: 40, y: 145, w: 530, h: 185 });
+    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 390, w: 530, h: 170 });
+    expect(app.store.get('demo-flow-frame')).toMatchObject({ x: 40, y: 590, w: 530, h: 130 });
+    expect(app.r.contentBounds).toHaveBeenCalledWith([
+      'demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame', 'demo-flow-frame',
+    ]);
     const camera = vi.mocked(app.r.setCamera).mock.calls[0][0];
     expect(camera.zoom).toBeGreaterThanOrEqual(0.5);
   });
