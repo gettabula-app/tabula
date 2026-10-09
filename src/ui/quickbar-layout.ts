@@ -1,5 +1,7 @@
 export interface Box { x: number; y: number; w: number; h: number }
 
+export const GROUP_BAR_GAP = 20;
+
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**

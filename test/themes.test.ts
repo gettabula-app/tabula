@@ -114,6 +114,7 @@ describe('applyTheme', () => {
     const mismatched = THEME_VARS.filter((v) => values.get(v) !== matrix.vars[v]);
     expect(mismatched).toEqual([]);
     expect(root.dataset.theme).toBe('matrix');
+    expect(root.dataset.scheme).toBe('dark');
     expect(values.get('color-scheme')).toBe('dark');
   });
 
@@ -124,5 +125,6 @@ describe('applyTheme', () => {
     const notRemoved = THEME_VARS.filter((v) => !removed.includes(v));
     expect(notRemoved).toEqual([]);
     expect(root.dataset.theme).toBe('default');
+    expect(root.dataset.scheme).toBe('light');
   });
 });

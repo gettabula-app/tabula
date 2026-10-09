@@ -95,7 +95,7 @@ export const THEMES: Theme[] = [
       '--grid-major': '#3A3A4A',
       '--canvas-ink': '#DCD7BA',
       '--canvas-rule': '#54546D',
-      '--guide': '#D27E99',
+      '--guide': '#FF5D8F',
     },
   },
   {
@@ -180,6 +180,7 @@ export function applyTheme(id: string, root: ThemeRoot = document.documentElemen
     else root.style.setProperty(v, theme.vars[v]);
   }
   root.dataset.theme = theme.id;
+  root.dataset.scheme = theme.scheme;
   root.style.setProperty('color-scheme', theme.scheme);
 }
 

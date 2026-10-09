@@ -7,6 +7,7 @@ import {
   groupChipText,
   groupPathLabel,
   placeEnteredGroupChips,
+  placeEnteredGroupPins,
   showSelectedGroupChip,
   truncateMiddle,
 } from '../src/ui/group-ui-logic';
@@ -93,6 +94,24 @@ describe('group chip visibility and placement', () => {
     expect(placement.name.x).toBeGreaterThanOrEqual(8);
     expect(placement.done.x + 52).toBeLessThanOrEqual(382);
     expect(placement.done.y + 28).toBeLessThanOrEqual(836);
+  });
+
+  it('promotes pins over chip fills and moves pins away from chip text to just below the row', () => {
+    const chips = [
+      { box: { x: 100, y: 100, w: 100, h: 20 }, text: { x: 109, y: 104, w: 82, h: 11 } },
+      { box: { x: 210, y: 100, w: 52, h: 28 }, text: { x: 219, y: 108, w: 34, h: 11 } },
+    ];
+    const placements = placeEnteredGroupPins([
+      { id: 'edge', x: 80, y: 115, label: 'A', color: '#123456', resolved: false, count: 1, selected: false },
+      { id: 'text', x: 112, y: 115, label: 'B', color: '#123456', resolved: false, count: 2, selected: true },
+      { id: 'draft', x: 112, y: 115, label: '+', color: '#123456', resolved: false, count: 0, selected: false, draft: true },
+    ], chips);
+
+    expect(placements).toEqual([
+      { id: 'edge', x: 80, y: 115, promoted: true, moved: false },
+      { id: 'text', x: 112, y: 156, promoted: false, moved: true },
+      { id: 'draft', x: 112, y: 115, promoted: false, moved: false },
+    ]);
   });
 });
 

@@ -10,7 +10,11 @@
   --group-chip-line: var(--tray-line);
 }
 
-/* Contain the transformed SVG layer so the chrome chips can paint above comment pins. */
+:root[data-scheme='dark'] {
+  --group-dim: color-mix(in srgb, var(--canvas) 88%, transparent);
+}
+
+/* Keep the transformed canvas below chrome while promoted comment pins can cross the chip row. */
 .board-surface { z-index: 0; }
 
 .group-chip,
@@ -41,16 +45,15 @@
 }
 
 .group-chip[hidden],
-.group-done[hidden],
-.group-chip-bridge[hidden] { display: none; }
+.group-done[hidden] { display: none; }
 
-.group-chip-bridge {
+.group-pin-overlay {
   position: absolute;
-  z-index: 20;
-  left: 0;
-  top: 0;
+  z-index: 21;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  background: var(--group-chip-bg);
 }
 
 .group-done {
@@ -90,10 +93,10 @@
     content: '';
     position: absolute;
     left: 50%;
-    top: 50%;
+    bottom: 0;
     width: 44px;
     height: 44px;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, 0);
   }
 
   .icon-btn.qb-text.group-action {

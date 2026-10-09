@@ -86,7 +86,7 @@ describe('group renderer overlays', () => {
     expect(dimPath().getAttribute('class')).toBe('group-dim-wash active');
     expect(dimPath().getAttribute('fill-rule')).toBe('evenodd');
     const dimD = dimPath().getAttribute('d') ?? '';
-    expect(svg()).toContain('stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="3"');
+    expect(svg()).toContain('stroke="var(--canvas)" stroke-opacity="0.8" stroke-width="2"');
     expect(dimD).toContain('M10 20h80v60h-80z');
     expect(dimD).toContain('M120 20h80v60h-80z');
     expect(dimD).toContain('M230 20h80v60h-80z');
