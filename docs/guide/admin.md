@@ -101,7 +101,7 @@ The provider checks the key before anything is stored. While it checks, the butt
 
 After saving, the tab shows only the last four characters, for example **Anthropic key ending …a1b2**, with when the key was added and last used. The full key is never shown again. To change it, paste a new one and select **Replace key**. To remove it, select **Remove**, then **Click again to remove**.
 
-Select **Test key** next to **Remove** to check whether the saved key still works. The check leaves the key and its “last used” date alone, and shows a short result below it.
+Select **Test key** next to **Remove** to check whether the saved key still works. The check leaves the key and its “last used” date alone, and shows a short result below it. Tests count towards the same hourly limit as saving a key, and are recorded in the audit log without the key.
 
 If the server can no longer read the stored key, the tab warns you. Enter the key again to fix it.
 
@@ -230,7 +230,7 @@ Anyone with a board open sees **Restoring…** in the status chip and the board 
 
 A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Backups and restores read as sentences too, naming the backup by its date. Hover an entry to see the underlying action name.
 
-- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
+- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added, tested or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
 
 Entries with no person are shown as the system, for example when a hosted workspace is locked or unlocked.
