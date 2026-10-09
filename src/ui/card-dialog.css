@@ -4,8 +4,7 @@
    body scrolls, at most 85% of the view high. */
 
 .k-card-dialog .modal, .k-labels-dialog .modal { width: min(600px, 100%); }
-.k-card-form .field:first-child { margin-top: 0; }
-.k-card-form .field-label { display: block; }
+.k-card-form > :first-child { margin-top: 0; }
 .k-desc { min-height: 96px; resize: vertical; }
 .k-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .k-stack { display: grid; gap: 8px; }
@@ -16,7 +15,7 @@
 .modal .k-card-form .input:disabled { opacity: 1; border-style: dashed; color: var(--tray-text); }
 .k-note { padding: 8px 0 8px 12px; border-left: 2px solid var(--tray-text); color: var(--tray-text); }
 
-.k-label-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.k-card-form .k-label-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
 .modal .k-label-head .btn { height: 28px; padding: 0 4px; font-size: 13px; letter-spacing: normal; text-transform: none; }
 .k-labels { display: flex; flex-wrap: wrap; gap: 8px; }
 .k-chip {
@@ -36,7 +35,7 @@
 .k-actions .btn.danger { margin-left: auto; }
 
 /* Labels dialog: one row per label, rules between them */
-.k-label-list { margin: 0; padding: 0; list-style: none; border-top: 2px solid var(--tray-text); border-bottom: 1px solid var(--tray-line); }
+.k-label-list { margin: 0; padding: 0; list-style: none; border-bottom: 1px solid var(--tray-line); }
 .k-label-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line); }
 .k-label-list > :first-child { border-top: 0; }
 .k-label-row .k-swatches { grid-column: 1 / -1; }
@@ -48,6 +47,13 @@
 .k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }
 .k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* wide enough: name, colours and tools on one line */
+@media (min-width: 640px) {
+  .k-label-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .k-label-row .k-swatches { grid-column: 2; grid-row: 1; }
+  .k-label-row .k-swatch { width: 24px; height: 24px; }
+}
 
 @media (max-width: 860px) {
   .modal-back.k-card-dialog { align-items: end; padding: 0; }
