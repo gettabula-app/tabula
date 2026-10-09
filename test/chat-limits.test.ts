@@ -115,4 +115,25 @@ describe('the chat limits', () => {
     for (let i = 0; i < 20; i++) limits.change('ana');
     expect(limits.post('ana', 'board/b1')).toBe(0);
   });
+
+  it.each<['channelInfo' | 'unread' | 'read', number]>([['channelInfo', 60], ['unread', 60], ['read', 60]])(
+    'allow %s %i times a minute per person, then ask to wait, each on its own',
+    (name, max) => {
+      const { c, now } = clock();
+      const limits = createChatLimits({ now });
+      expect(CHAT_LIMITS[name]).toEqual({ max, windowMs: 60_000 });
+      for (let i = 0; i < max; i++) {
+        expect(limits[name]('ana')).toBe(0);
+        c.now += 100;
+      }
+      expect(limits[name]('ana')).toBeGreaterThan(0);
+      expect(limits[name]('ben')).toBe(0);
+      // the other reads, the posts and the edits are counted apart
+      for (const other of (['channelInfo', 'unread', 'read'] as const).filter((n) => n !== name)) expect(limits[other]('ana')).toBe(0);
+      expect(limits.post('ana', 'board/b1')).toBe(0);
+      expect(limits.change('ana')).toBe(0);
+      c.now += 60_000;
+      expect(limits[name]('ana')).toBe(0);
+    },
+  );
 });

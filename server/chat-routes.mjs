@@ -124,8 +124,12 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
   return [
     // The channel's metadata for the interface (docs/chat.md, Mentions): what the caller may do in it, and the people
     // who can read it (the `@` list). Names only, never email; a hidden channel is the same 404 as everywhere else.
-    compile('GET', 'chat/:kind/:ref', {}, ({ user, params }) => {
+    // Counted before the access check, so asking about channels one cannot read is slowed down the same way; a 429 says
+    // nothing about any channel.
+    compile('GET', 'chat/:kind/:ref', {}, ({ res, user, params }) => {
       const { kind, ref } = params;
+      const wait = limits.channelInfo(user.id);
+      if (wait) throw limited(res, wait);
       const can = channelFor(user, kind, ref);
       const people = directory
         .listUsers()
@@ -210,8 +214,10 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
     }),
 
     // A read marker is the person's own state, not workspace content, so it works while the workspace is read-only.
-    compile('PUT', 'chat/:kind/:ref/read', { body: true, readOnlyOk: true }, ({ user, params, body }) => {
+    compile('PUT', 'chat/:kind/:ref/read', { body: true, readOnlyOk: true }, ({ res, user, params, body }) => {
       const { kind, ref } = params;
+      const wait = limits.read(user.id);
+      if (wait) throw limited(res, wait);
       channelFor(user, kind, ref);
       if (!Number.isSafeInteger(body.lastId) || body.lastId < 0) throw badRequest('lastId must be a message id');
       const lastId = store().markRead(user.id, kind, ref, body.lastId);
@@ -223,7 +229,11 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       return [200, { kind, ref, lastId }];
     }),
 
-    compile('GET', 'chat/unread', {}, ({ user }) => [200, { channels: unreadSummary({ directory, store, user }) }]),
+    compile('GET', 'chat/unread', {}, ({ res, user }) => {
+      const wait = limits.unread(user.id);
+      if (wait) throw limited(res, wait);
+      return [200, { channels: unreadSummary({ directory, store, user }) }];
+    }),
 
     compile('GET', 'admin/chat', {}, ({ user }) => {
       requireAdmin(user);

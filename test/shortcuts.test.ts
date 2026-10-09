@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SHORTCUTS, TOOL_KEYS } from '../src/shortcuts';
+import { SHORTCUTS, TOOL_KEYS, shortcutKeys } from '../src/shortcuts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -54,6 +54,16 @@ describe('keyboard shortcuts dialog', () => {
     const elsewhere = new Set(['mod+v', 'mod+k', '/']);
     const unhandled = [...documented].filter((id) => !toolLetters.has(id) && !elsewhere.has(id) && !handled.has(id));
     expect(unhandled).toEqual([]);
+  });
+
+  it('gives board chat M, a key no tool and no other row uses (docs/chat.md)', () => {
+    const rows = SHORTCUTS.filter((s) => s.ids.includes('m'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toMatch(/board chat/i);
+    expect(TOOL_KEYS.m).toBeUndefined();
+    expect(shortcutKeys('m')).toBe('M');
+    const ids = SHORTCUTS.flatMap((s) => s.ids);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('says ] brings to front and [ sends to back', () => {
