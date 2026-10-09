@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members` and `chat-object` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members` and `chat-object` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -49,6 +49,7 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `layers-hidden` | As `layers`, with a note and the diamond hidden: the "2 hidden" count in the header and the dimmed rows with the eye-off glyph |
 | `history` | Version history open from the board menu |
 | `comments` | The side tray open on Comments (with chat on, its Comments and Chat tabs) |
+| `comment-thread` | The seeded board with a comment thread opened beside its pin |
 | `empty-templates`, `empty-share`, `empty-menu` | An empty board (the "An empty board" hint) under the Templates drawer, the Share dialog and the board menu |
 | `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |

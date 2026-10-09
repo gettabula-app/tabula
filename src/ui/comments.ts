@@ -337,14 +337,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       if (!list.some((m) => m.id === editing)) editing = null;
       if (!list.some((m) => m.id === confirming)) confirming = null;
       const hadFocus = document.activeElement === editArea;
-      head.replaceChildren(
-        h('div', { class: 'comment-who' },
-          avatar(t.authorName, t.authorColor),
-          h('span', { class: 'comment-name' }, t.authorName),
-          h('span', { class: 'comment-time' }, fmtAgo(t.createdAt)),
-          t.resolved ? h('span', { class: 'comment-badge' }, 'Resolved') : null),
-        closeBtn,
-      );
+      head.replaceChildren(...(t.resolved ? [h('span', { class: 'comment-badge' }, 'Resolved')] : []), closeBtn);
       msgs.replaceChildren(...list.map((m) => messageEl(m, ro, mine, mod, list.some((x) => !x.root && x.authorId !== mine))));
       if (ro !== footRo) {
         footRo = ro;
