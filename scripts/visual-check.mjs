@@ -1138,6 +1138,14 @@ const STATES = {
     await env.page.getByRole('button', { name: 'Remove dots' }).click();
     await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
     await env.page.locator('.toast.show').waitFor({ state: 'hidden' });
+    // the compact bar is ONE row: every visible control sits on the same line (the instructions stay folded away)
+    const rows = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.vote-compact');
+      const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
+      return { n: boxes.length, tops: new Set(boxes.map((b) => Math.round(b.top / 4))).size, boxes: boxes.map((b) => `${b.name}:${Math.round(b.left)}-${Math.round(b.right)}`), barW: bar.getBoundingClientRect().width };
+    });
+    console.log('vote-running-touch', JSON.stringify(rows));
+    if (rows.tops !== 1) throw new Error(`vote-running-touch: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
   },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {
