@@ -121,7 +121,16 @@
   .aibar-main { flex-wrap: wrap; }
   .aibar-grip { display: none; }
   .aibar[data-ui='preview'] .aibar-actions, .aibar[data-ui='error'] .aibar-actions { order: 5; flex: 1 1 100%; }
-  .aibar[data-ui='preview'] .aibar-actions .btn { flex: 1 1 0; }
+  /* four buttons do not fit a phone's bar in a row (Add to board was cut off): the three beside each other share a row,
+     and Add to board, the main action, has the one below at full width (DOM order stays the tab order) */
+  .aibar[data-ui='preview'] .aibar-actions { flex-wrap: wrap; }
+  .aibar[data-ui='preview'] .aibar-actions .btn { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; }
+  .aibar[data-ui='preview'] .aibar-actions .btn.primary { flex: 1 1 100%; }
+  /* the prompt gets a row of its own (it was about 35 px wide beside the context button, Run and the chevron); the context
+     button, Run and the chevron share the row below */
+  .aibar-field { order: -1; flex: 1 1 100%; }
+  .aibar-ctx { flex: 0 1 auto; min-width: 0; }
+  .aibar-main > .aibar-actions { margin-left: auto; }
   .aibar[data-ui='error'] .aibar-actions { padding-left: 30px; }
   .aibar[data-ui='error'] .aibar-actions:not(:has(.btn)) { order: 3; flex: none; padding: 0; }
   .aibar[data-ui='running'] .aibar-ctx { display: none; }
@@ -129,6 +138,7 @@
   .aibar-ctx { padding: 0 6px 0 8px; }
   .aibar-model { display: none; }
   .aibar-disclosure > .aibar-model-wrap { display: inline; }
-  .aibar-disclosure > span:first-child { flex: 1 1 100%; }
-  .aibar-disclosure > span:nth-child(2)::before { content: none; margin: 0; }
+  /* one fact a line, no separators: a separator that wrapped to the start of a line read as a stray "·" */
+  .aibar-disclosure > span { flex: 1 1 100%; }
+  .aibar-disclosure .sep::before { content: none; margin: 0; }
 }
