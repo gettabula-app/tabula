@@ -78,7 +78,7 @@ A lane with a limit shows for example `3 / 3`, with a red mark when it is full. 
 
 ## The whole kanban
 
-The **⋯** in the kanban's header (editors) offers **Rename**, **Add lane**, **Labels**, **Lock** or **Unlock**, and **Delete kanban**. **Export cards (CSV)** and **Open as list** are shown but not available yet.
+The **⋯** in the kanban's header (editors) offers **Rename**, **Add lane**, **Labels**, **Lock** or **Unlock**, and **Delete kanban**. It also has **Open as list** and **Export cards (CSV)**.
 
 ## Filter the cards
 
@@ -95,13 +95,37 @@ Cards that do not match are dimmed, not hidden, and a drag selection skips them.
 
 When you zoom far out, card titles become bars and lane headers keep only their names.
 
+## Open as a list
+
+**Open as list** shows a kanban as lane tabs with one row per card. Find it in the kanban's **⋯** menu, in the quick-action bar, by pressing `Enter` on a selected kanban, or, at phone width, by double-tapping a kanban. On a phone the list fills the screen. On a wide screen it is a panel at the side.
+
+Each row has:
+
+- A grip to drag the card up or down within its lane.
+- **Move to…**, which lists the lanes with their card counts, then top or bottom. A full lane with a blocking limit is greyed out and says why.
+- **Open** (the card dialog) and **Turn into sticky**.
+
+`Alt` with the arrow keys moves a card as on the board, and a screen reader hears where it went. The **Add card** bar at the bottom adds a card to the lane you are looking at, unless it is full and blocking. Viewers can read and filter the list. Commenters can open cards but not change them.
+
+On a touch screen, a card on the board lifts after you press and hold it for about half a second, so you can drag it without scrolling the board.
+
+## Kanban templates
+
+While the preview switch is on, the templates drawer offers four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, due dates and links to trackers are never part of a template.
+
+When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, due dates and tracker links.
+
+## Export cards as CSV
+
+Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's **⋯** menu, or **Export cards (CSV)** in the quick-action bar. You get one row per card, for all kanbans on the board or just the selected ones. The columns are the kanban, lane, stage, position, title, description, owner, due date, labels, comment count, who created it, when it was last updated and its id. The file opens correctly in Excel. Any cell that starts with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet shows it as text and never runs it. Kanbans hidden in the Layers panel are left out.
+
 ## Older versions
 
 A board that contains a kanban opens read only in a Tabula version that does not know kanban boards yet, with a banner that says so. Reload the page to get the current version.
 
 ## Not yet
 
-Exporting cards as a CSV file and opening a kanban as a list are coming.
+A Markdown summary of a kanban, and dragging lane headers to reorder lanes, are coming. Until then use **Move left** and **Move right** in the lane menu.
 
 ## Related
 

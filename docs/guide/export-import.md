@@ -14,6 +14,7 @@ Open the board menu (the three-dot **Menu** button at the top right). The **Expo
 | **JSON snapshot** | A readable copy of the board. |
 | **Markdown summary** | Text notes grouped by frame, with votes and poll results. |
 | **Copy as Mermaid** | Mermaid text copied to your clipboard. |
+| **Cards as CSV** | One row per kanban card, for spreadsheets. Shown when the board has a kanban. See [Kanban boards](kanban.md#export-cards-as-csv). |
 
 Files are named after the board.
 
