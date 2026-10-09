@@ -544,6 +544,29 @@ async function screenshotScenario(width) {
           { title: 'Improve next', ids: ['seed-note-3', 'seed-note-4', 'seed-note-5'] },
         ],
       });
+      // the peer's label row for the reviewer's preview (TAB-215): at 390 the long name made it fall behind the zoom tray, with Accept covered
+      await peer.page.evaluate(() => {
+        const app = window.__board;
+        app.r.fit(app.r.contentBounds(), 72, 0.9);
+      });
+      await peer.page.locator('.ailive-row:not([hidden])').waitFor({ timeout: 10_000 });
+      await sleep(300);
+      check(`A.${width}: a peer's label row for the reviewer's preview is whole and its buttons can be pressed`, await peer.page.evaluate(() => {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const row = document.querySelector('.ailive-row:not([hidden])');
+        const out = { row: Boolean(row), inside: true, buttons: {} };
+        if (!row) return out;
+        const r = row.getBoundingClientRect();
+        out.inside = r.left >= 0 && r.top >= 0 && r.right <= vw && r.bottom <= vh;
+        for (const b of row.querySelectorAll('button')) {
+          const br = b.getBoundingClientRect();
+          const top = document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2);
+          out.buttons[b.textContent.trim()] = Boolean(top && (top === b || b.contains(top)));
+        }
+        return out;
+      }), { row: true, inside: true, buttons: { Discard: true, Review: true, Accept: true } });
+      await saveShot(peer, `07-peer-label-row-${width}.png`);
       await peer.page.evaluate(({ id, text }) => {
         const app = window.__board;
         app.store.transact(() => app.store.update(id, { text }));

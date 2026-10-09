@@ -293,6 +293,55 @@ describe('label rows', () => {
   });
 });
 
+describe('label rows on a phone (TAB-215)', () => {
+  // the probe of the issue: a 390 x 844 board, the rail ending at x = 64 and the zoom tray at the bottom right
+  const phone = { w: 390, h: 844 };
+  const rail = { x: 12, y: 60, w: 52, h: 724 };
+  const zoom = { x: 248, y: 790, w: 130, h: 44 };
+  const preview = { x: 200, y: 360, w: 150, h: 200 };
+  const row = (w: number, extra: { wrap?: { w: number; h: number } } = {}) => ({ id: 'a', anchor: preview, w, h: 24, ...extra });
+  const wrap = { w: 200, h: 48 };
+
+  it('keeps a row of up to 314px above its preview, as before', () => {
+    expect(placeLabelRows([row(300)], [rail, zoom], phone, 64).get('a')).toEqual({ x: 82, y: 334, below: false });
+    expect(placeLabelRows([row(310)], [rail, zoom], phone, 64).get('a')).toEqual({ x: 72, y: 334, below: false });
+    expect(placeLabelRows([row(314)], [rail, zoom], phone, 64).get('a')).toEqual({ x: 68, y: 334, below: false });
+  });
+
+  it('stacks the buttons under the label when the row is wider than the room, instead of falling to the bottom', () => {
+    for (const w of [320, 340, 380]) {
+      const at = placeLabelRows([row(w, { wrap })], [rail, zoom], phone, 64).get('a')!;
+      expect(at).toEqual({ x: 182, y: 360 - 48 - 2, below: false, wrapped: true });
+    }
+  });
+
+  it('does not wrap a row that fits, even when it could', () => {
+    expect(placeLabelRows([row(300, { wrap })], [rail, zoom], phone, 64).get('a')).not.toHaveProperty('wrapped');
+  });
+
+  it('never puts a row under the rail, also when its preview sits against it', () => {
+    const near = { id: 'n', anchor: { x: 10, y: 360, w: 100, h: 100 }, w: 200, h: 24 };
+    const at = placeLabelRows([near], [rail], phone, 64).get('n')!;
+    expect(at).toEqual({ x: 68, y: 334, below: false });
+    // without the rail's edge the row went to x = 8, touched the rail, and fell down the board looking for a free spot
+    expect(placeLabelRows([near], [rail], phone).get('n')!.below).toBe(true);
+  });
+
+  it('stays beside its preview when no spot is free, not at the bottom of the board', () => {
+    const wall = { x: 0, y: 0, w: 390, h: 844 };
+    const at = placeLabelRows([row(300)], [wall], phone, 64).get('a')!;
+    expect(at).toEqual({ x: 82, y: 334, below: false });
+  });
+
+  it('still avoids the rail and the zoom tray in y, and a wrapped row is as tall as its wrap says', () => {
+    const lower = { id: 'l', anchor: { x: 200, y: 700, w: 150, h: 120 }, w: 340, h: 24, wrap };
+    const at = placeLabelRows([lower], [rail, zoom], phone, 64).get('l')!;
+    expect(at.wrapped).toBe(true);
+    const box = { x: at.x, y: at.y, w: 200, h: 48 };
+    for (const o of [rail, zoom]) expect(intersects(box, o)).toBe(false);
+  });
+});
+
 describe('target outline', () => {
   const rects: Record<string, Rect> = { a: { x: 0, y: 0, w: 100, h: 50 }, b: { x: 200, y: 100, w: 100, h: 100 }, f: { x: -50, y: -50, w: 500, h: 400 } };
   const bounds = (id: string) => rects[id] ?? null;
