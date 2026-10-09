@@ -111,12 +111,68 @@ describe('demo guards', () => {
     expect(demo.demoGuardReport().blocked).toBe(8);
   });
 
+  it('rejects the exact hostile URL and path cases while keeping the Fontshare display rule explicit', async () => {
+    const { demo } = await install();
+    const rejected: (string | Request)[] = [
+      'https://api.fontshare.com@evil.test/v2/css?f[]=satoshi',
+      'https://user:pass@api.fontshare.com/v2/css?f[]=satoshi',
+      'https://evil.test/demo/x',
+      new Request('https://evil.test/'),
+      'https://api.fontshare.com/v2/css?f[]=satoshi&f[]=evil',
+      'https://api.fontshare.com/v2/css?f[]=satoshi@400,999',
+      'https://api.fontshare.com/v2/css?f[]=satoshi#x',
+      'https://api.fontshare.com/v2/css?f[]=satoshi&x=1',
+      'https://api.fontshare.com/v2/css?f[]=satoshi&display=auto',
+      'https://api.fontshare.com:444/v2/css?f[]=satoshi',
+      'http://api.fontshare.com/v2/css?f[]=satoshi',
+      'https://cdn.fontshare.com/x.woff2?a=1',
+      'https://cdn.fontshare.com/x.html',
+      'https://api.fontshare.com/v2/fonts',
+      'https://api.fontshare.com/v2/css/',
+      '/demo/assets%2fsecret.js',
+      '/demo/assets%5csecret.js',
+      '/demo/name%2efile.js',
+      '/demo/../demo/assets/normalized.js',
+      '/demo/..%2fapi/x',
+      '/demo/%2e%2e/api/x',
+    ];
+    for (const [index, target] of rejected.entries()) {
+      await expect(fetch(target as RequestInfo)).rejects.toThrow('Demo blocked fetch');
+      expect(demo.demoGuardReport().blocked).toBe(index + 1);
+    }
+
+    // The real guard permits exactly one `display=swap` parameter alongside allowlisted family entries.
+    await fetch('https://api.fontshare.com/v2/css?f[]=satoshi&display=swap');
+    await fetch(new Request('https://demo.test/demo/assets/request.js'));
+    expect(nativeFetch).toHaveBeenCalledTimes(2);
+    expect(demo.demoGuardReport().blocked).toBe(rejected.length);
+  });
+
+  it('uses the checked normalized fetch URL and converts a stateful input only once', async () => {
+    await install();
+    let conversions = 0;
+    const input = {
+      toString: () => (++conversions === 1 ? '/demo/assets/safe.js' : 'https://evil.test/'),
+    } as unknown as RequestInfo;
+    await fetch(input);
+    expect(conversions).toBe(1);
+    expect(nativeFetch).toHaveBeenCalledWith('https://demo.test/demo/assets/safe.js', undefined);
+  });
+
+  it('counts every refusal but retains at most 200 attempt descriptions', async () => {
+    const { demo } = await install();
+    await Promise.allSettled(Array.from({ length: 205 }, (_, i) => fetch(`https://evil.test/${i}`)));
+    expect(demo.demoGuardReport().blocked).toBe(205);
+    expect(demo.demoGuardReport().attempts).toHaveLength(200);
+    expect(demo.demoGuardReport().attempts[0]).toContain('https://evil.test/0');
+  });
+
   it('allows a static XHR GET and blocks API XHR, sockets, service worker registration and both sendBeacon methods', async () => {
     const { demo } = await install();
     const staticXhr = new XMLHttpRequest();
     staticXhr.open('GET', '/demo/assets/index.js');
     staticXhr.send();
-    expect(createdXhr?.open).toHaveBeenCalledWith('GET', '/demo/assets/index.js', true, null, null);
+    expect(createdXhr?.open).toHaveBeenCalledWith('GET', 'https://demo.test/demo/assets/index.js', true, null, null);
     expect(createdXhr?.send).toHaveBeenCalledWith(null);
     expect(() => {
       const xhr = new XMLHttpRequest();

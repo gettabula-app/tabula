@@ -17,6 +17,10 @@ import { customStickyColors } from './palette';
 import { cardRows, cardsCsvName, csvText } from './csv';
 import { containerOf } from './containers';
 import { listLabels } from './labels';
+import { DEMO } from './demo';
+
+const DEMO_IMPORT_COMPRESSED_LIMIT = 20 * 1024 * 1024;
+const DEMO_IMPORT_UNCOMPRESSED_LIMIT = 100 * 1024 * 1024;
 
 export interface BoardJson {
   format: 'driftboard';
@@ -121,10 +125,27 @@ export async function toDrift(app: BoardApp, opts: { leaveOutWithheld?: boolean 
 export interface ImportedBoard { json: BoardJson; update?: Uint8Array; comments?: Uint8Array; /** The pictures of the file by the `asset` reference they stand for. */ assets?: Record<string, ImportedAsset> }
 
 export async function readBoardFile(file: File): Promise<ImportedBoard> {
+  if (DEMO && file.size > DEMO_IMPORT_COMPRESSED_LIMIT) {
+    throw new Error('This board file exceeds the 20 MiB demo import limit.');
+  }
   const buf = new Uint8Array(await file.arrayBuffer());
   // zip magic: PK\x03\x04
   if (buf[0] === 0x50 && buf[1] === 0x4b) {
-    const files = unzipSync(buf);
+    let compressedTotal = 0;
+    let uncompressedTotal = 0;
+    const files = unzipSync(buf, DEMO ? {
+      filter: (entry) => {
+        compressedTotal += entry.size;
+        uncompressedTotal += entry.originalSize;
+        if (compressedTotal > DEMO_IMPORT_COMPRESSED_LIMIT) {
+          throw new Error('This board archive exceeds the 20 MiB demo import limit.');
+        }
+        if (uncompressedTotal > DEMO_IMPORT_UNCOMPRESSED_LIMIT) {
+          throw new Error('This board archive expands beyond the 100 MiB demo import limit.');
+        }
+        return true;
+      },
+    } : undefined);
     const assets = unpackAssets(files);
     if (!files['board.json']) throw new Error('This file is not a Tabula board (board.json is missing).');
     return {

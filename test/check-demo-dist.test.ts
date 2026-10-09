@@ -18,10 +18,12 @@ function hashed(value: string) {
   return { bytes, hash: crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 8) };
 }
 
+const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
+
 function validFixture() {
   const shard = hashed(JSON.stringify({ icons: { a: { body: '<path d="M0 0"/>' } } }));
   const index = hashed(JSON.stringify({ n: ['a'], a: [], sh: [[shard.hash, 1]] }));
-  write('index.html', '<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'self\'"><link rel="stylesheet" href="/demo/assets/main.css"><script type="module" src="/demo/assets/main.js"></script></head><body><main>Demo</main></body></html>');
+  write('index.html', `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${DEMO_CSP}"><link rel="stylesheet" href="/demo/assets/main.css"><script type="module" src="/demo/assets/main.js"></script></head><body><main>Demo</main></body></html>`);
   write('assets/main.js', 'document.body.dataset.ready = "yes";');
   write('assets/main.css', 'body { color: black; }');
   write('demo.json', JSON.stringify({ base: '/demo/', ephemeral: true }));
@@ -55,7 +57,12 @@ describe('check-demo-dist', () => {
 
   it('requires the CSP meta tag', () => {
     fs.writeFileSync(path.join(root, 'index.html'), fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/<meta[^>]*>/, ''));
-    expect(() => checkDemoDist(root)).toThrow(/Content-Security-Policy meta tag is missing/);
+    expect(() => checkDemoDist(root)).toThrow(/Content-Security-Policy meta tag must contain the exact demo policy/);
+  });
+
+  it('rejects a CSP that is present but broader than the exact demo policy', () => {
+    fs.writeFileSync(path.join(root, 'index.html'), fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(DEMO_CSP, "default-src *; script-src 'self' 'unsafe-eval'; style-src *"));
+    expect(() => checkDemoDist(root)).toThrow(/Content-Security-Policy meta tag must contain the exact demo policy/);
   });
 
   it('rejects a manifest link', () => {

@@ -17,6 +17,7 @@ export interface DemoGuardReport {
 let blocked = 0;
 let attempts: string[] = [];
 let releaseGuards: (() => void) | null = null;
+const ATTEMPT_LOG_LIMIT = 200;
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -56,7 +57,7 @@ export function installDemoGuards(): () => void {
   };
   const reject = (kind: string, target: string): never => {
     blocked++;
-    attempts.push(`${kind}: ${target}`);
+    if (attempts.length < ATTEMPT_LOG_LIMIT) attempts.push(`${kind}: ${target}`);
     throw new Error(`Demo blocked ${kind}: ${target}`);
   };
   const allowedFontshare = (url: URL): boolean => {
@@ -78,22 +79,42 @@ export function installDemoGuards(): () => void {
     }
     return false;
   };
-  const allowed = (method: string, value: string | URL): boolean => {
-    if (method.toUpperCase() !== 'GET') return false;
+  const pageUrl = new URL(globalThis.location?.href ?? 'http://localhost/');
+  const origin = pageUrl.origin;
+  const basePath = new URL(import.meta.env.BASE_URL || '/', pageUrl).pathname;
+  const safePath = (target: string): boolean => {
+    // Keep the original reference's path as URL parsing normalizes literal and encoded dot segments.
+    let rawPath = target.split(/[?#]/, 1)[0] ?? '';
+    rawPath = rawPath.replace(/^[a-z][a-z\d+.-]*:\/\/[^/\\]*/i, '').replace(/^\/\/[^/\\]*/, '');
+    for (let i = 0; i < 8; i++) {
+      if (/%(?:2f|5c|2e)/i.test(rawPath)) return false;
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(rawPath);
+      } catch {
+        return false;
+      }
+      if (decoded.split(/[\\/]/).includes('..')) return false;
+      if (decoded === rawPath) return true;
+      rawPath = decoded;
+    }
+    return false;
+  };
+  const allowed = (method: string, target: string): URL | null => {
+    if (method.toUpperCase() !== 'GET') return null;
     let url: URL;
     try {
-      url = new URL(String(value), globalThis.location?.href ?? 'http://localhost/');
+      url = new URL(target, pageUrl);
     } catch {
-      return false;
+      return null;
     }
     if (url.protocol === 'https:' && ['api.fontshare.com', 'cdn.fontshare.com'].includes(url.hostname)) {
-      return allowedFontshare(url);
+      return allowedFontshare(url) ? url : null;
     }
-    const origin = globalThis.location?.origin ?? new URL(globalThis.location?.href ?? 'http://localhost/').origin;
-    if (url.origin !== origin) return false;
-    const base = new URL(import.meta.env.BASE_URL || '/', globalThis.location?.href ?? 'http://localhost/').pathname;
-    if (!url.pathname.startsWith(base)) return false;
-    return !/(?:^|\/)(?:api|sync|chat)(?:\/|$)/i.test(url.pathname);
+    if (url.origin !== origin || !safePath(target)) return null;
+    if (!url.pathname.startsWith(basePath)) return null;
+    if (/(?:^|\/)(?:api|sync|chat)(?:\/|$)/i.test(url.pathname)) return null;
+    return url;
   };
 
   for (const target of targets) {
@@ -108,8 +129,9 @@ export function installDemoGuards(): () => void {
     const request = typeof Request !== 'undefined' && input instanceof Request;
     const target = request ? (input as Request).url : String(input);
     const method = init?.method ?? (request ? (input as Request).method : 'GET');
-    if (!allowed(method, target)) reject('fetch', target);
-    return originalFetch(input, init);
+    const normalized = allowed(method, target);
+    if (!normalized) return reject('fetch', target);
+    return originalFetch(request ? input : normalized.href, init);
   };
   replace(globalThis, 'fetch', guardedFetch);
   if (!sameTarget(globalThis, win)) replace(win, 'fetch', guardedFetch);
@@ -130,9 +152,11 @@ export function installDemoGuards(): () => void {
     const open = xhr.open.bind(xhr) as (method: string, url: string | URL, async?: boolean, username?: string | null, password?: string | null) => void;
     const send = xhr.send.bind(xhr) as (body?: Document | XMLHttpRequestBodyInit | null) => void;
     xhr.open = ((method: string, url: string | URL, async = true, username?: string | null, password?: string | null) => {
-      demoAllowed = allowed(method, url);
-      if (!demoAllowed) reject('XMLHttpRequest', String(url));
-      open(method, url, Boolean(async), username ?? null, password ?? null);
+      const target = String(url);
+      const normalized = allowed(method, target);
+      demoAllowed = normalized !== null;
+      if (!normalized) return reject('XMLHttpRequest', target);
+      open(method, normalized.href, Boolean(async), username ?? null, password ?? null);
     }) as typeof xhr.open;
     xhr.send = ((body?: Document | XMLHttpRequestBodyInit | null) => {
       if (!demoAllowed) reject('XMLHttpRequest', 'send');

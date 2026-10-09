@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { strToU8, zipSync } from 'fflate';
 import { installFakeBrowser, type FakeBrowser } from './fake-dom';
 
 let browser: FakeBrowser | undefined;
@@ -59,6 +60,92 @@ describe('demo Fontshare allowlist', () => {
     expect(fonts.cssUrl('evil-slug', [400])).toBeNull();
     expect(head.children).toHaveLength(0);
     expect(nativeFetch).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Satoshi for imported __proto__ and constructor font names', async () => {
+    const { fonts, nativeFetch } = await setup(true);
+    const { Store } = await import('../src/store');
+    const { Comments } = await import('../src/comments');
+    const { applyImported, exportSvg, readBoardFile } = await import('../src/exporters');
+    const json = {
+      format: 'driftboard', schemaVersion: 1, exportedAt: '2026-10-09T00:00:00.000Z', meta: {}, flow: {},
+      objects: ['__proto__', 'constructor'].map((font, index) => ({
+        id: `special-font-${index}`, type: 'text', x: index * 320, y: 0, w: 300, h: 48, rotation: 0,
+        z: String(index), createdBy: 'visitor', updatedAt: 1, font, text: 'Fallback text', fontSize: 18,
+      })),
+    };
+    const imported = await readBoardFile(new File([JSON.stringify(json)], 'crafted-board.json'));
+    const store = new Store(new (await import('yjs')).Doc());
+    const comments = new Comments(new (await import('yjs')).Doc());
+    applyImported({ doc: store.doc, store, comments }, imported, 'visitor');
+
+    const slugs = ['special-font-0', 'special-font-1'].map((id) => (store.get(id) as { font: string }).font);
+    expect(slugs).toEqual(['__proto__', 'constructor']);
+    expect(slugs.map((slug) => fonts.fontFamily(slug))).toEqual([fonts.fontFamily('satoshi'), fonts.fontFamily('satoshi')]);
+    const app = {
+      store,
+      r: { contentBounds: () => ({ x: 0, y: 0, w: 640, h: 100 }), ctx: { get: (id: string) => store.getPlaced(id) } },
+    } as unknown as import('../src/app').BoardApp;
+    const { svg } = exportSvg(app);
+    expect(svg).toContain('&quot;Satoshi&quot;');
+    expect(svg).not.toContain('&quot;Constructor&quot;');
+    expect(svg).not.toContain('__proto__');
+    expect(nativeFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not import or fetch a non-allowlisted font while exporting an SVG', async () => {
+    const { nativeFetch } = await setup(true);
+    const { Store } = await import('../src/store');
+    const { exportSvg } = await import('../src/exporters');
+    const store = new Store(new (await import('yjs')).Doc());
+    store.create({
+      id: 'unlisted-font', type: 'text', x: 0, y: 0, w: 320, h: 48, rotation: 0, z: 'a',
+      createdBy: 'visitor', font: 'not-allowlisted', text: 'SVG export', fontSize: 18,
+    });
+    const app = {
+      store,
+      r: { contentBounds: () => ({ x: 0, y: 0, w: 320, h: 48 }), ctx: { get: (id: string) => store.getPlaced(id) } },
+    } as unknown as import('../src/app').BoardApp;
+
+    const { svg } = exportSvg(app);
+    expect(svg).toContain('@import');
+    expect(svg).not.toContain('not-allowlisted');
+    expect(svg).not.toContain('font-family="Not-allowlisted"');
+    expect(nativeFetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized demo board files before reading or inflating them', async () => {
+    await setup(true);
+    const { readBoardFile } = await import('../src/exporters');
+    const oversized = {
+      size: 20 * 1024 * 1024 + 1,
+      arrayBuffer: vi.fn<() => Promise<ArrayBuffer>>(),
+    } as unknown as File;
+    await expect(readBoardFile(oversized)).rejects.toThrow(/20 MiB demo import limit/);
+    expect(oversized.arrayBuffer).not.toHaveBeenCalled();
+
+    const archive = zipSync({ 'board.json': strToU8('{}') });
+    let central = -1;
+    for (let i = 0; i < archive.length - 4; i++) {
+      if (archive[i] === 0x50 && archive[i + 1] === 0x4b && archive[i + 2] === 0x01 && archive[i + 3] === 0x02) {
+        central = i;
+        break;
+      }
+    }
+    expect(central).toBeGreaterThanOrEqual(0);
+    new DataView(archive.buffer, archive.byteOffset, archive.byteLength).setUint32(central + 24, 100 * 1024 * 1024 + 1, true);
+    await expect(readBoardFile(new File([archive], 'oversized-expanded.drift'))).rejects.toThrow(/100 MiB demo import limit/);
+  });
+
+  it('does not apply the demo file-size cap in a normal build', async () => {
+    await setup(false);
+    const { readBoardFile } = await import('../src/exporters');
+    const json = { format: 'driftboard', schemaVersion: 1, exportedAt: '2026-10-09T00:00:00.000Z', meta: {}, flow: {}, objects: [] };
+    const file = {
+      name: 'large-metadata.json', size: 20 * 1024 * 1024 + 1,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(json)).buffer,
+    } as File;
+    await expect(readBoardFile(file)).resolves.toMatchObject({ json });
   });
 
   it('uses the static picker catalogue and loads an allowlisted family through a guarded stylesheet URL', async () => {

@@ -8,6 +8,7 @@ import zlib from 'node:zlib';
 const MiB = 1024 * 1024;
 const EXPECTED_DEMO = { base: '/demo/', ephemeral: true };
 const CHECK_ORIGIN = 'https://demo-check.invalid';
+const EXPECTED_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
 
 const fail = (message) => { throw new Error(message); };
 
@@ -134,8 +135,10 @@ export function checkDemoDist(dir = path.resolve(process.cwd(), 'dist-demo')) {
   for (const script of tags(html, 'script')) {
     if (!script.get('src')) fail('inline <script> is forbidden in index.html');
   }
-  const csp = tags(html, 'meta').some((attrs) => attrs.get('http-equiv')?.toLowerCase() === 'content-security-policy' && attrs.has('content'));
-  if (!csp) fail('Content-Security-Policy meta tag is missing from index.html');
+  const cspTags = tags(html, 'meta').filter((attrs) => attrs.get('http-equiv')?.toLowerCase() === 'content-security-policy');
+  if (cspTags.length !== 1 || cspTags[0].get('content') !== EXPECTED_CSP) {
+    fail('Content-Security-Policy meta tag must contain the exact demo policy');
+  }
   if (tags(html, 'link').some((attrs) => (attrs.get('rel') ?? '').toLowerCase().split(/\s+/).includes('manifest'))) {
     fail('<link rel="manifest"> is forbidden in index.html');
   }

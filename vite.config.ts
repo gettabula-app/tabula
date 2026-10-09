@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import docs from './scripts/vite-docs.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com https://cdn.fontshare.com; base-uri 'self'; form-action 'none'";
+const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
 
 function demoBuildPlugin() {
   let outDir = '';
