@@ -333,6 +333,18 @@ Not in this slice, each to follow on the same ghost overlay and resolve flow:
 - **Proposals from MCP agents.** Agents still write through MCP with their own origin; they do not yet propose.
 - **Live shared edits** of a proposal: one person's review changes are not seen by others.
 
+### Checking the review in a browser
+
+`npm run check:ai-review` drives the review panel in headless Chromium, with nothing on the network. It builds the app (`npm run build:app`; `-- --no-build` reuses `dist/`), starts a throwaway relay in open mode (a fresh data folder, a free port, `TABULA_AI_OPEN=1`), and points the relay's Anthropic client at a local stub (`scripts/lib/anthropic-stub.mjs`, 127.0.0.1 only, through `ANTHROPIC_BASE_URL`). The stub streams a canned answer for the feature that asked (five stickies and a frame for generate, two groups for cluster) and records every call, and the check asserts that no other call was made. Nothing from the shell's `TABULA_*` or `ANTHROPIC_*` variables reaches the relay. It needs Chromium once (`npx playwright install chromium`).
+
+It asserts, and prints `PASS` or `FAIL` for each step and a last line `REPORT: PASS=n FAIL=n BLOCKED=n`. The exit code is 1 unless every step passed and nothing was blocked (the app did not build, Chromium is missing, a relay or the stub did not start).
+
+- **At 390 and 1024 wide:** a ready create proposal with the panel closed and open, after one sticky was unticked, one text edited and one colour changed (the ghosts follow), with every item unticked, a cluster proposal where a peer edited one sticky after it arrived ("Changed since", unticked, disabled), and after Add selected (the added objects carry `proposedBy`, and the properties panel reads "Proposed by AI (Generate ideas) for …"). Each state is a screenshot in `tabula-review/ai-review/` (git-ignored; `-- --out <folder>` to move them), taken for a person to look at: the asserts do not judge a layout.
+- **Two people on one board:** A asks and both see the preview; B reviews it and A still sees the original; B adds the subset; both boards then hold the same objects, written once, with `proposedBy`; the preview is gone for A; one Undo for B removes every added object for both.
+- **Every page:** the console and page errors of each browser context are printed (`CONSOLE`, `PAGEERROR`). They are listed, not asserted.
+
+It is never part of `npm test` or CI: it takes about a minute and needs a browser. `test/ai-review-check-config.test.ts` checks that no npm script or workflow runs it, that vitest collects nothing under `scripts/`, that the script names no path of the machine it was written on, that it writes only to `dist/`, `tabula-review/` and a temporary folder, and that the stub answers as described. Run it by hand when the panel, `ai-live.ts` or the resolve flow changes.
+
 ## Not in this slice
 
 The board entry points and the proposal preview (slice C), text to diagram, smart template fill, a chat assistant with tools, OpenAI-compatible providers, image input, AI on comments, local-only (per-device) keys, per-person credit allowances, metered overage.
