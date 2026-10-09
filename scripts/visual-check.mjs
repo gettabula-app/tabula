@@ -348,7 +348,7 @@ const STATES = {
     await openSeedBoard(env);
     await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
     await env.page.getByRole('button', { name: 'Board settings' }).click();
-    await env.page.locator('[role="dialog"][aria-label="Board settings"]').waitFor();
+    await env.page.getByRole('dialog', { name: 'Board settings' }).waitFor();
   },
   async admin({ page, base }) {
     await page.goto(`${base}/#/admin`);

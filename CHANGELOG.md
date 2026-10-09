@@ -4,6 +4,9 @@ All notable changes to Tabula are documented here, newest first. The format foll
 
 ## [Unreleased]
 
+### Changed
+- Swiss pass on the board chrome and dialogs (TAB-48): trays, the quick-action bar, the properties panel, menus, popovers, the toast, the comment and history panels and the AI bar have square corners and a 1px hairline instead of a soft shadow, in every theme; buttons, inputs, segmented controls, chips, tiles and badges are square. Avatars, colour swatches and vote dots stay round. `--radius` is 0 and `--shadow` is the hairline.
+
 ### Fixed
 - Zoom, touch and high contrast (TAB-149, slice 6 of `docs/accessibility-audit.md`): pinching on the toolbars and panels zooms the page again (only the canvas takes touch gestures itself); the font picker never is wider than the window; the hosted workspace banner on a board wraps at large text sizes instead of being cut off, and the editing chrome sits below it; in Windows high contrast mode the colour swatches keep their colours and the chosen option is outlined.
 - Board page landmarks (TAB-149, slice 4 of `docs/accessibility-audit.md`): the canvas is the page's main landmark, the top bars and the quick-action bar are labelled regions, a hidden heading carries the board's name, and the home page's title is "Boards - Tabula". The quick-action bar is a region instead of a toolbar.
