@@ -52,6 +52,7 @@ function movedBetween(before: ContainerLayout | null | undefined, after: Contain
 }
 
 const cmpZ = (a: Obj, b: Obj) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1);
+const EMPTY_GROUP_CLEANUP = Symbol('empty-group-cleanup');
 
 /**
  * Wraps one board's Y.Doc. Keeps a plain-object cache of every board object so
@@ -156,6 +157,16 @@ export class Store {
       this.orderDirty = true;
       this.shownCache = null;
       this.listeners.forEach((l) => l(changed));
+    });
+
+    // A remote merge can move every member out of a group. Local Store.remove and update calls clean those up in
+    // their existing transaction; this catches empty groups that arrive through Yjs sync, then broadcasts one
+    // idempotent cleanup transaction to the other clients.
+    this.doc.on('afterTransaction', (transaction) => {
+      const changedTypes = transaction.changedParentTypes as unknown as Map<unknown, unknown>;
+      if (changedTypes.has(this.objects) && this.emptyGroupIds().length) {
+        this.doc.transact(() => this.removeEmptyGroups(), EMPTY_GROUP_CLEANUP);
+      }
     });
 
     this.undo = new Y.UndoManager([this.objects, this.meta, this.labels], {
@@ -354,10 +365,11 @@ export class Store {
     if (!m) return;
     const group = m.get('type') === 'group';
     let wroteField = false;
+    let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
       if (raw === undefined) {
-        if (m.has(k)) { m.delete(k); wroteField = true; }
+        if (m.has(k)) { m.delete(k); wroteField = true; if (k === 'parent') parentChanged = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
@@ -366,15 +378,48 @@ export class Store {
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
       const cur = m.get(k);
-      if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) { m.set(k, v); wroteField = true; }
+      if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) {
+        m.set(k, v);
+        wroteField = true;
+        if (k === 'parent') parentChanged = true;
+      }
     }
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
+    if (parentChanged) this.removeEmptyGroups();
   }
 
   remove(ids: Iterable<Id>) {
     for (const id of ids) this.objects.delete(id);
+    this.removeEmptyGroups();
+  }
+
+  /** Removes structurally empty groups, including ancestors made empty by removing nested groups. */
+  private removeEmptyGroups(): Id[] {
+    const removed: Id[] = [];
+    for (;;) {
+      const empty = this.emptyGroupIds();
+      if (!empty.length) return removed;
+      for (const id of empty) {
+        if (this.objects.has(id)) {
+          this.objects.delete(id);
+          removed.push(id);
+        }
+      }
+    }
+  }
+
+  /** Direct children count even when they are hidden; groups are removed only when structurally empty. */
+  private emptyGroupIds(): Id[] {
+    const groups = new Set<Id>();
+    const parentsWithChildren = new Set<Id>();
+    this.objects.forEach((object, id) => {
+      if (object.get('type') === 'group') groups.add(id);
+      const parent = object.get('parent');
+      if (typeof parent === 'string') parentsWithChildren.add(parent);
+    });
+    return [...groups].filter((id) => !parentsWithChildren.has(id));
   }
 
   /** Connectors whose ends are bound to the given object. */

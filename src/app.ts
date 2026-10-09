@@ -2396,7 +2396,13 @@ export class BoardApp {
    */
   deleteObjects(list: Id[]): boolean {
     if (this.readOnly) return false;
-    const plan = planKanbanDelete(this.store, list);
+    const selected = new Set(list);
+    for (const id of list) {
+      if (this.store.get(id)?.type === 'group') {
+        for (const child of this.store.descendantsOf(id)) selected.add(child.id);
+      }
+    }
+    const plan = planKanbanDelete(this.store, [...selected]);
     if ('refused' in plan) {
       this.notify(plan.refused);
       return false;
@@ -2404,7 +2410,7 @@ export class BoardApp {
     const { ids, relocate } = plan;
     if (!ids.size) return false;
     const moved = new Set(relocate.map((r) => r.id));
-    this.announce(ids.size === 1 ? 'Deleted 1 object' : `Deleted ${ids.size} objects`);
+    const objectsBefore = this.store.cache.size;
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       // the cards of a deleted lane move to the end of its neighbour first (docs/kanban.md, Concurrent edits)
@@ -2426,6 +2432,8 @@ export class BoardApp {
       this.store.remove(ids);
     });
     this.store.undo.stopCapturing();
+    const deleted = objectsBefore - this.store.cache.size;
+    this.announce(deleted === 1 ? 'Deleted 1 object' : `Deleted ${deleted} objects`);
     this.setSelection(this.selection.filter((id) => !ids.has(id)));
     return true;
   }
