@@ -177,7 +177,7 @@ A run needs the right to edit the board, reads it without private notes, comment
 | Fontshare | Full catalogue (100 families), searchable picker with live previews, weights per family, board heading/body fonts, offline caching via the service worker |
 | Icon sets | Search 344k+ icons from 188 sets that Tabula serves itself (no third-party request), filter by set, licence and trademark notes, an Icon credits dialog; "Download for offline" stores a set on this device. Sets Tabula does not host are online only, loaded on request from Iconify with failover to its backup hosts; placed icons store their SVG (sanitised) and render offline |
 | Stickers | Fluent, Twemoji and Noto emoji in a Stickers drawer, drawn in full colour; placed stickers are stored in the board, so they work offline and export with it; a React button in the quick-action bar drops a reaction next to the selection |
-| Team exercises | 14 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem); session bar with steps, shared timer with chime, private writing + reveal, ask everyone to look at my view (a request each person can answer with Go to, Follow, Dismiss or Mute; it moves nobody), step editor, Markdown summary |
+| Team exercises | 18 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem, Business Model Canvas, Lean Canvas, Service Blueprint, Design Sprint agenda); session bar with steps, shared timer with chime, private writing + reveal, ask everyone to look at my view (a request each person can answer with Go to, Follow, Dismiss or Mute; it moves nobody), step editor, Markdown summary |
 | Dot voting | One-click dot vote from the toolbar on any board (no template needed); dots per person can be any number or unlimited, set per step or changed live for everyone mid-vote, with the number of people on the board and dots placed so far shown alongside; click to add a dot, shift-click to remove; totals hidden until reveal; many dots on one note collapse into a counted badge; results stay on the board after the vote until cleared, with ranked results to copy |
 | Polls | Facilitated polls from the toolbar's quick poll button or as a session step: a question with 2–10 options, single or multiple choice, anonymous by default or named; one answer per person, changeable until the poll closes; a card above the session bar for answering and, after reveal, a ranked list with percentages; reveal, copy results as Markdown, or add them to the board as a sticky; answers sync live and work offline, travel in `.drift` and JSON exports, and appear in the Markdown summary once revealed |
 | Comments | Threaded comments pinned to a spot or an object (press C or use the speech-bubble tool): post, reply, edit, delete, resolve and reopen; pins follow the object through move, resize and rotate; a Comments panel lists open and resolved threads and flies to a pin; pins can be hidden from the board menu; comments sync live in their own room, work offline, travel in `.drift` and JSON exports, and never appear in PNG/SVG exports. In accounts mode the new **commenter** role can comment on a board without being able to edit it |
@@ -210,11 +210,14 @@ npm test             # vitest
 npm run lint         # oxlint
 npm run typecheck    # tsc --noEmit
 npm run test:repeat -- test/relay.test.ts --times 20   # flake gate: repeat files under CI=true
+npm run visual -- --id TAB-123   # headless screenshots of the app, see docs/visual-check.md
 ```
 
 Covers CRDT merging of concurrent and offline edits, undo scope, ordering, connector routing, rotated hit-testing, UML text round-trips, Mermaid import/export, markup escaping and XML validity, icon sanitising, the Fontshare catalogue format, and the relay end to end (two clients syncing, offline merge on reconnect, persistence across restarts, invalid room names).
 
 `npm run test:repeat -- [files] [--times 20] [--platform win32] [--bail]` runs test files again and again under `CI=true` (the CI settings of `vite.config.ts`) and reports which tests failed in which runs; without files it takes the test files changed versus `origin/main`. New test files should pass it 10 to 20 times before they are merged. `--platform win32` makes tests that branch on the platform take their Windows branch (`test/platform.ts`).
+
+`npm run visual` needs Chromium once (`npx playwright install chromium`). It starts its own throwaway relay, seeds a fixed board and writes screenshots for every state, theme and width to `tabula-review/<id>/`, so nobody needs the shared Chrome for a look at a change. See [docs/visual-check.md](docs/visual-check.md).
 
 ## CI/CD
 
@@ -223,7 +226,7 @@ GitHub Actions (`.github/workflows/`):
 - **CI** runs on pushes to `main`, `v*` tags, pull requests and manual dispatch. Lint, typecheck and `npm audit` run once on Linux. Tests and the app build run on Linux, macOS and Windows with Node 22, 24 and 26; the icon sets are built once, in the Linux job that uploads the `dist` artifact, and in the Docker build. The Docker image then builds with layer caching and is pushed to `ghcr.io/gettabula-app/tabula` on pushes to `main` and on tags. A docs-only push does not rebuild the image, so `:main` can carry an older guide until the next code push: build from the latest `main` before deploying. On pull requests every change starts CI and its first job skips what the change does not need, so use the `CI passed` job as the single required check for branch protection.
 - **User guide** builds and tests the in-app guide (`docs/guide/`) on pushes to `main` that change it, since CI skips those when nothing else changed. On pull requests the same check runs inside CI, as the `User guide build` job.
 - **CodeQL** scans the code on pushes, PRs and weekly. **Dependency review** blocks PRs that add dependencies with high-severity advisories.
-- A newer push to the same branch or PR cancels the run in progress, so a burst of commits only builds the last one. Docs-only pushes to `main` start no CI run, so they never cancel a code run in progress.
+- A newer push to the same branch or PR cancels the run in progress, so a burst of commits only builds the last one. Pushes to `main` that only touch docs or `design/` mockups start no CI run, so they never cancel a code run in progress.
 - Dependabot opens grouped weekly updates for npm, Actions and the Docker base image. `@iconify/json` gets its own pull request, because a bump can rename icons.
 
 ## Project layout
@@ -231,6 +234,7 @@ GitHub Actions (`.github/workflows/`):
 ```
 server/relay.mjs     sync relay + static server (serves dist/icons gzipped)
 scripts/build-icons.mjs  builds the icon sets into dist/icons (scripts/lib/icons-build.mjs: licence rule, packer, index)
+scripts/visual-check.mjs  headless screenshots for visual QA (docs/visual-check.md)
 src/store.ts         Y.Doc wrapper: objects, meta, flow, votes, undo
 src/sync.ts          IndexedDB persistence, relay connection, identity, board list
 src/geometry.ts      bounds, hit-testing, anchors, connector routing

@@ -97,7 +97,7 @@ Select something and a small bar appears above it (below, if above would cover a
 
 ## The properties panel
 
-**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), send to back (`[`), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it.
+**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it.
 
 ## Selecting, moving and grouping
 

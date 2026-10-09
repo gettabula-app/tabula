@@ -119,10 +119,17 @@ Files that are not valid templates, or that were made by a newer version of Tabu
 | Ideation | Crazy 8s, Brainstorm + affinity map |
 | Discussion | Lean Coffee |
 | Prioritisation | Impact / Effort matrix, MoSCoW |
-| Planning | User story map |
-| Discovery | Customer journey map, Empathy map |
-| Strategy | SWOT |
+| Planning | User story map, Design Sprint agenda |
+| Discovery | Customer journey map, Empathy map, Service Blueprint |
+| Strategy | SWOT, Business Model Canvas, Lean Canvas |
 | Risk | Pre-mortem |
+
+Four of these are laid out as one-page canvases or agendas:
+
+- **Business Model Canvas** has the nine blocks (key partners, activities and resources, value propositions, customer relationships and channels, customer segments, cost structure and revenue streams), each with a question to answer.
+- **Lean Canvas** has the nine blocks for a startup idea, from problem and solution to unfair advantage, with the problem written first.
+- **Service Blueprint** has a column for each stage of a service and rows for physical evidence, customer actions, frontstage actions, backstage actions and support processes, with a line of visibility between frontstage and backstage.
+- **Design Sprint agenda** has a goal frame and a column for each day, Monday to Friday. Its session plan walks through Monday's mapping.
 
 Each built-in template comes with a session plan, shown in the session bar as **Session ready**. You can edit the steps or hide the bar before you start. Nothing runs until you start the session.
 
