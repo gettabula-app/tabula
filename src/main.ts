@@ -10,6 +10,7 @@ import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { renderChatPage } from './ui/chat-page';
+import { mountMentionNotices } from './ui/mention-notice';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
 import { renderAdmin } from './ui/admin';
@@ -357,8 +358,19 @@ async function boot() {
   // Open mode (no accounts, or no server to ask) resolves at once and routes exactly as before.
   await initAuth();
   startMeRefresh();
+  // the cards for mentions in channels you are not looking at, while chat is on for this person
+  let stopMentions: (() => void) | null = null;
+  const syncMentions = () => {
+    if (chatAvailable() && !stopMentions) stopMentions = mountMentionNotices();
+    else if (!chatAvailable() && stopMentions) {
+      stopMentions();
+      stopMentions = null;
+    }
+  };
+  syncMentions();
   onAuth((s) => {
     if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
+    syncMentions();
   });
   if (isDesktop()) {
     try {

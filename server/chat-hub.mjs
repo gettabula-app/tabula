@@ -51,6 +51,8 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
   /** @type {Map<string, Set<any>>} channel key to subscribed sockets */
   const byChannel = new Map();
   let knownReadOnly = readOnly === true;
+  /** When a person's last socket went away (kept for an hour, for the mention email's "nobody has looked since" test). */
+  const lastGone = new Map();
 
   const allSockets = () => [...byUser.values()].flatMap((set) => [...set]);
 
@@ -82,7 +84,10 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     state.subs.clear();
     const mine = byUser.get(state.userId);
     mine?.delete(ws);
-    if (mine?.size === 0) byUser.delete(state.userId);
+    if (mine?.size === 0) {
+      byUser.delete(state.userId);
+      lastGone.set(state.userId, now());
+    }
   }
 
   function close(ws, code, reason) {
@@ -246,6 +251,30 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     }
   }
 
+  /**
+   * A notice for one person about a channel they are not looking at (a mention, docs/chat.md): sent to all their sockets when
+   * none of them is subscribed to the channel. Answers 'sent', 'looking' (a tab shows that channel, so the message is
+   * already in front of them) or 'offline' (no socket at all).
+   * @param {string} userId
+   * @param {string} kind
+   * @param {string} ref
+   * @param {Record<string, unknown>} frame
+   * @returns {'sent' | 'looking' | 'offline'}
+   */
+  function notice(userId, kind, ref, frame) {
+    const sockets = Array.from(byUser.get(userId) ?? []);
+    if (sockets.length === 0) return 'offline';
+    const key = channelKey(kind, ref);
+    if (sockets.some((ws) => ws.chat.subs.has(key))) return 'looking';
+    for (const ws of sockets) send(ws, frame);
+    return 'sent';
+  }
+
+  /** Whether the person has a socket now, or had one that went away at `since` (ms) or later. */
+  function activeSince(userId, since) {
+    return byUser.has(userId) || (lastGone.get(userId) ?? 0) >= since;
+  }
+
   /** The person moved their read marker: every socket of theirs clears its badge. */
   function read(userId, kind, ref, lastId) {
     for (const ws of Array.from(byUser.get(userId) ?? [])) send(ws, { t: 'read', kind, ref, lastId });
@@ -284,6 +313,7 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
   // person every five seconds (disabling and removing someone also arrive as events).
   function tick() {
     const t = now();
+    for (const [userId, at] of lastGone) if (t - at > 60 * 60_000) lastGone.delete(userId);
     for (const ws of allSockets()) {
       try {
         if (!sessionOk(ws)) {
@@ -317,5 +347,5 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     if (events) for (const [name, fn] of Object.entries(listeners)) events.off(name, fn);
   }
 
-  return { connect, publish, read, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size }) };
+  return { connect, publish, read, notice, activeSince, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size }) };
 }

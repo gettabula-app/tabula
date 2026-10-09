@@ -146,6 +146,7 @@ let chat = null;
 let chatHub = null;
 let chatStore = null;
 let chatRetention = null;
+let chatNotifier = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -160,12 +161,13 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
       import('./chat-routes.mjs'),
       import('./chat-retention.mjs'),
+      import('./chat-notify.mjs'),
     ]);
     const store = () => {
       if (maintenance) throw new Error('the workspace is being restored');
@@ -182,7 +184,10 @@ if (config.authEnabled) {
       readOnly: cloud?.limits().readOnly === true,
       log,
     });
-    chat = { store, access, hub: chatHub };
+    // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
+    const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
+    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
+    chat = { store, access, hub: chatHub, notifier: chatNotifier };
     chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
     chatRetention.start();
   }
@@ -299,6 +304,7 @@ async function enterMaintenance() {
   chatHub?.closeAll(CLOSE_RESTORING, 'restoring');
   chatHub?.stop();
   chatRetention?.stop();
+  chatNotifier?.stop();
   closeChat();
   saveAllRooms();
   roomsFrozen = true;
@@ -1050,6 +1056,7 @@ async function stopRelay() {
   history.close();
   chatHub?.stop();
   chatRetention?.stop();
+  chatNotifier?.stop();
   if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
   closeChat();
   directory?.close();

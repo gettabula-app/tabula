@@ -240,15 +240,16 @@ describe('parseSize', () => {
 });
 
 describe('the assets table of the directory', () => {
-  it('is the last migration and is added to a directory that was written before it', () => {
-    expect(MIGRATIONS[MIGRATIONS.length - 1]).toBe(ASSETS_MIGRATION);
+  it('is a migration of its own and is added to a directory that was written before it', () => {
+    const at = MIGRATIONS.indexOf(ASSETS_MIGRATION);
+    expect(at).toBeGreaterThan(-1);
     const file = path.join(dir, 'directory.sqlite');
     const d = openDirectory(file);
     d.setSetting('kept', 'yes');
     d.putAsset({ boardId: 'board1', hash: 'a'.repeat(64), mime: 'image/png', bytes: 10, width: 1, height: 1, createdBy: null, createdAt: 5 });
     d.close();
     const raw = new DatabaseSync(file);
-    raw.exec(`DROP TABLE assets; PRAGMA user_version = ${MIGRATIONS.length - 1}`);
+    raw.exec(`DROP TABLE user_prefs; DROP TABLE assets; PRAGMA user_version = ${at}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getSetting('kept')).toBe('yes');

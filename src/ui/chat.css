@@ -148,3 +148,23 @@
   .chat-count { border: 1px solid CanvasText; }
   .side-tray { border-color: CanvasText; }
 }
+
+/* reactions: small outlined counts under a message, and the six-button row of the message menu */
+.chat-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; }
+.chat-reaction {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; box-sizing: border-box;
+  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  font: 600 12px/1 var(--ui); cursor: pointer;
+}
+.chat-reaction:hover:not(:disabled) { background: var(--tray-hover); }
+.chat-reaction.mine { border-color: var(--tray-text); background: var(--tray-2); }
+.chat-reaction:disabled { cursor: default; opacity: 1; }
+.chat-reaction:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 1px; }
+.chat-reaction-n { min-width: 8px; text-align: left; }
+.chat-picker { display: flex; flex-wrap: nowrap; gap: 0; padding: 4px; }
+.chat-menu:has(.chat-picker) { min-width: 256px; }
+.chat-pick.menu-item { width: 40px; height: 40px; padding: 0; justify-content: center; font-size: 20px; line-height: 1; }
+.chat-pick.on { background: var(--tray-2); box-shadow: inset 0 -2px 0 var(--tray-text); }
+@media (forced-colors: active) {
+  .chat-reaction.mine, .chat-pick.on { outline: 2px solid Highlight; outline-offset: -2px; }
+}

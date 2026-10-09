@@ -10,8 +10,8 @@ import { authState, chatAvailable, onAuth } from './auth';
 import * as cache from './chat-cache';
 import {
   CACHE_PER_CHANNEL, KEEP_IN_LIST, PAGE, applyDelete, backoffMs, classifyFailure, countUnread, delivered, enqueue, mergeMessages,
-  newClientId, newestId, nextToSend, oldestId, outboxItem, removeItem, revive, trimOldest, updateItem,
-  type ChatAccess, type OutboxItem,
+  newClientId, newestId, nextToSend, oldestId, outboxItem, parseMention, removeItem, revive, trimOldest, updateItem, withReactions,
+  type ChatAccess, type MentionNotice, type OutboxItem,
 } from './ui/chat-logic';
 
 export type ChatKind = 'board' | 'team' | 'workspace';
@@ -82,6 +82,7 @@ let workspaceReadOnly = false;
 const unread = new Map<string, { unread: number; mentions: number; lastId?: number }>();
 const channels = new Map<string, Channel>();
 const badgeListeners = new Set<() => void>();
+const mentionListeners = new Set<(n: MentionNotice) => void>();
 let outbox: OutboxItem[] = [];
 let outboxLoad: Promise<void> | null = null;
 let flushing = false;
@@ -229,6 +230,11 @@ function onFrame(f: Record<string, unknown>) {
   if (!isKind(f.kind) || typeof f.ref !== 'string') return;
   const key = keyOf(f.kind, f.ref);
   const ch = channels.get(key);
+  if (t === 'mention') {
+    const notice = parseMention(f);
+    if (notice) for (const fn of Array.from(mentionListeners)) fn(notice);
+    return;
+  }
   if (t === 'unread') {
     unread.set(key, { ...unread.get(key), unread: Number(f.unread) || 0, mentions: Number(f.mentions) || 0 });
     emit();
@@ -246,6 +252,10 @@ function onFrame(f: Record<string, unknown>) {
     if (!ch.visible) return;
     ch.messages = keepBounded(ch, mergeMessages(ch.messages, [f.message]));
     settleDelivered([f.message]);
+    saveChannel(ch);
+    emit(ch);
+  } else if (t === 'reaction' && typeof f.id === 'number' && Array.isArray(f.reactions)) {
+    ch.messages = withReactions(ch.messages, f.id, f.reactions as { emoji: string; userIds: string[] }[]);
     saveChannel(ch);
     emit(ch);
   } else if (t === 'delete' && typeof f.id === 'number') {
@@ -513,6 +523,8 @@ export interface BoardChat {
   discard(clientId: string): void;
   edit(id: number, text: string): Promise<void>;
   remove(id: number): Promise<void>;
+  /** Turns this person's reaction on a message on or off. */
+  react(id: number, emoji: string, on: boolean): Promise<void>;
   /** The newest message is on screen: move the read marker there (at most every two seconds). */
   markRead(): void;
 }
@@ -647,6 +659,12 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
       saveChannel(ch);
       emit(ch);
     },
+    async react(id, emoji, on) {
+      const { reactions } = await api.chatReact(id, emoji, on);
+      ch.messages = withReactions(ch.messages, id, reactions);
+      saveChannel(ch);
+      emit(ch);
+    },
     markRead() {
       if (!ch.visible || ch.readTimer) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
@@ -707,6 +725,12 @@ export async function fetchChannels(): Promise<ChatChannelEntry[]> {
   }
   emit();
   return list;
+}
+
+/** A mention notice from the server (the app is open and the channel is not): the cards listen. Returns the way to stop. */
+export function onMention(fn: (n: MentionNotice) => void): () => void {
+  mentionListeners.add(fn);
+  return () => mentionListeners.delete(fn);
 }
 
 /** Badge changes for any channel (the Chat button listens while its tab is closed). */

@@ -1042,3 +1042,28 @@ describe('audit', () => {
     expect(d.listAudit()).toHaveLength(1);
   });
 });
+
+describe('per-person preferences', () => {
+  it('start empty, are kept per person and key, and are replaced by a later value', () => {
+    const d = open();
+    const ana = user(d, 'ana@example.test');
+    const ben = user(d, 'ben@example.test');
+    expect(d.getPref(ana.id, 'chat.emailMentions')).toBeNull();
+    d.setPref(ana.id, 'chat.emailMentions', '0');
+    d.setPref(ana.id, 'other', 'x');
+    expect(d.getPref(ana.id, 'chat.emailMentions')).toBe('0');
+    expect(d.getPref(ben.id, 'chat.emailMentions')).toBeNull();
+    d.setPref(ana.id, 'chat.emailMentions', '1');
+    expect(d.getPref(ana.id, 'chat.emailMentions')).toBe('1');
+    expect(d.getPref(ana.id, 'other')).toBe('x');
+  });
+
+  it('are refused for someone who does not exist, and go with the person who is removed', () => {
+    const d = open();
+    expect(() => d.setPref('nobody', 'k', 'v')).toThrow('user not found');
+    const ana = user(d, 'ana@example.test');
+    d.setPref(ana.id, 'k', 'v');
+    d.removeUser(ana.id);
+    expect(d.getPref(ana.id, 'k')).toBeNull();
+  });
+});

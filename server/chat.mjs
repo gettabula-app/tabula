@@ -52,6 +52,9 @@ export const CHAT_MIGRATIONS = [
 
 // Workspace settings for chat live in the directory's `settings` table with the others (docs/chat.md, Interface).
 export const CHAT_SETTING_KEYS = Object.freeze({ viewersMayPost: 'chat.viewersMayPost', retentionDays: 'chat.retentionDays', workspaceChannel: 'chat.workspaceChannel' });
+/** The small fixed set of reactions (docs/chat.md, Messages): one of each per person per message, in this order. */
+export const REACTIONS = Object.freeze(['👍', '❤️', '😄', '🎉', '👀', '✅']);
+
 /** Keep chat messages: one year unless an administrator chooses otherwise. null is "forever". */
 export const RETENTION_CHOICES = [365, 90, 30, null];
 export const DEFAULT_RETENTION_DAYS = 365;
@@ -101,6 +104,8 @@ const toMessage = (r) => ({
   deletedAt: r.deleted_at == null ? null : Number(r.deleted_at),
   deletedBy: r.deleted_by ?? null,
   mentions: [],
+  /** `{ emoji, userIds }` for each reaction in use, in the order of REACTIONS. */
+  reactions: [],
 });
 
 export function openChat(file) {
@@ -159,6 +164,18 @@ export function openChat(file) {
         ...chunk.map((m) => m.id),
       );
       for (const r of rows) byId.get(Number(r.message_id))?.mentions.push(r.user_id);
+      const reacted = all(
+        `SELECT message_id, user_id, emoji FROM chat_reactions WHERE message_id IN (${chunk.map(() => '?').join(', ')}) ORDER BY rowid`,
+        ...chunk.map((m) => m.id),
+      );
+      for (const r of reacted) {
+        const m = byId.get(Number(r.message_id));
+        if (!m) continue;
+        let entry = m.reactions.find((x) => x.emoji === r.emoji);
+        if (!entry) m.reactions.push((entry = { emoji: r.emoji, userIds: [] }));
+        entry.userIds.push(r.user_id);
+      }
+      for (const m of chunk) m.reactions.sort((a, b) => REACTIONS.indexOf(a.emoji) - REACTIONS.indexOf(b.emoji));
     }
     return messages;
   }
@@ -235,6 +252,23 @@ export function openChat(file) {
       run('DELETE FROM chat_reactions WHERE message_id = ?', id);
     });
     return getMessage(id);
+  }
+
+  /**
+   * Turns one person's reaction on or off on a live message. Returns the message's reactions after, and whether anything
+   * changed (switching on what is on, or off what is off, changes nothing). null for a message that is gone or deleted.
+   * @returns {{ reactions: { emoji: string, userIds: string[] }[], changed: boolean } | null}
+   */
+  function setReaction(messageId, userId, emoji, on) {
+    if (!REACTIONS.includes(emoji)) throw new Error('not a reaction');
+    return transaction(() => {
+      const row = get('SELECT deleted_at FROM chat_messages WHERE id = ?', messageId);
+      if (!row || row.deleted_at != null) return null;
+      const result = on
+        ? run('INSERT OR IGNORE INTO chat_reactions (message_id, user_id, emoji) VALUES (?, ?, ?)', messageId, userId, emoji)
+        : run('DELETE FROM chat_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?', messageId, userId, emoji);
+      return { reactions: getMessage(messageId).reactions, changed: Number(result.changes) > 0 };
+    });
   }
 
   const topId = (kind, ref) => Number(get('SELECT MAX(id) AS top FROM chat_messages WHERE kind = ? AND ref = ?', kind, ref).top ?? 0);
@@ -366,6 +400,8 @@ export function openChat(file) {
     editMessage,
     deleteMessage,
     topId,
+    readMarker: markerOf,
+    setReaction,
     markRead,
     channelUnread,
     unreadSummary,

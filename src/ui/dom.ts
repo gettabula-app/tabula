@@ -51,6 +51,7 @@ export const ICONS = {
   shapes: '<rect x="3.5" y="10" width="10" height="10" rx="1"/><circle cx="16" cy="8" r="5"/>',
   uml: '<rect x="4" y="3.5" width="16" height="17" rx="1"/><path d="M4 8.5h16M4 14h16M7 11.2h6M7 16.8h8"/>',
   icons: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 007 0"/><path d="M9 9.5h.01M15 9.5h.01" stroke-width="2.5"/>',
+  react: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.2c.9 1.4 2 2.1 3.5 2.1s2.6-.7 3.5-2.1"/><path d="M9.4 9.6h.01M14.6 9.6h.01"/>',
   stickers: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.6 1-5.8-4.2-4.1 5.9-.9z"/>',
   templates: '<rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="M3.5 9h17M9.5 9v11"/>',
   history: '<path d="M3.5 12a8.5 8.5 0 108.5-8.5c-2.5 0-4.8 1.1-6.4 2.9L3.5 8.5"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 1.8"/>',

@@ -361,6 +361,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         compile,
         audit,
         requireAdmin,
+        notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
       })
