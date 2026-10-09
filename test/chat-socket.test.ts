@@ -177,6 +177,48 @@ describe('the /chat socket', { timeout: 60_000 }, () => {
     expect(c.frames.find((f) => f.t === 'closed')).toEqual({ t: 'closed', kind: 'board', ref: board });
   });
 
+  it('delivers team and workspace messages to subscribers and counts to other tabs, and nothing to outsiders', async () => {
+    const team = await h.newTeam(owner.cookie);
+    const ana = await h.joinTeam(owner.cookie, team.id);
+    const ben = await h.joinTeam(owner.cookie, team.id);
+    const outsider = await h.joinTeam(owner.cookie, (await h.newTeam(owner.cookie)).id);
+    const [a, b, o] = await Promise.all([ready(ana.cookie), ready(ben.cookie), ready(outsider.cookie)]);
+    expect((await subscribe(a, team.id, 'team')).t).toBe('subscribed');
+    expect((await subscribe(o, team.id, 'team')).t).toBe('denied');
+    expect((await subscribe(a, 'main', 'workspace')).t).toBe('subscribed');
+    await h.api(ana.cookie, 'POST', `/api/chat/team/${team.id}/messages`, { clientId: crypto.randomUUID(), text: 'to the team' });
+    await h.api(owner.cookie, 'POST', '/api/chat/workspace/main/messages', { clientId: crypto.randomUUID(), text: 'to everyone' });
+    await until(() => has(b, (f) => f.t === 'unread' && f.kind === 'team' && f.ref === team.id) && has(a, (f) => f.t === 'message' && f.kind === 'workspace'));
+    expect(has(a, (f) => f.t === 'message' && f.kind === 'team' && f.message.text === 'to the team')).toBe(true);
+    // Ben is not subscribed: counts only, never the text
+    expect(JSON.stringify(b.frames)).not.toContain('to the team');
+    await flushed(o);
+    expect(JSON.stringify(o.frames)).not.toContain('to the team');
+    expect(has(o, (f) => f.t === 'unread' && f.kind === 'team')).toBe(false);
+  });
+
+  it('closes a team channel when the person leaves the team', async () => {
+    const team = await h.newTeam(owner.cookie);
+    const ana = await h.joinTeam(owner.cookie, team.id);
+    const a = await ready(ana.cookie);
+    await subscribe(a, team.id, 'team');
+    expect((await h.api(owner.cookie, 'DELETE', `/api/teams/${team.id}/members/${ana.user.id}`)).status).toBe(204);
+    await until(() => has(a, (f) => f.t === 'closed' && f.kind === 'team' && f.ref === team.id));
+  });
+
+  it('closes the workspace channel when an administrator switches it off', async () => {
+    const team = await h.newTeam(owner.cookie);
+    const ana = await h.joinTeam(owner.cookie, team.id);
+    const a = await ready(ana.cookie);
+    await subscribe(a, 'main', 'workspace');
+    try {
+      expect((await h.api(owner.cookie, 'PUT', '/api/admin/chat', { workspaceChannel: false })).status).toBe(200);
+      await until(() => has(a, (f) => f.t === 'closed' && f.kind === 'workspace'));
+    } finally {
+      await h.api(owner.cookie, 'PUT', '/api/admin/chat', { workspaceChannel: true });
+    }
+  });
+
   it('mirrors a read marker to every tab of the person', async () => {
     const { board, person } = await setup();
     const ana = await person('commenter');

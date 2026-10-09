@@ -1,0 +1,6 @@
+/* The admin dashboard's Chat tab (docs/chat.md): a note, three settings, each saved as it is changed. */
+.chat-admin { min-width: 0; }
+.chat-admin .admin-fact { align-items: start; }
+.chat-admin-note { margin: 0 0 16px; max-width: 72ch; color: var(--graphite); font-size: 13px; line-height: 1.5; }
+.chat-admin .admin-fact .chat-admin-note { margin: 8px 0 0; }
+.chat-admin-keep { display: flex; flex-wrap: wrap; gap: 8px; }

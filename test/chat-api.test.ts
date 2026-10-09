@@ -196,14 +196,14 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     expect(refused.status).toBe(403);
     expect(refused.body.error).toBe('read_only_viewer');
 
-    expect((await h.api(owner.cookie, 'GET', '/api/admin/chat')).body).toEqual({ viewersMayPost: false, retentionDays: 365 });
+    expect((await h.api(owner.cookie, 'GET', '/api/admin/chat')).body).toEqual({ viewersMayPost: false, retentionDays: 365, workspaceChannel: true });
     expect((await h.api(vic.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: true })).status).toBe(403);
     expect((await h.api(owner.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: 'yes' })).status).toBe(400);
     expect((await h.api(owner.cookie, 'PUT', '/api/admin/chat', { retentionDays: 7 })).status).toBe(400);
     expect((await h.api(owner.cookie, 'PUT', '/api/admin/chat', { enabled: false })).status).toBe(400);
     try {
       const on = await h.api(owner.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: true });
-      expect(on.body).toEqual({ viewersMayPost: true, retentionDays: 365 });
+      expect(on.body).toEqual({ viewersMayPost: true, retentionDays: 365, workspaceChannel: true });
       expect((await send(vic, board, 'hello now')).status).toBe(201);
     } finally {
       await h.api(owner.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: false });

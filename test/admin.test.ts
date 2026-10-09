@@ -118,6 +118,8 @@ describe('auditSentence', () => {
     ['chat.delete', entry('chat.delete', { kind: 'board', ref: 'b1', messageId: 7, authorId: 'u2' }), 'ana@example.com removed a message by bo@example.com in “Roadmap”'],
     ['chat.delete by a removed author on a board that is gone', entry('chat.delete', { kind: 'board', ref: 'gone', messageId: 7, authorId: null }), 'ana@example.com removed a message by a former member in a board chat'],
     ['chat.settings', entry('chat.settings', { viewersMayPost: true, retentionDays: 90 }), 'ana@example.com changed the chat settings (viewers may post, keep messages 90 days)'],
+    ['chat.retention', entry('chat.retention', { days: 365, removed: 120 }), '120 chat messages older than 365 days were removed by the retention setting'],
+    ['chat.settings channel', entry('chat.settings', { workspaceChannel: false }), 'ana@example.com changed the chat settings (workspace channel off)'],
     ['chat.settings forever', entry('chat.settings', { viewersMayPost: false, retentionDays: null }), 'ana@example.com changed the chat settings (viewers read only, keep messages forever)'],
     ['backup.run', entry('backup.run', { changed: true, files: 14, uploaded: 3 }, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace (14 files, 3 new)'],
     ['backup.run with nothing known', entry('backup.run', {}, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace'],
@@ -185,7 +187,7 @@ describe('auditSentence', () => {
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
       'asset.upload', 'assets.gc',
-      'chat.delete', 'chat.settings',
+      'chat.delete', 'chat.settings', 'chat.retention',
       'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
       'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
     ];
@@ -465,17 +467,24 @@ describe('overviewTiles', () => {
 });
 
 describe('visibleAdminTabs', () => {
+  it('shows Chat only where the server has chat', () => {
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true)).toContain('chat');
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', false)).not.toContain('chat');
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'admin')).not.toContain('chat');
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'admin', true)).toContain('chat');
+  });
+
   it('shows Access tokens only when AI tool access is on', () => {
-    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toEqual([...ADMIN_TABS]);
-    expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner')).not.toContain('tokens');
-    expect(visibleAdminTabs(ADMIN_TABS, false, 'owner')).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true)).toEqual([...ADMIN_TABS]);
+    expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner', true)).not.toContain('tokens');
+    expect(visibleAdminTabs(ADMIN_TABS, false, 'owner', true)).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
   });
 
   it('shows Backups to owners only', () => {
-    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toContain('backups');
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner', true)).toContain('backups');
     for (const role of ['admin', 'member', 'guest', undefined] as const) {
-      expect(visibleAdminTabs(ADMIN_TABS, true, role), `${role}`).not.toContain('backups');
-      expect(visibleAdminTabs(ADMIN_TABS, true, role)).toEqual(ADMIN_TABS.filter((t) => t !== 'backups'));
+      expect(visibleAdminTabs(ADMIN_TABS, true, role, true), `${role}`).not.toContain('backups');
+      expect(visibleAdminTabs(ADMIN_TABS, true, role, true)).toEqual(ADMIN_TABS.filter((t) => t !== 'backups'));
     }
   });
 });

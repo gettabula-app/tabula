@@ -361,6 +361,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         compile,
         audit,
         requireAdmin,
+        emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
       })
     : [];

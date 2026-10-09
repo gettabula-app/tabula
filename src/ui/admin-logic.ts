@@ -95,7 +95,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.settings', 'ai.key.set', 'ai.key.delete',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
-  'chat.delete', 'chat.settings',
+  'chat.delete', 'chat.settings', 'chat.retention',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
 ] as const;
@@ -276,9 +276,15 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'chat.settings': {
       const changes: string[] = [];
       if (flag(d.viewersMayPost) !== undefined) changes.push(d.viewersMayPost ? 'viewers may post' : 'viewers read only');
+      if (flag(d.workspaceChannel) !== undefined) changes.push(d.workspaceChannel ? 'workspace channel on' : 'workspace channel off');
       if (d.retentionDays === null) changes.push('keep messages forever');
       else if (typeof d.retentionDays === 'number') changes.push(`keep messages ${countLabel(d.retentionDays, 'day', 'days')}`);
       return `${who} changed the chat settings${changes.length ? ` (${changes.join(', ')})` : ''}`;
+    }
+    case 'chat.retention': {
+      const removed = typeof d.removed === 'number' ? d.removed : 0;
+      const days = typeof d.days === 'number' ? ` older than ${countLabel(d.days, 'day', 'days')}` : '';
+      return `${removed === 1 ? '1 chat message' : `${removed} chat messages`}${days} ${removed === 1 ? 'was' : 'were'} removed by the retention setting`;
     }
     case 'backup.run': {
       const files = typeof d.files === 'number' ? d.files : null;
@@ -417,6 +423,6 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
  * Admin sections to show: Access tokens only when AI tool access is on for this server, and Backups only to owners (the
  * routes behind it refuse admins). Backups is listed for every owner, also when backups are off: the tab then says so.
  */
-export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined): T[] {
-  return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner'));
+export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined, chat?: boolean): T[] {
+  return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner') && (t !== 'chat' || chat === true));
 }

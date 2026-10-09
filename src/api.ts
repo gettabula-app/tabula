@@ -58,8 +58,29 @@ export interface ChatMessage {
 export interface ChatChannelInfo {
   kind: string;
   ref: string;
-  access: { write: boolean; moderate: boolean; role: BoardRole | null; readOnly: boolean };
+  access: { write: boolean; moderate: boolean; role: BoardRole | string | null; readOnly: boolean };
   people: { id: string; name: string }[];
+}
+
+/** One row of GET /api/chat/channels: a place to talk, for the Chat page. `member` is false for a team an admin may read. */
+export interface ChatChannelEntry {
+  kind: 'board' | 'team' | 'workspace';
+  ref: string;
+  name: string;
+  write: boolean;
+  unread: number;
+  mentions: number;
+  lastId: number;
+  lastAt: number | null;
+  archived?: boolean;
+  member?: boolean;
+}
+
+/** GET and PUT /api/admin/chat. `retentionDays` is null for "forever". */
+export interface ChatSettings {
+  viewersMayPost: boolean;
+  retentionDays: number | null;
+  workspaceChannel: boolean;
 }
 
 export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
@@ -685,6 +706,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatRead: (kind: string, ref: string, lastId: number) =>
       call<{ kind: string; ref: string; lastId: number }>('PUT', `/api/chat/${seg(kind)}/${seg(ref)}/read`, { lastId }),
     chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
+    chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),
+    adminChat: () => call<ChatSettings>('GET', '/api/admin/chat'),
+    setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),
 
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),

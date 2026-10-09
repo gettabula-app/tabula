@@ -2,7 +2,7 @@
 // outbox, grouping the list into rows, finding links and mentions, and the composer's `@` list. src/chat.ts and
 // src/ui/chat.ts do the I/O around it.
 
-import type { ChatMessage } from '../api';
+import type { ChatChannelEntry, ChatMessage } from '../api';
 
 /** Messages per page, as the server's default. */
 export const PAGE = 50;
@@ -419,3 +419,78 @@ export const atBottom = (scrollTop: number, scrollHeight: number, clientHeight: 
 
 /** The localStorage key for whether one person had one board's chat open (driftboard prefix, as every stored id). */
 export const chatOpenKey = (userId: string, boardId: string): string => `driftboard:chat:${userId}:${boardId}`;
+
+// ---------------------------------------------------------------- the Chat page's channel list
+
+export type ChannelKind = ChatChannelEntry['kind'];
+
+export interface ChannelSection {
+  id: 'workspace' | 'teams' | 'other-teams' | 'boards';
+  title: string;
+  entries: ChatChannelEntry[];
+}
+
+const byName = (a: ChatChannelEntry, b: ChatChannelEntry) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || (a.ref < b.ref ? -1 : 1);
+const byRecent = (a: ChatChannelEntry, b: ChatChannelEntry) => (b.lastAt ?? 0) - (a.lastAt ?? 0) || byName(a, b);
+
+/**
+ * The channel list as sections, in the order people look for things: the workspace, their teams (recent first, archived
+ * last), the teams a workspace owner or admin may read without belonging to, then boards whose chat is recent. Empty
+ * sections are left out.
+ */
+export function groupChannels(entries: readonly ChatChannelEntry[]): ChannelSection[] {
+  const workspace = entries.filter((e) => e.kind === 'workspace');
+  const teams = entries.filter((e) => e.kind === 'team' && e.member !== false);
+  const live = teams.filter((e) => !e.archived).sort(byRecent);
+  const archived = teams.filter((e) => e.archived).sort(byRecent);
+  const others = entries.filter((e) => e.kind === 'team' && e.member === false).sort(byName);
+  const boards = entries.filter((e) => e.kind === 'board').sort(byRecent);
+  const sections: ChannelSection[] = [
+    { id: 'workspace', title: 'Workspace', entries: workspace },
+    { id: 'teams', title: 'Teams', entries: [...live, ...archived] },
+    { id: 'other-teams', title: 'Other teams', entries: others },
+    { id: 'boards', title: 'Boards', entries: boards },
+  ];
+  return sections.filter((s) => s.entries.length > 0);
+}
+
+/** The address of a channel on the Chat page. */
+export const channelHash = (kind: ChannelKind, ref: string): string => `#/chat/${kind}/${ref}`;
+
+/** The first channel to show when the address names none: the one with a mention, else the most unread, else the first listed. */
+export function defaultChannel(sections: readonly ChannelSection[], unreadOf: (e: ChatChannelEntry) => { unread: number; mentions: number }): ChatChannelEntry | null {
+  const all = sections.flatMap((s) => s.entries);
+  let best: ChatChannelEntry | null = null;
+  let score = 0;
+  for (const e of all) {
+    const u = unreadOf(e);
+    const s = u.mentions * 1_000_000 + u.unread;
+    if (s > score) {
+      best = e;
+      score = s;
+    }
+  }
+  return best ?? all[0] ?? null;
+}
+
+/** "99+" past two digits. */
+export const badgeText = (n: number): string => (n > 99 ? '99+' : String(n));
+
+const KIND_LABEL: Record<ChannelKind, string> = { workspace: 'Workspace', team: 'Team', board: 'Board' };
+
+/** What a screen reader hears for a channel row: its name, what kind it is and what is unread. */
+export function channelLabel(e: ChatChannelEntry, c: { unread: number; mentions: number }): string {
+  const parts = [e.name, KIND_LABEL[e.kind] + (e.archived ? ', archived' : '')];
+  if (c.unread) parts.push(`${c.unread} unread${c.mentions ? `, ${c.mentions} mentioning you` : ''}`);
+  return parts.join(', ');
+}
+
+/** The small line under a channel's name: what kind it is and when it last had a message. */
+export function channelMeta(e: ChatChannelEntry, now: number): string {
+  const kind = e.kind === 'board' ? 'Board' : e.kind === 'team' ? (e.member === false ? 'Team, not a member' : 'Team') : 'Everyone';
+  const state = e.archived ? ' · archived' : '';
+  if (e.lastAt === null) return `${kind}${state}`;
+  const days = Math.floor((now - e.lastAt) / 86_400_000);
+  const when = days <= 0 ? timeLabel(e.lastAt) : days === 1 ? 'yesterday' : days < 7 ? `${days} days ago` : new Date(e.lastAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return `${kind}${state} · ${when}`;
+}

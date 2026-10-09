@@ -7,7 +7,8 @@ import { newId } from '../store';
 import { importedBoardName, readBoardFile, type ImportedBoard } from '../exporters';
 import { storedWhere } from '../desktop-env';
 import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
-import { cacheServerBoards, cachedServerBoards, setSignedOut, type AuthState } from '../auth';
+import { cacheServerBoards, cachedServerBoards, chatAvailable, setSignedOut, type AuthState } from '../auth';
+import { boardUnread, onChatBadge } from '../chat';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
@@ -230,7 +231,7 @@ function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
   return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
     const title = b.title || UNTITLED;
     return {
-      id: b.id, title, updatedAt: b.updatedAt, role: b.role,
+      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true,
       actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
     };
   }), 'access');
@@ -245,6 +246,8 @@ interface BoardRow {
   title: string;
   updatedAt: number;
   role?: BoardRole;
+  /** A board on the server: its chat's unread count shows beside the title (when chat is on). */
+  chat?: boolean;
   actions: (HTMLElement | null)[];
 }
 
@@ -263,6 +266,28 @@ function deleteButton(label: string, tip: string, disabled: boolean, onclick: ()
   return h('button', { class: 'icon-btn', 'data-tip': tip, 'aria-label': label, disabled, onclick }, icon('trash', 18));
 }
 
+/**
+ * The unread count of a board's chat, beside its title (inside the row's link, which opens the board and its chat): outlined
+ * in red when someone mentioned you. Empty (and hidden) when nothing is unread or chat is off; it follows the live counts while on screen.
+ */
+function boardChatBadge(boardId: string): HTMLElement | null {
+  if (!chatAvailable()) return null;
+  const a = h('span', { class: 'board-chat', hidden: true });
+  const paint = () => {
+    const c = boardUnread(boardId);
+    a.hidden = c.unread === 0;
+    a.textContent = c.unread > 99 ? '99+' : String(c.unread);
+    a.classList.toggle('mention', c.mentions > 0);
+    a.setAttribute('aria-label', `${c.unread} unread in board chat${c.mentions ? `, ${c.mentions} mentioning you` : ''}`);
+  };
+  paint();
+  const off = onChatBadge(() => {
+    if (!a.isConnected) off();
+    else paint();
+  });
+  return a;
+}
+
 /** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */
 function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
   return h('div', { class: `board-table ${kind}` },
@@ -272,7 +297,7 @@ function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 
       kind === 'access' ? h('span', null, 'Access') : null,
       h('span')),
     h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => h('li', { class: 'board-row' },
-      h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title)),
+      h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null),
       h('span', { class: 'board-sub' },
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
         r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
