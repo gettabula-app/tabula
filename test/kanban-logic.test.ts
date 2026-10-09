@@ -3,7 +3,9 @@ import { KANBAN, layoutContainer } from '../shared/containers';
 import {
   ADD_ROW, addRow, cardHeight, dropIndexAt, dropLine, dueChip, emptyBox, initials, keyboardMove, laneCards, laneCount,
   laneRegionAt, laneTargetAt, localToday, lowDetail, moveAnnouncement,
+  cardFillFromSticky, isDueDate, joinCardText, ownerKey, ownerOptions, readingOrder, splitStickyText, stickyFillFromCard,
 } from '../src/ui/kanban-logic';
+import { STICKY_COLORS } from '../src/palette';
 
 // docs/kanban.md, slice 2: the pure maths behind drawing, dropping and keyboard moves.
 
@@ -186,5 +188,91 @@ describe('initials', () => {
     expect(initials('ana maria novak')).toBe('AN');
     expect(initials('Lea')).toBe('L');
     expect(initials('  ')).toBe('?');
+  });
+});
+
+// docs/kanban.md, slice 3: cards.
+describe('sticky text and card text', () => {
+  it('splits at the first line break, dropping the blank lines before the description', () => {
+    expect(splitStickyText('Ship it')).toEqual({ title: 'Ship it', desc: undefined });
+    expect(splitStickyText('Ship it\n\n  \nBefore Friday\nand notes\n')).toEqual({ title: 'Ship it', desc: 'Before Friday\nand notes' });
+    expect(splitStickyText('Ship\r\nit')).toEqual({ title: 'Ship', desc: 'it' });
+    expect(splitStickyText(undefined)).toEqual({ title: '', desc: undefined });
+  });
+
+  it('keeps a long first line whole: the title gets 200 characters, the description the rest', () => {
+    const long = `${'a'.repeat(200)} tail`;
+    const r = splitStickyText(`${long}\nmore`);
+    expect(r.title).toBe('a'.repeat(200));
+    expect(r.desc).toBe('tail\n\nmore');
+  });
+
+  it('joins title and description with a blank line, and round-trips', () => {
+    expect(joinCardText('T', 'D')).toBe('T\n\nD');
+    expect(joinCardText('T', undefined)).toBe('T');
+    expect(joinCardText('', 'D')).toBe('D');
+    const { title, desc } = splitStickyText(joinCardText('Title', 'Line 1\n\nLine 2'));
+    expect({ title, desc }).toEqual({ title: 'Title', desc: 'Line 1\n\nLine 2' });
+  });
+});
+
+describe('colours between stickies and cards', () => {
+  it('a sticky swatch becomes its palette key, another colour stays a checked colour', () => {
+    expect(cardFillFromSticky('#A3D2FF', STICKY_COLORS)).toBe('blue');
+    expect(cardFillFromSticky('#a3d2ff', STICKY_COLORS)).toBe('blue');
+    expect(cardFillFromSticky('#123456', STICKY_COLORS)).toBe('#123456');
+    expect(cardFillFromSticky('red;background:url(x)', STICKY_COLORS)).toBeUndefined();
+    expect(cardFillFromSticky(undefined, STICKY_COLORS)).toBeUndefined();
+  });
+
+  it('a card colour becomes its sticky swatch, a board colour, or the nearest swatch', () => {
+    const y = STICKY_COLORS[0].fill;
+    expect(stickyFillFromCard('teal', STICKY_COLORS, [], y)).toBe('#8FE3CA');
+    expect(stickyFillFromCard('#ABCDEF', STICKY_COLORS, ['#ABCDEF'], y)).toBe('#ABCDEF');
+    expect(stickyFillFromCard('#00ff00', STICKY_COLORS, [], y)).toBe('#BCE88C');
+    expect(stickyFillFromCard(undefined, STICKY_COLORS, [], y)).toBe(y);
+    expect(stickyFillFromCard('expression(alert(1))', STICKY_COLORS, [], y)).toBe(y);
+  });
+});
+
+describe('reading order', () => {
+  const box = (id: string, x: number, y: number) => ({ id, x, y, w: 100, h: 100 });
+  it('reads rows top to bottom and each row left to right, with some slack for a ragged row', () => {
+    const items = [box('d', 0, 260), box('b', 220, 30), box('a', 0, 0), box('c', 440, -20)];
+    expect(readingOrder(items).map((o) => o.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+  it('gives the same order whatever order it is given', () => {
+    const items = [box('a', 0, 0), box('b', 120, 0), box('c', 0, 120), box('d', 120, 120)];
+    expect(readingOrder([...items].reverse()).map((o) => o.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('due dates', () => {
+  it('accepts only real calendar dates', () => {
+    expect(isDueDate('2026-01-16')).toBe(true);
+    expect(isDueDate('2024-02-29')).toBe(true);
+    expect(isDueDate('2026-02-29')).toBe(false);
+    expect(isDueDate('2026-1-16')).toBe(false);
+    expect(isDueDate('2026-01-16T00:00')).toBe(false);
+    expect(isDueDate(20260116)).toBe(false);
+  });
+});
+
+describe('owner picker', () => {
+  it('offers me, the people here and those already assigned, each once, me first; names alone by name', () => {
+    const opts = ownerOptions(
+      { id: 'me', name: 'Visual QA' },
+      [{ id: 'u2', name: 'Marta Ruiz' }, { id: 'me', name: 'Visual QA' }],
+      [{ ownerId: 'u3', ownerName: 'Ana Novak' }, { ownerName: 'Lea Brandt' }, { ownerName: 'lea brandt' }, { ownerName: 'Marta Ruiz' }, { ownerId: 'u2', ownerName: 'Old name' }],
+    );
+    expect(opts.map((o) => [o.key, o.name])).toEqual([
+      ['id:me', 'Visual QA'], ['id:u3', 'Ana Novak'], ['name:Lea Brandt', 'Lea Brandt'], ['id:u2', 'Marta Ruiz'],
+    ]);
+    expect(opts[0].me).toBe(true);
+  });
+  it('names the current owner by id, else by name', () => {
+    expect(ownerKey({ ownerId: 'u1', ownerName: 'A' })).toBe('id:u1');
+    expect(ownerKey({ ownerName: ' A ' })).toBe('name:A');
+    expect(ownerKey({})).toBe('');
   });
 });

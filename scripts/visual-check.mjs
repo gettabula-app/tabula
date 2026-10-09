@@ -33,7 +33,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --mode <mode>      open (default) or accounts
   --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
-                     kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-lowdetail, kanban-dialog, kanban-labels, kanban-full-card, kanban-convert, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -749,6 +749,54 @@ const STATES = {
       }
       app.setSelection([]);
     });
+  },
+  // slice 3: the card dialog (a bottom sheet at phone width), the Labels dialog, a card with everything set, K
+  async 'kanban-dialog'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.setSelection(['k-c2']);
+      app.openCardDialog('k-c2');
+    });
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+  },
+  async 'kanban-labels'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => window.__board.openLabels());
+    await env.page.getByRole('dialog', { name: 'Labels' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+  },
+  async 'kanban-full-card'(env) {
+    // its own board: the description and the comment would otherwise stay in the shared one
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-card`, fit: false });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      if (!app.store.get('k-c2').desc) {
+        app.store.transact(() => app.store.update('k-c2', { desc: 'Steps: open Safari 17, sign in, watch the redirect.' }));
+        app.comments.addThread({ id: 'visual-user', name: 'Visual QA', color: '#2F6FED' }, { x: 0, y: 0, obj: 'k-c2', fx: 0.95, fy: 0.1 }, 'Seen on iOS too.');
+      }
+      app.setSelection(['k-c2']);
+      app.r.fit(app.r.contentBounds(['k-c2']), window.innerWidth < 600 ? 24 : 240, 2);
+    });
+    await settle(env.page);
+  },
+  async 'kanban-convert'(env) {
+    // its own board: K turns the note into a card in Review, which would change every later kanban shot
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-convert` });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      // every shot shares the board: an earlier one left the note a card, so it goes back to a sticky first
+      if (app.store.get('k-note-1').type === 'card') app.turnIntoStickies(['k-note-1']);
+      const lane = app.store.getPlaced('k-review');
+      app.store.transact(() => app.store.update('k-note-1', { x: lane.x + 40, y: lane.y + 60, parent: undefined }));
+      app.setSelection(['k-note-1']);
+    });
+    await env.page.keyboard.press('k');
+    await env.page.waitForFunction(() => window.__board.store.get('k-note-1').type === 'card');
+    await settle(env.page);
   },
   async 'kanban-lowdetail'(env) {
     await openKanbanBoard(env, { fit: false });

@@ -192,7 +192,8 @@ export class Renderer {
       layout: () => this.connectorLayout(),
       containerLayout: (id) => this.store.containerLayout(id),
       dragging: (id) => this.kanbanState.dragging.has(id),
-      label: (id) => validLabel(this.store.labels.get(id)) ?? undefined,
+      // a value under another label's key is not that label (src/labels.ts)
+      label: (id) => { const l = validLabel(this.store.labels.get(id)); return l && l.id === id ? l : undefined; },
       ownerColor: (o) => this.ownerColor(o),
       commentCount: (id) => this.commentCount(id),
     };

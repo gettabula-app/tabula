@@ -260,6 +260,18 @@ describe('colours from the board', () => {
   });
 });
 
+describe('text from the board (slice 3 writes it)', () => {
+  it('escapes a title, an owner name and a label name with markup in them', () => {
+    const { store, ids } = board();
+    const evil = '"><img src=x onerror=alert(1)><script>alert(1)</script>';
+    store.transact(() => store.update(ids[0], { text: evil, desc: evil, ownerName: evil, labels: ['x'], due: '2026-01-16' }));
+    store.labels.set('x', { id: 'x', name: evil.slice(0, 40), color: 'blue', order: 0 });
+    const svg = draw(store, ids[0], { ownerColor: () => undefined });
+    expect(svg).not.toMatch(/<img|<script/i);
+    expect(svg).toContain('&lt;img');
+  });
+});
+
 describe('resolving color-mix for an export', () => {
   it('mixes two colours, and gives a mix with transparent as an opacity on fills and strokes', () => {
     expect(resolveColorMix('style="fill:color-mix(in srgb, #000000 50%, #FFFFFF)"')).toBe('style="fill:#808080"');

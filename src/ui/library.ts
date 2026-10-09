@@ -1,3 +1,4 @@
+import { kanbanFlag } from '../flags';
 import type { BoardApp } from '../app';
 import type { BaseObj, ConnectorObj, End, Point, ShapeKind, UmlRelation } from '../types';
 import { ICONS, h, icon } from './dom';
@@ -108,7 +109,8 @@ function draggable(el: HTMLElement, item: DropItem) {
   return el;
 }
 
-function shapesTab(app: BoardApp, close: () => void) {
+/** The Shapes drawer's body. Exported for tests. */
+export function shapesTab(app: BoardApp, close: () => void) {
   const input = h('input', { type: 'search', class: 'input shape-search', placeholder: 'Search shapes', 'aria-label': 'Search shapes', autocomplete: 'off' });
   const results = h('div', null);
   const tile = (kind: ShapeKind, label: string) => {
@@ -136,7 +138,8 @@ function shapesTab(app: BoardApp, close: () => void) {
       const kinds = SHAPE_KINDS.filter((k) => k.group === group && (k.label.toLowerCase().includes(q) || k.kind.includes(q)));
       return kinds.length ? [h('div', { class: 'list-label' }, label), h('div', { class: 'tiles' }, ...kinds.map((k) => tile(k.kind, k.label)))] : [];
     });
-    if ('kanban board'.includes(q) && !app.readOnly) groups.push(h('div', { class: 'list-label' }, 'Boards'), h('div', { class: 'tiles' }, kanbanTile()));
+    // making kanbans is behind a flag until slices 3 to 5 are done (src/flags.ts): without it neither heading nor tile
+    if ('kanban board'.includes(q) && !app.readOnly && kanbanFlag()) groups.push(h('div', { class: 'list-label' }, 'Boards'), h('div', { class: 'tiles' }, kanbanTile()));
     results.replaceChildren(...(groups.length ? groups : [h('div', { class: 'empty' }, `No shapes match “${query}”.`)]));
   };
   input.addEventListener('input', render);

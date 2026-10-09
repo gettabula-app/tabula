@@ -1,4 +1,6 @@
 import { openContextMenu } from './context-menu';
+import { openCardDialog } from './card-dialog';
+import { openLabelsDialog } from './labels-dialog';
 import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
@@ -177,6 +179,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
   app.onImageFiles = (files) => void addImages(app, files);
   app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
+  // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
+  app.openCard = (id, focus) => void openCardDialog(app, id, focus);
+  app.openLabels = () => void openLabelsDialog(app);
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {

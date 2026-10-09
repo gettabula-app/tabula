@@ -1,3 +1,5 @@
+import { kanbanFlag } from './flags';
+import { withoutNewKanbans } from './containers';
 import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, ShapeKind, Step, StepMode } from './types';
 import { newId } from './store';
@@ -519,6 +521,8 @@ function templateOrigin(app: BoardApp) {
 
 /** Create the objects in one undo step, replace the flow when `steps` is given, and fly to them. */
 function place(app: BoardApp, objs: Obj[], steps: Step[] | null) {
+  // while making kanbans is behind its flag, a template makes none (src/flags.ts); its ids are all new
+  if (!kanbanFlag()) objs = withoutNewKanbans(objs, () => false).objs;
   const zs = app.store.topZs(objs.length);
   objs.forEach((o, i) => (o.z = zs[i]));
   app.store.undo.stopCapturing();
