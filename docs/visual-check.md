@@ -69,6 +69,8 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `kanban-sheet-full` | The list on a full block lane: the Add card bar refused, with the lock |
 | `ai-review` | (open mode) The review panel of someone else's AI proposal, with `?aibar` and a run handed to the board the way the relay does |
 | `ai-preview-empty` | (open mode) An AI preview on an empty board: the "An empty board" hint is hidden (TAB-214) |
+| `ai-live-remote-ring` | (open mode) Another person's AI run in flight, from the relay's message, with `?aibar`: the outline in their amber around two notes and the "asking AI" label |
+| `ai-live-remote-preview` | (open mode) Their ready preview beside the board: ghost frame "Ideas" and stickies, dashed outline with its dark halo, the "Ana's AI preview" label row with Discard, Review and Accept. The view is fitted to the board and the room beside it, because `zoomToFit` leaves a preview out |
 | `ai-key-test` | (accounts mode) The account menu's "Your AI key" dialog after Test key answers "The key works." (the replies are mocked) |
 | `ai-key-test-error` | The same after the provider rejected the key: the status line in the danger colour |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
