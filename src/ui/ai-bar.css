@@ -27,6 +27,7 @@
 /* DOM order is the tab order (row 2, then the chips); the visual order is set here. */
 .aibar-chips { order: 1; display: flex; gap: 6px; padding: 8px 8px 0; overflow-x: auto; scrollbar-width: none; }
 .aibar-chips::-webkit-scrollbar { display: none; }
+.aibar-chips :focus-visible { outline-offset: -2px; }
 .aibar-main { order: 2; display: flex; align-items: center; gap: 8px; padding: 8px; min-height: 52px; }
 .aibar-disclosure { order: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; padding: 6px 12px 8px; border-top: 1px solid var(--tray-line); font-size: 11px; line-height: 16px; color: var(--tray-muted); }
 .aibar-disclosure .sep::before { content: '\00B7'; margin-right: 8px; }
