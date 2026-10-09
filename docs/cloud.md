@@ -66,6 +66,13 @@ GET /api/internal/volume
 
 Which data volume the instance runs on (`docs/backups.md`, Volumes and restores): the ids of `DATA_DIR/volume.json`, `adoptedAt` (milliseconds, `null` if the volume was never adopted), `startedAt` (when this process started) and `lastAdoption`, the newest entry of the marker's history (`{ at, from: { workspaceId, flyVolumeId }, to: { ... }, reason }`) or `null`. Ids only. Hosted workspaces only, with the bearer token, like the other calls here.
 
+```
+GET /api/internal/version
+  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy } }
+```
+
+The release label (`null` if `TABULA_VERSION` was not set), process start time in milliseconds, the schema generations and rollback limits this build declares, and the generations and legacy status of its database files. Each nested schema field has `directory` and `chat` values; chat is `null` when it is off. This endpoint contains no secrets. See [migrations.md](migrations.md) for the reader rule and release contract.
+
 **Contract for an adopt-volume action.** When the control plane swaps a machine's mount to another volume (a Tier 1 restore from a snapshot, or a move), it should:
 
 1. set `TABULA_FLY_VOLUME_ID=<the new volume id>` on the machine together with the mount change (so the instance can tell a restored copy from the disk it had: a changed id is adopted on its own, every session ends and an audit row `volume.adopt` is written);
