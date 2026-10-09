@@ -1410,6 +1410,19 @@ const STATES = {
     await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
   },
+  async 'templates-esc'(env) {
+    await openSeedBoard(env);
+    const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
+    await button.click();
+    await env.page.locator('.drawer.show').waitFor();
+    await env.page.keyboard.press('Escape');
+    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    const result = await env.page.evaluate(() => ({
+      open: !!document.querySelector('.drawer.show'),
+      focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
+    }));
+    if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);
+  },
   async settings(env) {
     await openSeedBoard(env);
     await env.page.getByRole('button', { name: 'Menu', exact: true }).click();

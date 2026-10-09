@@ -36,6 +36,7 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
+import { escapeAction } from './ui/escape-priority';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 function loadStickyColor(): string {
@@ -184,6 +185,8 @@ export class BoardApp {
   openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
+  /** Set by the board UI: closes its open library drawer when Escape reaches it. */
+  closeEscapeDrawer: (() => boolean) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
 
@@ -2230,6 +2233,37 @@ export class BoardApp {
     window.addEventListener('keydown', (e) => {
       const tgt = e.target as HTMLElement;
       const typing = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable);
+      const k = e.key.toLowerCase();
+      if (k === 'escape') {
+        const action = escapeAction({
+          key: e.key,
+          defaultPrevented: e.defaultPrevented,
+          overlayOpen: !!document.querySelector('.popover, .modal-back'),
+          dragging: !!this.drag || !!this.longPress,
+          groupOpen: !!this.scope,
+          drawerOpen: !!document.querySelector('.drawer.show'),
+        });
+        if (action === 'overlay' || action === 'none') return;
+        if (action === 'drag') {
+          this.cancelLongPress();
+          this.cancelCardDrag();
+          if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+        if (action === 'group') {
+          this.leaveGroup();
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+        if (action === 'drawer' && this.closeEscapeDrawer?.()) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+      }
       if (e.code === 'Space' && !typing) {
         if (!this.spaceDown) {
           this.spaceDown = true;
@@ -2240,7 +2274,6 @@ export class BoardApp {
       }
       if (typing) return;
       const mod = e.metaKey || e.ctrlKey;
-      const k = e.key.toLowerCase();
       const ro = this.readOnly;
       if (mod && k === 'g') {
         e.preventDefault();

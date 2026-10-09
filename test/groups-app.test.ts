@@ -86,7 +86,7 @@ const longPressId = (app: Harness) => (app as unknown as { longPress?: { id: Id 
 const call = (app: Harness, name: string, ...args: unknown[]) => (app[name] as (...xs: unknown[]) => unknown).apply(app, args);
 const key = (event: Partial<KeyboardEvent>) => ({
   key: '', code: '', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, target: browser.document.body,
-  preventDefault: vi.fn<() => void>(), ...event,
+  preventDefault: vi.fn<() => void>(), stopImmediatePropagation: vi.fn<() => void>(), ...event,
 });
 const keydown = (event: Partial<KeyboardEvent>) => handlers.get('keydown')?.forEach((fn) => fn(key(event)));
 const objects = (store: Store) => [...store.cache.values()].map((o) => structuredClone(o)).sort((a, b) => a.id.localeCompare(b.id));

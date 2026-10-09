@@ -188,6 +188,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const layersBtn = drawerBtn('Layers', 'layers', 'layers');
   layersBtn.setAttribute('aria-keyshortcuts', 'Alt+L');
   layersBtn.dataset.tipKey = 'alt+l';
+  const templatesBtn = drawerBtn('Templates and team exercises', 'templates', 'templates');
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
@@ -245,7 +246,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       drawerBtn('UML', 'uml', 'uml'),
       drawerBtn('Icons', 'icons', 'icons'),
       drawerBtn('Stickers', 'stickers', 'stickers'),
-      drawerBtn('Templates and team exercises', 'templates', 'templates'),
+      templatesBtn,
       layersBtn,
       voteBtn,
       pollBtn,
@@ -266,6 +267,14 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     });
     stickyBtn.style.setProperty('--sticky', app.stickyColor);
   };
+  app.closeEscapeDrawer = () => {
+    const tab = library.tab;
+    if (!tab) return false;
+    library.open(null);
+    rail.querySelector<HTMLElement>(`[data-drawer="${tab}"]`)?.focus();
+    return true;
+  };
+  app.lifetime.signal.addEventListener('abort', () => { app.closeEscapeDrawer = null; }, { once: true });
   const syncShapesBtn = () => {
     const on = library.tab === 'shapes' || app.tool.kind === 'shape';
     shapesBtn.classList.toggle('on', on);
