@@ -2,6 +2,12 @@
 
 A kanban board is a set of columns, called lanes, with cards in them. You drag a card from one lane to another as the work moves along. It sits on the canvas like any other object.
 
+## Kanban is in preview
+
+Making a kanban is switched off for now. To try it, add `?kanban` to the board's address, for example `https://your-tabula/board/abc?kanban`. Tabula remembers it on that browser. Without it you do not see the Kanban tool or **Make kanban**, and a sticky can only become a card inside a kanban that is already on the board. Kanbans already on a board always show and can be edited.
+
+Without the switch, pasting, importing or using a template leaves out kanbans and cards that are not copies of ones already on the board.
+
 ## Add a kanban
 
 1. Open the **Shapes** panel and select **Kanban** under **Boards**. You can also type "kanban" in **Search shapes**.
@@ -17,6 +23,30 @@ If you can only view a board, you cannot add one.
 - Type a title. `Enter` adds the card and starts the next one. `Esc` stops.
 
 A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. Deleting a card works like deleting any other object.
+
+## Open a card
+
+Double-click a card, select it and press `Enter`, or choose **Open** in the quick-action bar. The card dialog has:
+
+- **Title** and **Description**.
+- **Owner**: you, the people on the board now, anyone already named on it, or a name you type.
+- **Due date**, with the date picker of your browser.
+- **Labels**, picked from the board's labels.
+- **Comment**, **Turn into sticky** and **Delete**.
+
+Each field saves when you leave it, and each is one step in Undo. On a phone the dialog is a sheet at the bottom. Commenters see the card read-only and can still comment. Viewers cannot open it.
+
+## Labels
+
+Choose **Labels** in the card dialog, or in the quick-action bar or properties panel of a kanban, to manage the board's labels. You can create, rename, reorder and delete labels, and give each one of eight named colours. Only editors can change labels. A label on a card shows as a chip, with a check mark in the picker.
+
+## Turn stickies into cards
+
+- Select stickies or cards and press `K`, or choose **Turn into card** or **Turn into sticky**. It is the same object, so its comments, connectors, votes and history stay. The first line becomes the title and the rest the description.
+- A sticky over a lane joins that lane. A card turned into a sticky stays where it was drawn.
+- Drag a sticky onto a lane to make it a card there. A line shows where it will land.
+- **Make kanban from selection** (with the preview switch on) puts the selected stickies into the first lane of a new kanban, in reading order.
+- Someone else's note is never converted while private writing is running.
 
 ## Move cards
 
@@ -38,7 +68,7 @@ A board that contains a kanban opens read only in a Tabula version that does not
 
 ## Not yet
 
-Editing a card's details (description, owner, due date, labels), the lane menu, work-in-progress limits that block drops, and filters are coming. Until then cards have a title only.
+The lane menu, work-in-progress limits that block drops, and filters are coming.
 
 ## Related
 
