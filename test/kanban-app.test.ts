@@ -3,11 +3,13 @@ import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
 import { Renderer } from '../src/render';
 import { Store } from '../src/store';
-import { KANBANS_LEFT_OUT, addCard, newKanban } from '../src/containers';
+import { KANBANS_LEFT_OUT, addCard, addCardRefusal, newKanban } from '../src/containers';
+import { CardInput } from '../src/ui/kanban';
 import { insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
 import type { CustomTemplate } from '../src/custom-templates';
 import { KANBAN, LIMITS, ranksBetween } from '../shared/containers';
-import { addRow, laneCards } from '../src/ui/kanban-logic';
+import { EMPTY_FILTER, addRow, laneCards, laneMenuRect, type FilterChip } from '../src/ui/kanban-logic';
+import { kanbanHeaderControls, objectMarkup, type HeaderControls } from '../src/markup';
 import type { BaseObj, Id, Point } from '../src/types';
 
 // docs/kanban.md, slice 2: BoardApp's kanban behaviour (pointer, hit testing, creating, deleting), on a BoardApp
@@ -72,7 +74,13 @@ function harness() {
     flow: { handleClick: () => false, isHidden: () => false, isVoting: () => false, activeStep: () => null },
     isPinching: () => false,
     openCard: openCard,
+    openKanbanMenu: vi.fn<(kind: string, id: Id, at: unknown) => void>(),
+    role: null,
   });
+  Object.assign(app.conn, { id: 'board1' });
+  // as the constructor wires them
+  r.filterChips = (id) => app.filterChipsOf(id);
+  r.dimmed = (o) => app.isDimmed(o);
   return { app, store, r, notify, startInput, container: container.id, lanes: lanes.map((l) => l.id), ids };
 }
 
@@ -513,5 +521,302 @@ describe('placing a template while the kanban flag is off (src/templates.ts)', (
     insertCustomTemplate(app, custom());
     expect(count(store, 'container')).toBe(3);
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------- slice 4: lanes and discipline
+
+describe('the kanban header, the lane ⋯ and the add-lane +', () => {
+  const headerPoint = (store: Store, container: Id, pick: (c: HeaderControls) => { x: number; y: number; w: number; h: number } | null | undefined, chips: FilterChip[] = [], editable = true) => {
+    const o = store.getPlaced(container) as BaseObj;
+    const r = pick(kanbanHeaderControls(o, chips, editable))!;
+    return { x: o.x + r.x + r.w / 2, y: o.y + r.y + r.h / 2 };
+  };
+  const menuCalls = (app: Harness) => (app.openKanbanMenu as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => [c[0], c[1]]);
+
+  it('an editor: Filter, the kanban ⋯ and a lane ⋯ open their menus; the + adds a lane', () => {
+    const { app, store, r, container, lanes } = harness();
+    call(app, 'onDown', pointer(r, headerPoint(store, container, (c) => c.filter?.rect)));
+    call(app, 'onDown', pointer(r, headerPoint(store, container, (c) => c.menu)));
+    const lane = store.geometry(store.get(lanes[1])!);
+    const m = laneMenuRect(lane);
+    call(app, 'onDown', pointer(r, { x: m.x + 14, y: m.y + 14 }));
+    expect(menuCalls(app)).toEqual([['filter', container], ['container', container], ['lane', lanes[1]]]);
+    expect(app["drag" as keyof Harness]).toBeNull();
+    const add = store.containerLayout(container)!.addLane;
+    call(app, 'onDown', pointer(r, { x: add.x + 16, y: add.y + 16 }));
+    expect(store.containerLayout(container)!.lanes).toHaveLength(4);
+  });
+
+  it('a viewer or a commenter: Filter only; no ⋯, no +', () => {
+    const { app, store, r, container, lanes } = harness();
+    const menuAt = headerPoint(store, container, (c) => c.menu);
+    store.setReadOnly(true);
+    call(app, 'onDown', pointer(r, headerPoint(store, container, (c) => c.filter?.rect, [], false)));
+    call(app, 'onDown', pointer(r, menuAt));
+    const m = laneMenuRect(store.geometry(store.get(lanes[1])!));
+    call(app, 'onDown', pointer(r, { x: m.x + 14, y: m.y + 14 }));
+    const add = store.containerLayout(container)!.addLane;
+    call(app, 'onDown', pointer(r, { x: add.x + 16, y: add.y + 16 }));
+    // without the ⋯ the Filter button sits where the ⋯ was, so the second click opens the filter too
+    expect(menuCalls(app).every(([kind]) => kind === 'filter')).toBe(true);
+    expect(menuCalls(app).length).toBeGreaterThan(0);
+    expect(store.containerLayout(container)!.lanes).toHaveLength(3);
+    app.openLaneMenu(lanes[0]);
+    app.openContainerControl(container, 'menu');
+    expect(menuCalls(app).every(([kind]) => kind === 'filter')).toBe(true);
+  });
+
+  it('a chip\'s remove button takes that part of the filter away', () => {
+    const { app, store, r, container } = harness();
+    app.setKanbanFilter(container, { mine: true, labels: [], due: ['none'], text: '' });
+    const chips = app.filterChipsOf(container);
+    expect(chips.map((c) => c.key)).toEqual(['mine', 'due:none']);
+    call(app, 'onDown', pointer(r, headerPoint(store, container, (c) => c.chips[0].remove, chips)));
+    expect(app.kanbanFilter(container)).toMatchObject({ mine: false, due: ['none'] });
+  });
+
+  it('a locked kanban still opens its menu (to unlock it) and its filter', () => {
+    const { app, store, r, container } = harness();
+    store.transact(() => store.update(container, { locked: true }));
+    call(app, 'onDown', pointer(r, headerPoint(store, container, (c) => c.menu)));
+    expect(menuCalls(app)).toEqual([['container', container]]);
+  });
+});
+
+describe('lane and kanban menu actions', () => {
+  it('each is one undo step; a refusal is a toast and writes nothing', () => {
+    const { app, store, container, lanes, notify } = harness();
+    const steps = () => (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;
+    expect(app.editLaneFromMenu(lanes[1], { fill: 'teal' })).toBe(true);
+    expect(app.moveLaneFromMenu(lanes[1], 'left')).toBe(true);
+    expect(app.addLaneTo(container)).not.toBeNull();
+    expect(steps()).toBe(3);
+    store.transact(() => store.update(lanes[2], { locked: true }));
+    store.undo.clear();
+    expect(app.editLaneFromMenu(lanes[2], { fill: 'blue' })).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('This lane is locked. Unlock it to change it.');
+    expect(app.deleteLane(lanes[2], false)).toBe(false);
+    expect(steps()).toBe(0);
+  });
+
+  it('Delete lane moves its cards to the neighbour; with its cards removes them; one undo step each', () => {
+    const { app, store, container, lanes, ids } = harness();
+    expect(app.deleteLane(lanes[0], false)).toBe(true);
+    expect(store.containerLayout(container)!.cards.get(lanes[1])).toEqual(ids);
+    store.undo.undo();
+    expect(store.containerLayout(container)!.cards.get(lanes[0])).toEqual(ids);
+    expect(app.deleteLane(lanes[0], true)).toBe(true);
+    for (const id of ids) expect(store.get(id)).toBeUndefined();
+    store.undo.undo();
+    for (const id of ids) expect(store.get(id)?.parent).toBe(lanes[0]);
+  });
+
+  it('delete with locked cards, or in a locked kanban, is refused', () => {
+    const { app, store, container, lanes, ids, notify } = harness();
+    store.transact(() => store.update(ids[1], { locked: true }));
+    expect(app.deleteLane(lanes[0], true)).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('This lane has locked cards. Unlock them to delete it.');
+    store.transact(() => store.update(container, { locked: true }));
+    expect(app.deleteLane(lanes[1], false)).toBe(false);
+    expect(app.deleteKanban(container)).toBe(false);
+    expect(app.moveLaneFromMenu(lanes[1], 'left')).toBe(false);
+    expect(app.addLaneTo(container)).toBeNull();
+    expect(store.containerLayout(container)!.lanes).toEqual(lanes);
+  });
+
+  it('Delete kanban takes its lanes and cards; Lock and Unlock toggle it', () => {
+    const { app, store, container, lanes, ids } = harness();
+    app.toggleKanbanLock(container);
+    expect(store.get(container)!.locked).toBe(true);
+    app.toggleKanbanLock(container);
+    expect(store.get(container)!.locked).toBeFalsy();
+    expect(app.deleteKanban(container)).toBe(true);
+    for (const id of [container, ...lanes, ...ids]) expect(store.get(id)).toBeUndefined();
+  });
+
+  it('read-only (viewers and commenters): no menu action writes', () => {
+    const { app, store, container, lanes } = harness();
+    store.setReadOnly(true);
+    expect(app.editLaneFromMenu(lanes[0], { fill: 'blue' })).toBe(false);
+    expect(app.moveLaneFromMenu(lanes[0], 'right')).toBe(false);
+    expect(app.addLaneTo(container)).toBeNull();
+    expect(app.deleteLane(lanes[0], false)).toBe(false);
+    expect(app.deleteKanban(container)).toBe(false);
+    app.toggleKanbanLock(container);
+    expect(store.get(container)!.locked).toBeFalsy();
+    expect(store.containerLayout(container)!.lanes).toEqual(lanes);
+  });
+
+  it('a stage change redraws the lane\'s cards (their due chips depend on it)', () => {
+    const { app, r, lanes, ids } = harness();
+    const dirty = (r as unknown as { dirty: Set<Id> }).dirty;
+    dirty.clear();
+    app.editLaneFromMenu(lanes[0], { stage: 'done' });
+    for (const id of ids) expect(dirty.has(id)).toBe(true);
+  });
+});
+
+describe('WIP block on the canvas', () => {
+  function full() {
+    const h = harness();
+    addCard(h.store, h.lanes[1], 'D', { createdBy: 'me' });
+    h.app.editLaneFromMenu(h.lanes[1], { wip: 1, wipMode: 'block' });
+    return h;
+  }
+
+  it('dragging over a full block lane shows Full and no drop line; the drop is refused with the toast', () => {
+    const { app, store, r, ids, lanes, container, notify } = full();
+    const to = centre(store, lanes[1], 0.3);
+    dragCard(app, r, centre(store, ids[0]), to);
+    expect(r.overlay.kanban?.full?.text).toBe('Full · 1 / 1');
+    expect(r.overlay.kanban?.line).toBeFalsy();
+    call(app, 'onUp', pointer(r, to, 'pointerup'));
+    expect(notify).toHaveBeenCalledWith('Doing is full: 1 of 1');
+    expect(store.containerLayout(container)!.cards.get(lanes[0])).toContain(ids[0]);
+    expect(r.overlay.kanban?.full).toBeFalsy();
+  });
+
+  it('a lane with room shows the drop line', () => {
+    const { app, store, r, ids, lanes } = full();
+    dragCard(app, r, centre(store, ids[0]), centre(store, lanes[2], 0.3));
+    expect(r.overlay.kanban?.line).toBeTruthy();
+    expect(r.overlay.kanban?.full).toBeFalsy();
+  });
+
+  it('Alt+Right into it is refused with the toast; Alt+Down inside it is not', () => {
+    const { app, store, ids, lanes, container, notify } = full();
+    app.setSelection([ids[0]]);
+    call(app, 'keyboardCardMove', 'right');
+    expect(notify).toHaveBeenCalledWith('Doing is full: 1 of 1');
+    expect(store.containerLayout(container)!.cards.get(lanes[0])).toContain(ids[0]);
+    call(app, 'keyboardCardMove', 'down');
+    expect(store.containerLayout(container)!.cards.get(lanes[0])![1]).toBe(ids[0]);
+  });
+});
+
+describe('filters (docs/kanban.md, Filters)', () => {
+  it('are never written to the board: no document change, no undo step; kept in this browser', () => {
+    const { app, store, container } = harness();
+    const saved = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => saved.set(k, v), removeItem: (k: string) => saved.delete(k) });
+    const before = Y.encodeStateAsUpdate(store.doc);
+    const steps = (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;
+    app.setKanbanFilter(container, { mine: true, labels: ['x'], due: ['today'], text: 'login' });
+    expect(Y.encodeStateAsUpdate(store.doc)).toEqual(before);
+    expect((store.undo as unknown as { undoStack: unknown[] }).undoStack.length).toBe(steps);
+    expect(JSON.parse(saved.get(`tabula:filter:board1:${container}`)!)).toMatchObject({ mine: true, text: 'login' });
+    app.setKanbanFilter(container, EMPTY_FILTER);
+    expect(saved.size).toBe(0);
+    expect(Y.encodeStateAsUpdate(store.doc)).toEqual(before);
+  });
+
+  it('a saved filter comes back on the next visit; storage that throws means no filter', () => {
+    const { app, container } = harness();
+    storage.set(`tabula:filter:board1:${container}`, JSON.stringify({ mine: true }));
+    expect(app.kanbanFilter(container).mine).toBe(true);
+    const h2 = harness();
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); }, removeItem() {} });
+    expect(h2.app.kanbanFilter(h2.container)).toEqual(EMPTY_FILTER);
+    h2.app.setKanbanFilter(h2.container, { ...EMPTY_FILTER, text: 'a' });
+    expect(h2.app.kanbanFilter(h2.container).text).toBe('a');
+  });
+
+  it('dim what does not match (35%), skip it in a marquee, and count matches; viewers filter too', () => {
+    const { app, store, r, container, ids } = harness();
+    store.transact(() => store.update(ids[1], { ownerId: 'me', ownerName: 'Me' }));
+    store.setReadOnly(true);
+    app.setKanbanFilter(container, { ...EMPTY_FILTER, mine: true });
+    expect(ids.map((id) => app.isDimmed(store.get(id)!))).toEqual([true, false, true]);
+    expect(objectMarkup(store.getPlaced(ids[0])!, r.ctx)).toContain('opacity="0.35"');
+    expect(objectMarkup(store.getPlaced(ids[1])!, r.ctx)).not.toContain('opacity=');
+    expect(app.filterCounts(container)).toEqual({ matching: 1, total: 3 });
+    store.setReadOnly(false);
+    const lane = store.geometry(store.get(store.get(ids[0])!.parent!)!);
+    call(app, 'onDown', pointer(r, { x: lane.x - 40, y: lane.y - 80 }));
+    call(app, 'onMove', pointer(r, { x: lane.x + lane.w + 4, y: lane.y + lane.h + 4 }, 'pointermove'));
+    expect(app.selection.filter((id) => ids.includes(id))).toEqual([ids[1]]);
+  });
+
+  it('an export draws every card at full strength and no Filter button', () => {
+    const { app, store, r, container, ids } = harness();
+    app.setKanbanFilter(container, { ...EMPTY_FILTER, text: 'nothing matches this' });
+    const ctx = { ...r.ctx, filterChips: undefined, dimmed: undefined, editable: false };
+    expect(objectMarkup(store.getPlaced(ids[0])!, ctx)).not.toContain('opacity=');
+    const head = objectMarkup(store.getPlaced(container)!, ctx);
+    expect(head).not.toContain('k-filter');
+    expect(head).not.toContain('k-menu');
+    expect(head).not.toContain('k-addlane');
+    expect(objectMarkup(store.getPlaced(container)!, r.ctx)).toContain('FILTER · 1');
+  });
+});
+
+describe('Add card in a full block lane (Slice 4 notes)', () => {
+  class FakeInputEl extends FakeEl {
+    value = '';
+    listeners = new Map<string, ((e: unknown) => void)[]>();
+    addEventListener(t: string, fn: (e: unknown) => void) {
+      this.listeners.set(t, [...(this.listeners.get(t) ?? []), fn]);
+    }
+    focus() {}
+    blur() {}
+  }
+  function fullLane() {
+    const h = harness();
+    addCard(h.store, h.lanes[1], 'D', { createdBy: 'me' });
+    h.app.editLaneFromMenu(h.lanes[1], { name: 'Review', wip: 1, wipMode: 'block' });
+    const els: FakeInputEl[] = [];
+    vi.stubGlobal('document', { createElement: () => { const e = new FakeInputEl(); els.push(e); return e; }, createElementNS: () => new FakeEl(), activeElement: null });
+    const input = new CardInput(h.app);
+    Object.assign(h.app, { cardInput: input });
+    // the CardInput makes its wrap, then its input, then its hint
+    return { ...h, input, field: els[1] };
+  }
+
+  it('the store refuses it with the Full message; warn lanes and lanes with room take it', () => {
+    const { store, lanes } = fullLane();
+    expect(addCardRefusal(store, lanes[1])).toBe('Review is full: 1 of 1');
+    expect(addCard(store, lanes[1], 'E', { createdBy: 'me' })).toBeNull();
+    expect(addCardRefusal(store, lanes[2])).toBeNull();
+    store.transact(() => store.update(lanes[1], { wipMode: undefined }));
+    expect(addCard(store, lanes[1], 'E', { createdBy: 'me' })).not.toBeNull();
+  });
+
+  it('the add row draws disabled with the limit in its tooltip', () => {
+    const { store, r, lanes } = fullLane();
+    const svg = objectMarkup(store.getPlaced(lanes[1])!, r.ctx);
+    expect(svg).toContain('k-add-full');
+    expect(svg).toContain('<title>Review is full: 1 of 1</title>');
+    expect(objectMarkup(store.getPlaced(lanes[2])!, r.ctx)).not.toContain('k-add-full');
+  });
+
+  it('a click on the add row and a double-click on empty lane space open nothing and say why', () => {
+    const { app, store, r, lanes, notify, input } = fullLane();
+    const layout = store.containerLayout(store.get(lanes[1])!.parent!)!;
+    const row = addRow(layout.rects.get(lanes[1])!, laneCards(layout, lanes[1]));
+    call(app, 'onDown', pointer(r, { x: row.x + 20, y: row.y + row.h / 2 }));
+    expect(input.active).toBeNull();
+    expect(notify).toHaveBeenLastCalledWith('Review is full: 1 of 1');
+    notify.mockClear();
+    const lane = layout.rects.get(lanes[1])!;
+    call(app, 'onDblClick', pointer(r, { x: lane.x + lane.w / 2, y: lane.y + lane.h - 20 }, 'dblclick'));
+    expect(input.active).toBeNull();
+    expect(notify).toHaveBeenLastCalledWith('Review is full: 1 of 1');
+  });
+
+  it('Enter in the inline input adds nothing once the lane is full, and says why', () => {
+    const { app, store, lanes, notify, input, field, container } = fullLane();
+    app.editLaneFromMenu(lanes[2], { name: 'Done', wip: 1, wipMode: 'block' });
+    input.start(lanes[2]);
+    expect(input.active).toBe(lanes[2]);
+    const enter = (text: string) => {
+      field.value = text;
+      field.listeners.get('keydown')!.forEach((fn) => fn({ key: 'Enter', preventDefault() {}, stopPropagation() {} }));
+    };
+    enter('First');
+    expect(store.containerLayout(container)!.cards.get(lanes[2])).toHaveLength(1);
+    enter('Second');
+    expect(store.containerLayout(container)!.cards.get(lanes[2])).toHaveLength(1);
+    expect(notify).toHaveBeenLastCalledWith('Done is full: 1 of 1');
   });
 });

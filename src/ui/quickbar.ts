@@ -168,7 +168,21 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     if (cards.length && cards.length === sel.length) out.push(action('sticky', cards.length === 1 ? 'Turn into sticky' : 'Turn into stickies', () => app.turnIntoStickies(), '', 'k'));
     if (stickies.length && app.canTurnIntoCards()) out.push(action('card', stickies.length === 1 ? 'Turn into card' : 'Turn into cards', () => app.turnIntoCards(), '', 'k'));
     if (stickies.length >= 2 && app.kanbanCreation) out.push(action('kanban', 'Make kanban from selection', () => app.makeKanbanFromSelection()));
-    if (sel.length === 1 && sel[0].type === 'container') out.push(action('tag', 'Labels', () => app.openLabels?.()));
+    if (sel.length === 1 && sel[0].type === 'container') {
+      const id = sel[0].id;
+      // slice 4: Add lane and Filter, as the design's quick-action bar for a kanban, and its ⋯ menu (the bar's own ⋯ is
+      // the properties panel)
+      out.push(
+        action('plus', 'Add lane', () => app.addLaneTo(id)),
+        action('filter', 'Filter cards', () => app.openContainerControl(id, 'filter')),
+        action('tag', 'Labels', () => app.openLabels?.()),
+        action('menu', 'Kanban menu', () => app.openContainerControl(id, 'menu')),
+      );
+    }
+    if (sel.length === 1 && sel[0].type === 'lane') {
+      const id = sel[0].id;
+      out.push(action('menu', 'Lane menu', () => app.openLaneMenu(id)));
+    }
     return out;
   }
 

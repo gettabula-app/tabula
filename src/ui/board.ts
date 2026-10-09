@@ -1,6 +1,7 @@
 import { openContextMenu } from './context-menu';
 import { openCardDialog } from './card-dialog';
 import { openLabelsDialog } from './labels-dialog';
+import { openKanbanMenu } from './kanban-menus';
 import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
@@ -182,6 +183,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
   app.openLabels = () => void openLabelsDialog(app);
+  app.openKanbanMenu = (kind, id, at) => openKanbanMenu(app, kind, id, at);
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
