@@ -119,6 +119,7 @@ While the tab is in the background, the page title starts with the number of unr
 
 - Chat is not part of version history, and it is not in exports or board files. A board you export and open elsewhere comes without its conversation.
 - Chat is separate from comments, and neither shows in the other.
+- On a phone, while the chat tray is open, the session bar (timer, vote, poll) steps aside so the message box is not covered. It comes back when you close the tray.
 - Mentions in a message you edit later notify the newly mentioned people, not the ones who were mentioned before.
 - Messages are deleted after a time set by an admin: one year unless they choose otherwise.
 

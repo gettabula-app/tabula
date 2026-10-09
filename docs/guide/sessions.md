@@ -74,7 +74,7 @@ Comment pins on hidden notes are hidden as well. See [Comments](comments.md).
 - **Everything** is every note, shape, card, text and image on the board. Frames, drawings, kanban columns and connectors are not included.
 - **Sticky notes only**.
 
-**Start vote** begins; **Start on everything** skips the choice. While the vote runs, the items that can take a dot have a faint dashed outline, and a click on anything else says it is not part of the vote.
+**Start vote** begins; **Start on everything** skips the choice. While the vote runs, the items that can take a dot have a dashed outline, and a click on anything else says it is not part of the vote.
 
 In a **Dot vote** step:
 

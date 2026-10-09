@@ -87,6 +87,8 @@ For emoji, see [Stickers](stickers.md).
 
 Select something and a small bar appears above it (below, if above would cover a connector). It shows only the controls that apply.
 
+On a phone the bar is as wide as the screen allows and scrolls sideways when it holds more controls than fit.
+
 ![The quick-action bar above a selected ellipse](images/quick-actions.png)
 
 - **Colour**: sticky note colour.
