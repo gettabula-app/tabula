@@ -2,6 +2,7 @@ import { openContextMenu } from './context-menu';
 import { openCardDialog } from './card-dialog';
 import { openLabelsDialog } from './labels-dialog';
 import { openKanbanMenu } from './kanban-menus';
+import { closeContainerSheet, openContainerSheet } from './container-sheet';
 import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
@@ -184,6 +185,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
   app.openLabels = () => void openLabelsDialog(app);
   app.openKanbanMenu = (kind, id, at) => openKanbanMenu(app, kind, id, at);
+  // the list sheet (docs/kanban.md, Phone and touch; slice 5); it goes when the board does
+  app.openSheet = (id, lane) => void openContainerSheet(app, id, lane);
+  app.lifetime.signal.addEventListener('abort', closeContainerSheet, { once: true });
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {

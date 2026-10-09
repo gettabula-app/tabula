@@ -312,6 +312,12 @@ export class FakeElement extends FakeNode {
   querySelector<T extends FakeElement = FakeElement>(selector: string): T | null {
     return this.querySelectorAll<T>(selector)[0] ?? null;
   }
+  /** The nearest of itself and its ancestors that matches. */
+  closest<T extends FakeElement = FakeElement>(selector: string): T | null {
+    if (matchesSelector(this, selector)) return this as unknown as T;
+    for (let n = this.parentNode; n; n = n.parentNode) if (matchesSelector(n, selector)) return n as T;
+    return null;
+  }
   getBoundingClientRect() {
     return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }

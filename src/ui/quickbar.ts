@@ -172,6 +172,10 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
       const id = sel[0].id;
       // slice 4: Add lane and Filter, as the design's quick-action bar for a kanban, and its ⋯ menu (the bar's own ⋯ is
       // the properties panel)
+      // slice 5: Open as list, the primary action on a phone (docs/kanban.md, Visual design, Phone)
+      out.push(isPhone()
+        ? h('button', { class: 'icon-btn qb-text on', type: 'button', 'aria-label': 'Open as list', onclick: () => app.openKanbanList(id) }, 'Open as list')
+        : action('kanban', 'Open as list', () => app.openKanbanList(id)));
       out.push(
         action('plus', 'Add lane', () => app.addLaneTo(id)),
         action('filter', 'Filter cards', () => app.openContainerControl(id, 'filter')),

@@ -921,3 +921,51 @@ describe('review fixes: lanes', () => {
     expect(order.map((id) => (store.get(id) as BaseObj).rank)).toEqual(before);
   });
 });
+
+describe('the list sheet from the canvas (slice 5)', () => {
+  it('opens on Enter with a kanban selected, for a viewer too', () => {
+    const { app, store, container } = harness();
+    const openSheet = vi.fn<(id: Id, lane?: Id) => void>();
+    Object.assign(app, { openSheet });
+    store.setReadOnly(true);
+    app.setSelection([container]);
+    press(app, 'Enter');
+    expect(openSheet).toHaveBeenCalledWith(container, undefined);
+  });
+
+  it('opens on a double tap at phone width, on the lane tapped', () => {
+    const { app, store, r, container, lanes, ids } = harness();
+    const openSheet = vi.fn<(id: Id, lane?: Id) => void>();
+    Object.assign(app, { openSheet });
+    call(app, 'onDblClick', pointer(r, centre(store, ids[1]), 'dblclick'));
+    expect(openSheet).toHaveBeenLastCalledWith(container, lanes[0]);
+    call(app, 'onDblClick', pointer(r, centre(store, lanes[2], 0.6), 'dblclick'));
+    expect(openSheet).toHaveBeenLastCalledWith(container, lanes[2]);
+    expect(openCard).not.toHaveBeenCalled();
+  });
+
+  it('lifts a card on a touch screen only after a long press', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { setTimeout, clearTimeout });
+    try {
+      const { app, store, r, container, lanes, ids } = harness();
+      const touch = (p: Point, type = 'pointerdown') => ({ ...pointer(r, p, type), pointerType: 'touch' });
+      // a short press and a move does nothing
+      call(app, 'onDown', touch(centre(store, ids[0])));
+      call(app, 'onMove', touch(centre(store, lanes[1], 0.3), 'pointermove'));
+      call(app, 'onUp', touch(centre(store, lanes[1], 0.3), 'pointerup'));
+      expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'C']);
+      // held for 600 ms, it lifts and drops where the finger goes, one undo step
+      call(app, 'onDown', touch(centre(store, ids[0])));
+      vi.advanceTimersByTime(600);
+      expect((app as unknown as { drag: { mode: string; moved: boolean } }).drag).toMatchObject({ mode: 'cards', moved: true });
+      for (let i = 1; i <= 4; i++) call(app, 'onMove', touch(centre(store, lanes[1], 0.3), 'pointermove'));
+      call(app, 'onUp', touch(centre(store, lanes[1], 0.3), 'pointerup'));
+      expect(titles(store, container, lanes[1])).toEqual(['A']);
+      store.undo.undo();
+      expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'C']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
