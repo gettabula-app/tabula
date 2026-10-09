@@ -6,7 +6,7 @@ import { h, icon } from './dom';
 import type { AdminKit } from './tokens';
 import {
   DATA_NOTICE, FEATURE_OPTIONS, LIMIT_CAPS, LIMIT_LABELS, MODEL_OPTIONS, PROVIDER, UNCONFIGURED_TEXT, draftOf, draftProblem, keyDates, keyLine, keyProblem,
-  patchOf, sourceLabel, type AdminDraft, type LimitName,
+  keyTestErrorMessage, patchOf, sourceLabel, type AdminDraft, type LimitName,
 } from './ai-logic';
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -73,6 +73,27 @@ function keyField(label: string, onInput: () => void, onEnter: () => void) {
     },
   });
   return { input, clear: () => (input.value = '') };
+}
+
+/** Check the stored key without asking the person to enter or expose it again. */
+function keyTest(run: () => Promise<unknown>) {
+  const status = h('p', { class: 'ai-problem', role: 'status', 'aria-live': 'polite' });
+  const button = h('button', { class: 'btn' }, 'Test key');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    button.textContent = 'Testing…';
+    status.textContent = '';
+    try {
+      await run();
+      status.textContent = 'The key works.';
+    } catch (e) {
+      status.textContent = keyTestErrorMessage(e) ?? describe(e);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Test key';
+    }
+  });
+  return { button, status };
 }
 
 /** The "Your AI key" dialog in the account menu: the person's own key for AI features, when the workspace allows it. */
@@ -145,6 +166,7 @@ export function openAiKeyDialog(): void {
     };
     const field = keyField('API key', check, () => void submit());
     save.addEventListener('click', () => void submit());
+    const tested = mine ? keyTest(() => api.testMyAiKey()) : null;
 
     body.replaceChildren(...nodes(
       intro,
@@ -153,8 +175,9 @@ export function openAiKeyDialog(): void {
         ? h('div', { class: 'ai-key' },
           h('div', { class: 'ai-key-who' },
             h('div', { class: 'ai-key-line' }, keyLine(mine)),
-            h('div', { class: 'ai-meta' }, keyDates(mine, fmtAgo))),
-          armed('Remove', 'Click again to remove', remove))
+            h('div', { class: 'ai-meta' }, keyDates(mine, fmtAgo)),
+            tested!.status),
+          h('div', { class: 'btn-row' }, tested!.button, armed('Remove', 'Click again to remove', remove)))
         : null,
       config.hasSecret
         ? h('div', { class: 'ai-field' },
@@ -280,6 +303,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     };
 
     const key = state.key;
+    const tested = key ? keyTest(() => api.testAdminAiKey()) : null;
     root.replaceChildren(...nodes(
       h('p', { class: 'ai-notice' }, DATA_NOTICE),
       h('dl', { class: 'admin-facts' },
@@ -301,8 +325,9 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
           h('div', { class: 'ai-key-who' },
             h('div', { class: 'ai-key-line' }, keyLine(key)),
             h('div', { class: 'ai-meta' }, keyDates(key, fmtAgo)),
-            key.readable ? null : h('div', { class: 'ai-meta ai-warn' }, 'This key cannot be read with the current TABULA_AI_SECRET. Enter it again.')),
-          kit.armable('Remove', 'Click again to remove', removeKey))
+            key.readable ? null : h('div', { class: 'ai-meta ai-warn' }, 'This key cannot be read with the current TABULA_AI_SECRET. Enter it again.'),
+            tested!.status),
+          h('div', { class: 'btn-row' }, tested!.button, kit.armable('Remove', 'Click again to remove', removeKey)))
         : kit.emptyLine('No workspace key yet. Without one, only people with a key of their own can run AI features.'),
       state.hasSecret
         ? h('div', { class: 'ai-field' },

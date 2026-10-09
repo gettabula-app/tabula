@@ -110,3 +110,19 @@ export function sourceLabel(source: AiConfig['keySource']): string {
   if (source === 'workspace') return 'Runs use the workspace key.';
   return 'There is no key yet, so AI features cannot run.';
 }
+
+/** A plain message for a stored-key check, or null when the shared screen message is more useful. */
+export function keyTestErrorMessage(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const e = error as { code?: unknown; status?: unknown; facts?: Record<string, unknown> };
+  if (e.code === 'ai_key_invalid') return 'The AI key was rejected.';
+  if (e.code === 'ai_unavailable') return "Anthropic isn't responding. Try again in a moment.";
+  if (e.code === 'ai_key_unreadable') return "The key can't be read. Enter it again.";
+  if (e.status === 429 || e.code === 'ai_rate_limited' || e.code === 'rate_limited') {
+    const wait = Number(e.facts?.retryAfter);
+    return Number.isFinite(wait) && wait > 0
+      ? `Too many checks. Try again in ${Math.ceil(wait)} s.`
+      : 'Too many checks. Try again later.';
+  }
+  return null;
+}

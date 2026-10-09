@@ -27,7 +27,7 @@ export function createAiRoutes({
   canWriteRoom = () => false, readRoom = () => { throw new Error('This server has no room access'); },
   createProvider: makeProvider = createProvider, live = null, log = console.error, now = Date.now, timeoutMs,
 }) {
-  const { HttpError, badRequest, forbidden, conflict } = errors;
+  const { HttpError, badRequest, forbidden, notFound, conflict } = errors;
   const ring = createKeyRing({ secret: config.ai.secret, previous: config.ai.previous });
   const settingsNow = () => readAiSettings(directory, config);
   const saves = createSaveThrottle({ now });
@@ -42,7 +42,7 @@ export function createAiRoutes({
     return new HttpError(500, 'internal', 'Something went wrong');
   }
 
-  // Each save makes an outbound call, so a person gets a few an hour and one at a time.
+  // Each save or test makes an outbound call, so a person gets a few an hour and one at a time.
   async function verifyKey(res, user, { provider, apiKey }) {
     const turn = saves.begin(user.id);
     if (turn.wait) {
@@ -56,6 +56,37 @@ export function createAiRoutes({
     } finally {
       turn.done();
     }
+  }
+
+  async function testStoredKey(res, user, scope) {
+    if (!ring.configured) throw conflict('ai_unconfigured', UNCONFIGURED);
+    const userId = scope === 'user' ? user.id : null;
+    let found;
+    try {
+      found = directory.readAiKey({ ring, scope, userId });
+    } catch (err) {
+      throw failure(res, err);
+    }
+    if (!found) throw notFound('AI key not found');
+
+    try {
+      await verifyKey(res, user, { provider: found.row.provider, apiKey: found.apiKey });
+    } catch (err) {
+      // A throttle refusal did not reach the provider, so it did not test the key.
+      if (!(err instanceof HttpError && err.code === 'rate_limited')) {
+        audit(user, 'ai.key.test', { scope, provider: found.row.provider, ok: false });
+      }
+      throw err;
+    }
+
+    const fresh = stillThere(user);
+    if (scope === 'user') {
+      if (!personalKeysFor(settingsNow(), fresh)) throw forbidden('Personal AI keys are not allowed in this workspace');
+    } else if (!isAdmin(fresh)) {
+      throw forbidden('Only workspace admins can do that');
+    }
+    audit(user, 'ai.key.test', { scope, provider: found.row.provider, ok: true });
+    return [200, { ok: true, provider: found.row.provider, checkedAt: now() }];
   }
 
   const keyView = (info) => (info ? { provider: info.provider, hint: info.hint, createdAt: info.createdAt, lastUsedAt: info.lastUsedAt } : null);
@@ -113,6 +144,11 @@ export function createAiRoutes({
       return [200, saved];
     }),
 
+    compile('POST', 'ai/keys/me/test', { body: true, readOnlyOk: true }, async ({ res, user }) => {
+      if (!personalKeysFor(settingsNow(), user)) throw forbidden('Personal AI keys are not allowed in this workspace');
+      return testStoredKey(res, user, 'user');
+    }),
+
     // Open while the workspace is read-only, and when personal keys were switched off: a person can always take their key back.
     compile('DELETE', 'ai/keys/me', { readOnlyOk: true }, ({ user }) => {
       directory.transaction(() => {
@@ -146,6 +182,11 @@ export function createAiRoutes({
         }
       });
       return [200, adminView()];
+    }),
+
+    compile('POST', 'admin/ai/key/test', { body: true, readOnlyOk: true }, async ({ res, user }) => {
+      requireAdmin(user);
+      return testStoredKey(res, user, 'workspace');
     }),
 
     ...createRunRoutes({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, live, log, now, timeoutMs }),

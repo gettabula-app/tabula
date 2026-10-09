@@ -217,5 +217,5 @@ export function createAiKeyStore({ get, run, transaction }) {
     return { provider: row.provider, baseUrl: row.base_url ?? null, apiKey };
   }
 
-  return { saveAiKey, getAiKeyInfo, deleteAiKey, aiKeyReadable, useAiKey };
+  return { saveAiKey, getAiKeyInfo, deleteAiKey, aiKeyReadable, readAiKey, useAiKey };
 }

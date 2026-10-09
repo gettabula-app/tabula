@@ -31,6 +31,10 @@ A line below it says when the key was added and when it was last used.
 
 Your full key is never shown again, and the server never returns it. The line **Runs use your key.** tells you that your key is the one in use. If there is no key at all, the dialog says that AI features cannot run yet.
 
+## Test a key
+
+When your key is saved, select **Test key** next to **Remove**. Tabula asks Anthropic whether the saved key still works. The test does not show or replace your key, and it does not change the “last used” date. The message says **The key works.** when it succeeds, or explains what went wrong.
+
 ## Replace a key
 
 Open **Your AI key**, paste a new key into **Replace with a new key**, and select **Save key**. The new key is checked the same way, and it replaces the old one once it is saved.
