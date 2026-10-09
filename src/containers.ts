@@ -1,11 +1,14 @@
 // Client glue for containers (docs/kanban.md, slice 2): making a kanban, adding a card, and moving cards, each one
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
-import { KANBAN, LIMITS, layoutContainer, planInsert, ranksBetween } from '../shared/containers';
+import { KANBAN, LIMITS, kanbanColor, layoutContainer, planInsert, ranksBetween } from '../shared/containers';
 import type { Store } from './store';
 import { newId } from './store';
 import type { BaseObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
+import { cleanCardLabels, listLabels } from './labels';
+import { STICKY_COLORS } from './palette';
+import { cardFillFromSticky, isDueDate, joinCardText, readingOrder, splitStickyText, stickyFillFromCard } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
 export const DEFAULT_LANES = [
@@ -250,4 +253,228 @@ export function planKanbanDelete(store: Store, selected: Id[]): DeletePlan {
     planned.set(target, siblings);
   }
   return { ids, relocate };
+}
+
+// ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
+
+/** A free-text owner's name (one with no account): the spec gives no limit, so this one is the container name's. */
+export const OWNER_NAME_MAX = LIMITS.containerName;
+/** The width of a card that is not in a lane: the default lane's body. */
+export const LOOSE_CARD_W = KANBAN.laneW - KANBAN.lanePad * 2;
+/** A sticky's size when a card turns back into one. */
+export const STICKY_SIZE = 192;
+
+export interface CardPatch {
+  title?: string;
+  desc?: string;
+  /** A person: `ownerId` and the name at the time; a name alone for someone with no account; null clears the owner. */
+  owner?: { id?: string; name: string } | null;
+  /** `YYYY-MM-DD`, or null to clear. */
+  due?: string | null;
+  labels?: Id[];
+  /** The accent: a palette key or a colour `kanbanColor` accepts; null clears it. */
+  fill?: string | null;
+}
+
+/** The ids of the labels the board has now. */
+export const knownLabels = (store: Store) => new Set(listLabels(store).map((l) => l.id));
+
+/** A card's width for measuring its height: its lane's body when it is laid out, else its stored width. */
+const cardWidth = (store: Store, card: Obj) => (store.isLaidOut(card) ? store.geometry(card).w : (card as BaseObj).w || LOOSE_CARD_W);
+
+/**
+ * The fields a card patch writes, checked: the title is one line of at most 200 characters (an empty title is not
+ * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, labels only ones the
+ * board has (which also drops ids of deleted labels, docs/kanban.md, Labels) and colours through `kanbanColor`. Null when
+ * the patch asks for something that is not allowed. The height follows from the result, as the writer stores it.
+ */
+export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Partial<BaseObj> | null {
+  const out: Partial<BaseObj> = {};
+  if (patch.title !== undefined) {
+    const t = patch.title.replace(/\s+/g, ' ').trim().slice(0, LIMITS.title).trim();
+    if (!t) return null;
+    out.text = t;
+  }
+  if (patch.desc !== undefined) {
+    const d = patch.desc.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+    if (d.length > LIMITS.description) return null;
+    out.desc = d || undefined;
+  }
+  if (patch.owner !== undefined) {
+    const name = (patch.owner?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, OWNER_NAME_MAX).trim();
+    out.ownerName = patch.owner ? name || undefined : undefined;
+    out.ownerId = patch.owner?.id && typeof patch.owner.id === 'string' ? patch.owner.id : undefined;
+    if (patch.owner && !out.ownerName && !out.ownerId) return null;
+  }
+  if (patch.due !== undefined) {
+    if (patch.due !== null && patch.due !== '' && !isDueDate(patch.due)) return null;
+    out.due = patch.due || undefined;
+  }
+  const known = knownLabels(store);
+  if (patch.labels !== undefined) out.labels = cleanCardLabels(patch.labels, known);
+  else if (card.labels?.length) out.labels = cleanCardLabels(card.labels, known);
+  if (out.labels && !out.labels.length) out.labels = undefined;
+  if (patch.fill !== undefined) out.fill = patch.fill === null ? undefined : kanbanColor(patch.fill) ?? undefined;
+  const next = { ...card, ...out } as BaseObj;
+  for (const k of Object.keys(out) as (keyof BaseObj)[]) if (out[k] === undefined) delete next[k];
+  out.h = cardContentHeight(next, cardWidth(store, card));
+  return out;
+}
+
+/**
+ * Edits one card from the card dialog, the quick-action bar or the properties panel: one transaction and one undo step.
+ * Returns whether anything changed. A locked card, a read-only board and a refused patch write nothing.
+ */
+export function editCard(store: Store, id: Id, patch: CardPatch): boolean {
+  const card = store.get(id);
+  if (card?.type !== 'card' || card.locked || store.readOnly) return false;
+  const fields = cardFields(store, card as BaseObj, patch);
+  if (!fields) return false;
+  const cur = card as BaseObj;
+  const changed = (Object.keys(fields) as (keyof BaseObj)[]).some((k) => JSON.stringify(fields[k]) !== JSON.stringify(cur[k]));
+  if (!changed) return false;
+  store.undo.stopCapturing();
+  store.transact(() => store.update(id, fields));
+  store.undo.stopCapturing();
+  return true;
+}
+
+/** Where a sticky turned into a card goes: a lane at an index, or nowhere (a loose card where the sticky was). */
+export type CardTarget = { lane: Id; index: number } | null;
+
+/** The fields that turn a sticky into a card in place: same object, so its id, comments, connectors and votes stay. */
+function stickyToCardFields(o: BaseObj): Partial<BaseObj> | null {
+  const { title, desc } = splitStickyText(o.text, LIMITS.title);
+  if (desc && desc.length > LIMITS.description) return null;
+  const fill = cardFillFromSticky(o.fill, STICKY_COLORS);
+  // a private note becomes a normal card: cards take no part in private writing (docs/kanban.md)
+  return { type: 'card', text: title, desc, fill, privateStep: undefined, rotation: 0 } as Partial<BaseObj>;
+}
+
+/**
+ * Turns stickies into cards in one transaction and one undo step (docs/kanban.md, Sticky to card and back). `target`
+ * says for each sticky which lane it goes to (at an index among that lane's cards); several going to one lane keep the
+ * order given. The others become loose cards where they are. Returns the refusal when a limit or a description that is
+ * too long stops it, in which case nothing is written.
+ */
+export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) => CardTarget): { done: Id[]; refused?: string } {
+  const stickies = ids.map((id) => store.get(id)).filter((o): o is BaseObj => o?.type === 'sticky' && !o.locked);
+  if (!stickies.length || store.readOnly) return { done: [] };
+  let total = 0;
+  for (const o of store.cache.values()) if (o.type === 'card') total++;
+  if (total + stickies.length > LIMITS.cards) return { done: [], refused: `A board holds at most ${LIMITS.cards} cards.` };
+  const patches = new Map<Id, Partial<BaseObj>>();
+  const byLane = new Map<Id, { index: number; ids: Id[] }>();
+  for (const o of stickies) {
+    const fields = stickyToCardFields(o);
+    if (!fields) return { done: [], refused: `A card description holds at most ${LIMITS.description.toLocaleString('en-GB')} characters.` };
+    const t = target(o);
+    const lane = t ? store.get(t.lane) : undefined;
+    if (t && lane?.type === 'lane' && lane.parent && store.containerLayout(lane.parent)) {
+      const g = byLane.get(t.lane) ?? { index: t.index, ids: [] };
+      g.ids.push(o.id);
+      byLane.set(t.lane, g);
+    } else {
+      // a loose card where the sticky was, card-sized; it keeps its frame
+      fields.w = LOOSE_CARD_W;
+    }
+    patches.set(o.id, fields);
+  }
+  const repairs: { id: Id; parent: Id; rank: string }[] = [];
+  for (const [laneId, g] of byLane) {
+    const refused = addRefusal(store, laneId, g.ids.length);
+    if (refused) return { done: [], refused };
+    const lane = store.get(laneId)!;
+    const layout = store.containerLayout(lane.parent!)!;
+    const siblings = (layout.cards.get(laneId) ?? []).map((id) => store.get(id)!).filter(Boolean);
+    const plan = planInsert(siblings, laneId, g.index, g.ids.length);
+    repairs.push(...plan.repairs);
+    const r = layout.rects.get(laneId)!;
+    g.ids.forEach((id, i) => Object.assign(patches.get(id)!, { parent: laneId, rank: plan.ranks[i], w: r.w - KANBAN.lanePad * 2, x: r.x + KANBAN.lanePad, y: r.y }));
+  }
+  for (const [id, p] of patches) {
+    const o = store.get(id) as BaseObj;
+    p.h = cardContentHeight({ ...o, ...p } as BaseObj, p.w ?? LOOSE_CARD_W);
+  }
+  store.undo.stopCapturing();
+  store.transact(() => {
+    for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
+    for (const [id, p] of patches) store.update(id, p);
+  });
+  store.undo.stopCapturing();
+  return { done: [...patches.keys()] };
+}
+
+/**
+ * Turns cards back into stickies in one transaction and one undo step: the description goes under the title after a
+ * blank line, the accent becomes the sticky colour, and a card in a lane is placed where it was drawn and joins the
+ * frame at that place, if any. Owner, due date, labels and description stay on the object, so turning it back into a
+ * card brings them back.
+ */
+export function cardsToStickies(store: Store, ids: Id[], frameAt: (p: Point, skip: Set<Id>) => Id | undefined, customColors: readonly string[] = []): Id[] {
+  const cards = ids.map((id) => store.get(id)).filter((o): o is BaseObj => o?.type === 'card' && !o.locked);
+  if (!cards.length || store.readOnly) return [];
+  const zs = store.topZs(cards.length);
+  const patches = cards.map((o, i) => {
+    const laidOut = store.isLaidOut(o);
+    const r = store.geometry(o);
+    const patch: Partial<BaseObj> = {
+      type: 'sticky', text: joinCardText(o.text, o.desc), fill: stickyFillFromCard(o.fill, STICKY_COLORS, customColors, STICKY_COLORS[0].fill),
+      rank: undefined, w: STICKY_SIZE, h: STICKY_SIZE,
+    } as Partial<BaseObj>;
+    if (laidOut) {
+      Object.assign(patch, { x: r.x, y: r.y, z: zs[i], parent: frameAt({ x: r.x + STICKY_SIZE / 2, y: r.y + STICKY_SIZE / 2 }, new Set([o.id])) });
+    }
+    return { id: o.id, patch };
+  });
+  store.undo.stopCapturing();
+  store.transact(() => patches.forEach((p) => store.update(p.id, p.patch)));
+  store.undo.stopCapturing();
+  return patches.map((p) => p.id);
+}
+
+/**
+ * A kanban made from stickies (docs/kanban.md, Making one): the default lanes at the top-left of the stickies, and the
+ * stickies as cards in the first lane in reading order. One transaction and one undo step. Returns the container's id,
+ * or a refusal and nothing written.
+ */
+export function kanbanFromStickies(store: Store, ids: Id[], base: NewObjectBase): { id: Id | null; refused?: string } {
+  const stickies = ids.map((id) => store.get(id)).filter((o): o is BaseObj => o?.type === 'sticky' && !o.locked);
+  if (!stickies.length || store.readOnly) return { id: null };
+  let containers = 0, cards = 0;
+  for (const o of store.cache.values()) {
+    if (o.type === 'container') containers++;
+    if (o.type === 'card') cards++;
+  }
+  if (containers >= LIMITS.containers) return { id: null, refused: `A board holds at most ${LIMITS.containers} kanbans.` };
+  if (stickies.length > LIMITS.cardsPerLane) return { id: null, refused: `A lane holds at most ${LIMITS.cardsPerLane} cards.` };
+  if (cards + stickies.length > LIMITS.cards) return { id: null, refused: `A board holds at most ${LIMITS.cards} cards.` };
+  const order = readingOrder(stickies.map((o) => ({ ...o, ...store.geometry(o) })));
+  const at = { x: Math.min(...order.map((o) => o.x)), y: Math.min(...order.map((o) => o.y)) };
+  const { container, lanes } = newKanban(at, base);
+  const first = lanes[0];
+  const ranks = ranksBetween(null, null, order.length, first.id);
+  const w = first.w - KANBAN.lanePad * 2;
+  const patches: { id: Id; patch: Partial<BaseObj> }[] = [];
+  for (const [i, o] of order.entries()) {
+    const fields = stickyToCardFields(store.get(o.id) as BaseObj);
+    if (!fields) return { id: null, refused: `A card description holds at most ${LIMITS.description.toLocaleString('en-GB')} characters.` };
+    Object.assign(fields, { parent: first.id, rank: ranks[i], w, x: first.x + KANBAN.lanePad, y: first.y });
+    fields.h = cardContentHeight({ ...(store.get(o.id) as BaseObj), ...fields } as BaseObj, w);
+    patches.push({ id: o.id, patch: fields });
+  }
+  // the layout grows with the cards: store the size it has with them, as for any new kanban
+  const layout = layoutContainer(container, lanes, patches.map((p) => ({ ...(store.get(p.id) as BaseObj), ...p.patch } as BaseObj)));
+  if (layout) {
+    container.w = layout.w;
+    container.h = layout.h;
+    for (const lane of lanes) Object.assign(lane, layout.rects.get(lane.id));
+  }
+  store.undo.stopCapturing();
+  store.transact(() => {
+    [container, ...lanes].forEach((o) => store.create(o));
+    patches.forEach((p) => store.update(p.id, p.patch));
+  });
+  store.undo.stopCapturing();
+  return { id: store.get(container.id) ? container.id : null };
 }

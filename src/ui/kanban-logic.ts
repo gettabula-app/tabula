@@ -2,7 +2,7 @@
 // one, what a lane's count says, what a due chip says, how tall a card is, and when the board draws in low detail.
 // No DOM and no store: the callers pass rectangles from the shared layout (shared/containers.mjs).
 
-import { KANBAN, type ContainerLayout, type Rect } from '../../shared/containers';
+import { KANBAN, kanbanColor, type ContainerLayout, type Rect } from '../../shared/containers';
 
 /** Below this zoom card text becomes bars and a lane header shows only its name (docs/kanban.md, Rendering). */
 export const LOW_DETAIL_ZOOM = 0.4;
@@ -231,4 +231,145 @@ export function initials(name: string | undefined): string {
   const first = [...words[0]][0] ?? '';
   const last = words.length > 1 ? [...words[words.length - 1]][0] ?? '' : '';
   return (first + last).toUpperCase();
+}
+
+// ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
+
+/** Whether a value is a calendar date as `due` stores it, `YYYY-MM-DD` and a real day. */
+export const isDueDate = (v: unknown): v is string => typeof v === 'string' && dayNumber(v) !== null;
+
+/**
+ * A sticky's text as a card's title and description (docs/kanban.md, Sticky to card and back): the first line is the
+ * title, the rest the description with the blank lines before it dropped. A first line longer than the title limit
+ * keeps its first 200 characters as the title and starts the description with the rest, so no text is lost.
+ */
+export function splitStickyText(text: string | undefined, titleMax = 200): { title: string; desc: string | undefined } {
+  const all = (text ?? '').replace(/\r\n?/g, '\n');
+  const nl = all.indexOf('\n');
+  let first = (nl < 0 ? all : all.slice(0, nl)).trim();
+  let rest = nl < 0 ? '' : all.slice(nl + 1).replace(/^\s*\n/, '').replace(/\s+$/, '');
+  if (first.length > titleMax) {
+    const cut = first.slice(0, titleMax).trimEnd();
+    rest = rest ? `${first.slice(cut.length).trim()}\n\n${rest}` : first.slice(cut.length).trim();
+    first = cut;
+  }
+  return { title: first, desc: rest ? rest : undefined };
+}
+
+/** A card's title and description as a sticky's text: the description under the title after a blank line. */
+export function joinCardText(title: string | undefined, desc: string | undefined): string {
+  const t = (title ?? '').trim();
+  const d = (desc ?? '').replace(/\s+$/, '');
+  return d ? (t ? `${t}\n\n${d}` : d) : t;
+}
+
+const rgbOf = (hex: string): [number, number, number] | null => {
+  const m = /^#([\da-f]{6})$/i.exec(hex);
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+};
+
+/**
+ * The colour a card takes from a sticky: the palette key when the sticky has one of the sticky swatches (so the accent
+ * follows the theme like a label), else the colour itself through `kanbanColor`; none when it is not a usable colour.
+ */
+export function cardFillFromSticky(fill: string | undefined, swatches: readonly { name: string; fill: string }[]): string | undefined {
+  if (typeof fill !== 'string') return undefined;
+  const s = swatches.find((x) => x.fill.toLowerCase() === fill.trim().toLowerCase());
+  if (s) return s.name.toLowerCase();
+  return kanbanColor(fill) ?? undefined;
+}
+
+/**
+ * The colour a sticky takes from a card (docs/kanban.md): a palette key gives its sticky swatch; a sticky swatch or one
+ * of the board's own sticky colours is kept; any other colour gives the nearest sticky swatch; no colour gives `fallback`.
+ */
+export function stickyFillFromCard(fill: string | undefined, swatches: readonly { name: string; fill: string }[], custom: readonly string[], fallback: string): string {
+  const c = kanbanColor(fill);
+  if (!c) return fallback;
+  const byKey = swatches.find((x) => x.name.toLowerCase() === c);
+  if (byKey) return byKey.fill;
+  const own = [...swatches.map((x) => x.fill), ...custom].find((x) => x.toLowerCase() === c.toLowerCase());
+  if (own) return own;
+  const rgb = rgbOf(c);
+  if (!rgb) return fallback;
+  let best = fallback;
+  let bestD = Infinity;
+  for (const s of swatches) {
+    const q = rgbOf(s.fill);
+    if (!q) continue;
+    const d = (q[0] - rgb[0]) ** 2 + (q[1] - rgb[1]) ** 2 + (q[2] - rgb[2]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = s.fill;
+    }
+  }
+  return best;
+}
+
+/**
+ * Stickies in reading order, for making a kanban from them (docs/kanban.md, Making one): rows top to bottom, each row
+ * left to right. A box starts a new row when its middle is below the current row's first middle by more than half the
+ * typical height, so stickies roughly in a line count as one row.
+ */
+export function readingOrder<T extends { id: string; x: number; y: number; w: number; h: number }>(items: readonly T[]): T[] {
+  if (items.length < 2) return [...items];
+  const hs = items.map((o) => o.h).sort((a, b) => a - b);
+  const tol = hs[Math.floor(hs.length / 2)] / 2;
+  const byY = [...items].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x || (a.id < b.id ? -1 : 1));
+  const rows: T[][] = [];
+  let rowY = -Infinity;
+  for (const o of byY) {
+    const cy = o.y + o.h / 2;
+    if (!rows.length || cy - rowY > tol) {
+      rows.push([o]);
+      rowY = cy;
+    } else rows[rows.length - 1].push(o);
+  }
+  return rows.flatMap((r) => r.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1)));
+}
+
+export interface OwnerOption {
+  /** `id:<user id>` for a person, `name:<name>` for a name with no account. */
+  key: string;
+  id?: string;
+  name: string;
+  me?: boolean;
+}
+
+/**
+ * Who the owner picker offers (docs/kanban.md, Owners): the viewer, the people in the room now and everyone already
+ * named as an owner on this board, each once; nothing from a directory. People by id, names without an id by name
+ * (ignoring case, and left out when a person of that name is listed). The viewer first, then by name.
+ */
+export function ownerOptions(
+  me: { id: string; name: string } | null,
+  present: readonly { id: string; name: string }[],
+  assigned: readonly { ownerId?: string; ownerName?: string }[],
+): OwnerOption[] {
+  const people = new Map<string, OwnerOption>();
+  const add = (id: string, name: string, isMe = false) => {
+    if (!id || people.has(id)) return;
+    people.set(id, { key: `id:${id}`, id, name: name.trim() || 'Someone', me: isMe || undefined });
+  };
+  if (me) add(me.id, me.name, true);
+  for (const p of present) add(p.id, p.name);
+  for (const a of assigned) if (a.ownerId) add(a.ownerId, a.ownerName ?? '');
+  const names = new Map<string, OwnerOption>();
+  const taken = new Set([...people.values()].map((p) => p.name.toLowerCase()));
+  for (const a of assigned) {
+    const n = (a.ownerName ?? '').trim();
+    if (a.ownerId || !n || taken.has(n.toLowerCase()) || names.has(n.toLowerCase())) continue;
+    names.set(n.toLowerCase(), { key: `name:${n}`, name: n });
+  }
+  const all = [...people.values(), ...names.values()];
+  return all.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name) || (a.key < b.key ? -1 : 1)));
+}
+
+/** The picker key of a card's current owner, or '' for none. */
+export function ownerKey(card: { ownerId?: string; ownerName?: string }): string {
+  if (card.ownerId) return `id:${card.ownerId}`;
+  const n = (card.ownerName ?? '').trim();
+  return n ? `name:${n}` : '';
 }
