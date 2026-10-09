@@ -93,7 +93,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'cloud.limits', 'cloud.notify',
   'ai.settings', 'ai.key.set', 'ai.key.delete',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
-  'asset.upload',
+  'asset.upload', 'assets.gc',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -259,6 +259,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} discarded an AI proposal on ${boardLabel}`;
     case 'asset.upload':
       return `${who} added an image to ${boardLabel}`;
+    case 'assets.gc': {
+      const rows = typeof d.rows === 'number' ? d.rows : 0;
+      return `${who} removed ${rows} unused image${rows === 1 ? '' : 's'}`;
+    }
     default:
       return entry.action;
   }

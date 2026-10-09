@@ -36,6 +36,7 @@ import { openAiConfig } from './ai/routes.mjs';
 import { createOpenRun } from './ai/run.mjs';
 import { createLiveRuns } from './ai/live.mjs';
 import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
+import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -193,10 +194,33 @@ function clientIp(req) {
 const assets = config.assets
   ? (() => {
       const dir = path.join(DATA_DIR, 'assets');
-      const store = createAssetStore({ dir, index: directory ?? createJsonAssetIndex(dir), limits: config.assets });
-      return { store, handlers: createAssetHandlers({ store, limiter: createUploadLimiter() }) };
+      const index = directory ?? createJsonAssetIndex(dir);
+      const store = createAssetStore({ dir, index, limits: config.assets });
+      return { store, index, dir, handlers: createAssetHandlers({ store, limiter: createUploadLimiter() }) };
     })()
   : null;
+// A picture's file is kept while any live room or retained version of a board refers to it (docs/images.md, History and
+// garbage collection). Daily, and a couple of minutes after start; the timers do not keep the process alive.
+if (assets) {
+  const gc = createAssetGc({
+    index: assets.index,
+    pathOf: assets.store.pathOf,
+    assetsDir: assets.dir,
+    dataDir: DATA_DIR,
+    readLive: (id) => boardState(id),
+    log,
+  });
+  const sweep = () => {
+    try {
+      const summary = gc.run();
+      if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
+    } catch (err) {
+      log('asset gc failed', scrubText(err?.message));
+    }
+  };
+  setTimeout(sweep, Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) : 2 * 60 * 1000).unref();
+  setInterval(sweep, 24 * 60 * 60 * 1000).unref();
+}
 const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: assets.handlers, clientIp }) : null;
 
 if (buildApi) {
