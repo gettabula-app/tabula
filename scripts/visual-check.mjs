@@ -600,7 +600,8 @@ async function openAiKeyDialogWith({ page, base }, testReply) {
   await page.route('**/api/ai/keys/me/test', (route) => (testReply.ok ? json(route, { ok: true, provider: 'anthropic', checkedAt: NOW }) : json(route, testReply.body, testReply.status)));
   await page.goto(`${base}/#/b/${BOARD_ID}`);
   await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('menuitem', { name: 'Your AI key' }).click().catch(async () => page.getByText('Your AI key', { exact: true }).click());
+  // the menu rows are plain buttons, not menu items: a role lookup that never matches would wait out Playwright's 30 s
+  await page.getByText('Your AI key', { exact: true }).click();
   await page.getByRole('button', { name: 'Test key' }).click();
 }
 
