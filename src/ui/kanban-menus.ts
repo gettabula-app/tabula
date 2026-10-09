@@ -4,6 +4,7 @@ import type { BoardApp, KanbanMenuKind } from '../app';
 import type { BaseObj, Id, Rect } from '../types';
 import { LABEL_COLORS, LIMITS, kanbanColor } from '../../shared/containers';
 import { listLabels } from '../labels';
+import { downloadCardsCsv } from '../exporters';
 import { kanbanSwatch } from '../markup';
 import { popover } from './common';
 import { keepKeys } from './card-dialog';
@@ -221,7 +222,7 @@ export function openContainerMenu(app: BoardApp, id: Id, at: Rect) {
     item('Rename', pick(() => app.renameKanbanPart(id))),
     item('Add lane', pick(() => app.addLaneTo(id))),
     item('Labels…', pick(() => app.openLabels?.())),
-    item('Export cards (CSV)', () => {}, { disabled: true, title: 'Not available yet' }),
+    item('Export cards (CSV)', pick(() => downloadCardsCsv(app, [id]))),
     item('Open as list', pick(() => app.openKanbanList(id))),
     sep(),
     item(c.locked ? 'Unlock' : 'Lock', pick(() => app.toggleKanbanLock(id))),

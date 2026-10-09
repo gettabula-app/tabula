@@ -8,6 +8,7 @@ import { stickyColorField } from './colors';
 import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
 import { safeColor } from '../../shared/colors';
+import { downloadCardsCsv } from '../exporters';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
@@ -180,6 +181,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         action('plus', 'Add lane', () => app.addLaneTo(id)),
         action('filter', 'Filter cards', () => app.openContainerControl(id, 'filter')),
         action('tag', 'Labels', () => app.openLabels?.()),
+        action('download', 'Export cards (CSV)', () => downloadCardsCsv(app, [id])),
         action('menu', 'Kanban menu', () => app.openContainerControl(id, 'menu')),
       );
     }
