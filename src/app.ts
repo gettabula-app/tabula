@@ -205,18 +205,7 @@ export class BoardApp {
     this.styleEdit = new StyleEdit(this.store, () => this.selectedLeaves(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
     this.images = new BoardImages(this);
-    this.store.undo.on('stack-item-popped', (e: { type: 'undo' | 'redo'; changedParentTypes?: Map<unknown, Array<{ path?: (string | number)[]; changes?: { keys?: Map<string, unknown> } }>> }) => {
-      this.announce(e.type === 'undo' ? 'Undone' : 'Redone');
-      const changed = new Set<Id>();
-      for (const [type, events] of e.changedParentTypes ?? []) {
-        for (const event of events) {
-          if (type === this.store.objects) {
-            for (const id of event.changes?.keys?.keys() ?? []) changed.add(id);
-          } else if (event.path?.length) changed.add(String(event.path[0]));
-        }
-      }
-      this.resetScopeSelection(changed);
-    });
+    this.store.undo.on('stack-item-popped', (e) => this.handleUndoStackPopped(e.type));
 
     const meta = this.store.getMeta();
     this.r.gridType = meta.gridType;
@@ -291,6 +280,11 @@ export class BoardApp {
       else this.r.setCamera({ x: -this.r.size().w / 2, y: -this.r.size().h / 2, zoom: 1 });
     });
     this.refreshPins();
+  }
+
+  private handleUndoStackPopped(type: 'undo' | 'redo') {
+    this.announce(type === 'undo' ? 'Undone' : 'Redone');
+    this.resetScopeSelection(this.store.takeUndoChanged());
   }
 
   // ---------------------------------------------------------------- events

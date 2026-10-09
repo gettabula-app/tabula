@@ -74,6 +74,8 @@ export class Store {
 
   private listeners = new Set<ChangeListener>();
   private readOnlyListeners = new Set<(v: boolean) => void>();
+  /** Object ids touched by the current undo/redo transaction; consumed by the app's stack-item handler. */
+  private undoChangedIds = new Set<Id>();
   private _readOnly = false;
   private orderDirty = true;
   private orderCache: Obj[] = [];
@@ -107,7 +109,7 @@ export class Store {
     this.rebuildChildIndex();
     this.refreshOrphans();
 
-    this.objects.observeDeep((events) => {
+    this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
       for (const e of events) {
         if (e.target === this.objects) {
@@ -115,6 +117,11 @@ export class Store {
         } else if (e.path.length > 0) {
           changed.add(String(e.path[0]));
         }
+      }
+      // Keep only direct object-map changes here. The `changed` set below is also expanded with derived group and
+      // layout changes for rendering, which are not part of the objects written by undo/redo.
+      if (transaction.origin === this.undo) {
+        for (const id of changed) this.undoChangedIds.add(id);
       }
       const edits: [Obj | undefined, Obj | undefined][] = [];
       for (const id of changed) {
@@ -155,6 +162,17 @@ export class Store {
       trackedOrigins: new Set([LOCAL]),
       captureTimeout: 350,
     });
+    // Also clear on an undo/redo transaction with no object observer events (for example meta-only and labels-only).
+    this.doc.on('beforeTransaction', (transaction) => {
+      if (transaction.origin === this.undo) this.undoChangedIds.clear();
+    });
+  }
+
+  /** Returns and clears the object ids changed by the latest undo/redo transaction. */
+  takeUndoChanged(): Set<Id> {
+    const changed = new Set(this.undoChangedIds);
+    this.undoChangedIds.clear();
+    return changed;
   }
 
   onChange(l: ChangeListener) {
