@@ -9,7 +9,7 @@ This page records what an automated and static audit of Tabula found on 2026-10-
 | Slice | State |
 |---|---|
 | 1. Dialog and popover focus (C2, S1, S2, N3) | Done on `fix/tab-149-s1-focus`. Re-run of the audit on the touched screens: all six dialogs and popovers trap Tab (no Tab-out), return focus to the opener, and are named; axe `aria-dialog-name` and `aria-required-parent` no longer reported. |
-| 3. Live regions | Next |
+| 3. Live regions (S4, M7) | Done on `fix/tab-149-s3-live` (stacked on slice 1). A hidden polite status region (`src/ui/announce.ts`) says: people joining and leaving, sync state changes, delete / add (duplicate, paste) / undo / redo / z-order, new comments and replies from others, timer started / paused / time up, dot count after a pause in clicking, results revealed. Poll "N of M answered" chips are `role=status`. The history load error is `role=alert`. Sign-in and team-name inputs set `aria-invalid` (sign-in also `aria-describedby`). Lock and unlock were already announced by their toast. Not announced: remote edits to objects, and which object is selected (that belongs to slice 7). |
 | 2. Radiogroups | After 3 |
 | 4 to 6 | Not started |
 | 7. Canvas keyboard (C1) | Parked: needs a spec and a decision from Johan (see Slice 7) |

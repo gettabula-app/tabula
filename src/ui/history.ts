@@ -111,7 +111,7 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
     if (status === 'loading') return h('p', { class: 'history-state' }, 'Loading versions…');
     if (status === 'offline') return h('p', { class: 'history-state' }, 'Version history is stored on the server and needs a connection.');
     if (status === 'error') {
-      return h('div', { class: 'history-state' }, h('p', null, failure), h('button', { class: 'history-btn', onclick: () => void load() }, 'Retry'));
+      return h('div', { class: 'history-state' }, h('p', { role: 'alert' }, failure), h('button', { class: 'history-btn', onclick: () => void load() }, 'Retry'));
     }
     return null;
   }

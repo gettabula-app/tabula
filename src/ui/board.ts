@@ -4,6 +4,7 @@ import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
+import { announce } from './announce';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
@@ -50,6 +51,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
+  app.announce = announce;
 
   // ---------------------------------------------------------------- top left
   const name = h('input', { class: 'board-name', value: app.store.getMeta().name, 'aria-label': 'Board name', spellcheck: 'false' });
@@ -84,7 +86,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
     status.dataset.tip = tip;
+    // a change of state is announced; the count of people changing inside "live" is announced by name below
+    if (lastState !== null && s !== lastState) announce(`Sync: ${label}`, { key: 'sync', delay: 800 });
+    lastState = s;
   };
+  let lastState: string | null = null;
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
   renderStatus();
@@ -98,8 +104,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
+  let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    // who arrived and who left since the last time, said once the first list is known
+    const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, p.user.name]));
+    if (knownPeople) {
+      for (const [id, who] of now) if (!knownPeople.has(id)) announce(`${who} joined`, { key: 'presence', delay: 700, merge: true });
+      for (const [id, who] of knownPeople) if (!now.has(id)) announce(`${who} left`, { key: 'presence', delay: 700, merge: true });
+    }
+    knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
     people.replaceChildren(...ps.slice(0, 6).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name

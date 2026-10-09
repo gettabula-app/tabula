@@ -17,10 +17,12 @@ const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 
 /** Dialog to create a team. Calls onDone with the new team. */
 export function openCreateTeam(onDone: (team: Team) => void): void {
   const name = h('input', { class: 'input', maxlength: 80, required: true, 'aria-label': 'Team name' });
+  name.addEventListener('input', () => name.removeAttribute('aria-invalid'));
   let busy = false;
   const submit = async () => {
     const value = name.value.trim();
     if (!value) {
+      name.setAttribute('aria-invalid', 'true');
       toast('Give the team a name.');
       return;
     }

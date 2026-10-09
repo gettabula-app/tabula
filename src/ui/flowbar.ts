@@ -3,6 +3,7 @@ import type { Step, StepMode } from '../types';
 import { isBox } from '../types';
 import { newId } from '../store';
 import { h, icon } from './dom';
+import { announce } from './announce';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
 import { cooldownLabel } from '../focus-requests';
@@ -119,6 +120,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
   // Between flow changes only the timer readout updates, so focus and hover
   // on the bar's buttons are never disturbed.
   let wasRunning = false;
+  let timerChecked = false;
   const updateTimer = () => {
     const f = app.flow.state();
     const rem = app.flow.remainingMs();
@@ -128,13 +130,20 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
       if (rem === 0 && lastBeepKey !== key && !f.timer.pausedAt) {
         lastBeepKey = key;
         chime();
+        announce('Time is up');
       }
     }
     if (running !== wasRunning) {
+      // a timer already running when the bar first draws (someone joined late) is not announced as started
+      if (timerChecked) {
+        if (running) announce('Timer started');
+        else if (f.timer && rem) announce('Timer paused');
+      }
       wasRunning = running;
       render();
       return;
     }
+    timerChecked = true;
     const el = bar.querySelector<HTMLElement>('.timer');
     if (!el || !f.timer || rem === null) return;
     el.querySelector('.timer-num')!.textContent = fmt(rem);
@@ -243,6 +252,8 @@ function copyResults(app: BoardApp, stepId: string) {
   navigator.clipboard.writeText(md).then(() => toast('Ranked results copied'), () => toast('Clipboard is not available'));
 }
 
+let lastDots: { step: string; text: string } | null = null;
+
 /** What this person has left, shown as dots; opens the per-person limit. */
 function dotsButton(app: BoardApp): HTMLElement {
   const step = app.flow.activeStep()!;
@@ -258,6 +269,10 @@ function dotsButton(app: BoardApp): HTMLElement {
   } else {
     body = [h('span', { class: 'dot on' }), h('span', null, left ? `${left} of ${limit} left` : 'All dots used')];
   }
+  // placing or removing a dot changes this count; say it once the person stops clicking
+  const said = unlimited ? `${mine} dots placed` : `${left} of ${limit} dots left`;
+  if (lastDots && lastDots.step === step.id && lastDots.text !== said) announce(said, { key: 'dots', delay: 500 });
+  lastDots = { step: step.id, text: said };
   const b = h('button', {
     class: `votes-left${left === 0 ? ' none' : ''}`,
     disabled: app.readOnly,

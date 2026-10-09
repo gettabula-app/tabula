@@ -38,9 +38,13 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
     const setError = (msg: string | null) => {
       error?.remove();
       error = null;
+      input.removeAttribute('aria-invalid');
+      input.removeAttribute('aria-describedby');
       if (msg) {
-        error = h('p', { class: 'signin-error', role: 'alert' }, msg);
+        error = h('p', { class: 'signin-error', id: 'signin-error', role: 'alert' }, msg);
         submit.before(error);
+        input.setAttribute('aria-invalid', 'true');
+        input.setAttribute('aria-describedby', 'signin-error');
       }
     };
 
