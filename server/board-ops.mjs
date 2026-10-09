@@ -45,7 +45,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -192,7 +192,88 @@ export function readAll(doc) {
     const { rects } = layoutAll(boxes);
     for (const o of boxes) Object.assign(o, rects.get(o.id));
   }
-  return { boxes, connectors: connectors.filter((c) => !boundTo(c)), withheld };
+  const visibleConnectors = connectors.filter((c) => !boundTo(c));
+  deriveGroupGeometry(boxes, visibleConnectors);
+  return { boxes, connectors: visibleConnectors, withheld };
+}
+
+function rotatedBounds(o) {
+  const angle = o.type === 'container' || o.type === 'lane' || o.type === 'card' ? 0 : Number(o.rotation) || 0;
+  if (!angle) return { x: o.x, y: o.y, w: o.w, h: o.h };
+  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  const co = Math.cos(angle), si = Math.sin(angle);
+  const points = [[o.x, o.y], [o.x + o.w, o.y], [o.x + o.w, o.y + o.h], [o.x, o.y + o.h]].map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    return { x: cx + dx * co - dy * si, y: cy + dx * si + dy * co };
+  });
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
+
+/** Derives group rectangles from readable visible leaf members and counts direct readable members. */
+function deriveGroupGeometry(boxes, connectors) {
+  const all = [...boxes, ...connectors];
+  const byId = new Map(all.map((o) => [o.id, o]));
+  const children = new Map();
+  for (const o of all) {
+    if (typeof o.parent !== 'string') continue;
+    const list = children.get(o.parent) ?? [];
+    list.push(o);
+    children.set(o.parent, list);
+  }
+  const hidden = hiddenOf({ boxes, connectors });
+  const directCounts = new Map();
+  for (const o of all) if (byId.get(o.parent)?.type === 'group') directCounts.set(o.parent, (directCounts.get(o.parent) ?? 0) + 1);
+
+  const boundsFor = (groupId, path = new Set()) => {
+    if (path.has(groupId)) return null;
+    const nextPath = new Set(path).add(groupId);
+    const rects = [];
+    for (const child of children.get(groupId) ?? []) {
+      if (hidden.has(child.id)) continue;
+      if (child.type === 'group') {
+        const rect = boundsFor(child.id, nextPath);
+        if (rect) rects.push(rect);
+      } else if (child.type !== 'connector' && child.type !== 'frame') rects.push(rotatedBounds(child));
+    }
+    if (!rects.length) return null;
+    const x = Math.min(...rects.map((r) => r.x)), y = Math.min(...rects.map((r) => r.y));
+    const right = Math.max(...rects.map((r) => r.x + r.w)), bottom = Math.max(...rects.map((r) => r.y + r.h));
+    return { x: r2(x), y: r2(y), w: r2(right - x), h: r2(bottom - y) };
+  };
+
+  for (const group of boxes) {
+    if (group.type !== 'group') continue;
+    const rect = boundsFor(group.id);
+    Object.assign(group, rect ?? { x: 0, y: 0, w: 0, h: 0 }, {
+      rotation: 0,
+      members: directCounts.get(group.id) ?? 0,
+      hasVisibleMembers: Boolean(rect),
+    });
+  }
+}
+
+/** Descendants following group parents only; a repeated id ends a malformed cycle. */
+export function readDescendants(objects, id) {
+  const children = new Map();
+  for (const o of objects) {
+    if (typeof o.parent !== 'string') continue;
+    const list = children.get(o.parent) ?? [];
+    list.push(o);
+    children.set(o.parent, list);
+  }
+  const out = [];
+  const seen = new Set([id]);
+  const walk = (parentId) => {
+    for (const child of children.get(parentId) ?? []) {
+      if (child.parent !== parentId || seen.has(child.id)) continue;
+      seen.add(child.id);
+      out.push(child);
+      if (child.type === 'group') walk(child.id);
+    }
+  };
+  if (objects.some((o) => o.id === id)) walk(id);
+  return out;
 }
 
 /** Ids of the private notes that are withheld right now. */
@@ -251,6 +332,7 @@ export function summarise(o, textMax, detail = false) {
     if (text.truncated) out.textTruncated = true;
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
+  if (o.type === 'group' && Number.isInteger(o.members) && o.members >= 0) out.members = o.members;
   if (o.type === 'image') {
     // A picture is metadata only: its type, its natural size and the description its author gave it. Never its bytes, its
     // hash or any URL to it (docs/images.md, MCP and the other AI tools); what is in it is not read.
@@ -327,7 +409,8 @@ const touches = (o, b) => !(o.x > b.x + b.w || o.x + o.w < b.x || o.y > b.y + b.
  */
 export function summariseBoard(doc, options = {}) {
   const { limit = LIMITS.pageDefault, cursor = null, frameId = null, types = null, bounds = null } = options;
-  const { boxes, connectors, withheld } = readAll(doc);
+  const { boxes: allBoxes, connectors, withheld } = readAll(doc);
+  const boxes = allBoxes.filter((o) => o.type !== 'group' || o.hasVisibleMembers);
 
   const typeCounts = new Map();
   for (const o of [...boxes, ...connectors]) {
@@ -337,8 +420,9 @@ export function summariseBoard(doc, options = {}) {
   const overall = overallBounds(boxes);
 
   const wanted = types ? new Set(types) : null;
+  const frameDescendants = frameId ? new Set(readDescendants([...boxes, ...connectors], frameId).map((o) => o.id)) : null;
   const chosen = boxes.filter(
-    (o) => (!wanted || wanted.has(o.type)) && (!frameId || o.parent === frameId) && (!bounds || touches(o, bounds)),
+    (o) => (!wanted || wanted.has(o.type)) && (!frameId || frameDescendants.has(o.id)) && (!bounds || touches(o, bounds)),
   );
   const chosenIds = new Set(chosen.map((o) => o.id));
   const narrowed = Boolean(frameId || bounds);
@@ -347,7 +431,7 @@ export function summariseBoard(doc, options = {}) {
   const chosenConnectors = !wantConnectors
     ? []
     : connectors.filter(
-        (c) => !narrowed || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e)),
+        (c) => !narrowed || frameDescendants?.has(c.id) || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e)),
       );
 
   const ordered = [...chosen, ...chosenConnectors].map((o) => ({ o, key: keyOf(o) })).sort((a, b) => cmpKey(a.key, b.key));
@@ -370,7 +454,8 @@ export function summariseBoard(doc, options = {}) {
 
 /** Full details of up to 50 objects by id. Withheld notes are reported as missing, like objects that do not exist. */
 export function getObjectsDetail(doc, ids) {
-  const { boxes, connectors } = readAll(doc);
+  const { boxes: allBoxes, connectors } = readAll(doc);
+  const boxes = allBoxes.filter((o) => o.type !== 'group' || o.hasVisibleMembers);
   const byId = new Map([...boxes, ...connectors].map((o) => [o.id, o]));
   const found = [];
   const missing = [];

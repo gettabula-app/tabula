@@ -26,6 +26,10 @@ export const TEMPLATE_RELATIONS = [
 export const TEMPLATE_STEP_MODES = ['write', 'private-write', 'cluster', 'vote', 'discuss'];
 
 export const MAX_TEMPLATE_OBJECTS = 2000;
+export const MAX_TEMPLATE_GROUPS = 500;
+export const MAX_GROUP_MEMBERS = 500;
+export const MAX_GROUP_DEPTH = 8;
+export const MAX_GROUP_NAME = 80;
 export const MAX_TEMPLATE_STEPS = 100;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
 export const NAME_MAX = 80;
@@ -187,9 +191,17 @@ function box(o, what, ids, labels) {
     z: text(o.z, `${what} z order`, 64, { min: 1 }),
   };
   if (o.parent !== undefined) {
-    // a lane's parent is a kanban and a card's a lane (templateKanbanFields checks those); anything else sits in a frame
-    if (typeof o.parent !== 'string' || (!KANBAN_TYPES.has(o.type) && ids.get(o.parent) !== 'frame')) fail(`${what} has a parent that is not a frame in the template.`);
+    // Kanban-specific parents are checked below; ordinary objects can sit in a frame or group.
+    const parentType = typeof o.parent === 'string' ? ids.get(o.parent) : undefined;
+    if (typeof o.parent !== 'string' || (!KANBAN_TYPES.has(o.type) && parentType !== 'frame' && parentType !== 'group')) fail(`${what} has a parent that is not a frame or group in the template.`);
+    if (parentType === 'group' && (o.type === 'frame' || o.type === 'lane')) fail(`${what} cannot be inside a group.`);
     out.parent = o.parent;
+  }
+  if (o.type === 'group') {
+    if (Object.hasOwn(o, 'locked')) fail(`${what} cannot have a locked flag in a template.`);
+    if (o.name !== undefined) out.name = text(o.name, `${what} name`, MAX_GROUP_NAME);
+    out.x = 0; out.y = 0; out.w = 0; out.h = 0; out.rotation = 0;
+    return out;
   }
   if (o.text !== undefined) out.text = text(o.text, `${what} text`, MAX_TEXT, { lines: true });
   style(o, what, out);
@@ -265,6 +277,11 @@ function connector(o, what, ids) {
     startHead: o.startHead === undefined ? 'none' : oneOf(o.startHead, HEADS, `${what} startHead`),
     endHead: o.endHead === undefined ? 'arrow' : oneOf(o.endHead, HEADS, `${what} endHead`),
   };
+  if (o.parent !== undefined) {
+    const parentType = typeof o.parent === 'string' ? ids.get(o.parent) : undefined;
+    if (parentType !== 'frame' && parentType !== 'group') fail(`${what} has a parent that is not a frame or group in the template.`);
+    if (parentType === 'group') out.parent = o.parent;
+  }
   if (o.relation !== undefined) out.relation = oneOf(o.relation, TEMPLATE_RELATIONS, `${what} relation`);
   if (o.label !== undefined) out.label = text(o.label, `${what} label`, 1000, { lines: true });
   style(o, what, out, false);
@@ -317,20 +334,40 @@ export function validateTemplateContent(raw) {
     if (typeof o.type !== 'string' || !TEMPLATE_OBJ_TYPES.includes(o.type)) fail(`Object ${i + 1} has an unknown type.`);
     ids.set(o.id, o.type);
   });
+  const groupCount = list.filter((o) => o.type === 'group').length;
+  if (groupCount > MAX_TEMPLATE_GROUPS) fail(`A template can hold at most ${MAX_TEMPLATE_GROUPS} groups.`);
+  const directMembers = new Map();
+  for (const o of list) if (typeof o.parent === 'string' && ids.get(o.parent) === 'group') directMembers.set(o.parent, (directMembers.get(o.parent) ?? 0) + 1);
+  for (const [id, count] of directMembers) if (count > MAX_GROUP_MEMBERS) fail(`Group "${id}" can hold at most ${MAX_GROUP_MEMBERS} direct members.`);
 
   const labels = kanban(() => templateLabels(raw.labels));
   const labelIds = new Set(labels.map((l) => l.id));
   const objects = list.map((o, i) => (o.type === 'connector' ? connector(o, `Object ${i + 1}`, ids) : box(o, `Object ${i + 1}`, ids, labelIds)));
   kanban(() => checkTemplateKanbanLimits(objects));
 
-  // a parent chain that loops would never end for anything that walks up it
+  // A parent chain that loops would never end for anything that walks up it.
   const parents = new Map(objects.filter((o) => o.parent !== undefined).map((o) => [o.id, o.parent]));
   for (const start of parents.keys()) {
     let cursor = start;
-    for (let hops = 0; cursor !== undefined; hops++) {
+    const seen = new Set();
+    while (parents.has(cursor)) {
+      if (seen.has(cursor)) fail('Template objects cannot have a parent cycle in a loop.');
+      seen.add(cursor);
       cursor = parents.get(cursor);
-      if (cursor === start || hops > parents.size) fail('Frames cannot be inside each other in a loop.');
     }
+  }
+  for (const group of objects.filter((o) => o.type === 'group')) {
+    let cursor = group;
+    const seen = new Set([group.id]);
+    let depth = 1;
+    while (cursor.parent) {
+      if (seen.has(cursor.parent)) break; // the cycle error above already names this input
+      seen.add(cursor.parent);
+      cursor = objects.find((o) => o.id === cursor.parent);
+      if (!cursor) break;
+      if (cursor.type === 'group') depth++;
+    }
+    if (depth > MAX_GROUP_DEPTH) fail(`Groups can be nested at most ${MAX_GROUP_DEPTH} levels.`);
   }
 
   const seen = new Set();

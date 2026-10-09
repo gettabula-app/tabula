@@ -477,7 +477,7 @@ export function templateKanbanFields(o, what, ctx) {
     out.rank = o.rank;
   };
   if (o.type === 'container') {
-    if (o.parent !== undefined && parentType !== 'frame') refuse(`${what} is a kanban whose parent is not a frame in the template.`);
+    if (o.parent !== undefined && parentType !== 'frame' && parentType !== 'group') refuse(`${what} is a kanban whose parent is not a frame or group in the template.`);
     if (!hasLayout(o.layout)) refuse(`${what} has a layout this Tabula does not know.`);
     out.layout = o.layout;
     if (o.name !== undefined) out.name = line(o.name, `${what} name`, LIMITS.containerName, 0);
@@ -499,8 +499,12 @@ export function templateKanbanFields(o, what, ctx) {
     }
   } else if (o.type === 'card') {
     if (o.parent !== undefined) {
-      if (parentType !== 'lane') refuse(`${what} is a card whose parent is not a lane in the template.`);
-      rank();
+      if (parentType === 'group') {
+        if (o.rank !== undefined) refuse(`${what} is a grouped card, which has no rank.`);
+      } else {
+        if (parentType !== 'lane') refuse(`${what} is a card whose parent is not a lane or group in the template.`);
+        rank();
+      }
     } else if (o.rank !== undefined) refuse(`${what} is a loose card, which has no rank.`);
     if (o.text !== undefined) out.text = line(o.text, `${what} title`, LIMITS.title, 0);
     if (o.desc !== undefined) {

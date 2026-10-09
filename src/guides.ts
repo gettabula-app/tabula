@@ -2,7 +2,6 @@
 // See docs/guides.md.
 
 import type { BaseObj, Id, Obj, Rect } from './types';
-import { isBox } from './types';
 import { boxBounds, rectsIntersect, unionRects } from './geometry';
 
 /** Snap distance in screen px; the world distance is this divided by zoom. */
@@ -49,11 +48,16 @@ const cross = (a: Axis): Axis => (a === 'x' ? 'y' : 'x');
 const none = (): Snap => ({ dx: null, dy: null, guides: [], gaps: [] });
 
 /** Bounds of every box object that may be a reference: not skipped, not a connector, not hidden. */
-export function referenceRects(objs: Iterable<Obj>, skip: ReadonlySet<Id>, isHidden: (o: BaseObj) => boolean): Rect[] {
+export function referenceRects(
+  objs: Iterable<Obj>,
+  skip: ReadonlySet<Id>,
+  isHidden: (o: BaseObj) => boolean,
+  geometry?: (o: Obj) => Rect,
+): Rect[] {
   const out: Rect[] = [];
   for (const o of objs) {
-    if (skip.has(o.id) || !isBox(o) || isHidden(o)) continue;
-    out.push(boxBounds(o));
+    if (skip.has(o.id) || o.type === 'connector' || (o.type !== 'group' && isHidden(o))) continue;
+    out.push(o.type === 'group' ? geometry?.(o) ?? { x: 0, y: 0, w: 0, h: 0 } : boxBounds(o));
   }
   return out;
 }

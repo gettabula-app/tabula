@@ -16,7 +16,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -140,7 +140,12 @@ export interface ConnectorObj {
   name?: string;
 }
 
-export type Obj = BaseObj | ConnectorObj;
+/** A group has no picture of its own; its rectangle is derived from its visible members. */
+export interface Group extends BaseObj {
+  type: 'group';
+}
+
+export type Obj = BaseObj | Group | ConnectorObj;
 
 /** The AI run behind an added object (TAB-160): stored data, so hostile until cleanProposedBy (src/safe-obj.ts) has read it. */
 export interface ProposedBy {
@@ -149,7 +154,7 @@ export interface ProposedBy {
 }
 
 export const isConnector = (o: Obj | undefined): o is ConnectorObj => !!o && o.type === 'connector';
-export const isBox = (o: Obj | undefined): o is BaseObj => !!o && o.type !== 'connector';
+export const isBox = (o: Obj | undefined): o is BaseObj => !!o && o.type !== 'connector' && o.type !== 'group';
 
 export type StepMode = 'write' | 'private-write' | 'cluster' | 'vote' | 'discuss' | 'poll';
 

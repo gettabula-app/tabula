@@ -100,7 +100,8 @@ function gather(app: BoardApp): Gathered {
     // a note private writing hides from this person is not theirs to hand to the AI
     if (o.type !== 'sticky' || !isBox(o) || app.flow.isHidden(o as never)) continue;
     onBoard++;
-    if (o.parent && frames.has(o.parent)) selection.add(o.id);
+    const frame = app.store.frameOf?.(o) ?? (o.parent ? app.store.get(o.parent) : undefined);
+    if (frame && frames.has(frame.id)) selection.add(o.id);
     const b = boxBounds(o);
     if (b.x < vp.x + vp.w && vp.x < b.x + b.w && b.y < vp.y + vp.h && vp.y < b.y + b.h) view.push({ id: o.id, x: b.x + b.w / 2, y: b.y + b.h / 2 });
   }

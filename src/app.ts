@@ -435,6 +435,7 @@ export class BoardApp {
     const ord = this.store.shown();
     for (let i = ord.length - 1; i >= 0; i--) {
       const o = ord[i];
+      if (o.type === 'group') continue;
       if (o.locked && !opts.locked) continue;
       if (opts.skip?.has(o.id)) continue;
       const b = this.r.bounds(o);
@@ -799,10 +800,11 @@ export class BoardApp {
     const stack = [...ids];
     while (stack.length) {
       const id = stack.pop()!;
-      if (this.store.get(id)?.type !== 'frame') continue;
+      const parent = this.store.get(id);
+      if (parent?.type !== 'frame' && parent?.type !== 'group') continue;
       for (const c of this.store.childrenOf(id)) {
         if (c.locked || ids.has(c.id) || this.store.isLaidOut(c)) continue;
-        ids.add(c.id);
+        if (c.type !== 'group') ids.add(c.id);
         stack.push(c.id);
       }
     }
@@ -1637,7 +1639,7 @@ export class BoardApp {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
         const movers = [...d.orig.values()].filter(isBox).map(boxBounds);
-        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o)), movers, vp);
+        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), movers, vp);
       }
       const sn = snapMove(d.guides, dx, dy, this.zoom);
       if (sn.dx !== null) dx += sn.dx;
@@ -1707,7 +1709,7 @@ export class BoardApp {
     if (!e.altKey && !o0.rotation && !keepAspect) {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
-        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o)), [], vp);
+        d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), [], vp);
       }
       const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
       sx = sn.dx;
@@ -1937,6 +1939,12 @@ export class BoardApp {
     this.store.transact(() => {
       for (const o of this.store.cache.values()) {
         if (o.id === frame.id || o.type === 'frame' || o.locked || isConnector(o) || this.store.isLaidOut(o)) continue;
+        if (o.parent && this.store.get(o.parent)?.type === 'group') continue;
+        if (o.type === 'group') {
+          if (rectContains(fb, boxBounds(this.store.placed(o) as BaseObj))) this.store.update(o.id, { parent: frame.id });
+          continue;
+        }
+        if (!isBox(o)) continue;
         if (rectContains(fb, boxBounds(this.store.placed(o)))) this.store.update(o.id, { parent: frame.id });
       }
     });
@@ -1946,7 +1954,9 @@ export class BoardApp {
     this.store.transact(() => {
       for (const id of ids) {
         const o = this.store.get(id);
-        if (!isBox(o) || o.type === 'frame' || this.store.isLaidOut(o)) continue;
+        if (!o || o.type === 'frame' || this.store.isLaidOut(o)) continue;
+        if (o.parent && this.store.get(o.parent)?.type === 'group') continue;
+        if (o.type !== 'group' && !isBox(o)) continue;
         // children that moved together with their frame keep their parent
         if (o.parent && ids.includes(o.parent)) continue;
         const f = this.frameAt(center(this.store.placed(o)), new Set([id]));
@@ -2352,8 +2362,9 @@ export class BoardApp {
 
   private overlap(a: Obj, b: Obj): boolean {
     const layout = this.r.connectorLayout();
-    const ra = objBounds((id) => this.store.get(id), a, layout);
-    const rb = objBounds((id) => this.store.get(id), b, layout);
+    const geometry = (o: Obj) => this.store.geometry(o);
+    const ra = objBounds((id) => this.store.get(id), a, layout, geometry);
+    const rb = objBounds((id) => this.store.get(id), b, layout, geometry);
     return !!ra && !!rb && rectsIntersect(ra, rb);
   }
 

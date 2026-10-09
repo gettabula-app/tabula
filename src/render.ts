@@ -96,6 +96,7 @@ export const MAX_ZOOM = 32;
 
 /** Handles for a single selected object, in world coordinates. */
 export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: number, layout?: ConnectorLayout): Handle[] {
+  if (o.type === 'group') return [];
   if (isConnector(o)) {
     const g = connectorGeom(get, o, layout);
     return g ? [{ id: 'from', p: g.start }, { id: 'to', p: g.end }] : [];
@@ -475,7 +476,7 @@ export class Renderer {
   bounds(o: Obj): Rect | null {
     this.connectorLayout(); // first, so connectors whose slot moved lose their cached bounds
     if (this.boundsCache.has(o.id)) return this.boundsCache.get(o.id)!;
-    const b = objBounds(this.safeGet, safeObj(this.store.placed(o)), this.connectorLayout());
+    const b = objBounds(this.safeGet, safeObj(this.store.placed(o)), this.connectorLayout(), (obj) => this.store.geometry(obj));
     this.boundsCache.set(o.id, b);
     return b;
   }
@@ -557,6 +558,7 @@ export class Renderer {
     // containers that moved since the last draw: what they lay out moves with them, without a tween
     const shifted = new Set<Id>();
     for (const raw of ordered) {
+      if (raw.type === 'group') continue;
       const o = this.store.placed(raw);
       const b = this.bounds(o);
       if (!b || !rectsIntersect(b, view)) continue;

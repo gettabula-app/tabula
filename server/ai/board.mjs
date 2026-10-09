@@ -3,7 +3,7 @@
 // withheld are not here, and it uses the same summaries, which carry no author and no comment. This module touches no room:
 // the caller hands over a document inside roomAccess.read.
 
-import { boardTitle, cleanForModel, fence, hiddenOf, readAll, summarise } from '../board-ops.mjs';
+import { boardTitle, cleanForModel, fence, hiddenOf, readAll, readDescendants, summarise } from '../board-ops.mjs';
 
 export const READ_LIMITS = Object.freeze({
   /** Boxes and connectors sent in one run. */
@@ -42,7 +42,7 @@ export function readForAi(doc, { selection = null, frameId = null, onlyStickies 
   const all = readAll(doc);
   // what the board hides from everyone (TAB-198) is not sent, as it is not drawn
   const hidden = hiddenOf(all);
-  const boxes = all.boxes.filter((o) => !hidden.has(o.id));
+  const boxes = all.boxes.filter((o) => !hidden.has(o.id) && (o.type !== 'group' || o.hasVisibleMembers));
   const connectors = all.connectors.filter((c) => !hidden.has(c.id));
   let scope = 'board';
   let frame = null;
@@ -58,7 +58,8 @@ export function readForAi(doc, { selection = null, frameId = null, onlyStickies 
     if (!found || found.type !== 'frame') return { frameMissing: true };
     scope = 'frame';
     frame = { id: found.id, name: cleanForModel(found.name, 200).text };
-    candidates = boxes.filter((o) => o.parent === frameId);
+    const descendants = new Set(readDescendants([...boxes, ...connectors], frameId).map((o) => o.id));
+    candidates = boxes.filter((o) => descendants.has(o.id));
     centre = isRect(found) ? centreOf(found) : undefined;
   }
   if (onlyStickies) candidates = candidates.filter((o) => o.type === 'sticky');

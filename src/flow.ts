@@ -40,6 +40,7 @@ export class Flow {
 
   constructor(private app: BoardApp) {
     const s = app.store;
+    s.setGeometryVisibility((o) => !isBox(o) || !this.isHidden(o));
     this.polls = new Polls(app);
     s.flow.observe((_e, tx) => this.onFlowChange(tx.local));
     s.votes.observe(() => this.refreshVotes());
@@ -82,6 +83,7 @@ export class Flow {
   /** Only a change made on this screen moves this view. Other people's step changes arrive as a prompt they answer. */
   private onFlowChange(local: boolean) {
     const f = this.state();
+    this.app.store.invalidateGeometryVisibility();
     // a private step that starts (or a reveal that ends) changes which notes are hidden: what is selected is looked at again
     if (this.app.selection?.length) this.app.setSelection(this.app.selection);
     this.app.r.invalidateAll();
@@ -452,7 +454,8 @@ export class Flow {
     if (running?.mode === 'vote' && !f.reveal) voteSteps.delete(running.id);
     for (const id of voteSteps) for (const v of this.votesForStep(id)) totals.set(v.itemId, (totals.get(v.itemId) ?? 0) + 1);
     for (const fr of frames) {
-      const kids = s.childrenOf(fr.id).filter((o) => ((o as BaseObj).text || o.type === 'image') && !isConnector(o) && !this.isHidden(o as BaseObj) && s.isShown(o)) as BaseObj[];
+      const kids = [...s.cache.values()].filter((o): o is BaseObj => isBox(o) && s.frameOf(o)?.id === fr.id &&
+        (Boolean(o.text || o.type === 'image') && !this.isHidden(o) && s.isShown(o)));
       if (!kids.length) continue;
       lines.push(`## ${mdText(fr.name) || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
