@@ -9,8 +9,26 @@ import { audits, backedUp, backupNow, becomeB, CONFIRM, filesOf, filled, forge, 
 // docs/backups.md, Restoring. The whole-workspace restore against the fake S3 with the real backup engine.
 
 let h: Harness;
-afterEach(async () => {
+
+// Step timings, printed only for a test that had a slow step (2 s or more), so a slow CI runner shows where the time went
+// (the first Windows run that timed out had no way of saying). Nothing here changes what a test checks.
+const laps: { label: string; ms: number }[] = [];
+async function lap<T>(label: string, fn: () => Promise<T> | T): Promise<T> {
+  const started = performance.now();
+  try {
+    return await fn();
+  } finally {
+    laps.push({ label, ms: Math.round(performance.now() - started) });
+  }
+}
+
+afterEach(async (context) => {
+  const slow = laps.some((l) => l.ms >= 2000);
+  const closing = performance.now();
   await h?.close();
+  laps.push({ label: 'close the harness', ms: Math.round(performance.now() - closing) });
+  if (slow || laps.some((l) => l.ms >= 2000)) console.error(`[restore-engine timing] ${context.task.name}: ${laps.map((l) => `${l.label} ${l.ms}ms`).join(', ')}`);
+  laps.length = 0;
 });
 
 const expectCode = async (promise: Promise<unknown>, code: string) => {
@@ -28,14 +46,14 @@ const stagingDirs = (dir: string) => fs.readdirSync(dir).filter((n) => n.startsW
 
 /** State A backed up, state B live, the restore engine ready. */
 async function scenario() {
-  h = await harness({ accounts: true });
-  seedA(h);
+  h = await lap('harness', () => harness({ accounts: true }));
+  await lap('seed state A', () => seedA(h));
   const r = rig(h);
-  const a = await backupNow(r.backup);
+  const a = await lap('first backup', () => backupNow(r.backup));
   expect(a.ok).toBe(true);
-  const stateA = await backedUp(h, r.backup, a.manifest as string);
+  const stateA = await lap('read state A back', () => backedUp(h, r.backup, a.manifest as string));
   h.clock.now += HOUR;
-  becomeB(h);
+  await lap('become state B', () => becomeB(h));
   const stateB = filesOf(h.dir);
   h.clock.now += MIN;
   return { ...r, manifest: a.manifest as string, stateA, stateB, actor: ownerOf(h) };
@@ -234,11 +252,11 @@ describe('a whole restore', () => {
       db.exec("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 0, 1)");
       db.exec("INSERT INTO settings (key, value) VALUES ('fixture', 'old schema')");
     });
-    const forged = forge(h, [{ path: 'directory.sqlite', data: older }, { path: 'b9.yjs', data: docBytes('nine') }], { at: T0 + 6 * HOUR });
-    await s.restore.restoreWorkspace({ manifest: forged.name, confirm: CONFIRM, actor: s.actor });
+    const forged = await lap('forge an older-schema backup', () => forge(h, [{ path: 'directory.sqlite', data: older }, { path: 'b9.yjs', data: docBytes('nine') }], { at: T0 + 6 * HOUR }));
+    await lap('restore it', () => s.restore.restoreWorkspace({ manifest: forged.name, confirm: CONFIRM, actor: s.actor }));
     expect(fs.readFileSync(path.join(h.dir, 'notes.txt'), 'utf8')).toBe('not data of ours');
     expect(fs.existsSync(path.join(h.dir, 'outbox.jsonl'))).toBe(true);
-    const restored = reopen(h);
+    const restored = await lap('reopen the restored database', () => reopen(h));
     try {
       expect(setting(restored, 'fixture')).toBe('old schema');
       expect(restored.getUserByEmail('owner@example.com')).not.toBeNull();
@@ -249,15 +267,20 @@ describe('a whole restore', () => {
   });
 
   it('refuses without the confirmation word, with a bad name, without an actor, and changes nothing', async () => {
-    const s = await scenario();
+    // Every one of these is refused before anything is read, so no backup has to exist: only the live data to compare with.
+    h = await lap('harness', () => harness({ accounts: true }));
+    await lap('seed', () => seedA(h));
+    const r = rig(h);
+    const manifest = `${new Date(T0).toISOString().replace(/[-:]|\.\d{3}/g, '')}.json.enc`;
+    const actor = ownerOf(h);
     const before = filesOf(h.dir);
-    await expectCode(s.restore.restoreWorkspace({ manifest: s.manifest, confirm: 'restore', actor: s.actor }), 'confirmation_mismatch');
-    await expectCode(s.restore.restoreWorkspace({ manifest: s.manifest, confirm: '', actor: s.actor }), 'confirmation_mismatch');
-    await expectCode(s.restore.restoreWorkspace({ manifest: 'nope', confirm: CONFIRM, actor: s.actor }), 'bad_request');
-    await expectCode(s.restore.restoreWorkspace({ manifest: s.manifest, confirm: CONFIRM, actor: undefined as never }), 'forbidden');
+    await expectCode(r.restore.restoreWorkspace({ manifest, confirm: 'restore', actor }), 'confirmation_mismatch');
+    await expectCode(r.restore.restoreWorkspace({ manifest, confirm: '', actor }), 'confirmation_mismatch');
+    await expectCode(r.restore.restoreWorkspace({ manifest: 'nope', confirm: CONFIRM, actor }), 'bad_request');
+    await expectCode(r.restore.restoreWorkspace({ manifest, confirm: CONFIRM, actor: undefined as never }), 'forbidden');
     expect(filesOf(h.dir)).toEqual(before);
     expect(oldDirs(h.dir)).toEqual([]);
-    expect(s.exits).toEqual([]);
+    expect(r.exits).toEqual([]);
     expect(fs.existsSync(path.join(h.dir, 'restore.json'))).toBe(false);
   });
 });
