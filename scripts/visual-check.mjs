@@ -31,7 +31,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, quickbar-multi, quickbar-multi-end, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -900,6 +900,36 @@ const STATES = {
     await page.getByRole('button', { name: 'Erase chat messages' }).first().waitFor();
   },
   // TAB-243: the chat tray open while a dot vote runs: the session bar waits, so the message box is on screen and can be typed in
+  // TAB-240, TAB-241 and TAB-242: the session bar in a write step, in a poll step, and the Steps list from it, at phone widths
+  async 'flow-write'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vc-write', title: 'Brainstorm on sticky notes', mode: 'write', instructions: 'Add one idea per note. Quantity over quality, nobody comments yet.', durationSec: 300 }]);
+      f.start();
+    });
+    await env.page.locator('.flowbar.show .flow-step').waitFor();
+  },
+  async 'flow-poll'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      window.__board.flow.quickPoll({ question: 'Which day should we ship the next release of the mobile app to everyone?', options: ['Monday', 'Wednesday', 'Friday'], multiple: false, anonymous: true });
+    });
+    await env.page.locator('.flowbar.show').waitFor();
+  },
+  async 'flow-steps'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([
+        { id: 'vc-a', title: 'Brainstorm on sticky notes', mode: 'private-write', instructions: 'Write alone first.', durationSec: 300 },
+        { id: 'vc-b', title: 'Dot vote', mode: 'vote', instructions: 'Vote for the ideas you like.', durationSec: 180, votesPerPerson: 3 },
+      ]);
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+  },
   async 'chat-session'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
