@@ -693,7 +693,14 @@ export class Renderer {
       out += `<rect x="${m.x - g}" y="${m.y - g}" width="${m.w + 2 * g}" height="${m.h + 2 * g}" style="fill:none;stroke:var(--canvas-ink, #18212B)" stroke-width="${px(2)}"/>`;
       const text = 'MOVING · ALT + ARROWS';
       const tw = px(text.length * 6.9 + 16);
-      const tx = m.x + m.w + px(8), ty = m.y + m.h / 2 - px(10);
+      // right of the card, or left of it when the view ends there, or above it when neither side has room
+      const vp = this.viewport();
+      let tx = m.x + m.w + px(8), ty = m.y + m.h / 2 - px(10);
+      if (tx + tw > vp.x + vp.w) tx = m.x - px(8) - tw;
+      if (tx < vp.x) {
+        tx = Math.max(vp.x, m.x);
+        ty = m.y - g - px(24);
+      }
       out += `<g class="k-moving-tag"><rect x="${tx}" y="${ty}" width="${tw}" height="${px(20)}" style="fill:var(--signal, #FFD23F)"/>` +
         `<text x="${tx + px(8)}" y="${ty + px(14)}" font-size="${px(11)}" font-weight="600" letter-spacing="${px(0.66)}" style="fill:var(--on-signal, #18212B)" font-family="Switzer, system-ui, sans-serif">${text}</text></g>`;
     }

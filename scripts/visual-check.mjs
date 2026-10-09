@@ -446,7 +446,8 @@ async function openKanbanBoard({ page, base }, { fit = true } = {}) {
   await page.evaluate((doFit) => {
     const app = window.__board;
     app.setSelection([]);
-    if (doFit) app.r.fit(app.r.contentBounds(), 40, 1);
+    // a phone shows the kanban alone, as the design's 390 shots do; a desktop shows the objects beside it too
+    if (doFit) app.r.fit(window.innerWidth < 600 ? app.r.contentBounds(['k-box']) : app.r.contentBounds(), window.innerWidth < 600 ? 8 : 40, 1);
   }, fit);
   await settle(page);
 }
