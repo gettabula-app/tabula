@@ -33,12 +33,20 @@ export function doneChipText(coarsePointer: boolean): string {
 /**
  * The screen rectangle the quick-action bar keeps off while a group is selected: the chip sits 6px above the outline, which is 6px
  * out, 20px high; `x` and `y` are the screen position of the group's top-left corner. Null when the chip is not drawn.
+ * With `clamp` the box follows the chip where group-ui.ts really puts it (TAB-253): held 8px inside the viewport and under the top bars,
+ * so a group at the screen's edge on a phone has its chip, and this box, moved in.
  */
-export function groupChipAvoidBox(x: number, y: number, text: string, zoom: number): { x: number; y: number; w: number; h: number } | null {
+export function groupChipAvoidBox(
+  x: number, y: number, text: string, zoom: number,
+  clamp?: { viewport: { width: number; height: number }; topInset: number; width?: number },
+): { x: number; y: number; w: number; h: number } | null {
   if (!showSelectedGroupChip(true, false, false, zoom)) return null;
   const pad = 4;
-  const w = Math.max(42, 12 + text.length * 7);
-  return { x: x - 6 - pad, y: y - 32 - pad, w: w + 2 * pad, h: 20 + 12 + 2 * pad };
+  const w = clamp?.width ?? Math.max(42, 12 + text.length * 7);
+  let left = x - 6;
+  let top = y - 32;
+  if (clamp) ({ x: left, y: top } = clampGroupChipPosition(left, top, { width: w, height: 20 }, clamp.viewport, clamp.topInset));
+  return { x: left - pad, y: top - pad, w: w + 2 * pad, h: 20 + 12 + 2 * pad };
 }
 
 export function showSelectedGroupChip(selectedGroup: boolean, dragging: boolean, resizing: boolean, zoom: number): boolean {

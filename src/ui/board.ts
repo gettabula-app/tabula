@@ -16,6 +16,7 @@ import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountGroupUI } from './group-ui';
+import { mountTouchMenu } from './touch-menu';
 import { mountLibrary, openMermaidImport } from './library';
 import { bindLayersKey } from './layers';
 import { mountFlowBar, openVoteSetup, startVote } from './flowbar';
@@ -233,9 +234,12 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     layersBtn,
     voteBtn,
     pollBtn,
-    h('hr'),
-    h('button', { class: 'rail-btn', 'aria-label': 'Undo', 'data-tip-key': 'mod+z', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
-    h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
+    // TAB-253: the last group is one box so a phone can pin it to the bottom of a rail that scrolls (display: contents elsewhere)
+    h('div', { class: 'rail-end' },
+      h('hr'),
+      h('button', { class: 'rail-btn', 'aria-label': 'Undo', 'data-tip-key': 'mod+z', onclick: () => app.store.undo.undo() }, icon('undo', 22)),
+      h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
+    ),
   );
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
@@ -321,6 +325,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props);
   mountGroupUI(app, chrome);
+  mountTouchMenu(app);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)
