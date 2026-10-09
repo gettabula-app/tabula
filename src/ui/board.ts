@@ -14,6 +14,8 @@ import { mountFlowBar } from './flowbar';
 import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
+import { mountChat } from './chat';
+import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
@@ -23,7 +25,7 @@ import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
-import { authState, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
+import { authState, chatAvailable, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
@@ -135,10 +137,14 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch ? null : mountHistory(app, chrome);
   menuBtn.addEventListener('click', () => openMenu(app, menuBtn, history?.open ?? null, scratch));
-  const comments = mountComments(app, chrome);
+  // Comments and, where the server has chat (docs/chat.md), Chat share one right-hand tray
+  const sideTray = mountSideTray(chrome);
+  const comments = mountComments(app, chrome, sideTray);
+  const chat = !scratch && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch ? null : people,
     scratch ? null : comments.button,
+    chat?.button,
     scratch ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
     menuBtn,
   );
@@ -546,7 +552,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
     }),
     h('div', { class: 'list-label' }, 'Help'),
-    item('menu', 'Keyboard shortcuts', () => openShortcuts()),
+    item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
     item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab'),
     fileInput,
   ), { side: 'bottom' });
@@ -657,9 +663,9 @@ function openSettings(app: BoardApp) {
   } }]);
 }
 
-function openShortcuts() {
-  // the Ask AI row only for people who have the bar
-  const listed = SHORTCUTS.filter((s) => aiBarShown() || !s.ids.includes('mod+k'));
+function openShortcuts(chat: boolean) {
+  // the Ask AI row only for people who have the bar, the chat row only where the board has chat
+  const listed = SHORTCUTS.filter((s) => (aiBarShown() || !s.ids.includes('mod+k')) && (chat || !s.ids.includes('m')));
   const groups = [...new Set(listed.map((s) => s.group))];
   const rows = groups.flatMap((group) => [
     h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),

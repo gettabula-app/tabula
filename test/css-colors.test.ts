@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-// Fixed colours that stay the same in every theme: sticky notes, white avatars and cursor labels,
+// Fixed colours that stay the same in every theme: sticky notes, white avatars (comments and chat) and cursor labels,
 // the modal scrim, and the white field behind the class and label editors (the fallback when the
 // object has no colours of its own; editor.ts sets those inline).
 const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
@@ -22,6 +22,7 @@ const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
     literals: ['#1D1A12', '#FFE16B', '#FFF0B0', '#FFE58A', '#18212B', 'rgba(24, 33, 43, 0.2)', 'rgba(0, 0, 0, 0.12)', 'rgba(29, 26, 18, 0.1)'],
   },
   { file: 'src/ui/comments.css', selector: '.comment-avatar', literals: ['#fff'] },
+  { file: 'src/ui/chat.css', selector: '.chat-avatar', literals: ['#fff'] },
 ];
 
 const LITERAL = /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})(?![\w-])|(?<![\w-])rgba?\([^)]*\)|(?<![\w-])(?:white|black)(?![\w-])/gi;

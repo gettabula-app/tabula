@@ -347,6 +347,34 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     // Ana's own messages are not unread for her
     expect((await h.api(ana.cookie, 'GET', '/api/chat/unread')).body.channels.filter((c: any) => c.ref === board)).toEqual([]);
   });
+
+  it('describes a channel: what the caller may do and who can read it, never to an outsider', async () => {
+    const { creator, board, person, outsider } = await setup();
+    const ana = await person('commenter');
+    const vic = await person('viewer');
+    const stranger = await outsider();
+    const meta = (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}`);
+
+    const mine = await meta(creator);
+    expect(mine.status).toBe(200);
+    expect(mine.body.access).toEqual({ write: true, moderate: true, role: 'owner', readOnly: false });
+    const ids = mine.body.people.map((p: any) => p.id);
+    expect(ids).toEqual(expect.arrayContaining([creator.user.id, ana.user.id, vic.user.id, owner.user.id]));
+    expect(ids).not.toContain(stranger.user.id);
+    expect(mine.body.people.every((p: any) => Object.keys(p).sort().join() === 'id,name')).toBe(true);
+
+    expect((await meta(ana)).body.access).toEqual({ write: true, moderate: false, role: 'commenter', readOnly: false });
+    expect((await meta(vic)).body.access).toMatchObject({ write: false, role: 'viewer' });
+    try {
+      await h.api(owner.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: true });
+      expect((await meta(vic)).body.access).toMatchObject({ write: true, role: 'viewer' });
+    } finally {
+      await h.api(owner.cookie, 'PUT', '/api/admin/chat', { viewersMayPost: false });
+    }
+    expect((await meta(stranger)).status).toBe(404);
+    expect((await h.api(creator.cookie, 'GET', '/api/chat/team/x')).status).toBe(404);
+    expect((await h.api(creator.cookie, 'GET', '/api/chat/board/no-such-board')).status).toBe(404);
+  });
 });
 
 describe('without chat', { timeout: 60_000 }, () => {

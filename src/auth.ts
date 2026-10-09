@@ -1,4 +1,5 @@
 import { ApiError, api, type Me, type ServerBoard } from './api';
+import { clearChatCache } from './chat-cache';
 import { createMeRefresher, meChanged, type MeRefreshDeps } from './cloud-logic';
 
 export type AuthState =
@@ -64,6 +65,8 @@ function forgetCaches() {
   writeStorage(BOARDS_KEY, null);
   // the bytes of images are private to the signed-in person (docs/images.md); loaded on demand so auth stays light
   void import('./board-images').then((m) => m.clearAssetCache()).catch(() => undefined);
+  // chat's saved and unsent messages are the person's too (docs/chat.md, Offline); src/chat.ts forgets its memory itself
+  void clearChatCache().catch(() => undefined);
 }
 
 /** What the server said about images (docs/images.md): true, false, or null while it has not answered (then adding one stays possible, on this device). */
@@ -76,6 +79,15 @@ let serverImages: boolean | null = null;
 export function imagesAvailable(): boolean {
   const me = state.mode === 'signed-in' || state.mode === 'offline' ? state.me : null;
   return me ? me.images === true : serverImages !== false;
+}
+
+/**
+ * Whether board chat shows (docs/chat.md): only for a signed-in person on a server that reports `chat: true`. Offline
+ * with a cached /api/me counts too, so saved messages and the outbox stay reachable.
+ */
+export function chatAvailable(): boolean {
+  const me = state.mode === 'signed-in' || state.mode === 'offline' ? state.me : null;
+  return me?.chat === true;
 }
 
 export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Promise<AuthState> {
