@@ -5,6 +5,7 @@ import type { GridType } from '../types';
 import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
+import { leaveOutWithheld } from '../private-select';
 import { openChatNotifications } from './chat-prefs';
 import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
@@ -554,11 +555,12 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       }
     }),
     item('download', 'SVG vector', async () => download(await exportSvgFile(app, sel), `${name()}.svg`, 'image/svg+xml')),
-    item('download', 'Board file (.drift)', async () => download(await toDrift(app), `${name()}.drift`, 'application/zip'), 'Board with its sync data and pictures'),
-    item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel), null, 2), `${name()}.json`, 'application/json')),
+    item('download', 'Board file (.drift)', async () => download(await toDrift(app, { leaveOutWithheld: true }), `${name()}.drift`, 'application/zip'), 'Board with its sync data and pictures'),
+    item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel, undefined, { leaveOutWithheld: true }), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),
     item('mermaid', 'Copy as Mermaid', () => {
-      const objs = sel ? [...app.store.cache.values()].filter((o) => sel.includes(o.id) || o.type === 'connector') : [...app.store.cache.values()];
+      // never the words of a note private writing hides from this person
+      const objs = leaveOutWithheld(sel ? [...app.store.cache.values()].filter((o) => sel.includes(o.id) || o.type === 'connector') : [...app.store.cache.values()], app.flow);
       navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
     }),
     h('div', { class: 'list-label' }, 'Help'),

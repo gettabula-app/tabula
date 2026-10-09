@@ -1,4 +1,5 @@
 import type { BoardApp } from '../app';
+import { leaveOutWithheld } from '../private-select';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
 import { isSticker } from '../stickers';
@@ -218,7 +219,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn(locked ? 'unlock' : 'lock', locked ? 'Unlock' : 'Lock', () => app.toggleLock()),
       sel.some((o) => o.type === 'uml-class' || o.type === 'shape') ? btn('mermaid', 'Copy as Mermaid', () => {
         const ids = new Set(app.selection);
-        const objs = [...app.store.cache.values()].filter((o) => ids.has(o.id) || (isConnector(o) && o.from.kind === 'bound' && o.to.kind === 'bound' && ids.has(o.from.id) && ids.has(o.to.id)));
+        const objs = leaveOutWithheld([...app.store.cache.values()].filter((o) => ids.has(o.id) || (isConnector(o) && o.from.kind === 'bound' && o.to.kind === 'bound' && ids.has(o.from.id) && ids.has(o.to.id))), app.flow);
         navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
       }) : null,
       btn('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),

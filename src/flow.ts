@@ -73,6 +73,8 @@ export class Flow {
   /** Only a change made on this screen moves this view. Other people's step changes arrive as a prompt they answer. */
   private onFlowChange(local: boolean) {
     const f = this.state();
+    // a private step that starts (or a reveal that ends) changes which notes are hidden: what is selected is looked at again
+    if (this.app.selection?.length) this.app.setSelection(this.app.selection);
     this.app.r.invalidateAll();
     this.refreshVotes();
     if (f.active !== this.lastActive) {

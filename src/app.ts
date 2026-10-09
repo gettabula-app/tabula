@@ -1,4 +1,5 @@
 import { planStep } from './z-order';
+import { gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
@@ -177,7 +178,7 @@ export class BoardApp {
     this.store.onChange((changed) => {
       // drop deleted, locked and hidden objects from the selection (someone else may have hidden one)
       const before = this.selection.length;
-      this.selection = this.selection.filter((id) => { const o = this.store.get(id); return !!o && !o.locked && this.store.isShown(o); });
+      this.selection = selectableIds(this.store, this.flow, this.selection).filter((id) => !this.store.get(id)?.locked);
       if (this.selection.length !== before) this.emitSelection();
       for (const id of changed) {
         const o = this.store.get(id);
@@ -258,7 +259,8 @@ export class BoardApp {
   }
 
   setSelection(ids: Id[]) {
-    this.selection = [...new Set(ids)].filter((id) => this.store.get(id));
+    // never a note that private writing hides from this person (TAB-207), nor one hidden with the Layers panel's eye
+    this.selection = selectableIds(this.store, this.flow, ids);
     this.emitSelection();
   }
 
@@ -930,7 +932,7 @@ export class BoardApp {
         const m = rectOfPoints([d.start, p]);
         const inside = this.store.shown().filter((o) => {
           const b = this.r.bounds(o);
-          return !o.locked && b && rectContains(m, b);
+          return !o.locked && b && rectContains(m, b) && !isWithheld(o, this.flow);
         });
         this.r.setOverlay({ marquee: m });
         this.selection = [...new Set([...d.base, ...inside.map((o) => o.id)])];
@@ -1548,22 +1550,9 @@ export class BoardApp {
     this.setSelection([]);
   }
 
-  /** Selected objects plus connectors between them, as a portable list. */
+  /** Selected objects plus what travels with them, as a portable list; never a note private writing hides from this person. */
   gather(ids: Id[]): Obj[] {
-    const set = new Set(ids);
-    const stack = [...ids];
-    while (stack.length) {
-      const id = stack.pop()!;
-      if (this.store.get(id)?.type !== 'frame') continue;
-      for (const c of this.store.childrenOf(id)) if (!set.has(c.id)) { set.add(c.id); stack.push(c.id); }
-    }
-    for (const o of this.store.cache.values()) {
-      if (!isConnector(o) || set.has(o.id)) continue;
-      const fromIn = o.from.kind === 'bound' && set.has(o.from.id);
-      const toIn = o.to.kind === 'bound' && set.has(o.to.id);
-      if (fromIn && toIn) set.add(o.id);
-    }
-    return this.store.ordered().filter((o) => set.has(o.id)).map((o) => structuredClone(o));
+    return gatherObjects(this.store, this.flow, ids);
   }
 
   copy() {

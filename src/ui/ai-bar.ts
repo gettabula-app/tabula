@@ -90,14 +90,15 @@ function gather(app: BoardApp): Gathered {
   const selection = new Set<string>();
   for (const id of app.selection) {
     const o = cache.get(id);
-    if (!o) continue;
+    if (!o || app.flow.isHidden(o as never)) continue;
     if (o.type === 'frame') frames.add(id);
     else selection.add(id);
   }
   const view: Gathered['view'] = [];
   let onBoard = 0;
   for (const o of cache.values()) {
-    if (o.type !== 'sticky' || !isBox(o)) continue;
+    // a note private writing hides from this person is not theirs to hand to the AI
+    if (o.type !== 'sticky' || !isBox(o) || app.flow.isHidden(o as never)) continue;
     onBoard++;
     if (o.parent && frames.has(o.parent)) selection.add(o.id);
     const b = boxBounds(o);
