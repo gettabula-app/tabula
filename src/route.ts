@@ -11,6 +11,7 @@ export type Route =
   | { name: 'signin' }
   | { name: 'verify'; token: string }
   | { name: 'invite'; token: string }
+  | { name: 'join'; code: string }
   | { name: 'admin'; tab: AdminTab }
   | { name: 'chat'; kind?: 'board' | 'team' | 'workspace'; ref?: string };
 
@@ -23,7 +24,7 @@ function adminTab(segment: string | undefined): AdminTab {
 
 /** Sign-in, emailed-link and invite screens: reachable without a session. */
 function isAuthRoute(route: Route): boolean {
-  return route.name === 'signin' || route.name === 'verify' || route.name === 'invite';
+  return route.name === 'signin' || route.name === 'verify' || route.name === 'invite' || route.name === 'join';
 }
 
 /** Maps a location hash to a route. Anything unrecognised is the home screen, as it always was. */
@@ -34,6 +35,8 @@ export function parseRoute(hash: string): Route {
   if (edit) return { name: 'template-edit', id: edit[1] };
   const invite = hash.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
   if (invite) return { name: 'invite', token: invite[1] };
+  const join = hash.match(/^#\/join(?:\?(.*))?$/);
+  if (join) return { name: 'join', code: new URLSearchParams(join[1] ?? '').get('c') ?? '' };
   if (hash === '#/signin') return { name: 'signin' };
   if (hash === '#/templates') return { name: 'templates' };
   const admin = hash.match(/^#\/admin(?:\/([^/]*))?$/);
@@ -49,8 +52,10 @@ export function parseRoute(hash: string): Route {
 }
 
 /** The route to render: open mode has no accounts, so the account screens fall back to home like any unknown hash. */
-export function resolveRoute(hash: string, mode: AuthState['mode']): Route {
-  const route = parseRoute(hash);
+export function resolveRoute(hash: string, mode: AuthState['mode'], pathname = '', search = ''): Route {
+  const route = pathname === '/join'
+    ? { name: 'join', code: new URLSearchParams(search).get('c') ?? '' } satisfies Route
+    : parseRoute(hash);
   return mode === 'open' && (isAuthRoute(route) || route.name === 'admin' || route.name === 'chat') ? HOME : route;
 }
 

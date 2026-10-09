@@ -1,4 +1,4 @@
-import type { BoardRole, Member, PrincipalType, Share, ShareRole, Team, TeamMember } from '../api';
+import type { BoardRole, Me, Member, PrincipalType, Share, ShareRole, Team, TeamMember } from '../api';
 
 export const SHARE_ROLES: { value: ShareRole; label: string; hint: string }[] = [
   { value: 'editor', label: 'Editor', hint: 'Can edit' },
@@ -18,6 +18,10 @@ export interface Candidate {
 
 export function canManageShares(role: BoardRole | null, accounts: boolean): boolean {
   return accounts && role === 'owner';
+}
+
+export function canManageJoinCodes(me: Pick<Me, 'joinCodes'> | null, role: BoardRole | null): boolean {
+  return me?.joinCodes === true && (role === 'owner' || role === 'editor');
 }
 
 const key = (type: PrincipalType, id: string) => `${type}:${id}`;

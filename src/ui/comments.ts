@@ -6,6 +6,7 @@ import type { Point } from '../types';
 import { authState } from '../auth';
 import { h, icon } from './dom';
 import { announce } from './announce';
+import { guestMark } from './guest-mark';
 import { fmtAgo, segmented, toast } from './common';
 import type { SideTray } from './side-tray';
 import { safeInsets } from './safe-area';
@@ -145,7 +146,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     if (!panelOpen) return;
     const shown = (filter === 'open' ? open : resolved).sort((a, b) => b.createdAt - a.createdAt);
     // Rebuild only when something shown changed: a row removed under the pointer would swallow its click.
-    const key = JSON.stringify([filter, open.length, resolved.length, shown.map((t) => [t.id, t.text, t.replies.length, t.resolved, t.createdAt, t.authorName, t.authorColor])]);
+    const key = JSON.stringify([filter, open.length, resolved.length, shown.map((t) => [t.id, t.authorId, t.text, t.replies.length, t.resolved, t.createdAt, t.authorName, t.authorColor])]);
     if (key === painted) return;
     painted = key;
     panel.replaceChildren(
@@ -304,6 +305,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       const meta = h('div', { class: 'comment-meta' },
         avatar(m.authorName, m.authorColor),
         h('span', { class: 'comment-name' }, m.authorName),
+        m.authorId.startsWith('guest_') ? guestMark('comment-badge comment-guest') : null,
         m.imported ? h('span', { class: 'comment-badge' }, 'imported') : m.legacy ? h('span', { class: 'comment-badge' }, 'legacy') : null,
         h('span', { class: 'comment-time' }, `${fmtAgo(m.createdAt)}${m.editedAt ? ' · edited' : ''}`));
       if (editing === m.id) {

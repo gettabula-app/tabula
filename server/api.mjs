@@ -19,6 +19,10 @@ import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
+import {
+  JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
+  generateJoinCode,
+} from './join-codes.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -143,7 +147,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -209,9 +213,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // Deleted boards are gone for every API call, workspace admins included.
+  const boardRoleFor = (user, id) => user?.guest === true
+    ? (user.guestBoardId === id ? user.guestBoardRole : null)
+    : directory.boardRole(id, user.id);
+
   function boardFor(user, id, { own = false } = {}) {
     const board = directory.getBoard(id);
-    const role = board && board.deletedAt == null ? directory.boardRole(board.id, user.id) : null;
+    const role = board && board.deletedAt == null ? boardRoleFor(user, board.id) : null;
     if (!board || role === null) throw notFound('Board not found');
     if (own && role !== 'owner') throw forbidden('Only the board owner can do that');
     return { board, role };
@@ -399,7 +407,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
-    compile('GET', 'config', { public: true }, () => [200, { authEnabled: config.authEnabled }]),
+    compile('GET', 'config', { public: true }, () => [200, {
+      authEnabled: config.authEnabled,
+      ...(assets ? { images: true } : {}),
+      ...(config.joinCodes ? { joinCodes: true } : {}),
+    }]),
 
     compile('GET', 'me', {}, ({ user }) => [
       200,
@@ -410,6 +422,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ...(config.mcp ? { mcp: true } : {}),
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
+        ...(config.joinCodes ? { joinCodes: true } : {}),
         ...aiApi.meFlag(user),
       },
     ]),
@@ -663,6 +676,69 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       emit('access-changed', { boardId: board.id });
       return [204];
     }),
+
+    ...(config.joinCodes && joinCodeService
+      ? [
+          compile('POST', 'join', { public: true, body: true, readOnlyOk: true }, ({ req, res, body }) => {
+            if (typeof body.code !== 'string') throw badRequest('code must be a string');
+            if (typeof body.name !== 'string') throw badRequest('name must be a string');
+            const joined = joinCodeService.join({ code: body.code, name: body.name, source: clientIp(req) });
+            if (joined?.limited) {
+              res.setHeader('retry-after', '60');
+              throw new HttpError(429, 'rate_limited', 'Too many join attempts. Try again later.');
+            }
+            if (joined?.badName) throw badRequest('name must be 1 to 40 characters after sanitising');
+            if (!joined) throw new HttpError(404, 'invalid_join_code', JOIN_CODE_ERROR);
+            res.setHeader('set-cookie', auth.sessionCookie(joined.token, joined.expiresAt - now()));
+            return [201, {
+              boardId: joined.boardId,
+              role: joined.role,
+              name: joined.name,
+              guestId: `guest_${joined.id}`,
+              expiresAt: joined.expiresAt,
+            }];
+          }),
+          compile('POST', 'boards/:id/join-codes', { body: true }, ({ user, params, body }) => {
+            const { board, role: boardRole } = boardFor(user, params.id);
+            if (boardRole !== 'owner' && boardRole !== 'editor') throw forbidden('Only board editors can manage join codes');
+            const role = oneOf(body.role, ['commenter', 'editor'], 'role');
+            const hours = body.expiresInHours === undefined ? JOIN_CODE_DEFAULT_HOURS : body.expiresInHours;
+            if (!Number.isInteger(hours) || hours < 1 || hours > JOIN_CODE_MAX_HOURS) throw badRequest(`expiresInHours must be a whole number from 1 to ${JOIN_CODE_MAX_HOURS}`);
+            const maxUses = body.maxUses === undefined ? JOIN_CODE_DEFAULT_USES : body.maxUses;
+            if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > JOIN_CODE_MAX_USES) throw badRequest(`maxUses must be a whole number from 1 to ${JOIN_CODE_MAX_USES}`);
+            const code = generateJoinCode();
+            const createdAt = now();
+            const entry = directory.transaction(() => {
+              const saved = directory.createJoinCode({
+                boardId: board.id, createdBy: user.id, codeHash: joinCodeService.hashCode(code), role,
+                createdAt, expiresAt: createdAt + hours * 60 * 60 * 1000, maxUses,
+              });
+              audit(user, 'join-code.created', { boardId: board.id, joinCodeId: saved.id, role, expiresAt: saved.expiresAt, maxUses });
+              return saved;
+            });
+            return [201, { id: entry.id, code, role: entry.role, createdAt: entry.createdAt, expiresAt: entry.expiresAt, maxUses: entry.maxUses, uses: entry.uses }];
+          }),
+          compile('GET', 'boards/:id/join-codes', {}, ({ user, params }) => {
+            const { role } = boardFor(user, params.id);
+            if (role !== 'owner' && role !== 'editor') throw forbidden('Only board editors can manage join codes');
+            return [200, directory.listJoinCodes(params.id).map(({ id, role: codeRole, createdAt, expiresAt, maxUses, uses, revokedAt }) => ({ id, role: codeRole, createdAt, expiresAt, maxUses, uses, revokedAt }))];
+          }),
+          compile('DELETE', 'boards/:id/join-codes/:joinCodeId', {}, ({ user, params }) => {
+            const { board, role } = boardFor(user, params.id);
+            if (role !== 'owner' && role !== 'editor') throw forbidden('Only board editors can manage join codes');
+            const current = directory.getJoinCode(params.joinCodeId);
+            if (!current || current.boardId !== board.id) throw notFound('Join code not found');
+            if (current.revokedAt === null) {
+              directory.transaction(() => {
+                directory.revokeJoinCode(current.id, now());
+                audit(user, 'join-code.revoked', { boardId: board.id, joinCodeId: current.id });
+              });
+              emit('access-changed', { boardId: board.id });
+            }
+            return [204];
+          }),
+        ]
+      : []),
 
     // ---------------------------------------------------------- custom templates (docs/custom-templates.md)
 
@@ -1042,12 +1118,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     ...(assets
       ? [
-          compile('POST', 'boards/:id/assets', {}, ({ req, params, user }) => assetReply(() => assets.handlers.upload({
+          compile('POST', 'boards/:id/assets', {}, ({ req, params, user, sessionId }) => assetReply(() => assets.handlers.upload({
             boardId: params.id,
             req,
             rateKey: `user:${user.id}`,
             userId: user.id,
-            authorize: () => requireAssetWriter(user, params.id),
+            authorize: () => {
+              if (user.guest) {
+                const active = auth.authenticateGuest?.(req.headers.cookie);
+                if (!active || active.sessionId !== sessionId || active.boardId !== params.id) throw forbidden('This guest session is no longer valid');
+              }
+              requireAssetWriter(user, params.id);
+            },
             onCreated: (row) => audit(user, 'asset.upload', { boardId: row.boardId, hash: row.hash, bytes: row.bytes }),
           }))),
           compile('POST', 'boards/:id/assets/claim', { body: true }, ({ params, user, body }) => assetReply(() => assets.handlers.claim({
@@ -1174,6 +1256,19 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return { route, params };
   }
 
+  /** A guest cookie has a deliberately small HTTP surface in addition to its one permitted sync room. */
+  function guestApiAllows(method, segments, guest) {
+    const path = segments.join('/');
+    if (method === 'GET' && path === 'config') return true;
+    const [root, boardId, area, ...tail] = segments;
+    if (root !== 'boards' || boardId !== guest.boardId) return false;
+    const read = READ_METHODS.has(method);
+    if (read && area === 'assets' && tail.length === 1) return true;
+    if (read && guest.boardRole === 'editor' && area === 'versions' && (tail.length === 0 || (tail.length === 2 && tail[1] === 'state'))) return true;
+    // An editor may add images to this board only; the asset store applies the same per-file and per-board quotas.
+    return method === 'POST' && guest.boardRole === 'editor' && area === 'assets' && tail.length === 0;
+  }
+
   async function dispatch(req, res, pathname, query) {
     let segments;
     try {
@@ -1182,6 +1277,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw badRequest('Malformed URL');
     }
     const method = String(req.method).toUpperCase();
+    const guest = auth.authenticateGuest?.(req.headers.cookie) ?? null;
+    if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
 
     if (route.internal) {
@@ -1217,6 +1314,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       body,
       user: session?.user,
       sessionId: session?.sessionId,
+      session,
     });
     // a streaming route (POST /api/ai/run) has written and ended the response itself
     if (route.stream) return;
