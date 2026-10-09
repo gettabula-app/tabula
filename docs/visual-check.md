@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer` and `chat-unread` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer` and `chat-unread` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -45,6 +45,8 @@ The full default matrix is 420 shots in open mode (6 states and the 8 kanban sta
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
 | `drawer-stickers` | The seeded board with the Stickers drawer open (the icon sets are only there after a full `npm run build`; `build:app` shows the drawer's "could not be loaded" state) |
+| `layers` | The seeded board with the Layers panel open (TAB-198): the Went well frame open, To improve closed, the Backlog rectangle selected |
+| `layers-hidden` | As `layers`, with a note and the diamond hidden: the "2 hidden" count in the header and the dimmed rows with the eye-off glyph |
 | `history` | Version history open from the board menu |
 | `comments` | The side tray open on Comments (with chat on, its Comments and Chat tabs) |
 | `empty-templates`, `empty-share`, `empty-menu` | An empty board (the "An empty board" hint) under the Templates drawer, the Share dialog and the board menu |
@@ -76,7 +78,7 @@ A state is one small function in `scripts/visual-check.mjs`; add one there and i
 
 - Starts `node server/relay.mjs` as a child with a fresh temporary `DATA_DIR`, `HOST=127.0.0.1`, a free port and `QUIET=1`, serving the built app. Nothing from your shell reaches it (`TABULA_*`, `MIRA_*`, `PORT`, `DATA_DIR` and the like are dropped), and it starts in the empty data folder, so no `.env` file is read.
 - Accounts mode: `TABULA_AUTH=on`, `TABULA_MAIL=file`, `TABULA_OWNER_EMAIL=owner@example.test`, and `TABULA_CHAT=on` when a chat state is asked for. The chat states sign two more people in through a team invite (Ana Lima and Ben Okafor), share the board with the team and post the conversation through `POST /api/chat/...` with each person's own session; the server stamps the real time, so the script then moves the times next to the browser's fixed clock in `chat.sqlite`, and puts the owner's read marker back before each shot. The script asks for a sign-in link with `POST /api/auth/request`, reads the token from `<DATA_DIR>/outbox.jsonl`, verifies it with `POST /api/auth/verify` and gives the browser the session cookie. It then creates the home boards through `POST /api/boards`.
-- Seeds the board through the `?debug` handle (`window.__board`): a frame pair with six sticky notes, a rectangle, a diamond, an ellipse and a rounded rectangle, text, five connectors (two leave the same side of the rectangle) and one comment thread with a reply. Ids, positions and text are fixed, the first page writes it and the relay keeps it for the rest of the run.
+- Seeds the board through the `?debug` handle (`window.__board`): a frame pair with six sticky notes, a rectangle, a diamond, an ellipse and a rounded rectangle, text, five connectors (two leave the same side of the rectangle) and one comment thread with a reply. Ids, positions and text are fixed, the first page writes it and the relay keeps it for the rest of the run. The relay also keeps what a shot does to the board (`layers-hidden` hides two objects), so opening the seed board shows everything again first.
 - Takes every shot in a fresh browser context, so one state never leaves anything behind for the next.
 - At the end, in a `finally` block and on Ctrl+C: closes the browser, stops the relay by the process id it started, and deletes the temporary folder.
 

@@ -1,6 +1,6 @@
 # Shapes, text and sticky notes
 
-The tool rail on the left of a board holds everything you draw with. This page covers shapes, sticky notes, text, drawings, frames, icons, the quick-action bar, and locking.
+The tool rail on the left of a board holds everything you draw with. This page covers shapes, sticky notes, text, drawings, frames, icons, the quick-action bar, locking and the layers list.
 
 ## The tool rail
 
@@ -130,6 +130,17 @@ Lock an item to stop it getting in the way.
 Locked items behave as background: clicks and box selection pass over them, **Select All** skips them, and you cannot edit them or attach connectors to them. Hovering one shows a small lock badge.
 
 To unlock, press and hold on the item for 0.6 seconds. A ring fills, then the item unlocks and is selected. Dot voting still works on locked notes.
+
+## Layers
+
+**Layers** in the tool rail (or `Alt+L`, or **Layers** in the board menu) lists everything on the board, the item on top first. Frames come last, because they always sit behind everything else, and the items inside a frame are listed under it: click the triangle to fold a frame.
+
+- Click an item to select it on the board; hold `Shift`, `Ctrl` or `Cmd` to add or remove items.
+- Drag an item up or down to put it above or below another one beside it. On a phone, drag it by the handle on the right. With the keyboard, `Alt+Up` and `Alt+Down` move the focused item one place.
+- Double-click a name, or press `F2`, to rename an item. The name only shows in this list, except for a frame, where it is the frame's title. An item without a name is listed by its first words, or by what it is.
+- The eye hides an item, and the lock locks it (`H` and `L` on the focused item).
+
+A **hidden** item is hidden for everyone on the board, not just for you: it is not drawn, cannot be clicked or selected, and is left out of PNG and SVG exports and of the session summary. Connectors to a hidden item and everything inside a hidden frame are hidden with it. **Hiding is not private**: the item is still part of the board, anyone who can edit can show it again from the list, and it is still in board files (`.drift`) and JSON exports. The panel's title says how many items are hidden. Viewers and commenters see the list, but cannot change anything in it.
 
 ## Dot voting
 

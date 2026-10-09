@@ -334,9 +334,10 @@ export class Store {
     if (c?.type !== 'container') return null;
     let layout = this.layouts.get(id);
     if (layout === undefined) {
-      const lanes = this.childrenOf(id).filter((o) => o.type === 'lane');
-      const cards = lanes.flatMap((l) => this.childrenOf(l.id).filter((o) => o.type === 'card'));
-      if (this.orphanHome === id) for (const oid of this.orphanIds) cards.push(this.cache.get(oid)!);
+      // a hidden lane or card (TAB-198) leaves the layout, so the board closes up around it
+      const lanes = this.childrenOf(id).filter((o) => o.type === 'lane' && o.hidden !== true);
+      const cards = lanes.flatMap((l) => this.childrenOf(l.id).filter((o) => o.type === 'card' && o.hidden !== true));
+      if (this.orphanHome === id) for (const oid of this.orphanIds) if (this.cache.get(oid)!.hidden !== true) cards.push(this.cache.get(oid)!);
       layout = layoutContainer(c, lanes, cards);
       this.layouts.set(id, layout);
     }

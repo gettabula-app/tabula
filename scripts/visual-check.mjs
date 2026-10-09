@@ -169,9 +169,28 @@ async function openSeedBoard({ page, base }) {
   await seedComments(page, fresh);
   await page.evaluate(() => {
     const app = window.__board;
+    // the relay keeps what an earlier shot hid (layers-hidden)
+    const hidden = [...app.store.cache.values()].filter((o) => o.hidden).map((o) => o.id);
+    if (hidden.length) app.setHidden(hidden, false);
     app.setSelection([]);
     app.zoomToFit();
   });
+}
+
+// TAB-198: the layers panel on the seed board with one frame closed and the other open
+async function openLayers(env, hide = []) {
+  const { page } = env;
+  await page.addInitScript(({ key, closed }) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(closed));
+    } catch {
+      /* storage is not available in this frame */
+    }
+  }, { key: `driftboard:layers-collapsed:${BOARD_ID}`, closed: ['seed-frame-bad'] });
+  await openSeedBoard(env);
+  if (hide.length) await page.evaluate((ids) => window.__board.setHidden(ids, true), hide);
+  await page.getByRole('button', { name: 'Layers', exact: true }).click();
+  await page.locator('[role="tree"] [role="treeitem"]').first().waitFor();
 }
 
 // ---------------------------------------------------------------- backups (accounts mode)
@@ -493,6 +512,16 @@ const STATES = {
     await openSeedBoard(env);
     await env.page.getByRole('button', { name: 'Stickers', exact: true }).click();
     await env.page.locator('.drawer.show').waitFor();
+  },
+  async layers(env) {
+    await openLayers(env);
+    await env.page.evaluate(() => window.__board.setSelection(['seed-rect']));
+    await env.page.locator('.layer-row[aria-selected="true"]').waitFor();
+  },
+  async 'layers-hidden'(env) {
+    await openLayers(env, ['seed-note-2', 'seed-diamond']);
+    await env.page.locator('.layers-count', { hasText: '2 hidden' }).waitFor();
+    await env.page.locator('.layer-row.is-hidden').nth(1).waitFor();
   },
   async history(env) {
     await openSeedBoard(env);

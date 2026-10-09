@@ -1,0 +1,81 @@
+/* The layers panel, a tab of the left drawer. Swiss rules as in the admin dashboard and version history: hairlines, no
+   radius, no shadow, 11px uppercase labels, an 8px grid. --signal is the selected row's left rule and the insertion line
+   and nothing else. Theme variables only. */
+
+.drawer-head h2 .layers-count {
+  margin-left: 8px; color: var(--tray-muted); font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+}
+.drawer-head h2 .layers-count[hidden] { display: none; }
+
+/* above the selection's quick bar (12), which lies over the list when the selected object is behind the drawer */
+.drawer:has(.layers) { z-index: 13; }
+
+.drawer-body.layers { position: relative; padding: 0; gap: 0; overflow-x: hidden; }
+.layers-list { border-top: 1px solid var(--tray-line); }
+.layers-list[hidden], .layers-empty[hidden] { display: none; }
+.layers-empty { padding: 16px; color: var(--tray-muted); }
+
+.layer-row {
+  position: relative; display: flex; align-items: center; gap: 4px; box-sizing: border-box; height: 32px;
+  padding: 0 4px 0 calc(6px + var(--depth, 0) * 16px); border-left: 2px solid transparent; border-bottom: 1px solid var(--tray-line);
+  font-size: 13px; line-height: 16px; user-select: none; -webkit-user-select: none; outline: none;
+}
+.layer-row:hover { background: var(--tray-hover); }
+.layer-row[aria-selected='true'] { border-left-color: var(--signal); background: var(--tray-hover); }
+.layer-row:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
+.layer-row.dragged { opacity: 0.5; }
+.layers-list.dragging { cursor: grabbing; }
+
+.layer-twist { flex: none; display: grid; place-items: center; width: 16px; height: 16px; color: var(--tray-muted); }
+.layer-twist.has-kids { cursor: pointer; }
+.layer-twist.has-kids:hover { color: var(--tray-text); }
+.layer-twist.has-kids::before { content: ''; border: 4px solid transparent; border-right-width: 0; border-left-color: currentColor; }
+.layer-twist.has-kids.open::before { border: 4px solid transparent; border-bottom-width: 0; border-top-color: currentColor; }
+
+.layer-glyph { flex: none; display: grid; place-items: center; width: 16px; height: 16px; color: var(--tray-muted); }
+.layer-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-row.is-hidden .layer-glyph,
+.layer-row.is-hidden .layer-twist,
+.layer-row.is-hidden .layer-label { opacity: 0.5; }
+
+.layer-tools { flex: none; display: flex; }
+.layer-tool {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 0; background: transparent;
+  color: var(--tray-muted); visibility: hidden;
+}
+.layer-tool[hidden] { display: none; }
+.layer-row:hover .layer-tool,
+.layer-row:focus-within .layer-tool,
+.layer-row:focus .layer-tool { visibility: visible; }
+.layer-tool.on { visibility: visible; color: var(--tray-text); }
+.layer-tool:hover { background: var(--tray-hover); color: var(--tray-text); }
+.layer-tool:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
+
+/* a board nobody can change: the state shows as glyphs, with no toggles */
+.layers-list.ro .layer-tools { display: none; }
+.layer-flags { flex: none; display: none; gap: 4px; padding-right: 4px; color: var(--tray-text); }
+.layers-list.ro .layer-flags { display: flex; }
+
+.layer-grip { display: none; flex: none; place-items: center; width: 32px; height: 100%; color: var(--tray-muted); touch-action: none; }
+
+.layer-edit {
+  flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--tray-text); border-radius: 0;
+  background: transparent; color: var(--tray-text); font: inherit; outline: none;
+}
+
+.layer-line {
+  position: absolute; right: 0; height: 2px; margin-top: -1px; background: var(--signal); pointer-events: none; z-index: 1;
+}
+
+/* phones and touch screens: taller rows, the toggles always there, a grip to drag by (a finger on the row scrolls) */
+@media (max-width: 860px), (pointer: coarse) {
+  .layer-row { height: 40px; }
+  .layer-tool { width: 40px; height: 40px; visibility: visible; }
+  .layer-twist { width: 24px; height: 24px; }
+  .layer-grip:not([hidden]) { display: grid; }
+}
+
+@media (forced-colors: active) {
+  .layer-row[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .layer-line { forced-color-adjust: none; background: Highlight; }
+}

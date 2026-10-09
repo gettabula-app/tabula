@@ -13,7 +13,7 @@ import type { Id, Obj } from './types';
 import type { ZPatch } from './z-order';
 
 /** Types whose `parent` children nest under them in the panel. Groups join here (docs/groups.md). */
-export const CONTAINERS = new Set<string>(['frame', 'container']);
+export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
 
 export const TYPE_LABEL: Record<string, string> = {
   shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
@@ -92,8 +92,10 @@ export function layerTree(objects: readonly Obj[], board: LayerBoard, collapsed:
   }
 
   const sortSiblings = (list: Obj[], parent: Obj | null): Obj[] => {
-    if (parent?.type === 'container') {
-      const order = board.layoutOrder(parent.id);
+    // a kanban board's lanes, and a lane's cards, in the board's layout order (left to right, top to bottom)
+    const layoutRoot = parent?.type === 'container' ? parent.id : parent?.type === 'lane' ? parent.parent ?? null : null;
+    if (layoutRoot) {
+      const order = board.layoutOrder(layoutRoot);
       const laid = order.map((id) => list.find((o) => o.id === id)).filter((o): o is Obj => !!o);
       const rest = list.filter((o) => !order.includes(o.id)).sort(topFirst);
       return [...rest, ...laid];
