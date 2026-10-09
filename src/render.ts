@@ -606,7 +606,8 @@ export class Renderer {
 
     // selection
     const sel = ov.selection.map(get).filter(Boolean) as Obj[];
-    for (const o of sel) out += this.outline(o, px(1.5), 1);
+    // a dragged card's slot is its dashed placeholder, with no selection outline over it
+    for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
     if (sel.length > 1) {
       const b = this.contentBounds(ov.selection);
       if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;

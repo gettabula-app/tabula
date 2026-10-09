@@ -133,6 +133,15 @@ describe('moving cards', () => {
     expect(titles(store, container, lanes[0])).toEqual(['B']);
   });
 
+  it('writes nothing when cards are dropped where they already are', () => {
+    const { store, lanes, ids } = seeded();
+    const done = countTransactions(store);
+    expect(moveCards(store, [ids[1]], lanes[0], 1)).toBe(false);
+    expect(moveCards(store, [ids[0], ids[1]], lanes[0], 0)).toBe(false);
+    expect(done()).toBe(0);
+    expect(store.undo.undoStack).toHaveLength(0);
+  });
+
   it('leaves locked cards where they are', () => {
     const { store, container, lanes, ids } = seeded();
     store.transact(() => store.update(ids[0], { locked: true }));

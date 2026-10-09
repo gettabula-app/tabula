@@ -154,10 +154,16 @@ export function moveCards(store: Store, ids: Id[], laneId: Id, index: number): b
   const moving = movingOrder(store, ids).filter((id) => !store.get(id)?.locked);
   if (!moving.length) return false;
   const skip = new Set(moving);
-  const siblings = (layout.cards.get(laneId) ?? []).filter((id) => !skip.has(id)).map((id) => store.get(id)!).filter(Boolean);
-  const arriving = moving.filter((id) => !(layout.cards.get(laneId) ?? []).includes(id)).length;
+  const current = layout.cards.get(laneId) ?? [];
+  const others = current.filter((id) => !skip.has(id));
+  const at = Math.min(Math.max(Math.trunc(index) || 0, 0), others.length);
+  // dropped where they already are: nothing to write, and no undo step for it
+  const after = [...others.slice(0, at), ...moving, ...others.slice(at)];
+  if (after.length === current.length && after.every((id, i) => id === current[i])) return false;
+  const siblings = others.map((id) => store.get(id)!).filter(Boolean);
+  const arriving = moving.filter((id) => !current.includes(id)).length;
   if (arriving && addRefusal(store, laneId, arriving)) return false;
-  const { ranks, repairs } = planInsert(siblings, laneId, index, moving.length);
+  const { ranks, repairs } = planInsert(siblings, laneId, at, moving.length);
   store.undo.stopCapturing();
   store.transact(() => {
     for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });

@@ -272,7 +272,7 @@ const strokeStyle = (c: string) => `style="fill:none;stroke:${escapeXml(c)}"`;
 
 /** 11px uppercase label text, as `.lbl` in the design. */
 const LBL = { size: 11, weight: 600, spacing: 0.66 };
-const lblWidth = (text: string, slug: string | undefined) => measure(text, fontCss(slug, LBL.size, LBL.weight)) + text.length * LBL.spacing;
+const lblWidth = (text: string, slug: string | undefined) => measure(text.toUpperCase(), fontCss(slug, LBL.size, LBL.weight)) + text.length * LBL.spacing;
 
 function label(text: string, x: number, y: number, color: string, slug: string | undefined, anchor: 'start' | 'middle' | 'end' = 'start') {
   return `<text x="${n(x)}" y="${n(y)}" font-family="${escapeXml(fontFamily(slug))}" font-size="${LBL.size}" font-weight="${LBL.weight}" letter-spacing="${LBL.spacing}" text-anchor="${anchor}" ${fillStyle(color)}>${escapeXml(text.toUpperCase())}</text>`;
@@ -368,7 +368,6 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   let right = w - 12;
   if (count.state === 'over') {
     inner += `<rect x="${n(right - countW - 6)}" y="${mid - 10}" width="${n(countW + 12)}" height="20" ${fillStyle(K.danger)}/>`;
-    right -= 6;
   }
   const countColor = count.state === 'over' ? K.paper : count.state === 'at' ? K.canvasInk : K.meta;
   inner += `<g><title>${escapeXml(count.title)}</title>${label(count.text, right, mid + 4, countColor, o.font, 'end')}`;
@@ -378,7 +377,7 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   const stage = o.stage === 'done' ? 'Done' : '';
   const stageW = stage ? 14 + 2 + lblWidth(stage, o.font) : 0;
   const nameFont = fontCss(o.font, 14, 600);
-  const room = right - countW - (count.state === 'over' ? 6 : 0) - 8 - 12 - (stage ? stageW + 8 : 0);
+  const room = right - countW - (count.state === 'over' ? 12 : 0) - 8 - 12 - (stage ? stageW + 8 : 0);
   const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room));
   if (ctx.editingId !== o.id) inner += `<text x="12" y="${mid + 5}" font-family="${fam}" font-size="14" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
   if (stage) {

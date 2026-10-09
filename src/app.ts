@@ -269,7 +269,7 @@ export class BoardApp {
 
   get dragging(): boolean {
     const d = this.drag;
-    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || (d.mode === 'move' && d.moved));
+    return !!d && (d.mode === 'resize' || d.mode === 'rotate' || d.mode === 'endpoint' || ((d.mode === 'move' || d.mode === 'cards') && d.moved));
   }
 
   get readOnly(): boolean {
@@ -669,6 +669,8 @@ export class BoardApp {
         if (top?.locked) this.armLongPress(top.id, e);
         // a lane's "+ Add card" row opens the inline input (editors only; viewers do not see the row)
         if (!this.readOnly && !e.shiftKey && hit.type === 'lane' && this.laneRegion(hit.id, p) === 'add') {
+          // no mousedown after this pointerdown, so the browser does not move focus away from the input it opens
+          e.preventDefault();
           this.setSelection([]);
           this.cardInput.start(hit.id);
           return;
@@ -782,6 +784,7 @@ export class BoardApp {
       this.emit('drag');
       this.cardInput.stop();
       this.r.setKanbanState({ dragging: new Set(d.ids) });
+      this.r.setOverlay({ hover: null, anchorsFor: null, anchorHot: null });
       const lead = this.store.getPlaced(d.lead) as BaseObj;
       this.r.setGhost(cardBody(lead, { ...this.r.ctx, editingId: null, dragging: undefined }, 'ghost'));
     }
@@ -1007,6 +1010,7 @@ export class BoardApp {
     if (overPin) cursor = 'pointer';
     else if (hh) cursor = hh.h === 'rot' ? 'grab' : hh.h === 'from' || hh.h === 'to' ? 'move' : resizeCursor(hh.h, this.store.get(hh.id));
     else if (an) cursor = 'crosshair';
+    else if (live?.type === 'lane' && t === 'select' && !this.readOnly && this.laneRegion(live.id, p) === 'add') cursor = 'pointer';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
