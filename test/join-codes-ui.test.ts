@@ -50,6 +50,30 @@ afterEach(() => {
 });
 
 describe('join-code sharing controls', () => {
+  it('shows accessible inline errors for empty and short codes without submitting them', async () => {
+    const root = browser.mount();
+    renderJoin(root as unknown as HTMLElement, '', () => undefined);
+    const code = need(root, '#join-code');
+    const name = need(root, '#join-name');
+    name.value = 'Guest visitor';
+    expect(code.getAttribute('aria-label')).toBe('Join code');
+    expect(need(root, 'label[for="join-code"]').textContent).toBe('Join code');
+
+    need(root, 'form').dispatchEvent(new FakeEvent('submit'));
+    await flush();
+    expect(need(root, '#join-code-error').textContent).toBe('Enter the code you were given');
+    expect(code.getAttribute('aria-invalid')).toBe('true');
+    expect(browser.document.activeElement).toBe(code);
+    expect(mocks.joinWithCode).not.toHaveBeenCalled();
+
+    code.value = 'ABC';
+    code.dispatchEvent(new FakeEvent('input'));
+    need(root, 'form').dispatchEvent(new FakeEvent('submit'));
+    await flush();
+    expect(need(root, '#join-code-error').textContent).toBe('That code looks too short');
+    expect(mocks.joinWithCode).not.toHaveBeenCalled();
+  });
+
   it('creates a code, shows its copyable link and lets an editor revoke it', async () => {
     const code: CreatedJoinCode = {
       id: 'jc_1', code: 'ABCD2345', role: 'editor', createdAt: Date.now(), expiresAt: Date.now() + 6 * 60 * 60 * 1000,
