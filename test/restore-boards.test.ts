@@ -391,7 +391,10 @@ describe('GET /api/admin/backups/:name/boards', () => {
 });
 
 describe('the engine status in GET /api/admin/backups', () => {
-  const FIELDS = ['bytesStored', 'consecutiveFailures', 'dirty', 'intervalMinutes', 'keyId', 'lastFailureAt', 'lastFailureError', 'lastSuccessAt', 'lastTrigger', 'manifests', 'nextRunAt', 'objects', 'running'];
+  const FIELDS = [
+    'bytesStored', 'consecutiveFailures', 'deepCovered', 'deepDamaged', 'deepVerifiedAt', 'dirty', 'intervalMinutes', 'keyId', 'lastFailureAt', 'lastFailureError', 'lastSuccessAt', 'lastTrigger',
+    'manifests', 'missingObjects', 'nextRunAt', 'objects', 'running', 'unrepairableObjects', 'verifiedAt', 'wrongSizeObjects',
+  ];
 
   it('holds the sanitised fields of the backup status and nothing else', async () => {
     const s = await served();
@@ -405,7 +408,8 @@ describe('the engine status in GET /api/admin/backups', () => {
     expect(shown.lastSuccessAt).toBe(T0);
     expect(shown.bytesStored).toBeGreaterThan(0);
     expect(shown.objects).toBeGreaterThan(0);
-    for (const hidden of ['enabled', 'lastRunAt', 'lastError', 'lastManifest', 'prune', 'restore']) expect(shown).not.toHaveProperty(hidden);
+    expect(shown).toMatchObject({ verifiedAt: T0, missingObjects: 0, wrongSizeObjects: 0, unrepairableObjects: 0, deepVerifiedAt: null, deepDamaged: 0, deepCovered: 0 });
+    for (const hidden of ['enabled', 'lastRunAt', 'lastError', 'lastManifest', 'prune', 'restore', 'deepChecked', 'deepSkipped', 'verifyChecked', 'deepCursor', 'deepSince', 'deepCycleOk']) expect(shown).not.toHaveProperty(hidden);
     expect(body.restore).toMatchObject({ inProgress: null });
     expect(JSON.stringify(shown)).not.toMatch(/AKIA|canary|secret/i);
   });
