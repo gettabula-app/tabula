@@ -123,7 +123,8 @@ jobs:
         if: ${{ matrix.shard }}
       - name: Slowest test files
         if: ${{ !cancelled() }}
-        run: node scripts/test-timings.mjs test-results.json --top 15
+        # On the Windows shards, the slowest platform, a single test over its limit in test/timing-budget.json fails the job
+        run: node scripts/test-timings.mjs test-results.json --top 15 ${{ matrix.shard && '--budget test/timing-budget.json' || '' }}
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
