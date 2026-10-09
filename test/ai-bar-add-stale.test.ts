@@ -5,7 +5,7 @@ import { nothingToAdd } from '../src/ai-live-logic';
 import { mountAiBar } from '../src/ui/ai-bar';
 import { mountAiLive } from '../src/ui/ai-live';
 import { toast } from '../src/ui/common';
-import { FakeElement, installFakeBrowser, need, type FakeBrowser } from './fake-dom';
+import { FakeElement, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 // TAB-213 and TAB-218, the bar's own entry: Add to board on the person's own cluster preview, after the stickies it would move changed.
 // The live tray's Accept is pinned in test/ai-live-stale-add.test.ts; both ask takeReview the same question. Driven through
@@ -215,5 +215,23 @@ describe('Show on your own preview (TAB-218)', () => {
     expect(showRun(t.app, 'run1')).toBe(false);
     expect(showRun(t.app, 'nope')).toBe(false);
     expect(t.camera.flyTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('your own preview whose stickies all changed (TAB-221)', () => {
+  it('keeps a short row that says so and offers no Discard of its own, since the bar has it', async () => {
+    const t = await rig();
+    t.edit('a', { text: 'x' });
+    t.edit('b', { locked: true });
+    t.edit('c', null);
+    const row = browser.document.querySelector('.ailive-row')!;
+    expect(row.classList.contains('changed')).toBe(true);
+    expect(row.getAttribute('aria-label')).toBe('Your AI preview: everything changed since it came');
+    expect(textOf(row)).toContain('everything changed since it came');
+    expect(row.querySelectorAll('button')).toHaveLength(0);
+    // the bar still offers its own Discard, and the row is not an Accept
+    expect(t.chrome.querySelectorAll('.aibar-actions button').some((b) => b.textContent === 'Discard')).toBe(true);
+    expect(t.camera.flyTo).not.toHaveBeenCalled();
+    expect(t.camera.fit).not.toHaveBeenCalled();
   });
 });

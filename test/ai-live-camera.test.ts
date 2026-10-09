@@ -9,7 +9,7 @@ import { FakeElement, installFakeBrowser, type FakeBrowser } from './fake-dom';
 
 type Camera = { x: number; y: number; zoom: number };
 type BoardObject = { id: string; type: 'sticky'; x: number; y: number; w: number; h: number; text: string; fill: string };
-type Proposal = { kind: 'create'; objects: { text: string }[] };
+type Proposal = { kind: 'create'; objects: { text: string }[] } | { kind: 'group'; groups: { title: string; ids: string[] }[] };
 type Overlay = { ai: string };
 type MoveSpy = Mock<(source: string) => void>;
 
@@ -369,6 +369,27 @@ describe('the live AI preview camera guard', () => {
     rig.destroy();
     expect(rig.violations).toEqual([]);
     expectNoMovement(rig);
+  });
+
+  it('keeps the view still when every sticky of a remote cluster preview changes and its short row takes the place of the ghosts (TAB-221)', () => {
+    const rig = makeRig({ x: 10_000, y: 10_000, zoom: 1 });
+    const saved = FAR_OBJECTS.map((o) => ({ ...o }));
+    try {
+      snapshot(rig, [remoteRun('all-changed', 'ready', { proposal: { kind: 'group', groups: [{ title: 'Together', ids: ['far_a', 'far_b'] }] } })]);
+      expect(rig.layer.querySelector('.ailive-row')!.classList.contains('changed')).toBe(false);
+      // someone else edits one sticky and moves the other: nothing is left to draw
+      FAR_OBJECTS[0].text = 'edited elsewhere';
+      FAR_OBJECTS[1].x += 40;
+      rig.eventListeners.get('objects')?.forEach((fn) => fn());
+      frames();
+      const row = rig.layer.querySelector('.ailive-row')!;
+      expect(row.classList.contains('changed')).toBe(true);
+      expect(row.querySelectorAll('button').map((b) => b.textContent)).toEqual(['Discard']);
+      rig.destroy();
+      expectNoMovement(rig);
+    } finally {
+      FAR_OBJECTS.forEach((o, i) => Object.assign(o, saved[i]));
+    }
   });
 
   it('records deliberate camera moves so the guard is not vacuous', () => {

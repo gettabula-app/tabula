@@ -335,6 +335,9 @@ export function leftOutNote(stale: number): string {
 export const nothingToAdd = (stale: number): string =>
   stale > 0 ? 'Every sticky left in this proposal changed since it came, so nothing was moved.' : 'Nothing is selected to add.';
 
+/** What the short row of a preview says when every sticky it would move has changed since it came (TAB-221). */
+export const CHANGED_NOTE = 'everything changed since it came';
+
 /** The toast after discarding someone's preview. */
 export const discardedMessage = (owner: string | null): string => `Discarded ${owner ? `${owner}'s` : 'the'} preview.`;
 
