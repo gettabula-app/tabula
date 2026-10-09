@@ -121,6 +121,9 @@ async function startRelay(baseUrl) {
       TABULA_AI_OPEN: '1',
       TABULA_AI_MODEL: MODEL,
       ANTHROPIC_BASE_URL: baseUrl,
+      // open mode counts AI runs per client address (20 an hour), so every browser context below names its own address in
+      // x-forwarded-for and the relay reads it; one machine can then run the check for many themes and widths in an hour
+      TABULA_TRUST_PROXY: '1',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -200,8 +203,13 @@ async function routeOutside(route, appOrigin) {
   return route.abort();
 }
 
+// one address per browser context, from the range reserved for benchmarking (198.18.0.0/15), which no real client has
+let nextAddress = 1;
+const freshAddress = () => `198.18.${Math.floor(nextAddress / 250)}.${(nextAddress++ % 250) + 1}`;
+
 async function openBoard(boardId, width, name, color) {
   const context = await browser.newContext({
+    extraHTTPHeaders: { 'x-forwarded-for': freshAddress() },
     viewport: { width, height: width <= 500 ? 844 : 800 },
     deviceScaleFactor: 1,
     locale: 'en-US',
