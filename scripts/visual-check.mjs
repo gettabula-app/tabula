@@ -850,6 +850,8 @@ const STATES = {
     await openSeedBoard(env);
   },
   async 'join-short-code'({ page, base }) {
+    // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
+    await page.context().clearCookies();
     await page.goto(`${base}/join`);
     const code = page.getByLabel('Join code');
     await code.fill('ABC');
@@ -1831,13 +1833,14 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable, chat }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
   if (mode === 'accounts') {
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
     if (chat) env.TABULA_CHAT = 'on';
+    if (joinCodes) env.TABULA_JOIN_CODES = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -2146,7 +2149,8 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
+    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);
