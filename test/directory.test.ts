@@ -109,7 +109,17 @@ describe('migrations', () => {
     const file = path.join(tmp(), 'directory.sqlite');
     open(file).close();
     const raw = new DatabaseSync(file);
-    raw.exec('PRAGMA user_version = 99');
+    // a newer build that made a breaking change: its generation and the lowest reader are both ahead of this build
+    raw.exec("PRAGMA user_version = 99; UPDATE schema_meta SET value = '99' WHERE key = 'min_reader'");
+    raw.close();
+    expect(() => openDirectory(file)).toThrow(/newer/);
+  });
+
+  it('refuse a directory of a newer build that predates min_reader, which is read strictly', () => {
+    const file = path.join(tmp(), 'directory.sqlite');
+    open(file).close();
+    const raw = new DatabaseSync(file);
+    raw.exec('DROP TABLE schema_meta; PRAGMA user_version = 99');
     raw.close();
     expect(() => openDirectory(file)).toThrow(/newer/);
   });

@@ -22,6 +22,7 @@ import zlib from 'node:zlib';
 import * as Y from 'yjs';
 import { BackupError, PROTECTED_KEY, assetHashOf, createScrubber, isBackupPath, parseManifestName, parseProtections, validateRelPath } from './backup.mjs';
 import { newObjectId } from './board-ops.mjs';
+import { canRead, readSchemaState } from './schema.mjs';
 
 const MIB = 1024 * 1024;
 const MINUTE_MS = 60_000;
@@ -816,12 +817,14 @@ export function createRestore({
     fs.copyFileSync(path.join(stagingDir, 'directory.sqlite'), copy);
     try {
       let version;
+      let schema;
       try {
         const db = new DatabaseSync(copy, { readOnly: true });
         try {
           const rows = db.prepare('PRAGMA integrity_check').all();
           if (rows.length !== 1 || Object.values(rows[0])[0] !== 'ok') throw new RestoreError('integrity_check_failed', 'The database in the backup failed its integrity check, so nothing was changed');
           version = Number(db.prepare('PRAGMA user_version').get().user_version);
+          schema = readSchemaState(db);
         } finally {
           db.close();
         }
@@ -830,7 +833,8 @@ export function createRestore({
         throw new RestoreError('integrity_check_failed', 'The database in the backup cannot be read, so nothing was changed');
       }
       if (!Number.isInteger(version) || version < 1) throw new RestoreError('invalid_backup', 'The database in the backup is not a Tabula database');
-      if (version > MIGRATIONS.length) {
+      // newer than this build, but only when this build cannot read it (an expand-only newer build's database it can: docs/migrations.md)
+      if (!canRead(schema, MIGRATIONS.length)) {
         throw new RestoreError('schema_too_new', `The database in the backup was written by a newer Tabula (schema ${version}, this one knows ${MIGRATIONS.length}). ${NEWEST_SCHEMA_HINT}`);
       }
       let counts;
@@ -895,19 +899,21 @@ export function createRestore({
     fs.copyFileSync(file, copy);
     try {
       let version;
+      let schema;
       try {
         const db = new DatabaseSync(copy, { readOnly: true });
         try {
           const rows = db.prepare('PRAGMA integrity_check').all();
           if (rows.length !== 1 || Object.values(rows[0])[0] !== 'ok') throw new Error('integrity');
           version = Number(db.prepare('PRAGMA user_version').get().user_version);
+          schema = readSchemaState(db);
         } finally {
           db.close();
         }
       } catch {
         throw new RestoreError('integrity_check_failed', `The chat database in the backup failed its integrity check, so nothing was changed${where}`);
       }
-      if (!Number.isInteger(version) || version > CHAT_MIGRATIONS.length) {
+      if (!Number.isInteger(version) || !canRead(schema, CHAT_MIGRATIONS.length)) {
         throw new RestoreError('schema_too_new', `The chat database in the backup was written by a newer Tabula. ${NEWEST_SCHEMA_HINT}`);
       }
     } finally {
@@ -1425,7 +1431,7 @@ export function createRestore({
         if (rows.length !== 1 || Object.values(rows[0])[0] !== 'ok') throw new RestoreError('integrity_check_failed', 'The database in the backup failed its integrity check, so nothing was changed');
         const version = Number(db.prepare('PRAGMA user_version').get().user_version);
         if (version < 1) throw new RestoreError('invalid_backup', 'The database in the backup is not a Tabula database');
-        if (version > MIGRATIONS.length) throw new RestoreError('schema_too_new', `The database in the backup was written by a newer Tabula. ${NEWEST_SCHEMA_HINT}`);
+        if (!canRead(readSchemaState(db), MIGRATIONS.length)) throw new RestoreError('schema_too_new', `The database in the backup was written by a newer Tabula. ${NEWEST_SCHEMA_HINT}`);
         return read(db);
       } finally {
         db.close();

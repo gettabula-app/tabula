@@ -681,6 +681,7 @@ describe('loadConfig', () => {
   it('has sensible defaults', () => {
     const cfg = loadConfig({});
     expect(cfg).toEqual({
+      version: null,
       authEnabled: false,
       ownerEmail: null,
       baseUrl: 'http://localhost:8787',

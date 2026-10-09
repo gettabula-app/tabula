@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { describeSchema, migrate } from './schema.mjs';
 
 export const CHAT_MIGRATIONS = [
   `
@@ -71,24 +72,6 @@ export function readChatSettings(directory) {
   };
 }
 
-function migrate(db) {
-  const version = Number(db.prepare('PRAGMA user_version').get().user_version);
-  if (version > CHAT_MIGRATIONS.length) {
-    throw new Error(`chat.sqlite was written by a newer Tabula (schema ${version}, this build knows ${CHAT_MIGRATIONS.length})`);
-  }
-  for (let i = version; i < CHAT_MIGRATIONS.length; i++) {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      db.exec(CHAT_MIGRATIONS[i]);
-      db.exec(`PRAGMA user_version = ${i + 1}`);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-  }
-}
-
 const toMessage = (r) => ({
   id: Number(r.id),
   kind: r.kind,
@@ -113,7 +96,7 @@ export function openChat(file) {
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
-    migrate(db);
+    migrate(db, CHAT_MIGRATIONS, 'chat.sqlite');
   } catch (err) {
     db.close();
     throw err;
@@ -444,6 +427,8 @@ export function openChat(file) {
       cache.clear();
       db.close();
     },
+    /** This build's schema and the one on disk, for GET /api/internal/version (docs/migrations.md). */
+    schemaReport: () => describeSchema(db, CHAT_MIGRATIONS),
     transaction,
     getMessage,
     findByClientId,
