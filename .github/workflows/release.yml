@@ -1,0 +1,159 @@
+name: Release
+
+# TAB-236, docs/releasing.md. A v* tag (or a manual run) runs the full CI gates, builds the Docker image with TABULA_VERSION set to the
+# tag, pushes it to registry.fly.io/tabula-app:<tag> and, when asked, registers it with the control plane by digest.
+#
+# Secrets and variables the repository owner sets (Settings, Secrets and variables, Actions):
+#   FLY_API_TOKEN  a Fly token that may push to the registry of the tabula-app app. Without it the image is built but not pushed.
+#   ADMIN_TOKEN    the control plane's ADMIN_TOKEN. Without it, or without ADMIN_URL, the release is not registered.
+#   ADMIN_URL      the control plane's admin API as the runner can reach it (secret or variable). It is not reachable from the internet
+#                  by design (docs/releasing.md says what that means); without it the run prints the exact registration command.
+# A missing secret skips its steps with a notice. It never fails the run.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release label (the image tag and TABULA_VERSION), for example v4 or 2026.10.09-1'
+        required: true
+        type: string
+      security:
+        description: 'Register the release as a security release'
+        type: boolean
+        default: false
+      register:
+        description: 'Register the release with the control plane after the push (needs ADMIN_TOKEN and ADMIN_URL)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# One release per label at a time, and a second tag push never cancels a release that is pushing an image. The group differs from the
+# CI group on purpose: ci.yml is called below, and a called workflow whose group equals its caller's would cancel the caller.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  gates:
+    name: CI gates
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Build, push, register
+    needs: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      SECURITY: ${{ github.event.inputs.security || 'false' }}
+      REGISTER: ${{ github.event.inputs.register || 'true' }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      ADMIN_URL: ${{ secrets.ADMIN_URL || vars.ADMIN_URL }}
+      IMAGE_REPO: registry.fly.io/tabula-app
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the label and what is configured
+        id: plan
+        shell: bash
+        run: |
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9._-]{1,40}$ ]]; then
+            echo "::error::The release label '$TAG' must be 1 to 40 letters, digits, dots, dashes or underscores"
+            exit 1
+          fi
+          push=false
+          register=false
+          if [ -n "$FLY_API_TOKEN" ]; then
+            push=true
+          else
+            echo "::notice::FLY_API_TOKEN is not set: the image is built to prove the build, but not pushed to the Fly registry"
+          fi
+          if [ "$push" = true ] && [ "$REGISTER" = true ]; then
+            if [ -n "$ADMIN_TOKEN" ] && [ -n "$ADMIN_URL" ]; then
+              register=true
+            else
+              echo "::notice::ADMIN_TOKEN or ADMIN_URL is not set: the release is not registered. The summary has the command to run by hand"
+            fi
+          fi
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "register=$register" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: steps.plan.outputs.push == 'true'
+        with:
+          registry: registry.fly.io
+          username: x
+          password: ${{ secrets.FLY_API_TOKEN }}
+      - uses: docker/build-push-action@v7
+        id: build
+        with:
+          context: .
+          push: ${{ steps.plan.outputs.push == 'true' }}
+          tags: ${{ env.IMAGE_REPO }}:${{ env.TAG }}
+          build-args: |
+            TABULA_VERSION=${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Summary and registration body
+        id: body
+        if: steps.plan.outputs.push == 'true'
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          args=(--version "$TAG" --digest "$DIGEST")
+          if [ "$SECURITY" = true ]; then args+=(--security); fi
+          node scripts/release-body.mjs "${args[@]}" > release-body.json 2>release-body.err || { cat release-body.err; exit 1; }
+          {
+            echo "### Release $TAG"
+            echo
+            echo "Image: \`$IMAGE_REPO@$DIGEST\` (tag \`$IMAGE_REPO:$TAG\`)"
+            echo
+            echo 'Registration body:'
+            echo '```json'
+            cat release-body.json
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Register the release with the control plane
+        if: steps.plan.outputs.register == 'true'
+        shell: bash
+        run: |
+          case "$ADMIN_URL" in http://*|https://*) ;; *) echo "::error::ADMIN_URL must be an http or https URL"; exit 1 ;; esac
+          status=$(curl --silent --show-error --output response.json --write-out '%{http_code}' --request POST \
+            --url "${ADMIN_URL%/}/admin/releases" --header 'Content-Type: application/json' \
+            --header @- --data-binary @release-body.json <<<"Authorization: Bearer ${ADMIN_TOKEN}") || status=000
+          echo "Control plane answered $status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::The control plane refused or could not be reached ($status). The image is pushed; register it by hand (docs/releasing.md)"
+            cat response.json 2>/dev/null || true
+            exit 1
+          fi
+          echo "Registered $TAG" >> "$GITHUB_STEP_SUMMARY"
+      - name: Not registered, how to do it by hand
+        if: steps.plan.outputs.push == 'true' && steps.plan.outputs.register != 'true'
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo
+            echo 'Not registered by this run. From an operator machine, with the admin proxy running:'
+            echo '```'
+            echo "scripts/release.sh $TAG $DIGEST <path to this repository> --register$([ "$SECURITY" = true ] && echo ' --security')"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
