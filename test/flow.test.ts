@@ -244,6 +244,17 @@ describe('dot vote scope (TAB-232)', () => {
     expect(skips).toBe(1);
   });
 
+  it('a locked item is votable, as in Everything and Sticky notes only, because facilitators lock notes before a vote', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => { store.create({ ...note('locked'), locked: true } as BaseObj); store.create(note('free')); });
+    for (const kind of ['all', 'stickies'] as const) {
+      expect(flow.eligible({ kind }).map((o) => o.id).sort()).toEqual(['free', 'locked']);
+    }
+    flow.quickVote(UNLIMITED, { kind: 'stickies' });
+    flow.handleClick(store.get('locked')!, false);
+    expect(flow.myVoteCount()).toBe(1);
+  });
+
   it('an old vote step without a scope still means Everything', () => {
     const { store, flow } = setup();
     flow.quickVote(UNLIMITED);
