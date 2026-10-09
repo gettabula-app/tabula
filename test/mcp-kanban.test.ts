@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { rankBetween } from '../shared/containers.mjs';
+import { KANBAN, rankBetween, sortedChildren, splitRank } from '../shared/containers.mjs';
 import { createHarness, until, type Account, type Body } from './mcp-harness';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
@@ -76,15 +76,17 @@ describe('kanban MCP card tools', () => {
     expect(result.data.cards.map((c: Body) => c.id)).toEqual([cardId, lockedId]);
     expect(result.data.cards[0]).toMatchObject({
       title: 'Visible card', description: 'A description',
-      lane: { id: todoId, name: 'To do' }, stage: 'todo', ownerId: 'person-1', ownerName: 'Priya', ownerKind: 'person',
+      lane: { id: todoId, name: 'To do' }, stage: 'todo', ownerName: 'Priya', ownerKind: 'person',
       due: '2026-11-01', labels: [labelId], link: 'https://example.com/task',
     });
+    expect(result.data.cards[0]).not.toHaveProperty('ownerId');
+    expect(result.data.labels).toEqual([{ id: labelId, name: 'Bug' }]);
     expect(result.text).not.toContain('Private card');
     expect(result.text).not.toContain('Hidden card');
   });
 
   it('adds a card to the first lane with the requested stage and binds an agent owner to its token id', async () => {
-    const token = await addToken('kanban agent');
+    const token = await addToken('kanban  agent');
     const live = await watcher();
     try {
       const result = await h.tool(token.token, 'add_kanban_card', {
@@ -96,8 +98,35 @@ describe('kanban MCP card tools', () => {
         title: 'Ship release', description: 'Prepare the release', lane: { id: doingId }, stage: 'doing',
         ownerId: token.id, ownerName: 'kanban agent', ownerKind: 'agent', due: '2026-12-31', labels: [labelId], link: 'https://example.com/release',
       });
-      await until(() => [...live.doc.getMap('objects').values()].some((o) => o instanceof Y.Map && o.get('text') === 'Ship release'));
+      const id = result.data.card.id as string;
+      await until(() => live.doc.getMap('objects').get(id) instanceof Y.Map);
+      expect((live.doc.getMap('objects').get(id) as Y.Map<unknown>).get('h')).toBe(KANBAN.cardH);
     } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('uses the shared card height when a link change triggers re-layout', async () => {
+    const token = await addToken('link layout');
+    const live = await watcher();
+    const card = live.doc.getMap('objects').get(cardId) as Y.Map<unknown>;
+    const oldLink = card.get('link');
+    const oldHeight = card.get('h');
+    try {
+      card.set('h', KANBAN.cardH + 31);
+      await until(() => (h.savedDoc(board).getMap('objects').get(cardId) as Y.Map<unknown>)?.get('h') === KANBAN.cardH + 31);
+      const result = await h.tool(token.token, 'update_kanban_card', {
+        boardId: board, kanbanId, cardId, link: 'https://example.com/new-link-layout',
+      });
+      expect(result.error).toBeUndefined();
+      await until(() => card.get('h') === KANBAN.cardH);
+    } finally {
+      if (typeof oldLink === 'string') card.set('link', oldLink); else card.delete('link');
+      card.set('h', oldHeight);
+      await until(() => {
+        const saved = h.savedDoc(board).getMap('objects').get(cardId) as Y.Map<unknown> | undefined;
+        return saved?.get('link') === oldLink && saved?.get('h') === oldHeight;
+      });
       live.provider.destroy();
     }
   });
@@ -108,15 +137,88 @@ describe('kanban MCP card tools', () => {
     try {
       const result = await h.tool(token.token, 'update_kanban_card', {
         boardId: board, kanbanId, cardId, title: 'Revised title', description: 'Revised description', due: '2026-12-01',
-        labels: [], link: 'http://example.com/revised', ownerId: 'person-2', ownerName: 'Morgan', ownerKind: 'person',
+        labels: [], link: 'http://example.com/revised', ownerName: 'Morgan', ownerKind: 'person',
       });
       expect(result.error).toBeUndefined();
       expect(result.data.card).toMatchObject({
         id: cardId, title: 'Revised title', description: 'Revised description', due: '2026-12-01', labels: [],
-        link: 'http://example.com/revised', ownerId: 'person-2', ownerName: 'Morgan', ownerKind: 'person',
+        link: 'http://example.com/revised', ownerName: 'Morgan', ownerKind: 'person',
       });
+      expect(result.data.card).not.toHaveProperty('ownerId');
+      expect((live.doc.getMap('objects').get(cardId) as Y.Map<unknown>).get('ownerId')).toBeUndefined();
       await until(() => (live.doc.getMap('objects').get(cardId) as Y.Map<unknown>)?.get('text') === 'Revised title');
     } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('recomputes the shared default card height when only the link changes', async () => {
+    const token = await addToken('link relayout');
+    const live = await watcher();
+    const card = live.doc.getMap('objects').get(cardId) as Y.Map<unknown>;
+    try {
+      card.set('h', 319);
+      await until(() => (h.savedDoc(board).getMap('objects').get(cardId) as Y.Map<unknown>)?.get('h') === 319);
+      const result = await h.tool(token.token, 'update_kanban_card', {
+        boardId: board, kanbanId, cardId, link: 'https://example.com/layout-change',
+      });
+      expect(result.error).toBeUndefined();
+      await until(() => card.get('h') === KANBAN.cardH);
+      expect(card.get('h')).toBe(KANBAN.cardH);
+    } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('refuses person owner ids and never reassigns an agent owner to the caller', async () => {
+    const first = await addToken('first agent');
+    const second = await addToken('second agent');
+    const assigned = await h.tool(first.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerKind: 'agent' });
+    expect(assigned.error).toBeUndefined();
+    expect(assigned.data.card).toMatchObject({ ownerId: first.id, ownerName: 'first agent', ownerKind: 'agent' });
+
+    const nameOnly = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerName: 'second agent' });
+    expect(nameOnly.error).toBe('invalid_input');
+    const stillFirst = await h.tool(second.token, 'list_kanban_cards', { boardId: board, kanbanId });
+    expect(stillFirst.data.cards.find((card: Body) => card.id === cardId)).toMatchObject({ ownerId: first.id, ownerKind: 'agent' });
+
+    for (const clear of [{ ownerId: null }, { ownerName: null }]) {
+      const cleared = await h.tool(second.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ...clear });
+      expect(cleared.error).toBeUndefined();
+      expect(cleared.data.card).not.toHaveProperty('ownerId');
+      expect(cleared.data.card).not.toHaveProperty('ownerName');
+      expect(cleared.data.card).not.toHaveProperty('ownerKind');
+      await h.tool(first.token, 'update_kanban_card', { boardId: board, kanbanId, cardId, ownerKind: 'agent' });
+    }
+
+    const person = await h.tool(second.token, 'update_kanban_card', {
+      boardId: board, kanbanId, cardId, ownerKind: 'person', ownerName: 'Morgan',
+    });
+    expect(person.error).toBeUndefined();
+    expect(person.data.card).toMatchObject({ ownerName: 'Morgan', ownerKind: 'person' });
+    expect(person.data.card).not.toHaveProperty('ownerId');
+    const impersonation = await h.tool(second.token, 'update_kanban_card', {
+      boardId: board, kanbanId, cardId, ownerId: 'person-2', ownerName: 'Morgan', ownerKind: 'person',
+    });
+    expect(impersonation.error).toBe('invalid_input');
+    expect(impersonation.data.path).toBe('ownerId');
+  });
+
+  it('omits a stored link that fails the shared reader validator', async () => {
+    const token = await addToken('invalid stored link');
+    const live = await watcher();
+    const card = live.doc.getMap('objects').get(cardId) as Y.Map<unknown>;
+    const original = card.get('link');
+    try {
+      card.set('link', 'https://u:p@evil.example/');
+      await until(() => (h.savedDoc(board).getMap('objects').get(cardId) as Y.Map<unknown>)?.get('link') === 'https://u:p@evil.example/');
+      const listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId });
+      const out = listed.data.cards.find((item: Body) => item.id === cardId);
+      expect(out).not.toHaveProperty('link');
+      expect(listed.text).not.toContain('u:p@evil.example');
+    } finally {
+      if (typeof original === 'string') card.set('link', original); else card.delete('link');
+      await until(() => (h.savedDoc(board).getMap('objects').get(cardId) as Y.Map<unknown>)?.get('link') === original);
       live.provider.destroy();
     }
   });
@@ -132,6 +234,105 @@ describe('kanban MCP card tools', () => {
       await until(() => (live.doc.getMap('objects').get(cardId) as Y.Map<unknown>)?.get('parent') === doingId);
       expect([...live.doc.getMap('objects').values()].filter((o) => o instanceof Y.Map && o.get('type') === 'lane')).toHaveLength(laneCount);
     } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('does not write when a move requests the card’s current stage', async () => {
+    const token = await addToken('same stage');
+    const live = await watcher();
+    try {
+      const before = Y.encodeStateVector(live.doc);
+      const result = await h.tool(token.token, 'move_kanban_card', { boardId: board, kanbanId, cardId, stage: 'doing' });
+      expect(result.error).toBeUndefined();
+      expect(result.data.moved).toBe(false);
+      expect(Y.encodeStateVector(live.doc)).toEqual(before);
+    } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('flattens title newlines and normalizes owner whitespace before applying code-point limits', async () => {
+    const token = await addToken('normalized fields');
+    const result = await h.tool(token.token, 'add_kanban_card', {
+      boardId: board, kanbanId, laneId: todoId, title: '  First\n\t second  ', ownerName: '  Ada\n  Lovelace  ',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.data.card.title).toBe('First second');
+    expect(result.data.card.ownerName).toBe('Ada Lovelace');
+    const collapsedOwner = `${'A'.repeat(39)}${' '.repeat(100)}${'B'.repeat(40)}`;
+    const ownerAtLimit = await h.tool(token.token, 'add_kanban_card', {
+      boardId: board, kanbanId, laneId: todoId, title: 'Owner normalized', ownerName: collapsedOwner,
+    });
+    expect(ownerAtLimit.error).toBeUndefined();
+    expect(ownerAtLimit.data.card.ownerName).toBe(`${'A'.repeat(39)} ${'B'.repeat(40)}`);
+    for (const title of ['x'.repeat(201), '😀'.repeat(201)]) {
+      const refused = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title });
+      expect(refused.error).toBe('invalid_input');
+      expect(refused.data.path).toBe('title');
+    }
+    const refusedOwner = await h.tool(token.token, 'add_kanban_card', {
+      boardId: board, kanbanId, laneId: todoId, title: 'Owner too long', ownerName: '😀'.repeat(81),
+    });
+    expect(refusedOwner.error).toBe('invalid_input');
+    expect(refusedOwner.data.path).toBe('ownerName');
+  });
+
+  it('counts hidden and unrevealed private cards for WIP and appends after every card rank', async () => {
+    const token = await addToken('all lane cards');
+    const live = await watcher();
+    const objects = live.doc.getMap('objects');
+    const lane = objects.get(todoId) as Y.Map<unknown>;
+    const hidden = objects.get(hiddenId) as Y.Map<unknown>;
+    const privateCard = objects.get(privateId) as Y.Map<unknown>;
+    const original = {
+      hiddenRank: hidden.get('rank'), privateRank: privateCard.get('rank'), wip: lane.get('wip'), wipMode: lane.get('wipMode'),
+    };
+    let addedId: string | undefined;
+    try {
+      const cards = [...objects.values()].filter((value) => value instanceof Y.Map && value.get('type') === 'card' && value.get('parent') === todoId) as Y.Map<unknown>[];
+      const visibleCount = cards.filter((card) => card.get('hidden') !== true && !card.get('privateStep')).length;
+      expect(cards.some((card) => card.get('hidden') === true)).toBe(true);
+      expect(cards.some((card) => !!card.get('privateStep'))).toBe(true);
+      const currentLast = sortedChildren(cards.map((card) => card.toJSON() as { id: string; rank?: string; parent?: string } )).at(-1)!;
+      const hiddenRank = rankBetween(currentLast.rank ?? null, null, todoId);
+      const privateRank = rankBetween(hiddenRank, null, todoId);
+      hidden.set('rank', hiddenRank);
+      privateCard.set('rank', privateRank);
+      lane.set('wip', visibleCount + 1);
+      lane.set('wipMode', 'block');
+      await until(() => (h.savedDoc(board).getMap('objects').get(todoId) as Y.Map<unknown>)?.get('wip') === visibleCount + 1);
+
+      const blocked = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Blocked by hidden cards' });
+      expect(blocked.error).toBe('wip_limit');
+
+      lane.delete('wip');
+      lane.delete('wipMode');
+      await until(() => !(h.savedDoc(board).getMap('objects').get(todoId) as Y.Map<unknown>)?.has('wip'));
+      const added = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Rank after hidden' });
+      expect(added.error).toBeUndefined();
+      addedId = added.data.card.id as string;
+      await until(() => objects.get(addedId!) instanceof Y.Map);
+      const made = objects.get(addedId) as Y.Map<unknown>;
+      expect(splitRank(made.get('rank') as string)?.parent).toBe(todoId);
+      const finalCards = sortedChildren([...objects.values()]
+        .filter((value) => value instanceof Y.Map && value.get('type') === 'card' && value.get('parent') === todoId)
+        .map((value) => (value as Y.Map<unknown>).toJSON() as { id: string; rank?: string; parent?: string }));
+      expect(finalCards.at(-1)?.id).toBe(addedId);
+    } finally {
+      if (addedId) objects.delete(addedId);
+      hidden.set('rank', original.hiddenRank);
+      privateCard.set('rank', original.privateRank);
+      if (original.wip === undefined) lane.delete('wip'); else lane.set('wip', original.wip);
+      if (original.wipMode === undefined) lane.delete('wipMode'); else lane.set('wipMode', original.wipMode);
+      await until(() => {
+        const saved = h.savedDoc(board).getMap('objects');
+        const savedHidden = saved.get(hiddenId) as Y.Map<unknown> | undefined;
+        const savedPrivate = saved.get(privateId) as Y.Map<unknown> | undefined;
+        const savedLane = saved.get(todoId) as Y.Map<unknown> | undefined;
+        return (!addedId || !saved.has(addedId)) && savedHidden?.get('rank') === original.hiddenRank && savedPrivate?.get('rank') === original.privateRank &&
+          savedLane?.get('wip') === original.wip && savedLane?.get('wipMode') === original.wipMode;
+      });
       live.provider.destroy();
     }
   });
@@ -160,9 +361,23 @@ describe('kanban MCP card tools', () => {
     expect(move.data.message).toContain("No lane in this kanban has stage 'done'");
   });
 
+  it('rejects dates outside the shared real-date range', async () => {
+    const token = await addToken('date range');
+    for (const due of ['1899-12-31', '2201-01-01', '2026-02-30']) {
+      const result = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Bad date', due });
+      expect(result.error).toBe('invalid_input');
+      expect(result.data.path).toBe('due');
+    }
+    const enumValue = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Bad kind', ownerKind: 'robot' });
+    expect(enumValue.error).toBe('invalid_input');
+    expect(enumValue.data.path).toBe('ownerKind');
+  });
+
   it.each([
     ['javascript:', 'javascript:alert(1)'],
     ['data:', 'data:text/html,hello'],
+    ['credentials', 'https://u:p@h.com'],
+    ['deceptive userinfo', 'https://trusted.com@evil.com/'],
     ['too long', `https://example.com/${'x'.repeat(2000)}`],
   ])('rejects a %s link on both add and update', async (_label, link) => {
     const token = await addToken('bad link');

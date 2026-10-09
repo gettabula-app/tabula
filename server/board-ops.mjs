@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import * as Y from 'yjs';
 import { generateNKeysBetween } from 'fractional-indexing';
-import { layoutAll } from '../shared/containers.mjs';
+import { OWNER_NAME_MAX, TEMPLATE_STRIPPED, cleanOwnerName, layoutAll } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 
 export const LIMITS = Object.freeze({
@@ -935,6 +935,7 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
     fields.createdBy = createdBy;
     fields.updatedAt = now;
     delete fields.proposedBy; // template content can come from a file; a stored proposedBy never reaches a new board (TAB-160)
+    for (const key of TEMPLATE_STRIPPED) delete fields[key];
     if (o.type === 'connector') {
       fields.from = place(o.from);
       fields.to = place(o.to);
@@ -983,7 +984,8 @@ export function applyPlan(doc, plan) {
 /** The author of comments written through MCP. Set by the server; no tool accepts author fields. */
 export function aiAuthor({ id, userName, tokenName }) {
   const name = userName ? `${userName} via ${tokenName}` : tokenName;
-  return { id, name: stripInvisible(name).slice(0, 80), color: AI_COLOR };
+  const visible = cleanOwnerName(stripInvisible(name));
+  return { id, name: [...visible].slice(0, OWNER_NAME_MAX).join(''), color: AI_COLOR };
 }
 
 /**

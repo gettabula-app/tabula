@@ -71,6 +71,8 @@ div.ks-row-title { cursor: default; }
   display: inline-grid; place-items: center; width: 24px; height: 24px; box-shadow: inset 0 0 0 1px var(--rule);
   color: var(--ink); font-size: 10px; font-weight: 700;
 }
+.ks-owner.agent { display: inline-flex; gap: 3px; width: auto; min-width: 24px; padding: 0 4px; }
+.ks-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .ks-more-btn { align-self: start; }
 .ks-more-gap { width: 40px; }
 .ks-empty { padding: 24px 16px; color: var(--graphite); }

@@ -114,6 +114,22 @@ describe('the card rows', () => {
     expect(text).toContain(`Kanban,To do,todo,1,'=cmd|calc,"line one\nline two",Ada,agent,2026-10-12,"https://example.com/a,b?q=""first""","Bug; UI, phone",0,ada,2026-10-09T12:00:00.000Z,${csvCell(s.a)}\r\n`);
     expect(text).toContain('"Second, with ""quotes"""');
   });
+
+  it('exports a valid link and leaves owner_kind empty when no owner fields exist', () => {
+    const s = board();
+    s.store.transact(() => s.store.update(s.b, { link: 'https://example.com/a,b', ownerKind: 'agent' }));
+    const rows = cardRows({
+      get: (id) => s.store.get(id) as BaseObj | undefined,
+      containerLayout: (id) => s.store.containerLayout(id),
+      labels: listLabels(s.store),
+      commentCount: () => 0,
+    }, [s.k1]);
+    const row = rows.find((r) => r[14] === s.b)!;
+    expect(row[7]).toBe('');
+    expect(row[9]).toBe('https://example.com/a,b');
+    expect(csvCell(row[9])).toBe('"https://example.com/a,b"');
+    expect(csvText([row])).toContain(',,,"https://example.com/a,b",');
+  });
 });
 
 describe('which kanbans are exported', () => {

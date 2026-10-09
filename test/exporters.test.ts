@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { Store } from '../src/store';
 import type { BoardApp } from '../src/app';
+import { addCard, newKanban } from '../src/containers';
 import { installFakeBrowser, type FakeBrowser } from './fake-dom';
 
 type FetchResponder = (url: string) => Promise<Response>;
@@ -16,6 +17,7 @@ afterEach(() => {
   browser = undefined;
   vi.unstubAllEnvs();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.resetModules();
 });
 
@@ -121,5 +123,58 @@ describe('SVG font export', () => {
     const svg = await result;
     expect(svg).toMatch(/^<svg\b[\s\S]*<\/svg>$/);
     expect(svg).not.toContain('@font-face');
+  });
+});
+
+describe('PNG card links', () => {
+  it('rasterizes the visible link icon and returns no clickable SVG anchor', async () => {
+    const css = face('satoshi', 'Satoshi', 500);
+    const { exporters } = await setup(async (url) => {
+      if (url.startsWith('https://api.fontshare.com/')) return new Response(css);
+      if (url.startsWith('https://cdn.fontshare.com/')) return smallFont();
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const store = new Store(new Y.Doc());
+    const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'visitor', bodyFont: 'satoshi', headingFont: 'satoshi' });
+    store.transact(() => [container, ...lanes].forEach((o) => store.create(o)));
+    const id = addCard(store, lanes[0].id, 'Open design', { createdBy: 'visitor', font: 'satoshi' })!;
+    store.transact(() => store.update(id, { link: 'https://example.com/design' }));
+    const app = {
+      store,
+      r: {
+        contentBounds: () => ({ x: 0, y: 0, w: 1000, h: 500 }),
+        ctx: { get: (objectId: string) => store.getPlaced(objectId), containerLayout: (objectId: string) => store.containerLayout(objectId), label: (labelId: string) => store.labels.get(labelId) },
+      },
+    } as unknown as BoardApp;
+
+    let sourceBlob: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => { sourceBlob = blob as Blob; return 'blob:kanban-svg'; });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    class ImageStub {
+      decoding = '';
+      onload?: () => void;
+      onerror?: () => void;
+      set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+    }
+    vi.stubGlobal('Image', ImageStub);
+    const drawImage = vi.fn<CanvasRenderingContext2D['drawImage']>();
+    const canvasContext = { drawImage, measureText: (text: string) => ({ width: text.length * 7 }), font: '' };
+    const canvas = {
+      width: 0, height: 0,
+      getContext: () => canvasContext,
+      toBlob: (callback: BlobCallback | null, type?: string) => callback?.(new Blob(['raster pixels'], { type })),
+    };
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => tag === 'canvas' ? canvas as unknown as HTMLCanvasElement : createElement(tag));
+
+    const png = await exporters.exportPng(app, [container.id], 1);
+    expect(png.type).toBe('image/png');
+    expect(await png.text()).not.toContain('<a');
+    expect(drawImage).toHaveBeenCalledOnce();
+    expect(sourceBlob?.type).toBe('image/svg+xml');
+    const intermediateSvg = await sourceBlob!.text();
+    expect(intermediateSvg).toContain('data-card-link="true"');
+    expect(intermediateSvg).toContain('href="https://example.com/design"');
+    expect(intermediateSvg).toContain('M10 13.5l4-4M8.5 15.5l-1 1a3 3 0 01-4.2-4.2l3-3a3 3 0 014.2 0');
   });
 });

@@ -11,7 +11,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
+import { hasLayout, isSafeHttpUrl, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
 import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
@@ -319,7 +319,7 @@ const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
 /** The title lines a card draws at width `w`: its first line of text, wrapped, at most three, the last cut with an ellipsis. */
 export function cardTitleLines(o: BaseObj, w: number): string[] {
   const font = cardFont(o);
-  const max = w - cardPadLeft(o) - CARD.padX - (o.link ? 22 : 0);
+  const max = w - cardPadLeft(o) - CARD.padX - (isSafeHttpUrl(o.link) ? 24 : 0);
   const title = (o.text ?? '').split('\n')[0].trim();
   const lines = wrap(title || ' ', font, max);
   if (lines.length <= CARD.titleLines) return lines;
@@ -529,12 +529,14 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   inner += edge === 'ghost'
     ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
     : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
-  if (o.link && edge === 'hairline') {
-    const x = w - CARD.padX - 20, y = CARD.padY - 2;
-    inner += `<a class="k-card-link" data-card-link="true" href="${escapeXml(o.link)}" target="_blank" rel="noopener noreferrer" tabindex="0" aria-label="Open card link in a new tab">` +
-      `<rect class="k-card-link-focus" x="${n(x)}" y="${n(y)}" width="20" height="20" fill="var(--paper)" fill-opacity="0.001" pointer-events="all"/>` +
-      `<rect class="k-card-link-focus-ring" x="${n(x)}" y="${n(y)}" width="20" height="20" fill="none" stroke="none"/>` +
-      `<title>Open card link in a new tab</title>${kIcon(ICON_LINK, x + 3, y + 3, 14, K.meta)}</a>`;
+  if (isSafeHttpUrl(o.link) && edge === 'hairline') {
+    const hit = 24;
+    const x = w - CARD.padX - hit, y = CARD.padY - 4;
+    const title = (o.text ?? '').trim() || 'Untitled card';
+    inner += `<a class="k-card-link" data-card-link="true" href="${escapeXml(o.link!)}" target="_blank" rel="noopener noreferrer" tabindex="0" aria-label="Open link: ${escapeXml(title)}">` +
+      `<rect class="k-card-link-focus" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="var(--paper)" fill-opacity="0.001" pointer-events="all"/>` +
+      `<rect class="k-card-link-focus-ring" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="none" stroke="none"/>` +
+      `<title>Open link: ${escapeXml(title)}</title>${kIcon(ICON_LINK, x + 5, y + 5, 14, K.meta)}</a>`;
   }
   const fam = escapeXml(fontFamily(o.font));
   const lines = cardTitleLines(o, w);

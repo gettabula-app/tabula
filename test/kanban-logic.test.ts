@@ -175,6 +175,7 @@ describe('due chips', () => {
     expect(dueChip(undefined, today, false)).toBeNull();
     expect(dueChip('2026-02-30', today, false)).toBeNull();
     expect(dueChip('tomorrow', today, false)).toBeNull();
+    expect(dueChip('2201-01-01', today, false)).toBeNull();
   });
 
   it('reads the viewer local date', () => {
@@ -263,6 +264,10 @@ describe('due dates', () => {
   it('accepts only real calendar dates', () => {
     expect(isDueDate('2026-01-16')).toBe(true);
     expect(isDueDate('2024-02-29')).toBe(true);
+    expect(isDueDate('1900-01-01')).toBe(true);
+    expect(isDueDate('2200-12-31')).toBe(true);
+    expect(isDueDate('1899-12-31')).toBe(false);
+    expect(isDueDate('2201-01-01')).toBe(false);
     expect(isDueDate('2026-02-29')).toBe(false);
     expect(isDueDate('2026-1-16')).toBe(false);
     expect(isDueDate('2026-01-16T00:00')).toBe(false);
@@ -275,7 +280,7 @@ describe('owner picker', () => {
     const opts = ownerOptions(
       { id: 'me', name: 'Visual QA' },
       [{ id: 'u2', name: 'Marta Ruiz' }, { id: 'me', name: 'Visual QA' }],
-      [{ ownerId: 'u3', ownerName: 'Ana Novak' }, { ownerName: 'Lea Brandt' }, { ownerName: 'lea brandt' }, { ownerName: 'Marta Ruiz' }, { ownerId: 'u2', ownerName: 'Old name' }],
+      [{ ownerId: 'u3', ownerName: 'Ana Novak' }, { ownerName: 'Lea Brandt' }, { ownerName: 'lea brandt' }, { ownerName: 'Marta Ruiz' }, { ownerId: 'u2', ownerName: 'Old name' }, { ownerId: 'token-1', ownerName: 'Build bot', ownerKind: 'agent' }],
     );
     expect(opts.map((o) => [o.key, o.name])).toEqual([
       ['id:me', 'Visual QA'], ['id:u3', 'Ana Novak'], ['name:Lea Brandt', 'Lea Brandt'], ['id:u2', 'Marta Ruiz'],

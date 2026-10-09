@@ -147,15 +147,23 @@ describe('the sinks one by one', () => {
   it('keeps one explicit HTTP(S) card URL and drops unsafe schemes, whitespace tricks and overlong values', () => {
     const base = goodBox('card') as BaseObj;
     const longest = `https://example.com/${'a'.repeat(2000 - 'https://example.com/'.length)}`;
-    expect(safeObj({ ...base, link: longest, ownerKind: 'agent' } as Obj)).toMatchObject({ link: longest, ownerKind: 'agent' });
+    expect(safeObj({ ...base, link: longest, ownerKind: 'agent' } as Obj)).toMatchObject({ link: longest });
     for (const link of [
       'javascript:alert(1)', 'data:text/html,hi', 'ftp://example.com/a', ' https://example.com', 'https://example.com ',
       'https://example.com/a b', 'https://example.com/\tpath', 'https://example.com/\npath', 'https://example.com/\u200bpath',
-      'https://example.com/\\@evil.example', 'http:///example.com', 'https://example.com/'.padEnd(2001, 'a'),
+      'https://example.com/\\@evil.example', 'https://u:p@h.com', 'https://trusted.com@evil.com/', 'http:///example.com', 'https://example.com/'.padEnd(2001, 'a'),
     ]) {
       expect(safeObj({ ...base, link } as unknown as Obj)).not.toHaveProperty('link');
     }
     expect(safeObj({ ...base, ownerKind: 'robot' } as unknown as Obj)).not.toHaveProperty('ownerKind');
+  });
+
+  it('drops ownerKind when the card has neither an owner id nor a name', () => {
+    const base = { ...goodBox('card'), ownerKind: 'agent' } as unknown as Obj;
+    expect(safeObj(base)).not.toHaveProperty('ownerKind');
+    expect(safeObj({ ...base, ownerName: 'Build bot' })).toMatchObject({ ownerName: 'Build bot' });
+    expect(safeObj({ ...base, ownerId: 'token-1' })).toMatchObject({ ownerKind: 'agent', ownerId: 'token-1' });
+    expect(safeObj({ ...base, ownerName: 'Free text agent' })).not.toHaveProperty('ownerKind');
   });
 
   it('text, members and fonts that are not strings do not break drawing', () => {
