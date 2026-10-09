@@ -29,6 +29,7 @@ import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
+import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
 import { saveDelay } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
@@ -96,6 +97,31 @@ try {
   process.exit(1);
 }
 
+// Whose data this volume is (docs/backups.md, Volumes and restores). Decided right after the restore recovery, which
+// may have just swapped the data in, and before anything opens the data: a volume of another workspace is refused
+// here, before its database is read. Carried out by settleVolume() below, once the directory is open.
+const STARTED_AT = Date.now();
+let volumePlan;
+try {
+  volumePlan = planVolume({ dataDir: DATA_DIR, env, workspaceId: config.cloud?.workspaceId ?? null });
+  if (volumePlan.action === 'error') throw new VolumeError(volumePlan.message);
+} catch (err) {
+  console.error(err instanceof VolumeError ? err.message : `The volume marker (volume.json) could not be read (${err?.code ?? 'error'}), so the server will not start.`);
+  process.exit(1);
+}
+let volumeAdopted = false;
+// Adopting needs the directory (sessions, audit) and comes before the cloud hooks, the backups and the listener: a
+// failed step stops the start, nothing half adopted is served.
+function settleVolume(dir) {
+  try {
+    volumeAdopted = applyVolume({ dataDir: DATA_DIR, plan: volumePlan, directory: dir, log });
+  } catch (err) {
+    console.error(err instanceof VolumeError ? err.message : `Adopting this volume failed (${err?.code ?? err?.message ?? 'error'}), so the server will not start.`);
+    dir?.close();
+    process.exit(1);
+  }
+}
+
 // A restore has taken the server over: `maintenance` answers 503 and refuses sockets, `roomsFrozen` stops every save, so
 // nothing the old rooms hold can be written into the restored data.
 let maintenance = false;
@@ -157,6 +183,7 @@ if (config.authEnabled) {
     import('./cloud.mjs'),
   ]);
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
+  settleVolume(directory);
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
@@ -204,6 +231,7 @@ if (config.authEnabled) {
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
 }
+if (!config.authEnabled) settleVolume(null);
 
 // Backups need the directory (accounts mode only) and, like liveStats, are asked for per request, so they are created below.
 function backupStatus() {
@@ -274,7 +302,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -1103,7 +1131,7 @@ if (process.send) {
 server.listen(PORT, HOST, () => {
   backup?.start();
   restore?.start();
-  // The people in a restored workspace are not the ones the control plane last heard about.
-  if (recovery.action === 'completed') events.emit('usage-changed');
+  // The people in a restored workspace (or on an adopted copy) are not the ones the control plane last heard about.
+  if (recovery.action === 'completed' || volumeAdopted) events.emit('usage-changed');
   log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}${backup ? '  (backups on)' : ''}`);
 });

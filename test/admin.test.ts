@@ -139,6 +139,9 @@ describe('auditSentence', () => {
     ['restore.failed whole', entry('restore.failed', { kind: 'workspace', manifest: '20260115T093000Z.json.enc', error: 'not_enough_space' }), 'Restoring the whole workspace from the backup of 2026-01-15 09:30 UTC failed: ' + errorReason('not_enough_space')],
     ['restore.failed board without a reason', entry('restore.failed', { kind: 'board', manifest: '20260115T093000Z.json.enc' }), 'Restoring a board copy from the backup of 2026-01-15 09:30 UTC failed'],
     ['restore.old_data_removed', entry('restore.old_data_removed', { ageDays: 7, mode: 'days' }, { actorId: null, actorName: null, actorEmail: null }), 'The old data of a restore was removed (7 days old)'],
+    ['volume.adopt operator', entry('volume.adopt', { from: { workspaceId: 'ws_a', flyVolumeId: 'vol_1' }, to: { workspaceId: 'ws_b', flyVolumeId: 'vol_2' }, reason: 'operator' }, { actorId: null, actorName: null, actorEmail: null }), 'An operator adopted the data volume of workspace ws_a into this workspace; everyone was signed out'],
+    ['volume.adopt restored copy', entry('volume.adopt', { from: { workspaceId: 'ws_a', flyVolumeId: 'vol_1' }, to: { workspaceId: 'ws_a', flyVolumeId: 'vol_2' }, reason: 'restored-copy' }, { actorId: null, actorName: null, actorEmail: null }), 'The server adopted a restored copy of its data volume (Fly volume vol_1 → vol_2); everyone was signed out'],
+    ['volume.adopt without ids', entry('volume.adopt', { from: { workspaceId: null, flyVolumeId: null }, reason: 'restored-copy' }), 'The server adopted a restored copy of its data volume; everyone was signed out'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -192,6 +195,7 @@ describe('auditSentence', () => {
       'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
       'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
       'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
+      'volume.adopt',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });
