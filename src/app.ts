@@ -2399,10 +2399,39 @@ export class BoardApp {
   deleteObjects(list: Id[]): boolean {
     if (this.readOnly) return false;
     const selected = new Set(list);
-    for (const id of list) {
-      if (this.store.get(id)?.type === 'group') {
-        for (const child of this.store.descendantsOf(id)) selected.add(child.id);
+    const selectedGroups = list.filter((id) => this.store.get(id)?.type === 'group');
+    const gathered = this.gather(list);
+    const visible = new Set(gathered.map((o) => o.id));
+    const groupSubtree = new Set<Id>();
+    const preserve = new Set<Id>();
+    const selectedGroupIds = new Set(selectedGroups);
+    const pending = [...selectedGroups];
+    const expanded = new Set<Id>();
+    while (pending.length) {
+      const parent = pending.pop()!;
+      if (expanded.has(parent)) continue;
+      expanded.add(parent);
+      groupSubtree.add(parent);
+      for (const child of this.store.childrenOf(parent)) {
+        if (groupSubtree.has(child.id)) continue;
+        groupSubtree.add(child.id);
+        if (child.type === 'group' || child.type === 'frame' || child.type === 'container' || child.type === 'lane') pending.push(child.id);
       }
+    }
+    for (const childId of groupSubtree) {
+      if (selectedGroupIds.has(childId)) continue;
+      if (visible.has(childId)) selected.add(childId);
+      else {
+        // Objects omitted by private-selection gathering stay on the board when the group is removed.
+        selected.delete(childId);
+        preserve.add(childId);
+      }
+    }
+    // A copied connector that joins a group member to another selected object travels with the cut too.
+    for (const o of gathered) {
+      if (!isConnector(o)) continue;
+      const touchesGroup = [o.from, o.to].some((end) => end.kind === 'bound' && groupSubtree.has(end.id));
+      if (touchesGroup) selected.add(o.id);
     }
     const plan = planKanbanDelete(this.store, [...selected]);
     if ('refused' in plan) {
@@ -2415,6 +2444,19 @@ export class BoardApp {
     const objectsBefore = this.store.cache.size;
     this.store.undo.stopCapturing();
     this.store.transact(() => {
+      // Keep objects omitted by private-selection gathering outside the removed group subtree. Climb past every
+      // object being deleted so nested selected groups and containers cannot take them with them.
+      for (const id of preserve) {
+        const object = this.store.get(id);
+        if (!object?.parent) continue;
+        let parent: Id | undefined = object.parent;
+        const seen = new Set<Id>([id]);
+        while (parent && ids.has(parent) && !seen.has(parent)) {
+          seen.add(parent);
+          parent = this.store.get(parent)?.parent;
+        }
+        if (object.parent !== parent) this.store.update(id, { parent });
+      }
       // the cards of a deleted lane move to the end of its neighbour first (docs/kanban.md, Concurrent edits)
       for (const p of relocate) this.store.update(p.id, { parent: p.parent, rank: p.rank });
       // Connectors attached to deleted shapes keep their line: bound ends become free.
@@ -2429,7 +2471,9 @@ export class BoardApp {
           this.store.update(c.id, patch);
         }
         // children of deleted frames stay on the board
-        for (const ch of this.store.childrenOf(id)) if (!ids.has(ch.id) && !moved.has(ch.id)) this.store.update(ch.id, { parent: undefined });
+        if (this.store.get(id)?.type === 'frame') {
+          for (const ch of this.store.childrenOf(id)) if (!ids.has(ch.id) && !moved.has(ch.id) && !preserve.has(ch.id)) this.store.update(ch.id, { parent: undefined });
+        }
       }
       this.store.remove(ids);
     });
