@@ -35,7 +35,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications (the chat states turn on TABULA_CHAT)
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members (the chat states
+                     turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -636,6 +637,11 @@ const STATES = {
     await apiJson(env.base, 'POST', `chat/team/${env.chat.teamId}/messages`, { clientId: `visual-mention-${Date.now()}`, text: `@{${env.chat.ownerId}} can you confirm the room before lunch? I need it for the design review on Thursday.` }, env.chat.anaCookie);
     await env.page.locator('.mention-card').waitFor();
   },
+  // the Members tab with the two chat actions on a person (TAB-132 slice 5)
+  async 'chat-members'({ page, base }) {
+    await page.goto(`${base}/#/admin/members`);
+    await page.getByRole('button', { name: 'Erase chat messages' }).first().waitFor();
+  },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
     await env.page.getByRole('button', { name: 'Notifications' }).click();
@@ -778,7 +784,7 @@ const STATES = {
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

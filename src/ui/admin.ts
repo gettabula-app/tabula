@@ -6,6 +6,7 @@ import { canManageBilling, cloudErrorMessage, portalTarget } from '../cloud-logi
 import { ADMIN_TABS, type AdminTab } from '../route';
 import { aiAdminPanel } from './ai';
 import { chatAdminPanel } from './chat-admin';
+import { download } from '../exporters';
 import { backupsAdminPanel } from './backups';
 import { fmtAgo } from './common';
 import { h, icon } from './dom';
@@ -341,6 +342,22 @@ function membersPanel(me: Me): HTMLElement {
     paint();
   };
 
+  // docs/chat.md, Removing and erasing people: the two requests an administrator gets about a person's chat messages
+  const eraseChat = async (m: AdminMember) => {
+    let removed = 0;
+    if (await change(async () => { removed = (await api.eraseMemberChat(m.id)).removed; }, 'Erased chat messages')) {
+      notify(`Erased ${countLabel(removed, 'chat message', 'chat messages')} by ${m.name || m.email}`);
+    }
+  };
+
+  const exportChat = async (m: AdminMember) => {
+    await change(async () => {
+      const data = await api.memberChatExport(m.id);
+      const who = (m.name || m.email).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'member';
+      download(JSON.stringify(data, null, 2), `chat-${who}.json`, 'application/json');
+    }, 'Chat messages exported');
+  };
+
   const removeMember = async (m: AdminMember) => {
     if (await change(() => api.removeMember(m.id), `Removed ${m.name || m.email}`)) {
       members = members.filter((x) => x.id !== m.id);
@@ -391,14 +408,20 @@ function membersPanel(me: Me): HTMLElement {
         h('div', null, m.lastSeenAt === null ? 'Never seen' : `Seen ${fmtAgo(m.lastSeenAt)}`),
         h('div', null, countLabel(m.activeSessions, 'active session', 'active sessions')),
         h('div', null, countLabel(m.boardCount, 'board', 'boards'))),
-      h('div', { class: 'btn-row admin-actions' },
-        armable('Sign out everywhere', 'Click again to sign out', () => signOutEverywhere(m), {
-          disabled: !signOutVerdict.allowed, title: signOutVerdict.reason, focus: `${m.id}:signout`,
-        }),
-        toggle,
-        armable('Remove', 'Click again to remove', () => removeMember(m), {
-          disabled: !removal.allowed, title: removal.reason, focus: `${m.id}:remove`,
-        })));
+      h('div', { class: 'admin-actions-col' },
+        h('div', { class: 'btn-row admin-actions' },
+          armable('Sign out everywhere', 'Click again to sign out', () => signOutEverywhere(m), {
+            disabled: !signOutVerdict.allowed, title: signOutVerdict.reason, focus: `${m.id}:signout`,
+          }),
+          toggle,
+          armable('Remove', 'Click again to remove', () => removeMember(m), {
+            disabled: !removal.allowed, title: removal.reason, focus: `${m.id}:remove`,
+          })),
+        me.chat ? h('div', { class: 'btn-row admin-actions' },
+          slotButton('Export chat', () => exportChat(m), { focus: `${m.id}:chatexport` }),
+          armable('Erase chat messages', 'Click again to erase', () => eraseChat(m), {
+            disabled: m.role === 'owner' && actor.role !== 'owner', title: m.role === 'owner' && actor.role !== 'owner' ? 'Only an owner can erase an owner’s messages' : undefined, focus: `${m.id}:chaterase`,
+          })) : null));
   };
 
   loadList(box, () => api.adminMembers(), (list) => {
@@ -407,6 +430,7 @@ function membersPanel(me: Me): HTMLElement {
   });
   return h('div', null,
     h('div', { class: 'admin-toolbar' }, searchField('Search members', (q) => { query = q; paint(); }), count),
+    me.chat ? h('p', { class: 'muted small admin-note' }, 'Erase chat messages deletes everything a person wrote in chat, in every channel, now: it answers a request to be forgotten. Backups keep earlier copies until they expire. Export chat downloads a copy of what they wrote.') : null,
     box);
 }
 

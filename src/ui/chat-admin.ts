@@ -67,7 +67,7 @@ export function chatAdminPanel(kit: AdminKit): HTMLElement {
       radios[(at + (e.key === 'ArrowRight' ? 1 : radios.length - 1)) % radios.length].focus();
     });
     root.replaceChildren(
-      h('p', { class: 'chat-admin-note' }, 'Board chat, team channels and the workspace channel. Messages are plain text, kept on the server, and are not part of board files or exports.'),
+      h('p', { class: 'chat-admin-note' }, 'Board chat, team channels and the workspace channel. Messages are plain text, kept on the server, and are not part of board files or exports. To answer a request to be forgotten, or to give a person a copy of what they wrote, use Erase chat messages and Export chat in the Members tab. Backups keep erased messages until they expire.'),
       h('dl', { class: 'admin-facts' },
         fact('Workspace channel', check('Everyone except guests can talk in one workspace channel', state.workspaceChannel,
           (on) => void save({ workspaceChannel: on }, on ? 'Workspace channel is on' : 'Workspace channel is off'))),
