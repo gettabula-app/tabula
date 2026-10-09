@@ -14,7 +14,7 @@ The bar sits at the bottom centre of the board. From left to right it has:
 - The model and an estimate of the cost, for example "Summarise · ~1.3k tokens". Select it to see the model your admin chose, who can see that you are asking, and "About 1,300 tokens go in; the reply is capped at 8,000. An estimate, not a bill."
 - **Run**, and a button to collapse the bar.
 
-Above them are the three actions as chips: **Summarise**, **Cluster** and **Generate ideas**. Selecting one arms it, and the bar shows its cost. A line at the bottom says what will be sent and who pays, for example "Sends 3 selected stickies to Anthropic. Uses the workspace key." On a phone the bar takes the full width and the model line moves down to that line.
+Above them are the three actions as chips: **Summarise**, **Cluster** and **Generate ideas**. Selecting one arms it, and the bar shows its cost. A line at the bottom says what will be sent and who pays, for example "Sends 3 selected stickies to Anthropic. Uses the workspace key." On a phone the bar takes the full width, the prompt gets a row of its own, and the model and cost move down into the line at the bottom.
 
 Collapsing the bar leaves a small spark button, **Ask AI**. Select it, or press `Ctrl+K` (`Cmd+K` on a Mac), to open the bar again.
 
