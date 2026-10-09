@@ -591,6 +591,7 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
   .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
   .flowbar.vote-compact > .vote-finish { order: 4; height: 44px; padding: 0 8px; font-size: 12px; }
+  .flowbar.vote-compact > .flow-next { order: 4; width: 44px; height: 44px; padding: 0; gap: 0; overflow: hidden; font-size: 0; }
   .flowbar.vote-compact > .vote-info { order: 5; width: 44px; height: 44px; padding: 0; font-size: 11px; font-weight: 600; }
   .flowbar.vote-compact > .vote-instructions { order: 6; flex: 1 0 100%; padding: 4px 6px; color: var(--tray-muted); font-size: 12px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
   .flowbar.vote-compact > .vote-instructions[hidden] { display: none; }

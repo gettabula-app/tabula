@@ -48,6 +48,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
+| `vote-running-touch-steps` | The phone vote bar when the vote is one step of a session (Next step instead of Finish): one row, nothing outside the bar. Phone widths only. |
 | `vote-running-touch` | A running dot vote on the seeded board at phone widths: Remove dots is on, the instruction is collapsed, and the 600 px and wider shots are skipped |
 | `drawer-stickers` | The seeded board with the Stickers drawer open (the icon sets are only there after a full `npm run build`; `build:app` shows the drawer's "could not be loaded" state) |
 | `layers` | The seeded board with the Layers panel open (TAB-198): the Went well frame open, To improve closed, the Backlog rectangle selected |
