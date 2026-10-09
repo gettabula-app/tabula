@@ -132,12 +132,14 @@ A group bundles items so you can select them as one. It has no picture of its ow
 - Click any item of a group to select the whole group. Dragging a box over part of a group selects it too.
 - **Double-click** an item to enter the group. The rest of the board dims, the group gets a dashed outline and its name, and you can select, edit and move the items inside. Press `Esc`, click **Done**, or click empty canvas to leave. Groups can hold groups; `Esc` leaves one level at a time, and **Ungroup** takes apart only the outer one.
 - Choosing a colour or other style for a group changes every item in it that has one.
-- On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar and double-tap to enter. The **Done** chip leaves the group.
+- On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar, or hold a selected item or group for a menu that has them, also while Comments or Chat is open. Double-tap to enter; the **Done** chip leaves the group. The group's name and **Done** chips wait while Comments, Chat or a drawer is open and return when it closes. Undo and Redo stay at the foot of the tool rail.
 - During a dot vote a click gives a dot to the item you click, not to its group, and double-clicking an item still casts its votes without entering the group.
 
 Deleting or cutting a group removes the group and everything in it in one step. Notes that private writing is hiding from you are kept and moved out of the group instead. A group whose last item is deleted disappears too.
 
-Some things do not work on a whole group yet: moving, resizing and rotating it, copying and pasting it, and locking it as one. For now, enter the group to move or edit its items.
+Some things do not work on a whole group yet: moving, resizing and rotating it, and copying and pasting it. For now, enter the group to move or edit its items.
+
+You can lock a selected group with **Lock**. A locked group lets clicks, taps and box selections pass through, like any locked item, and a long press unlocks the outermost locked group.
 
 ## Locking
 
