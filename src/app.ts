@@ -87,7 +87,7 @@ export type KanbanMenuKind = 'lane' | 'container' | 'filter';
 /** A control on a kanban's header, or its add-lane +. */
 type KanbanControl = { kind: 'menu' } | { kind: 'filter' } | { kind: 'chip'; key: string } | { kind: 'addLane' };
 
-type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments' | 'filter';
+type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments' | 'filter' | 'vote-skip';
 
 /** The phone layout's breakpoint (styles.css, `max-width: 860px`): where a kanban opens as a list on a double tap. */
 const phoneWidth = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;

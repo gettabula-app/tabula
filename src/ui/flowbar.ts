@@ -2,6 +2,7 @@ import type { BoardApp } from '../app';
 import type { Step, StepMode } from '../types';
 import { isBox } from '../types';
 import { newId } from '../store';
+import { UNLIMITED, type VoteScope } from '../flow';
 import { h, icon } from './dom';
 import { announce } from './announce';
 import { rovingRadios } from './focus-scope';
@@ -290,6 +291,60 @@ function dotsButton(app: BoardApp): HTMLElement {
   }, ...body, icon('chevron', 14));
   b.addEventListener('click', () => openDotLimit(app, b));
   return b;
+}
+
+/** Starts a no-limit dot vote on `scope` and says what it covers. */
+export function startVote(app: BoardApp, scope: VoteScope) {
+  app.flow.quickVote(UNLIMITED, scope);
+  const n = app.flow.eligible(scope).length;
+  toast(`Dot vote started on ${n} ${n === 1 ? 'item' : 'items'}, no limit. Click one to add a dot.`);
+}
+
+/** The step before a quick dot vote: what can be voted on, with a count and a default (TAB-232). */
+export function openVoteSetup(app: BoardApp, anchor: HTMLElement) {
+  const chosen = app.selection.filter((id) => app.flow.canVote({ id: '', title: '', instructions: '', mode: 'vote', voteScope: 'selection', voteItems: [id] }, app.store.get(id)));
+  const scopes: { key: 'all' | 'selection' | 'stickies'; label: string; scope: VoteScope; hint: string }[] = [
+    { key: 'selection', label: 'Selected items', scope: { kind: 'selection', ids: chosen }, hint: 'Only what you have selected now, frames included.' },
+    { key: 'all', label: 'Everything', scope: { kind: 'all' }, hint: 'Every note, shape, card, text and image on the board.' },
+    { key: 'stickies', label: 'Sticky notes only', scope: { kind: 'stickies' }, hint: 'Just the sticky notes.' },
+  ];
+  const counts = new Map(scopes.map((s) => [s.key, app.flow.eligible(s.scope).length]));
+  let pick: 'all' | 'selection' | 'stickies' = chosen.length > 0 ? 'selection' : 'all';
+  const radios = h('div', { class: 'vote-scope', role: 'radiogroup', 'aria-label': 'What can be voted on' });
+  const summary = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  let pop: ReturnType<typeof popover>;
+  const start = h('button', { class: 'btn primary' }, 'Start vote');
+  const sync = () => {
+    for (const b of Array.from(radios.children) as HTMLElement[]) {
+      const on = b.dataset.key === pick;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+    const n = counts.get(pick) ?? 0;
+    summary.textContent = `${n} ${n === 1 ? 'item' : 'items'} can be voted on.`;
+    (start as HTMLButtonElement).disabled = n === 0;
+  };
+  for (const s of scopes) {
+    const n = counts.get(s.key) ?? 0;
+    const b = h('button', { role: 'radio', 'data-key': s.key, 'aria-checked': 'false', disabled: s.key === 'selection' && chosen.length === 0, onclick: () => { pick = s.key; sync(); } },
+      h('span', { class: 'vs-label' }, s.label, h('span', { class: 'vs-count' }, s.key === 'selection' && chosen.length === 0 ? 'select items first' : String(n))),
+      h('span', { class: 'muted small' }, s.hint));
+    radios.append(b);
+  }
+  rovingRadios(radios, { select: false });
+  start.addEventListener('click', () => {
+    const scope = scopes.find((s) => s.key === pick)!.scope;
+    pop.close();
+    startVote(app, scope);
+  });
+  sync();
+  pop = popover(anchor, h('div', { class: 'dots-pop vote-setup' },
+    h('div', { class: 'pop-head' }, h('h3', null, 'What can be voted on?')),
+    radios,
+    summary,
+    h('div', { class: 'copy-row' }, start, h('button', { class: 'btn', onclick: () => { pop.close(); startVote(app, { kind: 'all' }); } }, 'Start on everything')),
+    h('p', { class: 'muted small' }, 'Everyone gets as many dots as they like. You can change that from the bar once the vote runs.'),
+  ), { side: 'right' });
 }
 
 const PRESETS = [1, 2, 3, 5, 10];

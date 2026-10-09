@@ -6,9 +6,13 @@ import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 import { mdText } from './md-text';
 
+/** What a new dot vote covers (TAB-232). */
+export type VoteScope = { kind: 'all' } | { kind: 'stickies' } | { kind: 'selection'; ids: Id[] };
+
 /** `votesPerPerson` value meaning no limit. */
 export const UNLIMITED = 0;
 
+/** What a dot vote may be placed on before anyone narrows it: boxes, not frames, drawings, kanban containers or lanes. */
 const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' && o.type !== 'container' && o.type !== 'lane' && !isConnector(o);
 
 /**
@@ -39,6 +43,10 @@ export class Flow {
     this.polls = new Polls(app);
     s.flow.observe((_e, tx) => this.onFlowChange(tx.local));
     s.votes.observe(() => this.refreshVotes());
+    // a note added or removed while a vote runs changes what carries the ring
+    app.on?.('objects', () => {
+      if (this.isVoting()) this.app.r.setOverlay({ votable: this.votableNow() });
+    });
     // initial state
     queueMicrotask(() => {
       this.lastActive = s.getFlow().active;
@@ -101,6 +109,30 @@ export class Flow {
     return out;
   }
 
+  private votableNow(): Set<Id> {
+    const step = this.activeStep();
+    return step?.mode === 'vote' && !this.app.readOnly ? new Set(this.eligible(this.scopeOf(step)).map((o) => o.id)) : new Set();
+  }
+
+  scopeOf(step: Step): VoteScope {
+    if (step.voteScope === 'selection') return { kind: 'selection', ids: step.voteItems ?? [] };
+    return { kind: step.voteScope === 'stickies' ? 'stickies' : 'all' };
+  }
+
+  /** Whether a dot may go on this object in this vote step (TAB-232): the step's scope, on top of what is votable at all. */
+  canVote(step: Step | null, o: Obj | undefined): boolean {
+    if (!step || step.mode !== 'vote' || !o || !isBox(o)) return false;
+    if (step.voteScope === 'selection') return !!step.voteItems?.includes(o.id); // an explicit pick may be a frame
+    if (!VOTABLE(o)) return false;
+    return step.voteScope === 'stickies' ? o.type === 'sticky' : true;
+  }
+
+  /** The objects this person could put a dot on in `scope` right now (nothing the board hides from them). */
+  eligible(scope: VoteScope): BaseObj[] {
+    const probe: Step = { id: '', title: '', instructions: '', mode: 'vote', voteScope: scope.kind, ...(scope.kind === 'selection' ? { voteItems: scope.ids } : {}) };
+    return this.app.store.shown().filter((o): o is BaseObj => isBox(o) && !this.isHidden(o) && this.canVote(probe, o));
+  }
+
   /** Dots each person may place in a vote step; 0 means unlimited. */
   voteLimit(step: Step | null = this.activeStep()): number {
     return step?.votesPerPerson ?? 3;
@@ -141,11 +173,15 @@ export class Flow {
    * Start a dot vote right now, with no template needed. During a session it is
    * added after the current step; otherwise it becomes the whole session.
    */
-  quickVote(limit = UNLIMITED) {
+  quickVote(limit = UNLIMITED, scope: VoteScope = { kind: 'all' }) {
     const f = this.state();
     const step: Step = {
       id: newId(), title: 'Dot vote', mode: 'vote', votesPerPerson: limit, quick: true,
-      instructions: 'Click any note or shape to add a dot. Click again to add more; shift-click removes one of yours.',
+      instructions: scope.kind === 'selection' ? `Click one of the ${scope.ids.length} chosen ${scope.ids.length === 1 ? 'item' : 'items'} to add a dot. Click again to add more; shift-click removes one of yours.`
+        : scope.kind === 'stickies' ? 'Click a sticky note to add a dot. Click again to add more; shift-click removes one of yours.'
+        : 'Click any note or shape to add a dot. Click again to add more; shift-click removes one of yours.',
+      ...(scope.kind === 'all' ? {} : { voteScope: scope.kind }),
+      ...(scope.kind === 'selection' ? { voteItems: scope.ids } : {}),
     };
     if (f.active >= 0 && f.steps[f.active]?.mode === 'vote') return;
     if (f.active >= 0) {
@@ -201,7 +237,12 @@ export class Flow {
   /** Vote handling for clicks during a vote step. Returns true if the click was consumed. */
   handleClick(hit: Obj, remove: boolean): boolean {
     const step = this.activeStep();
-    if (!step || step.mode !== 'vote' || !VOTABLE(hit)) return false;
+    if (!step || step.mode !== 'vote') return false;
+    if (!this.canVote(step, hit)) {
+      // a frame is the background of what is on it, so a click on one is not a try at voting; anything else says why nothing happened
+      if (isBox(hit) && hit.type !== 'frame' && !remove) this.app.emit('vote-skip');
+      return false;
+    }
     const votes = this.app.store.votes;
     const me = this.app.user.id;
     if (remove) {
@@ -262,7 +303,7 @@ export class Flow {
         }
       }
     }
-    this.app.r.setOverlay({ votes: map });
+    this.app.r.setOverlay({ votes: map, votable: this.votableNow() });
     this.app.emit('flow');
   }
 
