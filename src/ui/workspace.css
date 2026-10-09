@@ -5,9 +5,8 @@
 }
 .workspace-banner[hidden] { display: none; }
 
-/* On a board it is a fixed single line, and the editing chrome moves down to make room. */
+/* On a board it is a fixed bar that wraps at large text sizes, and the editing chrome moves down by its height (--banner-h, set in main.ts). */
 .board-root > .workspace-banner {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 12; height: 28px; padding: 0 16px; line-height: 28px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 12; min-height: 28px; padding: 4px 16px;
 }
-.board-root.has-banner > .chrome { top: 28px; }
+.board-root.has-banner > .chrome { top: var(--banner-h, 28px); }

@@ -284,6 +284,9 @@ async function route() {
   mountBoardUi(app, root, { home: () => (location.hash = '#/') });
   const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
   root.appendChild(banner.el);
+  // the banner wraps at large text sizes; the editing chrome sits below its real height
+  const bannerSize = new ResizeObserver(() => root.style.setProperty('--banner-h', `${Math.ceil(banner.el.getBoundingClientRect().height)}px`));
+  bannerSize.observe(banner.el);
   const unsubscribe = onAuth(applyAccess);
   const releaseNewer = mountNewerBanner(conn.store, root);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
@@ -297,6 +300,7 @@ async function route() {
     unhint();
     unnotice();
     banner.dispose();
+    bannerSize.disconnect();
   };
   if (accounts) {
     releaseBanner = mountAccessBanner(conn, root, {
