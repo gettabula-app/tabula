@@ -31,7 +31,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -813,6 +813,46 @@ const STATES = {
       const chip = document.querySelector('.group-chip:not(.group-path-chip)');
       return window.__board.r.cam.zoom < 0.3 ? chip.hidden : !chip.hidden;
     });
+  },
+  // the quick-action bar with three notes selected: the Group button (a group selected shows Ungroup, see group-selected)
+  async 'group-multi'(env) {
+    await openSeedBoard(env);
+    await waitForGroupStyles(env.page);
+    // the relay keeps the groups the other group states made (ensureVisualGroups), which would turn the three notes into a group
+    // member and the Group button into Ungroup: dissolve them, outermost first, before selecting the loose notes
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      for (let guard = 0; guard < 10; guard++) {
+        const g = [...app.store.cache.values()].find((o) => o.type === 'group' && app.store.get(o.parent)?.type !== 'group');
+        if (!g) break;
+        app.store.transact(() => app.store.update(g.id, { locked: undefined }));
+        app.setSelection([g.id]);
+        if (!app.ungroupSelection()) break;
+      }
+      app.setSelection(['seed-note-1', 'seed-note-2', 'seed-note-3']);
+    });
+    await env.page.getByRole('button', { name: 'Group', exact: true }).waitFor();
+  },
+  // phones fit the seed board at 11%, where chips, handles and the lock badge are not drawn: these two zoom the camera onto the group first (at most 90%, so on a phone the whole group fills the width)
+  async 'group-selected-zoom'(env) {
+    await STATES['group-selected'](env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.r.flyTo(app.r.contentBounds(app.selection), 24, 0.9);
+    });
+    await env.page.waitForFunction(() => window.__board.r.cam.zoom >= 0.31);
+    await env.page.waitForTimeout(500);
+    await env.page.locator('.group-chip:not(.group-path-chip):not([hidden])').waitFor();
+  },
+  async 'group-entered-zoom'(env) {
+    await STATES['group-entered'](env);
+    const { outerId } = await ensureVisualGroups(env.page);
+    await env.page.evaluate((id) => {
+      const app = window.__board;
+      app.r.flyTo(app.r.contentBounds([id]), 24, 0.9);
+    }, outerId);
+    await env.page.waitForFunction(() => window.__board.r.cam.zoom >= 0.31);
+    await env.page.waitForTimeout(500);
   },
   async 'group-hover'(env) {
     await openSeedBoard(env);

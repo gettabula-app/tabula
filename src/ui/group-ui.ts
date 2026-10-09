@@ -3,14 +3,16 @@ import type { BoardApp } from '../app';
 import { isConnector } from '../types';
 import type { Group, Obj } from '../types';
 import { h } from './dom';
+import { PIN_R } from '../pins';
 import { clampGroupChipPosition, doneChipText, groupChipText, groupPathLabel, placeEnteredGroupChips, showSelectedGroupChip } from './group-ui-logic';
 
 /** The local group scope controls; outlines and dimming are renderer overlays. */
 export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
   const selectedChip = h('div', { class: 'group-chip', hidden: true, 'aria-hidden': 'true' });
+  const chipBridge = h('div', { class: 'group-chip-bridge', hidden: true, 'aria-hidden': 'true' });
   const pathChip = h('div', { class: 'group-chip group-path-chip', hidden: true });
   const done = h('button', { class: 'group-done', type: 'button', hidden: true, onclick: () => app.leaveGroup() });
-  parent.append(selectedChip, pathChip, done);
+  parent.append(selectedChip, chipBridge, pathChip, done);
 
   const hasWithheldMember = (member: Obj): boolean => {
     if (member.type === 'sticky' && app.r.isHidden(member)) return true;
@@ -79,6 +81,7 @@ export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
     const enteredGroup = scope?.type === 'group' ? scope as Group : undefined;
     const scopeBounds = enteredGroup ? app.r.bounds(enteredGroup) : null;
     if (enteredGroup && scopeBounds) {
+      chipBridge.hidden = true;
       const path = pathFor(enteredGroup);
       pathChip.textContent = path.text;
       pathChip.title = path.full;
@@ -95,28 +98,48 @@ export function mountGroupUI(app: BoardApp, parent: HTMLElement) {
         { x: point.left, y: point.top },
         { x: point.right - (done.offsetWidth || (coarse ? 48 : 76)), y: point.top },
         { width: pathChip.offsetWidth || 120, height: pathChip.offsetHeight || 20 },
-        { width: done.offsetWidth || (coarse ? 48 : 76), height: done.offsetHeight || (coarse ? 44 : 20) },
+        { width: done.offsetWidth || (coarse ? 48 : 76), height: done.offsetHeight || (coarse ? 28 : 20) },
         viewport,
         topInset,
       );
       positionAt(pathChip, placement.name);
       positionAt(done, placement.done);
+      const nameRight = placement.name.x + pathChip.offsetWidth;
+      const doneLeft = placement.done.x;
+      const rowHeight = Math.max(pathChip.offsetHeight, done.offsetHeight);
+      if (doneLeft > nameRight && app.r.pins.some((pin) => {
+        if (pin.draft) return false;
+        const at = app.r.toScreen({ x: pin.x, y: pin.y });
+        const extent = pin.count > 1 ? PIN_R * 2 + 4 : PIN_R * 2;
+        return at.x < doneLeft && at.x + extent > nameRight &&
+          at.y - extent < placement.name.y + rowHeight && at.y > placement.name.y;
+      })) {
+        chipBridge.hidden = false;
+        chipBridge.style.width = `${doneLeft - nameRight}px`;
+        chipBridge.style.height = `${rowHeight}px`;
+        positionAt(chipBridge, { x: nameRight, y: placement.name.y });
+      }
     } else {
       pathChip.hidden = true;
       done.hidden = true;
+      chipBridge.hidden = true;
     }
   };
 
   app.on('selection', place);
   app.on('objects', place);
   app.on('drag', place);
+  app.on('comments', place);
+  const offComments = app.comments.onChange(place);
   const offCamera = app.r.onCamera(place);
   const resize = new ResizeObserver(place);
   resize.observe(parent);
   app.onDestroy(() => {
+    offComments();
     offCamera();
     resize.disconnect();
     selectedChip.remove();
+    chipBridge.remove();
     pathChip.remove();
     done.remove();
   });

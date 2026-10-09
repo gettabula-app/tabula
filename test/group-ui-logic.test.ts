@@ -64,7 +64,7 @@ describe('group chip visibility and placement', () => {
     expect(clampGroupChipPosition(0, 0, { width: 420, height: 20 }, { width: 390, height: 844 }, 72).x).toBe(8);
   });
 
-  it('keeps the entered path and Done chips apart when a narrow group brings their anchors together', () => {
+  it('keeps the entered path and Done chips on one row when a narrow group brings their anchors together', () => {
     const placement = placeEnteredGroupChips(
       { x: 158, y: 336 },
       { x: 151, y: 336 },
@@ -74,8 +74,25 @@ describe('group chip visibility and placement', () => {
       72,
     );
     expect(placement.name).toEqual({ x: 158, y: 336 });
-    expect(placement.done).toEqual({ x: 260, y: 336 });
-    expect(placement.done.x).toBeGreaterThanOrEqual(placement.name.x + 94 + 8);
+    expect(placement.done).toEqual({ x: 252, y: 336 });
+    expect(placement.done.x).toBeGreaterThanOrEqual(placement.name.x + 94);
+  });
+
+  it('keeps the 28 px touch Done box beside the path chip in one clamped row', () => {
+    const placement = placeEnteredGroupChips(
+      { x: -12, y: 12 },
+      { x: -10, y: 12 },
+      { width: 138, height: 20 },
+      { width: 52, height: 28 },
+      { width: 390, height: 844 },
+      72,
+    );
+    expect(placement.name.y).toBe(72);
+    expect(placement.done.y).toBe(72);
+    expect(placement.done.x).toBeGreaterThanOrEqual(placement.name.x + 138);
+    expect(placement.name.x).toBeGreaterThanOrEqual(8);
+    expect(placement.done.x + 52).toBeLessThanOrEqual(382);
+    expect(placement.done.y + 28).toBeLessThanOrEqual(836);
   });
 });
 
