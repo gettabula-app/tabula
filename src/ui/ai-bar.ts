@@ -432,8 +432,9 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       const state = chipState(id, snap.ctx, snap.facts, config.features);
       el.classList.toggle('on', snap.armed === id);
       el.setAttribute('aria-pressed', String(snap.armed === id));
-      setDisabled(el, !idle || !state.enabled);
-      if (idle && state.reason) el.setAttribute('data-tip', state.reason);
+      // live in idle and after an error (docs/ai-toolbar.md, "States"), inert while running and previewing
+      setDisabled(el, !(idle || failed) || !state.enabled);
+      if ((idle || failed) && state.reason) el.setAttribute('data-tip', state.reason);
       else el.removeAttribute('data-tip');
     }
 
@@ -876,7 +877,13 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const el = (e.target as Element).closest<HTMLElement>('.chip');
     if (!el) return;
     roving(el);
-    if (st.ui !== 'idle' || isDisabled(el)) return;
+    if ((st.ui !== 'idle' && st.ui !== 'error') || isDisabled(el)) return;
+    // after an error a chip is a fresh start: the error goes, the choice stays
+    if (st.ui === 'error') {
+      stopCountdown();
+      st.error = null;
+      st.ui = 'idle';
+    }
     // a chip arms its action; Run or Enter starts it, with the estimate in view
     st.armed = toggleArmed(st.armed, el.dataset.id as AiFeature, st.ctx, st.facts, config.features);
     paint();
