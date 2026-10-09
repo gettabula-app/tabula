@@ -206,6 +206,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .topbar-mark { display: inline-flex; align-items: center; height: 32px; }
   .topbar-nav { order: 3; flex: 1 0 100%; margin: 0 -4px; padding: 4px 4px 8px; overflow-x: auto; scrollbar-width: none; }
   .topbar-nav::-webkit-scrollbar { display: none; }
+  .topbar-nav { gap: 14px; }
   .topbar-end { gap: 12px; }
   .topbar-me { max-width: 40vw; }
 

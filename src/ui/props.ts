@@ -157,7 +157,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
 
     // ---- text
     if (sel.some(HAS_TEXT)) {
-      const fb = h('button', { class: 'input font-btn', style: `font-family:"${fontName(s.font)}", system-ui`, 'aria-label': `Font: ${fontName(s.font)}` }, fontName(s.font), icon('chevron', 16));
+      const fb = h('button', { class: 'input font-btn', style: `font-family:"${fontName(s.font)}", system-ui`, 'aria-label': `Font: ${fontName(s.font)}` }, h('span', { class: 'font-name' }, fontName(s.font)), icon('chevron', 16));
       fb.addEventListener('click', () => {
         const used = [...new Set([...app.store.cache.values()].map((o) => (o as BaseObj).font).filter(Boolean))] as string[];
         const fontPatch = (slug: string) => ({ font: slug, fontWeight: nearestWeight(slug, s.fontWeight) });

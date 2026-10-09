@@ -680,7 +680,7 @@ function openSettings(app: BoardApp) {
   const snap = h('input', { type: 'checkbox', checked: m.snap, 'aria-label': 'Snap to grid' });
   snap.addEventListener('change', () => app.store.setMeta({ snap: snap.checked }));
   const fontBtn = (key: 'headingFont' | 'bodyFont') => {
-    const b = h('button', { class: 'input font-btn', style: `font-family:"${fontName(m[key])}", system-ui` }, fontName(m[key]), icon('chevron', 16));
+    const b = h('button', { class: 'input font-btn', style: `font-family:"${fontName(m[key])}", system-ui` }, h('span', { class: 'font-name' }, fontName(m[key])), icon('chevron', 16));
     b.addEventListener('click', () => openFontPicker(b, app.store.getMeta()[key], (slug) => {
       app.store.setMeta({ [key]: slug });
       b.firstChild!.textContent = fontName(slug);
