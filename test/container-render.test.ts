@@ -5,7 +5,7 @@ import { Renderer, handlesFor } from '../src/render';
 import { Store } from '../src/store';
 import type { BaseObj, Id } from '../src/types';
 
-// docs/kanban.md, slice 1: what the renderer and the markup do with containers, lanes and cards before slice 2 draws them.
+// docs/kanban.md, slices 1 and 2: what the renderer and the markup do with containers, lanes and cards.
 
 // Just enough of a page for the Renderer: every drawn object is a <g> whose markup is written once per draw.
 const writes = new Map<Id, string[]>();
@@ -36,6 +36,9 @@ class FakeEl {
   }
   getBoundingClientRect() {
     return { width: 1600, height: 1200, left: 0, top: 0 };
+  }
+  getContext() {
+    return null;
   }
 }
 
@@ -106,38 +109,33 @@ describe('handles', () => {
   });
 });
 
-describe('markup for containers, lanes and cards', () => {
-  const outsideVars = (svg: string) => svg.replace(/var\([^)]*\)/g, '');
-
-  it('draws a hairline box with a name for each, so none is an invisible region', () => {
-    const container = objectMarkup(box('c', 'container', { layout: 'kanban', name: 'Sprint', w: 300, h: 200 }), ctx);
-    const lane = objectMarkup(box('l', 'lane', { w: 280, h: 160 }), ctx);
-    const card = objectMarkup(box('k', 'card', { w: 264, h: 72 }), ctx);
-    expect(container).toContain('width="300" height="200"');
-    expect(container).toContain('>Sprint</text>');
-    expect(lane).toContain('>Lane</text>');
-    expect(card).toContain('>Card</text>');
-    for (const svg of [container, lane, card]) {
-      expect(svg).toContain('<rect ');
-      expect(svg).toContain('stroke-width="1"');
-    }
-  });
-
-  it('draws a container whose layout it does not know with a note, and a known one without', () => {
-    expect(objectMarkup(box('c', 'container', { layout: 'timeline', name: 'Plan' }), ctx)).toContain('Needs a newer Tabula');
+describe('markup for what no known layout places', () => {
+  it('draws a container whose layout it does not know as a hairline box with its name and a note', () => {
+    const svg = objectMarkup(box('c', 'container', { layout: 'timeline', name: 'Plan', w: 300, h: 200 }), ctx);
+    expect(svg).toContain('width="300" height="200"');
+    expect(svg).toContain('>Plan</text>');
+    expect(svg).toContain('Needs a newer Tabula');
     expect(objectMarkup(box('c', 'container', { name: 'Plan' }), ctx)).toContain('Needs a newer Tabula');
     expect(objectMarkup(box('c', 'container', { layout: 'kanban', name: 'Plan' }), ctx)).not.toContain('Needs a newer Tabula');
   });
 
-  it('names an unnamed container, and cannot be fed markup through a name', () => {
-    expect(objectMarkup(box('c', 'container', { layout: 'kanban' }), ctx)).toContain('>Container</text>');
-    const evil = objectMarkup(box('c', 'container', { layout: 'kanban', name: '</text><script>x</script>' }), ctx);
-    expect(evil).not.toContain('<script');
-    expect(evil).toContain('&lt;script&gt;');
+  it('draws a lane outside a known container as a named box, never as a lane', () => {
+    const svg = objectMarkup(box('l', 'lane', { name: 'Doing', w: 280, h: 160 }), ctx);
+    expect(svg).toContain('>Doing</text>');
+    expect(svg).toContain('stroke-width="1"');
+  });
+
+  it('cannot be fed markup through a name', () => {
+    for (const layout of ['kanban', 'timeline']) {
+      const evil = objectMarkup(box('c', 'container', { layout, name: '</text><script>x</script>', w: 900 }), ctx);
+      expect(evil).not.toContain('<script');
+      expect(evil).toContain('&lt;script&gt;');
+    }
   });
 
   it('uses theme variables for colour, with no hard-coded colour outside their fallbacks', () => {
-    for (const o of [box('c', 'container', { layout: 'kanban' }), box('l', 'lane'), box('k', 'card')]) {
+    const outsideVars = (svg: string) => svg.replace(/var\([^)]*\)/g, '');
+    for (const o of [box('c', 'container', { layout: 'kanban' }), box('c', 'container'), box('l', 'lane'), box('k', 'card')]) {
       const svg = outsideVars(objectMarkup(o, ctx));
       expect(svg).not.toMatch(/#[\da-f]{3,8}\b|rgba?\(|\b(?:white|black)\b/i);
       expect(objectMarkup(o, ctx)).toContain('var(--canvas-ink');

@@ -1,6 +1,6 @@
 import type { BoardApp } from '../app';
 import type { BaseObj, ConnectorObj, End, Point, ShapeKind, UmlRelation } from '../types';
-import { h, icon } from './dom';
+import { ICONS, h, icon } from './dom';
 import { dialog, toast } from './common';
 import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
@@ -118,6 +118,15 @@ function shapesTab(app: BoardApp, close: () => void) {
     });
     return draggable(b, { kind: 'shape', shape: kind });
   };
+  // a kanban is a container, not a shape, but it is made the same way: pick the tool, then click or drag on the board
+  const kanbanTile = () => {
+    const b = h('button', {
+      class: `tile${app.tool.kind === 'kanban' ? ' on' : ''}`, 'data-tip': 'Kanban: To do, Doing, Done. Click or drag on the board to place it.', 'aria-label': 'Kanban',
+      onclick: () => { app.setTool({ kind: 'kanban' }); close(); },
+      html: `<svg width="56" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.kanban}</svg><span>Kanban</span>`,
+    });
+    return b;
+  };
   const render = () => {
     const query = input.value.trim();
     const q = query.toLowerCase();
@@ -125,6 +134,7 @@ function shapesTab(app: BoardApp, close: () => void) {
       const kinds = SHAPE_KINDS.filter((k) => k.group === group && (k.label.toLowerCase().includes(q) || k.kind.includes(q)));
       return kinds.length ? [h('div', { class: 'list-label' }, label), h('div', { class: 'tiles' }, ...kinds.map((k) => tile(k.kind, k.label)))] : [];
     });
+    if ('kanban board'.includes(q) && !app.readOnly) groups.push(h('div', { class: 'list-label' }, 'Boards'), h('div', { class: 'tiles' }, kanbanTile()));
     results.replaceChildren(...(groups.length ? groups : [h('div', { class: 'empty' }, `No shapes match “${query}”.`)]));
   };
   input.addEventListener('input', render);

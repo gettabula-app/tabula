@@ -25,7 +25,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `templates`, `settings`, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer` and `chat-unread` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `comments`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer` and `chat-unread` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -34,7 +34,7 @@ npm run visual -- --id TAB-123 --mode accounts --states admin --themes default -
 | `--frameable` | off | Starts the throwaway relay with `TABULA_DEV_ALLOW_FRAMING=1` (see below) |
 | `--help` | | Prints the options |
 
-The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths) and about 70 seconds on a laptop, 450 shots in accounts mode (12 states and the three chat states).
+The full default matrix is 420 shots in open mode (6 states and the 8 kanban states, 5 themes, 6 widths) and about four minutes on a laptop, 450 shots in accounts mode (12 states and the three chat states; the kanban states are open mode only). Pass `--states` to take fewer.
 
 ## States
 
@@ -51,6 +51,14 @@ The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths)
 | `empty-focus` | The empty board with a focus request card from a second person (Ana, in a second browser context that sets the request on its awareness) |
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
+| `kanban` | (open mode only, as are the other `kanban` states) A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
+| `kanban-card` | The same with a card selected |
+| `kanban-drag` | A card held down and dragged into another lane: placeholder, ghost and drop line (the mouse stays down, so the shot is not parked) |
+| `kanban-drag-empty` | A card dragged over an empty lane: "Drop here" and the drop line at the top of its body |
+| `kanban-keyboard` | A card moved with Alt+arrows: the ring, the "Moving" tag and the live region |
+| `kanban-adding` | The inline "+ Add card" input with a title typed (not parked, so it keeps focus) |
+| `kanban-wip` | A fourth card in the lane with a limit of three: the danger count and rule |
+| `kanban-lowdetail` | The kanban at zoom 0.3: titles as bars, chips as colour, lane headers as names |
 | `admin` | `#/admin`, the Overview tab, signed in as the owner (accounts mode only) |
 | `backups-list` | `#/admin/backups`: the status and the list of seven backups (two protected, two unreadable). Accounts mode; the backup routes are answered with fixed data and the shot is the whole page |
 | `backups-detail` | The first backup opened in place: facts, free space, how long the old data is kept, the two actions (whole page) |
@@ -62,7 +70,7 @@ The full default matrix is 150 shots in open mode (5 states, 5 themes, 6 widths)
 | `chat-composer` | The same, with `Thanks @b` typed and the people list open |
 | `chat-unread` | The board with Chat closed: the Chat button's unread badge, outlined for a mention |
 
-A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`).
+A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.
 
 ## What the script does
 

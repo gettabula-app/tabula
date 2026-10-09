@@ -3,6 +3,7 @@
 // give the same answer. shared/containers.d.ts carries the types for TypeScript; the Dockerfile copies this folder.
 
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
+import { safeColor } from './colors.mjs';
 
 /**
  * @typedef {{ x: number, y: number, w: number, h: number }} Rect
@@ -69,6 +70,36 @@ export const LIMITS = Object.freeze({
 
 /** Palette keys for board labels: the sticky swatches (a test keeps them equal to src/palette.ts), coloured by theme tokens. */
 export const LABEL_COLORS = Object.freeze(['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey']);
+
+/**
+ * A lane's or card's `fill`, a label's `color` or an owner's colour as the kanban may draw it: a palette key (any case,
+ * given back in lower case, drawn as its sticky swatch) or a colour `safeColor` accepts in canonical form; anything else,
+ * and `none` or `transparent` (which would hide a lane or a chip), gives `fallback`. The value ends up in a style
+ * attribute, so this is the one check for every one of them, at render and wherever they are read or written.
+ * @param {unknown} value
+ * @param {string | null} [fallback] a palette key or null
+ * @returns {string | null}
+ */
+export function kanbanColor(value, fallback = null) {
+  if (typeof value === 'string' && LABEL_COLORS.includes(value.toLowerCase())) return value.toLowerCase();
+  const c = safeColor(value, null);
+  return c === null || c === 'none' || c === 'transparent' ? fallback : c;
+}
+
+/** The colour a label without a usable one shows. */
+export const LABEL_DEFAULT_COLOR = 'grey';
+
+/**
+ * A board label as it may be used, or null: an id and a name of at most 40 characters; a colour that `kanbanColor`
+ * refuses becomes the default one. Anything read from the `labels` map goes through this first, since any client can write that map.
+ * @returns {{ id: string, name: string, color: string, order: number } | null}
+ */
+export function validLabel(value) {
+  if (!value || typeof value !== 'object') return null;
+  const { id, name, color, order } = value;
+  if (typeof id !== 'string' || !id || typeof name !== 'string' || name.length > LIMITS.labelName) return null;
+  return { id, name, color: kanbanColor(color, LABEL_DEFAULT_COLOR), order: Number.isFinite(order) ? order : 0 };
+}
 
 // ---------------------------------------------------------------- ranks
 

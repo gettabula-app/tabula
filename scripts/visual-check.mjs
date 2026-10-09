@@ -31,9 +31,10 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, and in
-                     accounts mode admin, backups-list, backups-detail, backups-board-copy, backups-confirm, backups-restoring,
-                     backups-off, chat, chat-composer, chat-unread (the chat states turn on TABULA_CHAT)
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
+                     mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
+                     kanban-lowdetail, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread (the chat states turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -365,6 +366,102 @@ async function seedChat(relay, ownerCookie) {
   return { ownerId: ids.owner, readUpTo: answer, count: times.length };
 }
 
+
+// ---------------------------------------------------------------- kanban (docs/kanban.md, slice 2)
+
+const KANBAN_ID = 'visual-kanban';
+
+/** Runs inside the page: a kanban like the design mock's, once. Card heights are stored the way the app stores them. */
+function seedKanban({ at }) {
+  const app = window.__board;
+  const store = app.store;
+  if (store.get('k-box')) return false;
+  const body = store.getMeta().bodyFont;
+  const heading = store.getMeta().headingFont;
+  const z = store.topZ();
+  const base = { rotation: 0, z, createdBy: 'visual-seed', updatedAt: at };
+  const lanes = [
+    { id: 'k-todo', name: 'To do', stage: 'todo' },
+    { id: 'k-doing', name: 'Doing', stage: 'doing', fill: 'blue', wip: 3 },
+    { id: 'k-review', name: 'Review', wip: 2, wipMode: 'block' },
+    { id: 'k-done', name: 'Shipped', stage: 'done', fill: 'green' },
+  ];
+  const cards = {
+    'k-todo': [
+      { id: 'k-c1', text: 'Write the migration guide for teams moving sprint boards from spreadsheets, with the CSV column mapping and the formula guards', labels: ['docs'], ownerName: 'Lea Brandt' },
+      { id: 'k-c2', text: 'Fix the login loop on Safari 17', fill: '#FFA3C4', labels: ['bug', 'ui', 'urgent', 'chore'], due: '2026-01-16', ownerName: 'Visual QA', ownerId: 'visual-user' },
+      { id: 'k-c3', text: 'Spike: caching' },
+      { id: 'k-c4', text: 'Pick the beta cohort', due: '2026-01-19', ownerName: 'Ana Novak' },
+    ],
+    'k-doing': [
+      { id: 'k-d1', text: 'Card dialog: owner picker', labels: ['feature'], due: '2026-01-12', ownerName: 'Visual QA', ownerId: 'visual-user' },
+      { id: 'k-d2', text: 'Lane menu and WIP warning', labels: ['feature'], due: '2026-01-15', ownerName: 'Marta Ruiz' },
+      { id: 'k-d3', text: 'CSV export with formula guards', labels: ['bug'], ownerName: 'Visual QA', ownerId: 'visual-user' },
+    ],
+    'k-review': [],
+    'k-done': [
+      { id: 'k-e1', text: 'Copy shared/ into the Docker image', due: '2026-01-13', ownerName: 'Visual QA', ownerId: 'visual-user', labels: ['chore'] },
+      { id: 'k-e2', text: 'Spec review', labels: ['docs'] },
+    ],
+  };
+  const labels = [['bug', 'Bug', 'pink'], ['feature', 'Feature', 'blue'], ['ui', 'Frontend', 'teal'], ['urgent', 'Urgent', 'orange'], ['docs', 'Docs', 'violet'], ['chore', 'Chore', 'grey']];
+  const keys = ['a0', 'a1', 'a2', 'a3', 'a4'];
+  const objs = [{ ...base, id: 'k-box', type: 'container', layout: 'kanban', name: 'Q4 delivery', x: 0, y: 0, w: 1200, h: 600, font: heading }];
+  lanes.forEach((l, i) => objs.push({ ...base, ...l, type: 'lane', parent: 'k-box', rank: `${keys[i]}@k-box`, x: 0, y: 0, w: 280, h: 200, font: body }));
+  for (const [lane, list] of Object.entries(cards)) {
+    list.forEach((c, i) => {
+      const card = { ...base, ...c, type: 'card', parent: lane, rank: `${keys[i]}@${lane}`, x: 0, y: 0, w: 264, h: 0, font: body };
+      card.h = window.__kanban.cardContentHeight(card, 264);
+      objs.push(card);
+    });
+  }
+  // ordinary objects beside it, as in the mock
+  objs.push({ ...base, id: 'k-frame', type: 'frame', name: 'Ideas', x: -220, y: 0, w: 176, h: 276, fill: '#FFFFFF', font: heading });
+  objs.push({ ...base, id: 'k-note-1', type: 'sticky', text: 'Card ageing in Doing?', x: -204, y: 16, w: 104, h: 104, fill: '#FFE16B', parent: 'k-frame', font: body, fontSize: 14 });
+  objs.push({ ...base, id: 'k-note-2', type: 'sticky', text: 'Swimlanes by owner', x: -164, y: 152, w: 104, h: 104, fill: '#8FE3CA', parent: 'k-frame', font: body, fontSize: 14 });
+  store.transact(() => {
+    labels.forEach(([id, name, color], order) => store.labels.set(id, { id, name, color, order }));
+    objs.forEach((o) => store.create(o));
+  });
+  return true;
+}
+
+async function openKanbanBoard({ page, base }, { fit = true, board = KANBAN_ID } = {}) {
+  await page.goto(`${base}/?debug#/b/${board}`);
+  await page.waitForFunction(() => window.__board && window.__kanban, null, { timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const provider = window.__board.conn.provider;
+    return !provider || provider.synced;
+  }, null, { timeout: 15_000 });
+  // heights are measured with the board's fonts, so they have to be there first
+  await page.evaluate(() => document.fonts.ready);
+  await settle(page);
+  const fresh = await page.evaluate(seedKanban, { at: NOW - HOUR });
+  if (fresh) {
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.comments.addThread({ id: 'visual-user', name: 'Visual QA', color: '#2F6FED' }, { x: 0, y: 0, obj: 'k-d3', fx: 0.95, fy: 0.1 }, 'Should the guard cover tabs too?');
+    });
+  }
+  await page.evaluate((doFit) => {
+    const app = window.__board;
+    app.setSelection([]);
+    // a phone shows the kanban alone, as the design's 390 shots do; a desktop shows the objects beside it too
+    if (doFit) app.r.fit(window.innerWidth < 600 ? app.r.contentBounds(['k-box']) : app.r.contentBounds(), window.innerWidth < 600 ? 8 : 40, 1);
+  }, fit);
+  await settle(page);
+}
+
+/** The screen point of a world point on the kanban board. */
+const screenOf = (page, id, fx, fy) =>
+  page.evaluate(({ id, fx, fy }) => {
+    const app = window.__board;
+    const o = app.store.getPlaced(id);
+    const s = app.r.toScreen({ x: o.x + o.w * fx, y: o.y + o.h * fy });
+    const box = app.r.svg.getBoundingClientRect();
+    return { x: box.left + s.x, y: box.top + s.y };
+  }, { id, fx, fy });
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -473,6 +570,75 @@ const STATES = {
     await env.page.getByRole('button', { name: 'Board settings' }).click();
     await env.page.getByRole('dialog', { name: 'Board settings' }).waitFor();
   },
+  async kanban(env) {
+    await openKanbanBoard(env);
+  },
+  async 'kanban-card'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+  },
+  async 'kanban-drag'(env) {
+    await openKanbanBoard(env);
+    const { page } = env;
+    const from = await screenOf(page, 'k-c3', 0.5, 0.5);
+    const to = await screenOf(page, 'k-d1', 0.6, 0.95);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await settle(page);
+    return { noPark: true };
+  },
+  async 'kanban-drag-empty'(env) {
+    await openKanbanBoard(env);
+    const { page } = env;
+    const from = await screenOf(page, 'k-c3', 0.5, 0.5);
+    const to = await screenOf(page, 'k-review', 0.5, 0.3);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await settle(page);
+    return { noPark: true };
+  },
+  async 'kanban-keyboard'(env) {
+    await openKanbanBoard(env);
+    const { page } = env;
+    await page.evaluate(() => window.__board.setSelection(['k-d2']));
+    await page.keyboard.press('Alt+ArrowUp');
+    await page.keyboard.press('Alt+ArrowDown');
+    await page.locator('[role="status"][aria-live="polite"]').filter({ hasText: 'Moved to Doing' }).waitFor({ state: 'attached' });
+  },
+  async 'kanban-adding'(env) {
+    await openKanbanBoard(env);
+    const { page } = env;
+    await page.evaluate(() => window.__board.cardInput.start('k-todo'));
+    await page.locator('.k-input').fill('Draft the release notes');
+    await settle(page);
+    return { noPark: true };
+  },
+  async 'kanban-wip'(env) {
+    // its own board: the extra card would otherwise stay in the shared one and change every later kanban shot
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-wip` });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      if (!app.store.get('k-d4')) {
+        const card = { id: 'k-d4', type: 'card', parent: 'k-doing', rank: 'a3@k-doing', text: 'Phone sheet at 390', labels: ['ui'], ownerName: 'Ana Novak', due: '2026-01-22', x: 0, y: 0, w: 264, h: 0, rotation: 0, z: 'a0', createdBy: 'visual-seed', updatedAt: Date.now(), font: app.store.getMeta().bodyFont };
+        card.h = window.__kanban.cardContentHeight(card, 264);
+        app.store.transact(() => app.store.create(card));
+      }
+      app.setSelection([]);
+    });
+  },
+  async 'kanban-lowdetail'(env) {
+    await openKanbanBoard(env, { fit: false });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const b = app.store.getPlaced('k-box');
+      const s = app.r.size();
+      const zoom = 0.3;
+      app.r.setCamera({ zoom, x: b.x + b.w / 2 - s.w / 2 / zoom, y: b.y + b.h / 2 - s.h / 2 / zoom });
+    });
+    await settle(env.page);
+  },
   async admin({ page, base }) {
     await page.goto(`${base}/#/admin`);
     await waitForAdminPanel(page);
@@ -513,7 +679,9 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread']);
-const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+// The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
+const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
+const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -681,7 +849,9 @@ async function capture({ browser, state, theme, width, file, shared }) {
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
     const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat });
-    if (shot?.keepFocus) await page.mouse.move(1, 1);
+    // a state that holds the mouse down or keeps an input focused would be undone by parking
+    if (shot?.noPark) { /* left as it is */ }
+    else if (shot?.keepFocus) await page.mouse.move(1, 1);
     else await park(page);
     await settle(page);
     result.overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth);

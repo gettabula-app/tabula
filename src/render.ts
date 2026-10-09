@@ -1,6 +1,7 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
-import { isContainerType } from '../shared/containers';
+import { isContainerType, validLabel } from '../shared/containers';
+import { lowDetail } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
@@ -34,11 +35,27 @@ export interface Overlay {
   votes: Map<Id, { mine: number; total: number | null }>;
   dropTarget: Id | null;        // frame highlighted while dragging into it
   ai: string;                   // world-space markup of the AI previews on the board (ghosts), above the objects and below selections
+  kanban: KanbanOverlay | null; // card drag and keyboard move marks (docs/kanban.md)
+}
+
+/** What a kanban card drag or keyboard move draws over the board, in world coordinates. */
+export interface KanbanOverlay {
+  /** The 2px drop line with square ends. */
+  line?: Rect | null;
+  /** A card being moved by keyboard: a ring 4px out and the "Moving" tag. */
+  moving?: Rect | null;
+}
+
+/** Kanban state the drawing of lanes and cards depends on (docs/kanban.md, Dragging and Adding a card). */
+export interface KanbanDrawState {
+  dragging: ReadonlySet<Id>;
+  dropLane: Id | null;
+  addingLane: Id | null;
 }
 
 export const emptyOverlay = (): Overlay => ({
   selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
-  guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null, ai: '',
+  guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null, ai: '', kanban: null,
 });
 
 const GUIDE = 'var(--guide, #D6247F)';
@@ -94,6 +111,7 @@ export class Renderer {
   readonly world: SVGGElement;
   private objLayer: SVGGElement;
   private overlayLayer: SVGGElement;
+  private ghostLayer: SVGGElement;
   private gridRect: SVGRectElement;
   private gridDefs: SVGDefsElement;
   readonly cursorLayer: HTMLDivElement;
@@ -109,6 +127,15 @@ export class Renderer {
   readOnly = false;
   gridType: GridType = 'dots';
   gridSize = 24;
+  /** The person colour of a card's owner when this viewer knows the owner; set by the app. */
+  ownerColor: (o: BaseObj) => string | undefined = () => undefined;
+  /** How many comments an object has, for the count on a card; set by the app. */
+  commentCount: (id: Id) => number = () => 0;
+  private kanbanState: KanbanDrawState = { dragging: new Set(), dropLane: null, addingLane: null };
+  // the container each drawn lane or card belonged to, so a card that leaves a lane redraws the lane it left
+  private kanbanOf = new Map<Id, Id>();
+  // where each lane and card was last drawn, for the 120 ms tween when the layout moves it
+  private drawnAt = new Map<Id, Point>();
 
   private els = new Map<Id, SVGGElement>();
   private dirty = new Set<Id>();
@@ -134,12 +161,13 @@ export class Renderer {
     this.svg.classList.add('canvas');
     this.svg.setAttribute('role', 'application');
     this.svg.setAttribute('aria-label', 'Whiteboard canvas');
-    this.svg.innerHTML = `<defs>${SVG_DEFS}</defs><defs class="grid-defs"></defs><rect class="grid-bg" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)"/><g class="world"><g class="objects"></g><g class="overlay"></g></g>`;
+    this.svg.innerHTML = `<defs>${SVG_DEFS}</defs><defs class="grid-defs"></defs><rect class="grid-bg" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)"/><g class="world"><g class="objects"></g><g class="overlay"></g><g class="k-ghost-layer"></g></g>`;
     this.gridDefs = this.svg.querySelector('.grid-defs')!;
     this.gridRect = this.svg.querySelector('.grid-bg')!;
     this.world = this.svg.querySelector('.world')!;
     this.objLayer = this.svg.querySelector('.objects')!;
     this.overlayLayer = this.svg.querySelector('.overlay')!;
+    this.ghostLayer = this.svg.querySelector('.k-ghost-layer')!;
     this.cursorLayer = document.createElement('div');
     this.cursorLayer.className = 'cursor-layer';
     this.root.append(this.svg, this.cursorLayer);
@@ -151,13 +179,26 @@ export class Renderer {
       imageState: (o) => this.imageState(o),
       editingId: null,
       layout: () => this.connectorLayout(),
+      containerLayout: (id) => this.store.containerLayout(id),
+      dragging: (id) => this.kanbanState.dragging.has(id),
+      label: (id) => validLabel(this.store.labels.get(id)) ?? undefined,
+      ownerColor: (o) => this.ownerColor(o),
+      commentCount: (id) => this.commentCount(id),
     };
+    // live values, read at each draw (an export spreads the ctx and so takes them as they are then)
+    Object.defineProperties(this.ctx, {
+      zoom: { get: () => this.cam.zoom, enumerable: true },
+      dropLane: { get: () => this.kanbanState.dropLane, enumerable: true },
+      addingLane: { get: () => this.kanbanState.addingLane, enumerable: true },
+      editable: { get: () => !this.readOnly, enumerable: true },
+    });
 
     store.onChange((changed) => {
       this.layoutCache = null;
       for (const id of changed) {
         this.markDirty(id);
         for (const c of store.connectorsOf(id)) this.markDirty(c.id);
+        this.markKanban(id);
       }
       this.overlayDirty = true;
       this.schedule();
@@ -187,6 +228,62 @@ export class Renderer {
     this.boundsCache.delete(id);
   }
 
+  /**
+   * A change inside a kanban changes what its lanes and its header say (counts, the add-card row, "No cards"), not only
+   * the rectangles the store reports as moved: redraw the container and its lanes, now and where the object was before.
+   */
+  private markKanban(id: Id) {
+    const o = this.store.get(id);
+    const before = this.kanbanOf.get(id);
+    let now: Id | undefined;
+    if (o?.type === 'container') now = o.id;
+    else if (o?.type === 'lane') now = o.parent;
+    else if (o?.type === 'card') {
+      const lane = this.store.get(o.parent);
+      now = lane?.type === 'lane' ? lane.parent : undefined;
+    }
+    if (now) this.kanbanOf.set(id, now);
+    else this.kanbanOf.delete(id);
+    for (const cid of new Set([before, now])) {
+      if (!cid) continue;
+      this.markDirty(cid);
+      for (const lane of this.store.containerLayout(cid)?.lanes ?? []) this.markDirty(lane);
+    }
+  }
+
+  /** Changes what a drag or the inline add-card input shows in the board's own drawing, redrawing only what it touches. */
+  setKanbanState(patch: Partial<KanbanDrawState>) {
+    const prev = this.kanbanState;
+    const next = { ...prev, ...patch };
+    for (const id of new Set([...prev.dragging, ...next.dragging])) if (prev.dragging.has(id) !== next.dragging.has(id)) this.markDirty(id);
+    for (const id of [prev.dropLane, next.dropLane, prev.addingLane, next.addingLane]) if (id) this.markDirty(id);
+    this.kanbanState = next;
+    this.schedule();
+  }
+
+  /**
+   * The card under the pointer while it is dragged: `markup` in the card's own coordinates, placed at `at`. Its own layer,
+   * so that the lift plays once when it appears and moving it is one attribute. Null removes it.
+   */
+  setGhost(markup: string | null, at?: Point) {
+    if (markup === null) {
+      delete this.ghostLayer.dataset.markup;
+      this.ghostLayer.innerHTML = '';
+      this.ghostLayer.removeAttribute('transform');
+      return;
+    }
+    if (this.ghostLayer.dataset.markup !== markup) {
+      this.ghostLayer.dataset.markup = markup;
+      this.ghostLayer.innerHTML = `<g class="k-ghost" aria-hidden="true">${markup}</g>`;
+    }
+    if (at) this.ghostLayer.setAttribute('transform', `translate(${at.x} ${at.y})`);
+  }
+
+  /** Moves the drag ghost so that its top-left is at `at`. */
+  moveGhost(at: Point) {
+    this.ghostLayer.setAttribute('transform', `translate(${at.x} ${at.y})`);
+  }
+
   /** Redraws these objects at the next frame (an image whose bytes arrived). */
   invalidateObjects(ids: Iterable<Id>) {
     for (const id of ids) this.markDirty(id);
@@ -207,8 +304,13 @@ export class Renderer {
   }
 
   setCamera(c: Partial<Camera>) {
+    const low = lowDetail(this.cam.zoom);
     this.cam = { ...this.cam, ...c };
     this.cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.cam.zoom));
+    // a kanban draws differently below zoom 0.4, so crossing it redraws what is on screen of every kanban
+    if (lowDetail(this.cam.zoom) !== low) {
+      for (const id of this.els.keys()) if (isContainerType(this.store.get(id)?.type ?? '')) this.markDirty(id);
+    }
     this.camDirty = true;
     this.overlayDirty = true;
     this.schedule();
@@ -410,6 +512,8 @@ export class Renderer {
     const ordered = this.store.ordered();
     const visible = new Set<Id>();
     let prev: SVGGElement | null = null;
+    // containers that moved since the last draw: what they lay out moves with them, without a tween
+    const shifted = new Set<Id>();
     for (const raw of ordered) {
       const o = this.store.placed(raw);
       const b = this.bounds(o);
@@ -424,6 +528,7 @@ export class Renderer {
       }
       if (fresh || this.allDirty || this.dirty.has(o.id)) {
         el.innerHTML = objectMarkup(o, this.ctx);
+        if (isContainerType(o.type)) this.tween(el, o, fresh, shifted);
       }
       // keep DOM order equal to paint order
       const expectedNext: ChildNode | null = prev ? prev.nextSibling : this.objLayer.firstChild;
@@ -434,10 +539,36 @@ export class Renderer {
       if (!visible.has(id)) {
         el.remove();
         this.els.delete(id);
+        this.drawnAt.delete(id);
       }
     }
     this.dirty.clear();
     this.allDirty = false;
+  }
+
+  /**
+   * The 120 ms tween of a lane or card the layout moved, from where it was drawn to where it is now (docs/kanban.md,
+   * Rendering). Not for what is drawn for the first time, not when its container moved (a container drag moves its
+   * contents with it), and never with reduced motion.
+   */
+  private tween(el: SVGGElement, o: Obj, fresh: boolean, shifted: Set<Id>) {
+    const was = this.drawnAt.get(o.id);
+    const now = { x: (o as BaseObj).x, y: (o as BaseObj).y };
+    this.drawnAt.set(o.id, now);
+    if (o.type === 'container') {
+      if (was && (was.x !== now.x || was.y !== now.y)) shifted.add(o.id);
+      return;
+    }
+    if (fresh || !was || (was.x === now.x && was.y === now.y)) return;
+    const box = this.kanbanOf.get(o.id);
+    if (box && shifted.has(box)) return;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${was.x - now.x}px, ${was.y - now.y}px)`;
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 120ms ease-out';
+      el.style.transform = '';
+    });
   }
 
   private renderOverlay() {
@@ -475,7 +606,8 @@ export class Renderer {
 
     // selection
     const sel = ov.selection.map(get).filter(Boolean) as Obj[];
-    for (const o of sel) out += this.outline(o, px(1.5), 1);
+    // a dragged card's slot is its dashed placeholder, with no selection outline over it
+    for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
     if (sel.length > 1) {
       const b = this.contentBounds(ov.selection);
       if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
@@ -545,6 +677,32 @@ export class Renderer {
           `<circle cx="${x - w + px(15)}" cy="${y}" r="${px(3.5)}" fill="#fff"/>` +
           `<text x="${x - w + px(22)}" y="${y + px(4.2)}" font-size="${px(12)}" font-weight="700" fill="#fff" font-family="Switzer, system-ui, sans-serif">${label}</text></g>`;
       }
+    }
+
+    // kanban: the drop line (2px canvas ink, 8px square ends) and the keyboard move ring and tag
+    const k = ov.kanban;
+    if (k?.line) {
+      const l = k.line;
+      const e = px(8);
+      out += `<g style="fill:var(--canvas-ink, #18212B)"><rect x="${l.x}" y="${l.y + l.h / 2 - px(1)}" width="${l.w}" height="${px(2)}"/>` +
+        `<rect x="${l.x - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/><rect x="${l.x + l.w - e / 2}" y="${l.y + l.h / 2 - e / 2}" width="${e}" height="${e}"/></g>`;
+    }
+    if (k?.moving) {
+      const m = k.moving;
+      const g = px(4) + px(1);
+      out += `<rect x="${m.x - g}" y="${m.y - g}" width="${m.w + 2 * g}" height="${m.h + 2 * g}" style="fill:none;stroke:var(--canvas-ink, #18212B)" stroke-width="${px(2)}"/>`;
+      const text = 'MOVING · ALT + ARROWS';
+      const tw = px(text.length * 6.9 + 16);
+      // right of the card, or left of it when the view ends there, or above it when neither side has room
+      const vp = this.viewport();
+      let tx = m.x + m.w + px(8), ty = m.y + m.h / 2 - px(10);
+      if (tx + tw > vp.x + vp.w - px(16)) tx = m.x - px(8) - tw;
+      if (tx < vp.x + px(16)) {
+        tx = Math.max(vp.x, m.x);
+        ty = m.y - g - px(24);
+      }
+      out += `<g class="k-moving-tag"><rect x="${tx}" y="${ty}" width="${tw}" height="${px(20)}" style="fill:var(--signal, #FFD23F)"/>` +
+        `<text x="${tx + px(8)}" y="${ty + px(14)}" font-size="${px(11)}" font-weight="600" letter-spacing="${px(0.66)}" style="fill:var(--on-signal, #18212B)" font-family="Switzer, system-ui, sans-serif">${text}</text></g>`;
     }
 
     // pins last, so they sit above selections and handles; overlay only, never in exports
