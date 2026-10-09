@@ -285,6 +285,8 @@ select.input {
 .props.show { display: block; }
 .props-head { padding: 14px 0 2px; }
 .props-head .icon-btn:last-child { margin-right: -13px; }
+.props-head > div { display: flex; align-items: center; }
+.props-fold { display: none; }
 .field { margin-top: 12px; }
 .field-label { margin-bottom: 6px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -495,6 +497,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 5px; background
   .top-right { top: 64px; }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
+  /* folded to its title row, so the board shows above the selection while it stays selected */
+  .props.folded { overflow: hidden; padding-bottom: 0; }
+  .props.folded > :not(.props-head) { display: none; }
+  .props-fold { display: inline-grid; }
+  .quickbar { max-width: calc(100% - var(--rail-clear) - 12px); }
   .flowbar { left: var(--rail-clear); right: 12px; max-width: none; bottom: 60px; }
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }

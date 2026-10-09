@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearOfDock, dockTopOf, placeBar } from '../src/ui/quickbar-layout';
+import { clampX, clearOfDock, dockTopOf, placeBar } from '../src/ui/quickbar-layout';
 
 const view = { w: 1000, h: 800 };
 const bar = { w: 300, h: 40 };
@@ -75,5 +75,18 @@ describe('docked panels', () => {
     // selection low, under the panel: the bar lands above the panel rather than inside it
     const p = placeBar({ x: 100, y: 450, w: 120, h: 120 }, wide, view, 0, undefined, 120);
     expect(clearOfDock(p.y, wide.h, 300, 120) + wide.h + 12).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('clampX', () => {
+  it('keeps a bar right of the rail on a phone and inside the right edge', () => {
+    expect(clampX(12, 300, 390, 76)).toBe(76);
+    expect(clampX(60, 200, 390, 76)).toBe(76);
+    expect(clampX(150, 200, 390, 76)).toBe(150);
+    expect(clampX(300, 200, 390, 76)).toBe(178);
+  });
+
+  it('starts at the left limit when the bar is wider than the room', () => {
+    expect(clampX(0, 360, 390, 76)).toBe(76);
   });
 });

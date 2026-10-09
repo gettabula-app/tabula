@@ -33,6 +33,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
   const panel = h('aside', { class: 'props tray', 'aria-label': 'Selection properties' });
   parent.appendChild(panel);
   let open = false;
+  // phones only (styles.css shows the button below 860px): the panel folds to its title row and stays folded across selections
+  let folded = false;
   const toggled: (() => void)[] = [];
   let timer = 0;
   const schedule = () => {
@@ -222,7 +224,19 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ));
 
-    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18))), ...blocks.filter(Boolean) as HTMLElement[]);
+    const fold = h('button', {
+      class: 'icon-btn props-fold', 'data-tip': folded ? 'Show properties' : 'Fold properties', 'aria-label': folded ? 'Show properties' : 'Fold properties', 'aria-expanded': String(!folded),
+      style: folded ? 'transform: rotate(180deg)' : '',
+      onclick: () => {
+        folded = !folded;
+        panel.classList.toggle('folded', folded);
+        render();
+        panel.querySelector<HTMLElement>('.props-fold')?.focus();
+        toggled.forEach((f) => f());
+      },
+    }, icon('chevron', 18));
+    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('div', null, fold, h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18)))), ...blocks.filter(Boolean) as HTMLElement[]);
+    panel.classList.toggle('folded', folded);
     // keep keyboard focus on the same control across the rebuild that follows each change
     if (focused) panel.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focused)}"]`)?.focus();
   }

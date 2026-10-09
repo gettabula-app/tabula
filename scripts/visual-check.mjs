@@ -265,6 +265,15 @@ const STATES = {
     await more.evaluate((el) => el.click());
     await env.page.locator('.props.show').waitFor();
   },
+  // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
+  async 'board-selected-folded'(env) {
+    await STATES['board-selected'](env);
+    const fold = env.page.getByRole('button', { name: 'Fold properties' });
+    if (await fold.isVisible()) {
+      await fold.click();
+      await env.page.locator('.props.folded').waitFor();
+    }
+  },
   async templates({ page, base }) {
     await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
