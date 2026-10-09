@@ -112,6 +112,7 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 - Click to select. `Shift`+click adds or removes an item. Drag on empty canvas to select with a box.
 - `Ctrl+A` selects everything that is not locked.
 - Drag to move. Arrow keys nudge by 1; with `Shift`, by one grid step.
+- Select a text and drag a handle on its left or right side to change the width it wraps at; the box grows taller or shorter to fit its lines. Drag a corner handle to make the text larger or smaller: its width scales with it, so the lines break where they did. On a touch screen the handles are larger. With the keyboard, `Alt`+`Shift`+`Left` or `Right` changes the width and `Alt`+`Shift`+`Up` or `Down` changes the size.
 - Hold `Alt` while dragging to ignore the grid and [smart guides](smart-guides.md).
 - Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.

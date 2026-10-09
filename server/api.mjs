@@ -12,6 +12,7 @@ import {
 } from './templates.mjs';
 import { MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, SCOPES, TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { describeError } from './ai/errors.mjs';
+import { FEATURE_SPECS } from './ai/features.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
@@ -142,7 +143,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -156,6 +157,22 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       startedAt,
       build: { schema: pair((r) => r.build.schema), maxReader: pair((r) => r.build.maxReader) },
       disk: { schema: pair((r) => r.disk.schema), minReader: pair((r) => r.disk.minReader), legacy: pair((r) => r.disk.legacy) },
+    };
+  }
+
+  /** Counts only what the instance has recorded for GET /api/internal/stats (docs/cloud.md). */
+  function statsReport() {
+    const counts = directory.internalStatsCounts({
+      now: now(),
+      aiRunActions: Object.keys(FEATURE_SPECS).map((feature) => `ai.${feature}`),
+    });
+    return {
+      boards: counts.boards,
+      members: { active: counts.members.active, disabled: counts.members.disabled },
+      guests: counts.guests,
+      activePeople: { last7d: counts.activePeople.last7d, last30d: counts.activePeople.last30d },
+      aiRuns: { last30d: counts.aiRuns.last30d },
+      chatMessages: chat?.store?.()?.countMessages?.() ?? 0,
     };
   }
 
@@ -1066,6 +1083,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       ? [
           // Called by the control plane with the bearer token (`internal`), never by a browser.
           compile('GET', 'internal/usage', { internal: true }, () => [200, cloud.seatUsage()]),
+          // TAB-229: counts only, with no account, board or chat details.
+          compile('GET', 'internal/stats', { internal: true }, () => [200, statsReport()]),
           // TAB-71: which address the rate limits see for this request, to check the proxy setup on a deploy
           compile('GET', 'internal/client-ip', { internal: true }, ({ req }) => [200, clientIpReport(req, config)]),
           // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).

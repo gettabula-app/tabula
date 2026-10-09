@@ -110,7 +110,8 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
     { id: 'sw', p: L(0, o.h) }, { id: 'w', p: L(0, o.h / 2) },
   ];
   let hs = all;
-  if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w');
+  // a text: the sides change the wrap width, the corners scale the type (src/text-resize.ts); its height follows its lines
+  if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
   if (o.type !== 'frame' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
@@ -661,10 +662,13 @@ export class Renderer {
         const top = rotate({ x: o.x + o.w / 2, y: o.y }, center(o), o.rotation || 0);
         out += `<path d="M${top.x} ${top.y}L${rot.p.x} ${rot.p.y}" stroke="${WIRE}" stroke-width="${px(1)}"/>`;
       }
+      // on a touch screen the handles are drawn larger (a finger also reaches further to them: app.ts handleAt)
+      const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+      const half = px(coarse ? 8 : 4.5);
       for (const h of hs) {
-        if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
-        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(5.5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(2)}"/>`;
-        else out += `<rect x="${h.p.x - px(4.5)}" y="${h.p.y - px(4.5)}" width="${px(9)}" height="${px(9)}" rx="${px(2)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
+        if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
+        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5.5)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(2)}"/>`;
+        else out += `<rect x="${h.p.x - half}" y="${h.p.y - half}" width="${half * 2}" height="${half * 2}" rx="${px(2)}" fill="#fff" stroke="${WIRE}" stroke-width="${px(1.5)}"/>`;
       }
     }
 
