@@ -1197,6 +1197,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('PUT', 'internal/limits', { internal: true, body: true, readOnlyOk: true }, ({ body }) => {
             const checked = validateLimits(body);
             if (checked.error) throw badRequest(checked.error);
+            for (const warning of checked.warnings ?? []) console.warn(`api: ${warning}`);
             return [200, cloud.setLimits(checked.patch)];
           }),
           // Mails the workspace owners (a retried call is answered without mailing again); open while read-only like the limits.
