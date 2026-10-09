@@ -57,12 +57,43 @@ Choose **Labels** in the card dialog, or in the quick-action bar or properties p
 - Drop a card away from the kanban and it becomes a loose card on the board.
 - Viewers and commenters can look but cannot drag cards.
 
-## Lanes and the whole kanban
+## Lanes
 
-- Each lane shows how many cards it holds. If a limit is set, it shows for example `3 / 3`, with a red mark when the lane is full.
-- Click a card, a lane or the container to select it.
-- Deleting a lane moves its cards to the lane on its left, or on its right for the first lane. Deleting the whole kanban deletes its lanes and cards.
-- When you zoom far out, card titles become bars and lane headers keep only their names.
+Each lane shows how many cards it holds. Click a card, a lane or the container to select it.
+
+Editors have a **⋯** button on each lane. It offers:
+
+- **Rename**.
+- **Colour**, one of eight named colours.
+- **Stage**: to do, doing or done. Cards in a done lane are not shown as overdue.
+- **WIP limit**: set or clear the most cards the lane should hold, and choose **warn** or **block** (see below).
+- **Move left** and **Move right**.
+- **Delete lane** moves its cards to the lane on its left, or on its right for the first lane. **Delete lane and its cards** deletes both.
+
+To add a lane, select the **+** to the right of the last lane. It opens with its name ready to type. Each of these is one step in Undo. A locked lane or kanban says so instead of changing.
+
+### Limits on work in progress
+
+A lane with a limit shows for example `3 / 3`, with a red mark when it is full. In **warn** mode that is all that happens. In **block** mode a full lane also refuses more cards: a dropped card or sticky, a move with `Alt` and the arrow keys, and a new card. A message says why, for example "Review is full: 3 of 3". While you drag over a full lane it gets a dashed outline and "Full", and **+ Add card** in it is switched off. Moving a card within a full lane, or out of it, is always allowed. Limits are checked in your browser only.
+
+## The whole kanban
+
+The **⋯** in the kanban's header (editors) offers **Rename**, **Add lane**, **Labels**, **Lock** or **Unlock**, and **Delete kanban**. **Export cards (CSV)** and **Open as list** are shown but not available yet.
+
+## Filter the cards
+
+Select **Filter** in the kanban's header, or in the quick-action bar, to show only the cards you care about. You can combine:
+
+- **Mine**: cards you own.
+- **Labels**: cards with any of the labels you pick.
+- **Due**: overdue, today, this week or no date.
+- **Text**: words in the title or description.
+
+The popover says how many cards match, for example "2 of 9 match", and has **Clear**. Active filters also show as chips in the header, each with a button to remove it.
+
+Cards that do not match are dimmed, not hidden, and a drag selection skips them. Comment pins stay at full strength. A filter is yours alone: it is kept in this browser, not in the board, so other people do not see it and exports ignore it. Viewers and commenters can filter too.
+
+When you zoom far out, card titles become bars and lane headers keep only their names.
 
 ## Older versions
 
@@ -70,7 +101,7 @@ A board that contains a kanban opens read only in a Tabula version that does not
 
 ## Not yet
 
-The lane menu, work-in-progress limits that block drops, and filters are coming.
+Exporting cards as a CSV file and opening a kanban as a list are coming.
 
 ## Related
 
