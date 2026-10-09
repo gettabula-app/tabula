@@ -1,4 +1,16 @@
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
+const LOAD_CLASS_TIMING_DEFAULTS = Object.freeze({
+  burstMs: 10_000,
+  seedSettleMs: 250,
+  resultSettleMs: 100,
+  sampleIntervalMs: 500,
+});
+const LOAD_CLASS_TIMING_ENV = Object.freeze({
+  burstMs: 'LOAD_CLASS_BURST_MS',
+  seedSettleMs: 'LOAD_CLASS_SEED_SETTLE_MS',
+  resultSettleMs: 'LOAD_CLASS_RESULT_SETTLE_MS',
+  sampleIntervalMs: 'LOAD_CLASS_SAMPLE_INTERVAL_MS',
+});
 
 export function isLocalTargetHost(host) {
   return LOCAL_HOSTS.has(String(host).toLowerCase());
@@ -82,13 +94,33 @@ export function validateTargetOptions(target, users) {
   return target;
 }
 
-export function targetPlanText(target, users, seconds) {
+export function parseLoadClassTimingOptions(target, env = process.env) {
+  const hasOverride = Object.values(LOAD_CLASS_TIMING_ENV).some((name) => env[name] !== undefined);
+  if (!hasOverride || !target?.remote) return { ...LOAD_CLASS_TIMING_DEFAULTS };
+  if (!isLocalTargetHost(target.host)) {
+    throw new Error('LOAD_CLASS_* timing overrides are only allowed for a local TARGET_URL');
+  }
+
+  const timings = { ...LOAD_CLASS_TIMING_DEFAULTS };
+  for (const [key, name] of Object.entries(LOAD_CLASS_TIMING_ENV)) {
+    if (env[name] === undefined) continue;
+    const raw = String(env[name]);
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value)) {
+      throw new Error(`${name} must be a non-negative whole number`);
+    }
+    timings[key] = value;
+  }
+  return timings;
+}
+
+export function targetPlanText(target, users, seconds, burstMs = LOAD_CLASS_TIMING_DEFAULTS.burstMs) {
   const boards = users.length;
   const lines = [
     'REMOTE LOAD PLAN',
     `Host: ${target.host}`,
     `Steps: ${users.join(', ')} users`,
-    `Activity: ${seconds} seconds per step after a 10 second join burst`,
+    `Activity: ${seconds} seconds per step after a ${burstMs / 1000} second join burst`,
     `Accounts: ${target.accountCount}`,
     `Will create: ${boards} personal board${boards === 1 ? '' : 's'}, each seeded with 150 sticky objects; share each board with the other supplied accounts as editors; then try to delete the boards.`,
   ];

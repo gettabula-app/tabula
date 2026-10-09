@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assignAccountsToUsers,
+  parseLoadClassTimingOptions,
   parseTargetOptions,
   redactTargetSecrets,
   targetPlanText,
@@ -92,5 +93,22 @@ describe('class load target options', () => {
     const accounts = ['owner', 'member-a'];
     expect(assignAccountsToUsers(accounts, 5)).toEqual(['owner', 'member-a', 'owner', 'member-a', 'owner']);
     expect(assignAccountsToUsers(accounts, 2)).toEqual(['owner', 'member-a']);
+  });
+
+  it('restricts test timing overrides to local remote targets and validates non-negative integers', () => {
+    const local = parseTargetOptions({ TARGET_URL: 'http://127.0.0.1:8787', TARGET_COOKIES: 'session=fake' });
+    expect(parseLoadClassTimingOptions(local, {
+      LOAD_CLASS_BURST_MS: '500',
+      LOAD_CLASS_SEED_SETTLE_MS: '0',
+      LOAD_CLASS_RESULT_SETTLE_MS: '0',
+      LOAD_CLASS_SAMPLE_INTERVAL_MS: '100',
+    })).toEqual({ burstMs: 500, seedSettleMs: 0, resultSettleMs: 0, sampleIntervalMs: 100 });
+
+    const remote = parseTargetOptions({ TARGET_URL: 'https://team-a.gettabula.app', TARGET_COOKIES: 'session=fake' });
+    expect(() => parseLoadClassTimingOptions(remote, { LOAD_CLASS_BURST_MS: '500' })).toThrow(/only allowed for a local TARGET_URL/);
+    expect(() => parseLoadClassTimingOptions(local, { LOAD_CLASS_BURST_MS: '-1' })).toThrow(/non-negative whole number/);
+    expect(() => parseLoadClassTimingOptions(local, { LOAD_CLASS_BURST_MS: '1.5' })).toThrow(/non-negative whole number/);
+
+    expect(parseLoadClassTimingOptions({ remote: false }, { LOAD_CLASS_BURST_MS: '0' }).burstMs).toBe(10_000);
   });
 });

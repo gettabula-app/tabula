@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 import { errorCount, percentile, summaryRows, verdict } from './lib/load-class-stats.mjs';
 import {
   assignAccountsToUsers,
+  parseLoadClassTimingOptions,
   parseTargetOptions,
   redactTargetSecrets,
   targetPlanText,
@@ -25,10 +26,8 @@ import {
 // every y-websocket client adds an exit listener to process
 process.setMaxListeners(0);
 const execFileAsync = promisify(execFile);
-const BURST_MS = 10_000;
 const SYNC_TIMEOUT_MS = 30_000;
 const PROBE_MS = 2_000;
-const SAMPLE_MS = 500;
 const MAX_WORKERS = 4;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const epochNow = () => performance.timeOrigin + performance.now();
@@ -302,7 +301,7 @@ function connectBoardProvider({ base, boardId, cookie, doc }) {
   });
 }
 
-async function seedRemoteBoard({ base, boardId, owner }) {
+async function seedRemoteBoard({ base, boardId, owner, timings }) {
   const doc = new Y.Doc();
   const provider = connectBoardProvider({ base, boardId, cookie: owner.cookie, doc });
   let observerDoc;
@@ -331,7 +330,7 @@ async function seedRemoteBoard({ base, boardId, owner }) {
       if (performance.now() >= ackDeadline) throw new Error('Timed out waiting for the board seed update to be acknowledged within 10 seconds');
       await sleep(25);
     }
-    await sleep(250);
+    await sleep(timings.seedSettleMs);
   } finally {
     observer?.destroy();
     provider.destroy();
@@ -340,7 +339,7 @@ async function seedRemoteBoard({ base, boardId, owner }) {
   }
 }
 
-async function seedBoard({ base, dir, owner, team, accounts, remote, step, users, createdBoards }) {
+async function seedBoard({ base, dir, owner, team, accounts, remote, step, users, createdBoards, timings }) {
   const id = boardIdFor(step, users);
   const body = { id, title: `Class load ${users}` };
   if (!remote) body.teamId = team.id;
@@ -360,7 +359,7 @@ async function seedBoard({ base, dir, owner, team, accounts, remote, step, users
       if (result.status !== 201) throw new Error(`sharing board with target account ${index + 1} failed (HTTP ${result.status})`);
       shared.add(account.user.id);
     }
-    await seedRemoteBoard({ base, boardId: id, owner });
+    await seedRemoteBoard({ base, boardId: id, owner, timings });
     return id;
   }
 
@@ -462,9 +461,9 @@ function lagMonitor() {
   };
 }
 
-function startWorker(users, { base, boardId, durationMs, chat, remote = false }) {
+function startWorker(users, { base, boardId, durationMs, chat, remote = false, timings }) {
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { users, base, boardId, durationMs, chat, remote },
+    workerData: { users, base, boardId, durationMs, chat, remote, timings },
   });
   let readyResolve;
   let readyReject;
@@ -498,18 +497,18 @@ function startWorker(users, { base, boardId, durationMs, chat, remote = false })
   return { worker, ready, status, done: result };
 }
 
-async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seconds, relay, remote = false, createdBoards }) {
+async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seconds, relay, remote = false, createdBoards, timings }) {
   const signInFailures = remote ? [] : accounts.signInFailures.filter((failure) => failure.ordinal < users);
   const signedStudents = remote ? [] : accounts.students.filter((student) => Number(student.email.match(/student(\d+)/)?.[1]) < users);
   const participants = remote ? assignAccountsToUsers(accounts.accounts, users) : [accounts.owner, ...signedStudents];
   if (remote && accounts.accounts.length < users) {
     console.log(`*** REMOTE ACCOUNT REUSE: ${accounts.accounts.length} account(s) for ${users} users. Simulated users reuse accounts round-robin; this is one person with many tabs, and per-person limits are not multiplied. ***`);
   }
-  const boardId = await seedBoard({ base, dir, owner: accounts.owner, team, accounts: accounts.accounts, remote, step: stepIndex, users, createdBoards });
+  const boardId = await seedBoard({ base, dir, owner: accounts.owner, team, accounts: accounts.accounts, remote, step: stepIndex, users, createdBoards, timings });
   const workerCount = Math.min(MAX_WORKERS, Math.max(1, participants.length));
   const buckets = Array.from({ length: workerCount }, () => []);
   participants.forEach((person, index) => buckets[index % workerCount].push(person));
-  const workers = buckets.map((bucket) => startWorker(bucket, { base, boardId, durationMs: seconds * 1000, chat, remote }));
+  const workers = buckets.map((bucket) => startWorker(bucket, { base, boardId, durationMs: seconds * 1000, chat, remote, timings }));
   try {
     await Promise.all(workers.map((item) => item.ready));
     const sampler = relay ? new RelaySampler(relay.proc.pid) : null;
@@ -518,16 +517,16 @@ async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seco
     if (sampler) await sampler.sample();
     for (const item of workers) item.worker.postMessage({ type: 'start', startEpochMs });
     const allDone = Promise.all(workers.map((item) => item.done));
-    const timeoutAt = performance.now() + BURST_MS + seconds * 1000 + SYNC_TIMEOUT_MS + 15_000;
+    const timeoutAt = performance.now() + timings.burstMs + seconds * 1000 + SYNC_TIMEOUT_MS + 15_000;
     let relayExit = null;
     while (true) {
-      const outcome = await Promise.race([allDone.then((metrics) => ({ metrics })), sleep(SAMPLE_MS).then(() => ({ tick: true }))]);
+      const outcome = await Promise.race([allDone.then((metrics) => ({ metrics })), sleep(timings.sampleIntervalMs).then(() => ({ tick: true }))]);
       if (sampler) await sampler.sample();
       if (outcome.metrics) {
         const workerMetrics = outcome.metrics;
         generatorLag.stop();
         await Promise.allSettled(workers.map((item) => item.worker.terminate()));
-        await sleep(100);
+        await sleep(timings.resultSettleMs);
         if (sampler) await sampler.sample();
         const lagSamples = [...generatorLag.samples, ...workerMetrics.flatMap((metric) => metric.lagSamples)];
         const perThreadLagP95Ms = [percentile(generatorLag.samples, 95), ...workerMetrics.map((metric) => percentile(metric.lagSamples, 95))];
@@ -572,7 +571,7 @@ async function runStep({ stepIndex, users, accounts, base, dir, team, chat, seco
           connectedUsers,
           boardId,
           activitySeconds: seconds,
-          joinBurstSeconds: BURST_MS / 1000,
+          joinBurstSeconds: timings.burstMs / 1000,
           chat,
           relay: sampler?.result() ?? {
             rssPeakBytes: null,
@@ -627,8 +626,8 @@ function unexpectedStderrCount(lines) {
   ).length;
 }
 
-function printSummary(steps, out, chat, seconds, target = null) {
-  console.log(`Class load: ${target ? `target=${target.host} (includes network round trips), ` : ''}chat=${chat ? 'on' : 'off'}, ${seconds}s activity after a 10s join burst`);
+function printSummary(steps, out, chat, seconds, burstMs, target = null) {
+  console.log(`Class load: ${target ? `target=${target.host} (includes network round trips), ` : ''}chat=${chat ? 'on' : 'off'}, ${seconds}s activity after a ${burstMs / 1000}s join burst`);
   console.log('Users (connected) | Relay RSS MB peak/end | CPU % avg/peak-5s | Sync ms p50/p95/max | Join p95 ms | Generator lag p95 ms | Chat posts attempted/sent | Errors | Verdict');
   for (const [index, row] of summaryRows(steps).entries()) {
     const step = steps[index];
@@ -664,12 +663,13 @@ let targetForRedaction = null;
 async function main() {
   const options = parseOptions();
   const target = parseTargetOptions();
+  const timings = parseLoadClassTimingOptions(target);
   targetForRedaction = target;
   if (target.remote) {
     validateTargetOptions(target, options.users);
     const hasReuse = options.users.some((users) => users > target.accountCount);
     if (hasReuse && !options.chatExplicit) options.chat = false;
-    const plan = targetPlanText(target, options.users, options.seconds);
+    const plan = targetPlanText(target, options.users, options.seconds, timings.burstMs);
     console.log(plan);
     const decision = targetRunDecision(target);
     if (!decision.run) {
@@ -696,7 +696,7 @@ async function main() {
       for (const [stepIndex, users] of options.users.entries()) {
         steps.push(await runStep({
           stepIndex, users, accounts, base: target.origin, chat: options.chat, seconds: options.seconds,
-          remote: true, createdBoards,
+          remote: true, createdBoards, timings,
         }));
       }
     } else {
@@ -708,7 +708,7 @@ async function main() {
       await relay.ready;
       accounts = await bootstrapAccounts({ base: relay.base, dir, maxUsers: Math.max(...options.users) });
       for (const [stepIndex, users] of options.users.entries()) {
-        steps.push(await runStep({ stepIndex, users, accounts, base: relay.base, dir, team: accounts.team, chat: options.chat, seconds: options.seconds, relay }));
+        steps.push(await runStep({ stepIndex, users, accounts, base: relay.base, dir, team: accounts.team, chat: options.chat, seconds: options.seconds, relay, timings }));
       }
     }
   } finally {
@@ -731,7 +731,7 @@ async function main() {
         usersPerAccount: Math.ceil(Math.max(...options.users) / accounts.accounts.length),
       },
     } : { relayBase: relay.base }),
-    configuration: { users: options.users, seconds: options.seconds, chat: options.chat, joinBurstSeconds: BURST_MS / 1000, maxWorkerThreads: MAX_WORKERS },
+    configuration: { users: options.users, seconds: options.seconds, chat: options.chat, joinBurstSeconds: timings.burstMs / 1000, maxWorkerThreads: MAX_WORKERS },
     accountSetup: target.remote
       ? { accountsValidated: accounts.accounts.length, failedSignIns: 0 }
       : { studentsCreated: accounts.students.length, signInFailures: accounts.signInFailures },
@@ -740,7 +740,7 @@ async function main() {
   };
   fs.mkdirSync(path.dirname(options.out), { recursive: true });
   fs.writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`);
-  printSummary(steps, options.out, options.chat, options.seconds, target.remote ? target : null);
+  printSummary(steps, options.out, options.chat, options.seconds, timings.burstMs, target.remote ? target : null);
 }
 
 function runWorker(config) {
@@ -1042,7 +1042,7 @@ function runWorker(config) {
       started = true;
       parentPort.postMessage({ type: 'progress', event: 'start' });
       const localStart = performance.now() + (config.startEpochMs - epochNow());
-      activityStart = localStart + BURST_MS;
+      activityStart = localStart + config.timings.burstMs;
       activityEnd = activityStart + config.durationMs;
       const lagTick = () => {
         if (completed) return;
@@ -1054,7 +1054,7 @@ function runWorker(config) {
       lagExpected = localStart + 100;
       lagTimer = setTimeout(lagTick, Math.max(0, lagExpected - performance.now()));
       config.users.forEach((user, index) => {
-        const offset = config.users.length < 2 ? 0 : index * BURST_MS / (config.users.length - 1);
+        const offset = config.users.length < 2 ? 0 : index * config.timings.burstMs / (config.users.length - 1);
         const due = localStart + offset;
         addTimer(globalTimers, () => connectClient(user, index + 1), Math.max(0, due - performance.now()));
       });
