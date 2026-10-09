@@ -80,7 +80,8 @@ function scenario(files: { path: string; data: Buffer }[]) {
     now: () => T0 + 10 * 60_000,
     statfs: async () => ({ bsize: 4096, blocks: 1_000_000, bavail: 900_000 }),
     sleep: async () => {},
-    hooks: { closeDirectory: async () => {} },
+    // the engine closes the live database before the swap; an open file cannot be renamed on Windows
+    hooks: { closeDirectory: async () => live.close() },
     setTimeout: (fn: () => void, ms: number) => {
       const id = ++timerId;
       if (ms === 0) queueMicrotask(fn);
