@@ -198,6 +198,12 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
   const ctx = {
     ...app.r.ctx,
     editingId: null,
+    // a file shows the board's content: full detail at any zoom, and nothing of a drag, an input or the editing chrome
+    zoom: 1,
+    dragging: undefined,
+    dropLane: null,
+    addingLane: null,
+    editable: false,
     // an image is its data URL here, or a placeholder when its bytes were not found: never a link that only works on screen
     imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
   };

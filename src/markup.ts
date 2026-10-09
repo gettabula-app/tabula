@@ -8,9 +8,11 @@ import { headMarkup, shapeDecor, shapePath, textBox } from './shapes';
 import { escapeXml, fitText, fontCss, measure, wrap } from './text';
 import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
-import { CANVAS_INK, INK, PAPER, inkOn } from './palette';
+import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout } from '../shared/containers';
+import { hasLayout, type ContainerLayout } from '../shared/containers';
+import type { Label } from './types';
+import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, localToday, lowDetail } from './ui/kanban-logic';
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -22,6 +24,27 @@ export interface MarkupCtx {
   layout?: () => ConnectorLayout;
   /** What there is to draw for an image object: its pixels, or why not yet (src/image-loader.ts). Without it an image draws as its placeholder. */
   imageState?: (o: BaseObj) => ImageState;
+  // Kanban (docs/kanban.md). All optional: without them a kanban draws at full detail, with nothing in progress.
+  /** The layout of a container, for lane counts and where a lane's add-card row is. */
+  containerLayout?: (id: string) => ContainerLayout | null;
+  /** The camera zoom: below 0.4 a kanban draws in low detail. */
+  zoom?: number;
+  /** Cards being dragged here: their slot is a dashed placeholder (the layout does not move while dragging). */
+  dragging?: (id: string) => boolean;
+  /** The lane a dragged card is over: its "No cards" reads "Drop here". */
+  dropLane?: string | null;
+  /** Whether lanes offer "+ Add card" (editors only). */
+  editable?: boolean;
+  /** The lane whose add-card row is the inline input (drawn by the page, not here). */
+  addingLane?: string | null;
+  /** A board label by id (the `labels` map). */
+  label?: (id: string) => Label | undefined;
+  /** The person colour for a card's owner, when the owner is someone this viewer knows. */
+  ownerColor?: (card: BaseObj) => string | undefined;
+  /** Comments on an object, for the count on a card. */
+  commentCount?: (id: string) => number;
+  /** The viewer's date as YYYY-MM-DD, for due chips; today when absent. */
+  today?: string;
 }
 
 const n = (v: number) => Math.round(v * 100) / 100;
@@ -218,20 +241,278 @@ function frameMarkup(o: BaseObj) {
   );
 }
 
+// ---------------------------------------------------------------- kanban (docs/kanban.md, Visual design)
+
+// Colours are theme variables with the Default theme as fallback (an export replaces each by its fallback), always in a
+// style attribute: presentation attributes take neither var() nor color-mix().
+const K = {
+  canvas: 'var(--canvas, #EEF1F4)',
+  canvasInk: CANVAS_INK,
+  rule: 'var(--canvas-rule, #C9D1DA)',
+  paper: 'var(--paper, #FFFFFF)',
+  ink: 'var(--ink, #18212B)',
+  danger: 'var(--danger, #D41E24)',
+  stickyInk: 'var(--sticky-ink, #1D1A12)',
+  lane: 'color-mix(in srgb, var(--canvas-ink, #18212B) 5%, var(--canvas, #EEF1F4))',
+  meta: 'color-mix(in srgb, var(--canvas-ink, #18212B) 82%, var(--canvas, #EEF1F4))',
+  cardMeta: 'color-mix(in srgb, var(--ink, #18212B) 72%, var(--paper, #FFFFFF))',
+  edge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 28%, transparent)',
+  dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
+};
+
+/** A sticky swatch by its palette key (`blue`), the same in every theme; anything else is taken as a colour. */
+function swatch(key: string | undefined): string | undefined {
+  if (!key) return undefined;
+  const s = STICKY_COLORS.find((c) => c.name.toLowerCase() === key);
+  return s ? `var(--s-${key}, ${s.fill})` : key;
+}
+
+const fillStyle = (c: string) => `style="fill:${escapeXml(c)}"`;
+const strokeStyle = (c: string) => `style="fill:none;stroke:${escapeXml(c)}"`;
+
+/** 11px uppercase label text, as `.lbl` in the design. */
+const LBL = { size: 11, weight: 600, spacing: 0.66 };
+const lblWidth = (text: string, slug: string | undefined) => measure(text, fontCss(slug, LBL.size, LBL.weight)) + text.length * LBL.spacing;
+
+function label(text: string, x: number, y: number, color: string, slug: string | undefined, anchor: 'start' | 'middle' | 'end' = 'start') {
+  return `<text x="${n(x)}" y="${n(y)}" font-family="${escapeXml(fontFamily(slug))}" font-size="${LBL.size}" font-weight="${LBL.weight}" letter-spacing="${LBL.spacing}" text-anchor="${anchor}" ${fillStyle(color)}>${escapeXml(text.toUpperCase())}</text>`;
+}
+
+/** A 24-grid stroke icon (src/ui/dom.ts) scaled to `size` at (x, y). */
+function kIcon(path: string, x: number, y: number, size: number, color: string) {
+  return `<g transform="translate(${n(x)} ${n(y)}) scale(${n(size / 24)})" style="fill:none;stroke:${escapeXml(color)}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</g>`;
+}
+const ICON_PLUS = '<path d="M12 5v14M5 12h14"/>';
+const ICON_CHECK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+const ICON_LOCK = '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>';
+const ICON_COMMENT = '<path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/>';
+
+/** `text` cut to fit `max` pixels, with an ellipsis when it had to be cut. */
+function clip(text: string, font: string, max: number): string {
+  if (measure(text, font) <= max) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (measure(text.slice(0, mid).trimEnd() + '…', font) <= max) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + '…';
+}
+
+const cardFont = (o: BaseObj) => fontCss(o.font, CARD.titleSize, 500);
+const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
+
+/** The title lines a card draws at width `w`: its first line of text, wrapped, at most three, the last cut with an ellipsis. */
+export function cardTitleLines(o: BaseObj, w: number): string[] {
+  const font = cardFont(o);
+  const max = w - cardPadLeft(o) - CARD.padX;
+  const title = (o.text ?? '').split('\n')[0].trim();
+  const lines = wrap(title || ' ', font, max);
+  if (lines.length <= CARD.titleLines) return lines;
+  const kept = lines.slice(0, CARD.titleLines);
+  kept[CARD.titleLines - 1] = clip(`${kept[CARD.titleLines - 1]} ${lines[CARD.titleLines]}`, font, max);
+  return kept;
+}
+
+const hasMeta = (o: BaseObj) => !!(o.due || o.ownerName || o.ownerId);
+
+/** The height a card needs at width `w`, which its writer stores as `h` (docs/kanban.md, Layout: nothing measures on read). */
+export function cardContentHeight(o: BaseObj, w: number): number {
+  return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o) });
+}
+
+function kanbanContainerMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const w = o.w, h = o.h;
+  const low = lowDetail(ctx.zoom ?? 1);
+  const name = o.name || 'Kanban';
+  let inner = `<rect x="0.5" y="0.5" width="${n(Math.max(0, w - 1))}" height="${n(Math.max(0, h - 1))}" style="fill:${K.canvas};stroke:${K.rule}" stroke-width="1"/>`;
+  inner += `<rect x="0" y="46" width="${n(w)}" height="2" ${fillStyle(K.canvasInk)}/>`;
+  if (ctx.editingId === o.id) return wrapG(o, inner, 1);
+  const size = low ? 40 : 17;
+  const font = fontCss(o.font, size, 700);
+  const nameText = clip(name, font, w - 24);
+  inner += `<text x="12" y="${low ? 38 : 30}" font-family="${escapeXml(fontFamily(o.font))}" font-size="${size}" font-weight="700" letter-spacing="${low ? -0.4 : -0.17}" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
+  if (!low) {
+    const layout = ctx.containerLayout?.(o.id);
+    if (layout) {
+      const lanes = layout.lanes.length;
+      const cards = [...layout.cards.values()].reduce((s, ids) => s + ids.length, 0);
+      const meta = `${lanes} ${lanes === 1 ? 'lane' : 'lanes'} · ${cards} ${cards === 1 ? 'card' : 'cards'}`;
+      const x = 12 + measure(nameText, font) + 12;
+      if (x + lblWidth(meta, o.font) < w - 12) inner += label(meta, x, 28.5, K.meta, o.font);
+    }
+  }
+  return wrapG(o, inner, 1);
+}
+
+function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const w = o.w, h = o.h;
+  const low = lowDetail(ctx.zoom ?? 1);
+  const accent = swatch(o.fill);
+  const layout = o.parent ? ctx.containerLayout?.(o.parent) : null;
+  const ids = layout?.cards.get(o.id) ?? [];
+  const count = laneCount(o, ids.length);
+  const body = accent ? `color-mix(in srgb, ${accent} 10%, ${K.lane})` : K.lane;
+  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(body)}/>`;
+  if (accent) inner += `<rect x="0" y="0" width="${n(w)}" height="4" ${fillStyle(accent)}/>`;
+  if (!low && count.state === 'over') inner += `<rect x="0" y="46" width="${n(w)}" height="2" ${fillStyle(K.danger)}/>`;
+  const fam = escapeXml(fontFamily(o.font));
+  if (low) {
+    const font = fontCss(o.font, 28, 600);
+    if (ctx.editingId !== o.id) inner += `<text x="12" y="38" font-family="${fam}" font-size="28" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(clip(o.name || 'Lane', font, w - 24))}</text>`;
+    return wrapG(o, inner, 1);
+  }
+  // the count, right-aligned in the header, as a danger chip when over the limit
+  const mid = 26;
+  const countW = lblWidth(count.text, o.font) + (count.block ? 16 : 0);
+  let right = w - 12;
+  if (count.state === 'over') {
+    inner += `<rect x="${n(right - countW - 6)}" y="${mid - 10}" width="${n(countW + 12)}" height="20" ${fillStyle(K.danger)}/>`;
+    right -= 6;
+  }
+  const countColor = count.state === 'over' ? K.paper : count.state === 'at' ? K.canvasInk : K.meta;
+  inner += `<g><title>${escapeXml(count.title)}</title>${label(count.text, right, mid + 4, countColor, o.font, 'end')}`;
+  if (count.block) inner += kIcon(ICON_LOCK, right - countW, mid - 6, 12, countColor);
+  inner += '</g>';
+  // the name, then the done stage marker after it
+  const stage = o.stage === 'done' ? 'Done' : '';
+  const stageW = stage ? 14 + 2 + lblWidth(stage, o.font) : 0;
+  const nameFont = fontCss(o.font, 14, 600);
+  const room = right - countW - (count.state === 'over' ? 6 : 0) - 8 - 12 - (stage ? stageW + 8 : 0);
+  const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room));
+  if (ctx.editingId !== o.id) inner += `<text x="12" y="${mid + 5}" font-family="${fam}" font-size="14" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
+  if (stage) {
+    const x = 12 + measure(nameText, nameFont) + 8;
+    inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${label(stage, x + 16, mid + 4, K.meta, o.font)}</g>`;
+  }
+  // the body: an empty lane's dashed box, and the add-card row after the last card
+  const local = { x: 0, y: 0, w, h };
+  const cards = layout ? ids.map((id) => layout.rects.get(id)!).map((r) => ({ ...r, x: r.x - o.x, y: r.y - o.y })) : [];
+  const dropping = ctx.dropLane === o.id;
+  if (!cards.length || (dropping && cards.every((_, i) => ctx.dragging?.(ids[i])))) {
+    const b = emptyBox(local);
+    inner += `<rect x="${n(b.x + 0.5)}" y="${n(b.y + 0.5)}" width="${n(b.w - 1)}" height="${n(b.h - 1)}" ${strokeStyle(K.dash)} stroke-width="1" stroke-dasharray="4 3"/>`;
+    inner += label(dropping ? 'Drop here' : 'No cards', b.x + b.w / 2, b.y + b.h / 2 + 4, K.meta, o.font, 'middle');
+  }
+  if (ctx.editable && ctx.addingLane !== o.id) {
+    const r = addRow(local, cards);
+    const cy = r.y + r.h / 2;
+    inner += `<g class="k-add">${kIcon(ICON_PLUS, r.x + 8, cy - 8, 16, K.meta)}<text x="${n(r.x + 30)}" y="${n(cy + 4.5)}" font-family="${fam}" font-size="13" font-weight="500" ${fillStyle(K.meta)}>Add card</text></g>`;
+  }
+  return wrapG(o, inner, 1);
+}
+
+function cardMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const w = o.w, h = o.h;
+  if (ctx.dragging?.(o.id)) {
+    // the slot it leaves: a dashed hairline of the same size, nothing inside
+    return wrapG(o, `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" style="fill:none;stroke:color-mix(in srgb, var(--canvas-ink, #18212B) 55%, transparent)" stroke-width="1" stroke-dasharray="4 3"/>`, 1);
+  }
+  return wrapG(o, cardBody(o, ctx), 1);
+}
+
+/** A card's drawing in its own coordinates, without the group that places it: the board draws it, and so does the drag ghost. */
+export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' = 'hairline'): string {
+  const w = o.w, h = o.h;
+  const low = lowDetail(ctx.zoom ?? 1);
+  const accent = swatch(o.fill);
+  const padL = cardPadLeft(o);
+  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(K.paper)}/>`;
+  if (accent) inner += `<rect x="0" y="0" width="${CARD.accent}" height="${n(h)}" ${fillStyle(accent)}/>`;
+  inner += edge === 'ghost'
+    ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
+    : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+  const fam = escapeXml(fontFamily(o.font));
+  const lines = cardTitleLines(o, w);
+  let y = CARD.padY;
+  if (ctx.editingId !== o.id) {
+    if (low) {
+      lines.forEach((_, i) => (inner += `<rect x="${padL}" y="${n(y + i * CARD.titleLine + 3)}" width="${n((w - padL - CARD.padX) * (i === lines.length - 1 && lines.length > 1 ? 0.6 : 0.8))}" height="12" ${fillStyle(K.cardMeta)}/>`));
+    } else {
+      inner += `<text font-family="${fam}" font-size="${CARD.titleSize}" font-weight="500" ${fillStyle(K.ink)} xml:space="preserve">` +
+        lines.map((l, i) => `<tspan x="${padL}" y="${n(y + i * CARD.titleLine + 13.5)}">${escapeXml(l) || ' '}</tspan>`).join('') + '</text>';
+    }
+  }
+  y += Math.min(Math.max(lines.length, 1), CARD.titleLines) * CARD.titleLine;
+  // labels: at most three chips, then +n; names are never clipped
+  if (o.labels?.length) {
+    y += CARD.rowGap;
+    const known = o.labels.map((id) => ctx.label?.(id)).filter((l): l is Label => !!l);
+    let x = padL;
+    known.slice(0, 3).forEach((l) => {
+      const text = l.name.toUpperCase();
+      const tw = measure(text, fontCss(o.font, LBL.size, LBL.weight)) + text.length * 0.44 + 10;
+      inner += `<g><title>${escapeXml(l.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(tw)}" height="16" ${fillStyle(swatch(l.color) ?? K.cardMeta)}/>`;
+      if (!low) inner += `<text x="${n(x + 5)}" y="${n(y + 12)}" font-family="${fam}" font-size="11" font-weight="600" letter-spacing="0.44" ${fillStyle(K.stickyInk)}>${escapeXml(text)}</text>`;
+      inner += '</g>';
+      x += tw + 4;
+    });
+    if (known.length > 3 && !low) inner += label(`+${known.length - 3}`, x, y + 12, K.cardMeta, o.font);
+    y += CARD.labelRow;
+  }
+  // meta row: due, then the comment count and the owner on the right
+  if (hasMeta(o)) {
+    y += CARD.rowGap;
+    if (!low) {
+      const cy = y + CARD.metaRow / 2;
+      const lane = o.parent ? ctx.get(o.parent) : undefined;
+      const due = dueChip(o.due, ctx.today ?? localToday(), (lane as BaseObj | undefined)?.stage === 'done');
+      if (due) {
+        const tw = lblWidth(due.text, o.font);
+        const titles = { normal: 'Due', soon: 'Due soon', overdue: 'Overdue', done: 'Done' };
+        let chip = `<title>${titles[due.kind]}</title>`;
+        if (due.kind === 'overdue') chip += `<rect x="${padL}" y="${n(cy - 10)}" width="${n(tw + 10)}" height="20" ${fillStyle(K.danger)}/>` + label(due.text, padL + 5, cy + 4, K.paper, o.font);
+        else if (due.kind === 'soon') chip += `<rect x="${padL + 0.5}" y="${n(cy - 9.5)}" width="${n(tw + 9)}" height="19" ${strokeStyle(K.ink)} stroke-width="1"/>` + label(due.text, padL + 5, cy + 4, K.ink, o.font);
+        else if (due.kind === 'done') chip += kIcon(ICON_CHECK, padL, cy - 7, 14, K.cardMeta) + label(due.text, padL + 17, cy + 4, K.cardMeta, o.font);
+        else chip += label(due.text, padL, cy + 4, K.cardMeta, o.font);
+        inner += `<g>${chip}</g>`;
+      }
+      let right = w - CARD.padX;
+      if (o.ownerName || o.ownerId) {
+        const ring = ctx.ownerColor?.(o);
+        const x = right - 24;
+        inner += `<g><title>${escapeXml(o.ownerName || 'Owner')}${ring ? '' : ' (no account)'}</title><rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
+        inner += ring
+          ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
+          : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        inner += `<text x="${n(x + 12)}" y="${n(cy + 3.5)}" font-family="${fam}" font-size="10" font-weight="700" letter-spacing="0.2" text-anchor="middle" ${fillStyle(K.ink)}>${escapeXml(initials(o.ownerName))}</text></g>`;
+        right = x - 6;
+      }
+      const comments = ctx.commentCount?.(o.id) ?? 0;
+      if (comments > 0) {
+        const text = String(comments);
+        const tw = lblWidth(text, o.font);
+        inner += `<g><title>${comments} ${comments === 1 ? 'comment' : 'comments'}</title>${kIcon(ICON_COMMENT, right - tw - 16, cy - 7, 14, K.cardMeta)}${label(text, right, cy + 4, K.cardMeta, o.font, 'end')}</g>`;
+      }
+    }
+  }
+  return inner;
+}
+
+/** A container this client cannot lay out: a hairline box with its name and a note, never edited from here. */
+function unknownContainerMarkup(o: BaseObj) {
+  const text = (y: number, body: string) => `<text x="8" y="${y}" font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" ${fillStyle(K.canvasInk)}>${escapeXml(body)}</text>`;
+  const label = o.type === 'container' ? o.name || 'Container' : o.type === 'lane' ? o.name || 'Lane' : (o.text ?? '').split('\n')[0] || 'Card';
+  const note = o.type === 'container' ? text(38, 'Needs a newer Tabula') : '';
+  return wrapG(o, `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" ${strokeStyle(K.rule)} stroke-width="1"/>` + text(20, label) + note, 1);
+}
+
 /**
- * A container, a lane or a card, until slice 2 of docs/kanban.md draws them: a hairline box with its name, so what a
- * board holds can be seen and not only clicked. A container whose layout this client does not know says so (it is never
- * edited from here).
+ * A container, a lane or a card. A known layout draws the kanban; a container whose layout is unknown, and a lane or card
+ * that no layout places (its container is gone or unknown), draw as a hairline box with a name. A loose card (no lane)
+ * draws as a card.
  */
-function containerMarkup(o: BaseObj) {
-  const label = o.type === 'container' ? o.name || 'Container' : o.type === 'lane' ? 'Lane' : 'Card';
-  const text = (y: number, body: string) => `<text x="8" y="${y}" font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" fill="${CANVAS_INK}">${escapeXml(body)}</text>`;
-  const note = o.type === 'container' && !hasLayout(o.layout) ? text(38, 'Needs a newer Tabula') : '';
-  return wrapG(
-    o,
-    `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="none" stroke="var(--canvas-rule, #C9D1DA)" stroke-width="1"/>` + text(20, label) + note,
-    1,
-  );
+function containerMarkup(o: BaseObj, ctx: MarkupCtx) {
+  if (o.type === 'container') return hasLayout(o.layout) ? kanbanContainerMarkup(o, ctx) : unknownContainerMarkup(o);
+  if (o.type === 'card') {
+    // a card in a lane that no known layout places is not drawn as a card at a stale position
+    const lane = o.parent ? ctx.get(o.parent) : undefined;
+    const box = lane?.type === 'lane' && lane.parent ? ctx.get(lane.parent) : undefined;
+    if (lane?.type === 'lane' && !(box?.type === 'container' && hasLayout((box as BaseObj).layout))) return unknownContainerMarkup(o);
+    return cardMarkup(o, ctx);
+  }
+  const container = o.parent ? ctx.get(o.parent) : undefined;
+  return container?.type === 'container' && hasLayout((container as BaseObj).layout) ? laneMarkup(o, ctx) : unknownContainerMarkup(o);
 }
 
 /** An image: its pixels through `<image>` (never as markup, so nothing in the file can run), or a placeholder that says why not. */
@@ -442,7 +723,7 @@ export function objectMarkup(o: Obj, ctx: MarkupCtx): string {
     case 'path': return pathMarkup(o);
     case 'container':
     case 'lane':
-    case 'card': return containerMarkup(o);
+    case 'card': return containerMarkup(o, ctx);
     default:
       if (o.type.startsWith('uml-')) return umlMarkup(o, ctx);
       return '';
