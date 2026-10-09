@@ -27,7 +27,8 @@ export interface BoardJson {
 }
 
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list()): BoardJson {
-  const objs = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
+  // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
+  const objs = (ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered()).map((o) => app.store.placed(o));
   const json: BoardJson = {
     format: 'driftboard',
     schemaVersion: SCHEMA_VERSION,
@@ -200,7 +201,7 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     // an image is its data URL here, or a placeholder when its bytes were not found: never a link that only works on screen
     imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
   };
-  const body = objs.map((o) => objectMarkup(o, ctx)).join('\n');
+  const body = objs.map((o) => objectMarkup(app.store.placed(o), ctx)).join('\n');
   let style = opts.fontCss ?? '';
   if (!opts.fontCss) {
     style = [...usedFonts(objs)].map(([slug, ws]) => `@import url("${cssUrl(slug, [...ws])}");`).join('\n');
@@ -224,6 +225,7 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
   while (stack.length) {
     const id = stack.pop()!;
     if (app.store.get(id)?.type === 'frame') for (const c of app.store.childrenOf(id)) if (!set.has(c.id)) { set.add(c.id); stack.push(c.id); }
+    for (const cid of app.store.containerLayout(id)?.order ?? []) set.add(cid);
   }
   // include connectors between exported items
   for (const o of app.store.cache.values()) {

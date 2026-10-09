@@ -354,7 +354,7 @@ function minimap(app: BoardApp) {
     tr = { s, ox: 8 - all.x * s + (W - 16 - all.w * s) / 2, oy: 8 - all.y * s + (H - 16 - all.h * s) / 2 };
     for (const o of app.store.ordered()) {
       if (!isBox(o)) continue;
-      const b = boxBounds(o);
+      const b = boxBounds(app.store.placed(o));
       ctx.fillStyle = o.type === 'frame' ? 'rgba(255,255,255,.12)' : o.type === 'sticky' ? (o.fill ?? STICKY_COLORS[0].fill) : 'rgba(233,237,242,.55)';
       ctx.fillRect(tr.ox + b.x * s, tr.oy + b.y * s, Math.max(1, b.w * s), Math.max(1, b.h * s));
     }

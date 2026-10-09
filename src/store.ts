@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
-import type { BoardMeta, ConnectorObj, Id, Obj, Poll, PollAnswer, Step, Timer, Vote } from './types';
+import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unknownFeatures, type ContainerLayout } from '../shared/containers';
+import type { BoardMeta, ConnectorObj, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
 
 /** Transaction origin for edits made on this device; only these are undoable. */
@@ -30,6 +31,17 @@ export interface FlowState {
   results: Id | null;
 }
 
+/** Ids whose rectangle differs between two layouts of one container. With no earlier layout to compare, all of them. */
+function movedBetween(before: ContainerLayout | null | undefined, after: ContainerLayout | null): Id[] {
+  const out: Id[] = [];
+  for (const [id, r] of after?.rects ?? []) {
+    const was = before?.rects.get(id);
+    if (!was || was.x !== r.x || was.y !== r.y || was.w !== r.w || was.h !== r.h) out.push(id);
+  }
+  for (const id of before?.rects.keys() ?? []) if (!after?.rects.has(id)) out.push(id);
+  return out;
+}
+
 const cmpZ = (a: Obj, b: Obj) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1);
 
 /**
@@ -46,6 +58,8 @@ export class Store {
   readonly pollAnswers: Y.Map<PollAnswer>;
   /** A poll's changing fields, one key each (`${pollId}:revealed`), so concurrent changes merge. See polls.ts. */
   readonly pollState: Y.Map<unknown>;
+  /** Board-wide labels for cards (docs/kanban.md), whole value per label. */
+  readonly labels: Y.Map<Label>;
   readonly cache = new Map<Id, Obj>();
   readonly undo: Y.UndoManager;
 
@@ -55,6 +69,15 @@ export class Store {
   private orderDirty = true;
   private orderCache: Obj[] = [];
   private boundIndex = new Map<Id, Set<Id>>(); // shape id -> connector ids
+  private childIndex = new Map<Id, Set<Id>>(); // parent id -> child ids
+  private containerIds = new Set<Id>();
+  // Derived geometry (docs/kanban.md): one layout per container, dropped when something inside it changes.
+  private layouts = new Map<Id, ContainerLayout | null>();
+  private placedCache = new WeakMap<Obj, { rect: Rect; obj: Obj }>();
+  // Cards whose lane is gone have no container of their own, so they go to one home for everybody (see orphanHome).
+  private orphanIds: Id[] = [];
+  private orphanHome: Id | null = null;
+  private orphanSig = '';
 
   constructor(doc: Y.Doc) {
     this.doc = doc;
@@ -65,9 +88,12 @@ export class Store {
     this.polls = doc.getMap('polls');
     this.pollAnswers = doc.getMap('pollAnswers');
     this.pollState = doc.getMap('pollState');
+    this.labels = doc.getMap('labels');
 
     this.objects.forEach((m, id) => this.cache.set(id, m.toJSON() as Obj));
     this.rebuildBoundIndex();
+    this.rebuildChildIndex();
+    this.refreshOrphans();
 
     this.objects.observeDeep((events) => {
       const changed = new Set<Id>();
@@ -78,23 +104,37 @@ export class Store {
           changed.add(String(e.path[0]));
         }
       }
+      const edits: [Obj | undefined, Obj | undefined][] = [];
       for (const id of changed) {
         const prev = this.cache.get(id);
         if (isConnector(prev)) this.unindexConnector(prev);
+        this.unindexChild(prev);
+        if (prev?.type === 'container') this.containerIds.delete(id);
         const m = this.objects.get(id);
+        let next: Obj | undefined;
         if (m) {
-          const o = m.toJSON() as Obj;
-          this.cache.set(id, o);
-          if (isConnector(o)) this.indexConnector(o);
+          next = m.toJSON() as Obj;
+          this.cache.set(id, next);
+          if (isConnector(next)) this.indexConnector(next);
+          this.indexChild(next);
+          if (next.type === 'container') this.containerIds.add(id);
         } else {
           this.cache.delete(id);
         }
+        edits.push([prev, next]);
+      }
+      // What moved or resized because of its container is reported as changed too, so drawing and bounds follow.
+      for (const [cid, before] of this.dropLayouts(edits)) {
+        const after = this.containerLayout(cid);
+        // no layout to compare with (a container removed before it was ever laid out): everything inside is reported
+        const moved = before === undefined && !after ? this.membersOf(cid) : movedBetween(before, after);
+        for (const id of moved) changed.add(id);
       }
       this.orderDirty = true;
       this.listeners.forEach((l) => l(changed));
     });
 
-    this.undo = new Y.UndoManager([this.objects, this.meta], {
+    this.undo = new Y.UndoManager([this.objects, this.meta, this.labels], {
       trackedOrigins: new Set([LOCAL]),
       captureTimeout: 350,
     });
@@ -136,13 +176,25 @@ export class Store {
     return id ? this.cache.get(id) : undefined;
   }
 
-  /** All objects in paint order (frames first, then by z). */
+  /**
+   * All objects in paint order: frames first, then by z. A container is painted as a unit at its own z (the container,
+   * its lanes, then each lane's cards), so what is laid out inside it has no z of its own.
+   */
   ordered(): Obj[] {
     if (this.orderDirty) {
       const all = [...this.cache.values()];
       const frames = all.filter((o) => o.type === 'frame').sort(cmpZ);
-      const rest = all.filter((o) => o.type !== 'frame').sort(cmpZ);
-      this.orderCache = [...frames, ...rest];
+      const rest = all.filter((o) => o.type !== 'frame' && !this.isLaidOut(o)).sort(cmpZ);
+      const out = [...frames];
+      for (const o of rest) {
+        out.push(o);
+        if (o.type !== 'container') continue;
+        for (const id of this.containerLayout(o.id)?.order ?? []) {
+          const child = this.cache.get(id);
+          if (child) out.push(child);
+        }
+      }
+      this.orderCache = out;
       this.orderDirty = false;
     }
     return this.orderCache;
@@ -185,7 +237,7 @@ export class Store {
   /** Put the given objects above everything else, keeping their order among themselves. */
   bringToFront(ids: Iterable<Id>) {
     const set = new Set(ids);
-    const sel = this.ordered().filter((o) => set.has(o.id));
+    const sel = this.ordered().filter((o) => set.has(o.id) && !this.isLaidOut(o));
     if (!sel.length) return;
     const zs = this.topZs(sel.length);
     this.transact(() => sel.forEach((o, i) => this.update(o.id, { z: zs[i] })));
@@ -194,7 +246,7 @@ export class Store {
   /** Put the given objects below everything else, keeping their order among themselves. */
   sendToBack(ids: Iterable<Id>) {
     const set = new Set(ids);
-    const sel = this.ordered().filter((o) => set.has(o.id));
+    const sel = this.ordered().filter((o) => set.has(o.id) && !this.isLaidOut(o));
     if (!sel.length) return;
     const zs = this.bottomZs(sel.length);
     this.transact(() => sel.forEach((o, i) => this.update(o.id, { z: zs[i] })));
@@ -203,6 +255,7 @@ export class Store {
   create(o: Obj) {
     const entries = Object.entries(o).filter(([, v]) => v !== undefined);
     this.objects.set(o.id, new Y.Map(entries));
+    if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
   }
 
   update(id: Id, patch: Partial<Obj> | Record<string, unknown>) {
@@ -217,6 +270,8 @@ export class Store {
       if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) m.set(k, v);
     }
     if (m.size) m.set('updatedAt', Date.now());
+    const type = (patch as Record<string, unknown>).type;
+    if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
   }
 
   remove(ids: Iterable<Id>) {
@@ -235,10 +290,88 @@ export class Store {
     return out;
   }
 
-  childrenOf(frameId: Id): Obj[] {
+  childrenOf(parentId: Id): Obj[] {
     const out: Obj[] = [];
-    for (const o of this.cache.values()) if (o.parent === frameId) out.push(o);
+    for (const id of this.childIndex.get(parentId) ?? []) {
+      const o = this.cache.get(id);
+      if (o) out.push(o);
+    }
     return out;
+  }
+
+  /** The layout of a container and everything in it; null when it is not a container or its layout is unknown. */
+  containerLayout(id: Id): ContainerLayout | null {
+    const c = this.cache.get(id);
+    if (c?.type !== 'container') return null;
+    let layout = this.layouts.get(id);
+    if (layout === undefined) {
+      const lanes = this.childrenOf(id).filter((o) => o.type === 'lane');
+      const cards = lanes.flatMap((l) => this.childrenOf(l.id).filter((o) => o.type === 'card'));
+      if (this.orphanHome === id) for (const oid of this.orphanIds) cards.push(this.cache.get(oid)!);
+      layout = layoutContainer(c, lanes, cards);
+      this.layouts.set(id, layout);
+    }
+    return layout;
+  }
+
+  /** The layout that places this object, if one does. */
+  private layoutOf(o: Obj): ContainerLayout | null {
+    if (o.type === 'container') return this.containerLayout(o.id);
+    if (o.type === 'lane') return o.parent ? this.containerLayout(o.parent) : null;
+    if (o.type !== 'card' || o.parent === undefined) return null;
+    const parent = this.cache.get(o.parent);
+    if (parent) return parent.type === 'lane' && parent.parent ? this.containerLayout(parent.parent) : null;
+    return this.orphanHome ? this.containerLayout(this.orphanHome) : null;
+  }
+
+  /** Whether the object's rectangle comes from a container's layout, so its stored x, y, w and h are not read. */
+  isLaidOut(o: Obj): boolean {
+    return (o.type === 'lane' || o.type === 'card') && !!this.layoutOf(o)?.rects.has(o.id);
+  }
+
+  /** Where the object is: derived for a container's size and for what is laid out in it, stored for everything else. */
+  geometry(o: Obj): Rect {
+    const r = isContainerType(o.type) ? this.layoutOf(o)?.rects.get(o.id) : undefined;
+    return r ?? { x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 };
+  }
+
+  /** The object as it is drawn: itself, or for a container and what it lays out a copy with the derived rectangle. */
+  placed<T extends Obj>(o: T): T {
+    if (!isContainerType(o.type)) return o;
+    const rect = this.layoutOf(o)?.rects.get(o.id);
+    if (!rect) return o;
+    const hit = this.placedCache.get(o);
+    if (hit?.rect === rect) return hit.obj as T;
+    const obj = { ...o, ...rect, rotation: 0 };
+    const entry = { rect, obj };
+    this.placedCache.set(o, entry);
+    this.placedCache.set(obj, entry);
+    return obj;
+  }
+
+  getPlaced(id: Id | undefined): Obj | undefined {
+    const o = this.get(id);
+    return o && this.placed(o);
+  }
+
+  /** Board features this client does not know: when there are any, the board must not be edited from here. */
+  unsupportedFeatures(): string[] {
+    return unknownFeatures(this.meta.toJSON());
+  }
+
+  private needFeature(name: string) {
+    const key = featureKey(name);
+    if (this.meta.get(key) !== true) this.meta.set(key, true);
+  }
+
+  /**
+   * Lists `containers` as needed if the board holds a container, lane or card. For writers that change objects without
+   * `create` and `update`, such as a restore; the flag is only ever added, never taken away.
+   */
+  syncFeatures() {
+    for (const m of this.objects.values()) {
+      if (isContainerType(String(m.get('type')))) return this.needFeature(FEATURES.containers);
+    }
   }
 
   getMeta(): BoardMeta {
@@ -278,6 +411,88 @@ export class Store {
   private rebuildBoundIndex() {
     this.boundIndex.clear();
     for (const o of this.cache.values()) if (isConnector(o)) this.indexConnector(o);
+  }
+
+  private rebuildChildIndex() {
+    this.childIndex.clear();
+    this.containerIds.clear();
+    for (const o of this.cache.values()) {
+      this.indexChild(o);
+      if (o.type === 'container') this.containerIds.add(o.id);
+    }
+  }
+
+  private indexChild(o: Obj) {
+    if (typeof o.parent !== 'string') return;
+    let s = this.childIndex.get(o.parent);
+    if (!s) this.childIndex.set(o.parent, (s = new Set()));
+    s.add(o.id);
+  }
+
+  private unindexChild(o: Obj | undefined) {
+    if (typeof o?.parent !== 'string') return;
+    const s = this.childIndex.get(o.parent);
+    if (!s) return;
+    s.delete(o.id);
+    if (!s.size) this.childIndex.delete(o.parent);
+  }
+
+  /** The lanes of a container and their cards, by parent, whether or not the container still exists. */
+  private membersOf(id: Id): Id[] {
+    const out: Id[] = [];
+    for (const lane of this.childrenOf(id)) {
+      out.push(lane.id);
+      for (const card of this.childrenOf(lane.id)) out.push(card.id);
+    }
+    return out;
+  }
+
+  /** Forgets the layout of every container something inside changed in, and returns those containers with the layout they had. */
+  private dropLayouts(edits: [Obj | undefined, Obj | undefined][]): Map<Id, ContainerLayout | null | undefined> {
+    const affected = new Map<Id, ContainerLayout | null | undefined>();
+    let all = false;
+    // `container`: the edit itself was a container, new, changed or deleted, whatever the cache holds for it now
+    const drop = (id: Id | undefined, container = false) => {
+      if (id === undefined) return;
+      if (!affected.has(id) && (container || this.cache.get(id)?.type === 'container')) affected.set(id, this.layouts.get(id));
+      this.layouts.delete(id);
+    };
+    let structure = false;
+    for (const edit of edits) {
+      for (const o of edit) {
+        if (!o || !isContainerType(o.type)) continue;
+        structure = true;
+        if (o.type === 'container') drop(o.id, true);
+        else if (o.type === 'lane') drop(o.parent);
+        else {
+          const lane = o.parent === undefined ? undefined : this.cache.get(o.parent);
+          if (lane?.type === 'lane') drop(lane.parent);
+          else if (o.parent !== undefined && !lane) all = true;
+        }
+      }
+    }
+    if (structure && this.refreshOrphans()) all = true;
+    if (!all) return affected;
+    for (const id of this.containerIds) if (!affected.has(id)) affected.set(id, this.layouts.get(id));
+    this.layouts.clear();
+    return affected;
+  }
+
+  /** Recomputes which cards have lost their lane; true when that changed what any container shows. */
+  private refreshOrphans(): boolean {
+    const ids: Id[] = [];
+    for (const [parent, kids] of this.childIndex) {
+      if (this.cache.has(parent)) continue;
+      for (const id of kids) if (this.cache.get(id)?.type === 'card') ids.push(id);
+    }
+    ids.sort();
+    const home = orphanHome([...this.containerIds].map((id) => this.cache.get(id)!));
+    const sig = `${home ?? ''}|${ids.join(',')}`;
+    if (sig === this.orphanSig) return false;
+    this.orphanSig = sig;
+    this.orphanIds = ids;
+    this.orphanHome = home;
+    return true;
   }
 
   private indexConnector(c: ConnectorObj) {

@@ -1,5 +1,6 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isContainerType } from '../shared/containers';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
@@ -67,7 +68,8 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
     const g = connectorGeom(get, o, layout);
     return g ? [{ id: 'from', p: g.start }, { id: 'to', p: g.end }] : [];
   }
-  if (o.locked || o.type === 'path') return [];
+  // a container's size, and where its lanes and cards are, come from its layout: there is nothing to resize or turn
+  if (o.locked || o.type === 'path' || isContainerType(o.type)) return [];
   const c = center(o);
   const r = o.rotation || 0;
   const L = (x: number, y: number) => rotate({ x: o.x + x, y: o.y + y }, c, r);
@@ -141,7 +143,7 @@ export class Renderer {
     parent.appendChild(this.root);
 
     this.ctx = {
-      get: (id) => this.store.get(id),
+      get: (id) => this.store.getPlaced(id),
       isHidden: (o) => this.isHidden(o),
       imageState: (o) => this.imageState(o),
       editingId: null,
@@ -317,7 +319,7 @@ export class Renderer {
    */
   connectorLayout(): ConnectorLayout {
     if (!this.layoutCache) {
-      const next = buildConnectorLayout((id) => this.store.get(id), this.store.ordered().filter(isConnector));
+      const next = buildConnectorLayout((id) => this.store.getPlaced(id), this.store.ordered().filter(isConnector));
       // A connector that joins, leaves or reorders a side moves the others on it, even though they did not change.
       if (this.lastLayout) for (const id of movedConnectors(this.lastLayout, next)) this.markDirty(id);
       this.layoutCache = this.lastLayout = next;
@@ -328,7 +330,7 @@ export class Renderer {
   bounds(o: Obj): Rect | null {
     this.connectorLayout(); // first, so connectors whose slot moved lose their cached bounds
     if (this.boundsCache.has(o.id)) return this.boundsCache.get(o.id)!;
-    const b = objBounds((id) => this.store.get(id), o, this.connectorLayout());
+    const b = objBounds((id) => this.store.getPlaced(id), this.store.placed(o), this.connectorLayout());
     this.boundsCache.set(o.id, b);
     return b;
   }
@@ -405,7 +407,8 @@ export class Renderer {
     const ordered = this.store.ordered();
     const visible = new Set<Id>();
     let prev: SVGGElement | null = null;
-    for (const o of ordered) {
+    for (const raw of ordered) {
+      const o = this.store.placed(raw);
       const b = this.bounds(o);
       if (!b || !rectsIntersect(b, view)) continue;
       visible.add(o.id);
@@ -438,7 +441,7 @@ export class Renderer {
     this.overlayDirty = false;
     const z = this.cam.zoom;
     const px = (v: number) => v / z;
-    const get = (id: string) => this.store.get(id);
+    const get = (id: string) => this.store.getPlaced(id);
     const ov = this.overlay;
     let out = '';
 
@@ -569,7 +572,7 @@ export class Renderer {
 
   private outline(o: Obj, sw: number, opacity: number) {
     if (isConnector(o)) {
-      const g = connectorGeom((id) => this.store.get(id), o, this.connectorLayout());
+      const g = connectorGeom((id) => this.store.getPlaced(id), o, this.connectorLayout());
       if (!g) return '';
       return `<path d="${g.d}" fill="none" stroke="${WIRE}" stroke-width="${sw * 2.5}" stroke-opacity="${0.25 * opacity}"/>`;
     }

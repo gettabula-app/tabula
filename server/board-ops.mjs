@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import * as Y from 'yjs';
 import { generateNKeysBetween } from 'fractional-indexing';
+import { layoutAll } from '../shared/containers.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -43,7 +44,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'icon', 'image', 'path', 'connector',
+  'shape', 'sticky', 'text', 'frame', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -165,6 +166,11 @@ export function readAll(doc) {
     else boxes.push(o);
   });
   const boundTo = (c) => [c.from, c.to].some((e) => e?.kind === 'bound' && withheld.has(e.id));
+  // What a container lays out has no position of its own, so readers get the shared layout's (docs/kanban.md).
+  if (boxes.some((o) => o.type === 'container')) {
+    const { rects } = layoutAll(boxes);
+    for (const o of boxes) Object.assign(o, rects.get(o.id));
+  }
   return { boxes, connectors: connectors.filter((c) => !boundTo(c)), withheld };
 }
 

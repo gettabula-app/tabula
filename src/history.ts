@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
+import { isFeatureKey } from '../shared/containers';
 import { Store } from './store';
-import type { BaseObj, Id, Obj } from './types';
+import type { BaseObj, Id, Label, Obj } from './types';
 import { SCHEMA_VERSION } from './types';
 import type { BoardRole, Version } from './api';
 
@@ -67,7 +68,7 @@ export interface RestoreSummary {
   added: number;
   removed: number;
   changed: number;
-  /** Board settings (grid, fonts, sticky colours) differ. */
+  /** Board settings (grid, fonts, sticky colours, labels) differ. */
   meta: boolean;
 }
 
@@ -76,13 +77,19 @@ export interface RestorePlan {
   remove: Id[];
   change: ObjectChange[];
   meta: { set: Record<string, unknown>; unset: string[] };
+  /** The board's label set, so a restored card gets back the labels it points at. */
+  labels: { set: Record<Id, Label>; remove: Id[] };
   summary: RestoreSummary;
   /** The snapshot already matches the live board. */
   empty: boolean;
 }
 
-/** The board title is the board's identity in the home list and the directory; the schema version is the format's. */
+/**
+ * The board title is the board's identity in the home list and the directory; the schema version is the format's. What
+ * the board needs (`feature:` keys) is kept too: it is only ever added, and applyRestore recomputes it from the objects.
+ */
 const KEPT_META = new Set(['name', 'schemaVersion']);
+const kept = (key: string) => KEPT_META.has(key) || isFeatureKey(key);
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const clone = <T>(v: T): T => structuredClone(v);
@@ -133,16 +140,24 @@ export function planRestore(live: Store, snap: Store, opts: { isHidden: (o: Obj)
   const meta = { set: {} as Record<string, unknown>, unset: [] as string[] };
   const liveMeta = live.meta.toJSON() as Record<string, unknown>;
   const snapMeta = snap.meta.toJSON() as Record<string, unknown>;
-  for (const [k, v] of Object.entries(snapMeta)) if (!KEPT_META.has(k) && !same(liveMeta[k], v)) meta.set[k] = clone(v);
-  for (const k of Object.keys(liveMeta)) if (!KEPT_META.has(k) && !(k in snapMeta)) meta.unset.push(k);
+  for (const [k, v] of Object.entries(snapMeta)) if (!kept(k) && !same(liveMeta[k], v)) meta.set[k] = clone(v);
+  for (const k of Object.keys(liveMeta)) if (!kept(k) && !(k in snapMeta)) meta.unset.push(k);
+
+  const labels = { set: {} as Record<Id, Label>, remove: [] as Id[] };
+  snap.labels.forEach((v, k) => {
+    if (!same(live.labels.get(k), v)) labels.set[k] = clone(v);
+  });
+  live.labels.forEach((_, k) => {
+    if (!snap.labels.has(k)) labels.remove.push(k);
+  });
 
   const summary: RestoreSummary = {
     added: add.length,
     removed: remove.length,
     changed: change.length,
-    meta: Object.keys(meta.set).length > 0 || meta.unset.length > 0,
+    meta: Object.keys(meta.set).length > 0 || meta.unset.length > 0 || Object.keys(labels.set).length > 0 || labels.remove.length > 0,
   };
-  return { add, remove, change, meta, summary, empty: !summary.added && !summary.removed && !summary.changed && !summary.meta };
+  return { add, remove, change, meta, labels, summary, empty: !summary.added && !summary.removed && !summary.changed && !summary.meta };
 }
 
 /**
@@ -163,6 +178,10 @@ export function applyRestore(live: Store, plan: RestorePlan): void {
     }
     for (const k of plan.meta.unset) live.meta.delete(k);
     for (const [k, v] of Object.entries(plan.meta.set)) live.meta.set(k, v);
+    for (const k of plan.labels.remove) live.labels.delete(k);
+    for (const [k, v] of Object.entries(plan.labels.set)) live.labels.set(k, v);
+    // objects were written below `create` (a changed type, an added object whose snapshot predates the flag)
+    live.syncFeatures();
   });
   live.undo.stopCapturing();
 }

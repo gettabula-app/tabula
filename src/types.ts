@@ -16,7 +16,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'image' | 'path' | 'connector' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -99,6 +99,18 @@ export interface BaseObj extends Partial<StyleFields> {
   operations?: Member[];
   // facilitation
   privateStep?: Id;
+  // container (docs/kanban.md). `parent` says which lane or container, `rank` is `<key>@<parent>`.
+  layout?: string;
+  rank?: string;
+  laneW?: number;
+  stage?: 'todo' | 'doing' | 'done';
+  wip?: number;
+  wipMode?: 'warn' | 'block';
+  desc?: string;
+  ownerId?: string;
+  ownerName?: string;
+  due?: string;
+  labels?: Id[];
 }
 
 export interface ConnectorObj {
@@ -186,8 +198,21 @@ export interface PollAnswer {
   color?: string;
 }
 
+/** A board-wide label (docs/kanban.md). `color` is a palette key, so chips follow the theme. */
+export interface Label {
+  id: Id;
+  name: string;
+  color: string;
+  order: number;
+}
+
 export type GridType = 'dots' | 'lines' | 'iso' | 'none';
 
+/**
+ * The board's settings. The meta map also holds `feature:<name>` = true for what the board needs that older clients lack
+ * (`feature:containers`); a client that does not know one opens the board read-only. Those keys are open-ended, so they
+ * are not fields here (see FEATURE_PREFIX in shared/containers.mjs).
+ */
 export interface BoardMeta {
   name: string;
   schemaVersion: number;

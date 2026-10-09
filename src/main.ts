@@ -4,6 +4,8 @@ import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
 import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
+import { mountNewerBanner } from './ui/newer-banner';
+import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { offerTemplateUpload } from './ui/template-upload';
@@ -249,12 +251,15 @@ async function route() {
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
   const applyAccess = () => {
     const workspace = workspaceOf(authState());
-    const access = boardAccess(role, workspace, deleted);
+    const access = boardAccess(role, workspace, deleted, conn.store.unsupportedFeatures().length > 0);
     conn.store.setReadOnly(access.storeReadOnly);
     conn.comments.setReadOnly(access.commentsReadOnly);
     watchUnlock(workspace);
   };
   applyAccess();
+  // A feature this client lacks can arrive with a remote change, an import or a restore: the board turns read-only then too.
+  // Watching starts before the import below, which writes the board's meta.
+  const unwatchFeatures = watchFeatureGate(conn.store, applyAccess);
   const job = pending?.id === id ? pending : null;
   pending = null;
 
@@ -277,11 +282,14 @@ async function route() {
   const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
   root.appendChild(banner.el);
   const unsubscribe = onAuth(applyAccess);
+  const releaseNewer = mountNewerBanner(conn.store, root);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
   // The relay undid one of this person's changes to the comments: say so, once per notice.
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   releaseWorkspace = () => {
+    unwatchFeatures();
+    releaseNewer();
     unsubscribe();
     unhint();
     unnotice();

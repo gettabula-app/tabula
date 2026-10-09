@@ -63,7 +63,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
   /** Screen boxes around each segment of the connectors attached to the selection, with room for arrowheads. */
   function connectorBoxes(): Box[] {
-    const get = (id: string) => app.store.get(id);
+    const get = (id: string) => app.store.getPlaced(id);
     const ids = new Set<string>();
     for (const o of app.selected()) for (const c of app.store.connectorsOf(o.id)) ids.add(c.id);
     const out: Box[] = [];
