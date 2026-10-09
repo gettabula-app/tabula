@@ -912,7 +912,9 @@ const STATES = {
   },
   async 'flow-poll'(env) {
     await openSeedBoard(env);
+    // the poll lives in the seeded board, so a later width may find it already open
     await env.page.evaluate(() => {
+      if (window.__board.flow.pollOpen()) return;
       window.__board.flow.quickPoll({ question: 'Which day should we ship the next release of the mobile app to everyone?', options: ['Monday', 'Wednesday', 'Friday'], multiple: false, anonymous: true });
     });
     await env.page.locator('.flowbar.show').waitFor();

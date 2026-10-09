@@ -393,6 +393,18 @@ select.input {
 .step-list li.current { background: color-mix(in srgb, var(--signal) 10%, transparent); }
 .step-list li.current > .icon-btn:first-child { background: var(--signal); color: var(--on-signal); }
 .step-list .mins { padding: 0 6px; }
+/* TAB-242: a step is two rows on a phone, title between the number and the trash button, then minutes and mode, then the extra field (dots per person, Edit poll) */
+@media (max-width: 500px) {
+  .step-list li { grid-template-columns: 36px 56px 28px minmax(0, 1fr) 36px; row-gap: 4px; padding: 4px 2px; }
+  .step-list li > :nth-child(1) { grid-area: 1 / 1; }
+  .step-list li > :nth-child(2) { grid-area: 1 / 2 / 2 / 5; }
+  .step-list li > :nth-child(7) { grid-area: 1 / 5; }
+  .step-list li > :nth-child(3) { grid-area: 2 / 2; }
+  .step-list li > :nth-child(4) { grid-area: 2 / 3; }
+  .step-list li > :nth-child(5) { grid-area: 2 / 4 / 3 / 6; min-width: 0; }
+  .step-list li > :nth-child(6) { grid-area: 3 / 2 / 4 / 6; min-width: 0; }
+  .step-list li > :nth-child(6):empty { display: none; }
+  .step-list li input, .step-list li select { min-width: 0; }
 
 /* popovers, menus, dialogs, toast */
 .popover { position: fixed; z-index: 50; max-height: calc(100vh - 16px); overflow: auto; }

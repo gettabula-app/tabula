@@ -35,3 +35,23 @@ describe('the session bar on a phone (TAB-240, TAB-241)', () => {
     expect(css).toMatch(/\.flowbar > \.flow-idle, \.flowbar > \.flow-results, \.flowbar > \.poll-summary \{[^}]*min-width: 0/);
   });
 });
+
+describe('the Steps list on a phone (TAB-242)', () => {
+  // the first @media (max-width: 500px) in the file may be another block, so read the one that holds the step list
+  const at = css.indexOf('.step-list li > :nth-child(1)');
+  const block = css.slice(css.lastIndexOf('@media', at), css.indexOf('\n}\n', at));
+
+  it('wraps each step into rows instead of one 400 px wide grid row', () => {
+    expect(block).toContain('@media (max-width: 500px)');
+    expect(block).toMatch(/\.step-list li \{ grid-template-columns: 36px 56px 28px minmax\(0, 1fr\) 36px/);
+  });
+
+  it('puts the title beside the number and trash, minutes and mode under it, and the extra field last', () => {
+    const area = (n: number) => block.match(new RegExp(`:nth-child\\(${n}\\) \\{ grid-area: ([^;]+);`))?.[1];
+    expect(area(2)).toBe('1 / 2 / 2 / 5');
+    expect(area(7)).toBe('1 / 5');
+    expect(area(3)).toBe('2 / 2');
+    expect(area(5)).toBe('2 / 4 / 3 / 6');
+    expect(area(6)).toBe('3 / 2 / 4 / 6');
+  });
+});
