@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ApiError, createApi, type AdminOverview, type AuditEntry } from '../src/api';
 import { errorReason } from '../src/ui/backups-logic';
@@ -124,6 +127,12 @@ describe('auditSentence', () => {
     ['chat.settings channel', entry('chat.settings', { workspaceChannel: false }), 'ana@example.com changed the chat settings (workspace channel off)'],
     ['chat.settings forever', entry('chat.settings', { viewersMayPost: false, retentionDays: null }), 'ana@example.com changed the chat settings (viewers read only, keep messages forever)'],
     ['backup.run', entry('backup.run', { changed: true, files: 14, uploaded: 3 }, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace (14 files, 3 new)'],
+    ['backup.run that repaired objects', entry('backup.run', { changed: false, files: 14, uploaded: 2, repaired: 2 }, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace (14 files, 2 new, 2 repaired)'],
+    ['mcp.token.create', entry('mcp.token.create', { tokenId: 't1', name: 'Claude Desktop', scope: 'write', boardIds: null, days: 30 }), 'ana@example.com created an AI tool access token “Claude Desktop” (read and edit)'],
+    ['mcp.token.create read only with a long name', entry('mcp.token.create', { name: 'n'.repeat(90), scope: 'read' }), `ana@example.com created an AI tool access token “${'n'.repeat(59)}…” (read only)`],
+    ['mcp.token.revoke of their own', entry('mcp.token.revoke', { tokenId: 't1', name: 'Claude Desktop', by: 'self' }), 'ana@example.com revoked their AI tool access token “Claude Desktop”'],
+    ['mcp.token.revoke by an admin', entry('mcp.token.revoke', { tokenId: 't1', name: 'Cursor', userId: 'u2', by: 'admin' }), 'ana@example.com revoked the AI tool access token “Cursor” of bo@example.com'],
+    ['mcp.token.revoke_all', entry('mcp.token.revoke_all', { count: 3 }), 'ana@example.com revoked all of their AI tool access tokens (3)'],
     ['backup.run with nothing known', entry('backup.run', {}, { actorId: null, actorName: null, actorEmail: null }), 'System backed up the workspace'],
     ['backup.failed', entry('backup.failed', { error: 'S3 PUT failed (status 403, AccessDenied)' }, { actorId: null, actorName: null, actorEmail: null }), 'A backup failed: S3 PUT failed (status 403, AccessDenied)'],
     ['backup.failed with a long reason', entry('backup.failed', { error: 'x'.repeat(300) }), `A backup failed: ${'x'.repeat(119)}…`],
@@ -139,6 +148,9 @@ describe('auditSentence', () => {
     ['restore.failed whole', entry('restore.failed', { kind: 'workspace', manifest: '20260115T093000Z.json.enc', error: 'not_enough_space' }), 'Restoring the whole workspace from the backup of 2026-01-15 09:30 UTC failed: ' + errorReason('not_enough_space')],
     ['restore.failed board without a reason', entry('restore.failed', { kind: 'board', manifest: '20260115T093000Z.json.enc' }), 'Restoring a board copy from the backup of 2026-01-15 09:30 UTC failed'],
     ['restore.old_data_removed', entry('restore.old_data_removed', { ageDays: 7, mode: 'days' }, { actorId: null, actorName: null, actorEmail: null }), 'The old data of a restore was removed (7 days old)'],
+    ['volume.adopt operator', entry('volume.adopt', { from: { workspaceId: 'ws_a', flyVolumeId: 'vol_1' }, to: { workspaceId: 'ws_b', flyVolumeId: 'vol_2' }, reason: 'operator' }, { actorId: null, actorName: null, actorEmail: null }), 'An operator adopted the data volume of workspace ws_a into this workspace; everyone was signed out, and every AI tool access token and invite link was revoked'],
+    ['volume.adopt restored copy', entry('volume.adopt', { from: { workspaceId: 'ws_a', flyVolumeId: 'vol_1' }, to: { workspaceId: 'ws_a', flyVolumeId: 'vol_2' }, reason: 'restored-copy' }, { actorId: null, actorName: null, actorEmail: null }), 'The server adopted a restored copy of its data volume (Fly volume vol_1 → vol_2); everyone was signed out'],
+    ['volume.adopt without ids', entry('volume.adopt', { from: { workspaceId: null, flyVolumeId: null }, reason: 'restored-copy' }), 'The server adopted a restored copy of its data volume; everyone was signed out'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -192,8 +204,25 @@ describe('auditSentence', () => {
       'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
       'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
       'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
+      'volume.adopt',
+      'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
+  });
+
+  it('knows every audit action written by name anywhere in the server (TAB-199)', () => {
+    // Every `audit(...)`, `auditRow(...)` and `directory.audit(...)` call whose action is a literal; actions built from a
+    // variable (ai.<feature>, ai.run.<action>, team.leave and team.member.remove) are in the list above by hand.
+    const root = fileURLToPath(new URL('../server', import.meta.url));
+    const files = (fs.readdirSync(root, { recursive: true }) as string[]).filter((f) => f.endsWith('.mjs')).map((f) => fs.readFileSync(path.join(root, f), 'utf8'));
+    const written = new Set<string>();
+    for (const src of files) {
+      for (const m of src.matchAll(/\baudit(?:Row)?\(\s*[^,()]*(?:\([^()]*\))?[^,()]*,\s*'([a-z_]+(?:\.[a-z_]+)+)'/g)) written.add(m[1]);
+      // and an action kept in a constant, such as volume.mjs's AUDIT_ACTION
+      for (const m of src.matchAll(/\bconst [A-Z_]*AUDIT[A-Z_]*\s*=\s*'([a-z_]+(?:\.[a-z_]+)+)'/g)) written.add(m[1]);
+    }
+    expect(written.size).toBeGreaterThan(40);
+    expect([...written].filter((a) => !isKnownAuditAction(a)).sort()).toEqual([]);
   });
 
   it.each(KNOWN_AUDIT_ACTIONS.map((a) => [a]))('%s is known and reads as a sentence', (action) => {

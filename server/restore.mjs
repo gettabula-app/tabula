@@ -164,7 +164,7 @@ const isRealDirectory = (file) => {
 };
 
 /** A directory entry cannot always be flushed (Windows, some file systems): only a real I/O error is an error. */
-function fsyncDir(dir) {
+export function fsyncDir(dir) {
   let fd;
   try {
     fd = fs.openSync(dir, 'r');
@@ -177,7 +177,7 @@ function fsyncDir(dir) {
 }
 
 /** `wx` by default: an existing file (or a link) is never written through. */
-function writeFileDurable(file, data, flag = 'wx') {
+export function writeFileDurable(file, data, flag = 'wx') {
   const fd = fs.openSync(file, flag, 0o600);
   try {
     fs.writeFileSync(fd, data);
@@ -412,6 +412,24 @@ function removeLeftovers(dataDir, log) {
     }
   }
   if (removed) log(`restore: removed ${removed} staging director${removed === 1 ? 'y' : 'ies'} left by an interrupted attempt`);
+}
+
+/**
+ * Whether a restore is still in the middle of something: a journal in any phase but `rolled-back`, or a staging
+ * directory. After recoverOnStart this is a check, not a repair (server/volume.mjs asks before adopting a volume): the
+ * only journal it leaves is a `rolled-back` one, which is settled (the old data is back) and waits for the restore
+ * engine to record the failure. A journal that cannot be read counts as pending.
+ * @param {string} dataDir
+ */
+export function restorePending(dataDir) {
+  let journal;
+  try {
+    journal = readJournal(dataDir);
+  } catch {
+    return true;
+  }
+  if (journal && journal.phase !== 'rolled-back') return true;
+  return fs.readdirSync(dataDir).some((name) => STAGING_RE.test(name) || JOURNAL_TMP_RE.test(name));
 }
 
 /**

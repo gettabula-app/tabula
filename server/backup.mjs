@@ -15,6 +15,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
+import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
 import { withLegacyEnv } from './env.mjs';
 
 const MINUTE_MS = 60_000;
@@ -44,11 +46,16 @@ const FIRST_RUN_MIN_MS = MINUTE_MS;
 const FIRST_RUN_SPAN_MS = 4 * MINUTE_MS;
 const DEFAULT_SETTLE_SECONDS = 120;
 const DEFAULT_SHUTDOWN_SECONDS = 4;
+const DEFAULT_VERIFY_HOURS = 24;
+const DEFAULT_VERIFY_MAX_MB = 64;
 /** A workspace that never goes quiet is still backed up this long after its first change that is not in a backup (or one settle time, if that is longer). */
 const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
 /** The longest wait between two settle attempts while the bucket keeps failing. */
 const SETTLE_RETRY_CAP_MS = 30 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
+const COPY_WORKER_URL = new URL('./backup-copy-worker.mjs', import.meta.url);
+/** What a deep verify may find wrong with an object: the codes of readObject that mean the stored bytes are not the object. Anything else (the network, the provider) is not damage. */
+const DAMAGE_CODES = new Set(['not_found', 'tamper', 'content_mismatch', 'bad_format', 'unknown_key', 'too_large']);
 /** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
 export const PROTECTED_KEY = 'backup.protected';
 const MAX_PREVIOUS_KEYS = 8;
@@ -141,6 +148,8 @@ function keySpellings(raw, bytes) {
  * @property {number} intervalMinutes
  * @property {number} settleSeconds quiet time after the last change before a backup is taken; 0 turns settle backups off
  * @property {number} shutdownSeconds how long a graceful shutdown may spend on a final backup; 0 turns it off
+ * @property {number} verifyHours how often a slice of the newest backup is read back and decrypted; 0 turns the deep verify off
+ * @property {number} verifyMaxMb the most sealed megabytes one deep verify reads
  * @property {number} keepHourlyHours
  * @property {number} keepDailyDays
  * @property {string} accessKey not enumerable
@@ -221,6 +230,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', 60, 5, 10_080);
   const settleSeconds = wholeNumber(env, 'SETTLE_SECONDS', DEFAULT_SETTLE_SECONDS, 0, 3_600);
   const shutdownSeconds = wholeNumber(env, 'SHUTDOWN_SECONDS', DEFAULT_SHUTDOWN_SECONDS, 0, 25);
+  const verifyHours = wholeNumber(env, 'VERIFY_HOURS', DEFAULT_VERIFY_HOURS, 0, 720);
+  const verifyMaxMb = wholeNumber(env, 'VERIFY_MAX_MB', DEFAULT_VERIFY_MAX_MB, 1, 4_096);
   const keepHourlyHours = wholeNumber(env, 'KEEP_HOURLY_HOURS', 48, 0, 8_760);
   const keepDailyDays = wholeNumber(env, 'KEEP_DAILY_DAYS', 30, 0, 3_650);
 
@@ -233,6 +244,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     intervalMinutes,
     settleSeconds,
     shutdownSeconds,
+    verifyHours,
+    verifyMaxMb,
     keepHourlyHours,
     keepDailyDays,
   };
@@ -856,10 +869,27 @@ const EMPTY_STATUS = Object.freeze({
   objects: 0,
   manifests: 0,
   prune: null,
+  verifiedAt: null,
+  verifyChecked: 0,
+  missingObjects: 0,
+  wrongSizeObjects: 0,
+  unrepairableObjects: 0,
+  deepVerifiedAt: null,
+  deepChecked: 0,
+  deepDamaged: 0,
+  deepSkipped: 0,
+  deepCovered: 0,
+  deepSince: null,
+  deepCursor: 0,
+  deepCycleOk: 0,
 });
+
+/** Kept in the stored status so a restart carries on where the last deep verify stopped, but not part of what status() shows. */
+const INTERNAL_STATUS = ['deepSince', 'deepCursor', 'deepCycleOk'];
 
 const timeOrNull = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
 const countOr0 = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
+const shareOr0 = (v) => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0);
 
 function readStatus(directory, scrub) {
   const status = { ...EMPTY_STATUS };
@@ -877,6 +907,19 @@ function readStatus(directory, scrub) {
     status.objects = countOr0(stored.objects);
     status.manifests = countOr0(stored.manifests);
     status.prune = isObject(stored.prune) ? stored.prune : null;
+    status.verifiedAt = timeOrNull(stored.verifiedAt);
+    status.verifyChecked = countOr0(stored.verifyChecked);
+    status.missingObjects = countOr0(stored.missingObjects);
+    status.wrongSizeObjects = countOr0(stored.wrongSizeObjects);
+    status.unrepairableObjects = countOr0(stored.unrepairableObjects);
+    status.deepVerifiedAt = timeOrNull(stored.deepVerifiedAt);
+    status.deepChecked = countOr0(stored.deepChecked);
+    status.deepDamaged = countOr0(stored.deepDamaged);
+    status.deepSkipped = countOr0(stored.deepSkipped);
+    status.deepCovered = shareOr0(stored.deepCovered);
+    status.deepSince = timeOrNull(stored.deepSince);
+    status.deepCursor = countOr0(stored.deepCursor);
+    status.deepCycleOk = countOr0(stored.deepCycleOk);
   } catch {
     /* unreadable status starts again from nothing */
   }
@@ -891,8 +934,82 @@ const isFileSync = (file) => {
   }
 };
 
+/**
+ * Waits for the worker thread that copies a database. Resolves when it says it is done. Rejects when it reports a failure
+ * (an Error with a short `code`, and for SQLite its own wording, never a path), when it crashes or stops without an
+ * answer, or, after terminating the worker, when `signal` aborts. `cleanup` runs once a terminated worker is gone.
+ * @param {{ on: Function, once: Function, off: Function, terminate: () => unknown }} worker
+ * @param {{ signal?: AbortSignal | null, cleanup?: () => void }} [options]
+ */
+export function waitForCopy(worker, { signal = null, cleanup = () => {} } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      worker.off('message', onMessage);
+      worker.off('exit', onExit);
+      fn(value);
+    };
+    const failed = (code, message) => Object.assign(new Error(message), { code: typeof code === 'string' && ERRNO_RE.test(code) ? code : 'ERROR' });
+    const onMessage = (message) => {
+      if (message?.ok === true) finish(resolve);
+      else finish(reject, failed(message?.code, typeof message?.detail === 'string' ? message.detail : 'The database copy failed'));
+    };
+    const onError = (err) => finish(reject, failed(err?.code, 'The database copy worker failed'));
+    const onExit = (code) => finish(reject, failed('ERR_WORKER_EXIT', `The database copy worker stopped without an answer (exit code ${Number(code)})`));
+    function onAbort() {
+      finish(reject, aborted());
+      let ended;
+      try {
+        ended = worker.terminate();
+      } catch {
+        /* a worker that cannot be terminated is gone or about to be */
+      }
+      Promise.resolve(ended).catch(() => {}).then(cleanup);
+    }
+    worker.once('message', onMessage);
+    // Never removed: an 'error' nobody listens to would be thrown in the main thread.
+    worker.on('error', onError);
+    worker.once('exit', onExit);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 const megabytes = (bytes) => (bytes >= 1024 * 1024 ? `${Math.ceil(bytes / (1024 * 1024))} MB` : `${bytes} bytes`);
 const tooLarge = (rel, size, limit) => new BackupError('too_large', `${rel} is ${megabytes(size)}, more than the ${megabytes(limit)} a backup file may be`);
+
+/**
+ * What a run leaves in the data directory or the database that only means something to the process that wrote it:
+ * the temporary database copies of a run that never finished, and the `running`/`nextRunAt` of the stored status.
+ * Called when a volume is adopted (server/volume.mjs), whether or not backups are on, before the engine is created.
+ * Everything else is kept: the status's last manifest and counts and `backup.protected` describe the bucket, which a
+ * restored copy of the same workspace still shares. Returns how many files went.
+ * @param {{ dataDir: string, directory?: any }} options
+ */
+export function clearRunState({ dataDir, directory = null }) {
+  let removed = 0;
+  for (const name of fs.readdirSync(dataDir)) {
+    if (!STALE_TEMP_RE.test(name)) continue;
+    fs.rmSync(path.join(dataDir, name), { force: true });
+    removed++;
+  }
+  const stored = directory?.getSetting(STATUS_KEY);
+  if (typeof stored === 'string') {
+    let value = null;
+    try {
+      value = JSON.parse(stored);
+    } catch {
+      /* readStatus starts again from nothing; nothing to clear */
+    }
+    if (isObject(value) && (value.running !== false || value.nextRunAt != null)) {
+      directory.setSetting(STATUS_KEY, JSON.stringify({ ...value, running: false, nextRunAt: null }));
+    }
+  }
+  return removed;
+}
 
 /**
  * The backup engine. Returns null when backups are off. Nothing here throws out of a timer: a failed run is recorded
@@ -915,6 +1032,7 @@ const tooLarge = (rel, size, limit) => new BackupError('too_large', `${rel} is $
  * @param {number} [options.requestTimeoutMs] tests only
  * @param {number[]} [options.backoffMs] tests only: the waits before each retry of a request
  * @param {number} [options.maxFileBytes] tests only; the limit is MAX_FILE_BYTES
+ * @param {(file: URL, options: object) => any} [options.workerFactory] tests only: starts the thread that copies a database (the default is `new Worker`)
  */
 export function createBackup({
   config,
@@ -930,6 +1048,7 @@ export function createBackup({
   requestTimeoutMs = REQUEST_TIMEOUT_MS,
   backoffMs = BACKOFF_MS,
   maxFileBytes = MAX_FILE_BYTES,
+  workerFactory = (file, options) => new Worker(file, options),
 }) {
   if (!config) return null;
 
@@ -950,7 +1069,7 @@ export function createBackup({
   const keyring = createKeyring([config.key, ...(config.previousKeys ?? [])]);
   const keys = keyring.current;
   const stop = new AbortController();
-  const s3 = createS3Client({
+  const s3Options = {
     endpoint: config.endpoint,
     region: config.region,
     bucket: config.bucket,
@@ -961,14 +1080,22 @@ export function createBackup({
     now,
     setTimeout: setTimer,
     clearTimeout: clearTimer,
-    signal: stop.signal,
     requestTimeoutMs,
     backoffMs,
-  });
+  };
+  const s3 = createS3Client({ ...s3Options, signal: stop.signal });
+  /** The deep verify in progress, if any: it runs outside a run and gives way to any run, a shutdown and stop(). */
+  let deepCtl = null;
+  let deepPromise = null;
+  function cancelDeep() {
+    deepCtl?.abort(aborted());
+  }
 
   const intervalMs = config.intervalMinutes * MINUTE_MS;
   const settleMs = (config.settleSeconds ?? DEFAULT_SETTLE_SECONDS) * 1000;
   const settleCapMs = Math.max(SETTLE_MAX_WAIT_MS, settleMs);
+  const verifyMs = (config.verifyHours ?? DEFAULT_VERIFY_HOURS) * HOUR_MS;
+  const verifyBudget = (config.verifyMaxMb ?? DEFAULT_VERIFY_MAX_MB) * 1024 * 1024;
   const trackChanges = settleMs > 0 || (config.shutdownSeconds ?? DEFAULT_SHUTDOWN_SECONDS) > 0;
   const prefix = config.prefix;
   const objectKey = (id) => `${prefix}/objects/${id}`;
@@ -997,6 +1124,16 @@ export function createBackup({
   let verified = new Set();
   /** Objects uploaded by a run that did not get as far as its manifest: asked about before they are uploaded again. */
   const unpublished = new Set();
+  /**
+   * Objects a kept manifest names that are missing in the bucket, have the wrong size ('listing', found by every cleanup) or
+   * whose contents do not decrypt ('deep', found by the deep verify). A run uploads such an object again whenever a file
+   * still has that content, whatever it knows about the object. Kept in memory only: object ids never go into the status.
+   * @type {Map<string, 'listing' | 'deep'>}
+   */
+  const suspect = new Map();
+  // What an earlier process found damaged and could not name any more: shown until a whole rotation has looked again.
+  let forgottenDamaged = state.deepDamaged;
+  if (forgottenDamaged > 0) state = { ...state, deepCursor: 0, deepCycleOk: 0 };
 
   function persist() {
     try {
@@ -1035,11 +1172,14 @@ export function createBackup({
 
   /**
    * The file behind an object id, verified twice: the GCM tag (with the id in the additional data) and the keyed hash
-   * of the plaintext, which must be the id. A different expected hash can be passed to check against a manifest.
+   * of the plaintext, which must be the id. A different expected hash can be passed to check against a manifest, and
+   * `maxSealedBytes` to refuse an object that is larger than the manifest says (too_large) without reading it.
+   * @param {string} objectId
+   * @param {{ expectedPlaintextHmac?: string, maxSealedBytes?: number, client?: ReturnType<typeof createS3Client> }} [options]
    */
-  async function readObject(objectId, { expectedPlaintextHmac } = {}) {
+  async function readObject(objectId, { expectedPlaintextHmac, maxSealedBytes, client = s3 } = {}) {
     if (typeof objectId !== 'string' || !OBJECT_ID_RE.test(objectId)) throw new BackupError('not_found', 'Not a backup object id');
-    const sealed = await s3.get(objectKey(objectId), { maxBytes: MAX_FILE_BYTES + OVERHEAD });
+    const sealed = await client.get(objectKey(objectId), { maxBytes: maxSealedBytes ?? MAX_FILE_BYTES + OVERHEAD });
     const { plaintext, keys: used } = unseal(sealed, `obj:${objectId}`, keyring);
     const mac = objectIdOf(plaintext, used);
     if (mac !== objectId || (expectedPlaintextHmac !== undefined && expectedPlaintextHmac !== mac)) {
@@ -1050,8 +1190,16 @@ export function createBackup({
 
   // ------------------------------------------------------------ what gets backed up
 
+  // Not an error when a file cannot be removed: a worker that was just stopped can still hold it (Windows), and the
+  // next start removes what is left (cleanStaleTemps).
   function removeTemp(file) {
-    for (const suffix of ['', '-journal', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true });
+    for (const suffix of ['', '-journal', '-wal', '-shm']) {
+      try {
+        fs.rmSync(`${file}${suffix}`, { force: true });
+      } catch {
+        /* see above */
+      }
+    }
   }
 
   function cleanStaleTemps() {
@@ -1062,36 +1210,33 @@ export function createBackup({
     }
   }
 
+  /** Both SQLite steps of the copy run in a worker thread, so the event loop of the server is not held (docs/backups.md, When it runs). */
+  async function copyInOtherThread(source, tmp) {
+    let worker;
+    try {
+      worker = workerFactory(COPY_WORKER_URL, {
+        workerData: { job: COPY_JOB, source, tmp, statusKey: STATUS_KEY },
+        // The worker gets none of this process's environment (the backup key and the S3 credentials are in it), and does not repeat Node's one time SQLite notice.
+        env: {},
+        execArgv: ['--disable-warning=ExperimentalWarning'],
+      });
+    } catch (err) {
+      say(`the database copy could not be started in a worker thread (${describe(err)}); copying in the main thread`);
+      await copyDatabase(source, tmp, STATUS_KEY);
+      return;
+    }
+    await waitForCopy(worker, { signal: stop.signal, cleanup: () => removeTemp(tmp) });
+  }
+
   /**
    * A consistent copy of a database (directory.sqlite or chat.sqlite), taken while the server uses it. The directory's
    * copy leaves out the engine's own rows; the chat database has none.
    */
-  async function copyDatabase(source, rel) {
+  async function copyDatabaseFile(source, rel) {
     const tmp = path.join(dataDir, `${rel}.backup-${crypto.randomBytes(8).toString('hex')}.tmp`);
     tempFile = tmp;
     try {
-      const { DatabaseSync } = await import('node:sqlite');
-      const live = new DatabaseSync(source);
-      try {
-        live.exec('PRAGMA busy_timeout = 5000');
-        live.prepare('VACUUM INTO ?').run(tmp);
-      } finally {
-        live.close();
-      }
-      // Without this, the status and audit rows of every run would make the next run's copy differ and nothing would ever be unchanged.
-      const copy = new DatabaseSync(tmp);
-      try {
-        const has = (table) => copy.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
-        copy.exec('PRAGMA journal_mode = DELETE');
-        if (has('settings')) copy.prepare('DELETE FROM settings WHERE key = ?').run(STATUS_KEY);
-        if (has('audit')) {
-          copy.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed')");
-          if (has('sqlite_sequence')) copy.exec("UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(id), 0) FROM audit) WHERE name = 'audit'");
-        }
-        copy.exec('VACUUM');
-      } finally {
-        copy.close();
-      }
+      await copyInOtherThread(source, tmp);
       const size = fs.statSync(tmp).size;
       if (size > maxFileBytes) throw tooLarge(rel, size, maxFileBytes);
       const data = await fs.promises.readFile(tmp);
@@ -1128,10 +1273,10 @@ export function createBackup({
   /** One file at a time, so only one is in memory. `skipped` counts what was left out because it vanished or is damaged. */
   async function* snapshotFiles(counters) {
     const database = path.join(dataDir, 'directory.sqlite');
-    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDatabase(database, 'directory.sqlite') };
+    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDatabaseFile(database, 'directory.sqlite') };
     // Team chat (docs/chat.md) keeps its own database, copied the same way; it exists once chat was first used.
     const chat = path.join(dataDir, 'chat.sqlite');
-    if (isFileSync(chat)) yield { path: 'chat.sqlite', data: await copyDatabase(chat, 'chat.sqlite') };
+    if (isFileSync(chat)) yield { path: 'chat.sqlite', data: await copyDatabaseFile(chat, 'chat.sqlite') };
 
     const names = (await fs.promises.readdir(dataDir, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && ROOM_FILE_RE.test(entry.name))
@@ -1225,6 +1370,14 @@ export function createBackup({
 
   // ------------------------------------------------------------ one run
 
+  /** The objects the deep verify found damaged that are not put right yet; a count from an earlier process, whose ids are gone, stays until a rotation is complete. */
+  function syncDeepDamaged() {
+    let found = 0;
+    for (const kind of suspect.values()) if (kind === 'deep') found++;
+    const shown = Math.max(found, forgottenDamaged);
+    if (shown !== state.deepDamaged) state = { ...state, deepDamaged: shown };
+  }
+
   async function putObject(objectId, data) {
     const sealed = seal(data, `obj:${objectId}`, keys);
     await s3.put(objectKey(objectId), sealed);
@@ -1257,7 +1410,10 @@ export function createBackup({
       entries.push({ path: validateRelPath(file.path), size: file.data.length, objectId });
       if (handled.has(objectId)) continue;
       handled.add(objectId);
-      if (reusable.has(objectId) || unpublished.has(objectId)) {
+      if (suspect.has(objectId)) {
+        // A cleanup or a deep verify found this object missing or damaged: whatever else is known about it, it is put again.
+        repaired++;
+      } else if (reusable.has(objectId) || unpublished.has(objectId)) {
         if (verified.has(objectId) && reusable.has(objectId)) continue;
         const found = await s3.head(objectKey(objectId));
         if (found && (found.size === null || found.size === file.data.length + OVERHEAD)) continue;
@@ -1280,7 +1436,9 @@ export function createBackup({
       if (!found || (found.size !== null && found.size !== sealedLength)) {
         throw new BackupError('readback', 'An uploaded backup object could not be found again in the bucket');
       }
+      suspect.delete(objectId);
     }
+    syncDeepDamaged();
 
     let manifest = previous;
     let manifestName = previous?.name ?? null;
@@ -1314,6 +1472,7 @@ export function createBackup({
 
     const unique = new Map(manifest.files.map((f) => [f.objectId, f.size]));
     return {
+      objects: unique,
       changed: !unchanged,
       manifestName,
       files: manifest.files.length,
@@ -1340,9 +1499,16 @@ export function createBackup({
     }
   }
 
-  /** Old manifests first, then objects nothing refers to (older than an hour), and only on complete knowledge. */
-  async function prune(newestName, nowMs) {
-    const outcome = { at: nowMs, manifestsDeleted: 0, objectsDeleted: 0, gcSkipped: null, error: null, manifests: null, objects: null };
+  /**
+   * Old manifests first, then objects nothing refers to (older than an hour), and only on complete knowledge. The listing
+   * of the objects and the manifests that were read are also what tells whether every object a kept manifest names is
+   * there with the size it should have (`outcome.verify`; counts only), and the ones that are not become suspect.
+   * @param {string} newestName
+   * @param {number} nowMs
+   * @param {Map<string, number>} newestObjects the objects of the newest manifest, with their sizes
+   */
+  async function prune(newestName, nowMs, newestObjects) {
+    const outcome = { at: nowMs, manifestsDeleted: 0, objectsDeleted: 0, gcSkipped: null, error: null, manifests: null, objects: null, verify: null };
     try {
       const listed = await listManifests();
       outcome.manifests = listed.length;
@@ -1368,16 +1534,17 @@ export function createBackup({
       const dir = `${prefix}/objects/`;
       const objects = (await s3.list(dir)).filter((item) => OBJECT_ID_RE.test(item.key.slice(dir.length)));
       outcome.objects = objects.length;
-      const referenced = new Set();
+      const referenced = new Map();
       let unreadable = 0;
       for (const item of kept) {
         try {
-          for (const file of (await readManifest(item.name)).files) referenced.add(file.objectId);
+          for (const file of (await readManifest(item.name)).files) referenced.set(file.objectId, file.size);
         } catch (err) {
           if (err?.code === 'aborted') throw err;
           unreadable++;
         }
       }
+      outcome.verify = verifyListing(objects, dir, referenced, newestObjects, nowMs, unreadable > 0);
       if (unreadable) {
         outcome.gcSkipped = 'unreadable_manifest';
         say(`${unreadable} manifest(s) could not be read, so no objects are deleted this time`);
@@ -1397,6 +1564,41 @@ export function createBackup({
     return outcome;
   }
 
+  /**
+   * Compares what the kept manifests name with the bucket listing: an object that is not listed is missing, one whose listed
+   * size is not its size plus the sealing overhead is the wrong size. Both are suspect until a run has put them again.
+   * With a manifest that could not be read, only what the readable ones name is known, so nothing is forgotten.
+   * @param {{ key: string, size: number }[]} objects
+   * @param {string} dir
+   * @param {Map<string, number>} referenced
+   * @param {Map<string, number>} newestObjects
+   * @param {number} at
+   * @param {boolean} partial
+   */
+  function verifyListing(objects, dir, referenced, newestObjects, at, partial) {
+    const listedSizes = new Map(objects.map((item) => [item.key.slice(dir.length), item.size]));
+    const found = new Set();
+    let missing = 0;
+    let wrongSize = 0;
+    for (const [id, size] of referenced) {
+      const listed = listedSizes.get(id);
+      if (listed === undefined) missing++;
+      else if (listed === size + OVERHEAD) continue;
+      else wrongSize++;
+      found.add(id);
+    }
+    if (!partial) {
+      for (const [id, kind] of suspect) {
+        if (!referenced.has(id) || (kind === 'listing' && !found.has(id))) suspect.delete(id);
+      }
+    }
+    for (const id of found) if (!suspect.has(id)) suspect.set(id, 'listing');
+    syncDeepDamaged();
+    let unrepairable = 0;
+    for (const id of suspect.keys()) if (!newestObjects.has(id)) unrepairable++;
+    return { at, checked: referenced.size, missing, wrongSize, unrepairable };
+  }
+
   function recordSuccess(startedAt, summary, pruned) {
     const finishedAt = now();
     state = {
@@ -1410,6 +1612,16 @@ export function createBackup({
       objects: pruned.objects ?? state.objects,
       manifests: pruned.manifests ?? state.manifests,
       prune: { at: pruned.at, manifestsDeleted: pruned.manifestsDeleted, objectsDeleted: pruned.objectsDeleted, gcSkipped: pruned.gcSkipped, error: pruned.error },
+      deepSince: state.deepSince ?? startedAt,
+      ...(pruned.verify
+        ? {
+            verifiedAt: pruned.verify.at,
+            verifyChecked: pruned.verify.checked,
+            missingObjects: pruned.verify.missing,
+            wrongSizeObjects: pruned.verify.wrongSize,
+            unrepairableObjects: pruned.verify.unrepairable,
+          }
+        : {}),
     };
     persist();
     // A run that found nothing to do is in the status (lastSuccessAt) but not in the audit log: at hourly that would be 24 rows a day of nothing.
@@ -1418,6 +1630,7 @@ export function createBackup({
         changed: summary.changed,
         files: summary.files,
         uploaded: summary.uploaded,
+        repaired: summary.repaired,
         bytes: summary.bytesUploaded,
         skipped: summary.skipped,
         manifestsDeleted: pruned.manifestsDeleted,
@@ -1429,6 +1642,98 @@ export function createBackup({
         ? `ok: ${summary.files} files, ${summary.uploaded} uploaded, manifest ${summary.manifestName}`
         : `ok: nothing changed (${summary.files} files)`,
     );
+  }
+
+  /**
+   * Reads and decrypts a slice of the newest manifest's objects (the GCM tag and the keyed hash, as a restore would), within
+   * `verifyBudget` sealed bytes, in the order of the sorted object ids, starting where the last deep verify stopped. An
+   * object whose bytes are not the object is suspect, so the next run puts it again; the network or the provider failing is
+   * not damage, ends this check, and the object is the first one the next check looks at. Never throws. Its requests go
+   * through a client of its own whose signal `ctl` aborts, so a run, a shutdown or stop() cut even a read in progress short.
+   * @param {Map<string, number>} objects the newest manifest's objects with their sizes
+   * @param {AbortController} ctl
+   */
+  async function deepVerify(objects, ctl) {
+    const client = createS3Client({ ...s3Options, signal: AbortSignal.any([stop.signal, ctl.signal]) });
+    const cut = () => ctl.signal.aborted || finishing || stop.signal.aborted;
+    const ids = [...objects.keys()].sort();
+    const total = ids.length;
+    let at = state.deepCursor < total ? state.deepCursor : 0;
+    let cycleOk = at === 0 ? 0 : state.deepCycleOk;
+    let spent = 0;
+    let checked = 0;
+    let skipped = 0;
+    let damaged = 0;
+    let interrupted = false;
+    let stalled = null;
+    for (; at < total; at++) {
+      if (cut()) {
+        interrupted = true;
+        break;
+      }
+      const id = ids[at];
+      const sealedSize = objects.get(id) + OVERHEAD;
+      if (sealedSize > verifyBudget) {
+        skipped++;
+        continue;
+      }
+      if (spent + sealedSize > verifyBudget) break;
+      try {
+        await readObject(id, { maxSealedBytes: sealedSize, client });
+      } catch (err) {
+        if (err?.code === 'aborted' || cut()) {
+          interrupted = true;
+          break;
+        }
+        if (!DAMAGE_CODES.has(err?.code)) {
+          skipped++;
+          stalled = err;
+          break;
+        }
+        suspect.set(id, 'deep');
+        damaged++;
+      }
+      spent += sealedSize;
+      checked++;
+      cycleOk++;
+    }
+    if (damaged) say(`the deep check found ${damaged} damaged object(s); the next run puts them again where a file still has the content`);
+    if (stalled) say(`the deep check stopped early (${describe(stalled)})`);
+    const complete = !interrupted && !stalled && at >= total;
+    if (complete) forgottenDamaged = 0;
+    let unrepairable = 0;
+    for (const id of suspect.keys()) if (!objects.has(id)) unrepairable++;
+    state = {
+      ...state,
+      deepChecked: checked,
+      deepSkipped: skipped,
+      deepCovered: total === 0 ? 1 : Math.min(1, cycleOk / total),
+      deepCursor: complete ? 0 : at,
+      deepCycleOk: complete ? 0 : cycleOk,
+      unrepairableObjects: unrepairable,
+      ...(interrupted || (stalled && checked === 0) ? {} : { deepVerifiedAt: now() }),
+    };
+    syncDeepDamaged();
+  }
+
+  /**
+   * Starts the deep verify when it is due (every `verifyHours` hours since the last one, or since the first run), after a
+   * run has ended and outside it, so it never holds a run up: the next run, a shutdown's final backup and a restore's
+   * safety backup cancel it at once, and it carries on from where it stopped the next time. Never on shutdown.
+   */
+  function startDeepVerifyIfDue(trigger, objects) {
+    if (deepPromise || verifyMs <= 0 || trigger === 'shutdown' || finishing || stopped || stop.signal.aborted) return;
+    const since = state.deepVerifiedAt ?? state.deepSince;
+    if (since === null || now() - since < verifyMs) return;
+    const ctl = new AbortController();
+    deepCtl = ctl;
+    deepPromise = deepVerify(objects, ctl)
+      .then(() => persist())
+      .catch((err) => say(`the deep check of the backup failed (${describe(err)})`))
+      .finally(() => {
+        if (deepCtl === ctl) deepCtl = null;
+        deepPromise = null;
+      });
   }
 
   function recordFailure(startedAt, err) {
@@ -1456,16 +1761,21 @@ export function createBackup({
   async function run(trigger) {
     if (stopped) return { ok: false, aborted: true };
     if (running) return { ok: false, skipped: 'running' };
+    // a run, whatever started it, goes before a deep verify
+    cancelDeep();
     running = true;
     const startedAt = now();
     const seqAtStart = changeSeq;
     firstChangeInRun = null;
     let failed = false;
+    let verifyNext = null;
     try {
       const summary = await execute(startedAt);
-      const pruned = await prune(summary.manifestName, now());
+      const pruned = await prune(summary.manifestName, now(), summary.objects);
       lastTrigger = trigger;
       recordSuccess(startedAt, summary, pruned);
+      // After the success is recorded and outside the run: the check can find things to put right at the next run, but it never fails or holds up one.
+      verifyNext = summary.objects;
       // What was noted while this run read the files may or may not be in it, so only a quiet run clears the mark.
       retryNotBefore = 0;
       if (changeSeq === seqAtStart) {
@@ -1484,6 +1794,7 @@ export function createBackup({
       running = false;
       if (failed && settleMs > 0) retryNotBefore = now() + retryDelay(state.consecutiveFailures);
       afterRun();
+      if (verifyNext) startDeepVerifyIfDue(trigger, verifyNext);
     }
   }
 
@@ -1552,6 +1863,7 @@ export function createBackup({
   /** Stops everything at once, without waiting for the run in progress to unwind. */
   function halt() {
     stopped = true;
+    cancelDeep();
     if (timer !== null) clearTimer(timer);
     timer = null;
     nextRunAt = null;
@@ -1563,6 +1875,7 @@ export function createBackup({
   async function runFinal(budgetMs) {
     const outcome = { ran: false, ok: true, timedOut: false };
     finishing = true;
+    cancelDeep();
     if (timer !== null) clearTimer(timer);
     timer = null;
     nextRunAt = null;
@@ -1610,6 +1923,11 @@ export function createBackup({
     async stop() {
       halt();
       await inFlight?.catch(() => {});
+      await deepPromise;
+    },
+    /** Tests: resolves when no deep verify is going. */
+    deepIdle() {
+      return deepPromise ?? Promise.resolve();
     },
     /**
      * Something in the data directory changed (a room was saved, an API call wrote). Marks the workspace dirty and arms
@@ -1646,6 +1964,8 @@ export function createBackup({
     },
     runNow,
     status() {
+      const shown = { ...state };
+      for (const name of INTERNAL_STATUS) delete shown[name];
       return {
         enabled: true,
         running,
@@ -1654,7 +1974,7 @@ export function createBackup({
         settleSeconds: settleMs / 1000,
         dirty: dirtySince !== null,
         lastTrigger,
-        ...state,
+        ...shown,
         nextRunAt,
       };
     },

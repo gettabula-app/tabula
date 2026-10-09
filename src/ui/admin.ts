@@ -42,6 +42,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Sign-ins', prefix: 'auth.login' },
   { label: 'Sessions', prefix: 'admin.session' },
   { label: 'AI', prefix: 'ai.' },
+  { label: 'AI tool access', prefix: 'mcp.token.' },
   { label: 'Images', prefix: 'asset.' },
   { label: 'Chat', prefix: 'chat.' },
   // The audit filter is one literal prefix, so backups and restores each get a chip.
