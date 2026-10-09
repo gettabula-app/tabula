@@ -473,6 +473,14 @@ async function screenshotScenario(width) {
     check(`A.${width}: no button of the bar's preview row is cut off`, await target.page.evaluate(() => [...document.querySelectorAll('.aibar-actions button')]
       .filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > window.innerWidth)
       .map((b) => b.textContent?.trim())), []);
+    check(`A.${width}: no quick-action chip is cut off or scrolls (TAB-220)`, await target.page.evaluate(() => {
+      const bar = document.querySelector('.aibar')?.getBoundingClientRect();
+      const row = document.querySelector('.aibar-chips');
+      const cut = [...document.querySelectorAll('.aibar-chips .chip')]
+        .filter((c) => c.scrollWidth > c.clientWidth + 1 || c.getBoundingClientRect().right > (bar?.right ?? window.innerWidth) + 1 || c.getBoundingClientRect().right > window.innerWidth)
+        .map((c) => c.textContent?.trim());
+      return { cut, scrolls: Boolean(row && row.scrollWidth > row.clientWidth + 1) };
+    }), { cut: [], scrolls: false });
 
     // Show (TAB-218): with the preview off screen nothing moves the view by itself; the bar's Show brings it into view
     await target.page.evaluate(() => {

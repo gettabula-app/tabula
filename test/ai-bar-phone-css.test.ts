@@ -25,6 +25,12 @@ describe('the AI bar on a phone (ai-bar.css, max-width 860px)', () => {
     expect(rule('.aibar-field')).toContain('order: -1');
   });
 
+  it('lets the quick-action chips share the row and wrap, instead of scrolling one out of sight (TAB-220)', () => {
+    expect(rule('.aibar-chips')).toContain('flex-wrap: wrap');
+    expect(rule('.aibar-chips')).toContain('overflow-x: visible');
+    expect(rule('.aibar-chips .chip')).toContain('flex: 1 1 auto');
+  });
+
   it('puts the facts of the disclosure one to a line, with no separator that could start a line', () => {
     expect(rule('.aibar-disclosure > span')).toContain('flex: 1 1 100%');
     expect(rule('.aibar-disclosure .sep::before')).toContain('content: none');
