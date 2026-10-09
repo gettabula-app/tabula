@@ -10,6 +10,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
+import { hasLayout } from '../shared/containers';
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -214,6 +215,22 @@ function frameMarkup(o: BaseObj) {
     `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="6" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>` +
       `<text x="2" y="-10" font-family="${escapeXml(fontFamily(s.font))}" font-size="${s.fontSize}" font-weight="${s.fontWeight}" fill="${escapeXml(s.textColor)}">${name}</text>`,
     s.opacity,
+  );
+}
+
+/**
+ * A container, a lane or a card, until slice 2 of docs/kanban.md draws them: a hairline box with its name, so what a
+ * board holds can be seen and not only clicked. A container whose layout this client does not know says so (it is never
+ * edited from here).
+ */
+function containerMarkup(o: BaseObj) {
+  const label = o.type === 'container' ? o.name || 'Container' : o.type === 'lane' ? 'Lane' : 'Card';
+  const text = (y: number, body: string) => `<text x="8" y="${y}" font-family="${escapeXml(fontFamily('satoshi'))}" font-size="13" fill="${CANVAS_INK}">${escapeXml(body)}</text>`;
+  const note = o.type === 'container' && !hasLayout(o.layout) ? text(38, 'Needs a newer Tabula') : '';
+  return wrapG(
+    o,
+    `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="none" stroke="var(--canvas-rule, #C9D1DA)" stroke-width="1"/>` + text(20, label) + note,
+    1,
   );
 }
 
@@ -423,6 +440,9 @@ export function objectMarkup(o: Obj, ctx: MarkupCtx): string {
     case 'icon': return iconMarkup(o);
     case 'image': return imageMarkup(o, ctx);
     case 'path': return pathMarkup(o);
+    case 'container':
+    case 'lane':
+    case 'card': return containerMarkup(o);
     default:
       if (o.type.startsWith('uml-')) return umlMarkup(o, ctx);
       return '';

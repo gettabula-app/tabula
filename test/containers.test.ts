@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { STICKY_COLORS } from '../src/palette';
 import {
   KANBAN, LABEL_COLORS, LIMITS, hasLayout, isMixedRank, layoutAll, layoutContainer, needsNormalising, normaliseRanks, orphanHome, planInsert,
-  rankBetween, ranksBetween, sortedChildren, splitRank, unknownFeatures, withFeature, wipCheck,
+  rankBetween, ranksBetween, sortedChildren, splitRank, unknownFeatures, wipCheck,
+  featureKey, featuresOf, isFeatureKey,
 } from '../shared/containers';
 
 // docs/kanban.md: the shared module the browser and the MCP server both run. No Store, no DOM.
@@ -401,18 +402,40 @@ describe('wipCheck', () => {
 });
 
 describe('features', () => {
-  it('adds a feature once, in a stable order', () => {
-    expect(withFeature(undefined, 'containers')).toEqual(['containers']);
-    expect(withFeature(['containers'], 'containers')).toEqual(['containers']);
-    expect(withFeature(['zebra', 'containers'], 'alpha')).toEqual(['alpha', 'containers', 'zebra']);
-    expect(withFeature([1, 'containers', null], 'alpha')).toEqual(['containers', 'alpha'].sort());
+  it('writes one meta key per feature, so concurrent writers cannot overwrite each other', () => {
+    expect(featureKey('containers')).toBe('feature:containers');
+    expect(isFeatureKey('feature:tables') && isFeatureKey('features') && !isFeatureKey('name') && !isFeatureKey('gridType')).toBe(true);
+  });
+
+  it('lists the features of a board\'s meta, sorted', () => {
+    expect(featuresOf({ name: 'x', 'feature:tables': true, 'feature:containers': true })).toEqual(['containers', 'tables']);
+    expect(featuresOf({ 'feature:a': false, 'feature:b': null, 'feature:c': 0 })).toEqual(['c']);
+    expect(featuresOf({})).toEqual([]);
+    expect(featuresOf(undefined)).toEqual([]);
+  });
+
+  it('still reads the first form, an array under `features`', () => {
+    expect(featuresOf({ features: ['containers'] })).toEqual(['containers']);
+    expect(featuresOf({ features: ['containers'], 'feature:tables': true })).toEqual(['containers', 'tables']);
+    expect(unknownFeatures({ features: ['containers'] })).toEqual([]);
+    expect(unknownFeatures({ features: ['containers', 'holograms'] })).toEqual(['holograms']);
   });
 
   it('names the features this code does not know', () => {
-    expect(unknownFeatures(undefined)).toEqual([]);
-    expect(unknownFeatures('containers')).toEqual([]);
-    expect(unknownFeatures(['containers'])).toEqual([]);
-    expect(unknownFeatures(['containers', 'holograms', 7])).toEqual(['holograms']);
+    expect(unknownFeatures({})).toEqual([]);
+    expect(unknownFeatures({ 'feature:containers': true })).toEqual([]);
+    expect(unknownFeatures({ 'feature:containers': true, 'feature:holograms': true })).toEqual(['holograms']);
+    expect(unknownFeatures({ 'feature:containers': 'yes' })).toEqual([]);
+    expect(unknownFeatures({ 'feature:holograms': 1 })).toEqual(['holograms']);
+  });
+
+  it('fails closed: what it cannot read counts as a feature it does not know', () => {
+    for (const features of ['containers', 7, true, false, {}, { containers: true }]) {
+      expect(unknownFeatures({ features })).toEqual(['features']);
+    }
+    expect(unknownFeatures({ features: ['containers', 5] })).toEqual(['features']);
+    expect(unknownFeatures({ 'feature:': true })).toEqual(['']);
+    expect(unknownFeatures({ features: null })).toEqual([]);
   });
 });
 

@@ -208,6 +208,11 @@ export interface Label {
 
 export type GridType = 'dots' | 'lines' | 'iso' | 'none';
 
+/**
+ * The board's settings. The meta map also holds `feature:<name>` = true for what the board needs that older clients lack
+ * (`feature:containers`); a client that does not know one opens the board read-only. Those keys are open-ended, so they
+ * are not fields here (see FEATURE_PREFIX in shared/containers.mjs).
+ */
 export interface BoardMeta {
   name: string;
   schemaVersion: number;
@@ -218,8 +223,6 @@ export interface BoardMeta {
   bodyFont: string;
   /** Custom sticky colours added on this board, newest first; shared by everyone. */
   stickyColors: string[];
-  /** Features this board needs that older clients lack, such as `containers`; a client that does not know one opens it read-only. */
-  features?: string[];
 }
 
 export interface Point { x: number; y: number }

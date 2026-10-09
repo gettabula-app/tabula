@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { isFeatureKey } from '../shared/containers';
 import { Store } from './store';
 import type { BaseObj, Id, Label, Obj } from './types';
 import { SCHEMA_VERSION } from './types';
@@ -83,8 +84,12 @@ export interface RestorePlan {
   empty: boolean;
 }
 
-/** The board title is the board's identity in the home list and the directory; the schema version is the format's. */
+/**
+ * The board title is the board's identity in the home list and the directory; the schema version is the format's. What
+ * the board needs (`feature:` keys) is kept too: it is only ever added, and applyRestore recomputes it from the objects.
+ */
 const KEPT_META = new Set(['name', 'schemaVersion']);
+const kept = (key: string) => KEPT_META.has(key) || isFeatureKey(key);
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const clone = <T>(v: T): T => structuredClone(v);
@@ -135,8 +140,8 @@ export function planRestore(live: Store, snap: Store, opts: { isHidden: (o: Obj)
   const meta = { set: {} as Record<string, unknown>, unset: [] as string[] };
   const liveMeta = live.meta.toJSON() as Record<string, unknown>;
   const snapMeta = snap.meta.toJSON() as Record<string, unknown>;
-  for (const [k, v] of Object.entries(snapMeta)) if (!KEPT_META.has(k) && !same(liveMeta[k], v)) meta.set[k] = clone(v);
-  for (const k of Object.keys(liveMeta)) if (!KEPT_META.has(k) && !(k in snapMeta)) meta.unset.push(k);
+  for (const [k, v] of Object.entries(snapMeta)) if (!kept(k) && !same(liveMeta[k], v)) meta.set[k] = clone(v);
+  for (const k of Object.keys(liveMeta)) if (!kept(k) && !(k in snapMeta)) meta.unset.push(k);
 
   const labels = { set: {} as Record<Id, Label>, remove: [] as Id[] };
   snap.labels.forEach((v, k) => {
@@ -175,6 +180,8 @@ export function applyRestore(live: Store, plan: RestorePlan): void {
     for (const [k, v] of Object.entries(plan.meta.set)) live.meta.set(k, v);
     for (const k of plan.labels.remove) live.labels.delete(k);
     for (const [k, v] of Object.entries(plan.labels.set)) live.labels.set(k, v);
+    // objects were written below `create` (a changed type, an added object whose snapshot predates the flag)
+    live.syncFeatures();
   });
   live.undo.stopCapturing();
 }

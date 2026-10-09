@@ -1,5 +1,6 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isContainerType } from '../shared/containers';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
@@ -67,7 +68,8 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
     const g = connectorGeom(get, o, layout);
     return g ? [{ id: 'from', p: g.start }, { id: 'to', p: g.end }] : [];
   }
-  if (o.locked || o.type === 'path') return [];
+  // a container's size, and where its lanes and cards are, come from its layout: there is nothing to resize or turn
+  if (o.locked || o.type === 'path' || isContainerType(o.type)) return [];
   const c = center(o);
   const r = o.rotation || 0;
   const L = (x: number, y: number) => rotate({ x: o.x + x, y: o.y + y }, c, r);

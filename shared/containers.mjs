@@ -18,16 +18,35 @@ export const isContainerType = (type) => CONTAINER_TYPES.includes(type);
 export const FEATURES = Object.freeze({ containers: 'containers' });
 export const KNOWN_FEATURES = Object.freeze(Object.values(FEATURES));
 
-/** `list` plus `name`, once, in a stable order, so two clients that add the same feature write the same value. */
-export function withFeature(list, name) {
-  const names = Array.isArray(list) ? list.filter((f) => typeof f === 'string') : [];
-  return names.includes(name) ? names : [...names, name].sort();
+/**
+ * A feature is one key of the board's meta map, `feature:<name>` = true, so two clients that add different features at
+ * the same moment both keep theirs (one array under one key would keep only the last write).
+ */
+export const FEATURE_PREFIX = 'feature:';
+export const featureKey = (name) => `${FEATURE_PREFIX}${name}`;
+/** The meta keys that say what the board needs: never part of a board setting that history restores or removes. */
+export const isFeatureKey = (key) => key === 'features' || key.startsWith(FEATURE_PREFIX);
+
+/**
+ * The features a board's meta (as plain JSON) lists, sorted. A `feature:` key counts unless it is false or empty. The
+ * first form was a `features` array; it is still read, and anything else under that key is listed as `features` so
+ * that it is unknown. Reading fails closed: what cannot be understood is a feature this code does not know.
+ */
+export function featuresOf(meta) {
+  if (!meta || typeof meta !== 'object') return [];
+  const names = new Set();
+  for (const [key, value] of Object.entries(meta)) {
+    if (key.startsWith(FEATURE_PREFIX) && value !== false && value !== null && value !== undefined) names.add(key.slice(FEATURE_PREFIX.length));
+  }
+  const legacy = meta.features;
+  if (Array.isArray(legacy)) for (const f of legacy) names.add(typeof f === 'string' ? f : 'features');
+  else if (legacy !== undefined && legacy !== null) names.add('features');
+  return [...names].sort();
 }
 
-/** The features in `list` that this code does not know. */
-export function unknownFeatures(list) {
-  if (!Array.isArray(list)) return [];
-  return list.filter((f) => typeof f === 'string' && !KNOWN_FEATURES.includes(f));
+/** The features in a board's meta that this code does not know. */
+export function unknownFeatures(meta) {
+  return featuresOf(meta).filter((f) => !KNOWN_FEATURES.includes(f));
 }
 
 export const LIMITS = Object.freeze({

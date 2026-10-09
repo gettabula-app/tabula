@@ -1,11 +1,11 @@
 import './styles.css';
-import type { YMapEvent } from 'yjs';
 import { BoardApp } from './app';
 import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
 import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
 import { mountNewerBanner } from './ui/newer-banner';
+import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { offerTemplateUpload } from './ui/template-upload';
@@ -257,6 +257,9 @@ async function route() {
     watchUnlock(workspace);
   };
   applyAccess();
+  // A feature this client lacks can arrive with a remote change, an import or a restore: the board turns read-only then too.
+  // Watching starts before the import below, which writes the board's meta.
+  const unwatchFeatures = watchFeatureGate(conn.store, applyAccess);
   const job = pending?.id === id ? pending : null;
   pending = null;
 
@@ -279,18 +282,13 @@ async function route() {
   const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
   root.appendChild(banner.el);
   const unsubscribe = onAuth(applyAccess);
-  // A feature this client lacks can arrive with a remote change, so the board turns read-only then too.
-  const onFeatures = (e: YMapEvent<unknown>) => {
-    if (e.keysChanged.has('features')) applyAccess();
-  };
-  conn.store.meta.observe(onFeatures);
   const releaseNewer = mountNewerBanner(conn.store, root);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
   // The relay undid one of this person's changes to the comments: say so, once per notice.
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   releaseWorkspace = () => {
-    conn.store.meta.unobserve(onFeatures);
+    unwatchFeatures();
     releaseNewer();
     unsubscribe();
     unhint();

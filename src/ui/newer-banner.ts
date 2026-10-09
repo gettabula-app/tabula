@@ -1,5 +1,5 @@
 import './access.css';
-import type * as Y from 'yjs';
+import { watchFeatureGate } from '../feature-gate';
 import type { Store } from '../store';
 import { h } from './dom';
 
@@ -23,13 +23,10 @@ export function mountNewerBanner(store: Store, root: HTMLElement): () => void {
       banner = null;
     }
   };
-  const onMeta = (e: Y.YMapEvent<unknown>) => {
-    if (e.keysChanged.has('features')) paint();
-  };
-  store.meta.observe(onMeta);
+  const stop = watchFeatureGate(store, paint);
   paint();
   return () => {
-    store.meta.unobserve(onMeta);
+    stop();
     banner?.remove();
     banner = null;
   };

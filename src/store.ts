@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
-import { FEATURES, isContainerType, layoutContainer, orphanHome, unknownFeatures, withFeature, type ContainerLayout } from '../shared/containers';
+import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unknownFeatures, type ContainerLayout } from '../shared/containers';
 import type { BoardMeta, ConnectorObj, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
 
@@ -125,7 +125,10 @@ export class Store {
       }
       // What moved or resized because of its container is reported as changed too, so drawing and bounds follow.
       for (const [cid, before] of this.dropLayouts(edits)) {
-        for (const id of movedBetween(before, this.containerLayout(cid))) changed.add(id);
+        const after = this.containerLayout(cid);
+        // no layout to compare with (a container removed before it was ever laid out): everything inside is reported
+        const moved = before === undefined && !after ? this.membersOf(cid) : movedBetween(before, after);
+        for (const id of moved) changed.add(id);
       }
       this.orderDirty = true;
       this.listeners.forEach((l) => l(changed));
@@ -346,12 +349,22 @@ export class Store {
 
   /** Board features this client does not know: when there are any, the board must not be edited from here. */
   unsupportedFeatures(): string[] {
-    return unknownFeatures(this.meta.get('features'));
+    return unknownFeatures(this.meta.toJSON());
   }
 
   private needFeature(name: string) {
-    const cur = this.meta.get('features');
-    if (!Array.isArray(cur) || !cur.includes(name)) this.meta.set('features', withFeature(cur, name));
+    const key = featureKey(name);
+    if (this.meta.get(key) !== true) this.meta.set(key, true);
+  }
+
+  /**
+   * Lists `containers` as needed if the board holds a container, lane or card. For writers that change objects without
+   * `create` and `update`, such as a restore; the flag is only ever added, never taken away.
+   */
+  syncFeatures() {
+    for (const m of this.objects.values()) {
+      if (isContainerType(String(m.get('type')))) return this.needFeature(FEATURES.containers);
+    }
   }
 
   getMeta(): BoardMeta {
@@ -417,13 +430,24 @@ export class Store {
     if (!s.size) this.childIndex.delete(o.parent);
   }
 
+  /** The lanes of a container and their cards, by parent, whether or not the container still exists. */
+  private membersOf(id: Id): Id[] {
+    const out: Id[] = [];
+    for (const lane of this.childrenOf(id)) {
+      out.push(lane.id);
+      for (const card of this.childrenOf(lane.id)) out.push(card.id);
+    }
+    return out;
+  }
+
   /** Forgets the layout of every container something inside changed in, and returns those containers with the layout they had. */
   private dropLayouts(edits: [Obj | undefined, Obj | undefined][]): Map<Id, ContainerLayout | null | undefined> {
     const affected = new Map<Id, ContainerLayout | null | undefined>();
     let all = false;
-    const drop = (id: Id | undefined) => {
+    // `container`: the edit itself was a container, new, changed or deleted, whatever the cache holds for it now
+    const drop = (id: Id | undefined, container = false) => {
       if (id === undefined) return;
-      if (this.cache.get(id)?.type === 'container' && !affected.has(id)) affected.set(id, this.layouts.get(id));
+      if (!affected.has(id) && (container || this.cache.get(id)?.type === 'container')) affected.set(id, this.layouts.get(id));
       this.layouts.delete(id);
     };
     let structure = false;
@@ -431,7 +455,7 @@ export class Store {
       for (const o of edit) {
         if (!o || !isContainerType(o.type)) continue;
         structure = true;
-        if (o.type === 'container') drop(o.id);
+        if (o.type === 'container') drop(o.id, true);
         else if (o.type === 'lane') drop(o.parent);
         else {
           const lane = o.parent === undefined ? undefined : this.cache.get(o.parent);

@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { KANBAN, isMixedRank, layoutAll, needsNormalising, planInsert, ranksBetween } from '../shared/containers';
 import { connectorGeom, hitBox, objBounds } from '../src/geometry';
+import { boardAccess } from '../src/cloud-logic';
+import { watchFeatureGate } from '../src/feature-gate';
 import { applyRestore, planRestore } from '../src/history';
 import { toMermaid } from '../src/mermaid';
 import { Store } from '../src/store';
+import { NEWER_TEXT, mountNewerBanner } from '../src/ui/newer-banner';
 import type { BaseObj, ConnectorObj, Id, Label, ObjType } from '../src/types';
 import { readAll } from '../server/board-ops.mjs';
 
@@ -292,13 +295,23 @@ describe('cards whose lane is gone', () => {
     expect(s.geometry(s.get('o2')!)).toEqual(s.containerLayout('d')!.rects.get('o2'));
   });
 
-  it('moves them to the next container when the home container goes, and back with undo of nothing lost', () => {
+  it('moves them to the next container when the home container goes, and back when the removal is undone', () => {
     const s = new Store(new Y.Doc());
     addKanban(s, { ...kanban(), z: 'a1' });
     addKanban(s, { id: 'd', z: 'a0', lanes: { first: [] } });
     s.transact(() => s.create(box('o', 'card', { parent: 'gone', rank: 'a0@gone' })));
     expect(cardOrder(s, 'd-first')).toEqual(['o']);
+    s.undo.stopCapturing();
     s.transact(() => s.remove(['d', 'd-first']));
+    s.undo.stopCapturing();
+    expect(cardOrder(s, 'c-todo')).toEqual(['t1', 't2', 't3', 'o']);
+    expect(s.isLaidOut(s.get('o')!)).toBe(true);
+    s.undo.undo();
+    expect(s.get('d')).toBeDefined();
+    expect(cardOrder(s, 'd-first')).toEqual(['o']);
+    expect(cardOrder(s, 'c-todo')).toEqual(['t1', 't2', 't3']);
+    expect(s.geometry(s.get('o')!)).toEqual(s.containerLayout('d')!.rects.get('o'));
+    s.undo.redo();
     expect(cardOrder(s, 'c-todo')).toEqual(['t1', 't2', 't3', 'o']);
   });
 
@@ -364,6 +377,39 @@ describe('what changes when something inside a container does', () => {
     moveCard(s, 't1', 'c-done', 0);
     // the todo lane is no longer the tallest, so the container and every lane shrink; d1 keeps its rectangle
     expect([...seen[2]].sort()).toEqual(['c', 'c-doing', 'c-done', 'c-todo', 't1', 't2', 't3']);
+  });
+
+  it('reports everything that was laid out when the container itself is removed, and when that is undone', () => {
+    const s = new Store(new Y.Doc());
+    addKanban(s, kanban());
+    const inside = ['c-todo', 'c-doing', 'c-done', 't1', 't2', 't3', 'd1'];
+    const stored = (id: Id) => ({ x: bo(s, id).x, y: bo(s, id).y, w: bo(s, id).w, h: bo(s, id).h });
+    const seen: Set<Id>[] = [];
+    s.onChange((changed) => seen.push(changed));
+    s.undo.stopCapturing();
+    s.transact(() => s.remove(['c']));
+    s.undo.stopCapturing();
+    expect([...seen[0]].sort()).toEqual(['c', ...inside].sort());
+    // what was laid out is a plain box at its stored place again
+    expect(s.isLaidOut(s.get('t1')!)).toBe(false);
+    expect(s.geometry(s.get('t1')!)).toEqual(stored('t1'));
+    expect(s.containerLayout('c')).toBeNull();
+    s.undo.undo();
+    expect([...seen[1]].sort()).toEqual(['c', ...inside].sort());
+    expect(s.isLaidOut(s.get('t1')!)).toBe(true);
+    expect(s.geometry(s.get('t1')!)).toEqual(s.containerLayout('c')!.rects.get('t1'));
+  });
+
+  it('reports the lanes and cards of a container that is removed before it was ever laid out', () => {
+    const a = new Store(new Y.Doc());
+    addKanban(a, kanban());
+    const b = new Store(new Y.Doc());
+    Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc));
+    const seen: Set<Id>[] = [];
+    b.onChange((changed) => seen.push(changed));
+    a.transact(() => a.remove(['c']));
+    Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc, Y.encodeStateVector(b.doc)));
+    expect([...seen[0]].sort()).toEqual(['c', 'c-doing', 'c-done', 'c-todo', 'd1', 't1', 't2', 't3']);
   });
 
   it('does not report the neighbours of a card whose text changed but whose place did not', () => {
@@ -577,27 +623,27 @@ describe('moving a container', () => {
 });
 
 describe('the feature flag', () => {
-  it('lists containers in meta.features when the first container is written, once', () => {
+  const flags = (s: Store) => Object.fromEntries([...s.meta.entries()].filter(([k]) => k.startsWith('feature')));
+
+  it('writes feature:containers when the first container is written, once', () => {
     const s = new Store(new Y.Doc());
-    expect(s.meta.get('features')).toBeUndefined();
     s.transact(() => s.create(box('x', 'sticky')));
-    expect(s.meta.get('features')).toBeUndefined();
+    expect(flags(s)).toEqual({});
     addKanban(s, kanban());
-    expect(s.meta.get('features')).toEqual(['containers']);
-    expect(s.getMeta().features).toEqual(['containers']);
+    expect(flags(s)).toEqual({ 'feature:containers': true });
     addKanban(s, { id: 'd', lanes: { a: [] } });
-    expect(s.meta.get('features')).toEqual(['containers']);
+    expect(flags(s)).toEqual({ 'feature:containers': true });
     expect(s.unsupportedFeatures()).toEqual([]);
   });
 
-  it('also lists it when an object becomes a card, and keeps features other writers added', () => {
+  it('also writes it when an object becomes a card, and keeps what other writers added', () => {
     const s = new Store(new Y.Doc());
-    s.meta.set('features', ['zzz-future']);
+    s.meta.set('feature:future', true);
     s.transact(() => s.create(box('x', 'sticky')));
     s.transact(() => s.update('x', { type: 'card' }));
-    expect(s.meta.get('features')).toEqual(['containers', 'zzz-future']);
+    expect(flags(s)).toEqual({ 'feature:containers': true, 'feature:future': true });
     s.transact(() => s.update('x', { text: 'only text' }));
-    expect(s.meta.get('features')).toEqual(['containers', 'zzz-future']);
+    expect(flags(s)).toEqual({ 'feature:containers': true, 'feature:future': true });
   });
 
   it('is part of the undo step that wrote the container', () => {
@@ -606,23 +652,191 @@ describe('the feature flag', () => {
     addKanban(s, kanban());
     s.undo.undo();
     expect(s.cache.size).toBe(0);
-    expect(s.meta.get('features')).toBeUndefined();
+    expect(flags(s)).toEqual({});
+  });
+
+  it('keeps both features when two clients each add one at the same time', () => {
+    const a = new Store(new Y.Doc());
+    const b = new Store(new Y.Doc());
+    a.transact(() => a.create(box('c', 'container', { layout: 'kanban' })));
+    b.transact(() => b.meta.set('feature:tables', true));
+    Y.applyUpdate(a.doc, Y.encodeStateAsUpdate(b.doc, Y.encodeStateVector(a.doc)));
+    Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc, Y.encodeStateVector(b.doc)));
+    for (const s of [a, b]) {
+      expect(flags(s)).toEqual({ 'feature:containers': true, 'feature:tables': true });
+      expect(s.unsupportedFeatures()).toEqual(['tables']);
+    }
   });
 
   it('names the features this client does not know, including ones that arrive later', () => {
     const a = new Store(new Y.Doc());
     const b = new Store(new Y.Doc());
     expect(b.unsupportedFeatures()).toEqual([]);
-    a.meta.set('features', ['containers', 'holograms']);
+    a.meta.set('feature:holograms', true);
     Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc));
     expect(b.unsupportedFeatures()).toEqual(['holograms']);
+  });
+
+  it('reads the first form, an array, and locks on anything it cannot read', () => {
+    const s = new Store(new Y.Doc());
+    s.meta.set('features', ['containers']);
+    expect(s.unsupportedFeatures()).toEqual([]);
+    s.meta.set('features', ['containers', 'holograms']);
+    expect(s.unsupportedFeatures()).toEqual(['holograms']);
+    for (const bad of ['containers', 3, { containers: true }, ['containers', 7]]) {
+      s.meta.set('features', bad);
+      expect(s.unsupportedFeatures()).toEqual(['features']);
+    }
   });
 
   it('is not written on a read-only store', () => {
     const s = new Store(new Y.Doc());
     s.setReadOnly(true);
     s.transact(() => s.create(box('c', 'container', { layout: 'kanban' })));
-    expect(s.meta.get('features')).toBeUndefined();
+    expect(flags(s)).toEqual({});
+  });
+
+  it('can be recomputed from the objects, and only ever adds', () => {
+    const s = new Store(new Y.Doc());
+    s.syncFeatures();
+    expect(flags(s)).toEqual({});
+    s.objects.set('k', new Y.Map(Object.entries(box('k', 'card'))));
+    s.syncFeatures();
+    expect(flags(s)).toEqual({ 'feature:containers': true });
+    s.objects.delete('k');
+    s.syncFeatures();
+    expect(flags(s)).toEqual({ 'feature:containers': true });
+  });
+});
+
+describe('the feature gate', () => {
+  const remote = (key: string, value: unknown) => {
+    const other = new Y.Doc();
+    other.getMap('meta').set(key, value);
+    return Y.encodeStateAsUpdate(other);
+  };
+
+  it('tells its listener when a feature this client does not know appears or goes, and only then', () => {
+    const s = new Store(new Y.Doc());
+    const calls: string[][] = [];
+    const stop = watchFeatureGate(s, () => calls.push(s.unsupportedFeatures()));
+    s.transact(() => s.setMeta({ name: 'Renamed' }));
+    s.transact(() => s.create(box('c', 'container', { layout: 'kanban' })));
+    expect(calls).toEqual([]);
+    Y.applyUpdate(s.doc, remote('feature:holograms', true));
+    expect(calls).toEqual([['holograms']]);
+    s.meta.set('feature:holograms', true);
+    s.meta.set('feature:tables', true);
+    expect(calls).toEqual([['holograms'], ['holograms', 'tables']]);
+    s.meta.delete('feature:holograms');
+    s.meta.delete('feature:tables');
+    expect(calls.at(-1)).toEqual([]);
+    stop();
+    s.meta.set('feature:late', true);
+    expect(calls).toHaveLength(4);
+  });
+
+  it('is what turns a board read-only, whichever way the feature arrives', () => {
+    const s = new Store(new Y.Doc());
+    const apply = () => s.setReadOnly(boardAccess('owner', null, false, s.unsupportedFeatures().length > 0).storeReadOnly);
+    watchFeatureGate(s, apply);
+    apply();
+    expect(s.readOnly).toBe(false);
+    // a remote change, as from a newer client
+    Y.applyUpdate(s.doc, remote('feature:holograms', true));
+    expect(s.readOnly).toBe(true);
+    // a malformed value locks too
+    s.doc.transact(() => s.meta.delete('feature:holograms'));
+    expect(s.readOnly).toBe(false);
+    s.doc.transact(() => s.meta.set('features', 'containers'));
+    expect(s.readOnly).toBe(true);
+    // an import or a restore writes the document below the store's own writes, and the board can still recover
+    s.doc.transact(() => s.meta.delete('features'));
+    expect(s.readOnly).toBe(false);
+  });
+});
+
+describe('the banner for a board that needs a newer Tabula', () => {
+  class Node {
+    className = '';
+    textContent = '';
+    parent: Node | null = null;
+    children: Node[] = [];
+    attrs: Record<string, string> = {};
+    listeners: Record<string, (() => void)[]> = {};
+    style = {};
+    appendChild(c: Node) {
+      c.parent = this;
+      this.children.push(c);
+      return c;
+    }
+    remove() {
+      if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+      this.parent = null;
+    }
+    setAttribute(k: string, v: string) {
+      this.attrs[k] = v;
+    }
+    addEventListener(type: string, fn: () => void) {
+      (this.listeners[type] ??= []).push(fn);
+    }
+    text(): string {
+      return this.textContent + this.children.map((c) => c.text()).join('');
+    }
+    find(cls: string): Node | undefined {
+      return this.className === cls ? this : this.children.map((c) => c.find(cls)).find(Boolean);
+    }
+  }
+
+  let reloads = 0;
+  beforeEach(() => {
+    reloads = 0;
+    vi.stubGlobal('document', { createElement: () => new Node(), createTextNode: (t: string) => Object.assign(new Node(), { textContent: t }) });
+    vi.stubGlobal('location', { reload: () => reloads++ });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const remote = (key: string, value: unknown) => {
+    const other = new Y.Doc();
+    other.getMap('meta').set(key, value);
+    return Y.encodeStateAsUpdate(other);
+  };
+  const banners = (root: Node) => root.children.filter((c) => c.className === 'access-banner');
+
+  it('says so, with a reload button, as soon as the board needs a feature this client lacks', () => {
+    const s = new Store(new Y.Doc());
+    const root = new Node();
+    const stop = mountNewerBanner(s, root as unknown as HTMLElement);
+    expect(banners(root)).toHaveLength(0);
+    Y.applyUpdate(s.doc, remote('feature:holograms', true));
+    expect(banners(root)).toHaveLength(1);
+    expect(banners(root)[0].text()).toContain(NEWER_TEXT);
+    expect(banners(root)[0].attrs.role).toBe('alert');
+    banners(root)[0].find('btn primary')!.listeners.click[0]();
+    expect(reloads).toBe(1);
+    // a second unknown feature does not add a second banner
+    Y.applyUpdate(s.doc, remote('feature:tables', true));
+    expect(banners(root)).toHaveLength(1);
+    stop();
+    expect(banners(root)).toHaveLength(0);
+  });
+
+  it('is there at once for a board that already needs one, and goes when it no longer does', () => {
+    const s = new Store(new Y.Doc());
+    s.meta.set('features', 'unreadable');
+    const root = new Node();
+    mountNewerBanner(s, root as unknown as HTMLElement);
+    expect(banners(root)).toHaveLength(1);
+    s.doc.transact(() => s.meta.delete('features'));
+    expect(banners(root)).toHaveLength(0);
+  });
+
+  it('stays away for a board whose features are all known', () => {
+    const s = new Store(new Y.Doc());
+    const root = new Node();
+    mountNewerBanner(s, root as unknown as HTMLElement);
+    s.transact(() => s.create(box('c', 'container', { layout: 'kanban' })));
+    expect(banners(root)).toHaveLength(0);
   });
 });
 
@@ -725,8 +939,68 @@ describe('labels', () => {
       applyRestore(live, planRestore(live, snap, { isHidden: () => false }));
       expect(cardOrder(live, 'c-todo')).toEqual(['t1', 't2', 't3']);
       expect(cardOrder(live, 'c-doing')).toEqual(['d1']);
-      expect(live.meta.get('features')).toEqual(['containers']);
+      expect(live.meta.get('feature:containers')).toBe(true);
     });
+  });
+});
+
+describe('restoring a version and the feature flag', () => {
+  const none = () => false;
+  /** A snapshot store over the given objects, written without `create`, so no flag, as an older writer would leave it. */
+  function snapshot(objs: BaseObj[], meta: Record<string, unknown> = {}) {
+    const doc = new Y.Doc();
+    doc.transact(() => {
+      for (const o of objs) doc.getMap('objects').set(o.id, new Y.Map(Object.entries(o)));
+      for (const [k, v] of Object.entries(meta)) doc.getMap('meta').set(k, v);
+    });
+    const snap = new Store(doc);
+    snap.setReadOnly(true);
+    return snap;
+  }
+  const kids = [
+    box('c', 'container', { layout: 'kanban' }), box('l', 'lane', { parent: 'c', rank: 'a0@c' }),
+    box('k', 'card', { parent: 'l', rank: 'a0@l', h: 72 }),
+  ];
+
+  it('keeps the flag when containers come back from a snapshot that does not carry it', () => {
+    const live = new Store(new Y.Doc());
+    live.transact(() => live.create(box('s', 'sticky')));
+    const plan = planRestore(live, snapshot([box('s', 'sticky'), ...kids]), { isHidden: none });
+    expect(plan.add.map((o) => o.id).sort()).toEqual(['c', 'k', 'l']);
+    applyRestore(live, plan);
+    expect(live.meta.get('feature:containers')).toBe(true);
+    expect(cardOrder(live, 'l')).toEqual(['k']);
+  });
+
+  it('keeps the flag when an object only changes its type', () => {
+    const live = new Store(new Y.Doc());
+    live.transact(() => live.create(box('s', 'sticky')));
+    const plan = planRestore(live, snapshot([box('s', 'card')]), { isHidden: none });
+    expect(plan.change.map((c) => c.id)).toEqual(['s']);
+    applyRestore(live, plan);
+    expect(live.get('s')!.type).toBe('card');
+    expect(live.meta.get('feature:containers')).toBe(true);
+  });
+
+  it('does not take a feature away, even from a snapshot that never had it', () => {
+    const live = new Store(new Y.Doc());
+    addKanban(live, kanban());
+    live.meta.set('features', ['containers']);
+    const plan = planRestore(live, snapshot([box('s', 'sticky')]), { isHidden: none });
+    expect(plan.meta.unset).toEqual([]);
+    expect(plan.meta.set).toEqual({});
+    applyRestore(live, plan);
+    expect(live.cache.has('c')).toBe(false);
+    expect(live.meta.get('feature:containers')).toBe(true);
+    expect(live.meta.get('features')).toEqual(['containers']);
+  });
+
+  it('leaves a snapshot\'s unknown feature out, since the board was not asked to need it', () => {
+    const live = new Store(new Y.Doc());
+    const plan = planRestore(live, snapshot([box('s', 'sticky')], { 'feature:holograms': true, gridSize: 48 }), { isHidden: none });
+    expect(plan.meta.set).toEqual({ gridSize: 48 });
+    applyRestore(live, plan);
+    expect(live.unsupportedFeatures()).toEqual([]);
   });
 });
 

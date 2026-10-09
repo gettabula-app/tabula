@@ -63,8 +63,11 @@ export function isContainerType(type: string): boolean;
 
 export const FEATURES: { readonly containers: 'containers' };
 export const KNOWN_FEATURES: readonly string[];
-export function withFeature(list: unknown, name: string): string[];
-export function unknownFeatures(list: unknown): string[];
+export const FEATURE_PREFIX: 'feature:';
+export function featureKey(name: string): string;
+export function isFeatureKey(key: string): boolean;
+export function featuresOf(meta: unknown): string[];
+export function unknownFeatures(meta: unknown): string[];
 
 export const LIMITS: {
   readonly containers: 50;
