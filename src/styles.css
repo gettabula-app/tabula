@@ -544,6 +544,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 .empty-hint .btn { background: rgba(29, 26, 18, 0.1); }
 .empty-hint .btn.primary { background: #18212B; color: #FFE16B; }
 
+/* The centered 560px poll card overlaps the 336px right tray through 1316px; let the tray's composer take the space. */
+@media (max-width: 1320px) {
+  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar, .poll-card) { visibility: hidden; }
+}
+
 /* ------------------------------------------------------------- home */
 
 /* The home and templates pages live in ui/home.css; this wordmark is also the sign-in screens'. */
