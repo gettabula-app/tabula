@@ -210,11 +210,14 @@ npm test             # vitest
 npm run lint         # oxlint
 npm run typecheck    # tsc --noEmit
 npm run test:repeat -- test/relay.test.ts --times 20   # flake gate: repeat files under CI=true
+npm run visual -- --id TAB-123   # headless screenshots of the app, see docs/visual-check.md
 ```
 
 Covers CRDT merging of concurrent and offline edits, undo scope, ordering, connector routing, rotated hit-testing, UML text round-trips, Mermaid import/export, markup escaping and XML validity, icon sanitising, the Fontshare catalogue format, and the relay end to end (two clients syncing, offline merge on reconnect, persistence across restarts, invalid room names).
 
 `npm run test:repeat -- [files] [--times 20] [--platform win32] [--bail]` runs test files again and again under `CI=true` (the CI settings of `vite.config.ts`) and reports which tests failed in which runs; without files it takes the test files changed versus `origin/main`. New test files should pass it 10 to 20 times before they are merged. `--platform win32` makes tests that branch on the platform take their Windows branch (`test/platform.ts`).
+
+`npm run visual` needs Chromium once (`npx playwright install chromium`). It starts its own throwaway relay, seeds a fixed board and writes screenshots for every state, theme and width to `tabula-review/<id>/`, so nobody needs the shared Chrome for a look at a change. See [docs/visual-check.md](docs/visual-check.md).
 
 ## CI/CD
 
@@ -231,6 +234,7 @@ GitHub Actions (`.github/workflows/`):
 ```
 server/relay.mjs     sync relay + static server (serves dist/icons gzipped)
 scripts/build-icons.mjs  builds the icon sets into dist/icons (scripts/lib/icons-build.mjs: licence rule, packer, index)
+scripts/visual-check.mjs  headless screenshots for visual QA (docs/visual-check.md)
 src/store.ts         Y.Doc wrapper: objects, meta, flow, votes, undo
 src/sync.ts          IndexedDB persistence, relay connection, identity, board list
 src/geometry.ts      bounds, hit-testing, anchors, connector routing

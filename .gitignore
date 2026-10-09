@@ -3,6 +3,7 @@ dist/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 data/
+tabula-review/
 *.log
 .env
 .env.*
