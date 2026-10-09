@@ -30,6 +30,24 @@ GET /api/internal/usage
 `seats` counts people with the role `owner`, `admin` or `member` who are not disabled. `guests` counts guests who are not disabled. `members` is everyone with an account, disabled people included.
 
 ```
+GET /api/internal/stats
+  -> {
+       boards,
+       members: { active, disabled },
+       guests,
+       activePeople: { last7d, last30d },
+       aiRuns: { last30d },
+       chatMessages
+     }
+```
+
+This is a counts-only response; every value is a number, and it contains no names, addresses, ids, titles or content. `boards` is the count of `boards` rows with no `deleted_at`. `members.active` counts enabled `owner`, `admin` and `member` accounts, matching `usage.seats`. `members.disabled` counts all disabled accounts (including a disabled guest); `guests` counts enabled guests, matching `usage.guests`. Together, `members.active + members.disabled + guests` equals `usage.members`.
+
+`activePeople` counts distinct account ids with a session created or last seen in the inclusive rolling window, or an audit actor on a recorded board change in the window. The recorded changes are board create, metadata update, delete, restore, version restore, accepted AI proposal and asset upload. Session timestamps are not a log of every request, and live whiteboard edits do not record an editor id; board `updated_at` cannot identify who edited. So this is the number the instance can identify from those records, not a count of everyone who edited canvas content.
+
+`aiRuns.last30d` counts audit rows for the current AI features (`ai.generate`, `ai.summarise` and `ai.cluster`) in the inclusive rolling 30-day window. A run is recorded after provider streaming starts, including runs that then fail; refusals before streaming and key tests are not runs. `chatMessages` counts retained rows in `chat_messages` where `deleted_at` is null, including edited messages. Deleted tombstones and messages already purged by chat retention are excluded. It is zero when chat is off. Like `usage`, this endpoint is registered only in cloud mode; in open mode it answers 404.
+
+```
 GET /api/internal/backup-status
   -> { enabled: false }                         (backups are off)
   -> { enabled: true, running, keyId, intervalMinutes, settleSeconds, dirty, lastTrigger, lastRunAt, lastSuccessAt,

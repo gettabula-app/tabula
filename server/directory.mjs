@@ -18,6 +18,9 @@ const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVITY_AUDIT_ACTIONS = [
+  'board.create', 'board.update', 'board.delete', 'board.restore', 'board.version.restore', 'ai.run.accept', 'asset.upload',
+];
 const RANK_ROLE = { 4: 'owner', 3: 'editor', 2: 'commenter', 1: 'viewer' };
 
 // A share role the CASE does not know ranks 0, which grants nothing.
@@ -320,6 +323,47 @@ export function openDirectory(file) {
       else usage.seats += n;
     }
     return usage;
+  }
+
+  /** Counts only the fields returned by GET /api/internal/stats; never selects names or board details. */
+  function internalStatsCounts({ now = Date.now(), aiRunActions = [] } = {}) {
+    const actions = [...new Set(aiRunActions)].filter((action) => typeof action === 'string');
+    const aiRunPredicate = actions.length ? `action IN (${actions.map(() => '?').join(', ')})` : '0';
+    const activityAuditPredicate = `action IN (${ACTIVITY_AUDIT_ACTIONS.map(() => '?').join(', ')})`;
+    const row = get(
+      `SELECT
+         (SELECT COUNT(*) FROM boards WHERE deleted_at IS NULL) AS boards,
+         (SELECT COUNT(*) FROM users WHERE role IN ('owner', 'admin', 'member') AND disabled = 0) AS active_members,
+         (SELECT COUNT(*) FROM users WHERE disabled <> 0) AS disabled_members,
+         (SELECT COUNT(*) FROM users WHERE role = 'guest' AND disabled = 0) AS guests,
+         (SELECT COUNT(DISTINCT user_id) FROM (
+            SELECT user_id FROM sessions WHERE created_at >= ? OR last_seen >= ?
+            UNION
+            SELECT actor_id AS user_id FROM audit
+             WHERE ts >= ? AND actor_id IS NOT NULL
+               AND ${activityAuditPredicate}
+          ) AS recent_people) AS people_7d,
+         (SELECT COUNT(DISTINCT user_id) FROM (
+            SELECT user_id FROM sessions WHERE created_at >= ? OR last_seen >= ?
+            UNION
+            SELECT actor_id AS user_id FROM audit
+             WHERE ts >= ? AND actor_id IS NOT NULL
+               AND ${activityAuditPredicate}
+          ) AS recent_people) AS people_30d,
+         (SELECT COUNT(*) FROM audit WHERE ts >= ? AND ${aiRunPredicate}) AS ai_runs_30d`,
+      now - 7 * DAY_MS, now - 7 * DAY_MS, now - 7 * DAY_MS,
+      ...ACTIVITY_AUDIT_ACTIONS,
+      now - 30 * DAY_MS, now - 30 * DAY_MS, now - 30 * DAY_MS,
+      ...ACTIVITY_AUDIT_ACTIONS,
+      now - 30 * DAY_MS, ...actions,
+    );
+    return {
+      boards: Number(row.boards),
+      members: { active: Number(row.active_members), disabled: Number(row.disabled_members) },
+      guests: Number(row.guests),
+      activePeople: { last7d: Number(row.people_7d), last30d: Number(row.people_30d) },
+      aiRuns: { last30d: Number(row.ai_runs_30d) },
+    };
   }
 
   const countOwners = () => Number(get("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'").n);
@@ -886,6 +930,7 @@ export function openDirectory(file) {
     listMembersAdmin,
     adminStats,
     seatUsage,
+    internalStatsCounts,
     countOwners,
     listOwnerEmails,
     updateUser,

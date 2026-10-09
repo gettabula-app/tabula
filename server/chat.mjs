@@ -112,6 +112,7 @@ export function openChat(file) {
   const get = (sql, ...params) => stmt(sql).get(...params);
   const all = (sql, ...params) => stmt(sql).all(...params);
   const run = (sql, ...params) => stmt(sql).run(...params);
+  const countMessages = () => Number(get('SELECT COUNT(*) AS n FROM chat_messages WHERE deleted_at IS NULL').n);
 
   let closed = false;
   let depth = 0;
@@ -430,6 +431,7 @@ export function openChat(file) {
     /** This build's schema and the one on disk, for GET /api/internal/version (docs/migrations.md). */
     schemaReport: () => describeSchema(db, CHAT_MIGRATIONS),
     transaction,
+    countMessages,
     getMessage,
     findByClientId,
     insertMessage,
