@@ -146,6 +146,8 @@ On Fly every app of an organisation shares one private network (6PN), so a machi
 
 Why that list: what Fly's proxy forwards (visitors, `fly-replay` from the edge, Flycast calls of the control plane) arrives from the proxy's private IPv4 range (172.16.x.x was observed in the spike), direct 6PN traffic from another app arrives from its own `fdaa:` address, and the Machines API's exec path runs on loopback. Any other value of `TABULA_SOURCE_POLICY` refuses startup, as does a bad entry in `TABULA_ALLOW_SOURCES`.
 
+**Which image has it.** The policy is in commit 4a7be16 and later. The v4 image was built without it, so a v4 workspace ignores `TABULA_SOURCE_POLICY` and tenant-to-tenant isolation is **not in effect until the first image built after 4a7be16 (v5 or later) is rolled out**. Before a rollout starts, the isolation gate (health check, sign-in through the edge, control-plane calls, a refused direct `fdaa:` connection) must pass on a throwaway workspace; tabula-cloud's `docs/second-deploy.md` has it.
+
 **Turning it on for hosted workspaces.** The control plane puts `TABULA_SOURCE_POLICY=proxy` in every workspace machine's environment (`src/provision.mjs` in tabula-cloud; existing machines get it with the next config update). It is not baked into the image, so a self-hosted container of the same image stays open.
 
 **Recovery first.** If a workspace becomes unreachable after turning it on, set `TABULA_SOURCE_POLICY=off` in the machine's environment (or `fly machine update` with the env change) and restart it; nothing else changes. Visitors come through the proxy, so they are never refused; what is refused is a peer on 6PN.
