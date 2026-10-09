@@ -24,10 +24,21 @@ const cleanEnv = () =>
 
 const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
-/** Answers every POST like a streamed Messages API reply whose text is `answer`; holds it until `release` when `hold` is set. */
+/**
+ * Answers every POST like a streamed Messages API reply whose text is `answer`. After `hold()` a reply waits until
+ * `release()`; the gate stays open once released, so a request that arrives after the release is not held (the relay
+ * announces a run before its provider call reaches this server, so the test cannot count on the order).
+ */
 function fakeProvider(answer: unknown) {
-  let releaseNext: (() => void) | null = null;
-  const state = { hold: false, requests: 0, release: () => releaseNext?.() };
+  let gate: Promise<void> | null = null;
+  let open: () => void = () => {};
+  const state = {
+    requests: 0,
+    hold: () => {
+      gate = new Promise<void>((r) => (open = r));
+    },
+    release: () => open(),
+  };
   const server = http.createServer((req, res) => {
     req.resume();
     req.on('end', async () => {
@@ -35,7 +46,7 @@ function fakeProvider(answer: unknown) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(sse('message_start', { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 } } }));
       res.write(sse('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }));
-      if (state.hold) await new Promise<void>((r) => (releaseNext = r));
+      if (gate) await gate;
       res.write(sse('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: JSON.stringify(answer) } }));
       res.write(sse('content_block_stop', { type: 'content_block_stop', index: 0 }));
       res.write(sse('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 5 } }));
@@ -125,7 +136,7 @@ describe('live AI runs through the relay', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect([a.runs, b.runs]).toEqual([[], []]);
 
-    provider.state.hold = true;
+    provider.state.hold();
     const running = post('/api/ai/run', { feature: 'generate', boardId: 'board1', input: { prompt: 'CANARY-prompt', selection: ['s1'] }, presence: { name: 'Sam', color: '#1E9A6A' } });
     await until(() => a.runs.length >= 1 && b.runs.length >= 1);
     expect(a.runs[0]).toMatchObject({ kind: 'patch', run: { feature: 'generate', status: 'running', by: { id: null, name: 'Sam', color: '#1E9A6A' }, target: { ids: ['s1'] } } });
