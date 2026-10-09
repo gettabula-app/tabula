@@ -70,3 +70,35 @@ export function inertPage(keep: HTMLElement): () => void {
 export function restoreFocus(el: HTMLElement | null) {
   if (el && el !== document.body && el.isConnected) el.focus({ preventScroll: true });
 }
+
+/**
+ * Makes a `role="radiogroup"` work the way radios do: Tab reaches only the checked one (the first, if none is), and the arrow
+ * keys, Home and End move between them. With `select` (the default) the radio moved to is also clicked, as native radios do;
+ * pass `select: false` where a click has a lasting effect (it closes a popover, writes to the board) and Space or Enter
+ * should choose. Call it once the radios are in the group. It keeps the Tab stop on the checked radio after each click.
+ * docs/accessibility-audit.md, S3.
+ */
+export function rovingRadios(group: HTMLElement, opts: { select?: boolean } = {}) {
+  const radios = () => Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]')).filter((r) => !(r as HTMLButtonElement).disabled);
+  const sync = () => {
+    const list = radios();
+    const stop = list.find((r) => r.getAttribute('aria-checked') === 'true') ?? list[0];
+    for (const r of list) r.setAttribute('tabindex', r === stop ? '0' : '-1');
+  };
+  group.addEventListener('click', sync);
+  group.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    const list = radios();
+    const at = list.indexOf(e.target as HTMLElement);
+    if (at < 0) return;
+    const to = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (at + 1) % list.length
+      : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (at - 1 + list.length) % list.length
+        : e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    for (const r of list) r.setAttribute('tabindex', r === list[to] ? '0' : '-1');
+    list[to].focus();
+    if (opts.select !== false) list[to].click();
+  });
+  sync();
+}

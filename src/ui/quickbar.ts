@@ -3,7 +3,7 @@ import type { Align, BaseObj, ConnectorObj, Obj, Route, VAlign } from '../types'
 import { isBox, isConnector } from '../types';
 import { h, icon } from './dom';
 import { closePopover, field, popover, segmented, swatches } from './common';
-import { FILLS, STROKES, TEXT_COLORS } from '../palette';
+import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
 import { SHAPE_GROUPS, SHAPE_KINDS, shapePreviewSvg } from '../shapes';
 import { DEFAULTS, styleOf } from '../markup';
@@ -241,7 +241,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
             { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
           ], s.valign, (v) => app.updateSelected({ valign: v }, isVAligned), 'Vertical alignment')));
         }
-        parts.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: c, value: c })), s.textColor, (v) => app.updateSelected({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
+        parts.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => app.updateSelected({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
         return h('div', null, ...parts);
       }));
     }

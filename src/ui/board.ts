@@ -5,6 +5,7 @@ import type { GridType } from '../types';
 import { isBox } from '../types';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
+import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
@@ -24,7 +25,7 @@ import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
-import { CANVAS_INK, USER_COLORS, STICKY_COLORS } from '../palette';
+import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { SHORTCUTS } from '../shortcuts';
 import { UNLIMITED } from '../flow';
@@ -255,9 +256,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const pb = penBtn();
     if (pb && app.tool.kind === 'pen') penTray.style.top = `${pb.getBoundingClientRect().top - 6}px`;
     penTray.replaceChildren(
-      ...[CANVAS_INK, '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': c === CANVAS_INK ? 'Pen colour ink' : `Pen colour ${c}`, onclick: () => { app.penColor = c; renderPen(); } })),
+      ...[CANVAS_INK, '#2F6FED', '#D64545', '#1E9A6A', '#C98A00', '#7A5AF8'].map((c) => h('button', { class: `swatch${app.penColor === c ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': `Pen colour ${colorName(c).toLowerCase()}`, 'aria-pressed': String(app.penColor === c), onclick: () => { app.penColor = c; renderPen(); } })),
       h('hr'),
-      ...[2, 4, 8].map((w) => h('button', { class: `icon-btn${app.penWidth === w ? ' on' : ''}`, 'aria-label': `Pen width ${w}`, onclick: () => { app.penWidth = w; renderPen(); } }, h('span', { class: 'pen-dot', style: `--s:${w + 2}px` }))),
+      ...[2, 4, 8].map((w) => h('button', { class: `icon-btn${app.penWidth === w ? ' on' : ''}`, 'aria-label': `Pen width ${w}`, 'aria-pressed': String(app.penWidth === w), onclick: () => { app.penWidth = w; renderPen(); } }, h('span', { class: 'pen-dot', style: `--s:${w + 2}px` }))),
     );
   };
   app.on('tool', renderPen);
@@ -501,6 +502,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     auth.me.mcp ? item('link', 'AI tool access', () => openTokensDialog(auth.me)) : null,
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
+  const themeGroup = h('div', { role: 'radiogroup', 'aria-label': 'Theme' }, themeRows.map((r) => r.row));
+  rovingRadios(themeGroup);
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));
   const pop = popover(anchor, h('div', { class: 'menu' },
@@ -520,7 +523,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
         glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
     ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
-    h('div', { role: 'radiogroup', 'aria-label': 'Theme' }, themeRows.map((r) => r.row)),
+    themeGroup,
     h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
     item('download', 'PNG image', async () => {
       toast('Preparing image…');
@@ -571,14 +574,19 @@ function openShare(app: BoardApp) {
 function openProfile(app: BoardApp) {
   const u = { ...app.user };
   const name = h('input', { class: 'input', value: u.name, 'aria-label': 'Your name', maxlength: '40' });
-  const colors = h('div', { class: 'swatches' }, ...USER_COLORS.map((c) => {
-    const b = h('button', { class: `swatch${c === u.color ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': c, onclick: () => {
+  const colors = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Colour' }, ...USER_COLORS.map((c) => {
+    const b = h('button', { class: `swatch${c === u.color ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': colorName(c), role: 'radio', 'aria-checked': String(c === u.color), 'data-tip': colorName(c), onclick: () => {
       u.color = c;
-      colors.querySelectorAll('.swatch').forEach((x) => x.classList.remove('on'));
+      colors.querySelectorAll('.swatch').forEach((x) => {
+        x.classList.remove('on');
+        x.setAttribute('aria-checked', 'false');
+      });
       b.classList.add('on');
+      b.setAttribute('aria-checked', 'true');
     } });
     return b;
   }));
+  rovingRadios(colors);
   const accountName = authState().mode === 'signed-in';
   dialog('Your name and colour', h('div', { class: 'stack' },
     h('p', { class: 'muted' }, accountName

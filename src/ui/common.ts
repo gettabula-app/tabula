@@ -1,5 +1,5 @@
 import { h, icon } from './dom';
-import { focusFirst, focusIsIn, inertPage, restoreFocus, trapTab } from './focus-scope';
+import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
@@ -165,6 +165,7 @@ export function swatches(colors: { name: string; value: string }[], current: str
     buttons.push(b);
     row.appendChild(b);
   }
+  rovingRadios(row);
   return row;
 }
 
@@ -186,6 +187,7 @@ export function segmented<T extends string | number>(options: { value: T; label:
     buttons.push(b);
     row.appendChild(b);
   }
+  rovingRadios(row);
   return row;
 }
 

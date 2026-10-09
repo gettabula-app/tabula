@@ -4,6 +4,7 @@ import { isBox } from '../types';
 import { newId } from '../store';
 import { h, icon } from './dom';
 import { announce } from './announce';
+import { rovingRadios } from './focus-scope';
 import { popover, toast } from './common';
 import { download, safeName } from '../exporters';
 import { cooldownLabel } from '../focus-requests';
@@ -305,6 +306,7 @@ function openDotLimit(app: BoardApp, anchor: HTMLElement) {
     ...PRESETS.map((n) => h('button', { class: cur === n ? 'on' : '', role: 'radio', 'aria-checked': String(cur === n), onclick: () => set(n) }, String(n))),
     h('button', { class: `wide${cur <= 0 ? ' on' : ''}`, role: 'radio', 'aria-checked': String(cur <= 0), onclick: () => set(0) }, 'No limit'),
   );
+  rovingRadios(opts, { select: false });
   pop = popover(anchor, h('div', { class: 'dots-pop' },
     h('div', { class: 'pop-head' }, h('h3', null, 'Dots per person')),
     opts,

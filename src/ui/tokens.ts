@@ -1,4 +1,5 @@
 import './tokens.css';
+import { rovingRadios } from './focus-scope';
 import { ApiError, api, type AccessScope, type AccessToken, type AdminAccessToken, type CreatedAccessToken, type Me, type ServerBoard } from '../api';
 import { cloudErrorMessage } from '../cloud-logic';
 import { revokeVerdict } from './admin-logic';
@@ -182,9 +183,11 @@ export function openTokensDialog(me: Me): void {
         buttons[i].setAttribute('aria-checked', String(on));
       });
       mark();
+      const group = h('div', { class: 'tokens-opts', role: 'radiogroup', 'aria-label': label }, buttons);
+      rovingRadios(group);
       return h('div', { class: 'tokens-field' },
         h('div', { class: 'tokens-label' }, label),
-        h('div', { class: 'tokens-opts', role: 'radiogroup', 'aria-label': label }, buttons));
+        group);
     };
 
     const paintBoards = () => {
