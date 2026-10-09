@@ -1,7 +1,7 @@
 /* The review panel of an AI proposal (TAB-160). A right-hand panel like comments, square and hairline-ruled like the
    other trays (TAB-48); on phones a sheet above the zoom tray, right of the rail. Theme variables only. */
 .chrome > .aireview {
-  position: absolute; right: 12px; top: var(--panel-top); width: 360px; max-height: calc(100% - var(--panel-top) - 84px);
+  position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: 360px; max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom));
   display: flex; flex-direction: column; z-index: 14; box-sizing: border-box;
 }
 .aireview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 14px 8px 10px 16px; border-bottom: 2px solid var(--tray-text); }
@@ -35,7 +35,7 @@
 .aireview-actions .btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
 
 @media (max-width: 860px) {
-  .chrome > .aireview { top: auto; bottom: 64px; left: var(--rail-clear); right: 12px; width: auto; max-height: 60vh; }
+  .chrome > .aireview { top: auto; bottom: calc(64px + var(--safe-bottom)); left: var(--rail-clear); right: calc(12px + var(--safe-right)); width: auto; max-height: 60vh; }
 }
 
 /* the properties panel is hidden while a review is open, as for the drawers (src/styles.css): both sit at the right */

@@ -82,7 +82,7 @@
   /* the head stays, the body scrolls, and the actions stay at the sheet's foot, clear of the home indicator */
   .k-card-dialog .modal-body { padding-bottom: 0; }
   .k-card-dialog .k-actions {
-    position: sticky; bottom: 0; z-index: 1; margin: 20px -20px 0; padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    position: sticky; bottom: 0; z-index: 1; margin: 20px -20px 0; padding: 12px 20px calc(12px + var(--safe-bottom));
     background: var(--tray); border-top: 1px solid var(--tray-line);
   }
   .k-card-dialog .k-actions .btn { flex: 1 1 auto; }

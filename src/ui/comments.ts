@@ -8,6 +8,7 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { fmtAgo, segmented, toast } from './common';
 import type { SideTray } from './side-tray';
+import { safeInsets } from './safe-area';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
 type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt' | 'imported' | 'importedBy' | 'legacy'> & { root: boolean };
@@ -67,11 +68,16 @@ function focusSoon(ta: HTMLTextAreaElement) {
 function placeCard(el: HTMLElement, p: Point) {
   const w = el.offsetWidth, hgt = el.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
+  const safe = safeInsets();
+  const left = MARGIN + safe.left;
+  const right = MARGIN + safe.right;
+  const top = MARGIN + safe.top;
+  const bottom = MARGIN + safe.bottom;
   let x = p.x + GAP, y = p.y + GAP;
-  if (x + w > vw - MARGIN) x = p.x - GAP - w;
-  if (y + hgt > vh - MARGIN) y = p.y - GAP - hgt;
-  el.style.left = `${Math.max(MARGIN, Math.min(x, vw - w - MARGIN))}px`;
-  el.style.top = `${Math.max(MARGIN, Math.min(y, vh - hgt - MARGIN))}px`;
+  if (x + w > vw - right) x = p.x - GAP - w;
+  if (y + hgt > vh - bottom) y = p.y - GAP - hgt;
+  el.style.left = `${Math.max(left, Math.min(x, vw - w - right))}px`;
+  el.style.top = `${Math.max(top, Math.min(y, vh - hgt - bottom))}px`;
 }
 
 /** The comment tool's card, the comments panel (the Comments tab of the side tray) and its count badge. */

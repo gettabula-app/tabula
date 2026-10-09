@@ -32,8 +32,12 @@
   --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
   /* Swiss (TAB-48): square corners, and a hairline where a shadow was; trays separate from the canvas by their fill and this rule */
   --radius: 0;
-  --panel-top: 72px;
-  --rail-clear: 76px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --panel-top: calc(72px + var(--safe-top));
+  --rail-clear: calc(76px + var(--safe-left));
   --shadow: 0 0 0 1px var(--tray-line);
   /* ink of the white class and label editors; the same in every theme */
   --editor-fallback-ink: #18212B;
@@ -65,15 +69,15 @@ hr { border: 0; }
 
 .board-root { position: fixed; inset: 0; overflow: hidden; background: var(--canvas); }
 .demo-banner {
-  position: fixed; z-index: 30; top: 0; left: 0; right: 0; min-height: 36px;
+  position: fixed; z-index: 30; top: var(--safe-top); left: var(--safe-left); right: var(--safe-right); min-height: 36px;
   display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 12px;
   background: var(--tray); color: var(--tray-text); font-size: 12px; font-weight: 600; line-height: 1.25;
 }
 .demo-banner-short-copy { display: none; }
 .demo-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
-.demo-board > .chrome .top-left { top: 46px; }
-.demo-board > .chrome .top-right { top: 46px; }
-.demo-board > .chrome .rail { top: 108px; max-height: calc(100% - 132px); }
+.demo-board > .chrome .top-left { top: calc(46px + var(--safe-top)); }
+.demo-board > .chrome .top-right { top: calc(46px + var(--safe-top)); }
+.demo-board > .chrome .rail { top: calc(108px + var(--safe-top)); max-height: calc(100% - 132px - var(--safe-top) - var(--safe-bottom)); }
 /* only the canvas takes touch gestures itself; elsewhere the browser's pinch zoom stays available */
 .board-surface, .canvas { touch-action: none; }
 .loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--graphite); }
@@ -151,7 +155,7 @@ select.input {
 }
 .range { width: 100%; accent-color: var(--signal); }
 
-.top-left { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px); }
+.top-left { position: absolute; top: calc(12px + var(--safe-top)); left: calc(12px + var(--safe-left)); display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px - var(--safe-left) - var(--safe-right)); }
 .board-name {
   min-width: 80px; width: 22ch; max-width: 40ch; height: 36px; padding: 0 8px; border: 0; border-radius: 0;
   background: transparent; font: 600 15px var(--ui); outline: none; text-overflow: ellipsis;
@@ -165,7 +169,7 @@ select.input {
 .sync-status[data-state='live'] { color: color-mix(in srgb, var(--wire) 30%, var(--tray-text)); }
 .sync-status[data-state='denied'] { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 
-.top-right { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 4px; }
+.top-right { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); display: flex; align-items: center; gap: 6px; padding: 4px; }
 .people { display: flex; padding-right: 4px; }
 .avatar {
   width: 30px; height: 30px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
@@ -174,7 +178,7 @@ select.input {
 .avatar:first-child { margin-left: 0; }
 .avatar.more { background: var(--tray-2); color: var(--tray-muted); }
 
-.rail { position: absolute; left: 12px; top: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px); overflow: hidden; scrollbar-width: none; }
+.rail { position: absolute; left: calc(12px + var(--safe-left)); top: calc(72px + var(--safe-top)); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px - var(--safe-top) - var(--safe-bottom)); overflow: hidden; scrollbar-width: none; }
 @media (max-height: 820px) {
   .rail { gap: 1px; }
   .rail .rail-btn { width: 34px; height: 34px; }
@@ -193,7 +197,7 @@ select.input {
 }
 .rail-btn[data-tool='sticky'].on::after { box-shadow: 0 0 0 1.5px var(--on-signal); }
 
-.tool-tray { position: absolute; left: 76px; top: 300px; display: none; }
+.tool-tray { position: absolute; left: calc(76px + var(--safe-left)); top: 300px; display: none; }
 .pen-tray { flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px; }
 .pen-tray hr { margin: 0; }
 .pen-tray.show, .sticky-tray.show { display: flex; }
@@ -224,12 +228,12 @@ select.input {
 
 /* drawer */
 .drawer {
-  position: absolute; left: 76px; top: var(--panel-top); bottom: 76px; width: 312px; display: none; flex-direction: column; overflow: hidden;
+  position: absolute; left: calc(76px + var(--safe-left)); top: var(--panel-top); bottom: calc(76px + var(--safe-bottom)); width: 312px; display: none; flex-direction: column; overflow: hidden;
 }
 .drawer.show { display: flex; }
 .drawer { contain: layout paint; }
 @media (max-height: 820px) {
-  .drawer, .tool-tray { left: 70px; }
+  .drawer, .tool-tray { left: calc(70px + var(--safe-left)); }
 }
 .drawer-head, .props-head, .pop-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
 .drawer-head h2, .props-head h2, .pop-head h3, .modal-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
@@ -305,7 +309,7 @@ select.input {
 
 /* properties */
 .props {
-  position: absolute; right: 12px; top: var(--panel-top); width: 276px; max-height: calc(100% - var(--panel-top) - 84px); overflow-y: auto; display: none;
+  position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: 276px; max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); overflow-y: auto; display: none;
   padding: 0 14px 14px; scrollbar-width: thin;
 }
 .props.show { display: block; }
@@ -341,17 +345,17 @@ select.input {
 .props .arrange { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); }
 
 /* zoom & minimap */
-.zoom-tray { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 4px; }
+.zoom-tray { position: absolute; right: calc(12px + var(--safe-right)); bottom: calc(12px + var(--safe-bottom)); display: flex; align-items: center; gap: 2px; padding: 4px; }
 .zoom-label { min-width: 54px; height: 36px; border: 0; border-radius: 0; background: transparent; font-weight: 600; }
 .zoom-label:hover { background: var(--tray-hover); }
-.minimap { position: absolute; right: 12px; bottom: 64px; padding: 6px; display: none; }
+.minimap { position: absolute; right: calc(12px + var(--safe-right)); bottom: calc(64px + var(--safe-bottom)); padding: 6px; display: none; }
 .minimap.show { display: block; }
 .minimap canvas { display: block; width: 220px; height: 140px; cursor: pointer; border-radius: 0; background: var(--tray-2); }
 
 /* facilitation bar */
 /* The bar is as wide as its content, centred, and never wider than the space between the rail and the zoom tray. Groups wrap inside it. */
 .flowbar {
-  position: absolute; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: fit-content; max-width: calc(100% - 456px);
+  position: absolute; left: 0; right: 0; bottom: calc(12px + var(--safe-bottom)); margin: 0 auto; width: fit-content; max-width: calc(100% - 456px - var(--safe-left) - var(--safe-right));
   display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; box-shadow: none;
 }
 :root:not([data-theme='default']) .flowbar.tray { box-shadow: 0 0 0 1px var(--tray-line); }
@@ -432,7 +436,7 @@ select.input {
 }
 
 /* popovers, menus, dialogs, toast */
-.popover { position: fixed; z-index: 50; max-height: calc(100vh - 16px); overflow: auto; }
+.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
 .popover.tray, :root:not([data-theme='default']) .popover.tray {
   border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line);
@@ -469,7 +473,7 @@ select.input {
 .font-list .list-label { padding: 0 10px; }
 .pop-foot { padding-top: 6px; border-top: 1px solid var(--tray-line); }
 
-.modal-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--tray) 55%, transparent); }
+.modal-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: color-mix(in srgb, var(--tray) 55%, transparent); }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; overflow: hidden; }
 .modal.tray, :root:not([data-theme='default']) .modal.tray { border-radius: 0; box-shadow: 0 0 0 1px var(--tray-line); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px 20px; border-bottom: 2px solid var(--tray-text); }
@@ -512,7 +516,7 @@ select.input {
 kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: var(--tray-2); border: 1px solid var(--tray-line); }
 
 .toast {
-  position: fixed; left: 50%; bottom: 76px; z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  position: fixed; left: 50%; bottom: calc(76px + var(--safe-bottom)); z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
   padding: 10px 16px; border-radius: 0; border-left: 4px solid var(--signal); background: var(--tray); color: var(--tray-text);
   box-shadow: 0 0 0 1px var(--tray-line); font-weight: 500;
   transition: opacity 160ms, transform 160ms;
@@ -545,30 +549,30 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 .wordmark { font: 800 clamp(48px, 8vw, 96px)/0.9 var(--display); letter-spacing: -0.035em; color: var(--ink); }
 
 @media (max-width: 860px) {
-  :root { --panel-top: 120px; } /* a fallback: board.ts measures the bars (src/ui/panel-top.ts) */
-  .top-left { max-width: calc(100% - 24px); }
-  .top-right { top: 64px; }
-  .demo-board > .chrome .top-right { top: 100px; }
-  .demo-board > .chrome .rail { top: 144px; max-height: calc(100% - 168px); }
+  :root { --panel-top: calc(120px + var(--safe-top)); } /* a fallback: board.ts measures the bars (src/ui/panel-top.ts) */
+  .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
+  .top-right { top: calc(64px + var(--safe-top)); }
+  .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
+  .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
   .board-name { width: 14ch; }
-  .props { top: auto; bottom: 64px; max-height: 45vh; width: calc(100% - 92px); }
+  .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
   /* folded to its title row, so the board shows above the selection while it stays selected */
   .props.folded { overflow: hidden; padding-bottom: 0; }
   .props.folded > :not(.props-head) { display: none; }
   .props-fold { display: inline-grid; }
   /* TAB-239: after the base rule below in source order, so it needs the extra class to win; the bar scrolls inside this width */
-  .chrome > .quickbar { max-width: calc(100% - var(--rail-clear) - 12px); }
-  .flowbar { left: var(--rail-clear); right: 12px; width: auto; max-width: none; bottom: 60px; }
+  .chrome > .quickbar { max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); }
+  .flowbar { left: var(--rail-clear); right: calc(12px + var(--safe-right)); width: auto; max-width: none; bottom: calc(60px + var(--safe-bottom)); }
   /* TAB-237: the bar is the space between the rail and the edge, never wider: the step takes a row of its own, its instruction wraps, and the buttons wrap under it */
   .flowbar .flow-step { flex: 1 1 100%; max-width: none; min-width: 0; height: auto; min-height: 36px; padding: 4px 10px 4px 6px; }
   .flowbar .step-instr { white-space: normal; overflow-wrap: anywhere; }
   .flowbar > .flow-idle, .flowbar > .flow-results, .flowbar > .poll-summary { flex-basis: 100%; }
   .bar-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 0; align-self: auto; }
-  .drawer { width: calc(100% - 88px); }
+  .drawer { width: calc(100% - 88px - var(--safe-left) - var(--safe-right)); }
   /* an open drawer or the Comments and Chat tray takes the board: the selection's quick bar, the properties panel, the session bar (TAB-243: it sat over the chat composer), and the poll card wait, kept in place, until it closes */
   .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar, .poll-card) { visibility: hidden; }
   /* the rail runs the full height here: the hint is centred in the room right of it, not under it */
-  .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px)); }
+  .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px - var(--safe-right))); }
 }
 
 @media (max-width: 500px) {
@@ -613,7 +617,7 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 }
 
 /* quick actions */
-.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
+.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
 .quickbar.show { display: flex; }
 /* TAB-239: a bar wider than its room scrolls sideways and fades out at the edge that has more behind it */
 .quickbar[data-more='right'] { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); }

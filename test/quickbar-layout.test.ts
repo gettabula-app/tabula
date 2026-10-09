@@ -33,6 +33,12 @@ describe('placeBar', () => {
     expect(placeBar({ x: 980, y: 300, w: 20, h: 20 }, bar, view).x).toBe(688);
   });
 
+  it('keeps the quick bar outside safe right and bottom insets', () => {
+    const p = placeBar({ x: 980, y: 790, w: 20, h: 10 }, bar, view, 0, 12, 64, 12, [], 12, 56, 46);
+    expect(p.x).toBe(644);
+    expect(p.y + bar.h).toBeLessThanOrEqual(view.h - 46);
+  });
+
   it('uses the margin when the bar is wider than the view', () => {
     expect(placeBar({ x: 0, y: 300, w: 20, h: 20 }, bar, { w: 200, h: 800 }).x).toBe(12);
   });
@@ -96,5 +102,9 @@ describe('clampX', () => {
 
   it('starts at the left limit when the bar is wider than the room', () => {
     expect(clampX(0, 360, 390, 76)).toBe(76);
+  });
+
+  it('keeps the bar left of the safe right inset', () => {
+    expect(clampX(300, 200, 390, 76, 56)).toBe(134);
   });
 });

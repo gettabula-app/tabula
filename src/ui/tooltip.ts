@@ -2,6 +2,7 @@ import './tooltip.css';
 import { h } from './dom';
 import { shortcutKeys } from '../shortcuts';
 import { addToken, createTipController, placeTip, removeToken, tipContent, type TipContent } from '../tooltip';
+import { safeInsets, type Insets } from './safe-area';
 
 const ID = 'tabula-tooltip';
 // Anything with a data-tip, plus icon buttons that have no caption but their aria-label.
@@ -44,7 +45,11 @@ export function installTooltips(): void {
     keys.hidden = !content.keys;
     const box = el.getBoundingClientRect();
     const size = tip.getBoundingClientRect();
-    const at = placeTip(box, size, { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
+    const safe = safeInsets();
+    const inset = (edge: keyof Insets) => safe[edge];
+    const at = placeTip(box, size, { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight }, undefined, undefined, {
+      top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
+    });
     tip.style.left = `${Math.round(at.left)}px`;
     tip.style.top = `${Math.round(at.top)}px`;
   }

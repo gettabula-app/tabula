@@ -11,19 +11,21 @@ const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y <
  */
 export function placeBar(
   target: Box, bar: { w: number; h: number }, view: { w: number; h: number }, lift = 0, margin = 12, topInset = 64, gap = 12,
-  avoid: Box[] = [], left = margin,
+  avoid: Box[] = [], left = margin, right = margin, bottom = margin,
 ): { x: number; y: number; below: boolean } {
-  const maxX = view.w - bar.w - margin;
+  const maxX = view.w - bar.w - right;
   const cx = target.x + target.w / 2 - bar.w / 2;
   const x = maxX >= left ? Math.max(left, Math.min(maxX, cx)) : left;
   const yAbove = target.y - gap - lift - bar.h;
   const yBelow = target.y + target.h + gap;
   const aboveFits = yAbove >= topInset;
-  const belowFits = yBelow + bar.h <= view.h - margin;
+  const belowFits = yBelow + bar.h <= view.h - bottom;
   const covers = (y: number) => avoid.some((b) => overlaps({ x, y, w: bar.w, h: bar.h }, b));
-  if (aboveFits && !(belowFits && covers(yAbove) && !covers(yBelow))) return { x, y: yAbove, below: false };
+  if (aboveFits && !(belowFits && covers(yAbove) && !covers(yBelow))) {
+    return { x, y: Math.max(topInset, Math.min(view.h - bar.h - bottom, yAbove)), below: false };
+  }
   if (belowFits) return { x, y: yBelow, below: true };
-  return { x, y: Math.max(topInset, Math.min(view.h - bar.h - margin, yBelow)), below: true };
+  return { x, y: Math.max(topInset, Math.min(view.h - bar.h - bottom, yBelow)), below: true };
 }
 
 /**

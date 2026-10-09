@@ -25,8 +25,8 @@
 
 /* Top bar: the same height and 1120px alignment as the admin bar. */
 .topbar {
-  display: flex; align-items: center; gap: 24px; height: 56px;
-  padding: 0 max(24px, calc((100% - 1120px) / 2 + 24px));
+  display: flex; align-items: center; gap: 24px; height: calc(56px + var(--safe-top));
+  padding: var(--safe-top) calc(max(24px, calc((100% - 1120px) / 2 + 24px)) + var(--safe-right)) 0 calc(max(24px, calc((100% - 1120px) / 2 + 24px)) + var(--safe-left));
   border-bottom: 2px solid var(--ink);
 }
 .topbar-mark { font: 800 20px/1 var(--display); letter-spacing: -0.03em; color: var(--ink); text-decoration: none; }
@@ -202,7 +202,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 }
 
 @media (max-width: 720px) {
-  .topbar { height: auto; flex-wrap: wrap; gap: 0 16px; padding: 8px 16px 0; }
+  .topbar { height: auto; flex-wrap: wrap; gap: 0 16px; padding: calc(8px + var(--safe-top)) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left)); }
   .topbar-mark { display: inline-flex; align-items: center; height: 32px; }
   .topbar-nav { order: 3; flex: 1 0 100%; margin: 0 -4px; padding: 4px 4px 8px; overflow-x: auto; scrollbar-width: none; }
   .topbar-nav::-webkit-scrollbar { display: none; }

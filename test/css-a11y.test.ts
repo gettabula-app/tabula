@@ -78,4 +78,28 @@ describe('stylesheets', () => {
     expect(css).not.toMatch(/\.board-root\s*\{[^}]*touch-action/);
     expect(css).toMatch(/\.board-surface,\s*\.canvas\s*\{\s*touch-action:\s*none/);
   });
+
+  it('defines safe-area insets and applies them to the board chrome', () => {
+    const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
+    const root = rules(css).find((r) => r.selector === ':root')?.body ?? '';
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      expect(root).toMatch(new RegExp(`--safe-${edge}:\\s*env\\(safe-area-inset-${edge},\\s*0px\\)`));
+    }
+
+    const rule = (selector: string) => rules(css).find((r) => r.selector === selector)?.body ?? '';
+    expect(rule('.top-left')).toMatch(/var\(--safe-top\)/);
+    expect(rule('.top-left')).toMatch(/var\(--safe-left\)/);
+    expect(rule('.top-right')).toMatch(/var\(--safe-top\)/);
+    expect(rule('.top-right')).toMatch(/var\(--safe-right\)/);
+    expect(rule('.rail')).toMatch(/var\(--safe-top\)/);
+    expect(rule('.rail')).toMatch(/var\(--safe-left\)/);
+    expect(rule('.rail')).toMatch(/var\(--safe-bottom\)/);
+    expect(rule('.flowbar')).toMatch(/var\(--safe-bottom\)/);
+    expect(rule('.zoom-tray')).toMatch(/var\(--safe-bottom\)/);
+    expect(rule('.zoom-tray')).toMatch(/var\(--safe-right\)/);
+
+    const topbar = readFileSync(join(ROOT, 'src/ui/home.css'), 'utf8');
+    for (const edge of ['top', 'right', 'left']) expect(topbar).toMatch(new RegExp(`--safe-${edge}`));
+    expect(topbar).toMatch(/\.topbar\s*\{[^}]*calc\(8px \+ var\(--safe-top\)\)[^}]*calc\(16px \+ var\(--safe-right\)\)[^}]*calc\(16px \+ var\(--safe-left\)\)/);
+  });
 });

@@ -22,7 +22,7 @@ describe('the session bar on a phone (TAB-240, TAB-241)', () => {
   const rule = (selector: string) => phone.split('\n').find((l) => l.trim().startsWith(selector)) ?? '';
 
   it('takes the room between the rail and the edge, not the width of its content', () => {
-    expect(rule('.flowbar {')).toMatch(/left: var\(--rail-clear\)[^}]*right: 12px[^}]*width: auto/);
+    expect(rule('.flowbar {')).toMatch(/left: var\(--rail-clear\)[^}]*right: calc\(12px \+ var\(--safe-right\)\)[^}]*width: auto/);
   });
 
   it('gives the step a row of its own and lets its instruction wrap (write and discuss steps)', () => {
