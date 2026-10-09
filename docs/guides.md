@@ -223,7 +223,7 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 - `src/styles.css`: `--guide` in `:root`.
 - `test/themes.test.ts`: the `--guide` contrast assertion.
 - `README.md`: the Grid row says "alignment guides and equal-spacing guides to nearby objects, Alt to bypass"; `src/guides.ts` goes in the layout list next to `src/render.ts`.
-- `CHANGELOG.md`: an Added entry under Unreleased, in the implementation commit.
+- A fragment in `changelog.d/` (see `changelog.d/README.md`) with an Added entry, in the implementation commit.
 
 Not touched: `src/geometry.ts` (all new geometry lives in `src/guides.ts`), `src/store.ts`, `src/types.ts`, `src/flow.ts`, `src/ui/`, `server/`, `src/markup.ts`, `src/exporters.ts`.
 

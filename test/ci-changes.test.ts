@@ -16,6 +16,8 @@ describe('ci change classification', () => {
   it('skips everything for Markdown, other docs, design mockups, licences and dependabot.yml', () => {
     const none = { code: false, guide: false };
     expect(run('README.md')).toEqual(none);
+    expect(run('CHANGELOG.md')).toEqual(none);
+    expect(run('changelog.d/README.md')).toEqual(none);
     expect(run('docs/desktop.md')).toEqual(none);
     expect(run('design/ai-toolbar/index.html', 'design/ai-toolbar/shot.png')).toEqual(none);
     expect(run('desktop/README.md', 'server/notes.md', '.claude/agents/implementer.md')).toEqual(none);
@@ -24,6 +26,7 @@ describe('ci change classification', () => {
   });
 
   it('runs the full pipeline for anything else', () => {
+    expect(run('changelog.d/tab-123.md')).toEqual({ code: true, guide: false });
     expect(run('src/app.ts')).toEqual({ code: true, guide: false });
     expect(run('package.json')).toEqual({ code: true, guide: false });
     expect(run('.github/workflows/ci.yml')).toEqual({ code: true, guide: false });

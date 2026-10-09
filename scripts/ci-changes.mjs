@@ -5,24 +5,26 @@
 //   code=true|false   something changed outside the ignore set below, so the full pipeline runs
 //   guide=true|false  something changed under docs/guide/ or docs/images/, which are built into the app (scripts/vite-docs.mjs)
 //
-// Markdown, docs/ and licence files do not need the test matrix, but the guide still gets a build of its own.
-// No paths at all means there was nothing to compare, so both are true and everything runs.
+// Markdown, docs/ and licence files do not need the test matrix, except changelog.d/*.md fragments: a fragment-only PR
+// must start CI so quality can run the changelog format check. The guide still gets a build of its own. No paths at all
+// means there was nothing to compare, so both are true and everything runs.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
- * Paths that cannot break the app: any Markdown file, anything under docs/, design/ (static mockups that no build or
- * image includes), LICENSE* in the repo root, dependabot.yml.
+ * Paths that cannot break the app: any Markdown file except changelog.d fragments, anything under docs/, design/
+ * (static mockups that no build or image includes), LICENSE* in the repo root, dependabot.yml.
  */
 const IGNORED = [/\.md$/, /^docs\//, /^design\//, /^LICENSE[^/]*$/, /^\.github\/dependabot\.yml$/];
+const CHANGELOG_FRAGMENT = /^changelog\.d\/(?!README\.md$)[^/]+\.md$/;
 
 /** @param {string[]} paths @returns {{ code: boolean, guide: boolean }} */
 export function classify(paths) {
   const files = paths.map((p) => p.replace(/\r$/, '')).filter(Boolean);
   if (!files.length) return { code: true, guide: true };
   return {
-    code: files.some((f) => !IGNORED.some((re) => re.test(f))),
+    code: files.some((f) => CHANGELOG_FRAGMENT.test(f) || !IGNORED.some((re) => re.test(f))),
     guide: files.some((f) => f.startsWith('docs/guide/') || f.startsWith('docs/images/')),
   };
 }

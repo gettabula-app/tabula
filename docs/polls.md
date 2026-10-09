@@ -192,7 +192,7 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 - `src/exporters.ts`: `BoardJson.polls?` and `pollAnswers?`, in `toJson` and `validate`.
 - `src/main.ts`: JSON new-board import restores both maps (about 3 lines).
 - `README.md`: Polls row after Dot voting; `src/polls.ts` in the layout list.
-- `CHANGELOG.md`: Unreleased entry, in the implementation commit.
+- A fragment in `changelog.d/` (see `changelog.d/README.md`), in the implementation commit.
 
 Not touched: `src/app.ts`, `src/render.ts`, `src/styles.css`, `src/templates.ts`, `src/comments.ts`, `server/`.
 
