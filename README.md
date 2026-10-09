@@ -109,6 +109,17 @@ Tabula can let an AI tool such as Claude Code read and edit boards while people 
 
 In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
 
+### Images
+
+The relay stores pictures that people add to a board (PNG, JPEG, GIF and WebP) as files under `DATA_DIR/assets/`, named by the SHA-256 of their content, and only serves a file through a board that owns it (see [docs/images.md](docs/images.md)). Metadata such as GPS position is removed on the server. It is on by default; the limits are set with these variables, in bytes or with a `K`, `M` or `G` suffix.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_ASSETS` | `on` | `off` turns images off: the routes answer `404` |
+| `TABULA_ASSET_MAX_BYTES` | `10M` | Largest file after the browser has scaled it down |
+| `TABULA_ASSET_BOARD_QUOTA` | `100M` with accounts, `50M` without | Image storage per board |
+| `TABULA_ASSET_TOTAL_QUOTA` | none | Optional cap for the whole instance |
+
 ### Backups
 
 Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted on the instance first (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). It is off unless the five required variables are all set; some but not all is a startup error that names the missing ones. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). **Restore** is built as owner-only routes (`GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` for one board as a copy, `POST /api/admin/backups/restore` for the whole workspace, which restarts the server with exit code 75 and keeps the previous data aside); see [Restoring](docs/backups.md#restoring). The admin screen for it is not built yet.

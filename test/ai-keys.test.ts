@@ -286,7 +286,7 @@ describe('the ai_keys table', () => {
     d.createBoard({ id: 'board1', title: 'Kept', ownerId: u.id });
     d.close();
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE ai_keys; PRAGMA user_version = 6');
+    raw.exec('DROP TABLE assets; DROP TABLE ai_keys; PRAGMA user_version = 6');
     raw.close();
 
     const again = openDirectory(file);
@@ -294,7 +294,7 @@ describe('the ai_keys table', () => {
     expect(again.getAiKeyInfo('workspace')).toBeNull();
     again.close();
     const check = new DatabaseSync(file);
-    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(7);
+    expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(MIGRATIONS.length);
     check.close();
   });
 

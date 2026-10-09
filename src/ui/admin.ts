@@ -36,6 +36,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Sign-ins', prefix: 'auth.login' },
   { label: 'Sessions', prefix: 'admin.session' },
   { label: 'AI', prefix: 'ai.' },
+  { label: 'Images', prefix: 'asset.' },
 ];
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';

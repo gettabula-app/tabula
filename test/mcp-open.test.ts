@@ -23,7 +23,7 @@ describe('off by default', () => {
       expect(res.headers.get('content-type')).toMatch(/^application\/json/);
       expect(await res.json()).toEqual({ error: 'not_found' });
     }
-    expect((await off.api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false });
+    expect((await off.api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false, images: true });
     expect((await off.api(undefined, 'GET', '/api/me/tokens')).status).toBe(404);
     // sync works as it always did
     const a = off.connect('room-a');

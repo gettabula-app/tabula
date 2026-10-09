@@ -47,6 +47,30 @@ function loadMcp(env, authEnabled, url) {
   return { mode: 'open', token, scope: scope || 'read', ignored: [] };
 }
 
+// Images on a board (docs/images.md). Sizes are bytes, with an optional K, M or G suffix (powers of 1024).
+const SIZE_RE = /^(\d+)\s*([kmg])?b?$/i;
+export function parseSize(text, name) {
+  const m = SIZE_RE.exec(String(text).trim());
+  const value = m ? Number(m[1]) * { '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[(m[2] ?? '').toLowerCase()] : NaN;
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a size in bytes, such as 10485760 or 10M (got "${String(text).slice(0, 20)}")`);
+  return value;
+}
+
+// null when off. The per-board quota is 100 MB with accounts and 50 MB without: in open mode anyone with a link can upload.
+function loadAssets(env, authEnabled) {
+  const mode = (env.TABULA_ASSETS ?? '').trim() || 'on';
+  if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_ASSETS must be on or off (got "${mode.slice(0, 20)}")`);
+  if (mode === 'off') return null;
+  const size = (name, fallback) => (env[name] != null && String(env[name]).trim() !== '' ? parseSize(env[name], name) : fallback);
+  const maxBytes = size('TABULA_ASSET_MAX_BYTES', 10 * 1024 * 1024);
+  if (maxBytes < 1) throw new Error('TABULA_ASSET_MAX_BYTES must be at least 1');
+  return {
+    maxBytes,
+    boardQuota: size('TABULA_ASSET_BOARD_QUOTA', (authEnabled ? 100 : 50) * 1024 * 1024),
+    totalQuota: size('TABULA_ASSET_TOTAL_QUOTA', 0),
+  };
+}
+
 // AI features (docs/ai.md). The secrets are not enumerable, so printing or serialising the config never shows them.
 // Open mode has no accounts to own a key, so it needs both the operator's key and the explicit TABULA_AI_OPEN=1: a key
 // alone never turns AI on, because anyone with a board link would then spend it.
@@ -161,6 +185,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const cloud = loadCloud(env, authEnabled);
   const mcp = loadMcp(env, authEnabled, url);
   const ai = loadAi(env, authEnabled, warn);
+  const assets = loadAssets(env, authEnabled);
 
   return {
     authEnabled,
@@ -176,6 +201,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     port,
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
     ai,
+    assets,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),
   };

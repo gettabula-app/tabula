@@ -307,14 +307,14 @@ describe('without the cloud variables', () => {
     expect((await c.internal('GET', '/api/internal/usage')).status).toBe(404);
     expect((await c.internal('PUT', '/api/internal/limits', { readOnly: true })).status).toBe(404);
     expect((await c.api(owner.cookie, 'POST', '/api/billing/portal')).status).toBe(404);
-    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [] });
+    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [], images: true });
     expect(seen).toEqual([]);
   });
 
   it('ignores the variables when accounts mode is off', async () => {
     const srv = await launch({ ...CLOUD_ENV(), TABULA_AUTH: 'off' });
     const c = client(srv);
-    expect((await c.api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false });
+    expect((await c.api(undefined, 'GET', '/api/config')).body).toEqual({ authEnabled: false, images: true });
     expect((await c.internal('GET', '/api/internal/usage')).status).toBe(404);
   });
 });
