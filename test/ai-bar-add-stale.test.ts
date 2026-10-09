@@ -7,7 +7,7 @@ import { mountAiLive } from '../src/ui/ai-live';
 import { toast } from '../src/ui/common';
 import { FakeElement, installFakeBrowser, need, type FakeBrowser } from './fake-dom';
 
-// TAB-213, the bar's own entry: Add to board on the person's own cluster preview, after the stickies it would move changed.
+// TAB-213 and TAB-218, the bar's own entry: Add to board on the person's own cluster preview, after the stickies it would move changed.
 // The live tray's Accept is pinned in test/ai-live-stale-add.test.ts; both ask takeReview the same question. Driven through
 // the real bar (a run started from its chip and Run button, answered by a stubbed /api/ai/run) and the real live layer.
 
@@ -87,6 +87,8 @@ async function rig() {
   const r = {
     root, cursorLayer, cam: { x: 0, y: 0, zoom: 1 }, bounds: () => ({ x: 0, y: 0, w: 1, h: 1 }), isHidden: () => false, contentBounds: () => null,
     toScreen: (p: { x: number; y: number }) => p, setOverlay: () => {}, onCamera: () => () => {}, viewport: () => ({ x: 0, y: 0, w: 800, h: 600 }),
+    flyTo: vi.fn<(box: { x: number; y: number; w: number; h: number }, pad: number, maxZoom: number) => void>(),
+    fit: vi.fn<() => void>(),
   };
   let relay: ((m: AiRunsMessage) => void) | null = null;
   const listeners = new Map<string, (() => void)[]>();
@@ -127,7 +129,7 @@ async function rig() {
   runFrames();
 
   return {
-    app, calls, fetchMock,
+    app, calls, fetchMock, camera: r, chrome,
     edit: (id: string, patch: Record<string, unknown> | null) => {
       if (patch) Object.assign(cache.get(id)!, patch);
       else cache.delete(id);
@@ -166,5 +168,52 @@ describe('Add to board on the bar, after the stickies changed (TAB-213)', () => 
     expect((applied.calls[0][1] as { groups: unknown[] }).groups).toEqual([{ title: 'Went well', ids: ['a'] }, { title: 'To fix', ids: ['c'] }]);
     expect(toasted().at(-1)).toBe('Moved 2 stickies into 2 groups. 1 sticky that changed since the proposal came was left where it is.');
     expect(t.calls.at(-1)).toBe('/api/ai/runs/run1/resolve');
+  });
+});
+
+describe('Show on your own preview (TAB-218)', () => {
+  const showButtons = (root: FakeElement) => root.querySelectorAll('button').filter((b) => b.textContent === 'Show');
+
+  it('is offered in the bar and on the label row, and nothing moves the camera until it is pressed', async () => {
+    const t = await rig();
+    // the run is ready and drawn, and the view has not moved
+    expect(t.chrome.querySelector('.aibar')!.getAttribute('data-ui')).toBe('preview');
+    expect(t.camera.flyTo).not.toHaveBeenCalled();
+    expect(t.camera.fit).not.toHaveBeenCalled();
+    const buttons = showButtons(browser.document.documentElement);
+    expect(buttons.length).toBe(2); // the bar's and the label row's
+    expect(t.chrome.querySelectorAll('.aibar-actions button').filter((b) => b.textContent === 'Show')).toHaveLength(1);
+  });
+
+  it('flies the view to the preview from the bar, with room around it', async () => {
+    const t = await rig();
+    t.chrome.querySelectorAll('.aibar-actions button').find((b) => b.textContent === 'Show')!.click();
+    expect(t.camera.flyTo).toHaveBeenCalledTimes(1);
+    const [box, pad, maxZoom] = t.camera.flyTo.mock.calls[0];
+    // the box the stickies will land in: a real area, with room around it
+    for (const n of [box.x, box.y, box.w, box.h]) expect(Number.isFinite(n)).toBe(true);
+    expect(box.w).toBeGreaterThan(0);
+    expect(box.h).toBeGreaterThan(0);
+    expect(pad).toBeGreaterThan(0);
+    expect(maxZoom).toBe(1);
+    expect(t.camera.fit).not.toHaveBeenCalled();
+  });
+
+  it('does the same from the label row', async () => {
+    const t = await rig();
+    const row = showButtons(browser.document.documentElement).find((b) => b.closest('.ailive-row'))!;
+    row.click();
+    expect(t.camera.flyTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing for a run that has no preview on the board any more', async () => {
+    const t = await rig();
+    t.edit('a', null);
+    t.edit('b', null);
+    t.edit('c', null);
+    const { showRun } = await import('../src/ui/ai-live');
+    expect(showRun(t.app, 'run1')).toBe(false);
+    expect(showRun(t.app, 'nope')).toBe(false);
+    expect(t.camera.flyTo).not.toHaveBeenCalled();
   });
 });

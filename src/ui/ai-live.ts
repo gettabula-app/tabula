@@ -154,6 +154,21 @@ export interface TakenReview {
   stale: number;
 }
 
+/** The room a preview gets around it when it is brought into view, beyond the chrome's own insets: the label row above it. */
+const SHOW_PAD = 40;
+const SHOW_MAX_ZOOM = 1;
+
+/**
+ * Brings a preview into view (TAB-218): the camera flies to its box. Only ever called from a click on a Show button, for the
+ * person's own run: a preview that arrives, yours or anyone's, never moves the camera (test/ai-live-camera.test.ts).
+ */
+export function showRun(app: BoardApp, runId: string): boolean {
+  const layout = lives.get(app)?.layouts.get(runId);
+  if (!layout) return false;
+  app.r.flyTo(previewBox(layout), SHOW_PAD, SHOW_MAX_ZOOM);
+  return true;
+}
+
 /** What an add stamps on the objects it creates: the run's feature and who asked for it. */
 export function proposedByFor(app: BoardApp, runId: string): ProposedBy | undefined {
   const run = lives.get(app)?.runs.get(runId);
@@ -288,9 +303,11 @@ export function mountAiLive(app: BoardApp): void {
     const accept = h('button', { class: 'ailive-btn primary', type: 'button', 'data-tip': whose ? `Add ${whose}'s preview to the board` : 'Add the preview to the board', onclick: () => void settle(run, 'accept') }, 'Accept');
     // item by item, edited before it is added (TAB-160)
     const review = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': 'Choose what to add and edit it first', onclick: () => openReview(app, run.id, { accept: () => void settle(run, 'accept'), discard: () => void settle(run, 'discard') }) }, 'Review');
+    // your own preview is drawn wherever the board has room, which may be off screen: Show brings it into view (TAB-218)
+    const show = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': 'Bring the preview into view', onclick: () => void showRun(app, run.id) }, 'Show');
     const el = h('div', { class: `ailive-row${own ? ' mine' : ''}`, role: 'group', 'aria-label': text, style: `--c:${fill};--ink:${ink}` },
       h('span', { class: 'ailive-label' }, text),
-      tray ? h('span', { class: 'tray ailive-tray' }, discard, review, accept) : null);
+      tray ? h('span', { class: 'tray ailive-tray' }, discard, review, accept) : own ? h('span', { class: 'tray ailive-tray' }, show) : null);
     return { el, sig: '', w: 0, buttons: tray ? [discard, review, accept] : [] };
   }
 
