@@ -41,7 +41,7 @@ import { UNLIMITED } from '../flow';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
-import { aiBarFlag, aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
+import { aiBarFlag, aiBarFor, aiBarShown, aiSetupFor, glyph, mountAiBar, onAiBarChange } from './ai-bar';
 import { liveRunsFor, mountAiLive } from './ai-live';
 import './ai-review-panel';
 import { avatarLine, badgeRun } from '../ai-live-logic';
@@ -554,6 +554,10 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       h('div', { class: 'list-label' }, 'AI'),
       h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
         glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
+    ] : aiSetupFor(app) ? [
+      h('div', { class: 'list-label' }, 'AI'),
+      h('button', { class: 'menu-item', onclick: () => { pop.close(); location.hash = '#/admin/ai'; } },
+        glyph('spark', 18), h('span', null, 'Set up AI'), h('span', { class: 'menu-hint' }, 'Admin')),
     ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
     themeGroup,

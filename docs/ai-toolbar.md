@@ -2,7 +2,7 @@
 
 The floating bar where a person asks the AI to work on the board: summarise it, cluster stickies, generate ideas. It is the front door to the features in `docs/ai.md`; it adds no new AI capability.
 
-Status: design for review (TAB-123). Nothing is built. An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
+Status: built behind the `?aibar` flag (TAB-123, TAB-141). The bar, its entry points and live previews are in the app; remove the flag after a smoke run with a real key. An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
 
 Read `docs/ai.md` first. This document only covers the bar: how it looks, where it sits, what it does in each state, and the words it uses. Calls, keys, proposals, limits and errors come from there.
 
@@ -483,7 +483,7 @@ The relay writes an audit row, `ai.run.accept` or `ai.run.discard`. Who may reso
 
 A person's colour is their cursor colour (`USER_COLORS` in `src/palette.ts`). These are data, like sticky colours, not theme tokens. Label text is white or the ink `#18212B`, whichever contrasts more:
 
-| Colour | Label text | Label contrast | Outline against canvas (Default, Ayu, Kanagawa, Matrix, Evergreen) |
+| Colour | Label text | Label contrast | Person colour alone against canvas, before halo (Default, Ayu, Kanagawa, Matrix, Evergreen) |
 | --- | --- | --- | --- |
 | `#2F6FED` | white | 4.55 | 4.01, 3.41, 3.59, 4.39, 4.04 |
 | `#D64545` | white | **4.38** | 3.86, 3.54, 3.73, 4.56, 3.89 |
@@ -494,7 +494,7 @@ A person's colour is their cursor colour (`USER_COLORS` in `src/palette.ts`). Th
 | `#0E9AA7` | ink | 4.80 | **2.99**, 4.58, 4.82, 5.89, 3.01 |
 | `#E06D2B` | ink | 4.95 | **2.90**, 4.72, 4.97, 6.07, **2.92** |
 
-`#D64545` misses 4.5:1 for its 11px label by a little. Its label fill should be darkened (`color-mix(in srgb, #D64545 90%, #18212B)` gives white text 5.04:1). Amber, teal and orange outlines fall under 3:1 on the two light canvases. Cursors already use these colours, and the outline always comes with a label and a badge, but see open question 20.
+`#D64545` misses 4.5:1 for its 11px label by a little; its label fill is darkened (`color-mix(in srgb, #D64545 90%, #18212B)` gives white text 5.04:1). Amber, teal and orange outlines fall under 3:1 on the two light canvases before the halo. The in-flight ring has a 1px `--tray` line inside and outside its 2px person-colour border; the 18% glow stays 4px wide beyond the outer line. Another person's preview draws a solid `#18212B` under-stroke at 55% opacity, 1px wider on each side than the dashed colour outline. These halos bring the outlines to at least 3:1 on the light canvases without changing cursor colours (open question 20).
 
 ### Mock
 
@@ -502,18 +502,17 @@ Reviewer controls: **Other person (Ana)**: none, running, preview. **Two preview
 
 ## What the build needs
 
-For the engineer. The bar is new UI plus a few small changes to existing code.
+For the engineer. The bar, its entry points and live previews are built behind `?aibar`; remove the flag after a smoke run with a real key.
 
-- `src/ui/ai-bar.ts` and `src/ui/ai-bar.css` for the bar; `src/ai-bar-logic.ts` for the pure parts, which get unit tests: context counts and defaults, chip availability and reasons, arming and what Run starts, the disclosure text, the token and credit estimate, the error-to-view mapping (including role and key source), history, position clamping.
+- `src/ui/ai-bar.ts` and `src/ui/ai-bar.css` for the bar; `src/ai-bar-logic.ts` for the pure parts, with unit tests for context counts and defaults, chip availability and reasons, arming and what Run starts, the disclosure text, the token and credit estimate, the error-to-view mapping (including role and key source), history, position clamping and setup visibility.
 - `src/ui/board.ts` mounts it in `.chrome` when `GET /api/ai/config` says it should.
-- `src/shortcuts.ts` gets the Ctrl/Cmd+K row, with "/" as the second id (see "Keyboard").
-- The sticky tray's Generate, the board menu's and session bar's Summarise, and the quick bar's Cluster call one `openAiBar({ arm, context })` instead of running anything (see "Entry points").
+- `src/shortcuts.ts` registers the Ctrl/Cmd+K row, with "/" as the second id (see "Keyboard").
+- The sticky tray's Generate, the board menu's Summarise, the session bar's Summarise next to Vote results after Finish, and the quick bar's Cluster call the bar control's `open({ arm, context })` instead of running anything (see "Entry points").
 - `src/ui/quickbar.ts` passes the bar's rectangle to `placeBar` as an obstacle.
-- `toast()` in `src/ui/common.ts` gets an optional action button and a longer duration; it is text-only today. It also reads `--ai-top`.
-- `focus.ts` and the poll card read `--ai-top` (see "Placement").
-- The Share/board menu gets the admin-only "Set up AI" item when AI is off.
-- `docs/ai.md` and `CHANGELOG.md` get the bar, when it ships.
-- Multiplayer (TAB-141): the relay side is built (`server/ai/live.mjs`, `MSG_AI_RUNS`, `POST /api/ai/runs/:id/resolve`, `server/ai/policy.mjs` and `src/ai-policy.ts`). Still needed: in the relay, `target` and `private` on runs (see "Not in the relay yet" under "Protocol"); in the app, a reader for `MSG_AI_RUNS`, the target outline, label rows, other people's ghosts laid out with `nextFree`, their tray calling `resolve`, the avatar badge, the private switch and the "…first" toasts from `409 ai_run_resolved` and `resolvedBy`. Tests: snapshot then patches, a settled patch removes the preview, a 409 shows the toast and writes nothing, viewers get no tray, open mode reads "Someone", the label-row collision rule, and reduced motion.
+- `toast()` in `src/ui/common.ts` supports an optional action button and longer duration, and reads `--ai-top`; `focus.ts` and the poll card also read `--ai-top` (see "Placement").
+- The board menu shows admin-only **Set up AI** when the config has loaded with AI off; it links to `#/admin/ai`.
+- The status is recorded in `docs/ai.md` and `CHANGELOG.md`; the launch step left is removing `?aibar` after a smoke run with a real key.
+- Multiplayer (TAB-141): the relay and app live-run work is built behind the flag, including the in-flight target outline and other people's previews. This change adds the 1px dark halos to those outlines. Tests cover snapshots and patches, settled previews, resolve races, role-based trays, open mode, label-row collisions and reduced motion.
 - Tests (from the Linear spec): context selection, preview, accept and undo, permission gating, each error state, a mock provider (no network).
 
 ## Decisions beyond the brief
@@ -568,7 +567,7 @@ Questions 1, 2, 3, 5, 8 and 17 are closed by the decisions above; they stay here
 17. **Existing entry points.** Decided (Johan, 2026-10-09): the bar is the single entry point; the other items open it with their action armed (see "Entry points").
 18. **Dragging over content.** The bar can be dropped over the objects it is about to act on. It is draggable, so that is the person's choice, but the context button and the preview ghosts do not move to avoid it.
 19. **Proposals held on the relay (TAB-141).** Answered: `docs/ai.md` ("Live runs") now says the relay holds each run and its proposal in memory only, until it is settled or expires, and a restart forgets them.
-20. **Weak person colours.** Amber, teal and orange outlines are under 3:1 on the light canvases, and red labels are just under 4.5:1. Fix in `USER_COLORS` (which also helps cursors), or darken those colours only for AI outlines and labels?
+20. **Weak person colours.** Decided (Johan, 2026-10-09): a 1px dark halo on outlines, built in `ai-live.css` and `ghostMarkup`; cursors keep their colours. Red preview labels already darken toward `#18212B` to meet 4.5:1.
 21. **Others' previews and the viewport.** Should a new preview from someone else ever pan your view? Proposed: never. The avatar badge and the outline are enough, and a follow (`docs/focus-requests.md`) is one click away.
 22. **Leaving with a preview open.** Answered by the relay design: a ready run survives its owner disconnecting, and any editor can still accept or discard it until it expires after 10 minutes.
 23. **Private by default for personal keys?** Decided off by default. Revisit if people with personal keys turn it on almost every time.

@@ -108,7 +108,7 @@ export function previewBox(layout: Layout): Rect {
 }
 
 interface Paint { color: string; opacity: number }
-interface Paints { area: Paint; wash: Paint; edge: Paint; rule: Paint; arrow: Paint }
+interface Paints { area: Paint; wash: Paint; edge: Paint; rule: Paint; arrow: Paint; areaHalo: boolean }
 
 function paints(tone: GhostTone): Paints {
   // someone else's colour, written into attributes and a color-mix(): only a colour of the grammar (TAB-203)
@@ -120,6 +120,7 @@ function paints(tone: GhostTone): Paints {
     edge: c ? { color: mixed, opacity: 1 } : { color: CANVAS_INK, opacity: 0.55 },
     rule: { color: mixed, opacity: 1 },
     arrow: c ? { color: c, opacity: 0.45 } : { color: CANVAS_INK, opacity: 0.32 },
+    areaHalo: tone.color !== null,
   };
 }
 
@@ -154,7 +155,9 @@ function dashed(p: Paint, width: number, dash: [number, number]): string {
 
 function areaMarkup(area: Rect, p: Paints, px: GhostEnv['px']): string {
   const r = inflate(area, PREVIEW_PAD);
-  return `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" fill="${p.wash.color}" fill-opacity="${p.wash.opacity}" ${dashed(p.area, px(2), [px(6), px(4)])}/>`;
+  const box = `x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}"`;
+  const halo = p.areaHalo ? `<rect ${box} fill="none" stroke="${INK}" stroke-opacity="0.55" stroke-width="${n(px(2) + 2 * px(1))}"/>` : '';
+  return `${halo}<rect ${box} fill="${p.wash.color}" fill-opacity="${p.wash.opacity}" ${dashed(p.area, px(2), [px(6), px(4)])}/>`;
 }
 
 function stickyGhost(r: Rect, text: string, fill: string, p: Paints, env: GhostEnv): string {

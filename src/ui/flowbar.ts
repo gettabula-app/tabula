@@ -11,6 +11,7 @@ import { cooldownLabel } from '../focus-requests';
 import { focusFor } from './focus';
 import { mountPollCard, openStepPoll, pollBarControls, pollResultsBlock, refreshAnswered } from './polls';
 import { NOTHING_HIDDEN, escapeHidesBar, hidePoll, hideShown, hideSession, idleShown, loadIdleHidden, reopenSession, saveIdleHidden, type IdleHidden } from './idle-bar';
+import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 
 const MODE_LABEL: Record<StepMode, string> = {
   write: 'Write', 'private-write': 'Private writing', cluster: 'Group', vote: 'Dot vote', discuss: 'Discuss', poll: 'Poll',
@@ -60,6 +61,10 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           h('span', { class: 'results-dot', 'aria-hidden': 'true' }),
           h('div', null, h('div', { class: 'flow-title' }, 'Vote results'), h('div', { class: 'muted small' }, `${resultsDots} ${resultsDots === 1 ? 'dot' : 'dots'} on the board`)),
           h('button', { class: 'btn ghost', onclick: () => copyResults(app, f.results!) }, 'Copy results'),
+          !ro && aiBarFor(app) ? h('button', {
+            class: 'btn ghost', 'data-tip': 'Summarise the board with AI',
+            onclick: () => aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }),
+          }, glyph('spark', 16), 'Summarise') : null,
           h('button', { class: 'btn ghost', disabled: ro, onclick: () => { app.flow.clearResults(); toast('Dots cleared'); } }, 'Clear dots'))
         : null;
       const poll = pollResults ? pollResultsBlock(app, pollResults, () => update((cur) => hidePoll(cur, pollResults.id))) : null;
@@ -117,6 +122,9 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     );
 
   };
+
+  const offAiBar = onAiBarChange(app, (why) => { if (why === 'mount') render(); });
+  app.onDestroy(offAiBar);
 
   // Between flow changes only the timer readout updates, so focus and hover
   // on the bar's buttons are never disturbed.

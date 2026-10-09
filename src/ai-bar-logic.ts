@@ -589,6 +589,11 @@ export const ASK_ADMIN = 'Ask a workspace admin.';
 
 export const isAdminRole = (role: string | null | undefined): boolean => role === 'owner' || role === 'admin';
 
+/** An admin can open workspace AI settings from a board only after the disabled config has loaded. */
+export function showSetUpAi(o: { flag: boolean; config: Partial<Pick<AiConfig, 'enabled' | 'hasSecret'>> | null | undefined; role: string | null | undefined }): boolean {
+  return o.flag && o.config?.enabled === false && isAdminRole(o.role);
+}
+
 /** "40 s", and "3 min" once a wait is longer than a minute and a half. */
 export const formatWait = (s: number): string => (s <= 90 ? `${s} s` : `${Math.ceil(s / 60)} min`);
 const waitWords = (s: number): string => (s <= 90 ? plural(s, 'second', 'seconds') : plural(Math.ceil(s / 60), 'minute', 'minutes'));

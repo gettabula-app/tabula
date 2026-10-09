@@ -6,7 +6,7 @@ import {
   contextAfterSelection, contextIds, contextLabel, contextMenu, createSseParser, disclosure, dockBottom, dragPos, errorPlain, errorView,
   estimateFor, estimateTokens, formatExact, formatPos, formatTokens, formatWait, isAdminRole, modelChipText, modelShort, nearestIds,
   parseAiEvent, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi,
-  runTarget, runTip, runningText, sendsText, serializeHistory, settledMessage, stepHistory, thisRunText, toggleArmed, waitOf,
+  runTarget, runTip, runningText, sendsText, serializeHistory, settledMessage, showSetUpAi, stepHistory, thisRunText, toggleArmed, waitOf,
   type AiOutcome, type Facts, type SseMessage,
 } from '../src/ai-bar-logic';
 import { parseRequest } from '../server/ai/run.mjs';
@@ -687,6 +687,19 @@ describe('errors', () => {
     expect(isAdminRole('guest')).toBe(false);
     expect(isAdminRole(null)).toBe(false);
     expect(isAdminRole(undefined)).toBe(false);
+  });
+});
+
+describe('Set up AI menu item', () => {
+  it('appears for an owner or admin after AI is known to be off, behind the flag', () => {
+    expect(showSetUpAi({ flag: true, config: { enabled: false, hasSecret: undefined }, role: 'owner' })).toBe(true);
+    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'admin' })).toBe(true);
+    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'member' })).toBe(false);
+    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'viewer' })).toBe(false);
+    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'commenter' })).toBe(false);
+    expect(showSetUpAi({ flag: true, config: { enabled: true }, role: 'admin' })).toBe(false);
+    expect(showSetUpAi({ flag: true, config: null, role: 'admin' })).toBe(false);
+    expect(showSetUpAi({ flag: false, config: { enabled: false }, role: 'admin' })).toBe(false);
   });
 });
 
