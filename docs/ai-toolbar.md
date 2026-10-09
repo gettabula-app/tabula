@@ -10,7 +10,7 @@ Read `docs/ai.md` first. This document only covers the bar: how it looks, where 
 
 - **A dark tray, like the quick bar and the session bar.** Same tokens, same radius, same shadow. It belongs to the board chrome, not to the app pages.
 - **Docked bottom centre, expanded the first time**, collapsible to a 40px spark button, draggable on desktop. Collapse and position are remembered per person in this browser.
-- **Context first.** A pill on the left says what the AI will work on (the selection, the visible area, the whole board, or nothing but the prompt). A line under the bar says what will be sent to the provider and which key pays.
+- **Context first.** A context button on the left says what the AI will work on (the selection, the visible area, the whole board, or nothing but the prompt). A line under the bar says what will be sent to the provider and which key pays.
 - **Three actions in v1**, as chips: Summarise, Cluster, Generate ideas. A chip arms its action and shows the cost; Run or Enter starts it. A free-text prompt runs Generate. The other chips in the Linear spec are not built, so they are not shown (see "Chips").
 - **The single entry point.** The Generate, Summarise and Cluster items elsewhere in the app open this bar with their action armed (see "Entry points").
 - **Nothing touches the board until the person says so.** A run produces a preview on the canvas (ghosts), and the bar offers Discard, Retry and Add to board. Add is one undo step.
@@ -45,10 +45,10 @@ One tray, three rows. Row 2 comes first in the document and in the tab order; CS
 | Part | Spec |
 | --- | --- |
 | Tray | `.tray`: `background: var(--tray)`, `color: var(--tray-text)`, `border-radius: var(--radius)`, `box-shadow: var(--shadow)`, plus the 1px `--tray-line` outline the other trays get on non-default themes. `overflow: hidden` so the progress rule and corners clip. Width `min(640px, 100%)` of the dock. Padding 0; rows own their padding (8px). |
-| Row 1, chips | Horizontally scrollable, no scrollbar. Each chip is the app's `.chip`: 28px high, pill, `color-mix(in srgb, var(--tray-text) 6%, transparent)` fill, 12.5px/500. Gap 6px. Padding 8px 8px 0. |
+| Row 1, chips | Horizontally scrollable, no scrollbar. Each chip is the app's `.chip`: 28px high, square (radius 0, as every control since TAB-48), `color-mix(in srgb, var(--tray-text) 6%, transparent)` fill, 12.5px/500. Gap 6px. Padding 8px 8px 0. |
 | Row 2 | 8px padding, 8px gaps, min height 52px. Controls 36px high. |
 | Grip | 20px wide, six-dot glyph in `--tray-muted`, `cursor: grab`. Desktop only. |
-| Context pill | 36px, 1px `--tray-line` border, 8px radius, 12.5px/600, label plus a 14px chevron. Opens a menu. |
+| Context button | 36px, 1px `--tray-line` border, radius 0, 12.5px/600, label plus a 14px chevron. Opens a menu. |
 | Prompt | The app's `.input` look: 36px, 8px radius, 1px `--tray-line` border, 6% `--tray-text` fill, 13px. Focus: border `var(--signal)`. Placeholder `--tray-muted`. A 32px history icon button sits inside its right end. |
 | Model chip | Text button, 12px/500, `--tray-muted`, hover `--tray-hover` with `--tray-text`. Opens a small popover (see "Cost and model"). |
 | Run | `.btn.primary`: `var(--signal)` fill, `var(--on-signal)` text, 36px, 600. |
@@ -56,7 +56,7 @@ One tray, three rows. Row 2 comes first in the document and in the tab order; CS
 | Disclosure | Row 3. 11px/16px, `--tray-muted`, 1px `--tray-line` rule above, padding 6px 12px 8px. Two segments separated by a centred dot: what is sent, then who pays. |
 | Progress rule | 2px, along the tray's bottom edge, `var(--signal)`, only while running. |
 
-Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. The chips keep the app's pill shape and the popovers keep the app's square shape, so each looks like its neighbours.
+Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. Since the TAB-48 Swiss pass every control is square (radius 0: chips, buttons, the bar itself and its popovers) and trays have a 1px `--tray-line` hairline instead of a shadow; only avatars, colour swatches and dots stay round. The bar follows that, so it looks like its neighbours.
 
 ### Chips
 
@@ -94,7 +94,7 @@ Spending tokens or credits always takes a second, deliberate step, and the estim
 
 ### Context
 
-The pill says what the run will read.
+The context button says what the run will read.
 
 | Label | Meaning | Count shown in the menu |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ The pill says what the run will read.
 
 Defaults: with a selection, the selection; with nothing selected, **Visible area**. Selecting something switches the context to the selection; clearing the selection switches a "Selection" context to Visible area. A choice the person made in the menu sticks until the selection changes. "Selection" is disabled in the menu when nothing is selected ("Nothing selected").
 
-`docs/ai.md` also lets a feature run on a frame, and Summarise has a `summary` or `retro` type. Neither is in the pill. A frame can be selected like any object, so it falls under "Selection" (its stickies). The `retro` type stays in the session bar, after Finish. See open question 6.
+`docs/ai.md` also lets a feature run on a frame, and Summarise has a `summary` or `retro` type. Neither is in the context button. A frame can be selected like any object, so it falls under "Selection" (its stickies). The `retro` type stays in the session bar, after Finish. See open question 6.
 
 Counts are stickies in the mock because the v1 features read stickies. When the selection holds other objects the label says "3 items".
 
@@ -166,12 +166,12 @@ These items are hidden whenever the bar is (viewers, commenters, AI off). They n
 
 | State | Row 1 chips | Row 2 | Row 3 | Focus |
 | --- | --- | --- | --- | --- |
-| **Idle** | Live | Context pill, prompt (+ history), model chip, Run, collapse | Sends… · key | Prompt, when opened by the shortcut or the button |
-| **Armed** (idle with a chip selected) | The armed chip solid | Context pill, prompt ("Optional instruction…"), model chip naming the action and its estimate, Run enabled, collapse | Sends… · key | Prompt |
+| **Idle** | Live | Context button, prompt (+ history), model chip, Run, collapse | Sends… · key | Prompt, when opened by the shortcut or the button |
+| **Armed** (idle with a chip selected) | The armed chip solid | Context button, prompt ("Optional instruction…"), model chip naming the action and its estimate, Run enabled, collapse | Sends… · key | Prompt |
 | **Collapsed** | – | A 40px tray button with a spark glyph | – | The button, after collapsing |
-| **Running** | Dimmed to 40%, not clickable | Status line replaces the prompt: "Summarising 42 stickies…". Context pill dimmed (on phones it is hidden to give the status room). Model chip stays. **Stop** replaces Run. Collapse is disabled. | Sends… · "Esc stops". Progress rule along the bottom edge. | Stays on Stop |
-| **Preview** | Dimmed | Summary line ("6 stickies in a new frame “Summary”"), then **Discard** (ghost), **Retry**, **Add to board** (primary). No pill, no model chip. Collapse is disabled. | "Nothing is on the board until you add it · Enter adds, Esc discards" | **Add to board** |
-| **Error** | Live | Icon and message in the tray red, then the action that helps, then a dismiss ✕. No pill, no model chip. | Sends… · key | Stays where it was; the message is announced |
+| **Running** | Dimmed to 40%, not clickable | Status line replaces the prompt: "Summarising 42 stickies…". Context button dimmed (on phones it is hidden to give the status room). Model chip stays. **Stop** replaces Run. Collapse is disabled. | Sends… · "Esc stops". Progress rule along the bottom edge. | Stays on Stop |
+| **Preview** | Dimmed | Summary line ("6 stickies in a new frame “Summary”"), then **Discard** (ghost), **Retry**, **Add to board** (primary). No context button, no model chip. Collapse is disabled. | "Nothing is on the board until you add it · Enter adds, Esc discards" | **Add to board** |
+| **Error** | Live | Icon and message in the tray red, then the action that helps, then a dismiss ✕. No context button, no model chip. | Sends… · key | Stays where it was; the message is announced |
 
 The chips stay in place (dimmed) while running and previewing so the bar does not change height as it changes state.
 
@@ -264,7 +264,7 @@ Ctrl+K is a browser shortcut on Windows and Linux (Chrome and Firefox move to th
 
 Document order is the tab order, so row 2 comes before the chips even though the chips are drawn above it (CSS `order`):
 
-1. Context pill
+1. Context button
 2. Prompt
 3. History button
 4. Model chip
@@ -286,7 +286,7 @@ Focus moves: expand focuses the prompt; collapse focuses the spark button; a pre
 | Bar | `<section aria-label="Ask AI">` |
 | Spark button | `aria-label="Ask AI"`, `aria-expanded`, `aria-controls` (the bar) |
 | Chip row | `role="toolbar"`, `aria-label="AI quick actions"`; chips are toggle buttons (`aria-pressed`, true when armed) with roving `tabindex`; disabled chips use `aria-disabled="true"` and the tooltip gives the reason through `aria-describedby` |
-| Context pill | `aria-haspopup="menu"`, `aria-expanded`; the menu is `role="menu"` with `role="menuitemradio"` items and `aria-checked` |
+| Context button | `aria-haspopup="menu"`, `aria-expanded`; the menu is `role="menu"` with `role="menuitemradio"` items and `aria-checked` |
 | Prompt | `<input type="text" aria-label="Prompt">` (the placeholder carries the hint); `enterkeyhint="send"` |
 | History | Button with `aria-label="Prompt history"`, `aria-haspopup="listbox"`; list is `role="listbox"` with `role="option"` |
 | Model chip | `aria-haspopup="dialog"`, `aria-label` repeats the estimate then "Model and cost details"; popover is `role="dialog"` with `aria-label="Model and cost"` |
@@ -338,10 +338,10 @@ The brief sets the phone layout at 600px and below. The mock applies it up to **
 - Full width with 12px side margins, capped at 640px and centred above 640px.
 - Bottom 64px (above the zoom tray row), or 8px above the session bar when it shows. The session bar itself is at `bottom: 60px` at these widths.
 - Chips: one scrolling row.
-- Row 2: context pill, prompt (with history), Run, collapse (a down chevron). The model chip moves into the disclosure line as an underlined button. No grip, no drag.
+- Row 2: context button, prompt (with history), Run, collapse (a down chevron). The model chip moves into the disclosure line as an underlined button. No grip, no drag.
 - Disclosure: two lines. The first segment takes the first line; key source and the model chip share the second.
 - Preview and error: the message takes the full row beside the collapse chevron; the buttons go on their own row below, sharing the width (Discard, Retry, Add to board each flex to fit). An error with only a dismiss keeps it on the message row.
-- Running: the context pill is hidden so "Summarising 42 stickies…" is not truncated.
+- Running: the context button is hidden so "Summarising 42 stickies…" is not truncated.
 - The selection quick bar sits above the AI bar in z-order; nothing the bar does moves it.
 - Tap targets are the app's 36px for buttons and 28px for chips. The chips are below the usual 44px guideline; they are separated by 6px and the row scrolls, but this should be checked on a device (open question 13).
 - Keep the bar above the on-screen keyboard: use `visualViewport` so the dock follows the keyboard. Not in the mock.
@@ -521,7 +521,7 @@ For the engineer. The bar is new UI plus a few small changes to existing code.
 1. **Only the three v1 chips, by default.** Mind map, Rewrite and Translate are treated like Table and Slides: not built, so not shown. A reviewer switch shows the planned eight.
 2. **A fourth context, "Prompt only"**, so Generate can run with no board content sent, and the disclosure line can say so.
 3. **A typed prompt runs Generate** when no chip is armed. Run is disabled while nothing would run.
-4. **Chips and the context pill are dimmed (and the chips inert) while running and previewing**, so the height does not change and nothing can start a second run.
+4. **Chips and the context button are dimmed (and the chips inert) while running and previewing**, so the height does not change and nothing can start a second run.
 5. **Collapse is disabled while running and previewing**, so a run or a preview is never orphaned behind a button.
 6. **"Edit request" on a refusal**, and a **dismiss ✕ on every error**, so the person can get back to the prompt.
 7. **"Uses AI credits"** for the platform key source (`docs/ai.md` says only "the platform with credits").
@@ -566,7 +566,7 @@ Questions 1, 2, 3, 5, 8 and 17 are closed by the decisions above; they stay here
 15. **Concurrent edits during a preview.** The spec validates at Add and fails with "The board changed while you were looking. Run it again." A friendlier option is to re-validate and drop the invalid parts, but a partial add contradicts `docs/ai.md` ("An invalid proposal is an error, never a partial edit").
 16. **The model chip is a button with a popover** because the model is not the person's choice (admins pick it). If per-run model choice is wanted later, the same chip becomes a menu.
 17. **Existing entry points.** Decided (Johan, 2026-10-09): the bar is the single entry point; the other items open it with their action armed (see "Entry points").
-18. **Dragging over content.** The bar can be dropped over the objects it is about to act on. It is draggable, so that is the person's choice, but the context pill and the preview ghosts do not move to avoid it.
+18. **Dragging over content.** The bar can be dropped over the objects it is about to act on. It is draggable, so that is the person's choice, but the context button and the preview ghosts do not move to avoid it.
 19. **Proposals held on the relay (TAB-141).** Answered: `docs/ai.md` ("Live runs") now says the relay holds each run and its proposal in memory only, until it is settled or expires, and a restart forgets them.
 20. **Weak person colours.** Amber, teal and orange outlines are under 3:1 on the light canvases, and red labels are just under 4.5:1. Fix in `USER_COLORS` (which also helps cursors), or darken those colours only for AI outlines and labels?
 21. **Others' previews and the viewport.** Should a new preview from someone else ever pan your view? Proposed: never. The avatar badge and the outline are enough, and a follow (`docs/focus-requests.md`) is one click away.
