@@ -153,7 +153,8 @@ async function prepare() {
 describe('the relay restoring a workspace', () => {
   it('shuts everything down for the swap, leaves with 75, and starts again on the restored data', async () => {
     const s = await prepare();
-    const first = await launch(s.dir, { ...backupEnv(h!.fake.url), TABULA_TEST_RESTORE_EXIT_DELAY_MS: '2500', ROOM_UNLOAD_MS: '300' });
+    // the disk is given, never read: how long the old data is kept must not depend on the machine the test runs on
+    const first = await launch(s.dir, { ...backupEnv(h!.fake.url), TABULA_TEST_RESTORE_EXIT_DELAY_MS: '2500', ROOM_UNLOAD_MS: '300', TABULA_TEST_RESTORE_DISK_USED: '0.4' });
     expect(first.out()).toContain('(backups on)');
     const c = client(first, s.dir);
     const cookie = await c.signIn('owner@example.com');
@@ -227,6 +228,30 @@ describe('the relay restoring a workspace', () => {
       expect(JSON.stringify([after.body, list2.body])).not.toContain(secret);
     }
   }, 60_000);
+
+  it('keeps the old data only until the next backup when the disk it is given is nearly full, and for 7 days when it is not', async () => {
+    const s = await prepare();
+    const full = await launch(s.dir, { ...backupEnv(h!.fake.url), TABULA_TEST_RESTORE_DISK_USED: '0.95' });
+    const c = client(full, s.dir);
+    const cookie = await c.signIn('owner@example.com');
+    const preview = await c.api(cookie, 'GET', `/api/admin/backups/${s.manifest}`);
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({ keepOldFor: 'until the next successful backup (at least 24 h)', space: { enough: true } });
+    expect(preview.body.reason).toContain('95%');
+    const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: CONFIRM });
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ ok: true, restarting: true, keepOldFor: 'until the next successful backup (at least 24 h)' });
+    expect(await full.exited).toBe(75);
+
+    const roomy = await launch(s.dir, { ...backupEnv(h!.fake.url), TABULA_TEST_RESTORE_DISK_USED: '0.2' });
+    const c2 = client(roomy, s.dir);
+    const cookie2 = await c2.signIn('owner@example.com');
+    const list = await c2.api(cookie2, 'GET', '/api/admin/backups');
+    expect(list.status).toBe(200);
+    const again = await c2.api(cookie2, 'GET', `/api/admin/backups/${s.manifest}`);
+    expect(again.body).toMatchObject({ keepOldFor: '7 days' });
+    expect(again.body.reason).toContain('7 days');
+  });
 
   it('does not accept a restore that is not confirmed, and the server keeps running', async () => {
     const s = await prepare();

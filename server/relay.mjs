@@ -169,6 +169,14 @@ const openRoomState = (name) => {
 };
 const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
 
+// Not documented: the relay tests give the restore engine a disk that is this full (0 to 1) instead of the real one, so the
+// retention they check (7 days, or until the next backup when the volume would pass 80%) does not depend on the machine.
+function testDisk(value) {
+  const used = Number(value);
+  if (value === undefined || value === '' || !Number.isFinite(used) || used < 0 || used > 1) return {};
+  return { statfs: async () => ({ bsize: 4096, blocks: 1_000_000, bavail: Math.round(1_000_000 * (1 - used)) }) };
+}
+
 // Restore (docs/backups.md, Restoring): null without backups or accounts. The hooks are what only the relay can do.
 const restore = createRestore({
   backup,
@@ -180,6 +188,7 @@ const restore = createRestore({
   exit: (code) => process.exit(code),
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
+  ...testDisk(process.env.TABULA_TEST_RESTORE_DISK_USED),
 });
 // Images on a board (docs/images.md): the files are shared by both modes; the index of who may read which is the directory
 // database with accounts and a small JSON file without.
