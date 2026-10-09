@@ -538,11 +538,14 @@ function parseBy(v: unknown): { id: string | null; name: string | null } | null 
 }
 
 /** POST /api/ai/runs/:id/resolve. Never throws. The first call wins; an accept answers with the proposal to write. */
-export async function resolveAiRun(fetchFn: typeof fetch, runId: string, action: ResolveAction, signal?: AbortSignal): Promise<ResolveOutcome> {
+/** `name` is the person's display name: open mode tells the runner who settled their run by it (accounts mode ignores it). */
+export async function resolveAiRun(fetchFn: typeof fetch, runId: string, action: ResolveAction, signal?: AbortSignal, name?: string | null): Promise<ResolveOutcome> {
   let res: Response;
+  const clean = [...(name ?? '').replace(/\s+/g, ' ').trim()].slice(0, NAME_MAX).join('').trim();
   try {
     res = await fetchFn(`/api/ai/runs/${encodeURIComponent(runId)}/resolve`, {
-      method: 'POST', credentials: 'same-origin', signal, headers: { ...POST_HEADERS, accept: 'application/json' }, body: JSON.stringify({ action }),
+      method: 'POST', credentials: 'same-origin', signal, headers: { ...POST_HEADERS, accept: 'application/json' },
+      body: JSON.stringify(clean ? { action, presence: { name: clean } } : { action }),
     });
   } catch {
     return { kind: 'network' };

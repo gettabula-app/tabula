@@ -31,11 +31,12 @@ export interface Overlay {
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
   dropTarget: Id | null;        // frame highlighted while dragging into it
+  ai: string;                   // world-space markup of the AI previews on the board (ghosts), above the objects and below selections
 }
 
 export const emptyOverlay = (): Overlay => ({
   selection: [], hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
-  guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null,
+  guides: [], preview: '', remote: [], votes: new Map(), dropTarget: null, ai: '',
 });
 
 const GUIDE = 'var(--guide, #D6247F)';
@@ -430,7 +431,7 @@ export class Renderer {
     const px = (v: number) => v / z;
     const get = (id: string) => this.store.get(id);
     const ov = this.overlay;
-    let out = '';
+    let out = ov.ai;
 
     // remote selections
     for (const r of ov.remote) {

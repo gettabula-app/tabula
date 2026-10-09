@@ -1,6 +1,8 @@
 import './ai-bar.css';
 import type { BoardApp } from '../app';
 import { applyProposal, type AiProposal } from '../ai-apply';
+import { settledNotice } from '../ai-live-logic';
+import type { SettledRun } from '../ai-runs';
 import {
   CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON,
   addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos, contextAfterSelection, contextLabel, contextMenu,
@@ -15,6 +17,7 @@ import { boxBounds } from '../geometry';
 import { isBox } from '../types';
 import { openAiKeyDialog } from './ai';
 import { modelLabel } from './ai-logic';
+import { avoidForRun, barMoved, dropRun, linkBar, setOwnRun, setStarting } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
 
@@ -57,7 +60,7 @@ const LOCAL_ICONS = {
   wifiOff: '<path d="M3 3l18 18"/><path d="M2.5 9a14 14 0 015-2.9M10 5.2a14 14 0 0111.5 3.8M5.5 12.5a9.5 9.5 0 014.2-2.4M14 10.1a9.5 9.5 0 014.5 2.4M8.6 15.8a5 5 0 013.6-1.2"/><circle cx="12" cy="19" r=".9" fill="currentColor"/>',
 } as const;
 
-function glyph(name: keyof typeof LOCAL_ICONS | keyof typeof ICONS, size = 18): HTMLSpanElement {
+export function glyph(name: keyof typeof LOCAL_ICONS | keyof typeof ICONS, size = 18): HTMLSpanElement {
   if (!(name in LOCAL_ICONS)) return icon(name as keyof typeof ICONS, size);
   const s = document.createElement('span');
   s.className = 'ico';
@@ -116,12 +119,27 @@ function gather(app: BoardApp): Gathered {
 export interface AiBarControl {
   /** Expands the bar, optionally sets its context and arms an action, and focuses the prompt. Starts nothing. */
   open(opts?: { arm?: AiFeature; context?: AiContext }): void;
+  /** The bar's box, or its button's when collapsed, in viewport pixels; null while it is not on screen. */
+  rect(): DOMRect | null;
 }
 
 const controls = new WeakMap<BoardApp, AiBarControl>();
+const watchers = new WeakMap<BoardApp, Set<(why: 'mount' | 'layout') => void>>();
 let shown = 0;
 
 export const aiBarFor = (app: BoardApp): AiBarControl | null => controls.get(app) ?? null;
+
+/** The bar came or went ('mount': the entry points show or hide), or changed size or place ('layout': the quick bar makes way). */
+export function onAiBarChange(app: BoardApp, fn: (why: 'mount' | 'layout') => void): () => void {
+  let set = watchers.get(app);
+  if (!set) watchers.set(app, (set = new Set()));
+  set.add(fn);
+  return () => set.delete(fn);
+}
+
+const announce = (app: BoardApp, why: 'mount' | 'layout') => {
+  for (const fn of watchers.get(app) ?? []) fn(why);
+};
 /** Whether a bar is on the board right now: the shortcuts dialog lists "Ask AI" only for people who have it. */
 export const aiBarShown = (): boolean => shown > 0;
 
@@ -608,7 +626,15 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     st.ui = 'running';
     paint();
     focusPrimary();
-    const out = await runAi(fetchFn, req.body, { signal: ctl.signal });
+    // the live layer draws this run's ghosts from the relay's patches; it needs to know which run is the bar's own
+    setStarting(app, { name: app.user.name, color: app.user.color });
+    const onRunId = (id: string) => {
+      if (destroyed || st.run?.token !== token) return;
+      setOwnRun(app, id);
+      setStarting(app, null);
+    };
+    const out = await runAi(fetchFn, req.body, { signal: ctl.signal, onRunId });
+    setStarting(app, null);
     if (destroyed || st.run?.token !== token) return;
     st.run = null;
     if (!out.ok) {
@@ -616,6 +642,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       return;
     }
     if (!out.runId) return fail('internal');
+    setOwnRun(app, out.runId);
     st.preview = { runId: out.runId, proposal: out.proposal };
     st.ui = 'preview';
     paint();
@@ -667,7 +694,10 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   function discard() {
     const p = st.preview;
     if (st.ui !== 'preview' || st.busy) return;
-    if (p) void resolveAiRun(fetchFn, p.runId, 'discard', resolveSignal());
+    if (p) {
+      void resolveAiRun(fetchFn, p.runId, 'discard', resolveSignal(), app.user.name);
+      dropRun(app, p.runId);
+    }
     st.preview = null;
     st.ui = 'idle';
     paint();
@@ -679,7 +709,8 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const p = st.preview;
     const req = st.req;
     if (st.ui !== 'preview' || st.busy || !p || !req) return;
-    void resolveAiRun(fetchFn, p.runId, 'discard', resolveSignal());
+    void resolveAiRun(fetchFn, p.runId, 'discard', resolveSignal(), app.user.name);
+    dropRun(app, p.runId);
     void begin(req);
   }
 
@@ -689,7 +720,9 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     if (st.ui !== 'preview' || !p || st.busy) return;
     st.busy = true;
     paint();
-    const res = await resolveAiRun(fetchFn, p.runId, 'accept', resolveSignal());
+    // taken before the answer: the stickies land where the ghosts are, whatever the board does meanwhile
+    const avoid = avoidForRun(app, p.runId);
+    const res = await resolveAiRun(fetchFn, p.runId, 'accept', resolveSignal(), app.user.name);
     st.busy = false;
     if (destroyed || st.preview !== p) return;
     const leave = () => {
@@ -698,9 +731,10 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     };
     switch (res.kind) {
       case 'ok': {
+        dropRun(app, p.runId);
         const proposal = res.proposal;
         if (!proposal) return fail('internal');
-        const applied = applyProposal(app, proposal);
+        const applied = applyProposal(app, proposal, avoid);
         if (!applied.ok) return fail(applied.reason === 'read_only' ? 'read_only' : 'board_changed');
         leave();
         st.prompt = '';
@@ -714,11 +748,13 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
         return;
       }
       case 'settled':
+        dropRun(app, p.runId);
         leave();
         paint();
         toast(settledMessage(res.action, res.by, account()?.user.id ?? null));
         return;
       case 'gone':
+        dropRun(app, p.runId);
         leave();
         paint();
         toast('That preview is gone. Run it again.');
@@ -737,6 +773,19 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
         paint();
         return toast('Something went wrong. Try again.');
     }
+  }
+
+  /** The relay says a run came off the board. When it is the one this preview came from, someone else settled it. */
+  function settledElsewhere(run: SettledRun) {
+    const p = st.preview;
+    // during the bar's own add, the answer to its click tells the story
+    if (destroyed || st.ui !== 'preview' || !p || p.runId !== run.id || st.busy) return;
+    const hadFocus = dock.contains(document.activeElement);
+    st.preview = null;
+    st.ui = 'idle';
+    paint();
+    if (hadFocus) focusPrompt();
+    toast(settledNotice(run, account()?.user.id ?? null));
   }
 
   // ------------------------------------------------------------ popovers
@@ -980,6 +1029,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
    * Stacks the bar above whatever is docked below it (the session bar, a poll card) and publishes `--ai-bottom` on the chrome and
    * `--ai-top` on the page: how far the bar reaches up from the bottom, so the toast and the focus cards stay above it.
    */
+  let boxSig = '';
   function restack() {
     if (destroyed) return;
     const cr = chrome.getBoundingClientRect();
@@ -993,6 +1043,14 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     // a bar dragged elsewhere does not stack: it stays where it was put
     const top = placed ? 0 : aiTop(cr.bottom, visibleEl().getBoundingClientRect().top);
     document.documentElement.style.setProperty('--ai-top', `${top}px`);
+    // the quick bar and the label rows on the board make way for the bar
+    const box = visibleEl().getBoundingClientRect();
+    const sig = `${Math.round(box.left)},${Math.round(box.top)},${Math.round(box.width)},${Math.round(box.height)}`;
+    if (sig !== boxSig) {
+      boxSig = sig;
+      barMoved(app);
+      announce(app, 'layout');
+    }
   }
   let restackRaf = 0;
   function restackLater() {
@@ -1103,8 +1161,16 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       paint();
       setTimeout(() => focusPrimary(), 0);
     },
+    rect() {
+      const el = visibleEl();
+      if (destroyed || el.hidden) return null;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 ? r : null;
+    },
   };
   controls.set(app, control);
+  linkBar(app, { rect: () => control.rect(), settled: settledElsewhere });
+  announce(app, 'mount');
 
   refresh();
 
@@ -1118,7 +1184,10 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       destroyed = true;
       st.run?.ctl.abort();
       // a preview nobody settles stays for the others to add or discard; losing the right to edit takes it with us
-      if (cancel && st.preview) void resolveAiRun(fetchFn, st.preview.runId, 'discard', resolveSignal());
+      if (cancel && st.preview) {
+        void resolveAiRun(fetchFn, st.preview.runId, 'discard', resolveSignal(), app.user.name);
+        dropRun(app, st.preview.runId);
+      }
       stopCountdown();
       clearTimeout(openTimer);
       cancelAnimationFrame(raf);
@@ -1133,8 +1202,12 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       dock.remove();
       chrome.style.removeProperty('--ai-bottom');
       document.documentElement.style.removeProperty('--ai-top');
-      if (controls.get(app) === control) controls.delete(app);
+      if (controls.get(app) === control) {
+        controls.delete(app);
+        linkBar(app, null);
+      }
       shown--;
+      announce(app, 'mount');
     },
   };
 }

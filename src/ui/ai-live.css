@@ -1,0 +1,38 @@
+/* The AI runs of the people on the board (docs/ai-toolbar.md, "Multiplayer (TAB-141)"): label rows on previews, outlines around what
+   someone's run is working on, and the spark on a runner's avatar. A person's colour is data: it comes in inline as --c, with the text
+   colour that reads on it as --ink. Everything else is a theme variable. */
+
+/* inside the board surface, under the chrome and the remote cursors; only the buttons take the pointer */
+.ailive { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+/* the label row: a label on the preview's top-left corner, and for editors the Discard and Accept tray beside it */
+.ailive-row { position: absolute; left: 0; top: 0; height: 24px; display: flex; align-items: center; gap: 4px; will-change: transform; }
+.ailive-row[hidden], .ailive-run[hidden] { display: none; }
+.ailive-label { flex: none; height: 20px; padding: 0 8px; background: var(--c); color: var(--ink); font: 600 11px/20px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.ailive-row.mine .ailive-label { background: var(--signal); color: var(--on-signal); }
+.ailive-tray { display: flex; align-items: center; gap: 2px; height: 24px; padding: 0 2px; pointer-events: auto; }
+.ailive-btn { height: 20px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--tray-text); font: 600 11.5px/20px var(--ui); white-space: nowrap; }
+.ailive-btn:hover { background: var(--tray-hover); }
+.ailive-btn.primary { background: var(--signal); color: var(--on-signal); }
+.ailive-btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }
+.ailive-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.ailive-btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+
+/* a run in flight: the person's colour around its target, pulsing slowly; the label does not pulse */
+.ailive-run { position: absolute; left: 0; top: 0; will-change: transform; }
+.ailive-ring {
+  position: absolute; inset: 0; border: 2px solid var(--c); border-radius: 6px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent); animation: ailive-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ailive-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ailive-ring { animation: none; opacity: 1; border-style: dashed; box-shadow: none; } }
+.ailive-run .ailive-label { position: absolute; left: -2px; bottom: 100%; margin-bottom: 4px; background: var(--lc); letter-spacing: normal; text-transform: none; }
+
+/* the spark on the avatar of someone who has a run or a preview */
+.avatar.ai-busy { position: relative; }
+.avatar-ai { position: absolute; right: -6px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; background: var(--signal); color: var(--on-signal); box-shadow: 0 0 0 2px var(--tray); }
+.avatar-ai .ico { display: grid; place-items: center; }
+
+/* the Generate button on the sticky tray and the empty-board hint; hidden while there is no bar */
+.ailive-generate[hidden] { display: none; }
+.sticky-tray .ailive-generate { width: 100%; justify-content: flex-start; gap: 8px; }

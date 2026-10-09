@@ -12,6 +12,7 @@ import type { mountProps } from './props';
 import { clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
 import { connectorGeom } from '../geometry';
 import { reactionPicker } from './stickers';
+import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
 
 type IconName = Parameters<typeof icon>[0];
@@ -56,9 +57,17 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
     const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, connectorBoxes());
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, undefined, [...connectorBoxes(), ...aiBarBox()]);
     bar.style.transform = `translate(${p.x}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
     below = p.below;
+  }
+
+  /** The AI bar (or its button) is one more thing the quick bar keeps off: it flips above the selection instead of landing under it. */
+  function aiBarBox(): Box[] {
+    const r = aiBarFor(app)?.rect();
+    if (!r) return [];
+    const origin = parent.getBoundingClientRect();
+    return [{ x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height }];
   }
 
   /** Screen boxes around each segment of the connectors attached to the selection, with room for arrowheads. */
@@ -223,6 +232,13 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         );
       }));
     }
+    // opens the AI bar with Cluster armed on these stickies; it runs nothing
+    if (aiBarFor(app) && sel.filter(isSticky).length >= 2) {
+      arrange.push(h('button', {
+        class: 'icon-btn', type: 'button', 'aria-label': 'Cluster with AI', 'data-tip': 'Cluster with AI',
+        onclick: () => aiBarFor(app)?.open({ arm: 'cluster', context: 'selection' }),
+      }, glyph('spark', 18)));
+    }
     groups.push(arrange);
     groups.push([menu('stickers', 'React with a sticker', () => reactionPicker(app))]);
 
@@ -257,6 +273,15 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   app.on('tool', sync);
   app.on('readonly', sync);
   props.onToggle(build);
+  // the AI bar mounting adds or takes away Cluster; its moving makes the quick bar find its place again
+  onAiBarChange(app, (why) => {
+    if (why === 'layout') {
+      if (shown) position();
+      return;
+    }
+    build();
+    sync();
+  });
   // the panel's top moves when it opens, closes or is rebuilt at another height, and the bar keeps clear of it
   new ResizeObserver(() => { if (shown) position(); }).observe(props.el);
 

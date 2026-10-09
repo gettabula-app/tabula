@@ -55,6 +55,13 @@ describe('resolving a run', () => {
     expect([res.status, res.body]).toEqual([200, { id, action: 'discard', feature: 'generate' }]);
   });
 
+  it('takes the name of whoever settles a run from the account, never from the request', async () => {
+    const { w, editor, resolve, runReady } = await world();
+    const id = await runReady();
+    expect((await resolve(editor, id, { action: 'accept', presence: { name: 'Mallory' } })).status).toBe(200);
+    expect(w.live.get(id).resolvedBy).toEqual({ id: editor.user.id, name: editor.user.name ?? null });
+  });
+
   it('refuses viewers and commenters, and does not settle the run for them', async () => {
     const { viewer, commenter, owner, resolve, runReady } = await world();
     const id = await runReady();
@@ -260,6 +267,21 @@ describe('open mode', () => {
     expect([...by.name].length).toBeLessThanOrEqual(40);
     const hidden = await post('/api/ai/run', { ...generate('board1'), private: true });
     expect(hidden.status).toBe(400);
+  });
+
+  it('names who settled a run by the name the resolve brings, as plain text of 40 characters', async () => {
+    const { post, open } = await openWorld();
+    const ran = await post('/api/ai/run', generate('board1'));
+    const id = JSON.parse(/^data: (.+)$/m.exec(ran.text)![1]).runId;
+    expect((await post(`/api/ai/runs/${id}/resolve`, { action: 'accept', presence: { color: '#2F6FED' } })).status).toBe(400);
+    const ok = await post(`/api/ai/runs/${id}/resolve`, { action: 'accept', presence: { name: `  Ben\u202e ${'y'.repeat(60)}` } });
+    expect(ok.status).toBe(200);
+    const by = open.live.get(id).resolvedBy;
+    expect(by.id).toBeNull();
+    expect(by.name.startsWith('Ben y')).toBe(true);
+    expect([...by.name].length).toBeLessThanOrEqual(40);
+    const late = await post(`/api/ai/runs/${id}/resolve`, { action: 'discard' });
+    expect(JSON.parse(late.text).by.name).toBe(by.name);
   });
 
   it('needs the CSRF header and AI turned on', async () => {
