@@ -28,7 +28,7 @@ vi.mock('../src/auth', () => ({ setGuest: (...args: unknown[]) => mocks.setGuest
 vi.mock('../src/ui/common', () => ({ toast: vi.fn<(...args: unknown[]) => void>() }));
 
 const { mountJoinCodes } = await import('../src/ui/join-codes');
-const { renderJoin } = await import('../src/ui/join');
+const { renderJoin, cleanCode } = await import('../src/ui/join');
 
 let browser: FakeBrowser;
 
@@ -136,5 +136,32 @@ describe('join page', () => {
     await flush();
     expect(textOf(need(root, '[role="alert"]'))).toBe('This code is no longer valid. Ask the board owner for a new one.');
     expect(need(root, 'input[name="code"]').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('drops spaces and lower case from a typed or pasted code before the length limit', async () => {
+    expect(cleanCode('abcd efgh')).toBe('ABCDEFGH');
+    expect(cleanCode(' abcd2345 ')).toBe('ABCD2345');
+    expect(cleanCode('ABCD\u00a0EFGH23')).toBe('ABCDEFGH');
+    const guest: GuestJoin = { boardId: 'b', role: 'editor', name: 'Sam', guestId: 'guest_2', expiresAt: Date.now() + 100_000 };
+    mocks.joinWithCode.mockResolvedValue(guest);
+    const root = browser.mount();
+    renderJoin(root as unknown as HTMLElement, '', vi.fn<(value: GuestJoin) => void>());
+    const code = need(root, 'input[name="code"]');
+    expect(code.getAttribute('maxlength')).toBeNull();
+    code.value = 'k8pv fbam';
+    code.dispatchEvent(new FakeEvent('input'));
+    expect(code.value).toBe('K8PVFBAM');
+    need(root, 'input[name="name"]').value = 'Sam';
+    need(root, 'form').dispatchEvent(new FakeEvent('submit'));
+    await flush();
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('K8PVFBAM', 'Sam');
+  });
+
+  it('limits the name to the server limit and names the field the way the label does', () => {
+    const root = browser.mount();
+    renderJoin(root as unknown as HTMLElement, '', vi.fn<(value: GuestJoin) => void>());
+    const name = need(root, 'input[name="name"]');
+    expect(name.getAttribute('maxlength')).toBe('40');
+    expect(name.getAttribute('aria-label')).toBe('Display name');
   });
 });
