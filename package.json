@@ -13,6 +13,7 @@
     "start": "node server/relay.mjs",
     "typecheck": "tsc --noEmit",
     "visual": "node scripts/visual-check.mjs",
+    "docs:images": "node scripts/docs-images.mjs",
     "lint": "oxlint --deny-warnings",
     "test": "vitest run",
     "test:repeat": "node scripts/test-repeat.mjs",

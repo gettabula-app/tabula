@@ -13,7 +13,7 @@ Below the top bar:
 - **Search boards** filters the list by title as you type.
 - A **Start from a template** row with up to four templates, your own saved templates first, and an **All templates** link. See [Templates](templates.md).
 
-<!-- screenshot: the Boards page in a signed-in workspace with two teams, one View only badge, and the template row -->
+![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board, then the template row](images/teams-home.png)
 
 ## Open mode
 

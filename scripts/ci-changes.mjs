@@ -3,7 +3,7 @@
 // one per line as `git diff --name-only` prints them, and prints two lines for $GITHUB_OUTPUT:
 //
 //   code=true|false   something changed outside the ignore set below, so the full pipeline runs
-//   guide=true|false  something changed under docs/guide/, which is built into the app (scripts/vite-docs.mjs)
+//   guide=true|false  something changed under docs/guide/ or docs/images/, which are built into the app (scripts/vite-docs.mjs)
 //
 // Markdown, docs/ and licence files do not need the test matrix, but the guide still gets a build of its own.
 // No paths at all means there was nothing to compare, so both are true and everything runs.
@@ -23,7 +23,7 @@ export function classify(paths) {
   if (!files.length) return { code: true, guide: true };
   return {
     code: files.some((f) => !IGNORED.some((re) => re.test(f))),
-    guide: files.some((f) => f.startsWith('docs/guide/')),
+    guide: files.some((f) => f.startsWith('docs/guide/') || f.startsWith('docs/images/')),
   };
 }
 
