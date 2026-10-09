@@ -36,16 +36,10 @@ const freePort = () =>
     });
   });
 
-// The accounts relay prefers Tabula's default port, so the address in the Share dialog reads as a real one.
-const portFree = (port) => new Promise((resolve) => {
-  const srv = net.createServer();
-  srv.once('error', () => resolve(false));
-  srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
-});
-
-async function startRelay(mode, distDir, preferred) {
+async function startRelay(mode, distDir) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `tabula-docs-${mode}-`));
-  const port = preferred && (await portFree(preferred)) ? preferred : await freePort();
+  // Let the OS assign each screenshot relay a port so concurrent runs cannot claim the same fixed port.
+  const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   // nothing from the caller's shell may reach the relay
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(k)));
@@ -449,7 +443,7 @@ async function main() {
     const needsAccounts = names.some((n) => ['signin', 'teams-home', 'access-removed', 'share-roles'].includes(n));
     let people = null;
     if (needsAccounts) {
-      acc = await startRelay('accounts', distDir, 8787);
+      acc = await startRelay('accounts', distDir);
       people = await seedAccounts(acc);
     }
     for (const name of names) {

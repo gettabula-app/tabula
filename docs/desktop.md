@@ -47,7 +47,7 @@ Ignored: `desktop/src-tauri/target/` and `desktop/src-tauri/gen/` (`.gitignore`)
 
 | Command | What it does |
 | --- | --- |
-| `npm run desktop:dev` | `tauri dev`: starts `npm run dev` (relay on 8787 and Vite on 5173) and opens a window on `http://localhost:5173`. Since Phase 1 `auto` means off in this window too, so it no longer reaches the Vite-proxied `/sync`: to test sync in dev, type `ws://localhost:5173/sync` in Board settings. If 5173 is busy Vite moves to the next port and the window waits for the wrong URL (the config has no `strictPort`); stop the other dev server first |
+| `npm run desktop:dev` | `tauri dev`: starts `npm run dev` (relay on 8787 and Vite on 5173 by default) and opens a window on the selected Vite port. Set `PORT` and `VITE_PORT` to distinct available ports for concurrent sessions; the window follows `VITE_PORT`, and Vite fails clearly if that port is occupied. Since Phase 1 `auto` means off in this window too, so it no longer reaches the Vite-proxied `/sync`: to test sync in dev, type `ws://localhost:<VITE_PORT>/sync` in Board settings |
 | `npm run desktop:build` | `tauri build`: runs `npm run build:app` (typecheck plus Vite, no icon sets), embeds `dist/` and bundles `app`, `dmg` and `nsis` for the host OS |
 | `npm run desktop:build -- --bundles app` | Only the `.app` (skips the DMG step, which drives Finder through AppleScript) |
 
@@ -101,7 +101,7 @@ Two settings decide where a user's boards live, and nothing in the app would not
 | `cargo clippy --all-targets` | no warnings |
 | `npm run desktop:build -- --debug --bundles app` | builds `Tabula.app` (24 MiB debug); `beforeBuildCommand` ran the web build from the repo root |
 | `npm run desktop:build -- --bundles app` | release `Tabula.app`, 8.9 MiB, arm64 only, unsigned, 1 min 35 s with a cold release cache |
-| `npm run desktop:dev -- --config '{"build":{"devUrl":"http://localhost:5174"}}'` | relay and Vite started, the app compiled and attached (Vite had moved to 5174 because 5173 was taken on this machine) |
+| `VITE_PORT=5174 PORT=8788 npm run desktop:dev` | selects the same Vite port for the server and window; not run in this audit |
 | `npm run lint`, `npm run typecheck`, `npm test` | pass; 39 test files, 1698 tests. The web checks are unaffected by `desktop/` |
 
 Phase 1 (macOS 15.1.1, arm64; the harness was a temporary debug build that reported over a local WebSocket and posted key events to the process, none of it committed):
@@ -177,7 +177,7 @@ What must stay stable or users lose their boards:
 1. **The origin.** `tauri://localhost` on macOS and Linux; on Windows the scheme (`http` or `https`) set by `useHttpsScheme`. Never change either. Moving a user's data across origins is not possible from the web side.
 2. **The `identifier`.** It names the folders above and the backup folder, so renaming the app's identifier orphans the data. Locked by a test, see "Locked settings".
 3. **No switch to a custom data store.** `dataDirectory` and `dataStoreIdentifier` (macOS 14+) point the webview at a different store. **Docs**
-4. **Dev and production are different stores.** `desktop:dev` runs on `http://localhost:5173`, a different origin, so boards made there do not show up in an installed build. This follows from the origin rule; I did not inspect the dev run's folder (an unbundled binary has no bundle identifier, so WebKit probably names it after the executable). **Unverified**
+4. **Dev and production are different stores.** `desktop:dev` runs on the selected Vite port (`5173` by default), a different origin, so boards made there do not show up in an installed build. This follows from the origin rule; I did not inspect the dev run's folder (an unbundled binary has no bundle identifier, so WebKit probably names it after the executable). **Unverified**
 
 ### Storage purge (the 7 day rule)
 
