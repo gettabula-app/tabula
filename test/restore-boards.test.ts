@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { createApi } from '../server/api.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
-import { RestoreError } from '../server/restore.mjs';
+import { BOARDS_LISTED_MAX, RestoreError } from '../server/restore.mjs';
 import { HOUR, MIN, T0, docBytes, harness, type Harness } from './backup-harness';
 import { audits, backupNow, becomeB, forge, ownerOf, rig, seedA, sqliteBytes } from './restore-harness';
 
@@ -191,20 +191,27 @@ describe('the boards of one backup', () => {
     expect(err.extra.needed).toBeGreaterThan(64 * 1024 * 1024);
   });
 
-  it('cuts the list at 500 boards and says so', async () => {
+  // The cap is 500; the check uses a cap of 5, because forging two backups with over a thousand room files took more
+  // than a minute on a Windows runner (CI on f3a6ee5) for the same code path.
+  it('holds the real cap at 500', () => {
+    expect(BOARDS_LISTED_MAX).toBe(500);
+  });
+
+  it('cuts the list at the cap and says so, keeping the most recently edited', async () => {
     const s = await scenario();
+    const capped = rig(h, { boardsListedMax: 5 });
     const many = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `board${i}`, title: `Board ${i}`, at: i }));
-    const exact = await forgedBoards(many(500), [], undefined, T0 + 40 * HOUR);
-    const full = await list(s, exact.name);
-    expect(full.boards).toHaveLength(500);
+    const exact = await forgedBoards(many(5), [], undefined, T0 + 40 * HOUR);
+    const full = await capped.restore.listBoardsInBackup(exact.name, s.actor);
+    expect(full.boards).toHaveLength(5);
     expect(full.truncated).toBe(false);
-    const over = await forgedBoards(many(520), [], undefined, T0 + 41 * HOUR);
-    const cut = await list(s, over.name);
-    expect(cut.boards).toHaveLength(500);
+    const over = await forgedBoards(many(8), [], undefined, T0 + 41 * HOUR);
+    const cut = await capped.restore.listBoardsInBackup(over.name, s.actor);
+    expect(cut.boards).toHaveLength(5);
     expect(cut.truncated).toBe(true);
     // the newest are kept
-    expect(cut.boards[0].id).toBe('board519');
-    expect(cut.boards.at(-1).id).toBe('board20');
+    expect(cut.boards[0].id).toBe('board7');
+    expect(cut.boards.at(-1).id).toBe('board3');
   });
 
   it('cleans titles and team names, and lists no board that cannot be restored', async () => {
