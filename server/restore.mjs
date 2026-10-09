@@ -65,7 +65,9 @@ const PRE_RE = /^\.pre-restore-(\d{10,16})$/;
 const ID_RE = /^[0-9a-f]{16}$/;
 const BOARD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ROOM_FILE_RE = /^[A-Za-z0-9_-]{1,64}(?:~comments)?\.yjs$/;
-const DB_FILES = ['directory.sqlite', 'directory.sqlite-wal', 'directory.sqlite-shm'];
+// chat.sqlite (docs/chat.md) is swapped with the directory: a restore brings back the conversation of its backup, and a
+// backup made before chat existed leaves none behind.
+const DB_FILES = ['directory.sqlite', 'directory.sqlite-wal', 'directory.sqlite-shm', 'chat.sqlite', 'chat.sqlite-wal', 'chat.sqlite-shm'];
 const ERRNO_RE = /^[A-Z0-9_]{2,40}$/;
 const NEWEST_SCHEMA_HINT = 'Update Tabula first, then restore.';
 
@@ -836,6 +838,7 @@ export function createRestore({
     for (const [i, file] of manifest.files.entries()) {
       if (file.path === 'directory.sqlite') continue;
       const where = ` (file ${i + 1} of ${total})`;
+      if (file.path === 'chat.sqlite') continue; // verifyChat
       const bytes = fs.readFileSync(path.join(stagingDir, ...file.path.split('/')));
       try {
         if (assetHashOf(file.path) !== null) {
@@ -852,6 +855,38 @@ export function createRestore({
       } catch {
         throw new RestoreError('invalid_backup', `A document in the backup cannot be read, so nothing was changed${where}`);
       }
+    }
+  }
+
+  /** The chat database of a backup, when it has one: readable, intact and not from a newer Tabula. Checked on a copy. */
+  async function verifyChat(stagingDir, manifest) {
+    const index = manifest.files.findIndex((f) => f.path === 'chat.sqlite');
+    if (index === -1) return;
+    const where = ` (file ${index + 1} of ${manifest.files.length})`;
+    const { DatabaseSync } = await import('node:sqlite');
+    const { CHAT_MIGRATIONS } = await import('./chat.mjs');
+    const file = path.join(stagingDir, 'chat.sqlite');
+    const copy = path.join(stagingDir, 'verify-chat.sqlite');
+    fs.copyFileSync(file, copy);
+    try {
+      let version;
+      try {
+        const db = new DatabaseSync(copy, { readOnly: true });
+        try {
+          const rows = db.prepare('PRAGMA integrity_check').all();
+          if (rows.length !== 1 || Object.values(rows[0])[0] !== 'ok') throw new Error('integrity');
+          version = Number(db.prepare('PRAGMA user_version').get().user_version);
+        } finally {
+          db.close();
+        }
+      } catch {
+        throw new RestoreError('integrity_check_failed', `The chat database in the backup failed its integrity check, so nothing was changed${where}`);
+      }
+      if (!Number.isInteger(version) || version > CHAT_MIGRATIONS.length) {
+        throw new RestoreError('schema_too_new', `The chat database in the backup was written by a newer Tabula. ${NEWEST_SCHEMA_HINT}`);
+      }
+    } finally {
+      removeSqliteFiles(copy);
     }
   }
 
@@ -1040,6 +1075,7 @@ export function createRestore({
       stagingDir = await stageFiles(manifest);
       const counts = await verifyDatabase(stagingDir);
       verifyDocuments(stagingDir, manifest);
+      await verifyChat(stagingDir, manifest);
       const retention = decideRetention(await volume(), 0);
       const oldDir = chooseOldDir();
       const prepared = await prepareDatabase(stagingDir, {

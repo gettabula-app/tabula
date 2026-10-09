@@ -15,6 +15,8 @@ import { describeError } from './ai/errors.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
+import { createChatRoutes } from './chat-routes.mjs';
+import { createChatLimits } from './chat-limits.mjs';
 
 const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
@@ -136,7 +138,8 @@ function compile(method, pattern, options, handler) {
 // (docs/ai.md); the tests do, so no request leaves the machine.
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null }) {
+// `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null }) {
   const emit = (name, payload) => {
     try {
       events.emit(name, payload);
@@ -339,6 +342,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
+  const chatOn = Boolean(config.chat && chat);
+  const chatRoutes = chatOn
+    ? createChatRoutes({
+        directory,
+        store: chat.store,
+        access: chat.access,
+        hub: chat.hub ?? null,
+        limits: chat.limits ?? createChatLimits(),
+        compile,
+        audit,
+        requireAdmin,
+        errors: { HttpError, badRequest, forbidden, notFound, conflict },
+      })
+    : [];
+
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, conflict }, cloud, ...ai });
 
   // ------------------------------------------------------------ handlers
@@ -354,6 +372,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ...(cloud ? { workspace: cloud.workspaceView() } : {}),
         ...(config.mcp ? { mcp: true } : {}),
         ...(assets ? { images: true } : {}),
+        ...(chatOn ? { chat: true } : {}),
         ...aiApi.meFlag(user),
       },
     ]),
@@ -1005,6 +1024,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
 
     ...aiApi.routes,
+
+    // ---------------------------------------------------------- team chat (docs/chat.md)
+
+    ...chatRoutes,
 
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 

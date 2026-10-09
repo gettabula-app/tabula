@@ -114,6 +114,10 @@ describe('auditSentence', () => {
     ['ai.generate with no outcome', entry('ai.generate', { boardId: 'b1' }), 'ana@example.com generated stickies on “Roadmap”'],
     ['ai.run.accept', entry('ai.run.accept', { boardId: 'b1', feature: 'generate' }), 'ana@example.com added an AI proposal to “Roadmap”'],
     ['ai.run.discard', entry('ai.run.discard', { boardId: 'b1', feature: 'cluster' }), 'ana@example.com discarded an AI proposal on “Roadmap”'],
+    ['chat.delete', entry('chat.delete', { kind: 'board', ref: 'b1', messageId: 7, authorId: 'u2' }), 'ana@example.com removed a message by bo@example.com in “Roadmap”'],
+    ['chat.delete by a removed author on a board that is gone', entry('chat.delete', { kind: 'board', ref: 'gone', messageId: 7, authorId: null }), 'ana@example.com removed a message by a former member in a board chat'],
+    ['chat.settings', entry('chat.settings', { viewersMayPost: true, retentionDays: 90 }), 'ana@example.com changed the chat settings (viewers may post, keep messages 90 days)'],
+    ['chat.settings forever', entry('chat.settings', { viewersMayPost: false, retentionDays: null }), 'ana@example.com changed the chat settings (viewers read only, keep messages forever)'],
   ])('%s', (_name, e, sentence) => {
     expect(auditSentence(e, NAMES)).toBe(sentence);
   });
@@ -164,6 +168,7 @@ describe('auditSentence', () => {
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify',
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
       'asset.upload', 'assets.gc',
+      'chat.delete', 'chat.settings',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });
