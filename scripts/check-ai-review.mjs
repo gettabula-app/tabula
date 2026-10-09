@@ -20,10 +20,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { startAnthropicStub } from './lib/anthropic-stub.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
+const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>] [--widths <list>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --widths    the viewport widths of the single-person scenario, comma separated (default 390,1024)\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
 let options;
 try {
-  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
+  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, widths: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
 } catch (err) {
   console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
@@ -35,6 +35,11 @@ if (options.help) {
 const THEME = options.theme ?? 'default';
 if (!/^[\w-]+$/.test(THEME)) {
   console.error(`bad theme "${THEME}"\n${USAGE}`);
+  process.exit(2);
+}
+const WIDTHS = (options.widths ?? '390,1024').split(',').map((w) => Number(w.trim()));
+if (!WIDTHS.length || WIDTHS.some((w) => !Number.isInteger(w) || w < 280 || w > 2000)) {
+  console.error(`bad widths "${options.widths}" (280 to 2000)\n${USAGE}`);
   process.exit(2);
 }
 const SHOTS = path.resolve(options.out ?? path.join(root, 'tabula-review', 'ai-review'));
@@ -465,6 +470,9 @@ async function screenshotScenario(width) {
       ghostTexts: GENERATED.map((o) => closedText.includes(o.text)), summaryGhost: closedText.includes('Summary'),
     }, { ui: 'preview', panelOpen: false, reviewVisible: true, ghostTexts: [true, true, true, true, true], summaryGhost: true });
     await saveShot(target, `01-create-closed-${width}.png`);
+    check(`A.${width}: no button of the bar's preview row is cut off`, await target.page.evaluate(() => [...document.querySelectorAll('.aibar-actions button')]
+      .filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > window.innerWidth)
+      .map((b) => b.textContent?.trim())), []);
 
     // Show (TAB-218): with the preview off screen nothing moves the view by itself; the bar's Show brings it into view
     await target.page.evaluate(() => {
@@ -760,7 +768,7 @@ async function main() {
     enabled: true, model: MODEL, features: ['generate', 'summarise', 'cluster'],
   }, (a, e) => a.enabled === e.enabled && a.model === e.model && ['generate', 'summarise', 'cluster'].every((f) => a.features?.includes(f)));
 
-  for (const width of [390, 1024]) {
+  for (const width of WIDTHS) {
     try {
       await screenshotScenario(width);
     } catch (err) {
@@ -773,6 +781,8 @@ async function main() {
     note('B.multiplayer: scenario execution', 'FAIL', err?.stack ?? String(err));
   }
 
+  // each width asks generate twice and cluster once, and the two-person scenario asks generate once
+  const expectedFeatures = [...WIDTHS.flatMap(() => ['generate', 'generate', 'cluster']), 'generate'];
   check('setup: every provider call went to the local Anthropic stub', {
     count: stub.calls.length,
     hosts: [...new Set(stub.calls.map((c) => c.path))],
@@ -781,12 +791,12 @@ async function main() {
     features: stub.calls.map((c) => c.feature),
     formats: stub.calls.map((c) => c.requestFormat),
   }, {
-    count: 7,
+    count: expectedFeatures.length,
     hosts: ['/v1/messages'],
     models: [MODEL],
     keysMatched: true,
-    features: ['generate', 'generate', 'cluster', 'generate', 'generate', 'cluster', 'generate'],
-    formats: ['json_schema', 'json_schema', 'json_schema', 'json_schema', 'json_schema', 'json_schema', 'json_schema'],
+    features: expectedFeatures,
+    formats: expectedFeatures.map(() => 'json_schema'),
   }, (a, e) => a.count === e.count && isDeepStrictEqual(a.hosts, e.hosts) && isDeepStrictEqual(a.models, e.models) && a.keysMatched && isDeepStrictEqual(a.features, e.features) && isDeepStrictEqual(a.formats, e.formats));
 }
 
