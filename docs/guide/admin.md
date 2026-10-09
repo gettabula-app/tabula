@@ -34,7 +34,7 @@ Counts for the whole workspace:
 
 Below the counts, **Instance** lists the server address, how email is sent, the version, and whether accounts are on.
 
-On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan, add seats and update the payment method. Admins who are not owners do not see it. A workspace that is provided free (for education or internal use) has nothing to bill, so the owner reads "This workspace is provided free (education or internal). There's nothing to bill." here and in the Backups tab instead of the button.
+On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan and update the payment method. Admins who are not owners do not see it. A workspace that is provided free (for education or internal use) has nothing to bill, so the owner reads "This workspace is provided free (education or internal). There's nothing to bill." here and in the Backups tab instead of the button.
 
 <!-- screenshot: Overview section with the stat tiles and the Instance list -->
 

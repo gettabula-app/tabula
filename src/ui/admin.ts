@@ -295,7 +295,7 @@ function billingBlock(): HTMLElement {
   });
   return h('div', null,
     h('h3', { class: 'admin-sub' }, 'Billing'),
-    h('p', { class: 'muted' }, 'Change the plan, add seats and update the payment method in the billing portal.'),
+    h('p', { class: 'muted' }, 'Change the plan and update the payment method in the billing portal.'),
     button);
 }
 
