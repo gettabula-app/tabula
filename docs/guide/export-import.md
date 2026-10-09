@@ -20,7 +20,7 @@ Files are named after the board.
 
 ### PNG and SVG
 
-Images use the light default colours on white whatever theme you are using. Comment pins are left out. Fonts are embedded so text looks the same. If you are offline and a font was never loaded, the image falls back to a system font. Very large boards are scaled down to fit a maximum image size.
+Images use the light default colours on white whatever theme you are using. Comment pins are left out. PNG and SVG exports fetch fonts used by the board while exporting and embed available WOFF2 files; opening an exported SVG makes no Fontshare request. If a font cannot be fetched or the combined raw font data would exceed 1.5 MB, that font falls back to a system font. Very large PNG boards are scaled down to fit a maximum image size.
 
 ### Board file (.drift)
 
