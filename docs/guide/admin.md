@@ -1,6 +1,6 @@
 # Admin dashboard
 
-The admin dashboard is for workspace owners and admins. It shows who is in the workspace, what they have, who is signed in, what changed, and how AI features are set up. Owners also bring back lost work from backups. It exists only in workspaces with sign-in.
+The admin dashboard is for workspace owners and admins. It shows who is in the workspace, what they have, who is signed in, what changed, and how AI features are set up. Owners also bring back lost work from backups. It exists only in workspaces with sign-in. Some sections are for owners only.
 
 ## Open the dashboard
 
@@ -168,9 +168,47 @@ If something fails before the swap, nothing changes and the page says why in pla
 
 <!-- screenshot: Backups section with the status block and the list, one backup protected and one unreadable -->
 
+## Backups
+
+Only owners see the **Backups** tab. It sits between **AI** and the audit log. Admins who are not owners do not see it, and its address shows them the **Overview**.
+
+If backups are not turned on, the tab says **Not set up**. On a hosted workspace it has an **Add backups** button that opens billing, the same way **Manage billing** does. On your own server it points to the setup steps and the person who runs the server.
+
+When backups are on, the tab shows:
+
+- **Status**: when the last backup ran and whether it worked, how many failed in a row, when the next one is due, how often they run, the key's short ID and the size stored. One sentence says what happened to the last restore.
+- **All backups**: newest first, with the time, the number of files, the size and the key. A backup shows **Protected** with a date while it cannot be removed, for example after a restore. A backup the server cannot read is greyed with the reason and cannot be opened. Only the newest backups are listed.
+
+Select a backup to see its details: the app version, the counts, the key, the free disk space, and how long the current data would be kept after a restore. Use **Back to the backup** to return from the screens below.
+
+### Restore a board as a copy
+
+Use this to get one board back without touching anything else.
+
+1. Open a backup and find the board under **Boards in this backup**. Use **Search the boards of this backup** to filter. Only the 500 boards edited most recently are listed.
+2. Pick the board, then select **Make a copy**.
+3. A message says **The copy is ready** with a link to the new board.
+
+The copy is a new board named **Restored: <title> <date>**. The live board is not changed. The copy goes to the board's original team if it still exists and you are in it. Otherwise it goes to your personal space, and the message says so. The copy has no version history. A board with no saved content in the backup cannot be copied. On a hosted workspace that is read-only, **Make a copy** is off and says why.
+
+### Restore the whole workspace
+
+Use this only to go back to an earlier state of everything: people, teams, boards, history and settings.
+
+1. Open a backup and select **Restore the whole workspace**.
+2. Read **What will happen**. A safety backup of the current data is made first, and if it fails nothing changes. The workspace is unavailable for about a minute while the server restarts, and everyone is signed out. The current data is moved aside, not deleted, and kept for the time shown.
+3. Type the word shown to confirm (`RESTORE`). **Restore this backup** stays off until you type it exactly, and while there is not enough disk space.
+4. Select **Restore this backup**. The window shows **Restoring…** and reloads when the workspace is back. If it takes longer than expected, the screen says so and offers **Check again**.
+
+Anyone with a board open sees **Restoring…** in the status chip and the board reloads when the workspace is back. Everyone signs in again afterwards.
+
+> Do a practice restore before you need one. A backup you have never restored is not proven.
+
+<!-- screenshot: Backups tab with the status and the list of backups -->
+
 ## Audit log
 
-A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Hover an entry to see the underlying action name.
+A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Backups and restores read as sentences too, naming the backup by its date. Hover an entry to see the underlying action name.
 
 - Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added or removed. **Backups** shows the automatic backup runs (and failures) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
@@ -179,6 +217,7 @@ Entries with no person are shown as the system, for example when a hosted worksp
 
 ## Related
 
+- [Export and import](export-import.md) for saving one board yourself
 - [Sharing, roles and teams](sharing.md)
 - [Access tokens and AI tools](ai-tools.md)
 - [Your AI key](ai-keys.md)
