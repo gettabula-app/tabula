@@ -192,6 +192,8 @@ The collector (`server/assets.mjs`, run daily and on start-up, off by default on
 3. Deletes a file under `assets/` when no row references its hash any more.
 4. Logs counts only. Writes an audit row `assets.gc` with `{rows, bytes}`.
 
+**Built** as `server/assets-gc.mjs`, run by the relay two minutes after it starts and then daily (a refinement of the steps above: it reads each board's live room through the relay's own `boardState`, so an open room counts, and each retained version file under `history/<board>/`; a room or version that cannot be read leaves that board's images alone; a file with no row at all is removed only after it is also older than the grace period, which covers a crash between writing the file and its row). It writes the audit row `assets.gc` only when it removed something, and logs one line.
+
 A soft-deleted board keeps its assets until the board is purged. The cost is that an image deleted from a board remains downloadable by hash through that board's old versions until the last version holding it expires (automatic versions are thinned to all of the last day, hourly for a week and daily for a month, within the 64 MB budget; named versions stay until deleted). This is the same reach history already has for text and is stated in the version history help; it is also an open question for Johan because it matters for privacy.
 
 ## Templates

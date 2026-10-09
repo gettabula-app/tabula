@@ -53,6 +53,10 @@ export function createAssetIndex({ get, all, run }) {
     assetsTotalBytes: () => Number(get('SELECT COALESCE(SUM(bytes), 0) AS n FROM (SELECT DISTINCT hash, bytes FROM assets)').n),
     assetBoards: (hash) => all('SELECT board_id FROM assets WHERE hash = ?', hash).map((r) => r.board_id),
     listBoardAssets: (boardId) => all('SELECT * FROM assets WHERE board_id = ?', boardId).map(toRow),
+    listAssetBoards: () => all('SELECT DISTINCT board_id FROM assets').map((r) => r.board_id),
+    deleteAsset: (boardId, hash) => {
+      run('DELETE FROM assets WHERE board_id = ? AND hash = ?', boardId, hash);
+    },
   };
 }
 
@@ -88,6 +92,10 @@ export function createJsonAssetIndex(dir) {
     },
     assetBoards: (hash) => [...rows.values()].filter((r) => r.hash === hash).map((r) => r.boardId),
     listBoardAssets: (boardId) => [...rows.values()].filter((r) => r.boardId === boardId),
+    listAssetBoards: () => [...new Set([...rows.values()].map((r) => r.boardId))],
+    deleteAsset: (boardId, hash) => {
+      if (rows.delete(`${boardId}:${hash}`)) save();
+    },
   };
 }
 
