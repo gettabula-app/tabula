@@ -39,6 +39,33 @@ describe('dot voting', () => {
     expect(flow.myVoteCount()).toBe(25);
   });
 
+  it('adds while Remove dots is off, removes one of mine while it is on, and resets it at vote end', () => {
+    const { store, flow } = fakeApp();
+    store.transact(() => store.create(note('a')));
+    flow.quickVote(UNLIMITED);
+
+    flow.handleClick(store.get('a')!, flow.shouldRemoveDots(false));
+    flow.handleClick(store.get('a')!, flow.shouldRemoveDots(false));
+    expect(flow.myVoteCount()).toBe(2);
+
+    expect(flow.setRemoveDotsMode(true)).toBe(true);
+    flow.handleClick(store.get('a')!, flow.shouldRemoveDots(false));
+    expect(flow.myVoteCount()).toBe(1);
+    expect(flow.isRemoveDotsMode()).toBe(true);
+
+    flow.end();
+    expect(flow.isRemoveDotsMode()).toBe(false);
+
+    flow.setSteps([
+      { id: 'vote-next', title: 'Vote again', instructions: '', mode: 'vote' },
+      { id: 'talk', title: 'Discuss', instructions: '', mode: 'discuss' },
+    ]);
+    flow.goto(0);
+    flow.setRemoveDotsMode(true);
+    flow.next();
+    expect(flow.isRemoveDotsMode()).toBe(false);
+  });
+
   it('enforces a limit, and raising it mid-vote frees more dots', () => {
     const { store, flow } = fakeApp();
     store.transact(() => store.create(note('a')));

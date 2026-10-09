@@ -902,7 +902,8 @@ export class BoardApp {
           this.openLaneMenu(top.id);
           return;
         }
-        if (!this.readOnly && top && this.flow.handleClick(top, e.shiftKey)) return;   // voting still works on locked notes
+        const removeVote = this.flow.shouldRemoveDots?.(e.shiftKey) ?? e.shiftKey;
+        if (!this.readOnly && top && this.flow.handleClick(top, removeVote)) return;   // voting still works on locked notes
         const hit = lockedTarget ? this.hit(p) : top;               // an unlocked object under a locked one still gets the click
         if (!hit) {
           this.drag = { mode: 'marquee', start: p, base: e.shiftKey ? [...this.selection] : [], moved: false };
