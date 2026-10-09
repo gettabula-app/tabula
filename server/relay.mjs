@@ -449,6 +449,12 @@ const MIME = {
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
+// TABULA_DEV_ALLOW_FRAMING=1 drops frame-ancestors so a page can show this app in an iframe at a chosen width
+// (scripts/visual-check.mjs --frameable, docs/visual-check.md). It removes the clickjacking protection: never set it on
+// a server people use.
+const ALLOW_FRAMING = env.TABULA_DEV_ALLOW_FRAMING === '1';
+if (ALLOW_FRAMING) console.warn('TABULA_DEV_ALLOW_FRAMING=1: any page can frame this app. Use it for local visual checks only, never on a server people use.');
+
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -458,7 +464,7 @@ const CSP = [
   "connect-src 'self' ws: wss: https://api.fontshare.com https://cdn.fontshare.com https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
   "worker-src 'self'",
   "base-uri 'none'",
-  "frame-ancestors 'none'",
+  ...(ALLOW_FRAMING ? [] : ["frame-ancestors 'none'"]),
 ].join('; ');
 
 const DOCS = path.join(DIST, 'docs');

@@ -12,6 +12,7 @@
     "build:icons": "node scripts/build-icons.mjs",
     "start": "node server/relay.mjs",
     "typecheck": "tsc --noEmit",
+    "visual": "node scripts/visual-check.mjs",
     "lint": "oxlint --deny-warnings",
     "test": "vitest run",
     "test:repeat": "node scripts/test-repeat.mjs",
@@ -43,6 +44,7 @@
     "@types/ws": "^8.18.2",
     "@xmldom/xmldom": "^0.9.12",
     "oxlint": "^1.87.0",
+    "playwright": "1.64.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^5.0.3"
