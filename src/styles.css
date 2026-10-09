@@ -445,6 +445,7 @@ select.input {
 .popover .dot-presets button { border-radius: 0; }
 .steps-pop { padding: 0 14px 14px; }
 .steps-pop .pop-head { padding: 16px 0 4px; }
+.steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }

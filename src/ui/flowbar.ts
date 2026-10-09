@@ -491,9 +491,9 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
     h('div', { class: 'pop-head' }, h('h3', null, 'Steps')),
     h('p', { class: 'muted small' }, 'Select a frame before adding a step to focus everyone on it.'),
     list,
-    h('div', { class: 'btn-row' }, addBtn,
+    h('div', { class: 'steps-foot btn-row' }, addBtn,
       h('button', { class: 'btn ghost', onclick: () => download(app.flow.summaryMarkdown(), `${safeName(app.store.getMeta().name)}-summary.md`, 'text/markdown') }, icon('download', 16), 'Summary'),
-      app.flow.state().active >= 0 ? h('button', { class: 'btn ghost', onclick: () => app.flow.end() }, 'End session') : null,
+      app.flow.state().active >= 0 ? h('button', { class: 'btn ghost', 'aria-label': 'End session', onclick: () => app.flow.end() }, 'End session') : null,
     ),
   ), { side: 'top', className: 'wide' });
 }

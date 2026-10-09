@@ -1,6 +1,7 @@
 import { h, icon } from './dom';
 import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
 import { safeInsets } from './safe-area';
+import { placePopover } from './popover-layout';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
@@ -19,19 +20,14 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     const a = anchor.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     const safe = safeInsets();
-    const left = safe.left;
-    const right = safe.right;
-    const top = safe.top;
-    const bottom = safe.bottom;
     const side = opts.side ?? 'bottom';
-    let x = a.left, y = a.bottom + 8;
-    if (side === 'right') { x = a.right + 10; y = a.top; }
-    if (side === 'left') { x = a.left - r.width - 10; y = a.top; }
-    if (side === 'top') { x = a.left + a.width / 2 - r.width / 2; y = a.top - r.height - 10; }
-    x = Math.max(8 + left, Math.min(window.innerWidth - right - r.width - 8, x));
-    y = Math.max(8 + top, Math.min(window.innerHeight - bottom - r.height - 8, y));
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
+    const bar = side === 'top' ? anchor.closest<HTMLElement>('.flowbar.show') : null;
+    const avoidAbove = bar?.getBoundingClientRect();
+    const pos = placePopover(a, r, { width: window.innerWidth, height: window.innerHeight }, safe, side, avoidAbove);
+    if (pos.maxHeight === null) el.style.removeProperty('max-height');
+    else el.style.maxHeight = `${pos.maxHeight}px`;
+    el.style.left = `${pos.left}px`;
+    el.style.top = `${pos.top}px`;
   };
   place();
   requestAnimationFrame(place);

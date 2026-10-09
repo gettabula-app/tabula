@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1329,6 +1329,25 @@ const STATES = {
     });
     await env.page.getByRole('button', { name: 'All steps' }).click();
     await env.page.locator('.step-list').waitFor();
+  },
+  async 'flow-steps-overlap'(env) {
+    await STATES['flow-steps'](env);
+    const result = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.show');
+      const pop = document.querySelector('.popover.wide');
+      const next = [...(bar?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.trim().startsWith('Next step'));
+      if (!bar || !pop || !next) return { failures: ['session bar, Steps popover or Next step button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const b = box(bar), p = box(pop), n = box(next);
+      const intersects = p.left < b.right && p.right > b.left && p.top < b.bottom && p.bottom > b.top;
+      const hit = document.elementFromPoint((n.left + n.right) / 2, (n.top + n.bottom) / 2);
+      const failures = [];
+      if (intersects) failures.push(`Steps popover intersects the session bar (${Math.round(p.top)}-${Math.round(p.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)})`);
+      if (hit !== next && !next.contains(hit)) failures.push(`Next step centre hits ${hit?.getAttribute('aria-label') ?? hit?.textContent?.trim() ?? hit?.tagName ?? 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, popover: { top: p.top, bottom: p.bottom }, bar: { top: b.top, bottom: b.bottom }, hit: hit?.textContent?.trim() };
+    });
+    console.log(`flow-steps-overlap ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`flow-steps-overlap: ${JSON.stringify(result.failures)}`);
   },
   async 'chat-session'(env) {
     await resetChatMarker(env);
