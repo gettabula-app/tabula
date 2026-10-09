@@ -927,7 +927,8 @@ const STATES = {
     await openSeedBoard(env);
     const m = await env.page.evaluate(() => {
       const rail = document.querySelector('.rail');
-      const scroller = rail?.querySelector('.rail-tools');
+      // on a rail without the .rail-tools wrapper (the TAB-253 layout) the rail itself scrolls: the check must catch that bug too
+      const scroller = rail?.querySelector('.rail-tools') ?? rail;
       const undo = rail?.querySelector('[aria-label="Undo"]');
       const redo = rail?.querySelector('[aria-label="Redo"]');
       const failures = [];
@@ -942,7 +943,7 @@ const STATES = {
         if (hit !== target && !target.contains(hit)) failures.push(`${position}:${name} centre hit ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
       };
       if (!rail || !scroller || !undo || !redo) {
-        return { failures: ['rail, rail-tools, Undo or Redo is missing'], maxScroll: 0, positions: [] };
+        return { failures: ['rail, scroller, Undo or Redo is missing'], maxScroll: 0, positions: [] };
       }
       for (const [name, button] of [['Undo', undo], ['Redo', redo]]) {
         if (!rail.contains(button)) failures.push(`${name} is outside the rail`);
