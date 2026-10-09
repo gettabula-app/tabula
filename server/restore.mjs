@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import * as Y from 'yjs';
-import { BackupError, PROTECTED_KEY, createScrubber, isBackupPath, parseManifestName, parseProtections, validateRelPath } from './backup.mjs';
+import { BackupError, PROTECTED_KEY, assetHashOf, createScrubber, isBackupPath, parseManifestName, parseProtections, validateRelPath } from './backup.mjs';
 import { newObjectId } from './board-ops.mjs';
 
 const MIB = 1024 * 1024;
@@ -203,7 +203,9 @@ function removeSqliteFiles(file) {
  * @property {string} [error] why the swap was undone (a code)
  */
 
-const isSwapEntry = (name) => typeof name === 'string' && (DB_FILES.includes(name) || ROOM_FILE_RE.test(name) || name === 'history');
+// the two directories the swap moves whole: version history and image files
+const SWAP_DIRS = ['history', 'assets'];
+const isSwapEntry = (name) => typeof name === 'string' && (DB_FILES.includes(name) || ROOM_FILE_RE.test(name) || SWAP_DIRS.includes(name));
 
 function parseJournal(text) {
   const bad = () => new RestoreError('restore_failed', 'The restore journal (restore.json) is not valid, so the server will not start. Do not delete anything: see docs/backups.md, Restoring.');
@@ -660,7 +662,7 @@ export function createRestore({
       lower.add(key);
       if (file.path === 'directory.sqlite') hasDirectory = true;
       else if (ROOM_FILE_RE.test(file.path) && !file.path.endsWith('~comments.yjs')) boards++;
-      topLevel.add(file.path.startsWith('history/') ? 'history' : file.path);
+      topLevel.add(file.path.startsWith('history/') ? 'history' : file.path.startsWith('assets/') ? 'assets' : file.path);
     });
     if (!hasDirectory) throw new RestoreError('no_directory', 'This backup has no workspace database (it was made without accounts), so it cannot be restored here');
     return { topLevel: [...topLevel].sort(), boards, files: total, bytes: manifest.totals.bytes };
@@ -836,7 +838,10 @@ export function createRestore({
       const where = ` (file ${i + 1} of ${total})`;
       const bytes = fs.readFileSync(path.join(stagingDir, ...file.path.split('/')));
       try {
-        if (ROOM_FILE_RE.test(file.path)) {
+        if (assetHashOf(file.path) !== null) {
+          // an image is named by the SHA-256 of its bytes
+          if (crypto.createHash('sha256').update(bytes).digest('hex') !== assetHashOf(file.path)) throw new Error('hash');
+        } else if (ROOM_FILE_RE.test(file.path)) {
           applyToThrowaway(bytes);
         } else if (file.path.endsWith('/index.json')) {
           const index = JSON.parse(bytes.toString('utf8'));
@@ -941,12 +946,12 @@ export function createRestore({
     return { name: `.pre-restore-${stamp}`, stamp };
   }
 
-  /** The live entries the swap moves: the database with its side files, every room file, the history directory. */
+  /** The live entries the swap moves: the database with its side files, every room file, the history and image directories. */
   function liveEntries() {
     const out = [];
     for (const entry of fs.readdirSync(dataDir, { withFileTypes: true })) {
       if (!isSwapEntry(entry.name)) continue;
-      const ok = entry.name === 'history' ? entry.isDirectory() : entry.isFile();
+      const ok = SWAP_DIRS.includes(entry.name) ? entry.isDirectory() : entry.isFile();
       if (!ok) throw new RestoreError('restore_failed', 'The data directory holds something that is not a plain file where Tabula keeps its data, so nothing was changed');
       out.push(entry.name);
     }
@@ -1257,12 +1262,28 @@ export function createRestore({
         fs.renameSync(tmp, final);
         written[written.length - 1] = final;
       };
+      // The pictures of the board (docs/images.md): the files come from the backup unless the live store already has them,
+      // and the copy gets a row for each, so it shows what the original showed. A picture the backup lacks shows as missing.
+      const pictures = [];
+      for (const r of await findBoardAssets(databaseFile, boardId)) {
+        const rel = `assets/${r.hash.slice(0, 2)}/${r.hash}`;
+        if (assetHashOf(rel) !== r.hash) continue;
+        const target = path.join(dataDir, ...rel.split('/'));
+        if (!exists(target)) {
+          const data = await download(rel);
+          if (!data || crypto.createHash('sha256').update(data).digest('hex') !== r.hash) continue;
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          put(rel, data);
+        }
+        pictures.push(r);
+      }
       put(`${id}.yjs`, boardOut);
       if (commentBytes) put(`${id}~comments.yjs`, commentBytes);
       fsyncDir(dataDir);
-      const detail = { kind: 'board', manifest: name, boardId: id, files: commentBytes ? 2 : 1, fallback };
+      const detail = { kind: 'board', manifest: name, boardId: id, files: commentBytes ? 2 : 1, ...(pictures.length ? { images: pictures.length } : {}), fallback };
       directory.transaction(() => {
         directory.createBoard({ id, title, ownerId: person.id, teamId: teamOk ? row.team_id : null });
+        for (const r of pictures) directory.putAsset({ boardId: id, hash: r.hash, mime: r.mime, bytes: r.bytes, width: r.width, height: r.height, createdBy: person.id, createdAt: now() });
         directory.audit(person.id, 'restore.done', detail);
       });
       written.length = 0;
@@ -1299,6 +1320,24 @@ export function createRestore({
         }
       }
       busy = null;
+    }
+  }
+
+  /** The image rows of one board in a backed-up database: none when it is older than the images table or the board has none. */
+  async function findBoardAssets(databaseFile, boardId) {
+    const { DatabaseSync } = await import('node:sqlite');
+    try {
+      const db = new DatabaseSync(databaseFile, { readOnly: true });
+      try {
+        const table = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'assets'").get();
+        if (!table) return [];
+        return db.prepare('SELECT hash, mime, bytes, width, height FROM assets WHERE board_id = ? ORDER BY hash').all(boardId)
+          .filter((r) => typeof r.hash === 'string' && typeof r.mime === 'string' && Number.isSafeInteger(r.bytes) && Number.isSafeInteger(r.width) && Number.isSafeInteger(r.height));
+      } finally {
+        db.close();
+      }
+    } catch {
+      return [];
     }
   }
 
