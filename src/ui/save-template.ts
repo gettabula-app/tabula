@@ -2,6 +2,8 @@ import './home.css';
 import type { BoardApp } from '../app';
 import type { Id, Obj } from '../types';
 import { isBox } from '../types';
+import { isContainerType } from '../../shared/containers';
+import { listLabels } from '../labels';
 import { imagesLeftOut, toTemplateContent, validateContent, type CustomTemplate, type TemplateContent, type TemplateScope } from '../custom-templates';
 import { authState } from '../auth';
 import { putTemplate, templatesShared } from '../template-store';
@@ -30,9 +32,12 @@ export interface TemplateDetails {
 /** The template content for some gathered objects, with the board's session steps and fonts. */
 export function boardTemplateContent(app: BoardApp, objs: Obj[], includeSteps: boolean): TemplateContent {
   const meta = app.store.getMeta();
-  return toTemplateContent(objs, app.flow.state().steps, {
+  // a kanban's parts are saved where its layout draws them, so the bounds and the thumbnail are right (docs/kanban.md)
+  const placed = objs.map((o) => (isContainerType(o.type) ? { ...o, ...app.store.geometry(o) } as Obj : o));
+  return toTemplateContent(placed, app.flow.state().steps, {
     includeSteps,
     fonts: { heading: meta.headingFont, body: meta.bodyFont },
+    labels: listLabels(app.store),
   }, (id) => app.store.get(id));
 }
 
@@ -92,7 +97,7 @@ function openTemplateDialog(app: BoardApp, spec: DialogSpec): void {
     const left = imagesLeftOut(objs);
     summary.textContent = `${n} ${n === 1 ? 'object' : 'objects'}${content.steps.length ? `, ${content.steps.length} session ${content.steps.length === 1 ? 'step' : 'steps'}` : ''}${left ? `. ${left} ${left === 1 ? 'image was' : 'images were'} left out: templates can't hold images yet.` : ''}`;
   };
-  preview.innerHTML = thumbnailSvg(content.objects);
+  preview.innerHTML = thumbnailSvg(content.objects, { labels: content.labels });
 
   const dlg = dialog(spec.title, h('div', { class: 'save-tpl' },
     h('div', { class: 'save-tpl-form' },

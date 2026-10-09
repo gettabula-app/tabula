@@ -34,7 +34,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
-                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
+                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-moveto, kanban-moveto-full, kanban-templates, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -523,6 +524,34 @@ async function zoomOnLane(page, laneIds) {
   if (did) await settle(page);
 }
 
+/** Fills Review (a block lane with a limit of 2) to its limit, once. */
+const fillReview = (page) =>
+  page.evaluate(() => {
+    const app = window.__board;
+    for (const [id, text, rank] of [['k-r1', 'Ranks carry their parent', 'a0'], ['k-r2', 'Store.geometry call sites', 'a1']]) {
+      if (app.store.get(id)) continue;
+      const card = { id, type: 'card', parent: 'k-review', rank: `${rank}@k-review`, text, x: 0, y: 0, w: 264, h: 0, rotation: 0, z: 'a0', createdBy: 'visual-seed', updatedAt: Date.now(), font: app.store.getMeta().bodyFont };
+      card.h = window.__kanban.cardContentHeight(card, 264);
+      app.store.transact(() => app.store.create(card));
+    }
+    app.setSelection([]);
+  });
+
+/** Opens the kanban as a list (slice 5) on a lane. */
+async function openSheet(page, lane) {
+  await page.evaluate((l) => window.__board.openKanbanList('k-box', l), lane);
+  await page.locator('.ks-sheet').waitFor();
+  await settle(page);
+}
+
+/** Opens Move to… for a card of the list sheet. */
+async function openMoveTo(page, title) {
+  await page.getByRole('button', { name: `Actions for ${title}` }).click();
+  await page.getByRole('menuitem', { name: 'Move to…' }).click();
+  await page.getByRole('dialog', { name: 'Move to…' }).waitFor();
+  await settle(page);
+}
+
 /** The screen point of a world point on the kanban board. */
 const screenOf = (page, id, fx, fy) =>
   page.evaluate(({ id, fx, fy }) => {
@@ -864,16 +893,7 @@ const STATES = {
     // its own board: Review is filled to its limit of 2
     await openKanbanBoard(env, { board: `${KANBAN_ID}-block` });
     const { page } = env;
-    await page.evaluate(() => {
-      const app = window.__board;
-      for (const [id, text, rank] of [['k-r1', 'Ranks carry their parent', 'a0'], ['k-r2', 'Store.geometry call sites', 'a1']]) {
-        if (app.store.get(id)) continue;
-        const card = { id, type: 'card', parent: 'k-review', rank: `${rank}@k-review`, text, x: 0, y: 0, w: 264, h: 0, rotation: 0, z: 'a0', createdBy: 'visual-seed', updatedAt: Date.now(), font: app.store.getMeta().bodyFont };
-        card.h = window.__kanban.cardContentHeight(card, 264);
-        app.store.transact(() => app.store.create(card));
-      }
-      app.setSelection([]);
-    });
+    await fillReview(page);
     await settle(page);
     // phone: Doing and Review side by side, zoomed before the pickup (a card picked up at the whole-board zoom keeps its
     // low-detail ghost), and the card taken from Doing so that it and the full lane are both on screen
@@ -906,6 +926,55 @@ const STATES = {
     // phone: the new lane, with its name field open, at about 100%
     await zoomOnLane(env.page, await env.page.evaluate(() => window.__board.store.containerLayout('k-box').lanes.at(-1)));
     return { noPark: true };
+  },
+  // slice 5: the list sheet, its filter, Move to… (with a full block lane), the kanban templates
+  async 'kanban-sheet'(env) {
+    await openKanbanBoard(env);
+    await openSheet(env.page, 'k-doing');
+    return { noPark: true };
+  },
+  async 'kanban-sheet-filter'(env) {
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-filter` });
+    await env.page.evaluate(() => window.__board.setKanbanFilter('k-box', { mine: true, labels: ['bug'], due: [], text: '' }));
+    await openSheet(env.page, 'k-todo');
+    await env.page.locator('.ks-filter').click();
+    await env.page.getByRole('dialog', { name: 'Filter cards' }).waitFor();
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'kanban-sheet-adding'(env) {
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-sheet-add` });
+    await openSheet(env.page, 'k-review');
+    await env.page.locator('.ks-add-btn').click();
+    await env.page.locator('.ks-input').fill('Draft the release notes');
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'kanban-moveto'(env) {
+    await openKanbanBoard(env);
+    await openSheet(env.page, 'k-doing');
+    await openMoveTo(env.page, 'Lane menu and WIP warning');
+    return { noPark: true };
+  },
+  async 'kanban-moveto-full'(env) {
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-block` });
+    await fillReview(env.page);
+    await openSheet(env.page, 'k-doing');
+    await openMoveTo(env.page, 'Lane menu and WIP warning');
+    return { noPark: true };
+  },
+  async 'kanban-sheet-full'(env) {
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-block` });
+    await fillReview(env.page);
+    await openSheet(env.page, 'k-review');
+    return { noPark: true };
+  },
+  async 'kanban-templates'({ page, base }) {
+    await page.goto(`${base}/?kanban#/templates`);
+    await page.locator('.tpl-card').first().waitFor();
+    await page.getByRole('button', { name: 'Planning', exact: true }).click();
+    await page.getByRole('heading', { name: 'Sprint board' }).waitFor();
+    await settle(page);
   },
   async 'kanban-lowdetail'(env) {
     await openKanbanBoard(env, { fit: false });

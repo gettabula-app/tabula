@@ -40,7 +40,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Ctrl/Cmd+D', action: 'Duplicate', ids: ['mod+d'] },
   { group: 'Edit', keys: 'Ctrl/Cmd+A', action: 'Select all', ids: ['mod+a'] },
   { group: 'Edit', keys: 'Delete, Backspace', action: 'Delete selection', ids: ['delete', 'backspace'] },
-  { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item, or open a card', ids: ['enter'] },
+  { group: 'Edit', keys: 'Enter', action: 'Edit text of the selected item, open a card, or open a kanban as a list', ids: ['enter'] },
   { group: 'Edit', keys: 'Arrows (Shift for grid steps)', action: 'Nudge', ids: ['arrows'] },
   { group: 'Edit', keys: 'K', action: 'Turn sticky notes into cards, or cards into sticky notes', ids: ['k'] },
   { group: 'Edit', keys: 'Alt+Arrows on a kanban card', action: 'Move the card in its lane, or to the next lane', ids: [] },

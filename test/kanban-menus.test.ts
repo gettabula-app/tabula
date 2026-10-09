@@ -40,6 +40,7 @@ function setup() {
     kanbanFilter: () => filter,
     setKanbanFilter: vi.fn<(id: Id, f: KanbanFilter) => void>((_: Id, f: KanbanFilter) => { filter = f; listeners.get('filter')?.forEach((fn) => fn()); }),
     filterCounts: vi.fn<() => { matching: number; total: number }>(() => ({ matching: 1, total: 3 })),
+    openKanbanList: vi.fn<(id: Id) => boolean>(() => true),
   };
   return { store, app, container: container.id, lanes: lanes.map((l) => l.id) };
 }
@@ -103,5 +104,18 @@ describe('the Filter popover', () => {
     vi.advanceTimersByTime(160);
     expect(app.setKanbanFilter).toHaveBeenCalledTimes(1);
     expect(app.kanbanFilter().text).toBe('log');
+  });
+});
+
+describe('the kanban menu in slice 5', () => {
+  it('opens the kanban as a list and offers the CSV export', () => {
+    const { app, container } = setup();
+    openContainerMenu(app as unknown as BoardApp, container, at);
+    const buttons = menu()!.querySelectorAll('button');
+    const csv = buttons.find((b) => textOf(b) === 'Export cards (CSV)')!;
+    expect(csv.disabled).toBe(false);
+    buttons.find((b) => textOf(b) === 'Open as list')!.click();
+    expect(app.openKanbanList).toHaveBeenCalledWith(container);
+    expect(menu()).toBeNull();
   });
 });

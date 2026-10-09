@@ -48,7 +48,9 @@ export function gatherObjects(store: Store, hiding: Hiding, ids: readonly Id[]):
   const stack = [...set];
   while (stack.length) {
     const id = stack.pop()!;
-    if (store.get(id)?.type !== 'frame') continue;
+    // frames carry their children, and a kanban its lanes and their cards (docs/kanban.md)
+    const type = store.get(id)?.type;
+    if (type !== 'frame' && type !== 'container' && type !== 'lane') continue;
     for (const c of store.childrenOf(id)) {
       if (set.has(c.id) || !open(c)) continue;
       set.add(c.id);

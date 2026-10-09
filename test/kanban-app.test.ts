@@ -5,7 +5,7 @@ import { Renderer } from '../src/render';
 import { Store } from '../src/store';
 import { KANBANS_LEFT_OUT, addCard, addCardRefusal, addLane, newKanban } from '../src/containers';
 import { CardInput } from '../src/ui/kanban';
-import { insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
+import { TEMPLATES, availableTemplates, insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
 import type { CustomTemplate } from '../src/custom-templates';
 import { KANBAN, LIMITS, ranksBetween } from '../shared/containers';
 import { EMPTY_FILTER, addRow, laneCards, laneMenuRect, type FilterChip } from '../src/ui/kanban-logic';
@@ -919,5 +919,97 @@ describe('review fixes: lanes', () => {
     expect(app.moveLaneFromMenu(order[2], 'left')).toBe(false);
     expect(notify).toHaveBeenLastCalledWith(expect.stringMatching(/locked/));
     expect(order.map((id) => (store.get(id) as BaseObj).rank)).toEqual(before);
+  });
+});
+
+describe('the list sheet from the canvas (slice 5)', () => {
+  it('opens on Enter with a kanban selected, for a viewer too', () => {
+    const { app, store, container } = harness();
+    const openSheet = vi.fn<(id: Id, lane?: Id) => void>();
+    Object.assign(app, { openSheet });
+    store.setReadOnly(true);
+    app.setSelection([container]);
+    press(app, 'Enter');
+    expect(openSheet).toHaveBeenCalledWith(container, undefined);
+  });
+
+  it('opens on a double tap at phone width, on the lane tapped', () => {
+    const { app, store, r, container, lanes, ids } = harness();
+    const openSheet = vi.fn<(id: Id, lane?: Id) => void>();
+    Object.assign(app, { openSheet });
+    call(app, 'onDblClick', pointer(r, centre(store, ids[1]), 'dblclick'));
+    expect(openSheet).toHaveBeenLastCalledWith(container, lanes[0]);
+    call(app, 'onDblClick', pointer(r, centre(store, lanes[2], 0.6), 'dblclick'));
+    expect(openSheet).toHaveBeenLastCalledWith(container, lanes[2]);
+    expect(openCard).not.toHaveBeenCalled();
+  });
+
+  it('lifts a card on a touch screen only after a long press', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { setTimeout, clearTimeout });
+    try {
+      const { app, store, r, container, lanes, ids } = harness();
+      const touch = (p: Point, type = 'pointerdown') => ({ ...pointer(r, p, type), pointerType: 'touch' });
+      // a short press and a move does nothing
+      call(app, 'onDown', touch(centre(store, ids[0])));
+      call(app, 'onMove', touch(centre(store, lanes[1], 0.3), 'pointermove'));
+      call(app, 'onUp', touch(centre(store, lanes[1], 0.3), 'pointerup'));
+      expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'C']);
+      // held for 600 ms, it lifts and drops where the finger goes, one undo step
+      call(app, 'onDown', touch(centre(store, ids[0])));
+      vi.advanceTimersByTime(600);
+      expect((app as unknown as { drag: { mode: string; moved: boolean } }).drag).toMatchObject({ mode: 'cards', moved: true });
+      for (let i = 1; i <= 4; i++) call(app, 'onMove', touch(centre(store, lanes[1], 0.3), 'pointermove'));
+      call(app, 'onUp', touch(centre(store, lanes[1], 0.3), 'pointerup'));
+      expect(titles(store, container, lanes[1])).toEqual(['A']);
+      store.undo.undo();
+      expect(titles(store, container, lanes[0])).toEqual(['A', 'B', 'C']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('kanban templates and copies (slice 5)', () => {
+  const withFlow = (app: Harness) => Object.assign(app.flow, { state: () => ({ steps: [] }), setSteps: vi.fn<() => void>(), end() {} });
+  const containers = (store: Store) => [...store.cache.values()].filter((o) => o.type === 'container').map((o) => o.id);
+
+  it('offers the four kanban templates only with the flag on', () => {
+    expect(availableTemplates().filter((t) => t.kanban)).toEqual([]);
+    flagOn();
+    expect(availableTemplates().filter((t) => t.kanban).map((t) => t.name)).toEqual(['Kanban', 'Sprint board', 'Bug triage', 'Personal tasks']);
+  });
+
+  it('places the Sprint board with its labels merged by name, in one undo step, leaving the session alone', () => {
+    const { app, store } = harness();
+    const flow = withFlow(app);
+    flagOn();
+    const feature = createLabel(store, 'FEATURE', 'teal')!;
+    store.undo.clear();
+    insertTemplate(app, TEMPLATES.find((t) => t.id === 'sprint-board')!);
+    expect(flow.setSteps).not.toHaveBeenCalled();
+    const id = containers(store).find((c) => (store.get(c) as BaseObj).name === 'Sprint board')!;
+    const layout = store.containerLayout(id)!;
+    expect(layout.lanes.map((l) => (store.get(l) as BaseObj).name)).toEqual(['Backlog', 'Sprint', 'In review', 'Done']);
+    expect(store.get(layout.lanes[2])).toMatchObject({ wip: 3 });
+    expect(listLabels(store).map((l) => l.name).sort()).toEqual(['Chore', 'FEATURE']);
+    const used = new Set([...layout.cards.values()].flat().flatMap((c) => (store.get(c) as BaseObj).labels ?? []));
+    expect(used.has(feature)).toBe(true);
+    for (const l of used) expect(listLabels(store).some((x) => x.id === l)).toBe(true);
+    store.undo.undo();
+    expect(containers(store)).toHaveLength(1);
+    expect(listLabels(store).map((l) => l.name)).toEqual(['FEATURE']);
+  });
+
+  it('duplicates a kanban with its lanes and cards, ranks naming the copies', () => {
+    const { app, store, container } = harness();
+    app.setSelection([container]);
+    app.duplicate();
+    const copy = containers(store).find((c) => c !== container)!;
+    const layout = store.containerLayout(copy)!;
+    expect(layout.lanes).toHaveLength(3);
+    expect(layout.cards.get(layout.lanes[0])!.map((c) => (store.get(c) as BaseObj).text)).toEqual(['A', 'B', 'C']);
+    for (const c of layout.cards.get(layout.lanes[0])!) expect((store.get(c) as BaseObj).rank!.endsWith(`@${layout.lanes[0]}`)).toBe(true);
+    expect(store.containerLayout(container)!.cards.get(store.containerLayout(container)!.lanes[0])).toHaveLength(3);
   });
 });

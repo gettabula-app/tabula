@@ -1,0 +1,143 @@
+/* The kanban list sheet and Move to… (docs/kanban.md, Visual design, Phone). The admin pairs: ink and graphite on paper,
+   hairlines in --rule, 2px ink rules; radius 0, no shadows. 11px uppercase labels as the admin phone tabs. Every target is
+   40px or more. Theme variables only, so all five themes work. */
+
+/* label chips are the sticky swatches, the same in every theme, so their text is the sticky ink */
+:root { --ks-chip-ink: var(--sticky-ink, #1D1A12); }
+
+.ks-sheet {
+  position: fixed; left: 0; right: 0; top: var(--ks-top, 64px); bottom: 0; z-index: 30;
+  display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink);
+  font-family: var(--ui);
+}
+.ks-head { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 8px 0 16px; }
+.ks-title { min-width: 0; flex: 1 1 auto; }
+.ks-name { margin: 0; font: 700 20px/24px var(--display); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ks-summary, .ks-tab, .ks-filter, .ks-end, .ks-opt, .ks-chip, .ks-due, .ks-more {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.ks-summary { display: block; color: var(--graphite); line-height: 16px; }
+.ks-btn {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 40px; padding: 0 10px;
+  border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); cursor: pointer;
+}
+.ks-btn.icon { border: 0; padding: 0; width: 40px; }
+.ks-btn.on { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
+.ks-btn:focus-visible, .ks-tab:focus-visible, .ks-row-title:focus-visible, .ks-add button:focus-visible, .ks-input:focus-visible,
+.ks-lane-opt:focus-visible, .ks-opt:focus-visible, .ks-bs-foot button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+/* lane tabs: a segmented strip that scrolls sideways, the active lane underlined 2px ink */
+.ks-tabs { flex: none; display: flex; gap: 24px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--rule); }
+.ks-tabs::-webkit-scrollbar { display: none; }
+.ks-tab {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 0; background: none; color: var(--graphite); white-space: nowrap; cursor: pointer;
+}
+.ks-tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.ks-n { display: inline-flex; align-items: center; gap: 3px; color: inherit; }
+.ks-n.over { padding: 0 4px; background: var(--danger); color: var(--paper); }
+
+/* card rows: grip, title with its chip and meta rows, ⋯; rows on hairlines */
+.ks-panel { position: relative; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+.ks-panel:has(+ .ks-add[hidden]) { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ks-rows { margin: 0; padding: 0; list-style: none; }
+.ks-row {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) 40px; align-items: start; gap: 4px; padding: 12px 8px 12px 4px;
+  border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.ks-row[style*='--fc'] { box-shadow: inset 4px 0 0 var(--fc); }
+.ks-row.dim { opacity: 0.35; }
+.ks-row.dragging { opacity: 0.5; }
+.ks-row.sel { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
+.ks-grip { display: grid; place-items: center; height: 40px; color: var(--graphite); touch-action: none; cursor: grab; }
+.ks-grip.off { cursor: default; }
+.ks-row-body { min-width: 0; }
+.ks-row-title {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; width: 100%; min-height: 40px; margin: 0;
+  padding: 10px 0 0; border: 0; border-radius: 0; background: none; color: var(--ink); text-align: left;
+  font: 500 15px/20px var(--ui); overflow-wrap: anywhere; cursor: pointer;
+}
+div.ks-row-title { cursor: default; }
+.ks-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.ks-chip { display: inline-flex; align-items: center; height: 16px; padding: 0 4px; background: var(--lc, var(--rule)); color: var(--ks-chip-ink); }
+.ks-more { color: var(--graphite); line-height: 16px; }
+.ks-meta { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-top: 8px; color: var(--graphite); }
+.ks-spacer { flex: 1 1 auto; }
+.ks-due { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 4px; color: var(--graphite); }
+.ks-due.soon { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.ks-due.overdue { background: var(--danger); color: var(--paper); }
+.ks-ccount { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.ks-owner {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--ink); font-size: 10px; font-weight: 700;
+}
+.ks-more-btn { align-self: start; }
+.ks-more-gap { width: 40px; }
+.ks-empty { padding: 24px 16px; color: var(--graphite); }
+.ks-drop { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--ink); pointer-events: none; }
+.ks-drop::before, .ks-drop::after { content: ''; position: absolute; top: -3px; width: 8px; height: 8px; background: var(--ink); }
+.ks-drop::before { left: 0; }
+.ks-drop::after { right: 0; }
+
+/* the Add card bar: a 48px signal button on a 2px ink rule, above the home indicator */
+.ks-add { flex: none; display: flex; gap: 8px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 2px solid var(--ink); background: var(--paper); }
+.ks-add[hidden] { display: none; }
+.ks-add-btn, .ks-add-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 0; border-radius: 0;
+  background: var(--signal); color: var(--on-signal); font: 600 15px var(--ui); cursor: pointer;
+}
+.ks-add-btn { flex: 1 1 auto; min-width: 0; }
+.ks-add-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-add-btn.refused { background: transparent; color: var(--graphite); box-shadow: inset 0 0 0 1px var(--rule); cursor: default; }
+.ks-add-go { flex: none; padding: 0 16px; }
+.ks-input {
+  flex: 1 1 auto; min-width: 0; height: 48px; padding: 0 12px; border: 2px solid var(--ink); border-radius: 0; background: var(--paper);
+  color: var(--ink); font: 500 15px var(--ui); outline: none;
+}
+
+/* Move to…: a bottom sheet over a tray scrim */
+.ks-move { position: fixed; inset: 0; z-index: 45; }
+.ks-scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--tray) 55%, transparent); }
+.ks-bsheet {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;
+  background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); font-family: var(--ui);
+}
+/* wider than a phone the sheet is a panel at the right, over the board, and Move to… rises inside it */
+@media (min-width: 861px) {
+  .ks-sheet { left: auto; width: 480px; border-left: 1px solid var(--ink); }
+  .ks-bsheet { left: auto; width: 480px; }
+}
+.ks-bs-head { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px 0 16px; }
+.ks-bs-head h2 { margin: 0; font: 700 20px/24px var(--display); letter-spacing: -0.02em; }
+.ks-bs-sub { margin: 0; padding: 0 16px 8px; color: var(--graphite); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-lane-opt {
+  display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px; border: 0; border-top: 1px solid var(--rule);
+  border-radius: 0; background: transparent; color: var(--ink); text-align: left; font: 500 15px var(--ui); cursor: pointer;
+}
+.ks-rd { flex: none; width: 18px; height: 18px; box-shadow: inset 0 0 0 1.5px var(--ink); }
+.ks-lane-opt[aria-checked='true'] .ks-rd { box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 0 0 5px var(--paper); background: var(--ink); }
+.ks-sw { flex: none; width: 4px; align-self: stretch; margin: 12px 0; background: var(--lc, transparent); }
+.ks-lane-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-end { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; color: var(--graphite); }
+.ks-end.over { padding: 0 6px; background: var(--danger); color: var(--paper); }
+.ks-lane-opt[aria-disabled='true'] { color: var(--graphite); cursor: default; }
+.ks-lane-opt[aria-disabled='true'] .ks-rd { box-shadow: inset 0 0 0 1.5px var(--graphite); }
+.ks-pos { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--rule); }
+.ks-opt {
+  flex: 1 1 0; height: 40px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); cursor: pointer;
+}
+.ks-opt[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+.ks-bs-foot { display: flex; gap: 8px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); border-top: 2px solid var(--ink); }
+.ks-bs-foot button {
+  flex: 1 1 0; height: 48px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink);
+  font: 600 15px var(--ui); cursor: pointer;
+}
+.ks-bs-foot button.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+
+.ks-sheet { animation: ks-in 120ms ease-out; }
+.ks-bsheet { animation: ks-up 120ms ease-out; }
+@keyframes ks-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ks-up { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ks-sheet, .ks-bsheet { animation: none; }
+}

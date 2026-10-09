@@ -125,3 +125,8 @@ export function orphanHome(containers: Iterable<ContainerFields>): string | null
 export function layoutAll(objects: Iterable<{ id: string; type: string; parent?: string }>): { layouts: Map<string, ContainerLayout>; rects: Map<string, Rect> };
 
 export function wipCheck(lane: { wip?: number; wipMode?: string }, cards: Iterable<{ id: string }>, moving: Iterable<string>): WipVerdict;
+
+export const TEMPLATE_STRIPPED: readonly string[];
+export function templateLabels(list: unknown): { id: string; name: string; color: string }[];
+export function templateKanbanFields(o: Record<string, unknown>, what: string, ctx: { types: Map<string, string>; labels: Set<string> }): Record<string, unknown>;
+export function checkTemplateKanbanLimits(objects: Iterable<{ id: string; type: string; parent?: unknown }>): void;

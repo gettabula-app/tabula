@@ -4,6 +4,7 @@ import type { BoardApp, KanbanMenuKind } from '../app';
 import type { BaseObj, Id, Rect } from '../types';
 import { LABEL_COLORS, LIMITS, kanbanColor } from '../../shared/containers';
 import { listLabels } from '../labels';
+import { downloadCardsCsv } from '../exporters';
 import { kanbanSwatch } from '../markup';
 import { popover } from './common';
 import { keepKeys } from './card-dialog';
@@ -26,7 +27,7 @@ function anchorAt(at: Rect, width: number): HTMLElement {
   return el;
 }
 
-interface ItemOpts {
+export interface ItemOpts {
   danger?: boolean;
   disabled?: boolean;
   /** For a choice among several: menuitemradio with aria-checked. */
@@ -39,7 +40,8 @@ interface ItemOpts {
   title?: string;
 }
 
-function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLButtonElement {
+/** A menu row of the kanban menus (also the list sheet's row menu, src/ui/container-sheet.ts). */
+export function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLButtonElement {
   let sw: HTMLElement | null = null;
   if (o.swatch !== undefined) {
     sw = h('span', { class: 'k-chip-swatch', 'aria-hidden': 'true' });
@@ -61,7 +63,7 @@ function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLButtonEl
 /** How long the filter waits after a key or a board change before it redraws and recounts. */
 export const FILTER_DEBOUNCE = 150;
 
-const sep = () => h('hr', { class: 'menu-sep', role: 'separator' });
+export const sep = () => h('hr', { class: 'menu-sep', role: 'separator' });
 
 /** Opens one of the kanban menus against a rectangle of the page (BoardApp.openKanbanMenu). */
 export function openKanbanMenu(app: BoardApp, kind: KanbanMenuKind, id: Id, at: Rect) {
@@ -220,9 +222,8 @@ export function openContainerMenu(app: BoardApp, id: Id, at: Rect) {
     item('Rename', pick(() => app.renameKanbanPart(id))),
     item('Add lane', pick(() => app.addLaneTo(id))),
     item('Labels…', pick(() => app.openLabels?.())),
-    // the CSV export and the list sheet are slice 5: shown so the menu keeps its shape, but not yet usable
-    item('Export cards (CSV)', () => {}, { disabled: true, title: 'Not available yet' }),
-    item('Open as list', () => {}, { disabled: true, title: 'Not available yet' }),
+    item('Export cards (CSV)', pick(() => downloadCardsCsv(app, [id]))),
+    item('Open as list', pick(() => app.openKanbanList(id))),
     sep(),
     item(c.locked ? 'Unlock' : 'Lock', pick(() => app.toggleKanbanLock(id))),
     item('Delete kanban', pick(() => app.deleteKanban(id)), { danger: true }),

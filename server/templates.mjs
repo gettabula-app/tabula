@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } from './board-ops.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { checkTemplateKanbanLimits, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
 import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
@@ -164,7 +165,17 @@ function style(o, what, out, withFill = true) {
   if (o.opacity !== undefined) out.opacity = number(o.opacity, `${what} opacity`, 0, 1);
 }
 
-function box(o, what, ids) {
+/** Runs a check from shared/containers.mjs, whose refusal becomes a TemplateInputError with the same message. */
+function kanban(check) {
+  try {
+    return check();
+  } catch (e) {
+    if (e instanceof TemplateInputError) throw e;
+    return fail(e instanceof Error ? e.message : 'A kanban in the template is not valid.');
+  }
+}
+
+function box(o, what, ids, labels) {
   const out = {
     id: o.id,
     type: o.type,
@@ -176,7 +187,8 @@ function box(o, what, ids) {
     z: text(o.z, `${what} z order`, 64, { min: 1 }),
   };
   if (o.parent !== undefined) {
-    if (typeof o.parent !== 'string' || ids.get(o.parent) !== 'frame') fail(`${what} has a parent that is not a frame in the template.`);
+    // a lane's parent is a kanban and a card's a lane (templateKanbanFields checks those); anything else sits in a frame
+    if (typeof o.parent !== 'string' || (!KANBAN_TYPES.has(o.type) && ids.get(o.parent) !== 'frame')) fail(`${what} has a parent that is not a frame in the template.`);
     out.parent = o.parent;
   }
   if (o.text !== undefined) out.text = text(o.text, `${what} text`, MAX_TEXT, { lines: true });
@@ -222,6 +234,16 @@ function box(o, what, ids) {
         out.points = [...o.points];
       }
       break;
+    case 'container':
+    case 'lane':
+    case 'card': {
+      // every kanban field is checked one by one (docs/kanban.md, Templates); a title is a card's only text
+      const fields = kanban(() => templateKanbanFields(o, what, { types: ids, labels }));
+      delete out.fill;
+      if (o.type !== 'card') delete out.text;
+      Object.assign(out, fields);
+      break;
+    }
     case 'uml-class':
       if (o.stereotype !== undefined) out.stereotype = text(o.stereotype, `${what} stereotype`, 200);
       if (o.attributes !== undefined) out.attributes = members(o.attributes, `${what} attribute`);
@@ -296,7 +318,10 @@ export function validateTemplateContent(raw) {
     ids.set(o.id, o.type);
   });
 
-  const objects = list.map((o, i) => (o.type === 'connector' ? connector(o, `Object ${i + 1}`, ids) : box(o, `Object ${i + 1}`, ids)));
+  const labels = kanban(() => templateLabels(raw.labels));
+  const labelIds = new Set(labels.map((l) => l.id));
+  const objects = list.map((o, i) => (o.type === 'connector' ? connector(o, `Object ${i + 1}`, ids) : box(o, `Object ${i + 1}`, ids, labelIds)));
+  kanban(() => checkTemplateKanbanLimits(objects));
 
   // a parent chain that loops would never end for anything that walks up it
   const parents = new Map(objects.filter((o) => o.parent !== undefined).map((o) => [o.id, o.parent]));
@@ -322,6 +347,7 @@ export function validateTemplateContent(raw) {
       h: number(bounds.h, 'bounds height', 0, COORD),
     },
   };
+  if (labels.length) content.labels = labels;
   if (fonts !== undefined) {
     if (!isRecord(fonts) || typeof fonts.heading !== 'string' || typeof fonts.body !== 'string' || !FONT_RE.test(fonts.heading) || !FONT_RE.test(fonts.body)) {
       fail('content.fonts must name a heading and a body font.');

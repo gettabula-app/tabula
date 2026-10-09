@@ -13,6 +13,9 @@ import { answerKey } from './polls';
 import { SVG_DEFS, objectMarkup } from './markup';
 import { cssUrl, fontName, nearestWeight } from './fonts';
 import { customStickyColors } from './palette';
+import { cardRows, cardsCsvName, csvText } from './csv';
+import { containerOf } from './containers';
+import { listLabels } from './labels';
 
 export interface BoardJson {
   format: 'driftboard';
@@ -187,6 +190,32 @@ export function download(data: Blob | Uint8Array | string, name: string, type = 
 }
 
 export const safeName = (s: string) => (s || 'board').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'board';
+
+/**
+ * The kanbans Cards as CSV takes (docs/kanban.md, Export and import): the ones given, else those of the selection (a
+ * kanban, or the kanban of a selected lane or card), else every kanban on the board, in paint order.
+ */
+export function csvKanbans(app: BoardApp, ids?: readonly Id[]): Id[] {
+  const all = app.store.shown().filter((o) => o.type === 'container' && app.store.containerLayout(o.id)).map((o) => o.id);
+  const wanted = new Set((ids ?? app.selection).map((id) => containerOf(app.store, app.store.get(id))).filter((c): c is Id => !!c));
+  const picked = all.filter((id) => wanted.has(id));
+  return picked.length || ids ? picked : all;
+}
+
+/** Downloads the cards of kanbans as CSV. False (and nothing downloaded) when there is no kanban. */
+export function downloadCardsCsv(app: BoardApp, ids?: readonly Id[]): boolean {
+  const kanbans = csvKanbans(app, ids);
+  if (!kanbans.length) return false;
+  const rows = cardRows({
+    get: (id) => app.store.get(id) as BaseObj | undefined,
+    containerLayout: (id) => app.store.containerLayout(id),
+    labels: listLabels(app.store),
+    commentCount: (id) => app.r.commentCount(id),
+  }, kanbans);
+  const one = kanbans.length === 1 ? (app.store.get(kanbans[0]) as BaseObj).name ?? '' : null;
+  download(csvText(rows), cardsCsvName(app.store.getMeta().name, one, safeName), 'text/csv;charset=utf-8');
+  return true;
+}
 
 // ---------------------------------------------------------------- SVG / PNG
 

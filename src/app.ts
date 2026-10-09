@@ -18,7 +18,7 @@ import {
 import { cardBody, kanbanHeaderControls, objectMarkup, textHeight } from './markup';
 import {
   KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
-  cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
+  cardsToStickies, containerOf, laneOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
@@ -74,7 +74,8 @@ type Drag =
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
-  | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null };
+  // (`armed`: a touch long press started it, so it lifts at once, docs/kanban.md, Phone and touch)
+  | { mode: 'cards'; start: Point; ids: Id[]; lead: Id; grab: Point; moved: boolean; target: LaneTarget | null; frame: Id | null; armed?: boolean };
 
 /** The field the card dialog starts on. */
 export type CardFocus = 'title' | 'owner' | 'due' | 'labels';
@@ -84,6 +85,9 @@ export type KanbanMenuKind = 'lane' | 'container' | 'filter';
 type KanbanControl = { kind: 'menu' } | { kind: 'filter' } | { kind: 'chip'; key: string } | { kind: 'addLane' };
 
 type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'presence' | 'drag' | 'editing' | 'readonly' | 'comments' | 'filter';
+
+/** The phone layout's breakpoint (styles.css, `max-width: 860px`): where a kanban opens as a list on a double tap. */
+const phoneWidth = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
 
 const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
   isBox(o) && o.type !== 'path' && o.type !== 'frame';
@@ -147,7 +151,8 @@ export class BoardApp {
   }
   connectorDefaults: Partial<ConnectorObj> = { route: 'elbow', startHead: 'none', endHead: 'arrow' };
   private drag: Drag | null = null;
-  private longPress: { id: Id; x: number; y: number; timer: number; ring: HTMLElement } | null = null;
+  /** A press being held: it unlocks a locked object, or (`fire`) does something else when it completes. */
+  private longPress: { id: Id; x: number; y: number; timer: number; ring: HTMLElement; fire?: () => void } | null = null;
   private spaceDown = false;
   private listeners = new Map<Events, Set<() => void>>();
   private lastPointer: Point = { x: 0, y: 0 };
@@ -170,6 +175,8 @@ export class BoardApp {
    * page coordinates (src/ui/kanban-menus.ts).
    */
   openKanbanMenu: ((kind: KanbanMenuKind, id: Id, at: Rect) => void) | null = null;
+  /** Set by the board UI: opens a kanban as a list (src/ui/container-sheet.ts), on one of its lanes. */
+  openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
@@ -607,7 +614,7 @@ export class BoardApp {
     return null;
   }
 
-  private armLongPress(id: Id, e: PointerEvent) {
+  private armLongPress(id: Id, e: PointerEvent, fire?: () => void) {
     if (this.readOnly) return;
     this.cancelLongPress();
     const ring = document.createElement('div');
@@ -618,7 +625,7 @@ export class BoardApp {
     ring.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="11" fill="none" stroke="rgba(24,33,43,.18)" stroke-width="3"/><circle class="lp-arc" cx="14" cy="14" r="11" fill="none" stroke="#18212B" stroke-width="3" stroke-linecap="round" transform="rotate(-90 14 14)"/></svg>';
     this.r.root.append(ring);
     const timer = window.setTimeout(() => this.fireLongPress(), 600);
-    this.longPress = { id, x: e.clientX, y: e.clientY, timer, ring };
+    this.longPress = { id, x: e.clientX, y: e.clientY, timer, ring, fire };
   }
 
   private cancelLongPress() {
@@ -633,6 +640,7 @@ export class BoardApp {
     const lp = this.longPress;
     if (!lp) return;
     this.cancelLongPress();
+    if (lp.fire) return lp.fire();
     this.drag = null;
     this.r.setOverlay({ marquee: null });
     this.store.undo.stopCapturing();
@@ -737,7 +745,9 @@ export class BoardApp {
           this.setSelection([hit.id]);
         }
         if (this.selection.includes(hit.id) && !this.readOnly) {
-          if (hit.type === 'card') this.beginCardDrag(hit.id, p);
+          // on a touch screen a card lifts after a long press (600 ms), so a finger that only taps or scrolls moves nothing
+          if (hit.type === 'card' && e.pointerType === 'touch' && !hit.locked) this.armLongPress(hit.id, e, () => this.liftCard(hit.id, p));
+          else if (hit.type === 'card') this.beginCardDrag(hit.id, p);
           else this.beginMove(p);
         }
         return;
@@ -893,6 +903,18 @@ export class BoardApp {
     const c = kanbanHeaderControls(o, this.filterChipsOf(containerId), !this.readOnly);
     const r = (kind === 'menu' ? c.menu : c.filter?.rect) ?? { x: o.w - 44, y: 8, w: 32, h: 32 };
     this.openKanbanMenu?.(kind === 'menu' ? 'container' : 'filter', containerId, this.pageRect({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h }));
+  }
+
+  /**
+   * Opens a kanban as a list (docs/kanban.md, Phone and touch): its lanes as tabs, the cards of one as rows. For everyone
+   * who can see the board; what the rows offer follows the role. Returns whether it opened.
+   */
+  openKanbanList(containerId: Id, laneId?: Id): boolean {
+    if (this.store.get(containerId)?.type !== 'container' || !this.store.containerLayout(containerId) || !this.openSheet) return false;
+    this.cardInput.stop();
+    this.cancelCardDrag();
+    this.openSheet(containerId, laneId);
+    return true;
   }
 
   /** Draws a kanban control pressed while its menu or popover is open, and not when it closes. */
@@ -1295,8 +1317,18 @@ export class BoardApp {
     this.drag = { mode: 'cards', start: p, ids: movingOrder(this.store, ids), lead: id, grab: { x: p.x - lead.x, y: p.y - lead.y }, moved: false, target: null, frame: null };
   }
 
+  /** A card drag started by a long press on a touch screen: the ghost lifts where the finger is, before it moves. */
+  private liftCard(id: Id, p: Point) {
+    if (this.readOnly || this.drag) return;
+    this.beginCardDrag(id, p);
+    const d = this.drag as Drag | null;
+    if (d?.mode !== 'cards') return;
+    d.armed = true;
+    this.doCardDrag(d, p);
+  }
+
   private doCardDrag(d: Extract<Drag, { mode: 'cards' }>, p: Point) {
-    if (!d.moved && Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
+    if (!d.moved && !d.armed && Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
     if (!d.moved) {
       d.moved = true;
       this.emit('drag');
@@ -1861,6 +1893,15 @@ export class BoardApp {
     // a double click on a kanban's controls is two clicks on them, never a rename or a new card
     if (top?.type === 'container' && this.kanbanControlAt(top.id, p)) return;
     if (top?.type === 'lane' && this.laneRegion(top.id, p) === 'menu') return;
+    // at phone width a double tap on a kanban opens it as a list, on the lane tapped (docs/kanban.md, Phone and touch)
+    if (phoneWidth() && top && this.openSheet) {
+      const cid = containerOf(this.store, top) ?? (top.type === 'card' ? this.containerShowing(top.id) : null);
+      if (cid) {
+        const lane = top.type === 'lane' ? top.id : top.type === 'card' ? laneOf(this.store, top.id) ?? undefined : undefined;
+        this.openKanbanList(cid, lane);
+        return;
+      }
+    }
     if (top?.locked && !this.hit(p)) return;
     const hit = this.hit(p);
     if (this.readOnly) {
@@ -1964,7 +2005,10 @@ export class BoardApp {
       }
       if (k === 'enter' && this.selection.length === 1) {
         e.preventDefault();
-        if (this.store.get(this.selection[0])?.type === 'card') this.openCardDialog(this.selection[0]);
+        const type = this.store.get(this.selection[0])?.type;
+        if (type === 'card') this.openCardDialog(this.selection[0]);
+        // a kanban opens as a list, for every role: the keyboard route to its cards (docs/kanban.md, Phone and touch)
+        else if (type === 'container' && this.openKanbanList(this.selection[0])) return;
         else if (!ro) this.editor.start(this.selection[0]);
         return;
       }

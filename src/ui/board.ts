@@ -2,6 +2,7 @@ import { openContextMenu } from './context-menu';
 import { openCardDialog } from './card-dialog';
 import { openLabelsDialog } from './labels-dialog';
 import { openKanbanMenu } from './kanban-menus';
+import { closeContainerSheet, openContainerSheet } from './container-sheet';
 import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
@@ -25,7 +26,7 @@ import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
-import { download, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
+import { csvKanbans, download, downloadCardsCsv, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
@@ -184,6 +185,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
   app.openLabels = () => void openLabelsDialog(app);
   app.openKanbanMenu = (kind, id, at) => openKanbanMenu(app, kind, id, at);
+  // the list sheet (docs/kanban.md, Phone and touch; slice 5); it goes when the board does
+  app.openSheet = (id, lane) => void openContainerSheet(app, id, lane);
+  app.lifetime.signal.addEventListener('abort', closeContainerSheet, { once: true });
   const voteBtn = h('button', { class: 'rail-btn', 'data-tip': 'Start a dot vote (no limit)', 'aria-label': 'Start a dot vote' }, icon('vote', 22));
   voteBtn.addEventListener('click', () => {
     if (app.flow.isVoting()) {
@@ -565,6 +569,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     item('download', 'Board file (.drift)', async () => download(await toDrift(app, { leaveOutWithheld: true }), `${name()}.drift`, 'application/zip'), 'Board with its sync data and pictures'),
     item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel, undefined, { leaveOutWithheld: true }), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),
+    // cards of the selected kanbans, or of every kanban (docs/kanban.md, Export and import)
+    csvKanbans(app).length ? item('download', 'Cards as CSV', () => downloadCardsCsv(app), 'One row per card, for spreadsheets') : null,
     item('mermaid', 'Copy as Mermaid', () => {
       // never the words of a note private writing hides from this person
       const objs = leaveOutWithheld(sel ? [...app.store.cache.values()].filter((o) => sel.includes(o.id) || o.type === 'connector') : [...app.store.cache.values()], app.flow);
