@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { Store } from '../src/store';
 import { Flow } from '../src/flow';
-import { addCard, newKanban } from '../src/containers';
+import { addCard, newKanban, stickiesToCards } from '../src/containers';
+import { cardRows } from '../src/csv';
 
 // docs/kanban.md, Export and import: the Markdown summary lists a kanban as a heading, its lanes as lower headings and its
 // cards as bullets with (owner, due); what Layers hides stays out, as in the rest of the summary.
@@ -92,5 +93,28 @@ describe('Markdown in a kanban summary (injection)', () => {
     expect(md).toContain('- 1\\. numbered');
     expect(md).toContain('\\- nested');
     expect(md).toContain('(\\*Ada\\* \\_x\\_ \\[o\\]');
+  });
+});
+
+describe('private notes never reach a kanban summary or CSV (slice 5 privacy check)', () => {
+  it('a hidden private sticky parented to a lane is not a card, so neither lists it', () => {
+    const s = setup();
+    addCard(s.store, s.todo, 'Public card', { createdBy: 'me' });
+    s.store.transact(() => s.store.create({ id: 'secret', type: 'sticky', parent: s.todo, rank: 'a5@' + s.todo, text: 'Secret', privateStep: 'step1', createdBy: 'other', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a9' } as never));
+    const md = s.md();
+    expect(md).toContain('Public card');
+    expect(md).not.toContain('Secret');
+    const rows = cardRows({
+      get: (id) => s.store.get(id) as never, containerLayout: (id) => s.store.containerLayout(id), labels: [], commentCount: () => 0,
+    }, [s.container]);
+    expect(rows.flat().join('|')).not.toContain('Secret');
+  });
+
+  it('someone else’s unrevealed private note cannot be turned into a card, so it cannot get into either', () => {
+    const s = setup();
+    s.store.transact(() => s.store.create({ id: 'secret', type: 'sticky', text: 'Secret', privateStep: 'step1', createdBy: 'other', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a9' } as never));
+    expect(stickiesToCards(s.store, ['secret'], () => ({ lane: s.todo, index: 0 }), 'me').done).toEqual([]);
+    expect(s.store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(s.md()).not.toContain('Secret');
   });
 });
