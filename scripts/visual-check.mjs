@@ -33,7 +33,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --mode <mode>      open (default) or accounts
   --states <list>    Comma separated, default all for the mode: home, board, board-selected, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
-                     kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
+                     kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, and in accounts mode admin, backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object (the chat states
                      turn on TABULA_CHAT)
@@ -806,6 +807,81 @@ const STATES = {
     await env.page.keyboard.press('k');
     await env.page.waitForFunction(() => window.__board.store.get('k-note-1').type === 'card');
     await settle(env.page);
+  },
+  // slice 4: the lane and kanban menus, the Filter popover, a filter on, a refused drop into a full block lane, a new lane
+  async 'kanban-lane-menu'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
+    await env.page.getByRole('menu', { name: 'Doing lane menu' }).waitFor();
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'kanban-menu'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      window.__board.setSelection(['k-box']);
+      window.__board.openContainerControl('k-box', 'menu');
+    });
+    await env.page.getByRole('menu', { name: 'Kanban menu' }).waitFor();
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'kanban-filter'(env) {
+    // its own board: a filter is kept per board in this browser, and would dim every later kanban shot
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-filter` });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.setKanbanFilter('k-box', { mine: true, labels: ['bug'], due: [], text: '' });
+      app.openContainerControl('k-box', 'filter');
+    });
+    await env.page.getByRole('dialog', { name: 'Filter cards' }).waitFor();
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'kanban-filter-on'(env) {
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-filter` });
+    await env.page.evaluate(() => window.__board.setKanbanFilter('k-box', { mine: true, labels: ['bug'], due: [], text: '' }));
+    await settle(env.page);
+  },
+  async 'kanban-wip-block'(env) {
+    // its own board: Review is filled to its limit of 2
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-block` });
+    const { page } = env;
+    await page.evaluate(() => {
+      const app = window.__board;
+      for (const [id, text, rank] of [['k-r1', 'Ranks carry their parent', 'a0'], ['k-r2', 'Store.geometry call sites', 'a1']]) {
+        if (app.store.get(id)) continue;
+        const card = { id, type: 'card', parent: 'k-review', rank: `${rank}@k-review`, text, x: 0, y: 0, w: 264, h: 0, rotation: 0, z: 'a0', createdBy: 'visual-seed', updatedAt: Date.now(), font: app.store.getMeta().bodyFont };
+        card.h = window.__kanban.cardContentHeight(card, 264);
+        app.store.transact(() => app.store.create(card));
+      }
+      app.setSelection([]);
+    });
+    await settle(page);
+    const from = await screenOf(page, 'k-c3', 0.5, 0.5);
+    const to = await screenOf(page, 'k-review', 0.5, 0.55);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await settle(page);
+    return { noPark: true };
+  },
+  async 'kanban-wip-refused'(env) {
+    await STATES['kanban-wip-block'](env);
+    await env.page.mouse.up();
+    await env.page.locator('.toast').filter({ hasText: 'Review is full' }).waitFor();
+    return { noPark: true };
+  },
+  async 'kanban-addlane'(env) {
+    // its own board: the new lane would otherwise widen every later kanban shot
+    await openKanbanBoard(env, { board: `${KANBAN_ID}-addlane` });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      if (app.store.containerLayout('k-box').lanes.length < 5) app.addLaneTo('k-box');
+      app.r.fit(window.innerWidth < 600 ? app.r.contentBounds(['k-box']) : app.r.contentBounds(), window.innerWidth < 600 ? 8 : 40, 1);
+    });
+    await settle(env.page);
+    return { noPark: true };
   },
   async 'kanban-lowdetail'(env) {
     await openKanbanBoard(env, { fit: false });
