@@ -481,7 +481,7 @@ export function connectorGeom(
 }
 
 /** Bounds of any object (connectors need their routed geometry). */
-export function objBounds(get: (id: string) => Obj | undefined, o: Obj, layout?: ConnectorLayout): Rect | null {
+export function objBounds(get: (id: string) => Obj | undefined, o: Obj, layout?: ConnectorLayout, geometry?: (o: Obj) => Rect): Rect | null {
   if (isConnector(o)) {
     const g = connectorGeom(get, o, layout);
     return g ? rectOfPoints(g.pts) : null;
@@ -490,6 +490,7 @@ export function objBounds(get: (id: string) => Obj | undefined, o: Obj, layout?:
     const b = boxBounds(o);
     return { x: b.x, y: b.y - 28, w: b.w, h: b.h + 28 };
   }
+  if (o.type === 'group') return geometry?.(o) ?? { x: 0, y: 0, w: 0, h: 0 };
   return boxBounds(o);
 }
 

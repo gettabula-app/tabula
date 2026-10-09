@@ -47,7 +47,8 @@ export function withCleanProposedBy<T extends Obj>(o: T): T {
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list(), opts: { leaveOutWithheld?: boolean } = {}): BoardJson {
   const all = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
   // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
-  const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all).map((o) => withCleanProposedBy(app.store.placed(o)));
+  const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all)
+    .map((o) => withCleanProposedBy(o.type === 'group' ? o : app.store.placed(o)));
   if (opts.leaveOutWithheld) comments = threadsWithoutWithheld(app, comments);
   const json: BoardJson = {
     format: 'driftboard',
@@ -336,7 +337,9 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
   const stack = [...ids];
   while (stack.length) {
     const id = stack.pop()!;
-    if (app.store.get(id)?.type === 'frame') for (const c of app.store.childrenOf(id)) if (!set.has(c.id)) { set.add(c.id); stack.push(c.id); }
+    if (app.store.get(id)?.type === 'frame' || app.store.get(id)?.type === 'group') {
+      for (const c of app.store.childrenOf(id)) if (!set.has(c.id)) { set.add(c.id); stack.push(c.id); }
+    }
     for (const cid of app.store.containerLayout(id)?.order ?? []) set.add(cid);
   }
   // include connectors between exported items

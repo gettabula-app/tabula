@@ -1,8 +1,10 @@
 import * as Y from 'yjs';
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unknownFeatures, type ContainerLayout } from '../shared/containers';
-import type { BoardMeta, ConnectorObj, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
+import type { BaseObj, BoardMeta, ConnectorObj, Group, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
+import { boxBounds } from './geometry';
+import { descendantsOf as walkDescendants, frameOf as findFrame, isGroup, membersBounds } from './groups';
 import { cleanColor } from '../shared/colors';
 import { customStickyColors } from './palette';
 
@@ -78,6 +80,8 @@ export class Store {
   private shownCache: Obj[] | null = null;
   private boundIndex = new Map<Id, Set<Id>>(); // shape id -> connector ids
   private childIndex = new Map<Id, Set<Id>>(); // parent id -> child ids
+  private groupBoundsCache = new Map<Id, Rect | null>();
+  private geometryVisible: (o: Obj) => boolean = () => true;
   private containerIds = new Set<Id>();
   // Derived geometry (docs/kanban.md): one layout per container, dropped when something inside it changes.
   private layouts = new Map<Id, ContainerLayout | null>();
@@ -98,7 +102,7 @@ export class Store {
     this.pollState = doc.getMap('pollState');
     this.labels = doc.getMap('labels');
 
-    this.objects.forEach((m, id) => this.cache.set(id, m.toJSON() as Obj));
+    this.objects.forEach((m, id) => this.cache.set(id, this.cachedObject(m.toJSON() as Obj)));
     this.rebuildBoundIndex();
     this.rebuildChildIndex();
     this.refreshOrphans();
@@ -121,7 +125,7 @@ export class Store {
         const m = this.objects.get(id);
         let next: Obj | undefined;
         if (m) {
-          next = m.toJSON() as Obj;
+          next = this.cachedObject(m.toJSON() as Obj);
           this.cache.set(id, next);
           if (isConnector(next)) this.indexConnector(next);
           this.indexChild(next);
@@ -130,6 +134,10 @@ export class Store {
           this.cache.delete(id);
         }
         edits.push([prev, next]);
+      }
+      for (const [before, after] of edits) {
+        this.invalidateGroupAncestors(before, changed);
+        this.invalidateGroupAncestors(after, changed);
       }
       // What moved or resized because of its container is reported as changed too, so drawing and bounds follow.
       for (const [cid, before] of this.dropLayouts(edits)) {
@@ -194,15 +202,31 @@ export class Store {
       const all = [...this.cache.values()];
       const frames = all.filter((o) => o.type === 'frame').sort(cmpZ);
       const rest = all.filter((o) => o.type !== 'frame' && !this.isLaidOut(o)).sort(cmpZ);
-      const out = [...frames];
-      for (const o of rest) {
+      const out: Obj[] = [...frames];
+      const seen = new Set<Id>(frames.map((o) => o.id));
+      const append = (o: Obj) => {
+        if (seen.has(o.id) || o.type === 'frame' || this.isLaidOut(o)) return;
+        seen.add(o.id);
         out.push(o);
-        if (o.type !== 'container') continue;
-        for (const id of this.containerLayout(o.id)?.order ?? []) {
-          const child = this.cache.get(id);
-          if (child) out.push(child);
+        if (isGroup(o)) {
+          for (const child of this.childrenOf(o.id).filter((c) => c.parent === o.id).sort(cmpZ)) append(child);
+        } else if (o.type === 'container') {
+          for (const id of this.containerLayout(o.id)?.order ?? []) {
+            const child = this.cache.get(id);
+            if (child && !seen.has(child.id)) {
+              seen.add(child.id);
+              out.push(child);
+            }
+          }
         }
+      };
+      for (const o of rest) {
+        const parent = o.parent ? this.cache.get(o.parent) : undefined;
+        if (!isGroup(parent)) append(o);
       }
+      // A malformed parent cycle has no root. Start its first group by z, then stop when an id repeats.
+      for (const o of rest.filter(isGroup)) append(o);
+      for (const o of rest) append(o);
       this.orderCache = out;
       this.orderDirty = false;
     }
@@ -214,18 +238,24 @@ export class Store {
    * bound end hidden, so no line is left pointing at nothing. Hidden is for everyone and is not private.
    */
   isShown(o: Obj): boolean {
-    if (o.hidden === true) return false;
-    const seen = new Set<Id>([o.id]);
-    for (let p = o.parent ? this.cache.get(o.parent) : undefined; p && !seen.has(p.id); p = p.parent ? this.cache.get(p.parent) : undefined) {
-      if (p.hidden === true) return false;
-      seen.add(p.id);
-    }
+    if (!this.objectVisible(o)) return false;
+    if (isGroup(o) && !this.groupBounds(o)) return false;
     if (isConnector(o)) {
       for (const end of [o.from, o.to]) {
         if (end.kind !== 'bound') continue;
         const at = this.cache.get(end.id);
         if (at && at.type !== 'connector' && !this.isShown(at)) return false;
       }
+    }
+    return true;
+  }
+
+  private objectVisible(o: Obj): boolean {
+    if (o.hidden === true) return false;
+    const seen = new Set<Id>([o.id]);
+    for (let p = o.parent ? this.cache.get(o.parent) : undefined; p && !seen.has(p.id); p = p.parent ? this.cache.get(p.parent) : undefined) {
+      if (p.hidden === true) return false;
+      seen.add(p.id);
     }
     return true;
   }
@@ -289,11 +319,12 @@ export class Store {
   }
 
   create(o: Obj) {
+    const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 } : o;
     // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
     // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
-    const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(o.type);
+    const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
-    const entries = Object.entries(o)
+    const entries = Object.entries(stored)
       .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean'))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
@@ -303,9 +334,12 @@ export class Store {
   update(id: Id, patch: Partial<Obj> | Record<string, unknown>) {
     const m = this.objects.get(id);
     if (!m) return;
+    const group = m.get('type') === 'group';
+    let wroteField = false;
     for (const [k, raw] of Object.entries(patch)) {
+      if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
       if (raw === undefined) {
-        if (m.has(k)) m.delete(k);
+        if (m.has(k)) { m.delete(k); wroteField = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
@@ -314,9 +348,9 @@ export class Store {
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
       const cur = m.get(k);
-      if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) m.set(k, v);
+      if (typeof v === 'object' ? JSON.stringify(cur) !== JSON.stringify(v) : cur !== v) { m.set(k, v); wroteField = true; }
     }
-    if (m.size) m.set('updatedAt', Date.now());
+    if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
   }
@@ -344,6 +378,25 @@ export class Store {
       if (o) out.push(o);
     }
     return out;
+  }
+
+  descendantsOf(id: Id): Obj[] {
+    return walkDescendants(id, (childId) => this.cache.get(childId), (parentId) => this.childrenOf(parentId));
+  }
+
+  frameOf(o: Obj): BaseObj | undefined {
+    return findFrame(o, (id) => this.cache.get(id));
+  }
+
+  /** Refreshes group geometry after private-note visibility changes with the active flow step. */
+  invalidateGeometryVisibility() {
+    this.groupBoundsCache.clear();
+    this.shownCache = null;
+  }
+
+  setGeometryVisibility(predicate: (o: Obj) => boolean) {
+    this.geometryVisible = predicate;
+    this.invalidateGeometryVisibility();
   }
 
   /** The layout of a container and everything in it; null when it is not a container or its layout is unknown. */
@@ -379,12 +432,17 @@ export class Store {
 
   /** Where the object is: derived for a container's size and for what is laid out in it, stored for everything else. */
   geometry(o: Obj): Rect {
+    if (isGroup(o)) return this.groupBounds(o) ?? { x: 0, y: 0, w: 0, h: 0 };
     const r = isContainerType(o.type) ? this.layoutOf(o)?.rects.get(o.id) : undefined;
     return r ?? { x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? 0, h: o.h ?? 0 };
   }
 
   /** The object as it is drawn: itself, or for a container and what it lays out a copy with the derived rectangle. */
   placed<T extends Obj>(o: T): T {
+    if (isGroup(o)) {
+      const rect = this.groupBounds(o);
+      return { ...o, ...(rect ?? { x: 0, y: 0, w: 0, h: 0 }), rotation: 0 } as T;
+    }
     if (!isContainerType(o.type)) return o;
     const rect = this.layoutOf(o)?.rects.get(o.id);
     if (!rect) return o;
@@ -467,6 +525,43 @@ export class Store {
     for (const o of this.cache.values()) {
       this.indexChild(o);
       if (o.type === 'container') this.containerIds.add(o.id);
+    }
+  }
+
+  private cachedObject(o: Obj): Obj {
+    return isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 } : o;
+  }
+
+  private groupBounds(group: Group): Rect | null {
+    if (this.groupBoundsCache.has(group.id)) return this.groupBoundsCache.get(group.id)!;
+    const bounds = membersBounds(
+      group,
+      (id) => this.cache.get(id),
+      (id) => this.childrenOf(id),
+      (o) => this.geometryVisible(o) && this.objectVisible(o),
+      (o) => boxBounds(this.placed(o) as BaseObj),
+    );
+    this.groupBoundsCache.set(group.id, bounds);
+    return bounds;
+  }
+
+  private invalidateGroupAncestors(o: Obj | undefined, changed: Set<Id>) {
+    if (!o) return;
+    const seen = new Set<Id>([o.id]);
+    if (isGroup(o)) {
+      this.groupBoundsCache.delete(o.id);
+      changed.add(o.id);
+    }
+    let parentId = o.parent;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = this.cache.get(parentId);
+      if (!parent) break;
+      if (isGroup(parent)) {
+        this.groupBoundsCache.delete(parent.id);
+        changed.add(parent.id);
+      }
+      parentId = parent.parent;
     }
   }
 

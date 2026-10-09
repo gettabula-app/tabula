@@ -10,6 +10,7 @@ import { isSafeColor } from '../shared/colors';
 import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRank, templateKanbanFields, templateLabels } from '../shared/containers';
 import { STICKY_COLORS } from './palette';
 import { OBJ_ENUMS, cleanProposedBy } from './safe-obj';
+import { GROUP_MAX_DEPTH, GROUP_MAX_MEMBERS, GROUP_MAX_PER_BOARD, GROUP_NAME_MAX } from './groups';
 
 export const MAX_TEMPLATE_OBJECTS = 2000;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
@@ -228,7 +229,7 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
 }
 
 const OBJ_TYPES: Record<ObjType, true> = {
-  shape: true, sticky: true, text: true, frame: true, icon: true, image: true, path: true, connector: true, container: true, lane: true, card: true,
+  shape: true, sticky: true, text: true, frame: true, group: true, icon: true, image: true, path: true, connector: true, container: true, lane: true, card: true,
   'uml-class': true, 'uml-actor': true, 'uml-usecase': true, 'uml-lifeline': true, 'uml-note': true,
   'uml-package': true, 'uml-state': true, 'uml-initial': true, 'uml-final': true, 'uml-component': true,
 };
@@ -321,6 +322,15 @@ export function validateContent(c: unknown): TemplateContent {
       if (typeof o.font === 'string') out.font = o.font;
       return Object.assign(out, templateKanbanFields(o, `Object ${i + 1}`, kanbanCtx));
     }
+    if (o.type === 'group') {
+      if (Object.hasOwn(o, 'locked')) fail(`Group "${o.id}" cannot have a locked flag in a template.`);
+      if (o.name !== undefined && (typeof o.name !== 'string' || o.name.length > GROUP_NAME_MAX)) fail(`Group "${o.id}" name must be at most ${GROUP_NAME_MAX} characters.`);
+      return {
+        id: o.id, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: o.z,
+        ...(typeof o.parent === 'string' ? { parent: o.parent } : {}),
+        ...(typeof o.name === 'string' ? { name: o.name } : {}),
+      };
+    }
     if (o.parent !== undefined && isContainerType(kanbanCtx.types.get(o.parent as string) ?? '')) fail(`Object "${o.id}" is inside a kanban, where only lanes and cards go.`);
     if (o.type === 'icon' && o.body !== undefined) {
       if (typeof o.body !== 'string') fail(`Icon "${o.id}" has an invalid body.`);
@@ -328,6 +338,36 @@ export function validateContent(c: unknown): TemplateContent {
     }
     return o;
   });
+
+  const objectById = new Map(objects.map((o: Record<string, unknown>) => [o.id as string, o]));
+  const groupCount = objects.filter((o: Record<string, unknown>) => o.type === 'group').length;
+  if (groupCount > GROUP_MAX_PER_BOARD) fail(`A template can hold at most ${GROUP_MAX_PER_BOARD} groups.`);
+  const directMembers = new Map<Id, number>();
+  for (const o of objects as Record<string, unknown>[]) {
+    if (o.parent === undefined) continue;
+    if (typeof o.parent !== 'string' || !objectById.has(o.parent)) fail(`Object "${o.id}" has a parent that is not in the template.`);
+    const parent = objectById.get(o.parent)!;
+    if (o.type === 'connector' && parent.type === 'frame') delete o.parent;
+    if (parent.type === 'group') directMembers.set(parent.id as Id, (directMembers.get(parent.id as Id) ?? 0) + 1);
+    if (parent.type === 'group' && (o.type === 'frame' || o.type === 'lane')) fail(`Object "${o.id}" cannot be inside a group.`);
+    if (!isContainerType(o.type as string) && o.type !== 'connector' && parent.type !== 'frame' && parent.type !== 'group' && !(o.type === 'card' && parent.type === 'lane')) {
+      fail(`Object "${o.id}" has a parent that is not a frame or group in the template.`);
+    }
+    if (o.type === 'connector' && parent.type !== 'frame' && parent.type !== 'group') fail(`Connector "${o.id}" has a parent that is not a frame or group in the template.`);
+  }
+  for (const [id, count] of directMembers) if (count > GROUP_MAX_MEMBERS) fail(`Group "${id}" can hold at most ${GROUP_MAX_MEMBERS} direct members.`);
+  for (const start of objects as Record<string, unknown>[]) {
+    let cursor: Record<string, unknown> | undefined = start;
+    const seen = new Set<string>();
+    let depth = 0;
+    while (cursor?.parent) {
+      if (seen.has(cursor.id as string)) fail('Template objects cannot have a parent cycle.');
+      seen.add(cursor.id as string);
+      cursor = objectById.get(cursor.parent as string);
+      if (cursor?.type === 'group') depth++;
+    }
+    if (start.type === 'group' && depth + 1 > GROUP_MAX_DEPTH) fail(`Groups can be nested at most ${GROUP_MAX_DEPTH} levels.`);
+  }
 
   if (!Array.isArray(steps)) fail('Template content needs a list of steps.');
   const stepIds = new Set<Id>();

@@ -364,7 +364,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       inputSchema: objectSchema(
         {
           boardId: boardIdSchema,
-          frameId: { type: 'string', description: 'Only the direct children of this frame.' },
+          frameId: { type: 'string', description: 'Only descendants of this frame, including items inside groups.' },
           types: { type: 'array', items: { enum: OBJ_TYPES }, maxItems: 20 },
           bounds: objectSchema({ x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, ['x', 'y', 'w', 'h']),
           limit: { type: 'integer', minimum: 1, maximum: LIMITS.pageMax, description: `Default ${LIMITS.pageDefault}.` },

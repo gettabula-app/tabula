@@ -828,6 +828,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
   const ctx: MarkupCtx = { ...rawCtx, get: (id) => { const x = rawCtx.get(id); return x && safeObj(x); } };
   if (isConnector(o)) return connectorMarkup(o, ctx);
   switch (o.type) {
+    case 'group': return '';
     case 'shape': return shapeMarkup(o, ctx);
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
