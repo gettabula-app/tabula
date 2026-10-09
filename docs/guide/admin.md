@@ -1,6 +1,6 @@
 # Admin dashboard
 
-The admin dashboard is for workspace owners and admins. It shows who is in the workspace, what they have, who is signed in, what changed, and how AI features are set up. It exists only in workspaces with sign-in.
+The admin dashboard is for workspace owners and admins. It shows who is in the workspace, what they have, who is signed in, what changed, and how AI features are set up. Owners also bring back lost work from backups. It exists only in workspaces with sign-in.
 
 ## Open the dashboard
 
@@ -10,7 +10,7 @@ Use any of these:
 - **Admin** under **Account** in the board menu.
 - The address `#/admin`.
 
-Members and guests do not see these links and are sent back to the home screen if they open the address. Use the arrow at the top left to return to **Boards**.
+Members and guests do not see these links and are sent back to the home screen if they open the address. The **Backups** section is for owners only. Admins do not see it, and its address shows them the **Overview**. Use the arrow at the top left to return to **Boards**.
 
 The dashboard has a list of sections on the left. The address changes with the section, so reloading or going back returns you to the same one.
 
@@ -108,6 +108,65 @@ If the tab says the server cannot store keys, you can still change the settings 
 For a person's own key, see [Your AI key](ai-keys.md).
 
 <!-- screenshot: AI tab with the settings, and the workspace key line showing the last four characters -->
+
+## Backups
+
+The **Backups** section is for the workspace owner. Backups are copies of everything in the workspace, stored away from the server and encrypted before they leave it. Here you see how they are going and bring back one board or the whole workspace.
+
+It is listed for every owner. When backups are off it says **Not set up**. On a hosted workspace it offers **Add backups**, which opens billing in the same tab. On a server you run yourself it links to this page: turn backups on with the settings below, then restart the server.
+
+### Turn backups on
+
+Only for a server you run yourself. Backups are on when these five settings are all set:
+
+- `TABULA_BACKUP_S3_ENDPOINT`: the address of the storage, for example a Tigris, Cloudflare R2, Backblaze B2, MinIO or AWS S3 endpoint.
+- `TABULA_BACKUP_BUCKET`: the bucket.
+- `TABULA_BACKUP_ACCESS_KEY` and `TABULA_BACKUP_SECRET_KEY`: the credentials for the bucket.
+- `TABULA_BACKUP_KEY`: the encryption key, 32 random bytes as 64 hex characters. Make one with `openssl rand -hex 32`.
+
+**Lose the key and the backups cannot be read by anyone.** Keep a copy somewhere that is not the server. The other settings (how often, how long to keep backups, a key change) are described in the server documentation, `docs/backups.md` in the Tabula repository.
+
+### Status and list
+
+The top of the section shows the last backup and whether it worked, how many in a row have failed, when the next one runs, how often they run, the key's short id and how much is stored. A sentence below says how the last restore ended and when.
+
+Below that is the list, newest first. Each row has the time (UTC, and how long ago), the number of files, the size, the key and a note:
+
+- **Protected until** a date: the backup cannot be deleted by the normal clean-up until then. A backup you restore, and the safety backup made before a whole restore, are protected for 7 days.
+- **Unreadable** and the reason: the backup is grey and cannot be opened, for example because it was sealed with a key this server does not have, or because it failed its integrity check.
+
+The list shows at most 200 backups. Select **Details** on a row to open that backup.
+
+### One backup
+
+The backup opens in place. It shows when it was made, the version of Tabula, how many files and boards it holds, its size and key, whether there is room on the server for a whole restore, and how long the current data would be kept after one. There are two things to do:
+
+- **Restore a board as a copy** adds one board of the backup to your workspace as a new board. Nothing else changes.
+- **Restore the whole workspace** replaces everything with the backup.
+
+### Restore a board as a copy
+
+Search the boards of the backup by title or team, pick one and select **Make a copy**. The new board is named **Restored:** and the old title and the date, you own it, and it starts without version history. The board you have now is not touched. A link to the new board appears when the copy is ready.
+
+The copy goes into the board's original team if that team still exists and you are in it. Otherwise it goes to your personal space and the page says so. You can make more copies from the same backup. If a hosted workspace is read-only, the button is off and says why.
+
+### Restore the whole workspace
+
+This replaces people, teams, boards, comments, version history and settings with what the backup holds. The page lists what will happen before you can go on:
+
+- Everybody is signed out and has to sign in again. Access tokens and invite links are revoked.
+- The workspace is unavailable for about a minute while the server restarts.
+- A safety backup of the current data is made first. If it fails, nothing changes.
+- The current data is moved aside, not deleted, and kept for 7 days, or on a nearly full disk until the next successful backup and at least 24 hours. The page says which applies and why.
+- Edits made after the backup was taken are not in it. They exist only in the old data that is kept aside.
+
+Type `RESTORE` in capital letters, with no spaces, and select **Restore this backup**. The button stays off until the word is exactly right, and while there is not enough free disk space on the server. The page says how much is missing. Only one whole restore can start in 10 minutes.
+
+When the server accepts it, the whole window shows **Restoring…**. The page checks the server every few seconds and reloads when it is back. Then everybody signs in again. If the server has not come back after 3 minutes, the page says it is taking longer than expected. Select **Check again** to start over, or reload the page. A board that is open when a restore starts shows **Restoring…** too and reloads in the same way, and after you sign in you are taken back to that board.
+
+If something fails before the swap, nothing changes and the page says why in plain words, for example that there is not enough disk space or that the safety backup failed. If the whole workspace cannot be restored, the server starts again on the data it had before.
+
+<!-- screenshot: Backups section with the status block and the list, one backup protected and one unreadable -->
 
 ## Audit log
 

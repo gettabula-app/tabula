@@ -130,8 +130,8 @@ export async function writeLocalBoard(id: string, fill: (target: { doc: Y.Doc; s
 
 export type SyncStatus = 'local' | 'connecting' | 'live' | 'denied';
 
-/** Why the relay refused or dropped the connection (accounts mode close codes). */
-export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed';
+/** Why the relay refused or dropped the connection (accounts mode close codes). `restoring`: a restore has taken the workspace over (docs/backups.md). */
+export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed' | 'restoring';
 
 export function deniedReason(code: number): DeniedReason | null {
   switch (code) {
@@ -139,6 +139,7 @@ export function deniedReason(code: number): DeniedReason | null {
     case 4403: return 'no_access';
     case 4404: return 'not_found';
     case 4410: return 'access_removed';
+    case 4503: return 'restoring';
     default: return null;
   }
 }

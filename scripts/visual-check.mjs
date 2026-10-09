@@ -31,7 +31,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, templates, settings, admin (accounts only)
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, templates, settings, and in accounts mode
+                     admin, backups-list, backups-detail, backups-board-copy, backups-confirm, backups-restoring, backups-off
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
   --dark | --light   Only themes with that colour scheme
@@ -160,6 +161,93 @@ async function openSeedBoard({ page, base }) {
   });
 }
 
+// ---------------------------------------------------------------- backups (accounts mode)
+
+// The throwaway relay has no bucket, so the Backups tab is shown from fixed answers to the backup routes. The relay itself
+// answers `backups_off`, which is what backups-off shows.
+const KIB = 1024;
+const MIB = KIB * KIB;
+const GIB = MIB * KIB;
+const BACKUP_KEY = 'a1b2c3d4';
+const stamp = (at) => new Date(at).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+const manifestName = (at) => `${stamp(at)}.json.enc`;
+const BACKUPS = [
+  { at: NOW - 30 * MINUTE, files: 14, bytes: 4_823_552, protectedUntil: NOW + 6 * 24 * HOUR },
+  { at: NOW - 90 * MINUTE, files: 14, bytes: 4_811_264 },
+  { at: NOW - 150 * MINUTE, files: 13, bytes: 4_790_000, unreadable: 'unknown_key' },
+  { at: NOW - 27 * HOUR, files: 12, bytes: 4_201_113 },
+  { at: NOW - 3 * 24 * HOUR, files: 12, bytes: 3_998_000, protectedUntil: NOW + 3 * 24 * HOUR },
+  { at: NOW - 9 * 24 * HOUR, files: 9, bytes: 2_104_330 },
+  { at: NOW - 21 * 24 * HOUR, files: 7, bytes: 1_240_000, unreadable: 'tamper' },
+].map((b) => ({
+  name: manifestName(b.at),
+  createdAt: Math.floor(b.at / 1000) * 1000,
+  protected: b.protectedUntil !== undefined,
+  protectedUntil: b.protectedUntil ?? null,
+  ...(b.unreadable ? { readable: false, error: b.unreadable } : { readable: true, files: b.files, bytes: b.bytes, keyId: BACKUP_KEY }),
+}));
+const BACKUP_LIST = {
+  backups: BACKUPS,
+  truncated: false,
+  status: {
+    lastSuccessAt: NOW - 30 * MINUTE, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MINUTE,
+    running: false, intervalMinutes: 60, keyId: BACKUP_KEY, bytesStored: 18_874_368, objects: 52, manifests: BACKUPS.length,
+  },
+  restore: {
+    inProgress: null,
+    maintenance: false,
+    last: { kind: 'workspace', result: 'done', at: NOW - 3 * 24 * HOUR + 5 * MINUTE, manifest: BACKUPS[4].name, keepOldFor: '7 days' },
+    protectedBackups: [],
+    oldData: [],
+  },
+};
+const BACKUP_BOARDS = {
+  boards: [
+    ['roadmap', 'Roadmap 2026', 'team-design', 'Design', false],
+    ['retro', 'Sprint retro', 'team-design', 'Design', false],
+    ['notes', 'Meeting notes', null, null, false],
+    ['launch', 'Launch plan for the spring campaign across every region and every channel we use', 'team-growth', 'Growth', false],
+    ['onboarding', 'Customer onboarding journey', 'team-growth', 'Growth', true],
+    ['ideas', 'Ideas', null, null, false],
+  ].map(([id, title, teamId, teamName, deleted]) => ({ id, title, teamId, teamName, deleted })),
+  truncated: false,
+};
+const backupPreview = (name) => ({
+  name, createdAt: BACKUPS.find((b) => b.name === name)?.createdAt ?? NOW, appVersion: '0.1.0', keyId: BACKUP_KEY, files: 14, bytes: 4_823_552, boards: 6,
+  protected: true, confirmWord: 'RESTORE', keepOldFor: '7 days', reason: 'There is room on the disk, so the old data is kept for 7 days.',
+  space: { needed: 2 * 4_823_552 + 64 * MIB, free: 21 * GIB, enough: true },
+});
+
+/** Answers the backup routes (and, for the restoring screen, the restore and /api/health) from the fixed data above. */
+async function mockBackups(page, { restoring = false } = {}) {
+  const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/admin/backups**', (route) => {
+    const { pathname } = new URL(route.request().url());
+    const rest = pathname.replace(/^\/api\/admin\/backups\/?/, '');
+    if (route.request().method() === 'POST') {
+      return rest === 'restore' ? json(route, { ok: true, restarting: true, keepOldFor: '7 days' }, 202) : json(route, { error: 'bad_request', message: 'not used' }, 400);
+    }
+    if (rest === '') return json(route, BACKUP_LIST);
+    if (rest.endsWith('/boards')) return json(route, BACKUP_BOARDS);
+    return json(route, backupPreview(rest));
+  });
+  if (restoring) await page.route('**/api/health', (route) => json(route, { ok: true, rooms: 0, connections: 0, restoring: true }));
+}
+
+const waitForAdminPanel = (page) =>
+  page.waitForFunction(() => {
+    const panel = document.querySelector('.admin-panel');
+    return panel && !panel.textContent.includes('Loading');
+  });
+
+async function openBackup({ page, base }) {
+  await mockBackups(page, { restoring: true });
+  await page.goto(`${base}/#/admin/backups`);
+  await page.locator('.backups-row').first().waitFor();
+  await page.getByRole('button', { name: /^Details of the backup/ }).first().click();
+  await page.getByRole('button', { name: 'Restore the whole workspace' }).waitFor();
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -189,13 +277,44 @@ const STATES = {
   },
   async admin({ page, base }) {
     await page.goto(`${base}/#/admin`);
-    await page.waitForFunction(() => {
-      const panel = document.querySelector('.admin-panel');
-      return panel && !panel.textContent.includes('Loading');
-    });
+    await waitForAdminPanel(page);
+  },
+  async 'backups-list'({ page, base }) {
+    await mockBackups(page);
+    await page.goto(`${base}/#/admin/backups`);
+    await page.locator('.backups-row').first().waitFor();
+    await waitForAdminPanel(page);
+  },
+  async 'backups-detail'(env) {
+    await openBackup(env);
+  },
+  async 'backups-board-copy'(env) {
+    await openBackup(env);
+    await env.page.getByRole('button', { name: 'Restore a board as a copy' }).click();
+    await env.page.locator('.backups-pick-row').first().waitFor();
+    await env.page.locator('.backups-pick-row').nth(1).click();
+  },
+  async 'backups-confirm'(env) {
+    await openBackup(env);
+    await env.page.getByRole('button', { name: 'Restore the whole workspace' }).click();
+    await env.page.locator('#backups-confirm').waitFor();
+  },
+  async 'backups-restoring'(env) {
+    await openBackup(env);
+    await env.page.getByRole('button', { name: 'Restore the whole workspace' }).click();
+    await env.page.locator('#backups-confirm').fill('RESTORE');
+    await env.page.getByRole('button', { name: 'Restore this backup' }).click();
+    await env.page.locator('.restoring').waitFor();
+  },
+  async 'backups-off'({ page, base }) {
+    await page.goto(`${base}/#/admin/backups`);
+    await page.getByText('Not set up', { exact: true }).waitFor();
   },
 };
-const STATE_MODES = { admin: ['accounts'] };
+// These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
+const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
+const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
+const STATE_MODES = { admin: ['accounts'], ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -365,7 +484,7 @@ async function capture({ browser, state, theme, width, file, shared }) {
     await park(page);
     await settle(page);
     result.overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth);
-    await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide' });
+    await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide', fullPage: FULL_PAGE.has(state) });
   } catch (err) {
     result.failed = String(err.message).split('\n')[0];
     result.file = file.replace(/\.png$/, '-FAILED.png');

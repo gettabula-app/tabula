@@ -221,6 +221,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return restore;
   }
 
+  // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
+  const OWNER_STATUS_FIELDS = ['lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests'];
+
+  function ownerBackupStatus() {
+    const status = backupStatus() ?? {};
+    return Object.fromEntries(OWNER_STATUS_FIELDS.map((field) => [field, status[field] ?? null]));
+  }
+
   const RESTORE_FIELDS = { 'admin/backups/restore': ['manifest', 'confirm'], 'admin/backups/restore-board': ['manifest', 'boardId'] };
 
   function restoreBody(route, body) {
@@ -863,7 +871,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       try {
         const listing = await engine.listBackups();
         audit(user, 'backup.list', {});
-        return [200, { ...listing, restore: engine.status() }];
+        return [200, { ...listing, status: ownerBackupStatus(), restore: engine.status() }];
       } catch (err) {
         return restoreReply(err, res);
       }
@@ -875,6 +883,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         const preview = await engine.previewManifest(params.name);
         audit(user, 'backup.preview', { manifest: params.name });
         return [200, preview];
+      } catch (err) {
+        return restoreReply(err, res);
+      }
+    }),
+    // The boards inside one backup, for the board picker. Counts only in the audit log: no title, no id, no content.
+    compile('GET', 'admin/backups/:name/boards', {}, async ({ res, user, params }) => {
+      requireOwner(user);
+      const engine = restoreEngine();
+      try {
+        const listing = await engine.listBoardsInBackup(params.name, user);
+        audit(user, 'backup.boards', { manifest: params.name, count: listing.boards.length });
+        return [200, listing];
       } catch (err) {
         return restoreReply(err, res);
       }

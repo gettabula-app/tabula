@@ -447,8 +447,16 @@ describe('overviewTiles', () => {
 
 describe('visibleAdminTabs', () => {
   it('shows Access tokens only when AI tool access is on', () => {
-    expect(visibleAdminTabs(ADMIN_TABS, true)).toEqual([...ADMIN_TABS]);
-    expect(visibleAdminTabs(ADMIN_TABS, undefined)).not.toContain('tokens');
-    expect(visibleAdminTabs(ADMIN_TABS, false)).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toEqual([...ADMIN_TABS]);
+    expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner')).not.toContain('tokens');
+    expect(visibleAdminTabs(ADMIN_TABS, false, 'owner')).toEqual(ADMIN_TABS.filter((t) => t !== 'tokens'));
+  });
+
+  it('shows Backups to owners only', () => {
+    expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toContain('backups');
+    for (const role of ['admin', 'member', 'guest', undefined] as const) {
+      expect(visibleAdminTabs(ADMIN_TABS, true, role), `${role}`).not.toContain('backups');
+      expect(visibleAdminTabs(ADMIN_TABS, true, role)).toEqual(ADMIN_TABS.filter((t) => t !== 'backups'));
+    }
   });
 });
