@@ -79,6 +79,10 @@
   box-sizing: border-box; padding-right: 344px; background: var(--canvas); color: var(--ink); outline: none;
 }
 .history-preview.show { display: grid; }
+/* the signal-yellow ring is faint on this pale surface */
+.history-preview :focus-visible { outline-color: var(--ink); }
+/* rings in a scrolling list sit inside the rows: outside them they are cut off by the container */
+.history-body :focus-visible { outline-offset: -2px; }
 .history-banner {
   display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 24px;
   border-bottom: 2px solid var(--ink); background: var(--canvas);
