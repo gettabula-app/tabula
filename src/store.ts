@@ -79,6 +79,8 @@ export class Store {
   private undoChangedIds = new Set<Id>();
   /** Cleanup work is keyed to object transactions so ordinary edits do not scan the board. */
   private emptyGroupCleanupHints = new WeakMap<Y.Transaction, { scan: boolean; groups: Set<Id> }>();
+  /** Local structural writes clean up in their undoable transaction; don't repeat the scan after it closes. */
+  private locallyCleanedEmptyGroupTransactions = new WeakSet<Y.Transaction>();
   private _readOnly = false;
   private orderDirty = true;
   private orderCache: Obj[] = [];
@@ -184,6 +186,12 @@ export class Store {
       const hint = this.emptyGroupCleanupHints.get(transaction);
       if (!hint) return;
       if (hint.scan) {
+        if (this.locallyCleanedEmptyGroupTransactions.has(transaction)) {
+          if (hint.groups.size) {
+            this.doc.transact(() => this.removeEmptyGroupCandidates(hint.groups), EMPTY_GROUP_CLEANUP);
+          }
+          return;
+        }
         const empty = this.emptyGroupIds();
         if (empty.length) this.doc.transact(() => this.removeEmptyGroups(empty), EMPTY_GROUP_CLEANUP);
       } else if (hint.groups.size) {
@@ -409,10 +417,16 @@ export class Store {
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
-    if (parentChanged) this.removeEmptyGroups();
+    if (parentChanged) {
+      const transaction = this.doc._transaction;
+      if (transaction) this.locallyCleanedEmptyGroupTransactions.add(transaction);
+      this.removeEmptyGroups();
+    }
   }
 
   remove(ids: Iterable<Id>) {
+    const transaction = this.doc._transaction;
+    if (transaction) this.locallyCleanedEmptyGroupTransactions.add(transaction);
     for (const id of ids) this.objects.delete(id);
     this.removeEmptyGroups();
   }
@@ -438,24 +452,19 @@ export class Store {
     const childCounts = new Map<Id, number>();
     const childCount = (id: Id) => childCounts.get(id) ?? this.childIndex.get(id)?.size ?? 0;
     const pending = [...candidates];
-    const checked = new Set<Id>();
     const removed: Id[] = [];
     while (pending.length) {
       const id = pending.pop()!;
-      if (checked.has(id)) continue;
-      checked.add(id);
       const group = this.objects.get(id);
       if (group?.get('type') !== 'group' || childCount(id) > 0) continue;
       const parent = group.get('parent');
       this.objects.delete(id);
       removed.push(id);
       if (typeof parent === 'string') {
-        const remaining = childCount(parent) - 1;
-        if (remaining > 0) childCounts.set(parent, remaining);
-        else {
-          childCounts.delete(parent);
-          if (this.objects.get(parent)?.get('type') === 'group') pending.push(parent);
-        }
+        const remaining = Math.max(0, childCount(parent) - 1);
+        // Preserve zero while the observer's childIndex still contains the just-deleted child.
+        childCounts.set(parent, remaining);
+        if (remaining === 0 && this.objects.get(parent)?.get('type') === 'group') pending.push(parent);
       }
     }
     return removed;
