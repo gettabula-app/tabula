@@ -1,6 +1,6 @@
 # Tabula brand guide
 
-The graphic profile, taken from landing variant #27 "Mixed Media II: Editorial" (TAB-72, picked by Johan; TAB-196). It covers the website, docs, social images and print. The app itself keeps its Swiss UI and themes (`src/themes.ts`) until Johan decides otherwise; the tokens here are prefixed `--tb-` so the app could adopt them later without a clash.
+The graphic profile, taken from landing variant #27 "Mixed Media II: Editorial" (TAB-72, picked by Johan; TAB-196). It covers the website, docs, social images and print. The app itself stays Swiss, with its own UI and themes (`src/themes.ts`): Johan decided this on 2026-10-09. Editorial is the profile for the landing page, marketing and docs. The tokens here are prefixed `--tb-`, so they never clash with the app's.
 
 Files:
 
@@ -16,7 +16,7 @@ The idea is the headline: **paste your thinking together.** The collage is what 
 
 ## Logo and wordmark
 
-The logo is the word **Tabula** followed by a red square full stop. There is no separate symbol yet (see Open questions).
+The logo is the word **Tabula** followed by a red square full stop. There is no separate symbol yet: four favicon monogram options are on the first-look page (see First look).
 
 **Construction**
 
@@ -70,7 +70,7 @@ One palette, used everywhere, including every image brief.
 - Cobalt on paper: links and labels.
 - Never: ink on cobalt, cobalt on ink, red on cobalt, ink on red for body text.
 
-**Dark variant (a proposal)**: an ink ground with light-paper text. Red and cobalt get lighter versions for text and marks, and deeper versions for bands. Torn sheets stay light paper with ink text, so the collage, the cutouts and the multiply blend keep working; plain UI panels use `--tb-surface` `#1C1C22`.
+**Dark variant (wanted; ground not chosen yet)**: Johan wants a dark variant. The tokens below are the "Ink" direction; the first-look page also shows a "Night cobalt" ground. It is an ink ground with light-paper text. Red and cobalt get lighter versions for text and marks, and deeper versions for bands. Torn sheets stay light paper with ink text, so the collage, the cutouts and the multiply blend keep working; plain UI panels use `--tb-surface` `#1C1C22`.
 
 | Role token | Light | Dark |
 |---|---|---|
@@ -332,7 +332,7 @@ Short sentences, real features only, no hype, no "AI-powered" badges, no invente
 
 ## Asset kit
 
-Everything is in `design/brand/assets/` (about 0.45 MB). Licence: see `assets/LICENSE.md` (not decided yet).
+Everything is in `design/brand/assets/` (about 0.45 MB). Licence: the art is CC BY 4.0; the name, the wordmark and the monograms are reserved (see `assets/LICENSE.md`).
 
 | Folder | Files | Use |
 |---|---|---|
@@ -342,13 +342,41 @@ Everything is in `design/brand/assets/` (about 0.45 MB). Licence: see `assets/LI
 | `paper/` | `paper-grain.webp`, `scrap-red/-blue/-paper/-news.webp` | The page grain; torn scraps to back a cutout. |
 | `cutouts/` | scissors, push pin, bulldog clip, key, stopwatch, pointing hand, hand with pen | Greyscale cutouts with alpha. Multiply on paper. |
 | `board/` | `board-ui.webp` | The pasted board layer (an abstract board with a toolbar, notes and frames; no connectors). |
+| `monogram/` | `a-full-stop`, `b-cobalt-plate`, `c-pinned-t`, `d-stamp`: each as `.svg` (180, outlines) and `-16`, `-32`, `-48.svg` (pixel grid) | Favicon options, not final. Johan picks one; then the ICO and PNG set. |
 | `torn-edges.svg`, `torn-edges.css` | `#tb-torn-all`, `#tb-torn-x`; `.tb-torn`, `.tb-torn-x` | Torn edges without the rest of the tokens. |
 
 To use the profile in a page: link `design/brand/tokens.css`, load the two Google Fonts, put `paper-grain.webp` over the page, and build sections from the role tokens (`--tb-ground`, `--tb-sheet`, `--tb-band-cobalt` …), never the raw hex.
 
 ## Open questions for Johan
 
-- **Asset licence**: CC BY 4.0 for the art and the name and mark reserved, or something else?
-- **Dark variant**: is a dark scheme wanted at all? It is a proposal here and untested on real pages.
-- **Logo beyond the wordmark**: a monogram or symbol for favicons, app icons and avatars (for example "T" with the red square) is not designed yet.
-- **The app**: should the app move toward this profile (the `--tb-` tokens are ready), or stay Swiss?
+- **Asset licence**: answered (2026-10-09). CC BY 4.0 for the art; the name, the wordmark and the monograms are reserved. See `assets/LICENSE.md`.
+- **Dark variant**: answered. It is wanted. Which ground (Ink or Night cobalt) is still open; see First look.
+- **Logo beyond the wordmark**: open. Four monogram options are on the first-look page; see First look.
+- **The app**: answered. The app stays Swiss; Editorial is for the landing page, marketing and docs.
+
+## First look (TAB-196 next)
+
+`design/brand/first-look.html` (http://localhost:5200/design/brand/first-look.html) shows two things for Johan to choose from. It is a first look, not the full build.
+
+**A. Dark variant.** The same Editorial content (the hero collage with tape, cursors and the pasted board; a cobalt section; a feature slice with the watch cutout; the footer) side by side in light and dark, with a switch between two dark grounds (`?dark=night` opens the second):
+
+- **Ink**: ground `#121216`, the dark role tokens above, unchanged.
+- **Night cobalt** (new): ground `#0E1430`, surface `#171E42`, muted text `#A9AEC8`, footer `#070A1C`. The cobalt band stays full `#2347F5`, because the deeper `#1E3BD6` is only 2.28:1 on this ground and stops reading as a section.
+
+Fixes applied in both: sheets stay light; cutouts use normal blend; marks are masks filled with red-hi and cobalt-hi; grain is screen at 0.06; the footer gets a 2 px light rule, since an ink band on an ink ground is 1.10:1; the wordmark square stays `#D42A18` (3.69:1 on Ink, 3.57:1 on Night). The page has a contrast table for each ground.
+
+**B. Favicon monogram.** Four options in `design/brand/assets/monogram/`, pure SVG with no web font. The 180 px version is the Bodoni Moda outline; 16, 32 and 48 are redrawn on the pixel grid (hairline bar, bracketed serif wedges, hairline foot on whole pixels) so they stay sharp. Each has a filled tile, so it works in light and dark browser chrome.
+
+- **A, Full stop**: ink T with the red square kerned under its arm, on light paper.
+- **B, Cobalt plate**: light T and light square on cobalt (no red square on cobalt).
+- **C, Pinned t**: a lowercase t with the red square as its dot, on ink.
+- **D, Stamp**: the red square as the whole tile, with a light T cut out of it. Recommended: the clearest at 16 px, and it reads the same on every chrome and ground.
+
+**Choices for Johan**
+
+1. Ship the dark variant now, or later?
+2. Ink or Night cobalt?
+3. Which monogram (A, B, C or D; or a pair, such as D for the favicon and A for avatars)?
+4. In dark, keep the wordmark square brand red `#D42A18`, or use red-hi `#FF5B47`?
+
+After the picks: dark tokens into `tokens.json`, the dark section of this guide, and the ICO and PNG favicon set.
