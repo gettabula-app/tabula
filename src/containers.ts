@@ -1,10 +1,10 @@
 // Client glue for containers (docs/kanban.md, slice 2): making a kanban, adding a card, and moving cards, each one
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
-import { KANBAN, LIMITS, kanbanColor, layoutContainer, planInsert, ranksBetween } from '../shared/containers';
+import { KANBAN, LIMITS, isContainerType, kanbanColor, layoutContainer, planInsert, ranksBetween } from '../shared/containers';
 import type { Store } from './store';
 import { newId } from './store';
-import type { BaseObj, Id, Obj, Point } from './types';
+import type { BaseObj, ConnectorObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
@@ -348,6 +348,13 @@ export function editCards(store: Store, ids: Id[], patch: CardPatch): boolean {
   return true;
 }
 
+/**
+ * Whether this person may turn a sticky into a card. A note written privately in a session step that is not revealed
+ * yet converts only for its author (docs/kanban.md, Sticky to card and back): converting clears `privateStep`, so
+ * anyone else converting it would show it to everybody before the reveal. The reveal clears `privateStep` on every note.
+ */
+export const mayConvertSticky = (o: BaseObj, userId: string) => o.type === 'sticky' && !o.locked && !(o.privateStep && o.createdBy !== userId);
+
 /** Where a sticky turned into a card goes: a lane at an index, or nowhere (a loose card where the sticky was). */
 export type CardTarget = { lane: Id; index: number } | null;
 
@@ -366,8 +373,8 @@ function stickyToCardFields(o: BaseObj): Partial<BaseObj> | null {
  * order given. The others become loose cards where they are. Returns the refusal when a limit or a description that is
  * too long stops it, in which case nothing is written.
  */
-export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) => CardTarget): { done: Id[]; refused?: string } {
-  const stickies = ids.map((id) => store.get(id)).filter((o): o is BaseObj => o?.type === 'sticky' && !o.locked);
+export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) => CardTarget, userId: string): { done: Id[]; refused?: string } {
+  const stickies = ids.map((id) => store.get(id) as BaseObj | undefined).filter((o): o is BaseObj => !!o && mayConvertSticky(o, userId));
   if (!stickies.length || store.readOnly) return { done: [] };
   let total = 0;
   for (const o of store.cache.values()) if (o.type === 'card') total++;
@@ -448,7 +455,8 @@ export function cardsToStickies(store: Store, ids: Id[], frameAt: (p: Point, ski
  * or a refusal and nothing written.
  */
 export function kanbanFromStickies(store: Store, ids: Id[], base: NewObjectBase): { id: Id | null; refused?: string } {
-  const stickies = ids.map((id) => store.get(id)).filter((o): o is BaseObj => o?.type === 'sticky' && !o.locked);
+  // base.createdBy is the person making it: someone else's unrevealed private notes stay where they are
+  const stickies = ids.map((id) => store.get(id) as BaseObj | undefined).filter((o): o is BaseObj => !!o && mayConvertSticky(o, base.createdBy));
   if (!stickies.length || store.readOnly) return { id: null };
   let containers = 0, cards = 0;
   for (const o of store.cache.values()) {
@@ -486,4 +494,18 @@ export function kanbanFromStickies(store: Store, ids: Id[], base: NewObjectBase)
   });
   store.undo.stopCapturing();
   return { id: store.get(container.id) ? container.id : null };
+}
+
+/**
+ * Objects to insert (a paste, a duplicate, an imported file, a template) without the kanban parts that would make a new
+ * kanban or card while making kanbans is behind its flag (src/flags.ts). A container, lane or card is kept only when
+ * `exists` says it is a copy of one on this board now; connectors bound to what was left out go too.
+ */
+export function withoutNewKanbans(objs: Obj[], exists: (o: Obj) => boolean): { objs: Obj[]; dropped: number } {
+  const out = new Set<Id>();
+  for (const o of objs) if (isContainerType(o.type) && !exists(o)) out.add(o.id);
+  if (!out.size) return { objs, dropped: 0 };
+  const bound = (e: { kind: string; id?: string }) => e.kind === 'bound' && !!e.id && out.has(e.id);
+  const kept = objs.filter((o) => !out.has(o.id) && !(o.type === 'connector' && (bound((o as ConnectorObj).from) || bound((o as ConnectorObj).to))));
+  return { objs: kept, dropped: out.size };
 }

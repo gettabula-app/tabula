@@ -246,12 +246,12 @@ function addSticky(store: Store, id: Id, at: Point, text = 'Note') {
   store.transact(() => store.create({ id, type: 'sticky', x: at.x - 96, y: at.y - 96, w: 192, h: 192, rotation: 0, z: 'a5', fill: '#FFE16B', text, createdBy: 'me', updatedAt: 0 } as BaseObj));
 }
 const key = (k: string, extra: Record<string, unknown> = {}) => ({ key: k, code: '', target: null, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, preventDefault() {}, ...extra });
-const press = (app: Harness, k: string) => {
+const press = (app: Harness, k: string, extra: Record<string, unknown> = {}) => {
   const listeners: ((e: unknown) => void)[] = [];
   vi.stubGlobal('window', { addEventListener: (t: string, fn: (e: unknown) => void) => { if (t === 'keydown') listeners.push(fn); }, removeEventListener() {} });
   Object.assign(app, { lifetime: new AbortController() });
   call(app, 'bindKeys');
-  listeners.forEach((fn) => fn(key(k)));
+  listeners.forEach((fn) => fn(key(k, extra)));
 };
 
 describe('the kanban flag (src/flags.ts)', () => {
@@ -371,5 +371,80 @@ describe('dropping a sticky on a lane', () => {
     expect(store.containerLayout(container)!.cards.get(lanes[0])).toEqual([ids[0], 's1', ids[1], ids[2]]);
     store.undo.undo();
     expect(store.get('s1')!.type).toBe('sticky');
+  });
+});
+
+describe('someone else\'s private notes during a running private step', () => {
+  function withPrivate() {
+    const h = harness();
+    flagOn();
+    // written by someone else in a private step that is still running: hidden on this screen
+    h.store.transact(() => h.store.create({ id: 'secret', type: 'sticky', x: 3000, y: 3000, w: 192, h: 192, rotation: 0, z: 'a6', fill: '#FFE16B', text: 'Secret', privateStep: 'step1', createdBy: 'other', updatedAt: 0 } as BaseObj));
+    addSticky(h.store, 'mine', { x: 3300, y: 3000 }, 'Mine');
+    return h;
+  }
+
+  it('Cmd+A then K leaves them hidden stickies', () => {
+    const { app, store } = withPrivate();
+    press(app, 'a', { metaKey: true });
+    expect(app.selection).toContain('secret');
+    press(app, 'k');
+    expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(store.get('mine')!.type).toBe('card');
+  });
+
+  it('Cmd+A then Make kanban leaves them out', () => {
+    const { app, store } = withPrivate();
+    press(app, 'a', { metaKey: true });
+    app.makeKanbanFromSelection();
+    expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+  });
+
+  it('dropped on a lane with a selection, they move but stay hidden stickies', () => {
+    const { app, store, r, ids } = withPrivate();
+    app.setSelection(['secret', 'mine']);
+    const from = centre(store, 'secret');
+    const to = centre(store, ids[1], 0.3);
+    call(app, 'onDown', pointer(r, from));
+    for (let i = 1; i <= 4; i++) call(app, 'onMove', pointer(r, { x: from.x + ((to.x - from.x) * i) / 4, y: from.y + ((to.y - from.y) * i) / 4 }, 'pointermove'));
+    call(app, 'onUp', pointer(r, to, 'pointerup'));
+    expect(store.get('secret')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(store.get('mine')!.type).toBe('card');
+  });
+});
+
+describe('pasting, duplicating and importing while the kanban flag is off', () => {
+  const foreign = () => [
+    { id: 'kx', type: 'container', layout: 'kanban', name: 'From elsewhere', x: 0, y: 0, w: 900, h: 400, rotation: 0, z: 'a0', createdBy: 'x', updatedAt: 0 },
+    { id: 'cx', type: 'card', text: 'Loose', x: 0, y: 500, w: 264, h: 34, rotation: 0, z: 'a1', createdBy: 'x', updatedAt: 0 },
+    { id: 'sx', type: 'sticky', text: 'Note', x: 400, y: 500, w: 192, h: 192, rotation: 0, z: 'a2', createdBy: 'x', updatedAt: 0 },
+    { id: 'lx', type: 'connector', from: { kind: 'bound', id: 'cx', anchor: 'auto' }, to: { kind: 'bound', id: 'sx', anchor: 'auto' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'a3', createdBy: 'x', updatedAt: 0 },
+  ] as unknown as BaseObj[];
+  const count = (store: Store, type: string) => [...store.cache.values()].filter((o) => o.type === type).length;
+
+  it('leaves out kanbans and cards that are not copies of ones on this board, with their connectors, and says so', () => {
+    const { app, store, notify } = harness();
+    const before = { containers: count(store, 'container'), cards: count(store, 'card') };
+    const out = app.insertObjects(foreign(), { x: 0, y: 2000 });
+    expect(out.map((o) => o.type)).toEqual(['sticky']);
+    expect(count(store, 'container')).toBe(before.containers);
+    expect(count(store, 'card')).toBe(before.cards);
+    expect(count(store, 'connector')).toBe(0);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Kanbans'));
+  });
+
+  it('still duplicates a kanban that is on this board', () => {
+    const { app, store, container } = harness();
+    app.setSelection([container]);
+    app.duplicate();
+    expect(count(store, 'container')).toBe(2);
+  });
+
+  it('lets everything through with the flag', () => {
+    const { app, store } = harness();
+    flagOn();
+    app.insertObjects(foreign(), { x: 0, y: 2000 });
+    expect(count(store, 'container')).toBe(2);
+    expect(count(store, 'connector')).toBe(1);
   });
 });

@@ -80,6 +80,19 @@ describe('labels', () => {
     expect(listLabels(store).some((l) => l.id === 'bad')).toBe(false);
   });
 
+  it('reads no value stored under another label\'s key, and no more than 30 labels', () => {
+    const { store } = board();
+    const bug = createLabel(store, 'Bug')!;
+    // another client writes a value whose id is not its key: it would double or shadow Bug
+    store.transact(() => store.labels.set('evil', { id: bug, name: 'Not bug', color: 'pink', order: -1 }));
+    expect(listLabels(store).map((l) => l.name)).toEqual(['Bug']);
+    store.transact(() => {
+      for (let i = 0; i < 40; i++) store.labels.set(`x${i}`, { id: `x${i}`, name: `X${i}`, color: 'blue', order: i + 1 });
+    });
+    expect(listLabels(store)).toHaveLength(LIMITS.labels);
+    expect(createLabel(store, 'one more')).toBeNull();
+  });
+
   it('stores label names as text, whatever they contain', () => {
     const { store } = board();
     const id = createLabel(store, EVIL_TEXT)!;
@@ -197,7 +210,7 @@ describe('sticky to card and back', () => {
   it('keeps the id, the text, the description, the colour and the card fields, both ways, one undo step each', () => {
     const { store, lanes, container } = board();
     sticky(store, 's1', { text: 'Ship it\n\nBefore Friday,\nwith notes', fill: '#A3D2FF', ownerName: 'Lea', due: '2026-01-20', privateStep: 'step1', rotation: 0.2 });
-    const r = stickiesToCards(store, ['s1'], () => ({ lane: lanes[1], index: 0 }));
+    const r = stickiesToCards(store, ['s1'], () => ({ lane: lanes[1], index: 0 }), 'me');
     expect(r).toEqual({ done: ['s1'] });
     expect(undoSteps(store)).toBe(1);
     const card = bo(store, 's1');
@@ -217,7 +230,7 @@ describe('sticky to card and back', () => {
     const lane = store.geometry(store.get(lanes[1])!);
     expect(s.x).toBe(lane.x + KANBAN.lanePad);
 
-    stickiesToCards(store, ['s1'], () => null);
+    stickiesToCards(store, ['s1'], () => null, 'me');
     expect(bo(store, 's1')).toMatchObject({ type: 'card', text: 'Ship it', desc: 'Before Friday,\nwith notes', fill: 'blue', ownerName: 'Lea', w: LOOSE_CARD_W });
     store.undo.undo();
     store.undo.undo();
@@ -232,7 +245,7 @@ describe('sticky to card and back', () => {
     const comments = new Comments(new Y.Doc());
     const placed = store.placed(store.get('s1')!) as BaseObj;
     const tid = comments.addThread({ id: 'me', name: 'Me', color: '#326DD3' }, anchorFor({ x: placed.x + 10, y: placed.y + 10 }, placed), 'Note')!;
-    stickiesToCards(store, ['s1'], () => ({ lane: lanes[0], index: 0 }));
+    stickiesToCards(store, ['s1'], () => ({ lane: lanes[0], index: 0 }), 'me');
     const get = (id: string) => store.getPlaced(id);
     const thread = comments.list().find((t) => t.id === tid)!;
     expect(thread.anchor.obj).toBe('s1');
@@ -253,7 +266,7 @@ describe('sticky to card and back', () => {
     const { store, lanes, container, cards } = board();
     sticky(store, 's1', { text: 'One' });
     sticky(store, 's2', { text: 'Two' });
-    stickiesToCards(store, ['s2', 's1'], () => ({ lane: lanes[0], index: 1 }));
+    stickiesToCards(store, ['s2', 's1'], () => ({ lane: lanes[0], index: 1 }), 'me');
     expect(undoSteps(store)).toBe(1);
     expect(store.containerLayout(container)!.cards.get(lanes[0])).toEqual([cards[0], 's2', 's1', cards[1]]);
   });
@@ -261,7 +274,7 @@ describe('sticky to card and back', () => {
   it('refuses a description over the limit and writes nothing', () => {
     const { store } = board();
     sticky(store, 's1', { text: `Title\n${'x'.repeat(LIMITS.description + 1)}` });
-    const r = stickiesToCards(store, ['s1'], () => null);
+    const r = stickiesToCards(store, ['s1'], () => null, 'me');
     expect(r.refused).toMatch(/4,000/);
     expect(bo(store, 's1').type).toBe('sticky');
   });
@@ -280,10 +293,41 @@ describe('sticky to card and back', () => {
     const { store, cards } = board();
     sticky(store, 's1');
     store.setReadOnly(true);
-    expect(stickiesToCards(store, ['s1'], () => null).done).toEqual([]);
+    expect(stickiesToCards(store, ['s1'], () => null, 'me').done).toEqual([]);
     expect(cardsToStickies(store, cards, () => undefined)).toEqual([]);
     expect(kanbanFromStickies(store, ['s1'], { z: 'c0', createdBy: 'me' }).id).toBeNull();
     expect(bo(store, 's1').type).toBe('sticky');
+  });
+});
+
+describe('private notes (docs/kanban.md: a hidden private sticky converts only for its author)', () => {
+  it('leaves someone else\'s unrevealed private note a sticky, and converts the author\'s own', () => {
+    const { store, lanes } = board();
+    sticky(store, 'theirs', { privateStep: 'step1', createdBy: 'other', text: 'Secret' });
+    sticky(store, 'mine', { privateStep: 'step1', createdBy: 'me', text: 'Mine' });
+    const r = stickiesToCards(store, ['theirs', 'mine'], () => ({ lane: lanes[0], index: 0 }), 'me');
+    expect(r.done).toEqual(['mine']);
+    expect(store.get('theirs')).toMatchObject({ type: 'sticky', privateStep: 'step1', text: 'Secret' });
+    // the author converts it
+    expect(stickiesToCards(store, ['theirs'], () => null, 'other').done).toEqual(['theirs']);
+  });
+
+  it('converts it for anyone once revealed (the reveal clears privateStep)', () => {
+    const { store } = board();
+    sticky(store, 'theirs', { privateStep: 'step1', createdBy: 'other' });
+    store.transact(() => store.update('theirs', { privateStep: undefined }));
+    expect(stickiesToCards(store, ['theirs'], () => null, 'me').done).toEqual(['theirs']);
+  });
+
+  it('does not put it into a kanban made from a selection', () => {
+    const store = new Store(new Y.Doc());
+    sticky(store, 'theirs', { privateStep: 'step1', createdBy: 'other', x: 0, y: 0 });
+    sticky(store, 'mine', { x: 300, y: 0 });
+    const { id } = kanbanFromStickies(store, ['theirs', 'mine'], { z: 'c0', createdBy: 'me' });
+    const layout = store.containerLayout(id!)!;
+    expect(layout.cards.get(layout.lanes[0])).toEqual(['mine']);
+    expect(store.get('theirs')).toMatchObject({ type: 'sticky', privateStep: 'step1' });
+    expect(kanbanFromStickies(store, ['theirs'], { z: 'c1', createdBy: 'me' }).id).toBeNull();
   });
 });
 

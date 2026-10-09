@@ -17,7 +17,7 @@ import {
 } from './geometry';
 import { cardBody, objectMarkup, textHeight } from './markup';
 import {
-  cardsToStickies, containerOf, dropLoose, kanbanFromStickies, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
+  cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
 import {
@@ -821,9 +821,9 @@ export class BoardApp {
   turnIntoCards(ids: Id[] = this.selection): boolean {
     if (this.readOnly) return false;
     // without the kanban flag only stickies over a lane become cards: nothing makes a loose card (src/flags.ts)
-    const stickies = ids.filter((id) => this.store.get(id)?.type === 'sticky' && (kanbanFlag() || this.cardTargetOf(id)));
+    const stickies = ids.filter((id) => this.convertible(id) && (kanbanFlag() || this.cardTargetOf(id)));
     if (!stickies.length) return false;
-    const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id));
+    const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id), this.user.id);
     if (r.refused) {
       this.notify(r.refused);
       return false;
@@ -843,10 +843,16 @@ export class BoardApp {
     return t ? { lane: t.id, index: t.index } : null;
   }
 
+  /** A sticky this person may turn into a card: not someone else's unrevealed private note (mayConvertSticky). */
+  private convertible(id: Id): boolean {
+    const o = this.store.get(id);
+    return o?.type === 'sticky' && mayConvertSticky(o as BaseObj, this.user.id);
+  }
+
   /** Whether Turn into card does anything for the selection: always with the kanban flag, else only over a lane. */
   canTurnIntoCards(ids: Id[] = this.selection): boolean {
     if (this.readOnly) return false;
-    return ids.some((id) => this.store.get(id)?.type === 'sticky' && (kanbanFlag() || !!this.cardTargetOf(id)));
+    return ids.some((id) => this.convertible(id) && (kanbanFlag() || !!this.cardTargetOf(id)));
   }
 
   /** Whether making kanbans is on (src/flags.ts). */
@@ -875,7 +881,7 @@ export class BoardApp {
   makeKanbanFromSelection(): Id | null {
     if (this.readOnly || !kanbanFlag()) return null;
     const meta = this.store.getMeta();
-    const stickies = this.selection.filter((id) => this.store.get(id)?.type === 'sticky');
+    const stickies = this.selection.filter((id) => this.convertible(id));
     if (!stickies.length) return null;
     const first = this.store.get(stickies[0]) as BaseObj;
     const r = kanbanFromStickies(this.store, stickies, { z: this.store.topZ(), createdBy: this.user.id, headingFont: meta.headingFont, bodyFont: meta.bodyFont, parent: first.parent && this.store.get(first.parent)?.type === 'frame' ? first.parent : undefined });
@@ -906,12 +912,12 @@ export class BoardApp {
    * after the move. Only selected stickies count, not the children of a frame that moved with it.
    */
   private dropStickiesInLane(ids: Id[], p: Point) {
-    const stickies = ids.filter((id) => this.selection.includes(id) && this.store.get(id)?.type === 'sticky');
+    const stickies = ids.filter((id) => this.selection.includes(id) && this.convertible(id));
     if (!stickies.length) return;
     const t = this.laneTarget(p);
     if (!t) return;
     const order = [...stickies].sort((a, b) => { const ra = this.store.geometry(this.store.get(a)!), rb = this.store.geometry(this.store.get(b)!); return ra.y - rb.y || ra.x - rb.x; });
-    const r = stickiesToCards(this.store, order, () => ({ lane: t.id, index: t.index }));
+    const r = stickiesToCards(this.store, order, () => ({ lane: t.id, index: t.index }), this.user.id);
     if (r.refused) return this.notify(r.refused);
     if (!r.done.length) return;
     const lane = this.store.get(t.id) as BaseObj | undefined;
@@ -922,7 +928,7 @@ export class BoardApp {
 
   /** While stickies are moved over a lane: the drop line where they would land as cards. */
   private showStickyDrop(ids: Id[], p: Point): boolean {
-    const t = ids.some((id) => this.selection.includes(id) && this.store.get(id)?.type === 'sticky') ? this.laneTarget(p) : null;
+    const t = ids.some((id) => this.selection.includes(id) && this.convertible(id)) ? this.laneTarget(p) : null;
     const was = this.r.overlay.kanban?.line;
     if (!t) {
       if (was) this.clearStickyDrop();
@@ -1760,6 +1766,13 @@ export class BoardApp {
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
+    // while making kanbans is behind its flag, only copies of a kanban on this board come through (src/flags.ts)
+    if (!kanbanFlag()) {
+      const r = withoutNewKanbans(objs, (o) => this.store.get(o.id)?.type === o.type);
+      if (r.dropped) this.notify('Kanbans cannot be added to a board yet, so they were left out.');
+      objs = r.objs;
+      if (!objs.length) return [];
+    }
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
     const out = remapObjects(objs, map, offset, (id) => {

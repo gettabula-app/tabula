@@ -7,14 +7,18 @@ import type { Store } from './store';
 import { newId } from './store';
 import type { Id, Label } from './types';
 
-/** The board's labels in their order (by `order`, then name, then id), each one checked. */
+/**
+ * The board's labels in their order (by `order`, then name, then id), each one checked: a value stored under another
+ * label's key is not a label (it would shadow or double that label), and no more than the 30 a board holds are read,
+ * however many another client wrote.
+ */
 export function listLabels(store: Store): Label[] {
   const out: Label[] = [];
-  store.labels.forEach((v) => {
+  store.labels.forEach((v, key) => {
     const l = validLabel(v);
-    if (l) out.push(l);
+    if (l && l.id === key) out.push(l);
   });
-  return sortLabels(out);
+  return sortLabels(out).slice(0, LIMITS.labels);
 }
 
 export function sortLabels(labels: Label[]): Label[] {

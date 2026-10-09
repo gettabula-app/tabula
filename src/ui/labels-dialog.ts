@@ -4,7 +4,8 @@ import type { Label } from '../types';
 import { LABEL_COLORS, LIMITS } from '../../shared/containers';
 import { createLabel, createRefusal, deleteLabel, listLabels, moveLabel, nextLabelColor, recolorLabel, renameLabel } from '../labels';
 import { kanbanSwatch } from '../markup';
-import { dialog } from './common';
+import { closePopover, dialog, popover } from './common';
+import { keepKeys } from './card-dialog';
 import { h, icon } from './dom';
 
 // The Labels dialog (docs/kanban.md, Labels): create, rename, recolour, reorder and delete the board's labels. Editors
@@ -29,6 +30,35 @@ function colourPicker(current: string, label: string, onPick: (key: string) => v
     row.appendChild(b);
   }
   return row;
+}
+
+/**
+ * One label's colour: a button showing its swatch and name that opens a small list of the eight colours, each with its
+ * name, so a row is not a wall of swatches (the add row keeps its inline picker).
+ */
+function colourButton(l: Label, onPick: (key: string) => void): HTMLElement {
+  const sw = h('span', { class: 'k-chip-swatch', 'aria-hidden': 'true' });
+  const c = kanbanSwatch(l.color);
+  if (c) sw.style.setProperty('--c', c);
+  const b: HTMLButtonElement = h('button', {
+    class: 'k-colour-btn', type: 'button', 'aria-label': `Colour of ${l.name}: ${colourName(l.color)}`, 'data-tool': `${l.id}:colour`,
+    onclick: () => {
+      const list = h('div', { class: 'k-colour-list', role: 'radiogroup', 'aria-label': `Colour of ${l.name}` }, ...LABEL_COLORS.map((key) => {
+        const s2 = h('span', { class: 'k-chip-swatch', 'aria-hidden': 'true' });
+        s2.style.setProperty('--c', kanbanSwatch(key)!);
+        return h('button', {
+          class: 'k-colour-opt', type: 'button', role: 'radio', 'aria-checked': String(key === l.color),
+          onclick: () => {
+            closePopover();
+            onPick(key);
+          },
+        }, s2, h('span', null, colourName(key)), key === l.color ? h('span', { class: 'k-chip-check', 'aria-hidden': 'true' }, icon('check', 12)) : null);
+      }));
+      keepKeys(list);
+      popover(b, list, { side: 'bottom', className: 'k-colour-pop', label: `Colour of ${l.name}` });
+    },
+  }, sw, h('span', { class: 'k-colour-name' }, colourName(l.color)));
+  return b;
 }
 
 export function openLabelsDialog(app: BoardApp) {
@@ -71,6 +101,7 @@ export function openLabelsDialog(app: BoardApp) {
     const tool = (name: Parameters<typeof icon>[0], label: string, onClick: () => void, disabled = false, cls = '') =>
       h('button', { class: `icon-btn${cls}`, type: 'button', 'aria-label': label, 'data-tip': label, disabled, 'data-tool': `${l.id}:${name}`, onclick: onClick }, icon(name, 18));
     return h('li', { class: 'k-label-row' },
+      colourButton(l, (k) => recolorLabel(app.store, l.id, k)),
       input,
       h('div', { class: 'k-label-tools' },
         tool('chevron', `Move ${l.name} up`, () => moveLabel(app.store, l.id, -1), i === 0, ' k-up'),
@@ -80,7 +111,6 @@ export function openLabelsDialog(app: BoardApp) {
           app.notify(`Deleted the label ${l.name}. Undo brings it back.`);
         }, false, ' danger'),
       ),
-      colourPicker(l.color, `Colour of ${l.name}`, (k) => recolorLabel(app.store, l.id, k)),
     );
   }
 
@@ -98,8 +128,13 @@ export function openLabelsDialog(app: BoardApp) {
   const onLabels = () => render();
   app.store.labels.observe(onLabels);
   const body = h('div', null, list, count, adder);
-  body.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation();
+  keepKeys(body);
+  // labels are an editor's: a board that turns read-only closes the dialog
+  const stopRole = app.on('readonly', () => {
+    if (!app.readOnly) return;
+    d.close();
+    app.notify('Your access to this board changed, so Labels was closed.');
   });
-  return dialog('Labels', body, [], { className: 'k-labels-dialog', onClose: () => app.store.labels.unobserve(onLabels) });
+  const d = dialog('Labels', body, [], { className: 'k-labels-dialog', onClose: () => { app.store.labels.unobserve(onLabels); stopRole(); closePopover(); } });
+  return d;
 }

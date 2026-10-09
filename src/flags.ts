@@ -19,7 +19,9 @@ export function flagOn(name: string): boolean {
 
 /**
  * Making kanbans (docs/kanban.md) is behind a flag until slices 3 to 5 are done: `?kanban` or `driftboard:flag:kanban`.
- * Without it nothing creates a kanban (the Kanban tool, Make kanban from selection) and no loose card is made; kanbans
- * already on a board draw and edit as always, and a sticky can still become a card in one of their lanes.
+ * Without it there is no Kanban tool and no Make kanban from selection, no sticky becomes a loose card, and a paste, an
+ * import into a board or a template leaves out kanbans and cards unless they are copies of ones on this board (so a
+ * kanban here can still be copied and duplicated). Kanbans already on a board draw and edit as always, and a sticky can
+ * still become a card in one of their lanes. Opening a whole board file into a new board keeps what the file has.
  */
 export const kanbanFlag = (): boolean => flagOn('kanban');

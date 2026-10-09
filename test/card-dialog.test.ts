@@ -40,11 +40,21 @@ function setup(role: Role = 'editor') {
   const ui = createLabel(store, 'Frontend', 'teal')!;
   store.undo.clear();
   if (role !== 'editor') store.setReadOnly(true);
+  const roleNow = { value: role };
+  const listeners = new Map<string, Set<() => void>>();
+  const commentListeners = new Set<(v: boolean) => void>();
   const app = {
     store,
     get readOnly() { return store.readOnly; },
-    comments: { readOnly: () => role === 'viewer' },
-    canOpenCard: () => !store.readOnly || role === 'commenter',
+    comments: { readOnly: () => roleNow.value === 'viewer', onReadOnly: (fn: (v: boolean) => void) => { commentListeners.add(fn); return () => commentListeners.delete(fn); } },
+    canOpenCard: () => !store.readOnly || roleNow.value === 'commenter',
+    on: (ev: string, fn: () => void) => { const set = listeners.get(ev) ?? new Set(); set.add(fn); listeners.set(ev, set); return () => set.delete(fn); },
+    /** What the board does when this person's role changes. */
+    becomes(next: Role) {
+      roleNow.value = next;
+      store.setReadOnly(next !== 'editor');
+      listeners.get('readonly')?.forEach((fn) => fn());
+    },
     user: { id: 'me', name: 'Visual QA', color: '#326DD3' },
     participants: () => [{ clientId: 2, isMe: false, user: { id: 'u2', name: 'Marta Ruiz', color: '#D3332D' } }],
     notify: vi.fn<(m: string) => void>(),
@@ -61,8 +71,10 @@ const open = (app: unknown, id: Id, focus?: 'owner' | 'due' | 'labels') => openC
 const box = () => browser.document.body.querySelector('[role="dialog"]') as FakeElement | null;
 const byLabel = (label: string) => box()!.querySelectorAll('input, textarea, select').find((e) => e.getAttribute('aria-label') === label)!;
 const button = (name: string) => box()!.querySelectorAll('button').find((b) => textOf(b) === name || b.getAttribute('aria-label') === name);
+/** Types a value and leaves the field, as a person does: input, then change. */
 function change(el: FakeElement, value: string) {
   el.value = value;
+  el.dispatchEvent(new FakeEvent('input'));
   el.dispatchEvent(new FakeEvent('change'));
 }
 const bo = (store: Store, id: Id) => store.get(id) as BaseObj;
@@ -155,6 +167,93 @@ describe('the card dialog, for an editor', () => {
   });
 });
 
+describe('the card dialog, against changes made elsewhere', () => {
+  it('a field only focused writes nothing on close, so a rename made meanwhile stays', () => {
+    const { store, app, card } = setup();
+    const d = open(app, card)!;
+    byLabel('Title').focus();
+    byLabel('Description').focus();
+    store.transact(() => store.update(card, { text: 'Renamed elsewhere', desc: 'Described elsewhere' }));
+    d.close();
+    expect(bo(store, card)).toMatchObject({ text: 'Renamed elsewhere', desc: 'Described elsewhere' });
+  });
+
+  it('what was typed into a focused field is saved on close', () => {
+    const { store, app, card } = setup();
+    const d = open(app, card)!;
+    const t = byLabel('Title');
+    t.focus();
+    t.value = 'Typed, not left';
+    t.dispatchEvent(new FakeEvent('input'));
+    d.close();
+    expect(bo(store, card).text).toBe('Typed, not left');
+  });
+
+  it('an owner the list no longer offers does nothing, and never clears the owner', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerId: 'u2', ownerName: 'Marta Ruiz' }));
+    open(app, card);
+    const owner = byLabel('Owner');
+    owner.value = 'id:gone';
+    owner.dispatchEvent(new FakeEvent('change'));
+    expect(bo(store, card)).toMatchObject({ ownerId: 'u2', ownerName: 'Marta Ruiz' });
+    expect(owner.value).toBe('id:u2');
+  });
+
+  it('lets undo and redo through to the board, and keeps other keys', () => {
+    const { app, card } = setup();
+    open(app, card);
+    const board = vi.fn<() => void>();
+    browser.document.body.addEventListener('keydown', board);
+    for (const [key, mod] of [['z', 'metaKey'], ['Z', 'ctrlKey'], ['y', 'ctrlKey']]) {
+      const e = new FakeEvent('keydown');
+      Object.assign(e, { key, [mod]: true });
+      button('Comment')!.dispatchEvent(e);
+    }
+    expect(board).toHaveBeenCalledTimes(3);
+  });
+
+  it('marks chosen labels with a check as well as the colours', () => {
+    const { app, card, bug } = setup();
+    open(app, card);
+    expect(button('Bug')!.querySelector('.k-chip-check')).toBeNull();
+    button('Bug')!.click();
+    const chip = box()!.querySelectorAll('button').find((b) => b.dataset.label === bug)!;
+    expect(chip.querySelector('.k-chip-check')).not.toBeNull();
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('a role that changes while the dialog is open', () => {
+  it('an editor made a commenter: it opens again read-only', async () => {
+    const { app, card } = setup();
+    open(app, card);
+    app.becomes('commenter');
+    await Promise.resolve();
+    expect(byLabel('Title').readOnly).toBe(true);
+    expect(button('Delete')).toBeUndefined();
+    expect(browser.document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  });
+
+  it('a commenter made an editor: it opens again editable', async () => {
+    const { store, app, card } = setup('commenter');
+    open(app, card);
+    app.becomes('editor');
+    await Promise.resolve();
+    expect(byLabel('Title').readOnly).toBe(false);
+    change(byLabel('Title'), 'Now I can');
+    expect(bo(store, card).text).toBe('Now I can');
+  });
+
+  it('made a viewer: it closes and says why', () => {
+    const { app, card } = setup();
+    open(app, card);
+    app.becomes('viewer');
+    expect(box()).toBeNull();
+    expect(app.notify).toHaveBeenCalledWith(expect.stringContaining('access'));
+  });
+});
+
 describe('the card dialog, by role', () => {
   it('is read-only for commenters, who keep the comment button', () => {
     const { store, app, card } = setup('commenter');
@@ -218,7 +317,7 @@ describe('stored strings in the dialogs are text', () => {
 });
 
 describe('the Labels dialog', () => {
-  it('creates, renames, recolours, reorders and deletes', () => {
+  it('creates, renames, recolours, reorders and deletes', async () => {
     const { store, app, bug, ui } = setup();
     openLabelsDialog(app as unknown as BoardApp);
     const name = box()!.querySelectorAll('input').find((i) => i.getAttribute('aria-label') === 'New label name')!;
@@ -227,12 +326,41 @@ describe('the Labels dialog', () => {
     expect(listLabels(store).map((l) => l.name)).toEqual(['Bug', 'Frontend', 'Docs']);
     change(box()!.querySelectorAll('input').find((i) => i.dataset.label === bug)!, 'Defect');
     box()!.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Move Frontend up')!.click();
-    const colours = box()!.querySelectorAll('[role="radiogroup"]').find((g) => g.getAttribute('aria-label') === 'Colour of Frontend')!;
-    colours.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Violet')!.click();
+    // one button per label opens the eight colours, each with its name
+    box()!.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Colour of Frontend: Teal')!.click();
+    const colours = browser.document.body.querySelector('.k-colour-pop')!;
+    expect(colours.querySelectorAll('[role="radio"]').map((b) => textOf(b))).toEqual(['Yellow', 'Orange', 'Pink', 'Violet', 'Blue', 'Teal', 'Green', 'Grey']);
+    colours.querySelectorAll('[role="radio"]').find((b) => textOf(b) === 'Violet')!.click();
+    expect(browser.document.body.querySelector('.k-colour-pop')).toBeNull();
     box()!.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === 'Delete Docs')!.click();
     expect(listLabels(store).map((l) => `${l.name}:${l.color}`)).toEqual(['Frontend:violet', 'Defect:pink']);
     expect(listLabels(store)[0].id).toBe(ui);
     expect(textOf(box()!)).toContain('2 of 30 labels');
+    // the colour list arms its outside-click listener on a timer: let it run while the fake window is there
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('lets undo through to the board, so a deleted label can come back', () => {
+    const { app } = setup();
+    openLabelsDialog(app as unknown as BoardApp);
+    const board = vi.fn<() => void>();
+    browser.document.body.addEventListener('keydown', board);
+    const e = new FakeEvent('keydown');
+    Object.assign(e, { key: 'z', metaKey: true });
+    const inside = box()!.querySelector('.k-colour-btn')!;
+    inside.dispatchEvent(e);
+    const del = new FakeEvent('keydown');
+    Object.assign(del, { key: 'Delete' });
+    inside.dispatchEvent(del);
+    expect(board).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes when the board turns read-only', () => {
+    const { app } = setup();
+    openLabelsDialog(app as unknown as BoardApp);
+    app.becomes('commenter');
+    expect(box()).toBeNull();
+    expect(app.notify).toHaveBeenCalled();
   });
 
   it('is for editors only', () => {

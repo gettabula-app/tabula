@@ -34,11 +34,26 @@
 .k-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--tray-line); }
 .k-actions .btn.danger { margin-left: auto; }
 
-/* Labels dialog: one row per label, rules between them */
+/* Labels dialog: one row per label (colour, name, tools), rules between them */
+.k-colour-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; min-width: 104px;
+  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.k-colour-btn:hover { border-color: var(--tray-text); }
+/* the colour list opens over the dialog */
+.popover.k-colour-pop { z-index: 65; padding: 4px; }
+.k-colour-list { display: grid; min-width: 160px; }
+.k-colour-opt {
+  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: 0; border-radius: 0;
+  background: transparent; color: var(--tray-text); text-align: left; font-weight: 500;
+}
+.k-colour-opt:hover, .k-colour-opt[aria-checked='true'] { background: var(--tray-hover); }
+.k-colour-opt .k-chip-check { margin-left: auto; }
+.k-chip-check { display: inline-flex; }
 .k-label-list { margin: 0; padding: 0; list-style: none; border-bottom: 1px solid var(--tray-line); }
-.k-label-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line); }
+.k-label-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line); }
 .k-label-list > :first-child { border-top: 0; }
-.k-label-row .k-swatches { grid-column: 1 / -1; }
 .k-label-tools { display: flex; gap: 4px; }
 .k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
 .k-swatch {
@@ -48,16 +63,17 @@
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }
 .k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 
-/* wide enough: name, colours and tools on one line */
-@media (min-width: 640px) {
-  .k-label-row { grid-template-columns: minmax(0, 1fr) auto auto; }
-  .k-label-row .k-swatches { grid-column: 2; grid-row: 1; }
-  .k-label-row .k-swatch { width: 24px; height: 24px; }
-}
-
 @media (max-width: 860px) {
   .modal-back.k-card-dialog { align-items: end; padding: 0; }
-  .k-card-dialog .modal { width: 100%; max-height: 85vh; border-top: 2px solid var(--tray-text); }
+  .k-card-dialog .modal { width: 100%; max-height: 85vh; max-height: 85dvh; border-top: 2px solid var(--tray-text); }
+  /* the head stays, the body scrolls, and the actions stay at the sheet's foot, clear of the home indicator */
+  .k-card-dialog .modal-body { padding-bottom: 0; }
+  .k-card-dialog .k-actions {
+    position: sticky; bottom: 0; z-index: 1; margin: 20px -20px 0; padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--tray); border-top: 1px solid var(--tray-line);
+  }
+  .k-card-dialog .k-actions .btn { flex: 1 1 auto; }
+  .k-card-dialog .k-actions .btn.danger { margin-left: 0; }
   .k-row2 { grid-template-columns: 1fr; }
   .k-card-form .input, .k-card-form .btn { min-height: 40px; }
   .k-chip { height: 40px; }

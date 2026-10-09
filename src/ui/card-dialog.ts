@@ -16,10 +16,17 @@ import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
 
 const OTHER = '__other';
 
-/** The dialog's own keys stay in it: Delete on a focused button must not delete the card on the board behind it. */
-function keepKeys(box: HTMLElement) {
+/**
+ * The dialog's own keys stay in it: Delete on a focused button must not delete the card on the board behind it. Tab and
+ * Escape go on to the dialog, and undo and redo to the board (in a text field the board leaves them to the field).
+ */
+export function keepKeys(box: HTMLElement) {
   box.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation();
+    if (e.key === 'Tab' || e.key === 'Escape') return;
+    const mod = e.metaKey || e.ctrlKey;
+    const k = e.key.toLowerCase();
+    if (mod && (k === 'z' || k === 'y')) return;
+    e.stopPropagation();
   });
 }
 
@@ -36,16 +43,31 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   };
 
   // ---- fields
+  // Typed text is saved only when this person changed it: a field that was only focused never writes back what it showed,
+  // so a change someone else made meanwhile stays.
+  const dirty = { head: false, desc: false };
   const title = h('input', { class: 'input', type: 'text', maxlength: LIMITS.title, 'aria-label': 'Title', autocomplete: 'off' });
-  title.addEventListener('change', () => save({ title: title.value }));
+  const saveTitle = () => {
+    if (!dirty.head) return;
+    dirty.head = false;
+    save({ title: title.value });
+  };
+  title.addEventListener('input', () => (dirty.head = true));
+  title.addEventListener('change', saveTitle);
   title.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
-      save({ title: title.value });
+      saveTitle();
     }
   });
   const desc = h('textarea', { class: 'input k-desc', maxlength: LIMITS.description, rows: 5, 'aria-label': 'Description', placeholder: editable ? 'Add a description' : '' });
-  desc.addEventListener('change', () => save({ desc: desc.value }));
+  const saveDesc = () => {
+    if (!dirty.desc) return;
+    dirty.desc = false;
+    save({ desc: desc.value });
+  };
+  desc.addEventListener('input', () => (dirty.desc = true));
+  desc.addEventListener('change', saveDesc);
 
   const owner = h('select', { class: 'input', 'aria-label': 'Owner' });
   const ownerName = h('input', { class: 'input k-owner-name', type: 'text', maxlength: OWNER_NAME_MAX, 'aria-label': 'Owner\'s name', placeholder: 'Name', autocomplete: 'off' });
@@ -57,8 +79,11 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
       return;
     }
     ownerName.hidden = true;
+    if (owner.value === '') return save({ owner: null });
+    // a choice the list no longer offers (it changed under the open menu) does nothing, never clears the owner
     const opt = options.find((o) => o.key === owner.value);
-    save({ owner: opt ? { id: opt.id, name: opt.name } : null });
+    if (opt) save({ owner: { id: opt.id, name: opt.name } });
+    else render(true);
   });
   ownerName.addEventListener('change', () => {
     const name = ownerName.value.trim();
@@ -104,8 +129,9 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     if (!card || card.type !== 'card') return;
     // a field being typed in keeps what is typed, unless what it wrote was refused
     const focused = reset ? null : document.activeElement;
-    if (focused !== title) title.value = card.text ?? '';
-    if (focused !== desc) desc.value = card.desc ?? '';
+    // a text field keeps what is being typed into it; otherwise it shows the card
+    if (!(dirty.head && document.activeElement === title)) title.value = card.text ?? '';
+    if (!(dirty.desc && document.activeElement === desc)) desc.value = card.desc ?? '';
     // the owner picker: me, who is here and who is already named on this board (docs/kanban.md, Owners)
     const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name }));
     const assigned = [...app.store.cache.values()].filter((o) => o.type === 'card') as BaseObj[];
@@ -140,7 +166,10 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
           if (next === null) return app.notify(`A card holds at most ${LIMITS.labelsPerCard} labels.`);
           save({ labels: next });
         },
-      }, sw, h('span', { class: 'k-chip-name' }, l.name));
+      },
+      // chosen is said by more than the colours: a check before the name, and aria-pressed
+      on.has(l.id) ? h('span', { class: 'k-chip-check', 'aria-hidden': 'true' }, icon('check', 12)) : null,
+      sw, h('span', { class: 'k-chip-name' }, l.name));
       return b;
     }) : [h('p', { class: 'k-empty' }, editable ? 'No labels on this board yet.' : 'No labels.')]));
     // the chips are rebuilt: keep the keyboard on the one that was toggled
@@ -161,17 +190,28 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     render();
   });
   const onLabels = () => render();
+  // a role that changes while it is open (an editor made a commenter, or the other way): open again as the new role
+  // allows, or close and say why
+  const roleChanged = () => {
+    d.close();
+    // after the event that told us, so the new dialog does not hear it too
+    if (cardOf()?.type === 'card' && app.canOpenCard()) queueMicrotask(() => openCardDialog(app, id));
+    else app.notify('Your access to this board changed, so the card was closed.');
+  };
+  const stopRole = app.on('readonly', roleChanged);
+  const stopComments = app.comments.onReadOnly(roleChanged);
   app.store.labels.observe(onLabels);
   const d = dialog(heading, body, [], {
     className: 'k-card-dialog',
     onClose: () => {
       stopStore();
+      stopRole();
+      stopComments();
       app.store.labels.unobserve(onLabels);
-      // what was typed into a field that still has focus is kept, as leaving it would
+      // what this person typed into a field that still has focus is kept, as leaving it would; nothing else is written
       if (editable && cardOf()?.type === 'card') {
-        const card = cardOf()!;
-        if (title.value.trim() && title.value !== (card.text ?? '')) save({ title: title.value });
-        if (desc.value !== (card.desc ?? '')) save({ desc: desc.value });
+        if (title.value.trim()) saveTitle();
+        saveDesc();
       }
     },
   });
