@@ -639,7 +639,7 @@ const qb = $('#quickbar');
 qb.innerHTML = `<button class="icon-btn" aria-label="Sticky colour"><span class="qb-chip" style="--c:var(--s-yellow)"></span></button><span class="qb-sep"></span>${['dup', 'lock', 'front', 'trash'].map((n) => `<button class="icon-btn" aria-label="${n}">${ic(n, 20)}</button>`).join('')}`;
 
 /* ---------------------------------------------------------------- multiplayer (TAB-141)
-   Ana is another editor on the board. What we draw for her comes from the relay's live runs (MSG_AI_RUNS: her run's
+   Ana is another editor on the board. What we draw for their comes from the relay's live runs (MSG_AI_RUNS: their run's
    status, target and, once ready, its proposal), never from awareness. Everything here is faked. */
 const ANA = { name: 'Ana', color: '#7A5AF8', target: ['s10', 's11', 's12'], feature: 'Summarise' };
 function inkOn(hex) { // the label text: white or the app ink, whichever contrasts more with the person's colour
@@ -657,11 +657,11 @@ const myLabel = ghostArea.querySelector('.ghost-label');
 
 function layoutOther() {
   const phone = isNarrow(), ss = phone ? 76 : 104, step = ss + 16;
-  // her target: the selection she ran on
+  // their target: the selection they ran on
   const rs = ANA.target.map((i) => ({ x: parseFloat(stickies[i].style.left), y: parseFloat(stickies[i].style.top) }));
   const x0 = Math.min(...rs.map((r) => r.x)) - 8, y0 = Math.min(...rs.map((r) => r.y)) - 8, x1 = Math.max(...rs.map((r) => r.x)) + ss + 8, y1 = Math.max(...rs.map((r) => r.y)) + ss + 8;
   Object.assign(othRun.style, { left: x0 + 'px', top: y0 + 'px', width: x1 - x0 + 'px', height: y1 - y0 + 'px' });
-  // her preview
+  // their preview
   let ax, ay, cols;
   if (phone) { cols = 2; ax = S.two !== 'off' ? 196 : 84; ay = S.two !== 'off' ? 446 : 412; }
   else if (S.two === 'overlap') { cols = 2; ax = 660; ay = 150; }
@@ -694,12 +694,12 @@ function paintOther() {
   av.dataset.tip = line; av.setAttribute('aria-label', line);
   // my own label says "Your AI preview" once someone else's preview is on the board
   myLabel.textContent = st === 'preview' ? 'Your AI preview' : 'Preview';
-  // what Ana's own bar would do is not drawn: she is on another computer
+  // what Ana's own bar would do is not drawn: they are on another computer
   layoutOther();
 }
 
 function otherAct(kind) {
-  if (S.anaWins) { S.otherDone = 'lost'; paint(); toast(kind === 'accept' ? 'Ana discarded her preview first. Nothing was added.' : 'Ana added her preview first.'); return; }
+  if (S.anaWins) { S.otherDone = 'lost'; paint(); toast(kind === 'accept' ? 'Ana discarded their preview first. Nothing was added.' : 'Ana added their preview first.'); return; }
   S.otherDone = kind; paint();
   if (kind === 'accept') toast('Added Ana’s 4 stickies.', 'Undo', () => { S.otherDone = null; paint(); });
   else toast('Discarded Ana’s preview.');
