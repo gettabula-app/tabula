@@ -56,11 +56,23 @@ export function addRow(lane: Rect, cards: Rect[]): Rect {
 
 const inside = (r: Rect, p: { x: number; y: number }) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 
-/** Where in a lane a point is: its header band, its add-card row, or the rest of the body. */
-export function laneRegionAt(lane: Rect, cards: Rect[], p: { x: number; y: number }): 'header' | 'add' | 'body' {
+/** A lane header's ⋯ button (28 square, 8 from the lane's right edge, centred in the header band). Editors only. */
+export function laneMenuRect(lane: Rect): Rect {
+  return { x: lane.x + lane.w - 8 - 28, y: lane.y + 12, w: 28, h: 28 };
+}
+
+/**
+ * Where in a lane a point is: its ⋯ button (when `menu`, for editors), its header band, its add-card row, or the rest of
+ * the body.
+ */
+export function laneRegionAt(lane: Rect, cards: Rect[], p: { x: number; y: number }, menu = false): 'menu' | 'header' | 'add' | 'body' {
+  if (menu && inside(laneMenuRect(lane), p)) return 'menu';
   if (p.y < lane.y + KANBAN.header) return 'header';
   return inside(addRow(lane, cards), p) ? 'add' : 'body';
 }
+
+/** Whether a point is inside a rectangle, edges included. */
+export const inRect = inside;
 
 /** How many of a lane's cards (top to bottom) are above the pointer, by their midpoints: the insertion index. */
 export function dropIndexAt(cards: Rect[], y: number): number {
@@ -373,3 +385,180 @@ export function ownerKey(card: { ownerId?: string; ownerName?: string }): string
   const n = (card.ownerName ?? '').trim();
   return n ? `name:${n}` : '';
 }
+
+// ---------------------------------------------------------------- lanes and discipline (docs/kanban.md, slice 4)
+
+export type Stage = 'todo' | 'doing' | 'done';
+
+/** The lane stages, in menu order (docs/kanban.md, Lanes). Only `done` changes how cards draw. */
+export const STAGES: readonly { key: Stage; label: string }[] = [
+  { key: 'todo', label: 'To do' },
+  { key: 'doing', label: 'Doing' },
+  { key: 'done', label: 'Done' },
+];
+
+export const isStage = (v: unknown): v is Stage => v === 'todo' || v === 'doing' || v === 'done';
+
+/** Whether a lane's change of stage changes how its cards draw: their due chips read differently in a done lane. */
+export const stageRedrawsCards = (before: unknown, after: unknown) => (before === 'done') !== (after === 'done');
+
+/**
+ * Where Move left or Move right puts a lane: the index among the other lanes (left to right) to insert it at, or null at
+ * an edge, where there is nothing to do.
+ */
+export function laneMoveIndex(lanes: readonly string[], laneId: string, dir: 'left' | 'right'): number | null {
+  const i = lanes.indexOf(laneId);
+  if (i < 0) return null;
+  const to = dir === 'left' ? i - 1 : i + 1;
+  return to < 0 || to >= lanes.length ? null : to;
+}
+
+/** A WIP limit as typed: a whole number from 1 to 99, '' for no limit, or null when it is neither. */
+export function parseWip(text: string): number | '' | null {
+  const t = text.trim();
+  if (!t) return '';
+  if (!/^\d{1,2}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 1 && n <= 99 ? n : null;
+}
+
+/** The toast when a block lane refuses a drop (docs/kanban.md, Visual design: "Review is full: 2 of 2"). */
+export const wipFullMessage = (lane: string | undefined, count: number, limit: number) => `${lane?.trim() || 'This lane'} is full: ${count} of ${limit}`;
+
+/** The label on a block lane that refuses the cards dragged over it ("Full · 2 / 2"). */
+export const wipFullLabel = (count: number, limit: number) => `Full · ${count} / ${limit}`;
+
+// ---------------------------------------------------------------- filters (docs/kanban.md, Filters)
+
+export type DueBucket = 'overdue' | 'today' | 'week' | 'none';
+
+export const DUE_BUCKETS: readonly { key: DueBucket; label: string }[] = [
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This week' },
+  { key: 'none', label: 'None' },
+];
+
+/**
+ * One person's filter on one kanban: personal, never written to the board (docs/kanban.md, Filters). Each part that is
+ * set must match; within labels and within due, any one is enough.
+ */
+export interface KanbanFilter {
+  mine: boolean;
+  /** Label ids, any of. */
+  labels: string[];
+  /** Due buckets, any of. */
+  due: DueBucket[];
+  /** Words in the title or the description, ignoring case. */
+  text: string;
+}
+
+export const EMPTY_FILTER: KanbanFilter = Object.freeze({ mine: false, labels: [], due: [], text: '' }) as KanbanFilter;
+
+const TEXT_MAX = 200;
+
+/** A filter read back from storage (or anything else): only what a filter can hold, else the empty filter. */
+export function cleanFilter(v: unknown): KanbanFilter {
+  if (!v || typeof v !== 'object') return { ...EMPTY_FILTER, labels: [], due: [] };
+  const o = v as Record<string, unknown>;
+  const labels = Array.isArray(o.labels) ? [...new Set(o.labels.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 30) : [];
+  const keys = DUE_BUCKETS.map((b) => b.key) as string[];
+  const due = Array.isArray(o.due) ? [...new Set(o.due.filter((x): x is DueBucket => typeof x === 'string' && keys.includes(x)))] : [];
+  const text = typeof o.text === 'string' ? o.text.slice(0, TEXT_MAX) : '';
+  return { mine: o.mine === true, labels, due, text };
+}
+
+/** How many parts of a filter are on: Mine, each label, each due bucket, and the text. Zero means no filter. */
+export const filterParts = (f: KanbanFilter) => (f.mine ? 1 : 0) + f.labels.length + f.due.length + (f.text.trim() ? 1 : 0);
+
+export interface FilterViewer {
+  id: string;
+  name: string;
+  /** Accounts mode: Mine means the owner's account id; in open mode the owner's name counts too. */
+  accounts: boolean;
+}
+
+/** The ISO week (Monday to Sunday) of a day number, as the Monday's day number. */
+const mondayOf = (day: number) => day - ((new Date(day * DAY).getUTCDay() + 6) % 7);
+
+/** Which due buckets a card is in: overdue as its chip says (never in a done lane), today, this week (Monday to Sunday), none. */
+export function dueBuckets(due: string | undefined, today: string, done: boolean): Set<DueBucket> {
+  const out = new Set<DueBucket>();
+  const d = due ? dayNumber(due) : null;
+  const t = dayNumber(today);
+  if (d === null) {
+    out.add('none');
+    return out;
+  }
+  if (t === null) return out;
+  if (d < t && !done) out.add('overdue');
+  if (d === t) out.add('today');
+  if (mondayOf(d) === mondayOf(t)) out.add('week');
+  return out;
+}
+
+export interface FilterCard {
+  text?: string;
+  desc?: string;
+  ownerId?: string;
+  ownerName?: string;
+  due?: string;
+  labels?: string[];
+}
+
+/**
+ * Whether a card matches a filter. `known` is the board's label ids: a filter label that was deleted since matches
+ * nothing and counts as not set. The empty filter matches every card.
+ */
+export function cardMatches(card: FilterCard, f: KanbanFilter, ctx: { viewer: FilterViewer; today: string; done: boolean; known?: ReadonlySet<string> }): boolean {
+  if (f.mine) {
+    const { viewer } = ctx;
+    const byId = !!card.ownerId && card.ownerId === viewer.id;
+    const byName = !viewer.accounts && !!viewer.name.trim() && (card.ownerName ?? '').trim().toLowerCase() === viewer.name.trim().toLowerCase();
+    if (!byId && !byName) return false;
+  }
+  const labels = ctx.known ? f.labels.filter((id) => ctx.known!.has(id)) : f.labels;
+  if (labels.length && !(card.labels ?? []).some((id) => labels.includes(id))) return false;
+  if (f.due.length) {
+    const b = dueBuckets(card.due, ctx.today, ctx.done);
+    if (!f.due.some((k) => b.has(k))) return false;
+  }
+  const q = f.text.trim().toLowerCase();
+  if (q && !`${card.text ?? ''}\n${card.desc ?? ''}`.toLowerCase().includes(q)) return false;
+  return true;
+}
+
+export interface FilterChip {
+  /** `mine`, `label:<id>`, `due:<bucket>` or `text`. */
+  key: string;
+  text: string;
+}
+
+/** The chips that show an active filter on the kanban's header, in popover order. Deleted labels have none. */
+export function filterChips(f: KanbanFilter, labelName: (id: string) => string | undefined): FilterChip[] {
+  const out: FilterChip[] = [];
+  if (f.mine) out.push({ key: 'mine', text: 'Mine' });
+  for (const id of f.labels) {
+    const name = labelName(id);
+    if (name) out.push({ key: `label:${id}`, text: name });
+  }
+  for (const b of DUE_BUCKETS) if (f.due.includes(b.key)) out.push({ key: `due:${b.key}`, text: b.key === 'none' ? 'No due date' : b.label });
+  const t = f.text.trim();
+  if (t) out.push({ key: 'text', text: `“${t.length > 24 ? `${t.slice(0, 23)}…` : t}”` });
+  return out;
+}
+
+/** The filter without the part a chip shows. */
+export function withoutChip(f: KanbanFilter, key: string): KanbanFilter {
+  if (key === 'mine') return { ...f, mine: false };
+  if (key === 'text') return { ...f, text: '' };
+  if (key.startsWith('label:')) return { ...f, labels: f.labels.filter((id) => id !== key.slice(6)) };
+  if (key.startsWith('due:')) return { ...f, due: f.due.filter((b) => b !== key.slice(4)) };
+  return f;
+}
+
+/** "2 of 9 match", or "No filter" when nothing is set. */
+export const matchText = (f: KanbanFilter, matching: number, total: number) => (filterParts(f) ? `${matching} of ${total} match` : 'No filter');
+
+/** Where a kanban's filter is kept in this browser (docs/kanban.md, Filters): per board and per kanban, never in the board. */
+export const filterStorageKey = (board: string, container: string) => `tabula:filter:${board}:${container}`;

@@ -1,14 +1,14 @@
 // Client glue for containers (docs/kanban.md, slice 2): making a kanban, adding a card, and moving cards, each one
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
-import { KANBAN, LIMITS, isContainerType, kanbanColor, layoutContainer, planInsert, ranksBetween } from '../shared/containers';
+import { KANBAN, LIMITS, isContainerType, kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck } from '../shared/containers';
 import type { Store } from './store';
 import { newId } from './store';
 import type { BaseObj, ConnectorObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
-import { cardFillFromSticky, isDueDate, joinCardText, readingOrder, splitStickyText, stickyFillFromCard } from './ui/kanban-logic';
+import { cardFillFromSticky, isDueDate, isStage, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
 export const DEFAULT_LANES = [
@@ -95,6 +95,15 @@ export function addRefusal(store: Store, laneId: Id, n = 1): string | null {
 }
 
 /**
+ * Why a new card cannot be added to a lane, or null when it can: the limits, and a full block lane, which refuses a new
+ * card as it refuses a drop (docs/kanban.md, WIP limits; Slice 4 notes).
+ */
+export function addCardRefusal(store: Store, laneId: Id): string | null {
+  // a new card has no id yet: one that no lane shows stands in for it
+  return addRefusal(store, laneId) ?? wipRefusal(store, ['\u0000new'], laneId);
+}
+
+/**
  * Adds a card with this title at the end of a lane: one transaction, one undo step. The title is cut to the limit and its
  * height is stored, so every client lays it out the same. Returns the new card's id, or null when nothing was written.
  */
@@ -103,7 +112,7 @@ export function addCard(store: Store, laneId: Id, title: string, base: { created
   const text = title.trim().slice(0, LIMITS.title);
   if (lane?.type !== 'lane' || !lane.parent || !text || store.readOnly) return null;
   const layout = store.containerLayout(lane.parent);
-  if (!layout || addRefusal(store, laneId)) return null;
+  if (!layout || addCardRefusal(store, laneId)) return null;
   const siblings = (layout.cards.get(laneId) ?? []).map((id) => store.get(id)!).filter(Boolean);
   const { ranks, repairs } = planInsert(siblings, laneId, siblings.length, 1);
   const r = layout.rects.get(laneId)!;
@@ -152,7 +161,20 @@ export function moveRefusal(store: Store, ids: Id[], laneId: Id): string | null 
   const lane = store.get(laneId);
   const shown = lane?.type === 'lane' && lane.parent ? store.containerLayout(lane.parent)?.cards.get(laneId) ?? [] : [];
   const arriving = ids.filter((id) => !shown.includes(id)).length;
-  return arriving ? addRefusal(store, laneId, arriving) : null;
+  return arriving ? addRefusal(store, laneId, arriving) ?? wipRefusal(store, ids, laneId) : null;
+}
+
+/**
+ * Why a block lane refuses these cards, or null when it takes them (docs/kanban.md, WIP limits): only cards arriving
+ * from elsewhere count, so moving within the lane, out of it, or in a lane already over its limit through someone
+ * else's drop is never refused. Client-side only: two people dropping at once can both pass.
+ */
+export function wipRefusal(store: Store, ids: Iterable<Id>, laneId: Id): string | null {
+  const lane = store.get(laneId) as BaseObj | undefined;
+  if (lane?.type !== 'lane' || !lane.parent) return null;
+  const shown = store.containerLayout(lane.parent)?.cards.get(laneId) ?? [];
+  const v = wipCheck(lane, shown.map((id) => ({ id })), ids);
+  return v.ok || v.limit === null ? null : wipFullMessage(lane.name, shown.length, v.limit);
 }
 
 /**
@@ -398,7 +420,7 @@ export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) =>
   }
   const repairs: { id: Id; parent: Id; rank: string }[] = [];
   for (const [laneId, g] of byLane) {
-    const refused = addRefusal(store, laneId, g.ids.length);
+    const refused = addRefusal(store, laneId, g.ids.length) ?? wipRefusal(store, g.ids, laneId);
     if (refused) return { done: [], refused };
     const lane = store.get(laneId)!;
     const layout = store.containerLayout(lane.parent!)!;
@@ -511,4 +533,160 @@ export function withoutNewKanbans(objs: Obj[], exists: (o: Obj) => boolean): { o
   const bound = (e: { kind: string; id?: string }) => e.kind === 'bound' && !!e.id && out.has(e.id);
   const kept = objs.filter((o) => !out.has(o.id) && !(o.type === 'connector' && (bound((o as ConnectorObj).from) || bound((o as ConnectorObj).to))));
   return { objs: kept, dropped: out.size };
+}
+
+// ---------------------------------------------------------------- lanes (docs/kanban.md, slice 4)
+
+/** What a lane's ⋯ menu can change. `null` clears a field. */
+export interface LanePatch {
+  name?: string;
+  /** A palette key or a colour `kanbanColor` accepts. */
+  fill?: string | null;
+  stage?: Stage | null;
+  /** 1 to 99. Clearing the limit also clears the mode. */
+  wip?: number | null;
+  wipMode?: 'warn' | 'block';
+}
+
+/** Why a lane's own fields cannot be edited, or null when they can: a locked lane is never changed by an edit. */
+export function laneEditRefusal(store: Store, laneId: Id): string | null {
+  const lane = store.get(laneId);
+  if (lane?.type !== 'lane') return 'This lane is gone.';
+  if (store.readOnly) return 'This board is read-only.';
+  if (lane.locked) return 'This lane is locked. Unlock it to change it.';
+  return null;
+}
+
+/**
+ * Why lanes cannot be added to, removed from or reordered in a kanban, or null when they can: a locked kanban keeps its
+ * lanes (docs/kanban.md, Hit testing: a locked container blocks structural edits, not moving cards).
+ */
+export function structureRefusal(store: Store, containerId: Id): string | null {
+  const c = store.get(containerId);
+  if (c?.type !== 'container') return 'This kanban is gone.';
+  if (store.readOnly) return 'This board is read-only.';
+  if (c.locked) return 'This kanban is locked. Unlock it to change its lanes.';
+  return null;
+}
+
+/** The fields a lane patch writes, checked; null when the patch asks for something that is not allowed. */
+export function laneFields(patch: LanePatch): Partial<BaseObj> | null {
+  const out: Partial<BaseObj> = {};
+  if (patch.name !== undefined) {
+    const name = patch.name.replace(/\s+/g, ' ').trim().slice(0, LIMITS.laneName).trim();
+    if (!name) return null;
+    out.name = name;
+  }
+  // every colour goes through kanbanColor: a palette key or a checked colour, never the raw value
+  if (patch.fill !== undefined) out.fill = patch.fill === null ? undefined : kanbanColor(patch.fill) ?? undefined;
+  if (patch.stage !== undefined) {
+    if (patch.stage !== null && !isStage(patch.stage)) return null;
+    out.stage = patch.stage ?? undefined;
+  }
+  if (patch.wip !== undefined) {
+    if (patch.wip !== null && !(Number.isInteger(patch.wip) && patch.wip >= LIMITS.wipMin && patch.wip <= LIMITS.wipMax)) return null;
+    out.wip = patch.wip ?? undefined;
+    if (patch.wip === null) out.wipMode = undefined;
+  }
+  if (patch.wipMode !== undefined) {
+    if (patch.wipMode !== 'warn' && patch.wipMode !== 'block') return null;
+    if (patch.wip !== null) out.wipMode = patch.wipMode === 'block' ? 'block' : undefined;
+  }
+  return out;
+}
+
+/**
+ * Edits a lane from its menu: one transaction and one undo step, nothing when the lane is locked, the board read-only or
+ * the patch refused, or when nothing would change. Returns whether anything was written.
+ */
+export function editLane(store: Store, laneId: Id, patch: LanePatch): boolean {
+  if (laneEditRefusal(store, laneId)) return false;
+  const fields = laneFields(patch);
+  if (!fields) return false;
+  const cur = store.get(laneId) as BaseObj;
+  if (!(Object.keys(fields) as (keyof BaseObj)[]).some((k) => JSON.stringify(fields[k]) !== JSON.stringify(cur[k]))) return false;
+  store.undo.stopCapturing();
+  store.transact(() => store.update(laneId, fields));
+  store.undo.stopCapturing();
+  return true;
+}
+
+/**
+ * Moves a lane one place left or right: one transaction and one undo step that writes the lane's `rank` (plus fresh ranks
+ * for the other lanes when they had equal or mixed ones, as for cards). Nothing at an edge, for a locked lane, or in a
+ * locked kanban.
+ */
+export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boolean {
+  const lane = store.get(laneId);
+  if (lane?.type !== 'lane' || !lane.parent || lane.locked || structureRefusal(store, lane.parent)) return false;
+  const layout = store.containerLayout(lane.parent);
+  const to = layout ? laneMoveIndex(layout.lanes, laneId, dir) : null;
+  if (!layout || to === null) return false;
+  const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
+  const { ranks, repairs } = planInsert(others, lane.parent, to, 1);
+  store.undo.stopCapturing();
+  store.transact(() => {
+    for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
+    store.update(laneId, { rank: ranks[0] });
+  });
+  store.undo.stopCapturing();
+  return true;
+}
+
+/** Why a lane cannot be added to a kanban, or null when it can. */
+export function addLaneRefusal(store: Store, containerId: Id): string | null {
+  const refused = structureRefusal(store, containerId);
+  if (refused) return refused;
+  const n = store.containerLayout(containerId)?.lanes.length ?? 0;
+  return n >= LIMITS.lanes ? `A kanban holds at most ${LIMITS.lanes} lanes.` : null;
+}
+
+/** The name a new lane gets: "New lane", then "New lane 2" and so on, so two new lanes are told apart. */
+export function newLaneName(existing: Iterable<string | undefined>): string {
+  const names = new Set([...existing].map((n) => (n ?? '').trim().toLowerCase()));
+  if (!names.has('new lane')) return 'New lane';
+  let i = 2;
+  while (names.has(`new lane ${i}`)) i++;
+  return `New lane ${i}`;
+}
+
+/**
+ * Adds a lane after the last one (docs/kanban.md, Lanes: the + right of the last header): one transaction and one undo
+ * step. Returns its id, or null when nothing was written.
+ */
+export function addLane(store: Store, containerId: Id, base: { createdBy: string; font?: string }): Id | null {
+  if (addLaneRefusal(store, containerId)) return null;
+  const c = store.get(containerId) as BaseObj;
+  const layout = store.containerLayout(containerId);
+  if (!layout) return null;
+  const lanes = layout.lanes.map((id) => store.get(id)!).filter(Boolean);
+  const { ranks, repairs } = planInsert(lanes, containerId, lanes.length, 1);
+  const last = lanes[lanes.length - 1] as BaseObj | undefined;
+  const r = layout.addLane;
+  const lane: BaseObj = {
+    id: newId(), type: 'lane', parent: containerId, rank: ranks[0], name: newLaneName(lanes.map((l) => (l as BaseObj).name)),
+    x: r.x, y: r.y, w: c.laneW ?? KANBAN.laneW, h: 0, rotation: 0, z: last?.z ?? c.z, createdBy: base.createdBy, updatedAt: Date.now(),
+    font: base.font ?? last?.font,
+  };
+  store.undo.stopCapturing();
+  store.transact(() => {
+    for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
+    store.create(lane);
+  });
+  store.undo.stopCapturing();
+  return store.get(lane.id) ? lane.id : null;
+}
+
+/**
+ * What deleting a lane from its menu removes: the lane alone (its cards then move to the neighbour, as a Delete does) or
+ * the lane with its cards. Refused, with the reason, for a locked kanban, a locked lane or a lane with locked cards.
+ */
+export function laneDeleteIds(store: Store, laneId: Id, withCards: boolean): { ids: Id[] } | { refused: string } {
+  const lane = store.get(laneId);
+  if (lane?.type !== 'lane' || !lane.parent) return { refused: 'This lane is gone.' };
+  const refused = structureRefusal(store, lane.parent) ?? (lane.locked ? 'This lane is locked. Unlock it to delete it.' : null);
+  if (refused) return { refused };
+  const cards = store.containerLayout(lane.parent)?.cards.get(laneId) ?? [];
+  if (withCards && cards.some((id) => store.get(id)?.locked)) return { refused: 'This lane has locked cards. Unlock them to delete it.' };
+  return { ids: withCards ? [laneId, ...cards] : [laneId] };
 }
