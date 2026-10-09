@@ -4,6 +4,7 @@
   display: flex; flex-direction: column; gap: 10px;
 }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.comment-head > .icon-btn { margin-left: auto; }
 .comment-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .comment-who { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; font-size: 13px; }
 .comment-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
