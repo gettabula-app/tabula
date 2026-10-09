@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { BoardApp } from '../src/app';
 import { Renderer } from '../src/render';
 import { Store } from '../src/store';
-import { KANBANS_LEFT_OUT, addCard, addCardRefusal, newKanban } from '../src/containers';
+import { KANBANS_LEFT_OUT, addCard, addCardRefusal, addLane, newKanban } from '../src/containers';
 import { CardInput } from '../src/ui/kanban';
 import { insertCustomTemplate, insertTemplate, type TemplateDef } from '../src/templates';
 import type { CustomTemplate } from '../src/custom-templates';
@@ -11,6 +11,13 @@ import { KANBAN, LIMITS, ranksBetween } from '../shared/containers';
 import { EMPTY_FILTER, addRow, laneCards, laneMenuRect, type FilterChip } from '../src/ui/kanban-logic';
 import { kanbanHeaderControls, objectMarkup, type HeaderControls } from '../src/markup';
 import type { BaseObj, Id, Point } from '../src/types';
+import { createLabel, deleteLabel, listLabels, renameLabel } from '../src/labels';
+
+// filtering must read the board's labels once per labels change, not once per card: count the reads
+vi.mock('../src/labels', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../src/labels')>();
+  return { ...m, listLabels: vi.fn<typeof m.listLabels>(m.listLabels) };
+});
 
 // docs/kanban.md, slice 2: BoardApp's kanban behaviour (pointer, hit testing, creating, deleting), on a BoardApp
 // that has the real store, renderer and methods but no page around it.
@@ -81,6 +88,7 @@ function harness() {
   // as the constructor wires them
   r.filterChips = (id) => app.filterChipsOf(id);
   r.dimmed = (o) => app.isDimmed(o);
+  app.watchLabels();
   return { app, store, r, notify, startInput, container: container.id, lanes: lanes.map((l) => l.id), ids };
 }
 
@@ -818,5 +826,98 @@ describe('Add card in a full block lane (Slice 4 notes)', () => {
     enter('Second');
     expect(store.containerLayout(container)!.cards.get(lanes[2])).toHaveLength(1);
     expect(notify).toHaveBeenLastCalledWith('Done is full: 1 of 1');
+  });
+});
+
+describe('review fixes: filters and labels', () => {
+  it('filtering 2,000 cards reads the board\'s labels a constant number of times per draw, not per card', () => {
+    const { app, store, r, container, lanes } = harness();
+    const bug = createLabel(store, 'Bug', 'pink')!;
+    const extra = addLane(store, container, { createdBy: 'me' })!;
+    const all = [...lanes, extra];
+    store.transact(() => {
+      for (const lane of all) {
+        const ranks = ranksBetween(null, null, 497, lane);
+        ranks.forEach((rank, i) => store.create({ id: `${lane}-${i}`, type: 'card', parent: lane, rank, text: `Card ${i}`, labels: i % 3 ? [] : [bug], x: 0, y: 0, w: 264, h: 34, rotation: 0, z: 'a0', createdBy: 'me', updatedAt: 0 } as BaseObj));
+      }
+    });
+    const cards = [...store.cache.values()].filter((o) => o.type === 'card');
+    expect(cards.length).toBeGreaterThanOrEqual(1990);
+    app.setKanbanFilter(container, { ...EMPTY_FILTER, labels: [bug], text: 'card' });
+    const reads = vi.mocked(listLabels);
+    reads.mockClear();
+    // a draw: the header (chips), every card (dimming), and the popover's count
+    objectMarkup(store.getPlaced(container)!, r.ctx);
+    for (const c of cards) objectMarkup(store.getPlaced(c.id)!, r.ctx);
+    const n = app.filterCounts(container);
+    expect(n.total).toBe(cards.length);
+    expect(n.matching).toBeGreaterThan(600);
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it('renaming or deleting a filtered label on another client updates the chips and the dimming', () => {
+    const { app, store, container, ids } = harness();
+    const bug = createLabel(store, 'Bug', 'pink')!;
+    store.transact(() => store.update(ids[0], { labels: [bug] }));
+    app.setKanbanFilter(container, { ...EMPTY_FILTER, labels: [bug] });
+    expect(app.filterChipsOf(container).map((c) => c.text)).toEqual(['Bug']);
+    expect(ids.map((id) => app.isDimmed(store.get(id)!))).toEqual([false, true, true]);
+    const invalidate = vi.spyOn(app.r, 'invalidateKanban');
+    // another client: its update arrives through the shared document
+    const other = new Store(new Y.Doc());
+    Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(store.doc));
+    renameLabel(other, bug, 'Defect');
+    Y.applyUpdate(store.doc, Y.encodeStateAsUpdate(other.doc, Y.encodeStateVector(store.doc)));
+    expect(app.filterChipsOf(container).map((c) => c.text)).toEqual(['Defect']);
+    expect(invalidate).toHaveBeenCalledWith(container);
+    deleteLabel(other, bug);
+    Y.applyUpdate(store.doc, Y.encodeStateAsUpdate(other.doc, Y.encodeStateVector(store.doc)));
+    expect(app.filterChipsOf(container)).toEqual([]);
+    expect(ids.map((id) => app.isDimmed(store.get(id)!))).toEqual([false, false, false]);
+  });
+
+  it('a stored filter naming a label the board does not have drops it: count, on state and storage agree', () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => saved.set(k, v), removeItem: (k: string) => saved.delete(k) });
+    const { app, store, container } = harness();
+    const bug = createLabel(store, 'Bug', 'pink')!;
+    saved.set(`tabula:filter:board1:${container}`, JSON.stringify({ labels: [bug, 'gone'] }));
+    expect(app.kanbanFilter(container).labels).toEqual([bug]);
+    expect(app.filterChipsOf(container)).toHaveLength(1);
+    // the next labels change (any) cleans what is stored too
+    createLabel(store, 'Docs', 'violet');
+    expect(JSON.parse(saved.get(`tabula:filter:board1:${container}`)!).labels).toEqual([bug]);
+    deleteLabel(store, bug);
+    expect(app.kanbanFilter(container).labels).toEqual([]);
+    expect(app.filterChipsOf(container)).toEqual([]);
+    expect(saved.has(`tabula:filter:board1:${container}`)).toBe(false);
+  });
+});
+
+describe('review fixes: lanes', () => {
+  it('deleting a lane whose cards would go into a full block lane is refused with the Full toast; with its cards it is not', () => {
+    const { app, store, lanes, ids, notify } = harness();
+    addCard(store, lanes[1], 'D', { createdBy: 'me' });
+    app.editLaneFromMenu(lanes[1], { name: 'Doing', wip: 1, wipMode: 'block' });
+    expect(app.deleteLane(lanes[0], false)).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith(expect.stringMatching(/^Doing is full: 1 of 1/));
+    for (const id of ids) expect(store.get(id)?.parent).toBe(lanes[0]);
+    app.setSelection([lanes[0]]);
+    app.deleteSelection();
+    expect(store.get(lanes[0])).toBeDefined();
+    expect(app.deleteLane(lanes[0], true)).toBe(true);
+    expect(store.get(lanes[0])).toBeUndefined();
+  });
+
+  it('Move left or right is refused when the repair of tied ranks would rewrite a locked lane', () => {
+    const { app, store, container, lanes, notify } = harness();
+    const same = (store.get(lanes[0]) as BaseObj).rank;
+    store.transact(() => lanes.forEach((id) => store.update(id, { rank: same })));
+    const order = store.containerLayout(container)!.lanes;
+    store.transact(() => store.update(order[0], { locked: true }));
+    const before = order.map((id) => (store.get(id) as BaseObj).rank);
+    expect(app.moveLaneFromMenu(order[2], 'left')).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith(expect.stringMatching(/locked/));
+    expect(order.map((id) => (store.get(id) as BaseObj).rank)).toEqual(before);
   });
 });

@@ -17,7 +17,7 @@ import {
 } from './geometry';
 import { cardBody, kanbanHeaderControls, objectMarkup, textHeight } from './markup';
 import {
-  KANBANS_LEFT_OUT, addLane, addLaneRefusal, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
+  KANBANS_LEFT_OUT, addLane, addLaneRefusal, moveLaneRefusal, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
   cardsToStickies, containerOf, dropLoose, withoutNewKanbans, kanbanFromStickies, mayConvertSticky, moveCards, moveRefusal, movingOrder, newKanban, newKanbanSize, planKanbanDelete, stickiesToCards,
 } from './containers';
 import { CardInput } from './ui/kanban';
@@ -187,6 +187,7 @@ export class BoardApp {
       return p ? personColor(p.user.color) : undefined;
     };
     this.r.filterChips = (id) => this.filterChipsOf(id);
+    this.disposers.push(this.watchLabels());
     this.r.dimmed = (o) => this.isDimmed(o);
     this.r.commentCount = (id) => this.comments.list().filter((t) => t.anchor.obj === id && !t.resolved).reduce((n, t) => n + 1 + t.replies.length, 0);
     this.styleEdit = new StyleEdit(this.store, () => this.selected(), (o, patch) => this.writeStyle(o, patch));
@@ -922,7 +923,7 @@ export class BoardApp {
   moveLaneFromMenu(laneId: Id, dir: 'left' | 'right'): boolean {
     const lane = this.store.get(laneId) as BaseObj | undefined;
     if (lane?.type !== 'lane' || !lane.parent) return false;
-    const refused = structureRefusal(this.store, lane.parent) ?? laneEditRefusal(this.store, laneId);
+    const refused = moveLaneRefusal(this.store, laneId, dir);
     if (refused) {
       this.notify(refused);
       return false;
@@ -983,17 +984,58 @@ export class BoardApp {
   }
 
   // Filters are this viewer's own: kept in memory and in this browser, never in the board (docs/kanban.md, Filters).
+  // `filters` holds each filter as it was set or read back; what is used is that filter without labels the board no
+  // longer has, worked out once per labels change (a board may have 2,000 cards, and each draw asks about each one).
   private filterCache?: Map<Id, KanbanFilter>;
   private get filters(): Map<Id, KanbanFilter> {
     return (this.filterCache ??= new Map());
+  }
+  private filterUsed?: Map<Id, { version: number; raw: KanbanFilter; f: KanbanFilter }>;
+  private labelsVersion?: number;
+  private filterMemo?: { version: number; at: number; today: string; viewer: FilterViewer; known: Set<Id>; names: Map<Id, string> };
+
+  /** The board's labels, the viewer and today, for filtering: read once per labels change (and today once a minute). */
+  private filterContext() {
+    const version = this.labelsVersion ?? 0;
+    const now = Date.now();
+    const m = this.filterMemo;
+    if (m && m.version === version && now - m.at < 60_000) return m;
+    const labels = listLabels(this.store);
+    this.filterMemo = {
+      version, at: now, today: localToday(), viewer: this.filterViewer(),
+      known: new Set(labels.map((l) => l.id)), names: new Map(labels.map((l) => [l.id, l.name])),
+    };
+    return this.filterMemo;
+  }
+
+  /**
+   * Board labels changed (here, or from someone else, or by undo): filters that named a label that is gone drop it, in
+   * this browser's storage too, and every filtered kanban redraws its chips and dimming.
+   */
+  private onLabelsChanged() {
+    this.labelsVersion = (this.labelsVersion ?? 0) + 1;
+    const { known } = this.filterContext();
+    for (const [cid, raw] of this.filters) {
+      if (!filterParts(raw)) continue;
+      // a board still loading has no labels yet: nothing is dropped from storage until it has some
+      if (known.size && raw.labels.some((id) => !known.has(id))) this.saveFilter(cid, cleanFilter(raw, known));
+      this.r.invalidateKanban(cid);
+    }
+    this.emit('filter');
+  }
+
+  /** Starts following the board's labels for filters (the constructor calls it). */
+  watchLabels() {
+    const fn = () => this.onLabelsChanged();
+    this.store.labels.observe(fn);
+    return () => this.store.labels.unobserve(fn);
   }
 
   private filterKey(containerId: Id) {
     return filterStorageKey(this.conn?.id ?? '', containerId);
   }
 
-  /** This viewer's filter on a kanban (the empty filter when there is none). */
-  kanbanFilter(containerId: Id): KanbanFilter {
+  private rawFilter(containerId: Id): KanbanFilter {
     let f = this.filters.get(containerId);
     if (!f) {
       let raw: string | null = null;
@@ -1010,14 +1052,29 @@ export class BoardApp {
     return f;
   }
 
-  /** Sets this viewer's filter on a kanban and redraws it. Nothing is written to the board. */
-  setKanbanFilter(containerId: Id, f: KanbanFilter) {
-    const next = cleanFilter(f);
-    this.filters.set(containerId, next);
+  /** This viewer's filter on a kanban (the empty filter when there is none), without labels the board does not have. */
+  kanbanFilter(containerId: Id): KanbanFilter {
+    const ctx = this.filterContext();
+    const used = (this.filterUsed ??= new Map());
+    const raw = this.rawFilter(containerId);
+    const hit = used.get(containerId);
+    if (hit && hit.version === ctx.version && hit.raw === raw) return hit.f;
+    const f = raw.labels.length ? cleanFilter(raw, ctx.known) : raw;
+    used.set(containerId, { version: ctx.version, raw, f });
+    return f;
+  }
+
+  private saveFilter(containerId: Id, f: KanbanFilter) {
+    this.filters.set(containerId, f);
     try {
-      if (filterParts(next)) localStorage.setItem(this.filterKey(containerId), JSON.stringify(next));
+      if (filterParts(f)) localStorage.setItem(this.filterKey(containerId), JSON.stringify(f));
       else localStorage.removeItem(this.filterKey(containerId));
     } catch { /* storage that cannot be written: the filter lasts until the page closes */ }
+  }
+
+  /** Sets this viewer's filter on a kanban and redraws it. Nothing is written to the board. */
+  setKanbanFilter(containerId: Id, f: KanbanFilter) {
+    this.saveFilter(containerId, cleanFilter(f, this.filterContext().known));
     this.r.invalidateKanban(containerId);
     this.emit('filter');
   }
@@ -1031,8 +1088,8 @@ export class BoardApp {
   filterChipsOf(containerId: Id): FilterChip[] {
     const f = this.kanbanFilter(containerId);
     if (!filterParts(f)) return [];
-    const labels = new Map(listLabels(this.store).map((l) => [l.id, l.name]));
-    return filterChips(f, (id) => labels.get(id));
+    const { names } = this.filterContext();
+    return filterChips(f, (id) => names.get(id));
   }
 
   /** Whether this viewer's filter on a card's kanban leaves it out (it is drawn at 35% and a marquee skips it). */
@@ -1042,8 +1099,8 @@ export class BoardApp {
     if (lane?.type !== 'lane' || !lane.parent) return false;
     const f = this.kanbanFilter(lane.parent);
     if (!filterParts(f)) return false;
-    const known = new Set(listLabels(this.store).map((l) => l.id));
-    return !cardMatches(card as BaseObj, f, { viewer: this.filterViewer(), today: localToday(), done: lane.stage === 'done', known });
+    const ctx = this.filterContext();
+    return !cardMatches(card as BaseObj, f, { viewer: ctx.viewer, today: ctx.today, done: lane.stage === 'done', known: ctx.known });
   }
 
   /** How many of a kanban's cards this viewer's filter matches, of how many ("2 of 9 match"). */

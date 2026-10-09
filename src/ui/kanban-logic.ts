@@ -457,15 +457,18 @@ export const EMPTY_FILTER: KanbanFilter = Object.freeze({ mine: false, labels: [
 
 const TEXT_MAX = 200;
 
-/** A filter read back from storage (or anything else): only what a filter can hold, else the empty filter. */
-export function cleanFilter(v: unknown): KanbanFilter {
+/**
+ * A filter read back from storage (or anything else): only what a filter can hold, else the empty filter. With `known`
+ * (the board's label ids) a label that is not one of them is dropped, so the count, the chips and what is stored agree.
+ */
+export function cleanFilter(v: unknown, known?: ReadonlySet<string>): KanbanFilter {
   if (!v || typeof v !== 'object') return { ...EMPTY_FILTER, labels: [], due: [] };
   const o = v as Record<string, unknown>;
   const labels = Array.isArray(o.labels) ? [...new Set(o.labels.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 30) : [];
   const keys = DUE_BUCKETS.map((b) => b.key) as string[];
   const due = Array.isArray(o.due) ? [...new Set(o.due.filter((x): x is DueBucket => typeof x === 'string' && keys.includes(x)))] : [];
   const text = typeof o.text === 'string' ? o.text.slice(0, TEXT_MAX) : '';
-  return { mine: o.mine === true, labels, due, text };
+  return { mine: o.mine === true, labels: known ? labels.filter((id) => known.has(id)) : labels, due, text };
 }
 
 /** How many parts of a filter are on: Mine, each label, each due bucket, and the text. Zero means no filter. */

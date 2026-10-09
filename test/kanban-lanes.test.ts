@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { Store } from '../src/store';
 import {
-  addCard, addLane, addLaneRefusal, editLane, laneDeleteIds, laneFields, moveCards, moveLane, moveRefusal, newKanban, newLaneName,
+  addCard, addLane, addLaneRefusal, editLane, laneDeleteIds, laneFields, moveCards, moveLane, moveLaneRefusal, moveRefusal, newKanban, newLaneName, planKanbanDelete,
   stickiesToCards, wipRefusal,
 } from '../src/containers';
 import {
@@ -382,5 +382,38 @@ describe('two people editing lanes at once', () => {
     expect(order).toEqual(laneOrder(b, a.container));
     expect(order).toEqual(expect.arrayContaining([x, y]));
     expect(order).toHaveLength(5);
+  });
+});
+
+describe('review fixes', () => {
+  it('cleanFilter with the board\'s labels drops the others', () => {
+    expect(cleanFilter({ labels: ['a', 'gone', 'b'] }, new Set(['a', 'b'])).labels).toEqual(['a', 'b']);
+    expect(cleanFilter({ labels: ['gone'] }, new Set()).labels).toEqual([]);
+  });
+
+  it('moveLane never rewrites a locked lane through the repair of tied ranks', () => {
+    const { store, container, lanes } = board();
+    const same = lane(store, lanes[0]).rank;
+    store.transact(() => lanes.forEach((id) => store.update(id, { rank: same })));
+    const order = laneOrder(store, container);
+    store.transact(() => store.update(order[0], { locked: true }));
+    expect(moveLaneRefusal(store, order[2], 'left')).toMatch(/locked/);
+    expect(moveLane(store, order[2], 'left')).toBe(false);
+    expect(lane(store, order[0]).rank).toBe(same);
+    // without ties there is nothing to repair, and a locked neighbour does not stop the move
+    const b = board();
+    b.store.transact(() => b.store.update(b.lanes[0], { locked: true }));
+    expect(moveLaneRefusal(b.store, b.lanes[2], 'left')).toBeNull();
+    expect(moveLane(b.store, b.lanes[2], 'left')).toBe(true);
+  });
+
+  it('a lane delete does not relocate cards into a full block lane; deleting them with it is fine', () => {
+    const { store, lanes, cards } = board();
+    addCard(store, lanes[1], 'D', { createdBy: 'me' });
+    editLane(store, lanes[1], { name: 'Doing', wip: 2, wipMode: 'block' });
+    expect(planKanbanDelete(store, [lanes[0]])).toEqual({ refused: expect.stringMatching(/^Doing is full: 1 of 2/) });
+    expect('ids' in planKanbanDelete(store, [lanes[0], ...cards])).toBe(true);
+    editLane(store, lanes[1], { wipMode: 'warn' });
+    expect('ids' in planKanbanDelete(store, [lanes[0]])).toBe(true);
   });
 });

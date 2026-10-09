@@ -264,6 +264,10 @@ export function planKanbanDelete(store: Store, selected: Id[]): DeletePlan {
     if (!cards.length) continue;
     let siblings = planned.get(target);
     if (!siblings) siblings = (layout.cards.get(target) ?? []).filter((c) => !ids.has(c)).map((c) => store.get(c)!).map((o) => ({ id: o.id, parent: o.parent, rank: (o as BaseObj).rank }));
+    // a full block lane takes no cards from a deleted neighbour either: refused as a drop is (docs/kanban.md, Slice 4 notes)
+    const into = store.get(target) as BaseObj;
+    const wip = wipCheck(into, siblings, cards);
+    if (!wip.ok && wip.limit !== null) return { refused: `${wipFullMessage(into.name, siblings.length, wip.limit)}. Delete the lane with its cards, or make room first.` };
     const plan = planInsert(siblings, target, siblings.length, cards.length);
     const fixed = new Map(plan.repairs.map((r) => [r.id, r]));
     relocate.push(...plan.repairs);
@@ -624,6 +628,8 @@ export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boole
   if (!layout || to === null) return false;
   const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
   const { ranks, repairs } = planInsert(others, lane.parent, to, 1);
+  // the repair of tied ranks would rewrite a locked lane's rank: a locked object is never changed by an edit
+  if (repairs.some((p) => store.get(p.id)?.locked)) return false;
   store.undo.stopCapturing();
   store.transact(() => {
     for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
@@ -631,6 +637,23 @@ export function moveLane(store: Store, laneId: Id, dir: 'left' | 'right'): boole
   });
   store.undo.stopCapturing();
   return true;
+}
+
+/**
+ * Why Move left or Move right cannot move a lane, or null when it can (an edge is not a refusal: the menu disables it).
+ * Besides the locks, a move whose repair of tied ranks would rewrite a locked lane is refused.
+ */
+export function moveLaneRefusal(store: Store, laneId: Id, dir: 'left' | 'right'): string | null {
+  const lane = store.get(laneId);
+  if (lane?.type !== 'lane' || !lane.parent) return 'This lane is gone.';
+  const refused = structureRefusal(store, lane.parent) ?? laneEditRefusal(store, laneId);
+  if (refused) return refused;
+  const layout = store.containerLayout(lane.parent);
+  const to = layout ? laneMoveIndex(layout.lanes, laneId, dir) : null;
+  if (!layout || to === null) return null;
+  const others = layout.lanes.filter((id) => id !== laneId).map((id) => store.get(id)!).filter(Boolean);
+  const { repairs } = planInsert(others, lane.parent, to, 1);
+  return repairs.some((p) => store.get(p.id)?.locked) ? 'The lanes need re-ordering and one of them is locked. Unlock it to move this lane.' : null;
 }
 
 /** Why a lane cannot be added to a kanban, or null when it can. */

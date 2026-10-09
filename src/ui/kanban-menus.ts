@@ -15,7 +15,8 @@ import { DUE_BUCKETS, STAGES, laneMoveIndex, matchText, parseWip, type DueBucket
 // are for editors; the Filter popover is for everyone, and writes nothing to the board. Every write goes through
 // BoardApp (src/containers.ts underneath), so each pick is one undo step and a refusal is a toast.
 
-const colourName = (key: string) => key[0].toUpperCase() + key.slice(1);
+/** A colour's name for the menu: a palette key capitalised, a checked colour as it is, 'None' for nothing. */
+const colourName = (key: string | null | undefined) => (key ? key[0].toUpperCase() + key.slice(1) : 'None');
 
 /** A one pixel anchor over a rectangle of the page, `width` wide from its right edge, for a popover to sit under. */
 function anchorAt(at: Rect, width: number): HTMLElement {
@@ -57,6 +58,9 @@ function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLButtonEl
   o.sub ? h('span', { class: 'menu-hint k-mi-sub', 'aria-hidden': 'true' }, icon('chevron', 14)) : null);
 }
 
+/** How long the filter waits after a key or a board change before it redraws and recounts. */
+export const FILTER_DEBOUNCE = 150;
+
 const sep = () => h('hr', { class: 'menu-sep', role: 'separator' });
 
 /** Opens one of the kanban menus against a rectangle of the page (BoardApp.openKanbanMenu). */
@@ -72,9 +76,11 @@ function menuPopover(app: BoardApp, id: Id, kindOpen: 'menu' | 'filter', at: Rec
   const menu = h('div', { class: `menu k-menu ${cls}`, role: 'menu', 'aria-label': label, style: `width:${width}px` });
   keepKeys(menu);
   // the menu goes when its lane or kanban does, or when the board turns read-only under an editor's menu
-  const cleanups: (() => void)[] = [app.store.onChange(() => {
+  const gone = () => {
     if (!app.store.get(id) || (kindOpen === 'menu' && app.readOnly)) pop.close();
-  })];
+  };
+  // and when this person's role changes under it (an editor made a viewer keeps only the filter)
+  const cleanups: (() => void)[] = [app.store.onChange(gone), app.on('readonly', gone)];
   const pop = popover(anchor, menu, {
     side: 'bottom', className: 'k-pop', label, onClose: () => {
       anchor.remove();
@@ -114,7 +120,8 @@ export function openLaneMenu(app: BoardApp, laneId: Id, at: Rect) {
     const wip = l.wip ? `${l.wip}${l.wipMode === 'block' ? ' · block' : ''}` : 'None';
     show(
       item('Rename', pick(() => app.renameKanbanPart(laneId))),
-      item('Colour', () => colours(), { sub: true, hint: l.fill ? colourName(kanbanColor(l.fill) ?? '') : 'None' }),
+      // a fill another client wrote may be none, transparent or not a colour at all: kanbanColor says what is drawn
+      item('Colour', () => colours(), { sub: true, hint: colourName(kanbanColor(l.fill)) }),
       item('Stage', () => stages(), { sub: true, hint: stage }),
       item('WIP limit', () => wipPage(), { sub: true, hint: wip }),
       sep(),
@@ -253,7 +260,21 @@ export function openFilterPopover(app: BoardApp, id: Id, at: Rect) {
 
   const labels = listLabels(app.store);
   const text = h('input', { class: 'input', type: 'search', placeholder: 'Title or description', 'aria-label': 'Filter by words in the title or description', maxlength: '200', value: get().text });
-  text.addEventListener('input', () => set({ text: text.value }));
+  // typing redraws the kanban after a pause, not on every key: a board can hold 2,000 cards (FILTER_DEBOUNCE)
+  let typing = 0;
+  const flushText = () => {
+    if (!typing) return;
+    clearTimeout(typing);
+    typing = 0;
+    set({ text: text.value });
+  };
+  text.addEventListener('input', () => {
+    clearTimeout(typing);
+    typing = setTimeout(() => {
+      typing = 0;
+      set({ text: text.value });
+    }, FILTER_DEBOUNCE) as unknown as number;
+  });
   const count = h('span', { class: 'k-pop-count', role: 'status', 'aria-live': 'polite' });
   sync.push(() => {
     const n = app.filterCounts(id);
@@ -268,6 +289,8 @@ export function openFilterPopover(app: BoardApp, id: Id, at: Rect) {
     section('Due', 'Any of', h('div', { class: 'k-seg' }, ...DUE_BUCKETS.map((b) => chip(b.label, () => get().due.includes(b.key), () => set({ due: toggle(get().due, b.key as DueBucket) }))))),
     section('Text', null, text),
     h('div', { class: 'k-pop-foot' }, count, h('button', { class: 'k-linkbtn', type: 'button', onclick: () => {
+      clearTimeout(typing);
+      typing = 0;
       set({ mine: false, labels: [], due: [], text: '' });
       text.value = '';
     } }, 'Clear')),
@@ -275,7 +298,19 @@ export function openFilterPopover(app: BoardApp, id: Id, at: Rect) {
   const refresh = () => sync.forEach((f) => f());
   refresh();
   onClose(app.on('filter', refresh));
-  onClose(app.store.onChange(refresh));
+  // board changes (anyone's) recount after a pause too
+  let counting = 0;
+  onClose(app.store.onChange(() => {
+    clearTimeout(counting);
+    counting = setTimeout(() => {
+      counting = 0;
+      refresh();
+    }, FILTER_DEBOUNCE) as unknown as number;
+  }));
+  onClose(() => {
+    clearTimeout(counting);
+    flushText();
+  });
   pop.place();
   (menu.querySelector('button') as HTMLButtonElement | null)?.focus();
 }
