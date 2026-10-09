@@ -11,6 +11,7 @@ import { safeColor } from '../../shared/colors';
 import { downloadCardsCsv } from '../exporters';
 import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
+import { trackMore } from './scroll-cue';
 import { clampX, clearOfDock, dockTopOf, placeBar, type Box } from './quickbar-layout';
 
 // the phone layout of styles.css, where the rail runs the full height
@@ -52,14 +53,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   }
 
   /** Which edge of a bar that scrolls has more behind it (TAB-239): the CSS fades that edge out. */
-  function cue() {
-    const left = bar.scrollLeft > 1;
-    const right = bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1;
-    if (left || right) bar.dataset.more = left && right ? 'both' : left ? 'left' : 'right';
-    else delete bar.dataset.more;
-  }
-  bar.addEventListener('scroll', cue, { passive: true });
-
+  const cue = trackMore(bar);
   function position() {
     const b = app.r.contentBounds(app.selection);
     if (!b) return;

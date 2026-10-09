@@ -184,6 +184,10 @@
     border-top: 0; border-left: 0; border-bottom: 2px solid var(--canvas);
   }
   .admin .admin-tab.on { border-bottom-color: var(--ink); }
+  /* TAB-245: the edge of the row with more behind it fades out */
+  .admin-tabs[data-more='right'] { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 32px), transparent); mask-image: linear-gradient(to right, var(--ink) calc(100% - 32px), transparent); }
+  .admin-tabs[data-more='left'] { -webkit-mask-image: linear-gradient(to left, var(--ink) calc(100% - 32px), transparent); mask-image: linear-gradient(to left, var(--ink) calc(100% - 32px), transparent); }
+  .admin-tabs[data-more='both'] { -webkit-mask-image: linear-gradient(to right, transparent, var(--ink) 32px, var(--ink) calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, var(--ink) 32px, var(--ink) calc(100% - 32px), transparent); }
   .admin-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-tile:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
   .admin-fact { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
