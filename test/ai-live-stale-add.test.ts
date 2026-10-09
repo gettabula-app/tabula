@@ -4,7 +4,7 @@ import type { AiRunsMessage } from '../src/sync';
 import { leftOutNote, nothingToAdd } from '../src/ai-live-logic';
 import { mountAiLive, takeReview } from '../src/ui/ai-live';
 import { toast } from '../src/ui/common';
-import { FakeElement, installFakeBrowser, type FakeBrowser } from './fake-dom';
+import { FakeElement, installFakeBrowser, textOf, type FakeBrowser } from './fake-dom';
 
 // TAB-213: Accept (or Add to board) without opening the review still skips the stickies that changed since the proposal came,
 // as the panel does, and says so. Driven through the real live layer; the add itself is a spy.
@@ -131,7 +131,7 @@ describe('Accept without opening the review', () => {
     t.edit('a', { text: 'x' });
     t.edit('b', { locked: true });
     t.edit('c', { type: 'shape' });
-    // the ghosts, and the tray with them, are gone: what is drawn is what would be added, and that is nothing
+    // the ghosts and the Accept tray are gone: what is drawn is what would be added, and that is nothing
     expect([...browser.document.querySelectorAll('button')].some((b) => b.textContent === 'Accept')).toBe(false);
     // the bar's Add asks takeReview the same question before it asks the relay
     const taken = takeReview(t.app, 'run1', group);
@@ -164,6 +164,56 @@ describe('Accept without opening the review', () => {
     await vi.waitFor(() => expect(applied.calls).toHaveLength(1));
     expect((applied.calls[0][1] as { objects: unknown[] }).objects).toHaveLength(2);
     expect(toasted().at(-1)).toBe('Added Ana\'s 2 stickies.');
+  });
+});
+
+describe('a preview whose stickies all changed (TAB-221)', () => {
+  const row = () => browser.document.querySelector('.ailive-row');
+  const buttonsOf = (el: FakeElement) => el.querySelectorAll('button').map((b) => b.textContent);
+
+  function allChange(t: ReturnType<typeof rig>) {
+    t.edit('a', { text: 'x' });
+    t.edit('b', { locked: true });
+    t.edit('c', { type: 'shape' });
+  }
+
+  it('keeps a short row: the label, what happened, and only Discard', () => {
+    const t = rig(group);
+    allChange(t);
+    const el = row()!;
+    expect(el).not.toBeNull();
+    expect(el.classList.contains('changed')).toBe(true);
+    expect(el.getAttribute('aria-label')).toBe("Ana's AI preview: everything changed since it came");
+    expect(textOf(el)).toContain("Ana's AI preview");
+    expect(textOf(el)).toContain('everything changed since it came');
+    expect(buttonsOf(el)).toEqual(['Discard']);
+  });
+
+  it('is still discarded by its Discard, for everyone', async () => {
+    const t = rig(group);
+    allChange(t);
+    t.fetchMock.mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ id: 'run1', action: 'discard', feature: 'cluster', proposal: null }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    row()!.querySelectorAll('button').find((b) => b.textContent === 'Discard')!.click();
+    await vi.waitFor(() => expect(t.fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = t.fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(url).toBe('/api/ai/runs/run1/resolve');
+    expect(JSON.parse(init.body).action).toBe('discard');
+    expect(applied.calls).toHaveLength(0);
+  });
+
+  it('stays when the stickies are gone altogether, so the run can still be discarded', () => {
+    const t = rig(group);
+    for (const id of ['a', 'b', 'c']) t.edit(id, null);
+    expect(row()!.classList.contains('changed')).toBe(true);
+    expect(buttonsOf(row()!)).toEqual(['Discard']);
+  });
+
+  it('is not there while any sticky is unchanged: that is the ordinary row, with its three buttons', () => {
+    const t = rig(group);
+    t.edit('b', { text: 'x' });
+    expect(row()!.classList.contains('changed')).toBe(false);
+    expect(buttonsOf(row()!)).toEqual(['Discard', 'Review', 'Accept']);
+    expect(textOf(row()!)).not.toContain('everything changed');
   });
 });
 

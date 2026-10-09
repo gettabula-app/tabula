@@ -20,10 +20,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { startAnthropicStub } from './lib/anthropic-stub.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>] [--widths <list>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --widths    the viewport widths of the single-person scenario, comma separated (default 390,1024)\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
+const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>] [--widths <list>] [--runner <name>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --widths    the viewport widths of the single-person scenario, comma separated (default 390,1024)\n  --runner    the name of the reviewer (default "Reviewer <width>"), for a long name; at most 40 characters\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
 let options;
 try {
-  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, widths: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
+  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, widths: { type: 'string' }, runner: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
 } catch (err) {
   console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
@@ -42,6 +42,11 @@ if (!WIDTHS.length || WIDTHS.some((w) => !Number.isInteger(w) || w < 280 || w > 
   console.error(`bad widths "${options.widths}" (280 to 2000)\n${USAGE}`);
   process.exit(2);
 }
+if (options.runner !== undefined && !/^\S.{0,38}\S$|^\S$/.test(options.runner)) {
+  console.error(`bad runner name "${options.runner}" (1 to 40 characters, no space at either end)\n${USAGE}`);
+  process.exit(2);
+}
+const reviewerName = (width) => options.runner ?? `Reviewer ${width}`;
 const SHOTS = path.resolve(options.out ?? path.join(root, 'tabula-review', 'ai-review'));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-ai-review-'));
 let DIST = path.join(root, 'dist');
@@ -352,7 +357,9 @@ async function runFeature(target, feature, prompt = 'Generate exactly five usefu
   const { page, name } = target;
   if (feature === 'cluster') {
     await page.evaluate((ids) => window.__board.setSelection(ids), BASE_IDS);
-    await page.locator('.aibar-chips').getByRole('button', { name: 'Cluster', exact: true }).click();
+    // the chip stays armed after a run: a second click would turn it off
+    const chip = page.locator('.aibar-chips').getByRole('button', { name: 'Cluster', exact: true });
+    if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
   } else {
     await page.locator('.aibar-input').fill(prompt);
   }
@@ -450,7 +457,7 @@ async function showPropertiesFor(target, objectId) {
 
 async function screenshotScenario(width) {
   const boardId = `tab160-single-${width}`;
-  const target = await openBoard(boardId, width, `Reviewer ${width}`, '#2F6FED');
+  const target = await openBoard(boardId, width, reviewerName(width), '#2F6FED');
   try {
     await seedBoard(target.page, `TAB-160 review ${width}`);
     const run = await runFeature(target, 'generate');
@@ -516,6 +523,38 @@ async function screenshotScenario(width) {
     await fitPreviewIntoView(target.page, run.data.proposal);
     await target.page.waitForFunction(() => Boolean(document.querySelector('.ailive-row:not([hidden])')), null, { timeout: 10_000 });
 
+    // the label row's own Show (TAB-221): the preview half out of the view, the row's Show still in it; pressing it brings the preview back
+    const beforeRowShow = await target.page.evaluate(() => {
+      const app = window.__board;
+      const row = document.querySelector('.ailive-row:not([hidden])');
+      const dx = window.innerWidth - 200 - row.getBoundingClientRect().left;
+      app.r.setCamera({ x: app.r.cam.x - dx / app.r.cam.zoom, y: app.r.cam.y, zoom: app.r.cam.zoom });
+      return { x: app.r.cam.x, y: app.r.cam.y, zoom: app.r.cam.zoom };
+    });
+    await target.page.waitForFunction(() => {
+      const row = document.querySelector('.ailive-row:not([hidden])');
+      const btn = [...(row?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Show');
+      if (!btn) return false;
+      const r = btn.getBoundingClientRect();
+      return r.right <= window.innerWidth && r.left >= 0;
+    }, null, { timeout: 10_000 });
+    await target.page.locator('.ailive-row:not([hidden]) .ailive-btn', { hasText: 'Show' }).click();
+    for (let last = '', i = 0; i < 40; i++) {
+      const now = await target.page.evaluate(() => JSON.stringify(window.__board.r.cam));
+      if (now === last) break;
+      last = now;
+      await sleep(150);
+    }
+    check(`A.${width}: the label row's own Show moves the view to the half-visible preview`, await target.page.evaluate((before) => {
+      const cam = window.__board.r.cam;
+      const row = document.querySelector('.ailive-row:not([hidden])');
+      const r = row?.getBoundingClientRect();
+      return {
+        moved: cam.x !== before.x || cam.y !== before.y || cam.zoom !== before.zoom,
+        rowInside: Boolean(r && r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight),
+      };
+    }, beforeRowShow), { moved: true, rowInside: true });
+
     const panel = await openReview(target);
     check(`A.${width}: untouched create review keeps five stickies and frame`, await panel.evaluate((el) => ({
       checkedStickies: [...el.querySelectorAll('input[aria-label^="Keep sticky"]')].filter((e) => e.checked).length,
@@ -560,7 +599,7 @@ async function screenshotScenario(width) {
       stickyTexts: addedStickies.map((o) => o.text).sort(),
       colorOfChangedItem: addedStickies.find((o) => o.text === GENERATED[3].text)?.fill,
       frames: addedObjects.filter((o) => o.type === 'frame').map((o) => o.name),
-      proposedBy: addedStickies.every((o) => o.proposedBy?.feature === 'generate' && o.proposedBy?.by?.name === `Reviewer ${width}`),
+      proposedBy: addedStickies.every((o) => o.proposedBy?.feature === 'generate' && o.proposedBy?.by?.name === `${reviewerName(width)}`),
       untouchedTextCount: addedStickies.filter((o) => o.text === UNCHECKED_TEXT).length,
     }, {
       stickyTexts: [GENERATED[0].text, EDITED_TEXT, GENERATED[3].text, GENERATED[4].text].sort(),
@@ -569,11 +608,11 @@ async function screenshotScenario(width) {
     });
     const selected = addedStickies[0];
     check(`A.${width}: stored proposedBy carries feature and reviewer name`, selected.proposedBy, {
-      feature: 'generate', by: { id: null, name: `Reviewer ${width}` },
+      feature: 'generate', by: { id: null, name: `${reviewerName(width)}` },
     });
     await showPropertiesFor(target, selected.id);
     const origin = await target.page.locator('.props-origin').textContent();
-    check(`A.${width}: properties panel shows Proposed by AI line`, origin, `Proposed by AI (Generate ideas) for Reviewer ${width}`);
+    check(`A.${width}: properties panel shows Proposed by AI line`, origin, `Proposed by AI (Generate ideas) for ${reviewerName(width)}`);
     await saveShot(target, `05-added-properties-${width}.png`);
 
     await target.page.locator('.rail-btn[aria-label="Undo"]').click();
@@ -618,17 +657,19 @@ async function screenshotScenario(width) {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const row = document.querySelector('.ailive-row:not([hidden])');
-        const out = { row: Boolean(row), inside: true, buttons: {} };
+        const out = { row: Boolean(row), inside: true, labelInside: true, buttons: {} };
         if (!row) return out;
         const r = row.getBoundingClientRect();
         out.inside = r.left >= 0 && r.top >= 0 && r.right <= vw && r.bottom <= vh;
+        const lab = row.querySelector('.ailive-label')?.getBoundingClientRect();
+        out.labelInside = Boolean(lab && lab.left >= 0 && lab.right <= vw && lab.right <= r.right + 0.5);
         for (const b of row.querySelectorAll('button')) {
           const br = b.getBoundingClientRect();
           const top = document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2);
           out.buttons[b.textContent.trim()] = Boolean(top && (top === b || b.contains(top)));
         }
         return out;
-      }), { row: true, inside: true, buttons: { Discard: true, Review: true, Accept: true } });
+      }), { row: true, inside: true, labelInside: true, buttons: { Discard: true, Review: true, Accept: true } });
       await saveShot(peer, `07-peer-label-row-${width}.png`);
       await peer.page.evaluate(({ id, text }) => {
         const app = window.__board;
@@ -645,6 +686,46 @@ async function screenshotScenario(width) {
       await saveShot(target, `04-group-changed-since-${width}.png`);
       await groupPanel.getByRole('button', { name: 'Discard', exact: true }).click();
       await target.page.locator('.aireview').waitFor({ state: 'detached', timeout: 10_000 });
+
+      // every sticky of a cluster preview changes (TAB-221): the ghosts go, a short row stays, and it can still be discarded
+      await runFeature(target, 'cluster');
+      await peer.page.evaluate(() => {
+        const app = window.__board;
+        app.r.fit(app.r.contentBounds(), 72, 0.9);
+      });
+      await peer.page.locator('.ailive-row:not([hidden])').waitFor({ timeout: 10_000 });
+      await peer.page.evaluate((ids) => {
+        const app = window.__board;
+        app.store.transact(() => ids.forEach((id, i) => app.store.update(id, { text: `Changed again ${i + 1}` })));
+      }, BASE_IDS);
+      await peer.page.locator('.ailive-row.changed:not([hidden])').waitFor({ timeout: 10_000 });
+      await sleep(300);
+      const shortRow = (page) => page.evaluate(() => {
+        const row = document.querySelector('.ailive-row.changed:not([hidden])');
+        const r = row?.getBoundingClientRect();
+        const names = [...(row?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim());
+        const d = [...(row?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Discard');
+        const dr = d?.getBoundingClientRect();
+        const top = dr ? document.elementFromPoint(dr.left + dr.width / 2, dr.top + dr.height / 2) : null;
+        return {
+          label: row?.getAttribute('aria-label') ?? null,
+          buttons: names,
+          inside: Boolean(r && r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight),
+          discardPressable: names.length === 0 ? null : Boolean(d && top && (top === d || d.contains(top))),
+          ghosts: (window.__board.r.overlay.ai ?? '').length > 0,
+        };
+      });
+      check(`A.${width}: the peer's short row for a preview whose stickies all changed`, await shortRow(peer.page), {
+        label: `${reviewerName(width)}'s AI preview: everything changed since it came`, buttons: ['Discard'], inside: true, discardPressable: true, ghosts: false,
+      });
+      await saveShot(peer, `08-all-changed-peer-${width}.png`);
+      check(`A.${width}: the runner's own short row says so and leaves Discard to the bar`, await shortRow(target.page), {
+        label: 'Your AI preview: everything changed since it came', buttons: [], inside: true, discardPressable: null, ghosts: false,
+      });
+      await peer.page.locator('.ailive-row.changed:not([hidden])').getByRole('button', { name: 'Discard', exact: true }).click();
+      await peer.page.waitForFunction(() => document.querySelectorAll('.ailive-row').length === 0, null, { timeout: 10_000 });
+      await target.page.waitForFunction(() => document.querySelectorAll('.ailive-row').length === 0 && document.querySelector('.aibar')?.getAttribute('data-ui') !== 'preview', null, { timeout: 10_000 });
+      check(`A.${width}: Discard on the short row settles the run for both people`, await Promise.all([peer.page, target.page].map((p) => p.evaluate(() => ({ rows: document.querySelectorAll('.ailive-row').length })))), [{ rows: 0 }, { rows: 0 }]);
     } finally {
       await peer.context.close().catch(() => undefined);
       const ix = contexts.indexOf(peer.context);
@@ -789,8 +870,8 @@ async function main() {
     note('B.multiplayer: scenario execution', 'FAIL', err?.stack ?? String(err));
   }
 
-  // each width asks generate twice and cluster once, and the two-person scenario asks generate once
-  const expectedFeatures = [...WIDTHS.flatMap(() => ['generate', 'generate', 'cluster']), 'generate'];
+  // each width asks generate twice and cluster twice, and the two-person scenario asks generate once
+  const expectedFeatures = [...WIDTHS.flatMap(() => ['generate', 'generate', 'cluster', 'cluster']), 'generate'];
   check('setup: every provider call went to the local Anthropic stub', {
     count: stub.calls.length,
     hosts: [...new Set(stub.calls.map((c) => c.path))],

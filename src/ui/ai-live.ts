@@ -5,7 +5,7 @@ import { fingerprintOf, isStale, refreshStale, reviewCounts, reviewed, startRevi
 import type { ProposedBy } from '../types';
 import { errorView, resolveAiRun, type ResolveAction } from '../ai-bar-logic';
 import {
-  ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, leftOutNote, nothingToAdd, personColor, placeLabelRows,
+  CHANGED_NOTE, ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, leftOutNote, nothingToAdd, personColor, placeLabelRows,
   previewBox, previewLabelText, stacked, targetBounds, type LabelRowIn,
 } from '../ai-live-logic';
 import { LiveRuns, avoidFor, presenceLine, previewLayouts, type LiveRun, type SettledRun } from '../ai-runs';
@@ -105,12 +105,22 @@ export function dropRun(app: BoardApp, runId: string): void {
 // ---------------------------------------------------------------- review (TAB-160)
 
 /** The runs with each proposal as this person reviewed it: what is drawn here and what an add of it writes. */
-function shownRuns(live: Live, app: BoardApp): LiveRun[] {
-  return live.runs.list().map((r) => {
+/** A run as it is shown here: `changed` is set, with the stickies it named, when every one of them changed since it came (TAB-221). */
+export type ShownRun = LiveRun & { changed?: { ids: string[] } };
+
+function shownRuns(live: Live, app: BoardApp): ShownRun[] {
+  return live.runs.list().map((r): ShownRun => {
     if (!r.proposal) return r;
     // with no review open the default one stands in (TAB-213): a member that changed since is neither drawn nor added
     const review = live.reviews.get(r.id) ?? (r.status === 'ready' ? startReview(r.proposal, staleIn(live, app, r.id)) : null);
-    return review ? { ...r, proposal: reviewed(r.proposal, review) } : r;
+    if (!review) return r;
+    const shown = reviewed(r.proposal, review);
+    // nothing left to draw because every sticky changed: the run stays on the board as a short row, so it can still be discarded
+    const { total, stale } = reviewCounts(review);
+    if (!shown && r.status === 'ready' && r.proposal.kind === 'group' && total > 0 && stale === total) {
+      return { ...r, proposal: null, changed: { ids: r.proposal.groups.flatMap((g) => g.ids) } };
+    }
+    return { ...r, proposal: shown };
   });
 }
 
@@ -153,6 +163,10 @@ export interface TakenReview {
   choose: (proposal: AiProposal) => AiProposal | null;
   stale: number;
 }
+
+/** The label rows' own margins, as in `placeLabelRows` (src/ai-live-logic.ts): the board's edge, and the rail's. */
+const ROW_EDGE_PX = 8;
+const ROW_RAIL_PX = 4;
 
 /** The room a preview gets around it when it is brought into view, beyond the chrome's own insets: the label row above it. */
 const SHOW_PAD = 40;
@@ -204,6 +218,10 @@ interface Row {
   w: number;
   /** Measured size with the buttons under the label (TAB-215); set with `w`. */
   wrap?: { w: number; h: number };
+  /** Measured height of a row that is more than one line high (the short row of TAB-221); set with `w`. */
+  h?: number;
+  /** The width the short row was measured for: it is capped to the room beside the rail, which changes with the board's width. */
+  room?: number;
   buttons: HTMLButtonElement[];
 }
 
@@ -229,7 +247,7 @@ export function mountAiLive(app: BoardApp): void {
   const rows = new Map<string, Row>();
   const outlines = new Map<string, Outline>();
   const busy = new Set<string>();
-  let ready: LiveRun[] = [];
+  let ready: ShownRun[] = [];
   let flying: LiveRun[] = [];
   let mine = new Set<string>();
   let shownAi = '';
@@ -295,7 +313,7 @@ export function mountAiLive(app: BoardApp): void {
 
   // ------------------------------------------------------------ label rows
 
-  function buildRow(run: LiveRun, own: boolean, tray: boolean): Row {
+  function buildRow(run: ShownRun, own: boolean, tray: boolean): Row {
     const text = previewLabelText(run, own);
     const { fill, ink } = labelColors(personColor(run));
     const whose = nameOf(run);
@@ -305,18 +323,27 @@ export function mountAiLive(app: BoardApp): void {
     const review = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': 'Choose what to add and edit it first', onclick: () => openReview(app, run.id, { accept: () => void settle(run, 'accept'), discard: () => void settle(run, 'discard') }) }, 'Review');
     // your own preview is drawn wherever the board has room, which may be off screen: Show brings it into view (TAB-218)
     const show = h('button', { class: 'ailive-btn', type: 'button', 'data-tip': 'Bring the preview into view', onclick: () => void showRun(app, run.id) }, 'Show');
+    if (run.changed) {
+      // every sticky it would move has changed since it came (TAB-221): nothing to draw or add, but it can be discarded
+      const note = h('span', { class: 'tray ailive-note' }, CHANGED_NOTE);
+      const el = h('div', { class: `ailive-row changed${own ? ' mine' : ''}`, role: 'group', 'aria-label': `${text}: ${CHANGED_NOTE}`, style: `--c:${fill};--ink:${ink}` },
+        h('span', { class: 'ailive-label' }, text),
+        tray ? h('span', { class: 'tray ailive-tray' }, discard) : null,
+        note);
+      return { el, sig: '', w: 0, buttons: tray ? [discard] : [] };
+    }
     const el = h('div', { class: `ailive-row${own ? ' mine' : ''}`, role: 'group', 'aria-label': text, style: `--c:${fill};--ink:${ink}` },
       h('span', { class: 'ailive-label' }, text),
       tray ? h('span', { class: 'tray ailive-tray' }, discard, review, accept) : own ? h('span', { class: 'tray ailive-tray' }, show) : null);
     return { el, sig: '', w: 0, buttons: tray ? [discard, review, accept] : [] };
   }
 
-  function syncRow(run: LiveRun) {
+  function syncRow(run: ShownRun) {
     const own = mine.has(run.id);
     const tray = hasTray(run, { readOnly: app.readOnly, barRunId: live.ownRunId });
     const { fill, ink } = labelColors(personColor(run));
     // rebuilt only when what it says changed, so a hovered or focused button is not lost to a redraw
-    const sig = `${previewLabelText(run, own)}|${fill}|${ink}|${own}|${tray}`;
+    const sig = `${previewLabelText(run, own)}|${fill}|${ink}|${own}|${tray}|${run.changed ? 'changed' : ''}`;
     const have = rows.get(run.id);
     if (have && have.sig === sig) return;
     const next = buildRow(run, own, tray);
@@ -407,33 +434,58 @@ export function mountAiLive(app: BoardApp): void {
 
     // the run under review has its own Add and Discard in the panel: its row would only peek out from behind it
     const reviewing = new Set([...document.querySelectorAll<HTMLElement>('.chrome > .aireview')].map((el) => el.dataset.run));
+    const railEl = document.querySelector('.chrome > .rail');
+    const railEdgeNow = railEl ? Math.max(0, railEl.getBoundingClientRect().right - origin.left) : 0;
+    const railEdge = railEdgeNow;
     const input: LabelRowIn[] = [];
     for (const run of ready) {
       const row = rows.get(run.id);
       const layout = live.layouts.get(run.id);
-      if (!row || !layout) continue;
-      const anchor = screenRect(previewBox(layout));
+      if (!row || (!layout && !run.changed)) continue;
+      const anchor = layout ? screenRect(previewBox(layout)) : changedAnchor(run, view);
       // a preview that is off screen shows nothing: the avatar badge says someone has one
       row.el.hidden = reviewing.has(run.id) || !intersects(anchor, view);
       if (row.el.hidden) continue;
+      // the short row of a changed run (TAB-221) is never wider than the room right of the rail, and is measured again when that changes
+      const room = Math.max(120, view.w - ROW_EDGE_PX - Math.max(ROW_EDGE_PX, railEdgeNow + ROW_RAIL_PX));
+      if (row.room !== room) {
+        // the room changed (the board was resized): the row is measured again
+        row.room = room;
+        row.w = 0;
+        if (run.changed) row.el.style.maxWidth = `${room}px`;
+      }
       if (!row.w) {
-        // the row in one line, then with its buttons under the label, for a board too narrow for the first (TAB-215)
+        // the row in one line, then with its buttons under the label, for a board too narrow for the first (TAB-215); the
+        // stacked row is never wider than the room, and a label longer than that is cut with an ellipsis
         row.el.classList.remove('wrapped');
+        if (!run.changed) row.el.style.maxWidth = '';
         row.w = row.el.offsetWidth;
         row.el.classList.add('wrapped');
+        if (!run.changed) row.el.style.maxWidth = `${room}px`;
         row.wrap = { w: row.el.offsetWidth, h: row.el.offsetHeight || 2 * ROW_H };
         row.el.classList.remove('wrapped');
+        if (!run.changed) row.el.style.maxWidth = '';
+        if (run.changed) row.h = row.el.offsetHeight || 2 * ROW_H;
       }
-      input.push({ id: run.id, anchor, w: row.w, h: ROW_H, ...(row.wrap?.w ? { wrap: row.wrap } : {}) });
+      // the short row of a changed run is its own form: it is not wrapped, and it is taller than a row of buttons
+      input.push({ id: run.id, anchor, w: row.w, h: row.h ?? ROW_H, ...(row.wrap?.w && !run.changed ? { wrap: row.wrap } : {}) });
     }
-    // a row never goes left of the rail
-    const railEl = document.querySelector('.chrome > .rail');
-    const railEdge = railEl ? Math.max(0, railEl.getBoundingClientRect().right - origin.left) : 0;
+    // a row never goes left of the rail (its right edge is read first: the short row's width depends on it)
     for (const [id, at] of placeLabelRows(input, obstacles, { w: view.w, h: view.h }, railEdge)) {
       const el = rows.get(id)!.el;
       el.classList.toggle('wrapped', at.wrapped === true);
+      if (!ready.find((r) => r.id === id)?.changed) el.style.maxWidth = at.wrapped ? `${Math.max(120, view.w - ROW_EDGE_PX - Math.max(ROW_EDGE_PX, railEdge + ROW_RAIL_PX))}px` : '';
       el.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
     }
+  }
+
+  /** Where the short row of a run whose stickies all changed hangs: over the ones still on the board, else in the middle of the view. */
+  function changedAnchor(run: ShownRun, view: Rect): Rect {
+    const boxes = (run.changed?.ids ?? []).map(boundsOf).filter((b): b is Rect => !!b).map(screenRect);
+    if (!boxes.length) return { x: view.w / 2 - 1, y: view.h / 3, w: 2, h: 2 };
+    const x = Math.min(...boxes.map((b) => b.x));
+    const y = Math.min(...boxes.map((b) => b.y));
+    return { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
   }
 
   function paint() {
@@ -471,7 +523,7 @@ export function mountAiLive(app: BoardApp): void {
     const me = meId();
     live.layouts = previewLayouts(list, boardOf(app));
     mine = new Set(list.filter((r) => isMine(r, me, live.ownRunId, live.starting)).map((r) => r.id));
-    ready = stacked(list.filter((r) => live.layouts.has(r.id)), (r) => mine.has(r.id));
+    ready = stacked(list.filter((r) => live.layouts.has(r.id) || r.changed), (r) => mine.has(r.id));
     // the person's own run draws no outline: the bar shows it
     flying = list.filter((r) => r.status === 'running' && !mine.has(r.id));
 
