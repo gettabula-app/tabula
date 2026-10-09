@@ -1,0 +1,1064 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabula Brand Guide</title>
+<meta name="description" content="The Tabula graphic profile: wordmark, colour, contrast, type, layout, collage motifs, motion, Codex illustration briefs and the asset kit.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,800;1,6..96,500;1,6..96,800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<script>
+(function(){var d=document.documentElement;try{var s=localStorage.getItem('tb-scheme');if(s==='light'||s==='dark')d.setAttribute('data-tb-scheme',s);}catch(e){}
+if(!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)&&'IntersectionObserver' in window)d.classList.add('js-anim');})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:88px}
+body{font-family:var(--tb-font-body);font-size:var(--tb-step-0);line-height:var(--tb-leading-body);color:var(--tb-text);background:var(--tb-ground);overflow-x:hidden;position:relative}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit}
+p{max-width:var(--tb-measure-body)}
+h1,h2,h3{font-family:var(--tb-font-display);font-weight:var(--tb-weight-display);line-height:var(--tb-leading-display);letter-spacing:var(--tb-tracking-display)}
+h1{font-size:var(--tb-h1)}
+h2{font-size:var(--tb-h2)}
+h3{font-size:var(--tb-step-1);line-height:1.15;margin-bottom:8px}
+em{font-style:italic;font-weight:var(--tb-weight-display-em)}
+code,pre{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em}
+:focus-visible{outline:3px solid var(--tb-focus);outline-offset:3px}
+.on-ink :focus-visible,.on-blue :focus-visible{outline-color:var(--tb-on-band)}
+.wrap{width:min(var(--tb-wrap),100% - 2 * var(--tb-margin));margin-inline:auto}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--tb-gutter)}
+.sect{padding:var(--tb-section-pad) 0;position:relative;overflow-x:clip}
+.on-ink{background:var(--tb-band-ink);color:var(--tb-on-band)}
+.on-blue{background:var(--tb-band-cobalt);color:var(--tb-on-band)}
+.grain{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;mix-blend-mode:var(--tb-grain-blend);opacity:var(--tb-grain-opacity);z-index:50}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* wordmark: one symbol, used everywhere */
+.wm{display:block;height:auto;color:var(--tb-text);--wm-dot:var(--tb-c-red)}
+.wm.paper{color:var(--tb-c-paper-hi)}
+.wm.mono{color:var(--tb-c-paper-hi);--wm-dot:var(--tb-c-paper-hi)}
+
+/* kicker and lede, as on #27 */
+.kicker{display:flex;align-items:center;gap:12px;font-size:var(--tb-step--1);font-weight:700;letter-spacing:var(--tb-tracking-kicker);text-transform:uppercase;margin-bottom:24px}
+.kicker b{display:inline-grid;place-items:center;min-width:32px;height:24px;padding:0 8px;background:var(--tb-text);color:var(--tb-ground);letter-spacing:.06em}
+.kicker i{width:10px;height:10px;background:var(--tb-accent);flex:none}
+.on-ink .kicker b,.on-blue .kicker b{background:var(--tb-on-band);color:var(--tb-band-ink)}
+.on-blue .kicker b{color:var(--tb-band-cobalt)}
+.on-blue .kicker i,.on-ink .kicker i{background:var(--tb-on-band)}
+.lede{font-size:var(--tb-step-1);line-height:var(--tb-leading-lede);max-width:var(--tb-measure-lede)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;font:inherit;font-weight:700;font-size:var(--tb-step-0);letter-spacing:.02em;text-decoration:none;border:2px solid var(--tb-rule);cursor:pointer;transition:background var(--tb-dur-hover),color var(--tb-dur-hover),border-color var(--tb-dur-hover);background:var(--tb-text);color:var(--tb-ground)}
+.btn:hover{background:var(--tb-c-red);border-color:var(--tb-c-red);color:var(--tb-c-paper-hi)}
+.btn.s{background:transparent;color:var(--tb-text)}
+.btn.s:hover{background:var(--tb-text);color:var(--tb-ground);border-color:var(--tb-text)}
+.on-blue .btn,.on-ink .btn{background:var(--tb-on-band);color:var(--tb-band-ink);border-color:var(--tb-on-band)}
+.on-blue .btn.s,.on-ink .btn.s{background:transparent;color:var(--tb-on-band)}
+.on-blue .btn:hover,.on-ink .btn:hover{background:var(--tb-c-paper);color:var(--tb-c-ink);border-color:var(--tb-c-paper)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+
+/* header */
+header{position:sticky;top:0;z-index:60;background:var(--tb-surface);border-bottom:2px solid var(--tb-rule)}
+header .wrap{display:flex;align-items:center;justify-content:space-between;min-height:72px;gap:16px}
+header .home{display:block;width:132px;text-decoration:none}
+nav ul{display:flex;gap:4px;list-style:none;padding:0;align-items:center}
+nav a{display:block;padding:10px 12px;text-decoration:none;font-size:.82rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;border-bottom:2px solid transparent}
+nav a:hover{border-bottom-color:var(--tb-accent)}
+.scheme{margin-left:8px;min-height:40px;padding:0 14px;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase}
+
+/* shared collage pieces */
+.tape{z-index:5;opacity:.93}
+.mul{mix-blend-mode:var(--tb-cutout-blend)}
+.torn{clip-path:var(--tb-torn-all)}
+.tag{z-index:6;background:var(--tb-sheet);color:var(--tb-on-sheet);padding:14px 18px 16px;clip-path:var(--tb-torn-all)}
+.tag span{display:block;font-size:var(--tb-step--1);font-weight:700;letter-spacing:var(--tb-tracking-kicker);text-transform:uppercase;color:var(--tb-on-sheet-muted);margin-bottom:4px}
+.tag strong{display:block;font-family:var(--tb-font-display);font-weight:800;font-size:var(--tb-step-1);line-height:1.1}
+.cur{position:absolute;display:flex;flex-direction:column;align-items:flex-start;pointer-events:none;z-index:3}
+.cur svg{width:40px;height:40px;overflow:visible;filter:drop-shadow(0 2px 0 rgba(18,18,22,.5))}
+.cur svg{stroke:var(--tb-c-paper-hi);stroke-width:2;stroke-linejoin:round}
+.cur b{margin:-8px 0 0 26px;padding:3px 10px;border:2px solid var(--tb-c-paper-hi);color:var(--tb-c-paper-hi);font-size:.82rem;font-weight:700;letter-spacing:.03em;line-height:1.3}
+.cur.c1 svg{fill:var(--tb-c-red)}.cur.c1 b{background:var(--tb-c-red)}
+.cur.c2 svg{fill:var(--tb-c-cobalt)}.cur.c2 b{background:var(--tb-c-cobalt)}
+.cur.c3 svg{fill:var(--tb-c-ink)}.cur.c3 b{background:var(--tb-c-ink)}
+.ticks{list-style:none;padding:0;margin-top:32px;border-bottom:2px solid currentColor}
+.ticks li{padding:12px 0;border-top:2px solid currentColor;font-weight:600;display:grid;grid-template-columns:28px 1fr;align-items:baseline}
+.ticks li::before{content:"";width:10px;height:10px;background:var(--tb-accent);transform:translateY(-1px)}
+.on-blue .ticks li::before,.on-ink .ticks li::before{background:var(--tb-on-band)}
+.ticks.no li::before{content:"";height:3px;width:14px;background:currentColor;transform:translateY(-5px)}
+
+/* section head, as on #27 */
+.head{margin-bottom:56px;align-items:end}
+.head .k{grid-column:1 / -1}
+.head h2{grid-column:1 / span 7}
+.head p{grid-column:9 / span 4;font-size:var(--tb-step-1);line-height:1.4}
+
+/* hero */
+.hero{padding:64px 0 96px;overflow:hidden}
+.hero .grid{align-items:center}
+.hero-copy{grid-column:1 / span 5;position:relative;z-index:3}
+.hero-copy h1{margin-bottom:32px}
+.hero-copy h1 em{color:var(--tb-accent)}
+.hero-copy small{display:block;margin-top:24px;font-size:.9rem;font-weight:600;letter-spacing:.04em;color:var(--tb-text-muted)}
+.collage{grid-column:6 / span 7;position:relative;aspect-ratio:1 / .9}
+.collage>*{position:absolute}
+.redblk{left:24%;top:0;width:76%;height:68%;background:var(--tb-band-red)}
+.blueblk{left:0;bottom:4%;width:22%;height:20%;background:var(--tb-band-cobalt)}
+.bd{left:1%;top:11%;width:84%;background:var(--tb-c-paper-hi);padding:10px;box-shadow:10px 12px 0 var(--tb-paste-shadow);transform:rotate(-1.4deg);z-index:2}
+.stage{position:relative;aspect-ratio:1400 / 1024}
+.stage>img{position:absolute;inset:0;width:100%;height:100%}
+svg.ov{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ov path.l{fill:none;stroke:var(--tb-c-ink);stroke-width:7;stroke-linejoin:round}
+.ov path.h{fill:var(--tb-c-ink)}
+.collage .hand{right:-3%;top:66%;width:54%;z-index:4}
+.collage .tape{width:22%}
+.collage .t1{left:-3%;top:8%;transform:rotate(-38deg)}
+.collage .t2{left:78%;top:8%;transform:rotate(24deg)}
+.collage .mk{z-index:6;pointer-events:none}
+.collage .circ{left:27%;top:51%;width:46%}
+.collage .star{left:90%;top:-2%;width:11%}
+.collage .tag{left:3%;top:79%;max-width:44%;transform:rotate(-2deg)}
+
+/* contents index */
+.index .panel{background:var(--tb-sheet);color:var(--tb-on-sheet);padding:48px 48px 56px;clip-path:var(--tb-torn-all)}
+.index .top{display:flex;justify-content:space-between;align-items:end;gap:24px;flex-wrap:wrap;margin-bottom:40px}
+.index h2{font-size:clamp(2.4rem,4.6vw,var(--tb-step-5))}
+.index .top p{font-size:var(--tb-step-1);line-height:1.4;max-width:30ch}
+.index .kicker b{background:var(--tb-on-sheet);color:var(--tb-sheet)}
+.index .kicker i{background:var(--tb-on-sheet-accent)}
+.toc{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:var(--tb-gutter);row-gap:16px}
+.toc a{display:grid;grid-template-columns:auto 1fr;column-gap:16px;align-items:baseline;padding:16px 0 20px;border-top:3px solid var(--tb-on-sheet);text-decoration:none;height:100%;transition:transform .3s var(--tb-ease)}
+.toc a:hover{transform:translateY(-2px)}
+.toc a:hover strong{text-decoration:underline;text-decoration-color:var(--tb-on-sheet-accent);text-decoration-thickness:2px;text-underline-offset:5px}
+.toc .n{font-family:var(--tb-font-display);font-style:italic;font-weight:800;font-size:var(--tb-step-4);line-height:.9;color:var(--tb-on-sheet-accent);grid-row:span 2;min-width:1.3em}
+.toc strong{font-family:var(--tb-font-display);font-weight:800;font-size:var(--tb-step-1);line-height:1.15}
+.toc span:last-child{font-size:.94rem;color:var(--tb-on-sheet-muted);line-height:1.4}
+
+/* slices */
+.slice .grid{align-items:center}
+.slice h2{margin-bottom:24px}
+.slice .copy>p{font-size:var(--tb-step-1);line-height:1.45;max-width:36ch}
+.art{position:relative}
+.art>*{position:absolute}
+.copy.r{grid-column:8 / span 5}
+.copy.l{grid-column:1 / span 5}
+.art.r{grid-column:7 / span 6}
+.art.l{grid-column:1 / span 6}
+
+/* paper cards (shared by several sections) */
+.cards{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:40px var(--tb-gutter)}
+.card{position:relative;transition:transform var(--tb-dur-lift) var(--tb-ease)}
+.card::before{content:"";position:absolute;inset:0;background:var(--tb-c-ink);transform:translate(8px,10px);opacity:0;transition:opacity var(--tb-dur-lift) var(--tb-ease);clip-path:var(--tb-torn-all)}
+.card:hover{transform:translateY(-3px) rotate(var(--r,0deg))}
+.card:hover::before{opacity:.9}
+.pap{position:relative;background:var(--tb-sheet);color:var(--tb-on-sheet);clip-path:var(--tb-torn-all);padding:28px 24px 30px;height:100%;display:flex;flex-direction:column}
+.card .tp{position:absolute;width:44%;left:28%;top:-14px;z-index:2;transform:rotate(-3deg)}
+.lab{font-size:var(--tb-step--1);font-weight:700;letter-spacing:var(--tb-tracking-kicker);text-transform:uppercase;color:var(--tb-on-sheet-muted);margin-bottom:16px}
+.pap p{font-size:.96rem;line-height:1.5}
+.pap h3{font-size:var(--tb-step-2);margin-bottom:10px}
+.pap code{font-size:.82rem}
+
+/* 02 wordmark */
+.grounds{list-style:none;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--tb-gutter);margin-top:8px}
+.grounds li{display:flex;flex-direction:column;gap:12px}
+.grounds .g{aspect-ratio:4 / 3;display:grid;place-items:center;padding:14%;border:2px solid var(--tb-on-band)}
+.grounds .g .wm{width:100%}
+.grounds small{font-size:.86rem;font-weight:600;line-height:1.35}
+.grounds small b{display:block;font-size:var(--tb-step--1);letter-spacing:.14em;text-transform:uppercase}
+.construct{grid-column:1 / span 7;background:var(--tb-c-paper-hi);color:var(--tb-c-ink);padding:48px 40px 40px;clip-path:var(--tb-torn-all)}
+.construct figure{position:relative;margin:8px 0 24px}
+.construct .wm{color:var(--tb-c-ink);width:100%}
+.construct svg.guide{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.construct .guide rect,.construct .guide line{fill:none;stroke:var(--tb-c-cobalt);stroke-width:1.5;stroke-dasharray:5 4;vector-effect:non-scaling-stroke}
+.construct figcaption{font-size:.92rem;color:var(--tb-c-grey);margin-top:16px}
+.construct dl{display:grid;grid-template-columns:auto 1fr;gap:6px 20px;font-size:.96rem}
+.construct dt{font-weight:700}
+.wm-donts{grid-column:9 / span 4}
+.wm-donts h3{font-size:var(--tb-step-2)}
+
+/* 03 colour */
+.swatches{list-style:none;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--tb-gutter)}
+.sw{display:flex;flex-direction:column}
+.sw .chip{aspect-ratio:1 / 1.05;padding:14px;display:flex;flex-direction:column;justify-content:space-between;border:2px solid var(--tb-rule);font-family:var(--tb-font-display);font-weight:800;font-size:var(--tb-step-3);line-height:1}
+.sw .chip .cr{font-family:var(--tb-font-body);font-size:.8rem;font-weight:700;letter-spacing:.04em;display:flex;flex-direction:column;gap:2px}
+.sw .chip .cr span{display:flex;align-items:center;gap:6px}
+.sw .chip .cr span::before{content:"";width:9px;height:9px;background:currentColor;flex:none}
+.sw h3{margin:14px 0 2px;font-size:var(--tb-step-1)}
+.sw code{font-size:.82rem;font-weight:600}
+.sw p{font-size:.9rem;line-height:1.4;color:var(--tb-text-muted);margin-top:6px}
+.ratio{display:flex;height:56px;margin-top:56px;border:2px solid var(--tb-rule)}
+.ratio span{display:flex;align-items:end;padding:6px 10px;font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;overflow:hidden}
+.ratio-note{margin-top:16px;font-size:.96rem}
+.pairs{display:grid;grid-template-columns:1fr 1fr;gap:var(--tb-gutter);margin-top:56px}
+.pairs h3{font-size:var(--tb-step-2);margin-bottom:12px}
+
+/* 04 contrast */
+.ctabs{display:grid;grid-template-columns:1fr 1fr;gap:48px var(--tb-gutter)}
+.ctab h3{font-size:var(--tb-step-2);margin-bottom:4px}
+.ctab>p{font-size:.92rem;margin-bottom:16px;opacity:.85}
+.ctab table{width:100%;border-collapse:collapse;font-size:.9rem}
+.ctab th{text-align:left;font-size:var(--tb-step--1);letter-spacing:.14em;text-transform:uppercase;padding:0 8px 8px 0;font-weight:700}
+.ctab td{padding:7px 8px 7px 0;border-top:2px solid currentColor;vertical-align:middle}
+.ctab td.s{width:52px}
+.ctab .smp{display:grid;place-items:center;width:44px;height:30px;font-family:var(--tb-font-display);font-weight:800;font-size:1.05rem;border:1px solid rgba(127,127,127,.5)}
+.ctab .r{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ctab .v{font-size:.8rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.ctab .v.bad{text-decoration:line-through;text-decoration-thickness:2px}
+.ctab .nm{font-size:.86rem;line-height:1.3}
+
+/* 05 type */
+.spec{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--tb-gutter);row-gap:48px}
+.spec .big{grid-column:1 / span 8}
+.spec .big .sample{font-family:var(--tb-font-display);font-weight:800;font-size:clamp(3.4rem,9vw,8rem);line-height:.95;letter-spacing:-.02em}
+.spec .big .sample em{color:var(--tb-accent)}
+.spec .meta{grid-column:10 / span 3;align-self:end}
+.spec .meta dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:.94rem;border-top:2px solid var(--tb-rule);padding-top:12px}
+.spec .meta dt{font-weight:700}
+.spec .body{grid-column:1 / span 6}
+.spec .body .sample{font-size:var(--tb-step-1);line-height:1.45;max-width:38ch;margin-bottom:16px}
+.spec .body p+p{margin-top:12px}
+.spec .bits{grid-column:8 / span 5;display:flex;flex-direction:column;gap:28px}
+.ladder{list-style:none;padding:0;border-bottom:2px solid var(--tb-rule)}
+.ladder li{display:grid;grid-template-columns:76px 88px 1fr;align-items:baseline;gap:12px;padding:10px 0;border-top:2px solid var(--tb-rule);overflow:hidden}
+.ladder small{font-size:.8rem;font-weight:700;letter-spacing:.08em;color:var(--tb-text-muted)}
+.ladder span{font-family:var(--tb-font-display);font-weight:800;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.numdemo{display:flex;gap:16px;align-items:baseline;border-top:3px solid var(--tb-rule);padding-top:14px}
+.numdemo .n{font-family:var(--tb-font-display);font-style:italic;font-weight:800;font-size:var(--tb-step-4);line-height:.9;color:var(--tb-accent)}
+.numdemo strong{font-family:var(--tb-font-display);font-weight:800;font-size:var(--tb-step-1);display:block}
+.numdemo span:last-child{font-size:.94rem;color:var(--tb-text-muted)}
+.spec .body{grid-row:2}
+.spec .bits{grid-row:2 / span 2}
+.typenos{grid-column:1 / span 6;grid-row:3;align-self:start}
+
+/* 06 layout */
+.gridviz{position:relative;height:200px;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:var(--tb-gutter);margin-bottom:16px}
+.gridviz i{background:rgba(247,245,240,.16);border-inline:1px solid rgba(247,245,240,.5)}
+.gridviz .blk{position:absolute;top:28px;height:144px;display:flex;align-items:end;padding:10px 12px;font-size:.78rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.gridviz .c5{left:0;width:calc((100% - 11 * var(--tb-gutter)) / 12 * 5 + 4 * var(--tb-gutter));background:var(--tb-c-paper-hi);color:var(--tb-c-ink)}
+.gridviz .c6{right:0;width:calc((100% - 11 * var(--tb-gutter)) / 12 * 6 + 5 * var(--tb-gutter));background:var(--tb-c-red);color:var(--tb-c-paper-hi)}
+.gridnote{font-size:.94rem;margin-bottom:56px}
+.lay2{display:grid;grid-template-columns:5fr 1fr 6fr;gap:var(--tb-gutter);align-items:start}
+.lay2 h3{font-size:var(--tb-step-2);margin-bottom:16px}
+.spaces{list-style:none;padding:0;display:flex;flex-direction:column;gap:6px}
+.spaces li{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:12px;font-size:.84rem;font-weight:700}
+.spaces i{display:block;height:12px;background:var(--tb-on-band)}
+.rhythm{grid-column:3}
+.bands{list-style:none;padding:0;display:flex;flex-direction:column;border:2px solid var(--tb-on-band)}
+.bands li{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;padding:10px 14px;font-size:.88rem;font-weight:600}
+.bands li b{font-family:var(--tb-font-display);font-style:italic;font-size:1.2rem}
+.bands li small{font-size:.74rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.bands .p{background:var(--tb-c-paper);color:var(--tb-c-ink)}
+.bands .c{background:var(--tb-c-cobalt);color:var(--tb-c-paper-hi);border-block:2px solid var(--tb-on-band)}
+.bands .k{background:var(--tb-c-ink);color:var(--tb-c-paper-hi)}
+.bands .t{background:var(--tb-c-paper-hi);color:var(--tb-c-ink)}
+
+/* 07 motifs */
+.motifs{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:56px var(--tb-gutter)}
+.motif .demo{position:relative;aspect-ratio:4 / 3;margin-bottom:20px;background:var(--tb-c-paper);border:2px solid var(--tb-rule);overflow:hidden}
+.motif .demo>*{position:absolute}
+.motif h3{font-size:var(--tb-step-2);margin-bottom:8px}
+.motif dl{font-size:.94rem;line-height:1.45;display:grid;gap:6px}
+.motif dt{display:inline;font-weight:700}
+.motif dd{display:inline;margin:0}
+.motif dl div{border-top:2px solid var(--tb-rule);padding-top:6px}
+.d-torn .blue{inset:12% 30% 18% 8%;background:var(--tb-c-cobalt)}
+.d-torn .sheet{left:26%;top:22%;width:62%;padding:18px 20px 22px;transform:rotate(-1.8deg)}
+.d-tape .sheet{left:14%;top:18%;width:72%;height:64%;transform:rotate(1.4deg)}
+.d-tape .t1{width:34%;left:6%;top:12%;transform:rotate(-34deg)}
+.d-tape .t2{width:26%;right:6%;bottom:12%;transform:rotate(-20deg)}
+.d-cut .scrap{width:52%;left:8%;top:14%;transform:rotate(-4deg)}
+.d-cut .o1{width:46%;left:14%;top:18%;transform:rotate(-12deg)}
+.d-cut .o2{width:36%;right:8%;top:24%;transform:rotate(14deg)}
+.d-mark .word{left:0;right:0;top:30%;text-align:center;font-family:var(--tb-font-display);font-weight:800;font-size:clamp(2rem,4vw,3rem);line-height:1;color:var(--tb-c-ink)}
+.d-mark .circ{width:54%;left:23%;top:12%}
+.d-mark .ul{width:40%;left:30%;top:64%}
+.d-mark .ast{width:13%;right:9%;top:8%}
+.d-board .mount{left:7%;top:8%;width:80%;background:var(--tb-c-paper-hi);padding:6px;box-shadow:8px 10px 0 var(--tb-paste-shadow);transform:rotate(-1.2deg)}
+.d-board .tape{width:26%;right:4%;top:2%;transform:rotate(22deg)}
+.d-cur .c1{left:16%;top:18%}
+.d-cur .c2{left:48%;top:44%}
+.d-cur .c3{left:22%;top:62%}
+.d-scrap .s1{width:56%;left:8%;top:16%;transform:rotate(-5deg)}
+.d-scrap .s2{width:50%;right:6%;top:52%;transform:rotate(4deg)}
+.d-scrap .s3{width:34%;left:30%;top:10%;transform:rotate(-8deg)}
+.d-grain{background:var(--tb-c-paper)!important}
+.d-grain img{inset:0;width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.d-grain .full{clip-path:inset(0 50% 0 0)}
+.d-grain .low{clip-path:inset(0 0 0 50%);opacity:.2}
+.d-grain b{bottom:10px;font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;background:var(--tb-c-paper-hi);color:var(--tb-c-ink);padding:3px 8px}
+
+/* 08 motion */
+.mgrid{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:48px var(--tb-gutter)}
+.mo .stage2{position:relative;aspect-ratio:4 / 3;background:var(--tb-c-paper);border:2px solid var(--tb-on-band);overflow:hidden;margin-bottom:16px}
+.mo .stage2>*{position:absolute}
+.mo h3{font-size:var(--tb-step-2);margin-bottom:6px}
+.mo p{font-size:.94rem;line-height:1.45;margin-bottom:14px}
+.mo .btn{min-height:40px;padding:0 16px;font-size:.84rem}
+.motion-off{display:none;margin-top:24px;font-weight:600}
+html:not(.js-anim) .motion-off{display:block}
+html:not(.js-anim) .mo .btn{display:none}
+.m-settle .sheet{left:18%;top:20%;width:64%;padding:16px 18px;transform:rotate(-1.6deg)}
+.m-settle .tape{width:30%;left:12%;top:12%;transform:rotate(-28deg)}
+.m-draw{--ld:.3s;--hd:.9s}
+.m-draw .mount{left:10%;top:8%;width:80%;background:var(--tb-c-paper-hi);padding:6px;box-shadow:6px 8px 0 var(--tb-paste-shadow)}
+.m-glide .note{left:40%;top:30%;width:34%;aspect-ratio:1;background:var(--tb-c-cobalt);box-shadow:4px 5px 0 var(--tb-paste-shadow)}
+.m-glide .cur{left:58%;top:58%}
+.m-poll .ui{left:10%;top:14%;width:80%;background:#fff;border:2px solid var(--tb-c-ink);padding:14px;color:var(--tb-c-ink);font-size:.88rem}
+.m-poll .q{font-weight:700;margin-bottom:8px}
+.bar{display:grid;grid-template-columns:34px 1fr 18px;gap:8px;align-items:center;margin-top:6px;font-weight:600}
+.bar span{height:14px;background:var(--tb-c-paper);position:relative;overflow:hidden}
+.bar span i{position:absolute;inset:0;background:var(--tb-c-ink);transform-origin:left;transform:scaleX(var(--v))}
+.bar.win span i{background:var(--tb-c-red)}
+.bar b{text-align:right}
+.m-poll .dots{display:flex;gap:10px;margin-top:12px}
+.dots i{width:18px;height:18px;border-radius:50%;background:var(--tb-c-cobalt);display:block}
+.m-sway .hand{width:70%;right:-4%;top:36%;transform-origin:100% 50%}
+.m-sway .note{left:6%;top:24%;width:26%;aspect-ratio:1;background:var(--tb-c-red)}
+.m-lift{display:grid;place-items:center}
+.m-lift .card{position:relative;width:56%}
+.m-lift .pap{padding:18px 18px 20px}
+.m-lift .pap h3{font-size:var(--tb-step-1)}
+
+/* 09 codex */
+.palette{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 32px;list-style:none;padding:0}
+.palette li{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:2px solid var(--tb-on-band);font-size:.86rem;font-weight:600}
+.palette i{width:22px;height:22px;border:1px solid rgba(127,127,127,.6)}
+.tpl{background:var(--tb-c-paper-hi);color:var(--tb-c-ink);padding:44px 44px 48px;clip-path:var(--tb-torn-all);position:relative}
+.tpl .tbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.tpl .lab{color:var(--tb-c-grey);margin:0}
+.tpl pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.86rem;line-height:1.55}
+.tpl mark{background:none;color:var(--tb-c-red);font-weight:700}
+.tpl .btn{background:var(--tb-c-ink);color:var(--tb-c-paper-hi);border-color:var(--tb-c-ink);min-height:40px;padding:0 16px;font-size:.84rem}
+.worked{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--tb-gutter);margin-top:56px}
+.worked .pap{padding:24px 22px 26px}
+.worked .thumb{height:150px;display:grid;place-items:center;margin-bottom:16px;background:var(--tb-c-paper)}
+.worked .thumb img{max-height:130px;width:auto}
+.worked details{margin-top:12px;font-size:.86rem;line-height:1.5}
+.worked summary{cursor:pointer;font-weight:700}
+.worked details p{margin-top:8px;max-width:none}
+.avoid{display:grid;grid-template-columns:1fr 1fr;gap:var(--tb-gutter);margin-top:56px}
+.avoid h3{font-size:var(--tb-step-2)}
+.avoid ol{padding-left:1.2em;margin-top:16px}
+.avoid ol li{padding:4px 0}
+
+/* 10 voice */
+.heads{list-style:none;padding:0;border-bottom:2px solid var(--tb-rule)}
+.heads li{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:baseline;padding:18px 0;border-top:2px solid var(--tb-rule)}
+.heads q{quotes:none;font-family:var(--tb-font-display);font-weight:800;font-size:var(--tb-step-4);line-height:1.02}
+.heads q em{color:var(--tb-accent)}
+.heads small{font-size:var(--tb-step--1);font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tb-text-muted)}
+.voice-rules{margin-top:40px}
+
+/* 11 asset kit */
+.kit{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:40px var(--tb-gutter)}
+.kit .pap{padding:24px 22px 24px}
+.kit .thumb{height:120px;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;background:var(--tb-c-paper);padding:12px}
+.kit .thumb.inkbg{background:var(--tb-c-ink)}
+.kit .thumb img{max-height:96px;width:auto;min-width:0}
+.kit h3{font-size:var(--tb-step-1)}
+.kit ul{list-style:none;padding:0;margin-top:8px;font-size:.88rem}
+.kit ul li{padding:4px 0;border-top:1px solid rgba(18,18,22,.25)}
+.kit a{font-weight:600;text-decoration-color:var(--tb-c-red);text-decoration-thickness:2px;text-underline-offset:4px;overflow-wrap:anywhere}
+.kit-note{margin-top:48px;font-size:var(--tb-step-1);max-width:56ch}
+.kit-note a{text-decoration-color:var(--tb-on-band);text-decoration-thickness:2px;text-underline-offset:5px;font-weight:700}
+
+footer{background:var(--tb-band-ink);color:var(--tb-on-band);padding:56px 0;border-top:2px solid var(--tb-band-ink)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:24px 48px;align-items:center;justify-content:space-between}
+footer .wm{width:132px}
+footer p{font-size:.9rem;max-width:none}
+footer a{font-weight:600;text-underline-offset:5px;text-decoration-color:var(--tb-c-red);text-decoration-thickness:2px}
+
+/* MOTION. Hidden states exist only under html.js-anim (set when motion is allowed). Each moment plays once on view; .in is the end state. */
+/* hero: layers settle, tape presses down, connectors draw, cursors glide, then the hand sways */
+html.js-anim .L{opacity:0;transform:translate(var(--dx,0),var(--dy,24px)) rotate(var(--rr,0deg))}
+html.js-anim .in .L,html.js-anim .L.in{opacity:1;transform:none;transition:opacity var(--tb-dur-fade) var(--tb-ease) var(--d,0s),transform var(--tb-dur-settle) var(--tb-ease) var(--d,0s)}
+html.js-anim .L.keep-rot{transform:translate(var(--dx,0),var(--dy,24px)) rotate(calc(var(--rot) + var(--rr,0deg)))}
+html.js-anim .in .L.keep-rot{transform:rotate(var(--rot))}
+html.js-anim .collage .hand{--dx:60px;--dy:0px}
+html.js-anim [data-m] .ov path.l,html.js-anim [data-m] .g{stroke-dasharray:1;stroke-dashoffset:1}
+html.js-anim [data-m].in .ov path.l{stroke-dashoffset:0;transition:stroke-dashoffset var(--tb-dur-draw) var(--tb-ease) var(--ld,1s)}
+html.js-anim [data-m].in .g{stroke-dashoffset:0;transition:stroke-dashoffset var(--tb-dur-draw) var(--tb-ease) var(--d,.3s)}
+html.js-anim [data-m] .ov path.h{opacity:0}
+html.js-anim [data-m].in .ov path.h{opacity:1;transition:opacity .2s linear var(--hd,1.55s)}
+html.js-anim [data-m] .cur{opacity:0;transform:translate(-40px,-28px)}
+html.js-anim [data-m].in .cur{opacity:1;transform:none;transition:opacity .4s var(--tb-ease) var(--cd,0s),transform var(--tb-dur-glide) var(--tb-ease) var(--cd,0s)}
+html.js-anim .collage.in .hand,html.js-anim .m-sway.in .hand{animation:sway var(--tb-sway-dur) ease-in-out var(--tb-sway-delay) infinite alternate;transform-origin:100% 50%}
+@keyframes sway{from{rotate:0deg}to{rotate:var(--tb-sway-angle)}}
+html.js-anim [data-m] .dots i{opacity:0;transform:translateY(-28px) scale(1.3)}
+html.js-anim [data-m].in .dots i{opacity:1;transform:none;transition:opacity .35s var(--tb-ease) var(--d),transform .6s var(--tb-ease) var(--d)}
+html.js-anim [data-m] .bar span i{transform:scaleX(0)}
+html.js-anim [data-m].in .bar span i{transform:scaleX(var(--v));transition:transform var(--tb-dur-fill) var(--tb-ease) var(--d,0s)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before{transition:none!important;animation:none!important}}
+
+@media (max-width:1100px){
+  .cards,.kit{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .toc{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .swatches{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grounds{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .motifs,.mgrid,.worked{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ctabs{grid-template-columns:1fr}
+  nav li.opt{display:none}
+}
+@media (max-width:900px){
+  .hero-copy,.collage,.copy.l,.copy.r,.art.l,.art.r,.construct,.wm-donts,.spec .big,.spec .meta,.spec .body,.spec .bits{grid-column:1 / -1}
+  .collage{margin-top:56px}
+  .head h2,.head p{grid-column:1 / -1}
+  .head p{margin-top:16px}
+  .art.l,.art.r{grid-row:2;margin-top:56px}
+  .copy.l,.copy.r{grid-row:1}
+  .wm-donts{margin-top:48px}
+  .spec .body,.spec .bits,.typenos{grid-row:auto;grid-column:1 / -1}
+  .pairs,.avoid{grid-template-columns:1fr}
+  .lay2{grid-template-columns:1fr}
+  .rhythm{grid-column:1;margin-top:40px}
+}
+@media (max-width:700px){
+  :root{--tb-margin:var(--tb-margin-phone)}
+  .sect{padding:var(--tb-section-pad-phone) 0}
+  .hero{padding:40px 0 64px}
+  .index .panel{padding:32px 20px 36px}
+  .toc{grid-template-columns:1fr;row-gap:0}
+  .toc a{padding:12px 0 14px}
+  .toc .n{font-size:var(--tb-step-3);min-width:44px}
+  .head{margin-bottom:40px}
+  nav li:not(.keep){display:none}
+  header .home{width:108px}
+  .cards,.kit,.motifs,.mgrid,.worked{grid-template-columns:1fr;gap:40px}
+  .swatches{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}
+  .grounds{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px}
+  .sw .chip{font-size:var(--tb-step-2)}
+  .construct{padding:32px 20px 28px}
+  .tpl{padding:32px 20px 36px}
+  .tag{padding:10px 12px 12px}
+  .tag strong{font-size:1.05rem}
+  .tag span{font-size:.62rem}
+  .collage .tag{max-width:52%}
+  .bd{padding:6px;box-shadow:6px 8px 0 var(--tb-paste-shadow)}
+  .cur svg{width:36px;height:36px}
+  .cur b{font-size:.72rem;padding:2px 8px;margin-left:22px}
+  .ladder li{grid-template-columns:64px 1fr}
+  .ladder li small:nth-child(2){display:none}
+  .heads li{grid-template-columns:1fr;gap:6px}
+  .heads q{font-size:var(--tb-step-3)}
+  .ctab td.nm{font-size:.8rem}
+  .ctab .v{white-space:normal}
+  .gridviz{height:140px;column-gap:8px}
+  .gridviz .blk{top:20px;height:100px;font-size:.66rem;padding:6px}
+  .gridviz .c5{width:calc((100% - 88px) / 12 * 5 + 32px)}
+  .gridviz .c6{width:calc((100% - 88px) / 12 * 6 + 40px)}
+  .ratio span{font-size:.62rem;padding:4px 6px}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="wm" viewBox="34 -1500 7803 1520"><path fill="currentColor" d="M301 0V-15H521V-1485H427Q350 -1485 288.0 -1446.5Q226 -1408 178.0 -1341.0Q130 -1274 98.0 -1187.5Q66 -1101 49 -1006H34V-1500H1373V-1006H1358Q1342 -1101 1309.5 -1187.5Q1277 -1274 1229.5 -1341.0Q1182 -1408 1119.5 -1446.5Q1057 -1485 980 -1485H886V-15H1106V0Z M2130.0 20Q2057.0 20 2001.0 1.5Q1945.0 -17 1913.0 -56.5Q1881.0 -96 1881.0 -158V-609Q1881.0 -681 1866.5 -752.5Q1852.0 -824 1811.0 -871.0Q1770.0 -918 1690.0 -918Q1646.0 -918 1592.0 -907.5Q1538.0 -897 1489.0 -873.5Q1440.0 -850 1408.5 -812.0Q1377.0 -774 1377.0 -717H1360.0Q1360.0 -785 1414.0 -828.0Q1468.0 -871 1541.0 -871Q1617.0 -871 1672.5 -832.5Q1728.0 -794 1728.0 -721Q1728.0 -645 1671.5 -604.0Q1615.0 -563 1541.0 -563Q1462.0 -563 1410.0 -605.0Q1358.0 -647 1358.0 -717Q1358.0 -778 1392.0 -819.5Q1426.0 -861 1482.5 -887.0Q1539.0 -913 1607.5 -924.5Q1676.0 -936 1744.0 -936Q1904.0 -936 2006.5 -895.5Q2109.0 -855 2158.0 -781.5Q2207.0 -708 2207.0 -609V-105Q2207.0 -73 2223.5 -50.5Q2240.0 -28 2278.0 -28Q2304.0 -28 2345.0 -51.0Q2386.0 -74 2413.0 -129L2424.0 -122Q2392.0 -52 2313.5 -16.0Q2235.0 20 2130.0 20ZM1573.0 20Q1443.0 20 1365.5 -46.5Q1288.0 -113 1288.0 -227Q1288.0 -361 1404.5 -434.0Q1521.0 -507 1734.0 -507H1974.0V-494H1832.0Q1763.0 -494 1720.0 -455.0Q1677.0 -416 1658.0 -362.0Q1639.0 -308 1639.0 -261Q1639.0 -214 1649.0 -175.5Q1659.0 -137 1681.5 -114.0Q1704.0 -91 1740.0 -91Q1778.0 -91 1810.0 -120.0Q1842.0 -149 1861.5 -209.0Q1881.0 -269 1881.0 -361H1892.0Q1892.0 -241 1854.5 -155.5Q1817.0 -70 1746.0 -25.0Q1675.0 20 1573.0 20Z M3200.0 20Q3069.0 20 2989.0 -72.5Q2909.0 -165 2888.0 -335V0H2425.0V-15H2561.0V-1485H2425.0V-1500H2888.0V-586Q2909.0 -755 2988.5 -846.5Q3068.0 -938 3200.0 -938Q3309.0 -938 3405.5 -881.0Q3502.0 -824 3562.5 -717.0Q3623.0 -610 3623.0 -460Q3623.0 -310 3562.5 -202.5Q3502.0 -95 3405.5 -37.5Q3309.0 20 3200.0 20ZM3123.0 -20Q3170.0 -20 3198.5 -68.5Q3227.0 -117 3240.0 -214.5Q3253.0 -312 3253.0 -460Q3253.0 -608 3240.0 -705.0Q3227.0 -802 3198.5 -850.0Q3170.0 -898 3123.0 -898Q3067.0 -898 3013.0 -850.0Q2959.0 -802 2923.5 -705.0Q2888.0 -608 2888.0 -460Q2888.0 -312 2923.5 -214.5Q2959.0 -117 3013.0 -68.5Q3067.0 -20 3123.0 -20Z M4100.0 20Q3990.0 20 3928.0 -19.5Q3866.0 -59 3840.5 -127.0Q3815.0 -195 3815.0 -282V-905H3679.0V-920H4142.0V-284Q4142.0 -200 4148.5 -152.0Q4155.0 -104 4173.5 -84.0Q4192.0 -64 4227.0 -64Q4282.0 -64 4320.0 -101.5Q4358.0 -139 4381.0 -200.5Q4404.0 -262 4414.5 -333.5Q4425.0 -405 4425.0 -474L4438.0 -476Q4438.0 -401 4425.5 -315.0Q4413.0 -229 4378.5 -153.0Q4344.0 -77 4277.0 -28.5Q4210.0 20 4100.0 20ZM4425.0 0V-905H4300.0V-920H4752.0V-15H4887.0V0Z M5416.0 -1500V-15H5591.0V0H4913.0V-15H5089.0V-1485H4913.0V-1500Z M6495.0 20Q6422.0 20 6366.0 1.5Q6310.0 -17 6278.0 -56.5Q6246.0 -96 6246.0 -158V-609Q6246.0 -681 6231.5 -752.5Q6217.0 -824 6176.0 -871.0Q6135.0 -918 6055.0 -918Q6011.0 -918 5957.0 -907.5Q5903.0 -897 5854.0 -873.5Q5805.0 -850 5773.5 -812.0Q5742.0 -774 5742.0 -717H5725.0Q5725.0 -785 5779.0 -828.0Q5833.0 -871 5906.0 -871Q5982.0 -871 6037.5 -832.5Q6093.0 -794 6093.0 -721Q6093.0 -645 6036.5 -604.0Q5980.0 -563 5906.0 -563Q5827.0 -563 5775.0 -605.0Q5723.0 -647 5723.0 -717Q5723.0 -778 5757.0 -819.5Q5791.0 -861 5847.5 -887.0Q5904.0 -913 5972.5 -924.5Q6041.0 -936 6109.0 -936Q6269.0 -936 6371.5 -895.5Q6474.0 -855 6523.0 -781.5Q6572.0 -708 6572.0 -609V-105Q6572.0 -73 6588.5 -50.5Q6605.0 -28 6643.0 -28Q6669.0 -28 6710.0 -51.0Q6751.0 -74 6778.0 -129L6789.0 -122Q6757.0 -52 6678.5 -16.0Q6600.0 20 6495.0 20ZM5938.0 20Q5808.0 20 5730.5 -46.5Q5653.0 -113 5653.0 -227Q5653.0 -361 5769.5 -434.0Q5886.0 -507 6099.0 -507H6339.0V-494H6197.0Q6128.0 -494 6085.0 -455.0Q6042.0 -416 6023.0 -362.0Q6004.0 -308 6004.0 -261Q6004.0 -214 6014.0 -175.5Q6024.0 -137 6046.5 -114.0Q6069.0 -91 6105.0 -91Q6143.0 -91 6175.0 -120.0Q6207.0 -149 6226.5 -209.0Q6246.0 -269 6246.0 -361H6257.0Q6257.0 -241 6219.5 -155.5Q6182.0 -70 6111.0 -25.0Q6040.0 20 5938.0 20Z"/><rect style="fill:var(--wm-dot,#D42A18)" x="7237" y="-600" width="600" height="600"/></symbol>
+  <symbol id="cursor" viewBox="0 0 24 24"><path d="M3 2 L3 20 L8 15.5 L11.5 22.5 L15 21 L11.6 14 L18 14 Z"/></symbol>
+</svg>
+<img class="grain" src="assets/paper/paper-grain.webp" alt="" aria-hidden="true" width="600" height="600" decoding="async">
+<header>
+  <div class="wrap">
+    <a class="home" href="#top" aria-label="Tabula brand guide, top"><svg class="wm" viewBox="34 -1500 7803 1520" aria-hidden="true"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></a>
+    <nav aria-label="Sections"><ul>
+      <li class="opt"><a href="#contents">Contents</a></li>
+      <li><a href="#colour">Colour</a></li>
+      <li><a href="#type">Type</a></li>
+      <li><a href="#motifs">Motifs</a></li>
+      <li class="opt"><a href="#codex">Codex</a></li>
+      <li><a href="#kit">Kit</a></li>
+      <li class="keep"><button class="btn s scheme" type="button" id="scheme" aria-live="polite">Auto</button></li>
+    </ul></nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="sect hero" aria-labelledby="h1">
+  <div class="wrap grid">
+    <div class="hero-copy">
+      <div class="kicker"><i></i>Brand guide · TAB-196</div>
+      <h1 id="h1">Cut it out. <em>Paste it in.</em></h1>
+      <p class="lede">How Tabula looks: an art magazine about working together. Real things pasted onto cream paper, on a strict grid, in ink, cobalt and one red.</p>
+      <small>This page is built with the profile itself, from <code>tokens.css</code> and the asset kit. Written guide: <code>docs/brand.md</code>.</small>
+    </div>
+    <div class="collage" data-m role="img" aria-label="A collage: the Tabula board pasted onto red paper with tape, connectors between its frames, three named cursors, a photographed hand pointing at it, a red marker circle and a blue asterisk.">
+      <div class="redblk L" style="--dx:40px;--dy:-24px;--d:0s"></div>
+      <div class="blueblk L" style="--dx:-30px;--dy:30px;--d:.1s"></div>
+      <div class="bd L keep-rot" style="--rot:-1.4deg;--dy:32px;--rr:-3deg;--d:.2s">
+        <div class="stage">
+          <img src="assets/board/board-ui.webp" width="1400" height="1024" alt="" decoding="async" fetchpriority="high">
+          <svg class="ov" viewBox="0 0 1400 1024" aria-hidden="true">
+            <path class="l" pathLength="1" d="M566 316 H950"/>
+            <path class="h" d="M972 316 L946 301 L946 331 Z"/>
+            <path class="l" pathLength="1" d="M1178 519 V572 H1000 V598"/>
+            <path class="h" d="M1000 622 L985 596 L1015 596 Z"/>
+            <path class="l" pathLength="1" d="M363 519 V572 H540 V598"/>
+            <path class="h" d="M540 622 L525 596 L555 596 Z"/>
+          </svg>
+          <div class="cur c1" style="left:41%;top:41%;--cd:1.3s"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Mara</b></div>
+          <div class="cur c2" style="left:9%;top:62%;--cd:1.4s"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Idris</b></div>
+          <div class="cur c3" style="left:66%;top:22%;--cd:1.5s"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Noor</b></div>
+        </div>
+      </div>
+      <img class="tape t1 L keep-rot" style="--rot:-38deg;--dy:-20px;--rr:3deg;--d:.55s" src="assets/tape/tape-long.webp" width="534" height="108" alt="" decoding="async">
+      <img class="tape t2 L keep-rot" style="--rot:24deg;--dy:-20px;--rr:-3deg;--d:.65s" src="assets/tape/tape-short.webp" width="286" height="90" alt="" decoding="async">
+      <img class="hand mul L" style="--d:.45s" src="assets/cutouts/hand-point.webp" width="1000" height="363" alt="" decoding="async">
+      <img class="mk circ L" style="--d:.8s;--dy:0px" src="assets/marks/mark-circle.webp" width="452" height="338" alt="" decoding="async">
+      <img class="mk star L" style="--d:.9s;--dy:0px" src="assets/marks/mark-asterisk.webp" width="357" height="337" alt="" decoding="async">
+      <div class="tag L keep-rot" style="--rot:-2deg;--dy:28px;--d:.7s"><span>Nº 00</span><strong>The brand, pasted in.</strong></div>
+    </div>
+  </div>
+</section>
+
+<section id="contents" class="index" aria-labelledby="h-toc">
+  <div class="wrap">
+    <div class="panel">
+      <div class="top">
+        <div>
+          <div class="kicker"><i></i>Contents</div>
+          <h2 id="h-toc">In this issue.</h2>
+        </div>
+        <p>Eleven pages, the same as in <code>docs/brand.md</code>. Jump to any of them.</p>
+      </div>
+      <ol class="toc">
+        <li><a href="#essence"><span class="n">01</span><strong>Essence</strong><span>What the profile says.</span></a></li>
+        <li><a href="#wordmark"><span class="n">02</span><strong>Wordmark</strong><span>Tabula, with a red square.</span></a></li>
+        <li><a href="#colour"><span class="n">03</span><strong>Colour</strong><span>Paper, ink, cobalt, one red.</span></a></li>
+        <li><a href="#contrast"><span class="n">04</span><strong>Contrast</strong><span>Every pair, light and dark.</span></a></li>
+        <li><a href="#type"><span class="n">05</span><strong>Type</strong><span>Bodoni Moda and Instrument Sans.</span></a></li>
+        <li><a href="#layout"><span class="n">06</span><strong>Layout</strong><span>Twelve columns, 8 px steps, bands.</span></a></li>
+        <li><a href="#motifs"><span class="n">07</span><strong>Motifs</strong><span>Torn paper, tape, cutouts, marks.</span></a></li>
+        <li><a href="#motion"><span class="n">08</span><strong>Motion</strong><span>Play once, then stay still.</span></a></li>
+        <li><a href="#codex"><span class="n">09</span><strong>Illustration</strong><span>Briefs for Codex.</span></a></li>
+        <li><a href="#voice"><span class="n">10</span><strong>Voice</strong><span>Statement, italic turn.</span></a></li>
+        <li><a href="#kit"><span class="n">11</span><strong>Asset kit</strong><span>Files to download.</span></a></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="essence" class="sect slice" aria-labelledby="h-ess">
+  <div class="wrap grid">
+    <div class="copy l">
+      <div class="kicker"><b>01</b>Essence</div>
+      <h2 id="h-ess">Paste your thinking <em>together.</em></h2>
+      <p>The collage is what a team does on a board: bring pieces, pin them down, circle what matters. The editorial frame says it is considered and made by people.</p>
+      <ul class="ticks">
+        <li>Local-first: yours before it is anyone's</li>
+        <li>Open source, free to self-host</li>
+        <li>A tool for teams, not a gadget</li>
+      </ul>
+    </div>
+    <div class="art r" aria-hidden="true" style="aspect-ratio:1 / .86">
+      <div style="left:12%;top:0;width:82%;height:76%;background:var(--tb-band-cobalt)"></div>
+      <img src="assets/paper/scrap-red.webp" width="400" height="278" alt="" loading="lazy" decoding="async" style="left:2%;top:30%;width:52%;transform:rotate(-6deg)">
+      <img class="mul" src="assets/cutouts/scissors.webp" width="440" height="440" alt="" loading="lazy" decoding="async" style="left:8%;top:14%;width:46%;transform:rotate(-14deg)">
+      <div class="tag" style="right:4%;top:16%;width:46%;transform:rotate(1.6deg)"><span>Nº 01</span><strong>Real things, real board, one grid.</strong></div>
+      <img class="tape" src="assets/tape/tape-short.webp" width="286" height="90" alt="" loading="lazy" decoding="async" style="right:14%;top:10%;width:22%;transform:rotate(8deg)">
+      <img class="mul" src="assets/cutouts/push-pin.webp" width="440" height="440" alt="" loading="lazy" decoding="async" style="right:2%;bottom:0;width:30%;transform:rotate(18deg)">
+    </div>
+  </div>
+</section>
+
+<section id="wordmark" class="sect on-blue" aria-labelledby="h-wm">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>02</b>Logo and wordmark</div></div>
+      <h2 id="h-wm">One word, <em>one square.</em></h2>
+      <p>Bodoni Moda ExtraBold, tracked −0.02em, and a square full stop. Outlined in SVG, so no font is needed.</p>
+    </div>
+    <ul class="grounds">
+      <li><div class="g" style="background:var(--tb-c-paper)"><svg class="wm" style="color:var(--tb-c-ink)" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula wordmark on paper"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><small><b>Paper</b>Ink letters, red square. <code>ink.svg</code></small></li>
+      <li><div class="g" style="background:var(--tb-c-paper-hi)"><svg class="wm" style="color:var(--tb-c-ink)" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula wordmark on light paper"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><small><b>Light paper</b>Ink letters, red square. <code>ink.svg</code></small></li>
+      <li><div class="g" style="background:var(--tb-c-ink)"><svg class="wm paper" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula wordmark on ink"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><small><b>Ink</b>Light letters, red square. <code>paper.svg</code></small></li>
+      <li><div class="g" style="background:var(--tb-c-cobalt)"><svg class="wm mono" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula wordmark on cobalt"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><small><b>Cobalt</b>All light paper. <code>on-cobalt.svg</code></small></li>
+      <li><div class="g" style="background:var(--tb-c-red)"><svg class="wm mono" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula wordmark on red"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><small><b>Red</b>All light paper. <code>on-cobalt.svg</code></small></li>
+    </ul>
+    <div class="grid" style="margin-top:72px;align-items:start">
+      <div class="construct">
+        <div class="lab">Construction and clear space</div>
+        <figure>
+          <svg class="wm" viewBox="-1466 -3000 10803 4520" role="img" aria-label="The wordmark with its clear space: one cap height on every side.">
+            <rect x="-1466" y="-3000" width="10803" height="4520" fill="none" stroke="#2347F5" stroke-width="18" stroke-dasharray="90 70"/>
+            <rect x="34" y="-1500" width="7803" height="1520" fill="none" stroke="#2347F5" stroke-width="12" stroke-dasharray="40 40"/>
+            <use href="#wm" x="34" y="-1500" width="7803" height="1520"/>
+            <line x1="-1466" y1="-1500" x2="34" y2="-1500" stroke="#D42A18" stroke-width="16"/>
+            <line x1="-1466" y1="0" x2="34" y2="0" stroke="#D42A18" stroke-width="16"/>
+            <line x1="-730" y1="-1500" x2="-730" y2="0" stroke="#D42A18" stroke-width="16"/>
+          </svg>
+          <figcaption>Outer dashed line: the clear space, one cap height (the red measure) on every side. Nothing enters it.</figcaption>
+        </figure>
+        <dl>
+          <dt>Face</dt><dd>Bodoni Moda 800, optical size 28, tracking −0.02em</dd>
+          <dt>Square</dt><dd>0.30em, 0.22em after the "a", on the baseline</dd>
+          <dt>Colours</dt><dd>Ink <code>#121216</code>, red <code>#D42A18</code></dd>
+          <dt>Minimum</dt><dd>80 px wide on screen, 20 mm in print</dd>
+        </dl>
+      </div>
+      <div class="wm-donts">
+        <h3>Don'ts</h3>
+        <ul class="ticks no">
+          <li>Tilt, tear, tape or collage it. The name is set straight.</li>
+          <li>Recolour the letters red or cobalt.</li>
+          <li>Put the red square on cobalt (1.26:1).</li>
+          <li>Swap the square for a dot, a period or an asterisk.</li>
+          <li>Outline it, shadow it, stretch it or retype it.</li>
+          <li>Set it on a busy cutout or under heavy grain.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="colour" class="sect" aria-labelledby="h-col">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>03</b>Colour</div></div>
+      <h2 id="h-col">Cream paper, <em>one red.</em></h2>
+      <p>Six colours, the same hex in every page and every image brief. The numbers on each chip are measured live in your browser.</p>
+    </div>
+    <ul class="swatches">
+      <li class="sw"><div class="chip" style="background:var(--tb-c-paper)"><span style="color:var(--tb-c-ink)">Aa</span><span class="cr"><span style="color:var(--tb-c-ink)" data-cr>Ink</span><span style="color:var(--tb-c-red)" data-cr>Red</span></span></div><h3>Paper</h3><code>#ECE9E2 · --tb-c-paper</code><p>Page ground. The dominant colour.</p></li>
+      <li class="sw"><div class="chip" style="background:var(--tb-c-paper-hi)"><span style="color:var(--tb-c-ink)">Aa</span><span class="cr"><span style="color:var(--tb-c-ink)" data-cr>Ink</span><span style="color:var(--tb-c-red)" data-cr>Red</span></span></div><h3>Light paper</h3><code>#F7F5F0 · --tb-c-paper-hi</code><p>Torn sheets, panels, header, board ground.</p></li>
+      <li class="sw"><div class="chip" style="background:var(--tb-c-ink)"><span style="color:var(--tb-c-paper-hi)">Aa</span><span class="cr"><span style="color:var(--tb-c-paper-hi)" data-cr>Light</span><span style="color:var(--tb-c-red)" data-cr>Red</span></span></div><h3>Ink</h3><code>#121216 · --tb-c-ink</code><p>Text, rules, buttons, ink bands.</p></li>
+      <li class="sw"><div class="chip" style="background:var(--tb-c-cobalt)"><span style="color:var(--tb-c-paper-hi)">Aa</span><span class="cr"><span style="color:var(--tb-c-paper-hi)" data-cr>Light</span><span style="color:var(--tb-c-ink)" data-cr>Ink</span></span></div><h3>Cobalt</h3><code>#2347F5 · --tb-c-cobalt</code><p>Full-width bands, focus rings.</p></li>
+      <li class="sw"><div class="chip" style="background:var(--tb-c-red)"><span style="color:var(--tb-c-paper-hi)">Aa</span><span class="cr"><span style="color:var(--tb-c-paper-hi)" data-cr>Light</span><span style="color:var(--tb-c-ink)" data-cr>Ink</span></span></div><h3>Red</h3><code>#D42A18 · --tb-c-red</code><p>The full stop, italic turns, numerals, marks.</p></li>
+      <li class="sw"><div class="chip" style="background:var(--tb-c-grey)"><span style="color:var(--tb-c-paper-hi)">Aa</span><span class="cr"><span style="color:var(--tb-c-paper)" data-cr data-on="paper">On paper</span><span style="color:var(--tb-c-paper-hi)" data-cr data-on="paper-hi">On light</span></span></div><h3>Grey</h3><code>#55555C · --tb-c-grey</code><p>Secondary text on paper and light paper.</p></li>
+    </ul>
+    <div class="ratio" role="img" aria-label="Ratio of use: about 60 percent paper, 25 percent cobalt, 10 percent ink, 5 percent red.">
+      <span style="flex:60;background:var(--tb-c-paper-hi);color:var(--tb-c-ink)">Paper 60</span>
+      <span style="flex:25;background:var(--tb-c-cobalt);color:var(--tb-c-paper-hi)">Cobalt 25</span>
+      <span style="flex:10;background:var(--tb-c-ink);color:var(--tb-c-paper-hi)">Ink 10</span>
+      <span style="flex:5;background:var(--tb-c-red);color:var(--tb-c-paper-hi)">5</span>
+    </div>
+    <p class="ratio-note">Paper dominates. Cobalt carries whole sections, ink appears once or twice a page, and red is only ever an accent: never a full band, never body text on cream.</p>
+    <div class="pairs">
+      <div>
+        <h3>Allowed text</h3>
+        <ul class="ticks">
+          <li>Ink on paper and light paper: everything</li>
+          <li>Grey on paper and light paper: secondary text</li>
+          <li>Light paper on cobalt, ink and red: everything</li>
+          <li>Red on light paper: any size</li>
+          <li>Red on paper: large text only, like the italic turn</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Never</h3>
+        <ul class="ticks no">
+          <li>Ink on cobalt, cobalt on ink (2.93)</li>
+          <li>Red on cobalt, as text or as a mark (1.26)</li>
+          <li>Ink on red for body text (3.69)</li>
+          <li>Red body text on cream (4.18)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="contrast" class="sect on-ink" aria-labelledby="h-con">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>04</b>Contrast</div></div>
+      <h2 id="h-con">Every pair, <em>measured.</em></h2>
+      <p>WCAG 2: text 4.5, large text 3, marks and rules 3. The dark scheme is a proposal: ink ground, light text, lighter red and cobalt.</p>
+    </div>
+    <div class="ctabs" id="ctabs"></div>
+  </div>
+</section>
+
+<section id="type" class="sect" aria-labelledby="h-type">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>05</b>Type</div></div>
+      <h2 id="h-type">Two faces, <em>one turn.</em></h2>
+      <p>Bodoni Moda for display, Instrument Sans for everything else. One italic word per headline.</p>
+    </div>
+    <div class="spec">
+      <div class="big">
+        <div class="lab" style="color:var(--tb-text-muted)">Bodoni Moda 800 + Italic 500</div>
+        <p class="sample" aria-hidden="true">Run the room, <em>not the tool.</em></p>
+      </div>
+      <div class="meta">
+        <dl>
+          <dt>Display</dt><dd>Bodoni Moda 800</dd>
+          <dt>Turn</dt><dd>Bodoni Moda Italic 500</dd>
+          <dt>Leading</dt><dd>1.02</dd>
+          <dt>Tracking</dt><dd>−0.01em</dd>
+          <dt>Body</dt><dd>Instrument Sans 400 / 600 / 700</dd>
+          <dt>Leading</dt><dd>1.55, measure 45–60ch</dd>
+        </dl>
+      </div>
+      <div class="body">
+        <div class="lab" style="color:var(--tb-text-muted)">Instrument Sans 400, lede at step 1</div>
+        <p class="sample">Tabula is an infinite whiteboard for teams. It works offline in your browser and syncs live the moment everyone is in the room.</p>
+        <p>Body copy at 17 px, line height 1.55, at most 60 characters a line. Labels are the only uppercase text: 0.8rem, weight 700, tracked 0.18em. Strong text is weight 600.</p>
+        <div class="kicker" style="margin:24px 0 0"><b>05</b>Kicker with a number</div>
+        <div class="kicker" style="margin:12px 0 0"><i></i>Kicker without one</div>
+      </div>
+      <div class="bits">
+        <div>
+          <div class="lab" style="color:var(--tb-text-muted)">Scale, ratio 1.25 on 17 px</div>
+          <ol class="ladder">
+            <li><small>step 7</small><small>5.1rem</small><span style="font-size:var(--tb-step-7)">h1</span></li>
+            <li><small>step 6</small><small>4.06rem</small><span style="font-size:var(--tb-step-6)">h2</span></li>
+            <li><small>step 4</small><small>2.6rem</small><span style="font-size:var(--tb-step-4)">Numerals</span></li>
+            <li><small>step 3</small><small>2.08rem</small><span style="font-size:var(--tb-step-3)">Wordmark</span></li>
+            <li><small>step 2</small><small>1.66rem</small><span style="font-size:var(--tb-step-2)">Card titles</span></li>
+            <li><small>step 1</small><small>1.33rem</small><span style="font-size:var(--tb-step-1)">Lede and h3</span></li>
+            <li><small>step 0</small><small>1.0625rem</small><span style="font-size:var(--tb-step-0);font-family:var(--tb-font-body);font-weight:400">Body text</span></li>
+            <li><small>step −1</small><small>0.8rem</small><span style="font-size:var(--tb-step--1);font-family:var(--tb-font-body);font-weight:700;letter-spacing:.18em;text-transform:uppercase">Labels</span></li>
+          </ol>
+        </div>
+        <div>
+          <div class="lab" style="color:var(--tb-text-muted)">Numbered section, as in the contents index</div>
+          <div class="numdemo"><span class="n">07</span><span><strong>Export</strong><span>PNG, SVG, Markdown, Mermaid and more.</span></span></div>
+        </div>
+      </div>
+      <div class="typenos">
+        <h3 style="font-size:var(--tb-step-2)">Don'ts</h3>
+        <ul class="ticks no">
+          <li>A third typeface, or Bodoni for body text or anything under 17 px</li>
+          <li>A whole headline in italic: one turn, at the end</li>
+          <li>All-caps or letter-spaced Bodoni, underlined headlines</li>
+          <li>Light Bodoni weights at display size</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="layout" class="sect on-blue" aria-labelledby="h-lay">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>06</b>Layout</div></div>
+      <h2 id="h-lay">A strict grid <em>underneath.</em></h2>
+      <p>The collage can tilt because the grid never does. Twelve columns, 24 px gutters, 1320 px at most.</p>
+    </div>
+    <div class="gridviz" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><div class="blk c5">Copy · 5 col</div><div class="blk c6">Art · 6 col</div></div>
+    <p class="gridnote">A feature slice: copy on 5 columns, art on 6, one empty column between. The next slice mirrors it. Margins 32 px, 16 px on phones; below 900 px the copy stacks above the art.</p>
+    <div class="lay2">
+      <div>
+        <h3>Spacing, 8 px steps</h3>
+        <ul class="spaces">
+          <li>4<i style="width:4px"></i></li><li>8<i style="width:8px"></i></li><li>16<i style="width:16px"></i></li><li>24<i style="width:24px"></i></li><li>32<i style="width:32px"></i></li><li>48<i style="width:48px"></i></li><li>56<i style="width:56px"></i></li><li>72<i style="width:72px"></i></li><li>96<i style="width:96px"></i></li><li>120<i style="width:120px"></i></li>
+        </ul>
+        <p style="margin-top:16px;font-size:.94rem">Sections: 120 px top and bottom, 72 px on phones. Section heads: 56 px to the content.</p>
+      </div>
+      <div class="rhythm">
+        <h3>Section rhythm</h3>
+        <ol class="bands">
+          <li class="p"><b>00</b>Hero, art right<small>cream</small></li>
+          <li class="t"><b>·</b>Contents index, torn sheet<small>light paper</small></li>
+          <li class="p"><b>01</b>Slice, art right<small>cream</small></li>
+          <li class="c"><b>02</b>Slice, art left<small>cobalt</small></li>
+          <li class="p"><b>03</b>Strip of four cards<small>cream</small></li>
+          <li class="c"><b>04</b>List on a torn sheet<small>cobalt</small></li>
+          <li class="p"><b>05</b>Full-width torn strip<small>cream</small></li>
+          <li class="k"><b>06</b>Slice, art left<small>ink</small></li>
+        </ol>
+        <p style="margin-top:16px;font-size:.94rem">Never two bands of one colour in a row. One focal point per section.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="motifs" class="sect" aria-labelledby="h-mot">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>07</b>Motifs</div></div>
+      <h2 id="h-mot">Eight pieces, <em>used sparingly.</em></h2>
+      <p>Per section: at most one red block, one cobalt block, two tape strips, two cutouts and one mark.</p>
+    </div>
+    <ul class="motifs">
+      <li class="motif"><div class="demo d-torn" aria-hidden="true"><div class="blue"></div><div class="tag sheet"><span>Torn edge</span><strong>Every edge torn, by a polygon.</strong></div></div>
+        <h3>Torn paper</h3><dl><div><dt>When:</dt> <dd>sheets that hold text, and full-width strips (<code>--tb-torn-x</code>).</dd></div><div><dt>How much:</dt> <dd>one torn panel per section, tilt up to 2.4°, 16 px padding inside.</dd></div><div><dt>Don't:</dt> <dd>tear buttons, fields, photos, the header or the wordmark.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-tape" aria-hidden="true"><div class="tag sheet"></div><img class="t1 tape" src="assets/tape/tape-long.webp" width="534" height="108" alt="" loading="lazy"><img class="t2 tape" src="assets/tape/tape-short.webp" width="286" height="90" alt="" loading="lazy"></div>
+        <h3>Tape strips</h3><dl><div><dt>When:</dt> <dd>to pin a sheet or the board to the page.</dd></div><div><dt>How much:</dt> <dd>one or two per piece across a corner, about a quarter of its width, 4° to 38°.</dd></div><div><dt>Don't:</dt> <dd>tape over text or the wordmark, or use tape as a divider.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-cut" aria-hidden="true"><img class="scrap" src="assets/paper/scrap-blue.webp" width="376" height="272" alt="" loading="lazy"><img class="o1 mul" src="assets/cutouts/key.webp" width="667" height="720" alt="" loading="lazy"><img class="o2 mul" src="assets/cutouts/watch.webp" width="324" height="440" alt="" loading="lazy"></div>
+        <h3>Cut-out photos</h3><dl><div><dt>When:</dt> <dd>one real object that stands for the section, or a hand that points or writes.</dd></div><div><dt>How much:</dt> <dd>one or two per section, greyscale, multiplied onto paper.</dd></div><div><dt>Don't:</dt> <dd>colour photos, faces, logos, glossy stock objects.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-mark" aria-hidden="true"><div class="word">Vote</div><img class="circ" src="assets/marks/mark-circle.webp" width="452" height="338" alt="" loading="lazy"><img class="ul" src="assets/marks/mark-underline.webp" width="560" height="109" alt="" loading="lazy"><img class="ast" src="assets/marks/mark-asterisk.webp" width="357" height="337" alt="" loading="lazy"></div>
+        <h3>Hand marks</h3><dl><div><dt>When:</dt> <dd>to point at the one thing that matters: circle, underline, asterisk, tick, arrow.</dd></div><div><dt>How much:</dt> <dd>one per section (this demo breaks the rule to show three).</dd></div><div><dt>Don't:</dt> <dd>write words, draw connectors, or put red on cobalt.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-board" aria-hidden="true"><div class="mount"><img src="assets/board/board-ui.webp" width="1400" height="1024" alt="" loading="lazy"></div><img class="tape" src="assets/tape/tape-short.webp" width="286" height="90" alt="" loading="lazy"></div>
+        <h3>The pasted board</h3><dl><div><dt>When:</dt> <dd>wherever the product appears: the real UI, mounted on light paper, hard ink shadow, tilted about 1.3°.</dd></div><div><dt>How much:</dt> <dd>one per section; it is the focal point.</dd></div><div><dt>Don't:</dt> <dd>redraw it as an illustration; draw connectors as an SVG overlay, never in the image.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-cur" aria-hidden="true"><div class="cur c1"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Mara</b></div><div class="cur c2"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Idris</b></div><div class="cur c3"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Noor</b></div></div>
+        <h3>Named cursors</h3><dl><div><dt>When:</dt> <dd>on or near the board, to show people working together.</dd></div><div><dt>How much:</dt> <dd>up to three in the hero, one in a slice; 36 to 40 px, solid fill, light edge.</dd></div><div><dt>Don't:</dt> <dd>real people's names, thin outline cursors.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-grain" aria-hidden="true"><img class="full" src="assets/paper/paper-grain.webp" width="600" height="600" alt="" loading="lazy"><img class="low" src="assets/paper/paper-grain.webp" width="600" height="600" alt="" loading="lazy"><b style="left:10px">100 %</b><b style="right:10px">20 %, as used</b></div>
+        <h3>Paper texture</h3><dl><div><dt>When:</dt> <dd>once, fixed over the whole page.</dd></div><div><dt>How much:</dt> <dd>multiply at 0.2 (screen at 0.06 in dark).</dd></div><div><dt>Don't:</dt> <dd>stack it, raise it, or texture single elements.</dd></div></dl></li>
+      <li class="motif"><div class="demo d-scrap" aria-hidden="true"><img class="s1" src="assets/paper/scrap-red.webp" width="400" height="278" alt="" loading="lazy"><img class="s2" src="assets/paper/scrap-news.webp" width="464" height="164" alt="" loading="lazy"><img class="s3 mul" src="assets/cutouts/bulldog-clip.webp" width="440" height="440" alt="" loading="lazy"></div>
+        <h3>Paper scraps</h3><dl><div><dt>When:</dt> <dd>to back a cutout, or as the colour block behind a sheet.</dd></div><div><dt>How much:</dt> <dd>one scrap per composition: red, cobalt, light paper or newsprint.</dd></div><div><dt>Don't:</dt> <dd>stack scraps into a pile, or tear text into them.</dd></div></dl></li>
+    </ul>
+  </div>
+</section>
+
+<section id="motion" class="sect on-blue" aria-labelledby="h-mo">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>08</b>Motion</div></div>
+      <h2 id="h-mo">Play once, <em>then stay still.</em></h2>
+      <p>Four to six moments a page. Each plays when it comes into view, never again. Only transform, opacity and stroke.</p>
+    </div>
+    <ul class="mgrid">
+      <li class="mo"><div class="stage2 m-settle" data-m aria-hidden="true">
+          <div class="tag sheet L keep-rot" style="--rot:-1.6deg;--rr:-3deg;--d:.1s"><span>Settle</span><strong>Layers move 24 px into place.</strong></div>
+          <img class="tape L keep-rot" style="--rot:-28deg;--rr:3deg;--dy:-20px;--d:.5s" src="assets/tape/tape-long.webp" width="534" height="108" alt="">
+        </div>
+        <h3>Settle and tape press</h3><p>Fade 500 ms, move 800 ms, 100 ms stagger. The tape lands 3° off and eases to rest.</p><button class="btn s" type="button" data-replay>Replay</button></li>
+      <li class="mo"><div class="stage2 m-draw" data-m aria-hidden="true">
+          <div class="mount"><div class="stage"><img src="assets/board/board-ui.webp" width="1400" height="1024" alt="" loading="lazy">
+            <svg class="ov" viewBox="0 0 1400 1024"><path class="l" pathLength="1" d="M566 316 H950"/><path class="h" d="M972 316 L946 301 L946 331 Z"/><path class="l" pathLength="1" d="M1178 519 V572 H1000 V598"/><path class="h" d="M1000 622 L985 596 L1015 596 Z"/></svg></div></div>
+        </div>
+        <h3>Lines draw</h3><p>Connectors and guides draw themselves in 700 ms with stroke-dashoffset; the arrowhead appears as the line arrives.</p><button class="btn s" type="button" data-replay>Replay</button></li>
+      <li class="mo"><div class="stage2 m-glide" data-m aria-hidden="true">
+          <div class="note"></div>
+          <div class="cur c3" style="--cd:.2s"><svg aria-hidden="true"><use href="#cursor"/></svg><b>Noor</b></div>
+        </div>
+        <h3>Cursor glide</h3><p>A named cursor glides about 40 px onto its note in 800 ms, once.</p><button class="btn s" type="button" data-replay>Replay</button></li>
+      <li class="mo"><div class="stage2 m-poll" data-m aria-hidden="true">
+          <div class="ui"><div class="q">Which day for the retro?</div>
+            <div class="bar"><span class="d">Tue</span><span><i style="--v:.45"></i></span><b>4</b></div>
+            <div class="bar win"><span class="d">Thu</span><span><i style="--v:.85;--d:.1s"></i></span><b>7</b></div>
+            <div class="bar"><span class="d">Fri</span><span><i style="--v:.22;--d:.2s"></i></span><b>2</b></div>
+            <div class="dots"><i style="--d:.5s"></i><i style="--d:.6s"></i><i style="--d:.7s"></i></div>
+          </div>
+        </div>
+        <h3>Fill and drop</h3><p>Bars fill in 900 ms; vote dots drop 28 px in 600 ms, 100 ms apart.</p><button class="btn s" type="button" data-replay>Replay</button></li>
+      <li class="mo"><div class="stage2 m-sway" data-m aria-hidden="true">
+          <div class="note"></div>
+          <img class="hand mul" src="assets/cutouts/hand-point.webp" width="1000" height="363" alt="" loading="lazy">
+        </div>
+        <h3>Idle sway</h3><p>The only loop: one hero cutout turns 0.6° over 8 s, back and forth, 2 s after it settles.</p><button class="btn s" type="button" data-replay>Replay</button></li>
+      <li class="mo"><div class="stage2 m-lift" aria-hidden="true">
+          <div class="card" style="--r:-.6deg"><div class="pap"><span class="lab">Hover me</span><h3>Paper lifts</h3><p>3 px, ink shadow, 350 ms.</p></div></div>
+        </div>
+        <h3>Hover lift</h3><p>A paper card lifts 3 px and shows its ink shadow. Hover only, no loop.</p></li>
+    </ul>
+    <p class="motion-off">Motion is off: your system asks for reduced motion (or JavaScript is off), so every demo shows its end state.</p>
+    <ul class="ticks" style="margin-top:56px">
+      <li>Easing cubic-bezier(0.2, 0.7, 0.2, 1) for everything but the sway</li>
+      <li>No parallax, scroll-jacking, marquees, word-by-word type or stepped timing</li>
+      <li>Content shows without JavaScript; reduced motion shows the end state</li>
+    </ul>
+  </div>
+</section>
+
+<section id="codex" class="sect on-ink" aria-labelledby="h-cx">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>09</b>Illustration with Codex</div></div>
+      <h2 id="h-cx">Generated, <em>never drawn.</em></h2>
+      <p>All art comes from Codex image briefs. SVG is only for cursors, glyphs and overlays such as connectors and guides.</p>
+    </div>
+    <ul class="palette" aria-label="The palette, in every brief">
+      <li><i style="background:#ECE9E2"></i>paper #ECE9E2</li>
+      <li><i style="background:#F7F5F0"></i>light paper #F7F5F0</li>
+      <li><i style="background:#121216"></i>ink #121216</li>
+      <li><i style="background:#D42A18"></i>signal red #D42A18</li>
+      <li><i style="background:#2347F5"></i>cobalt blue #2347F5</li>
+      <li><i style="background:#8A8A90"></i>neutral greys</li>
+    </ul>
+    <div class="tpl">
+      <div class="tbar"><span class="lab">Prompt template · fill the red slots</span><button class="btn" type="button" id="copy-tpl">Copy template</button></div>
+<pre id="tpl-text">Use your image generation tool to create <mark>&lt;N&gt;</mark> image options, saved in the current directory as option-1.png … option-<mark>&lt;N&gt;</mark>.png (each <mark>&lt;ASPECT&gt;</mark>, about <mark>&lt;W&gt;x&lt;H&gt;</mark>).
+Subject: <mark>&lt;SUBJECT: what, pose or angle, how it is cut off&gt;</mark>.
+<mark>&lt;MEDIUM: "A strictly greyscale editorial photograph, high contrast, slight film grain, soft natural shadow." or "Drawn with a thick felt marker in &lt;HEX&gt;, slightly uneven line weight and dry-brush edges, like real ink on paper."&gt;</mark>
+Background: perfectly plain <mark>&lt;pure white #FFFFFF | flat magenta #FF00FF with no shadows on it&gt;</mark>, seamless, no floor, no table.
+PALETTE (use only these exact colours): paper #ECE9E2, light paper #F7F5F0, ink #121216, signal red #D42A18, cobalt blue #2347F5, plus neutral greys.
+Style: avant-garde art-magazine collage (editorial, monochrome photography with one or two bold accent colours).
+Hard rules: no text, no lettering, no numbers, no logos, no watermarks, no real or recognisable people, no faces, no connector lines or arrows between objects, no recognisable artworks, no stock-photo look, no earthy brown or terracotta tones.
+AVOID: <mark>&lt;SPECIFIC AVOIDS: colour, other objects, borders, frames&gt;</mark></pre>
+    </div>
+    <ul class="worked">
+      <li class="card" style="--r:-.5deg"><div class="pap"><div class="thumb"><img src="assets/cutouts/watch.webp" width="324" height="440" alt="" loading="lazy"></div><span class="lab">Cutout object · 1:1</span><h3>A stopwatch</h3><p>One object, whole, wide margins, pure white. Key the white out afterwards.</p>
+        <details><summary>Full prompt</summary><p>Create 2 options (square 1:1, about 1200x1200). Subject: a single vintage stopwatch with a plain face and no numbers, photographed from slightly above, whole object in frame with wide empty margins. A strictly greyscale editorial photograph, high contrast, slight film grain, a very soft small shadow. Background: plain pure white #FFFFFF. Palette, style and hard rules as in the template. AVOID: colour, other objects, hands, borders.</p></details></div></li>
+      <li class="card" style="--r:.5deg"><div class="pap"><div class="thumb"><img src="assets/cutouts/hand-pen.webp" width="1000" height="1069" alt="" loading="lazy"></div><span class="lab">Hand gesture · 4:5</span><h3>A hand with a pen</h3><p>Enters from one edge, plain sleeve, no jewellery, no face.</p>
+        <details><summary>Full prompt</summary><p>Create 3 options (portrait 4:5, about 1200x1500). Subject: an adult hand and forearm entering from the right edge, plain unbranded rolled-up sleeve, holding a thin marker pen about to draw. Hand only: no face, no jewellery, no tattoos. A strictly greyscale editorial photograph, high contrast, slight film grain, soft natural shadow. Background: plain pure white #FFFFFF. Palette, style and hard rules as in the template. AVOID: colour, text, other objects, frames.</p></details></div></li>
+      <li class="card" style="--r:-.4deg"><div class="pap"><div class="thumb"><img src="assets/marks/mark-circle.webp" width="452" height="338" alt="" loading="lazy" style="max-height:100px"></div><span class="lab">Hand mark · 3:2 sheet</span><h3>Marker marks</h3><p>Six marks on one sheet, an even grid, red and cobalt felt marker.</p>
+        <details><summary>Full prompt</summary><p>Create 2 options (landscape 3:2, about 1800x1200). Subject: a sheet of hand-drawn marker marks in an even 3 by 2 grid, none touching: an imperfect oval circle, a wavy underline, a curved arrow with an open head, an asterisk, a pair of brackets, a tick in a loose circle. Thick felt marker in signal red #D42A18 (four) and cobalt blue #2347F5 (two), uneven line weight, dry-brush edges. Background: plain pure white #FFFFFF. Palette, style and hard rules as in the template. AVOID: text, letters, numbers, other colours, shadows, paper texture, gradients.</p></details></div></li>
+    </ul>
+    <div class="avoid">
+      <div>
+        <h3>Avoid</h3>
+        <ul class="ticks no">
+          <li>Lettering, logos and brands</li>
+          <li>Connectors or arrows inside an image</li>
+          <li>Recognisable artworks, people or faces</li>
+          <li>Glossy stock looks, gradients, colour photos</li>
+          <li>Cafe clichés, globes, suns, earthy browns</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Post-processing</h3>
+        <ol>
+          <li>Crop each piece from its sheet with ImageMagick.</li>
+          <li>Marks: fill with the token colour, alpha from the ink density.</li>
+          <li>Photos: remove the white connected to the edge, or keep the white and multiply onto paper.</li>
+          <li>Paper and tape: key the magenta out.</li>
+          <li><code>cwebp -q 85 -alpha_q 100</code> at 2× the CSS width; under 250 KB each, 350 KB for a hero.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="voice" class="sect" aria-labelledby="h-voice">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>10</b>Voice</div></div>
+      <h2 id="h-voice">Statement, <em>italic turn.</em></h2>
+      <p>A plain statement, then a short turn in italic. Short sentences, real features only.</p>
+    </div>
+    <ul class="heads">
+      <li><q>Paste your thinking <em>together.</em></q><small>Hero</small></li>
+      <li><q>One board, <em>no edges.</em></q><small>01 The board</small></li>
+      <li><q>Run the room, <em>not the tool.</em></q><small>02 Sessions</small></li>
+      <li><q>Yours first. <em>Then everyone's.</em></q><small>05 Offline</small></li>
+      <li><q>Start a board. <em>Cut the rest.</em></q><small>Final call</small></li>
+    </ul>
+    <ul class="ticks voice-rules">
+      <li>The page speaks like a magazine: "In this issue."</li>
+      <li>No hype, no "AI-powered" badges, no invented social proof</li>
+      <li>In the app and the docs, plain English as before</li>
+    </ul>
+  </div>
+</section>
+
+<section id="kit" class="sect on-blue" aria-labelledby="h-kit">
+  <div class="wrap">
+    <div class="head grid">
+      <div class="k"><div class="kicker"><b>11</b>Asset kit</div></div>
+      <h2 id="h-kit">Everything, <em>ready to paste.</em></h2>
+      <p>About 0.45 MB in <code>design/brand/assets/</code>. Images are WebP with alpha.</p>
+    </div>
+    <ul class="kit">
+      <li class="card" style="--r:-.4deg"><div class="pap"><div class="thumb"><svg class="wm" style="color:var(--tb-c-ink);width:100%" viewBox="34 -1500 7803 1520" aria-hidden="true"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg></div><h3>Wordmark</h3><p>Outlined SVG, three colourways.</p><ul>
+        <li><a href="assets/wordmark/tabula-wordmark-ink.svg" download>tabula-wordmark-ink.svg</a></li>
+        <li><a href="assets/wordmark/tabula-wordmark-paper.svg" download>tabula-wordmark-paper.svg</a></li>
+        <li><a href="assets/wordmark/tabula-wordmark-on-cobalt.svg" download>tabula-wordmark-on-cobalt.svg</a></li></ul></div></li>
+      <li class="card" style="--r:.5deg"><div class="pap"><div class="thumb"><img src="assets/tape/tape-long.webp" width="534" height="108" alt="" loading="lazy" style="width:60%;transform:rotate(-8deg)"><img src="assets/tape/tape-short.webp" width="286" height="90" alt="" loading="lazy" style="width:34%;transform:rotate(10deg)"></div><h3>Tape</h3><p>Two strips, alpha.</p><ul>
+        <li><a href="assets/tape/tape-long.webp" download>tape-long.webp</a></li>
+        <li><a href="assets/tape/tape-short.webp" download>tape-short.webp</a></li></ul></div></li>
+      <li class="card" style="--r:-.6deg"><div class="pap"><div class="thumb"><img src="assets/marks/mark-tick.webp" width="416" height="381" alt="" loading="lazy" style="width:30%"><img src="assets/marks/mark-arrow.webp" width="449" height="318" alt="" loading="lazy" style="width:34%"><img src="assets/marks/mark-asterisk.webp" width="357" height="337" alt="" loading="lazy" style="width:26%"></div><h3>Hand marks</h3><p>Solid red or cobalt, alpha.</p><ul>
+        <li><a href="assets/marks/mark-circle.webp" download>mark-circle.webp</a></li>
+        <li><a href="assets/marks/mark-underline.webp" download>mark-underline.webp</a></li>
+        <li><a href="assets/marks/mark-arrow.webp" download>mark-arrow.webp</a></li>
+        <li><a href="assets/marks/mark-asterisk.webp" download>mark-asterisk.webp</a></li>
+        <li><a href="assets/marks/mark-brackets.webp" download>mark-brackets.webp</a></li>
+        <li><a href="assets/marks/mark-tick.webp" download>mark-tick.webp</a></li></ul></div></li>
+      <li class="card" style="--r:.4deg"><div class="pap"><div class="thumb"><img src="assets/cutouts/scissors.webp" width="440" height="440" alt="" loading="lazy" style="width:30%"><img src="assets/cutouts/bulldog-clip.webp" width="440" height="440" alt="" loading="lazy" style="width:28%"><img src="assets/cutouts/push-pin.webp" width="440" height="440" alt="" loading="lazy" style="width:28%"></div><h3>Cutouts</h3><p>Greyscale, alpha. Multiply onto paper.</p><ul>
+        <li><a href="assets/cutouts/scissors.webp" download>scissors.webp</a></li>
+        <li><a href="assets/cutouts/push-pin.webp" download>push-pin.webp</a></li>
+        <li><a href="assets/cutouts/bulldog-clip.webp" download>bulldog-clip.webp</a></li>
+        <li><a href="assets/cutouts/key.webp" download>key.webp</a></li>
+        <li><a href="assets/cutouts/watch.webp" download>watch.webp</a></li>
+        <li><a href="assets/cutouts/hand-point.webp" download>hand-point.webp</a></li>
+        <li><a href="assets/cutouts/hand-pen.webp" download>hand-pen.webp</a></li></ul></div></li>
+      <li class="card" style="--r:-.3deg"><div class="pap"><div class="thumb"><img src="assets/paper/scrap-red.webp" width="400" height="278" alt="" loading="lazy" style="width:30%"><img src="assets/paper/scrap-news.webp" width="464" height="164" alt="" loading="lazy" style="width:34%"><img src="assets/paper/scrap-blue.webp" width="376" height="272" alt="" loading="lazy" style="width:28%"></div><h3>Paper</h3><p>The page grain and four torn scraps.</p><ul>
+        <li><a href="assets/paper/paper-grain.webp" download>paper-grain.webp</a></li>
+        <li><a href="assets/paper/scrap-red.webp" download>scrap-red.webp</a></li>
+        <li><a href="assets/paper/scrap-blue.webp" download>scrap-blue.webp</a></li>
+        <li><a href="assets/paper/scrap-paper.webp" download>scrap-paper.webp</a></li>
+        <li><a href="assets/paper/scrap-news.webp" download>scrap-news.webp</a></li></ul></div></li>
+      <li class="card" style="--r:.6deg"><div class="pap"><div class="thumb"><img src="assets/board/board-ui.webp" width="1400" height="1024" alt="" loading="lazy"></div><h3>Board</h3><p>The pasted board layer, without connectors.</p><ul>
+        <li><a href="assets/board/board-ui.webp" download>board-ui.webp</a></li></ul></div></li>
+      <li class="card" style="--r:-.5deg"><div class="pap"><div class="thumb"><div class="torn" style="width:70%;height:80px;background:var(--tb-c-paper-hi)"></div></div><h3>Torn edges</h3><p>Clip paths as CSS and as SVG.</p><ul>
+        <li><a href="assets/torn-edges.css" download>torn-edges.css</a></li>
+        <li><a href="assets/torn-edges.svg" download>torn-edges.svg</a></li></ul></div></li>
+      <li class="card" style="--r:.4deg"><div class="pap"><div class="thumb"><code style="font-weight:700;font-size:1.8rem;line-height:1">--tb-*</code></div><h3>Tokens</h3><p>Colour, type, space, shape, motion.</p><ul>
+        <li><a href="tokens.css" download>tokens.css</a></li>
+        <li><a href="tokens.json" download>tokens.json</a></li>
+        <li><a href="assets/LICENSE.md" download>LICENSE.md</a> (not decided)</li></ul></div></li>
+    </ul>
+    <p class="kit-note">The licence is an open question: the proposal is CC BY 4.0 for the art, with the name and the wordmark reserved. Read <a href="assets/LICENSE.md">LICENSE.md</a>.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <svg class="wm paper" viewBox="34 -1500 7803 1520" role="img" aria-label="Tabula"><use href="#wm" x="34" y="-1500" width="7803" height="1520"/></svg>
+    <p>Brand guide, TAB-196. From landing #27, Mixed Media II: Editorial. Written guide: <code>docs/brand.md</code>.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  /* WCAG 2 contrast, the same formula as docs/brand.md */
+  function lin(c){c/=255;return c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4)}
+  function lum(rgb){return .2126*lin(rgb[0])+.7152*lin(rgb[1])+.0722*lin(rgb[2])}
+  function hex(h){h=h.replace('#','');return [0,2,4].map(function(i){return parseInt(h.substr(i,2),16)})}
+  function css(s){var m=s.match(/[\d.]+/g);return m?m.slice(0,3).map(Number):[0,0,0]}
+  function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+  window.tbContrast=function(a,b){return ratio(hex(a),hex(b))};
+
+  /* live numbers on the colour chips */
+  function chips(){
+    [].forEach.call(document.querySelectorAll('[data-cr]'),function(el){
+      var chip=el.closest('.chip');var r=ratio(css(getComputedStyle(el).color),css(getComputedStyle(chip).backgroundColor));
+      if(!el.dataset.label)el.dataset.label=el.textContent;
+      el.textContent=el.dataset.label+' '+r.toFixed(2);
+    });
+  }
+
+  /* contrast tables: [fg, fg name, bg, bg name, kind] kind t=text, n=non-text (3:1), d=decorative surface */
+  var T={
+    'Light, text':[['#121216','ink','#ECE9E2','paper','t'],['#121216','ink','#F7F5F0','light paper','t'],['#55555C','grey','#ECE9E2','paper','t'],['#55555C','grey','#F7F5F0','light paper','t'],['#D42A18','red','#F7F5F0','light paper','t'],['#D42A18','red','#ECE9E2','paper','t'],['#2347F5','cobalt','#ECE9E2','paper','t'],['#2347F5','cobalt','#F7F5F0','light paper','t'],['#F7F5F0','light paper','#2347F5','cobalt','t'],['#ECE9E2','paper','#2347F5','cobalt','t'],['#F7F5F0','light paper','#D42A18','red','t'],['#F7F5F0','light paper','#121216','ink','t'],['#121216','ink','#D42A18','red','t'],['#D42A18','red','#121216','ink','t'],['#121216','ink','#2347F5','cobalt','t'],['#2347F5','cobalt','#121216','ink','t'],['#D42A18','red','#2347F5','cobalt','t']],
+    'Light, non-text':[['#D42A18','red square, marks','#ECE9E2','paper','n'],['#2347F5','cobalt, focus ring','#ECE9E2','paper','n'],['#121216','ink rules, cursor','#ECE9E2','paper','n'],['#F7F5F0','focus ring','#2347F5','cobalt','n'],['#F7F5F0','light sheet','#121216','ink','n'],['#D42A18','red mark','#121216','ink','n'],['#2347F5','cobalt mark','#121216','ink','n'],['#D42A18','red block','#2347F5','cobalt','n'],['#121216','ink rule','#2347F5','cobalt','n']],
+    'Dark, text':[['#ECE9E2','text','#121216','ground','t'],['#ECE9E2','text','#1C1C22','surface','t'],['#A3A3AB','muted','#121216','ground','t'],['#A3A3AB','muted','#1C1C22','surface','t'],['#FF5B47','red-hi','#121216','ground','t'],['#FF5B47','red-hi','#1C1C22','surface','t'],['#7B93FF','cobalt-hi','#121216','ground','t'],['#7B93FF','cobalt-hi','#1C1C22','surface','t'],['#ECE9E2','text','#1E3BD6','cobalt-deep band','t'],['#ECE9E2','text','#B8241A','red-deep band','t'],['#121216','ink','#F7F5F0','sheet (stays light)','t'],['#55555C','grey','#F7F5F0','sheet (stays light)','t'],['#D42A18','red','#F7F5F0','sheet (stays light)','t'],['#FF5B47','red-hi','#1E3BD6','cobalt-deep band','t'],['#D42A18','red','#121216','ground','t']],
+    'Dark, non-text':[['#FF5B47','red-hi square, marks','#121216','ground','n'],['#7B93FF','cobalt-hi, focus ring','#121216','ground','n'],['#ECE9E2','rules, focus on band','#1E3BD6','cobalt-deep band','n'],['#ECE9E2','rules','#121216','ground','n'],['#F7F5F0','torn sheet','#121216','ground','n'],['#1E3BD6','cobalt-deep band','#121216','ground','d'],['#B8241A','red-deep block','#121216','ground','d'],['#1C1C22','surface panel','#121216','ground','d']]
+  };
+  var notes={'Light, text':'Light scheme, the default. Large = 24 px, or 19 px bold.','Light, non-text':'Marks, rules and focus rings need 3:1.','Dark, text':'Dark scheme (a proposal). Torn sheets stay light paper.','Dark, non-text':'Bands and panels are decorative surfaces: no minimum, never the only cue for a boundary.'};
+  function verdict(r,k){
+    if(k==='d')return ['Decorative',''];
+    if(k==='t')return r>=4.5?['AA text','']:r>=3?['Large only','']:['Never','bad'];
+    return r>=3?['Pass','']:['Never','bad'];
+  }
+  var box=document.getElementById('ctabs');
+  Object.keys(T).forEach(function(name){
+    var d=document.createElement('div');d.className='ctab';
+    var h='<h3>'+name+'</h3><p>'+notes[name]+'</p><table><thead><tr><th scope="col"><span class="sr">Sample</span></th><th scope="col">Pair</th><th scope="col">Ratio</th><th scope="col">Use</th></tr></thead><tbody>';
+    T[name].forEach(function(p){
+      var r=tbContrast(p[0],p[2]),v=verdict(r,p[4]);
+      var smp=p[4]==='t'?'Aa':'';
+      var inner=p[4]==='t'?'':'<i style="display:block;width:22px;height:12px;background:'+p[0]+'"></i>';
+      h+='<tr><td class="s"><span class="smp" style="background:'+p[2]+';color:'+p[0]+'">'+smp+inner+'</span></td><td class="nm">'+p[1]+' <code>'+p[0]+'</code> on '+p[3]+' <code>'+p[2]+'</code></td><td class="r">'+r.toFixed(2)+'</td><td class="v '+v[1]+'">'+v[0]+'</td></tr>';
+    });
+    d.innerHTML=h+'</tbody></table>';box.appendChild(d);
+  });
+
+  /* scheme toggle: Auto, Light, Dark */
+  var root=document.documentElement,btn=document.getElementById('scheme');
+  function label(){var s=root.getAttribute('data-tb-scheme')||'auto';btn.textContent=s==='auto'?'Auto':s==='light'?'Light':'Dark';btn.setAttribute('aria-label','Colour scheme: '+btn.textContent+'. Change.');}
+  btn.addEventListener('click',function(){
+    var s=root.getAttribute('data-tb-scheme')||'auto',n=s==='auto'?'light':s==='light'?'dark':'auto';
+    if(n==='auto')root.removeAttribute('data-tb-scheme');else root.setAttribute('data-tb-scheme',n);
+    try{n==='auto'?localStorage.removeItem('tb-scheme'):localStorage.setItem('tb-scheme',n);}catch(e){}
+    label();chips();
+  });
+  label();chips();
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(chips);
+
+  /* copy the prompt template */
+  var cp=document.getElementById('copy-tpl');
+  cp.addEventListener('click',function(){
+    var t=document.getElementById('tpl-text').textContent;
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){cp.textContent='Copied'},function(){cp.textContent='Select and copy'});
+    setTimeout(function(){cp.textContent='Copy template'},2000);
+  });
+
+  /* motion: play once on view; replay restarts one demo */
+  if(!root.classList.contains('js-anim'))return;
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.3});
+  [].forEach.call(document.querySelectorAll('[data-m]'),function(el){io.observe(el);});
+  [].forEach.call(document.querySelectorAll('[data-replay]'),function(b){
+    b.addEventListener('click',function(){
+      var st=b.closest('.mo').querySelector('[data-m]');
+      st.classList.remove('in');void st.offsetWidth;
+      requestAnimationFrame(function(){st.classList.add('in')});
+    });
+  });
+})();
+</script>
+</body>
+</html>
