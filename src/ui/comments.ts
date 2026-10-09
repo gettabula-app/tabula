@@ -8,6 +8,7 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { fmtAgo, segmented, toast } from './common';
 import type { SideTray } from './side-tray';
+import { safeInsets } from './safe-area';
 
 type Target = { threadId?: string; anchor?: Anchor; screen: Point };
 type Msg = Pick<Reply, 'id' | 'authorId' | 'authorName' | 'authorColor' | 'text' | 'createdAt' | 'editedAt' | 'imported' | 'importedBy' | 'legacy'> & { root: boolean };
@@ -67,11 +68,11 @@ function focusSoon(ta: HTMLTextAreaElement) {
 function placeCard(el: HTMLElement, p: Point) {
   const w = el.offsetWidth, hgt = el.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
-  const safe = getComputedStyle(document.documentElement);
-  const left = MARGIN + (parseFloat(safe.getPropertyValue('--safe-left')) || 0);
-  const right = MARGIN + (parseFloat(safe.getPropertyValue('--safe-right')) || 0);
-  const top = MARGIN + (parseFloat(safe.getPropertyValue('--safe-top')) || 0);
-  const bottom = MARGIN + (parseFloat(safe.getPropertyValue('--safe-bottom')) || 0);
+  const safe = safeInsets();
+  const left = MARGIN + safe.left;
+  const right = MARGIN + safe.right;
+  const top = MARGIN + safe.top;
+  const bottom = MARGIN + safe.bottom;
   let x = p.x + GAP, y = p.y + GAP;
   if (x + w > vw - right) x = p.x - GAP - w;
   if (y + hgt > vh - bottom) y = p.y - GAP - hgt;

@@ -1,6 +1,7 @@
 import './controls.css';
 import { h, icon } from './dom';
 import { WheelSteps, clampValue, parseTyped, stepValue, type StepOptions } from '../style-edit';
+import { safeInsets } from './safe-area';
 
 /** A step burst (wheel or held arrow keys) ends after this much quiet, and commits as one change. */
 const GESTURE_IDLE_MS = 600;
@@ -202,11 +203,11 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
     if (!list) return;
     const a = button.getBoundingClientRect();
     const r = list.getBoundingClientRect();
-    const safe = getComputedStyle(document.documentElement);
-    const left = 8 + (parseFloat(safe.getPropertyValue('--safe-left')) || 0);
-    const right = 8 + (parseFloat(safe.getPropertyValue('--safe-right')) || 0);
-    const top = 8 + (parseFloat(safe.getPropertyValue('--safe-top')) || 0);
-    const bottom = window.innerHeight - 8 - (parseFloat(safe.getPropertyValue('--safe-bottom')) || 0);
+    const safe = safeInsets();
+    const left = 8 + safe.left;
+    const right = 8 + safe.right;
+    const top = 8 + safe.top;
+    const bottom = window.innerHeight - 8 - safe.bottom;
     const below = a.bottom + 4 + r.height <= bottom || a.top - 4 - r.height < top;
     list.style.minWidth = `${a.width}px`;
     list.style.left = `${Math.max(left, Math.min(window.innerWidth - r.width - right, a.left))}px`;

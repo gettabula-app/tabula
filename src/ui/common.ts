@@ -1,5 +1,6 @@
 import { h, icon } from './dom';
 import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
+import { safeInsets } from './safe-area';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
@@ -17,11 +18,11 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   const place = () => {
     const a = anchor.getBoundingClientRect();
     const r = el.getBoundingClientRect();
-    const safe = getComputedStyle(document.documentElement);
-    const left = parseFloat(safe.getPropertyValue('--safe-left')) || 0;
-    const right = parseFloat(safe.getPropertyValue('--safe-right')) || 0;
-    const top = parseFloat(safe.getPropertyValue('--safe-top')) || 0;
-    const bottom = parseFloat(safe.getPropertyValue('--safe-bottom')) || 0;
+    const safe = safeInsets();
+    const left = safe.left;
+    const right = safe.right;
+    const top = safe.top;
+    const bottom = safe.bottom;
     const side = opts.side ?? 'bottom';
     let x = a.left, y = a.bottom + 8;
     if (side === 'right') { x = a.right + 10; y = a.top; }
@@ -95,7 +96,7 @@ export function toast(msg: string, ms = 2600, action?: { label: string; onClick:
   box.classList.toggle('has-action', !!action);
   // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
   const bar = document.querySelector('.flowbar.show');
-  const safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
+  const safeBottom = safeInsets().bottom;
   const base = bar ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
   box.style.bottom = `max(${base}, var(--ai-top, 0px))`;
   box.classList.add('show');

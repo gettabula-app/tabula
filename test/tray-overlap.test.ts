@@ -50,7 +50,7 @@ describe('quick bar width on a phone', () => {
 
   it('is capped to the room right of the rail by a rule that outranks the base rule', () => {
     expect(capRule).toMatch(/\.chrome\s*>\s*\.quickbar/);
-    expect(capRule).toContain('calc(100% - var(--rail-clear) - 12px)');
+    expect(capRule).toContain('calc(100% - var(--rail-clear) - 12px - var(--safe-right))');
   });
 
   it('scrolls sideways and fades the edge with more behind it', () => {

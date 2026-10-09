@@ -20,6 +20,7 @@ import { modelLabel } from './ai-logic';
 import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, setOwnRun, setStarting, showRun, takeReview } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
+import { safeInsets, type Insets } from './safe-area';
 
 // The AI bar (docs/ai-toolbar.md): a tray docked at the bottom of the board where the person asks the AI to summarise, cluster or
 // generate. This file reads the board, draws the bar and calls the relay; the rules and the text are in src/ai-bar-logic.ts.
@@ -997,8 +998,8 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     }
     const cr = chrome.getBoundingClientRect();
     const r = visibleEl().getBoundingClientRect();
-    const safe = getComputedStyle(document.documentElement);
-    const inset = (edge: string) => parseFloat(safe.getPropertyValue(`--safe-${edge}`)) || 0;
+    const safe = safeInsets();
+    const inset = (edge: keyof Insets) => safe[edge];
     const p = clampPos(pos, { w: r.width, h: r.height }, { w: cr.width, h: cr.height }, {
       top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
     });
@@ -1072,7 +1073,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       const r = el.getBoundingClientRect();
       if (r.height > 0) tops.push(r.top);
     }
-    const safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
+    const safeBottom = safeInsets().bottom;
     chrome.style.setProperty('--ai-bottom', `${dockBottom({ narrow: cr.width <= NARROW_DOCK, boardBottom: cr.bottom, tops, safeBottom })}px`);
     const placed = applyPos(st.pos);
     // a bar dragged elsewhere does not stack: it stays where it was put
