@@ -241,7 +241,7 @@ The backups above restore data **into** a running server. A hosted workspace can
 
 1. Checks that no restore is pending. The restore recovery has already run (it finishes or undoes an interrupted restore and removes staging directories), so this only confirms that no `.restore-*` staging directory is left and that a `restore.json` still there is a `rolled-back` one (the old data is back; the journal waits for the restore engine to record the failure). `.pre-restore-*` directories are kept: they are this workspace's older data and expire as described in [The old data](#the-old-data).
 2. Clears what a backup run left mid-way: the temporary database copies (`directory.sqlite.backup-*.tmp`) and the `running` and `nextRunAt` of the stored backup status. The rest of the status (the last manifest, counts) and the backups protected from pruning stay: they describe the bucket, which the copy still shares, and the next run compares against the bucket anyway.
-3. Accounts mode: **every session is revoked and every sign-in link deleted**, always. Everybody signs in again. Access tokens (MCP) and invite links are not touched.
+3. Accounts mode: **every session is revoked and every sign-in link deleted**, always. Everybody signs in again. When the volume came from **another workspace** (`TABULA_ADOPT_VOLUME`, reason `operator`), **every access token (MCP) and invite link is revoked too**: they belong to the other workspace. A restored copy of the same workspace (reason `restored-copy`) keeps them.
 4. Accounts mode: writes an audit row `volume.adopt` with no actor (the dashboard shows "System") and `{ from: { workspaceId, flyVolumeId }, to: { ... }, reason }`.
 5. Writes the marker with the new ids, `adoptedAt` and the history entry.
 

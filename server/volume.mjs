@@ -237,6 +237,8 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
     if (directory) {
       directory.transaction(() => {
         directory.revokeAllSessions();
+        // Another workspace's volume brings its MCP tokens and invite links with it; a restored copy keeps its own.
+        if (plan.reason === 'operator') directory.revokeAllGrants();
         directory.audit(null, AUDIT_ACTION, { from: plan.from, to: plan.to, reason: plan.reason });
       });
     }
@@ -246,7 +248,7 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
   if (plan.action === 'create') log(`volume: marked this volume (${plan.marker.volumeId}) as workspace ${plan.marker.workspaceId ?? '(none)'}, Fly volume ${plan.marker.flyVolumeId ?? '(unknown)'}`);
   if (plan.action === 'adopt') {
     const show = (id) => `workspace ${id.workspaceId ?? '(none)'}, Fly volume ${id.flyVolumeId ?? '(unknown)'}`;
-    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every session was signed out`);
+    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every session was signed out${plan.reason === 'operator' ? ', and every MCP access token and invite link revoked' : ''}`);
   }
   return plan.action === 'adopt';
 }

@@ -296,3 +296,49 @@ describe('accounts mode without a control plane', () => {
     await stop(run.proc);
   });
 });
+
+// An MCP access token and an invite link made before the adoption: a volume adopted from another workspace must not
+// bring working credentials with it, while a restored copy of the same workspace keeps its own (TAB-200).
+describe('access tokens and invite links on adoption', () => {
+  const MCP = { TABULA_MCP: 'on' };
+  async function grants(run: Run, cookie: string) {
+    const token = await api(run, 'POST', '/api/me/tokens', { cookie, body: { name: 'agent', scope: 'read' } });
+    expect(token.status).toBe(201);
+    const team = await api(run, 'POST', '/api/teams', { cookie, body: { name: 'Design' } });
+    expect(team.status).toBe(201);
+    const invite = await api(run, 'POST', `/api/teams/${team.body.id}/invites`, { cookie, body: {} });
+    expect(invite.status).toBe(201);
+    return invite.body.token as string;
+  }
+  const activeTokens = async (run: Run, cookie: string) => ((await api(run, 'GET', '/api/me/tokens', { cookie })).body as unknown[]).length;
+  const inviteStatus = async (run: Run, token: string) => (await api(run, 'GET', `/api/invites/${token}`)).status;
+
+  it('revokes them when the operator adopts another workspace\'s volume', async () => {
+    const dir = newDir();
+    let run = await start(dir, { ...hosted(WS_A), ...MCP, TABULA_FLY_VOLUME_ID: 'vol_1' });
+    const invite = await grants(run, await signIn(run, dir));
+    await stop(run.proc);
+
+    run = await start(dir, { ...hosted(WS_B), ...MCP, TABULA_FLY_VOLUME_ID: 'vol_9', TABULA_ADOPT_VOLUME: WS_B });
+    expect(run.out()).toContain('every MCP access token and invite link revoked');
+    const fresh = await signIn(run, dir);
+    expect(await activeTokens(run, fresh)).toBe(0);
+    expect(await inviteStatus(run, invite)).toBe(404);
+    await stop(run.proc);
+  });
+
+  it('keeps them when a restored copy of the same workspace is adopted', async () => {
+    const dir = newDir();
+    let run = await start(dir, { ...hosted(WS_A), ...MCP, TABULA_FLY_VOLUME_ID: 'vol_1' });
+    const invite = await grants(run, await signIn(run, dir));
+    await stop(run.proc);
+
+    run = await start(dir, { ...hosted(WS_A), ...MCP, TABULA_FLY_VOLUME_ID: 'vol_2' });
+    expect(run.out()).toContain('(restored-copy)');
+    expect(run.out()).not.toContain('invite link revoked');
+    const fresh = await signIn(run, dir);
+    expect(await activeTokens(run, fresh)).toBe(1);
+    expect(await inviteStatus(run, invite)).toBe(200);
+    await stop(run.proc);
+  });
+});

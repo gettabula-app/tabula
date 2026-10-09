@@ -472,6 +472,14 @@ export function openDirectory(file) {
     }));
   }
 
+  /** Every MCP access token and invite link stops working: what a volume adopted from another workspace carries over (TAB-200). */
+  function revokeAllGrants(now = Date.now()) {
+    return transaction(() => ({
+      accessTokens: run('UPDATE access_tokens SET revoked_at = ? WHERE revoked_at IS NULL', now),
+      invites: run('UPDATE invites SET revoked = 1 WHERE revoked = 0'),
+    }));
+  }
+
   // Sessions for the admin console. Explicit columns: the token hash never leaves this module.
   const toActiveSession = (r) => ({
     id: r.id,
@@ -904,6 +912,7 @@ export function openDirectory(file) {
     revokeSession,
     revokeUserSessions,
     revokeAllSessions,
+    revokeAllGrants,
     listActiveSessions,
     getActiveSession,
     createTeam,
