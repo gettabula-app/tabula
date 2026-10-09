@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createApi, type AdminAi } from '../src/api';
 import { ADMIN_TABS } from '../src/route';
 import {
-  DATA_NOTICE, FEATURE_OPTIONS, KEY_MAX, KEY_MIN, LIMIT_CAPS, MODEL_OPTIONS, PROVIDER, UNCONFIGURED_TEXT, draftOf, draftProblem, keyDates, keyLine, keyProblem,
-  keyTestErrorMessage, limitProblem, modelLabel, patchOf, sourceLabel,
+  DATA_NOTICE, FEATURE_OPTIONS, KEY_MAX, KEY_MIN, LIMIT_CAPS, MODEL_OPTIONS, OPENAI_COMPATIBLE_PROVIDER, PROVIDER, PROVIDER_OPTIONS, UNCONFIGURED_TEXT,
+  draftOf, draftProblem, hostOf, keyDates, keyLine, keyProblem, keyTestErrorMessage, limitProblem, modelLabel, patchOf, sourceLabel,
 } from '../src/ui/ai-logic';
 import { MODELS } from '../server/ai/anthropic.mjs';
 import { PROVIDERS } from '../server/ai/providers.mjs';
@@ -27,7 +27,8 @@ describe('the shared lists', () => {
   it('offer what the server accepts, in its order', () => {
     expect(MODEL_OPTIONS.map((o) => o.value)).toEqual(MODELS);
     expect(FEATURE_OPTIONS.map((o) => o.id)).toEqual(FEATURES);
-    expect([PROVIDER]).toEqual(PROVIDERS);
+    expect(PROVIDER_OPTIONS.map((o) => o.value)).toEqual(PROVIDERS);
+    expect([PROVIDER]).toEqual([PROVIDERS[0]]);
     expect(LIMIT_CAPS).toEqual(SERVER_CAPS);
     expect([KEY_MIN, KEY_MAX]).toEqual([API_KEY_MIN, API_KEY_MAX]);
   });
@@ -63,6 +64,16 @@ describe('keyProblem', () => {
     expect(keyProblem('12345678')).toBeNull();
     expect(keyProblem('  sk-ant-api03-abcdefgh  ')).toBeNull();
     expect(keyProblem('k'.repeat(512))).toBeNull();
+  });
+
+  it('checks the compatible provider endpoint and model before saving', () => {
+    const key = 'sk-test-1234abcd';
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, 'https://example.com/v1/', 'moonshotai/kimi-k3')).toBeNull();
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, '', 'moonshotai/kimi-k3')).toBe('Enter a base URL.');
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, 'https://example.com/v1', '')).toBe('Enter a model id.');
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, 'https://example.com/v1', 'a'.repeat(101))).toBe('A model id has at most 100 characters.');
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, 'https://example.com/v1', '_bad')).toBe('A model id starts with a letter or digit.');
+    expect(keyProblem(key, OPENAI_COMPATIBLE_PROVIDER, 'https://example.com/v1', 'bad model')).toBe('A model id uses only letters, digits, ., _, :, /, @, + and -.');
   });
 });
 
@@ -109,8 +120,18 @@ describe('patchOf', () => {
 
 describe('what the screens say about a key', () => {
   it('shows the provider and the last four characters only', () => {
-    expect(keyLine({ provider: 'anthropic', hint: 'a1b2' })).toBe('Anthropic key ending …a1b2');
-    expect(keyLine({ provider: 'other', hint: 'zzzz' })).toBe('other key ending …zzzz');
+    expect(keyLine({ provider: 'anthropic', hint: 'a1b2', baseUrl: null, model: null })).toBe('Anthropic key ending …a1b2');
+    expect(keyLine({ provider: 'openai-compatible', hint: 'abcd', baseUrl: 'https://integrate.api.nvidia.com/v1/', model: 'moonshotai/kimi-k3' }))
+      .toBe('OpenAI-compatible key ending …abcd · integrate.api.nvidia.com · moonshotai/kimi-k3');
+    expect(keyLine({ provider: 'other', hint: 'zzzz', baseUrl: null, model: null })).toBe('other key ending …zzzz');
+  });
+
+  it('shows only a safe HTTPS host for a compatible key', () => {
+    expect(hostOf('https://user:pass@example.com/v1?secret=x#part')).toBe('example.com');
+    expect(hostOf('https://user:pass@example.com:8443/v1')).toBe('example.com:8443');
+    expect(hostOf('javascript:alert(1)')).toBeNull();
+    expect(hostOf('')).toBeNull();
+    expect(hostOf(null)).toBeNull();
   });
 
   it('says when it was added and last used', () => {
@@ -127,6 +148,8 @@ describe('what the screens say about a key', () => {
 
   it('maps stored-key check errors to short messages', () => {
     expect(keyTestErrorMessage({ code: 'ai_key_invalid' })).toBe('The AI key was rejected.');
+    expect(keyTestErrorMessage({ code: 'ai_model_invalid' })).toBe('The provider does not know this model or this address. Check the base URL and the model.');
+    expect(keyTestErrorMessage({ code: 'ai_bad_output' })).toBe('This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.');
     expect(keyTestErrorMessage({ code: 'ai_rate_limited', facts: { retryAfter: 12 } })).toBe('Too many checks. Try again in 12 s.');
     expect(keyTestErrorMessage({ status: 429, facts: { retryAfter: 1.2 } })).toBe('Too many checks. Try again in 2 s.');
     expect(keyTestErrorMessage({ code: 'ai_unavailable' })).toBe("Anthropic isn't responding. Try again in a moment.");

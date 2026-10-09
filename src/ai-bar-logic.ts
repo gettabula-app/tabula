@@ -167,8 +167,13 @@ export function runningText(feature: AiFeature, ctx: AiContext, facts: Facts): s
 // ---------------------------------------------------------------- cost and model
 
 const SHORT_MODELS: Record<string, string> = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' };
-/** "Opus 5.5" for the model chip; an id the app does not know is shown as it is. */
-export const modelShort = (id: string): string => SHORT_MODELS[id] ?? id;
+/** Known Anthropic ids get product names; namespaced provider ids use their final part. */
+export const modelShort = (id: string): string => {
+  const known = SHORT_MODELS[id];
+  if (known) return known;
+  const slash = id.lastIndexOf('/');
+  return slash >= 0 && slash < id.length - 1 ? id.slice(slash + 1) : id;
+};
 
 /** The reply cap per feature (server/ai/features.mjs). */
 export const OUTPUT_CAP: Record<AiFeature, number> = { generate: 4000, summarise: 8000, cluster: 8000 };
@@ -207,7 +212,7 @@ export function modelChipText(o: ChipFacts): string {
   return `${o.armed ? FEATURE_LABEL[o.armed] : modelShort(o.model)} · ${cost}`;
 }
 
-export const modelChipLabel = (text: string): string => `${text}. Model and cost details`;
+export const modelChipLabel = (text: string): string => `${text}. Model and token estimate details`;
 export const MODEL_CHIP_TIP = 'Estimate before you run. Click for details.';
 
 export const CHOSEN_BY_ADMIN = 'Chosen by your workspace admin.';
@@ -631,6 +636,14 @@ export function errorView(code: string, ctx: ErrorContext): ErrorView {
       if (ctx.admin || own) return row('invalid', 'The AI key was rejected.', { link: { before: 'Check it in ', label: 'AI settings', after: '.', target: own ? 'my-key' : 'admin-ai' } });
       return row('invalid', 'The AI key was rejected.', { note: 'Ask a workspace admin to check it.' });
     }
+    case 'ai_model_invalid': {
+      const own = ctx.keySource === 'user';
+      const text = 'The provider does not know this model or this address. Check the base URL and the model.';
+      if (ctx.admin || own) return row('invalid', text, { link: { before: 'Check it in ', label: 'AI settings', after: '.', target: own ? 'my-key' : 'admin-ai' } });
+      return row('invalid', text, { note: 'Ask a workspace admin to check it.' });
+    }
+    case 'ai_bad_output':
+      return row('unusable', 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.', { retry: true });
     case 'rate_limited':
     case 'ai_rate_limited': {
       const wait = waitOf(ctx.retryAfter);

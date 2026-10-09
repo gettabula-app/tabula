@@ -249,7 +249,8 @@ describe('the assets table of the directory', () => {
     d.putAsset({ boardId: 'board1', hash: 'a'.repeat(64), mime: 'image/png', bytes: 10, width: 1, height: 1, createdBy: null, createdAt: 5 });
     d.close();
     const raw = new DatabaseSync(file);
-    raw.exec(`DROP TABLE user_prefs; DROP TABLE assets; PRAGMA user_version = ${at}`);
+    // an older directory has neither of these tables and no model column on its AI keys
+    raw.exec(`DROP TABLE user_prefs; DROP TABLE assets; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${at}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getSetting('kept')).toBe('yes');

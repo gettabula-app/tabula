@@ -130,7 +130,7 @@ export function parseResolve(body) {
  * @param {new (status: number, code: string, message?: string) => Error} deps.HttpError the class the caller turns into a response
  * @param {(room: string, fn: (doc: any) => any) => any} deps.readRoom reads a room document (roomAccess.read in the relay)
  * @param {(role: string, kind: 'board' | 'comments') => boolean} deps.canWriteRoom the relay's own rule
- * @param {(options: { kind: string, apiKey: string }) => any} [deps.createProvider] replaced by the tests
+ * @param {(options: { kind: string, apiKey: string, baseUrl?: string | null, model?: string | null, trusted?: boolean }) => any} [deps.createProvider] replaced by the tests
  * @param {number} [deps.timeoutMs] a run is stopped after this long
  * @param {ReturnType<typeof createLiveRuns>} [deps.live] the board's live runs (live.mjs); the relay shares one with both modes
  */
@@ -197,6 +197,8 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
   /** The stream. Never throws: every failure becomes the one `event: error`, and the audit row is written before the last event. */
   async function stream(call, prep, creds, res, runId) {
     const spec = FEATURE_SPECS[call.feature];
+    // a key of a provider with no fixed model list carries its own model (TAB-222); the others use the workspace's setting
+    const model = creds.model ?? call.model;
     const controller = new AbortController();
     const stop = (code) => {
       if (!controller.signal.aborted) controller.abort(new AiError(code));
@@ -220,9 +222,9 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     let proposal = null;
     let usage = null;
     try {
-      const provider = createProvider({ kind: creds.kind, apiKey: creds.apiKey });
+      const provider = createProvider({ kind: creds.kind, apiKey: creds.apiKey, baseUrl: creds.baseUrl ?? null, model: creds.model ?? null, trusted: creds.trusted === true });
       const events = provider.run({
-        model: call.model,
+        model,
         system: spec.system,
         content: prep.content,
         schema: spec.schema,
@@ -233,7 +235,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       const final = await collect(events, controller.signal, () => emit('progress', { n: ++progress }));
       if (final === null) throw new AiError('internal');
       if (final.type === 'refused') throw new AiError('ai_refused');
-      usage = usageSummary(final.usage, call.model);
+      usage = usageSummary(final.usage, model);
       call.stillAllowed();
       const types = spec.kind === 'group' ? readRoom(call.boardId, (doc) => new Map(readAll(doc).boxes.map((o) => [o.id, o.type]))) : new Map();
       const can = (_action, type) => V1_TYPES.has(type) && canWriteRoom(call.role ?? 'owner', 'board');
@@ -251,7 +253,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       res.off('close', onClose);
     }
 
-    const used = usage ?? usageSummary(null, call.model);
+    const used = usage ?? usageSummary(null, model);
     try {
       call.audit(`ai.${call.feature}`, {
         boardId: call.boardId,
@@ -410,7 +412,7 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
           openKey() {
             const found = directory.useAiKey(which);
             if (!found) throw noKey();
-            return { kind: found.provider, apiKey: found.apiKey };
+            return { kind: found.provider, apiKey: found.apiKey, baseUrl: found.baseUrl, model: found.model };
           },
           stillAllowed,
           audit: (action, detail) => audit(user, action, detail),
@@ -533,7 +535,8 @@ export function createOpenRun({ config, canWriteRoom, readRoom, roomExists, crea
           keySource: 'workspace',
           model: config.ai.model,
           limits: DEFAULT_LIMITS,
-          openKey: () => ({ kind: config.ai.provider, apiKey: open.apiKey }),
+          // the address and the model come from the operator's environment, so they are trusted (http and a local server are fine)
+          openKey: () => ({ kind: config.ai.provider, apiKey: open.apiKey, baseUrl: config.ai.baseUrl, model: config.ai.provider === 'openai-compatible' ? config.ai.model : null, trusted: true }),
           stillAllowed: () => {},
           audit: (action, detail) => log(`${action} ${JSON.stringify(detail)}`),
         },

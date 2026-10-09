@@ -36,8 +36,11 @@ Cost of the proxy: one extra hop (a few milliseconds next to a model call of sec
 `server/ai/` (plain `.mjs`, like the rest of `server/`):
 
 ```
-providers.mjs   createProvider({ kind, apiKey, baseUrl? }) -> Provider
+providers.mjs   createProvider({ kind, apiKey, baseUrl?, model?, trusted? }) -> Provider
 anthropic.mjs   kind 'anthropic', using @anthropic-ai/sdk
+openai-compatible.mjs  kind 'openai-compatible' (TAB-222): Chat Completions over node:https, no SDK
+net-guard.mjs   the address guard of its transport: public addresses only, pinned after the check
+base-url.mjs    the base URL and model id rules, for the key screens and the operator's environment
 features.mjs    the v1 features: prompt, output schema, effort and token cap per feature, input checks, proposal validation
 board.mjs       the board read of a run: scope, caps, nearest first, fenced
 limits.mjs      in-memory counters: runs per hour, runs in flight, key saves
@@ -72,9 +75,44 @@ Usage = { model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }
 - **Caching.** The system prompt is fixed per feature and comes first with `cache_control`, so repeated runs of a feature share a cached prefix. The board content comes after it.
 - **Errors** map from the SDK's typed errors: authentication (bad key) `ai_key_invalid`, rate limit `ai_rate_limited` (with `retry-after`), overloaded or 5xx `ai_unavailable`, anything else `internal`. Messages never contain the key or board text.
 
-### OpenAI-compatible (later)
+### OpenAI-compatible providers
 
-A second adapter: `POST <baseUrl>/v1/chat/completions` with `response_format: { type: 'json_schema' }`, `baseUrl` stored with the key. It covers OpenAI and self-hosted servers that speak the same API (useful to self-hosters who want a local model). Not in v1: each provider's structured output and error behaviour needs its own tests and prompts, and the provider list in the UI grows. The interface above takes it without changes.
+TAB-222. The kind `openai-compatible` speaks the Chat Completions API of OpenAI and of everything that copies it: NVIDIA's catalogue (`https://integrate.api.nvidia.com/v1`), OpenAI, OpenRouter and a local server such as Ollama or vLLM. It has no SDK (`server/ai/openai-compatible.mjs`, Node's `https`), and a key of this kind carries three things: the key, a **base URL** and a **model id**. Unlike Anthropic's, they are free text, so a person types them on the key screen.
+
+- **Request.** A non-streaming `POST <base>/chat/completions` with `Authorization: Bearer <key>`, `temperature: 0` and `max_tokens`. The system message is the feature's frozen prompt plus the JSON Schema of the answer in text, and the request sets `response_format: { type: 'json_object' }`, which almost every server accepts. Only that origin is ever called.
+- **Output.** The provider returns one parsed JSON object, and the existing feature validators (`features.mjs`) decide whether it is a proposal, exactly as for Anthropic. One fenced code block around the JSON is tolerated. At most two requests are made per run:
+  - an HTTP 400 or 422 on the first retries once without `response_format` (some servers refuse it), and the body is never read to decide that;
+  - an answer that is not a JSON object (prose, `null` or empty content, a reasoning model that put the text elsewhere, a cut-off reply) is retried once with a short "reply again with only the JSON object" message;
+  - after that the run ends with `ai_bad_output`: "This model did not answer in the required JSON format. Try a stronger instruction-following model." Nothing is changed, and nothing the model said is shown.
+- **Refusals.** `finish_reason: content_filter` or a `refusal` field is a refusal, as for Anthropic.
+- **Usage.** `prompt_tokens` and `completion_tokens`, summed over both attempts. There is no price: the model chip's popover says Tabula does not know it and the provider bills the key. The token estimate stays.
+- **Errors**, from the status of the response only:
+
+| Provider answer | Code |
+| --- | --- |
+| 401, 403 | `ai_key_invalid` |
+| 404 (also 400 or 422 on the key check) | `ai_model_invalid`: "The provider does not know this model or this address." |
+| 429 | `ai_rate_limited` (with `retry-after`) |
+| a timeout (30 s a request, 8 s for `/models`) | `ai_timeout`: a slow model is not an unavailable provider |
+| 5xx, 3xx, 408, other 4xx, a connection error, a body over 4 MB | `ai_unavailable` |
+| 200 with no choices, or an answer that never becomes JSON | `ai_bad_output` |
+
+- **Checking a key** (on save, and Test key) does two things. `GET <base>/models` says whether the key is accepted (a server without it answers 404, 405 or 501, and that is fine). Then one **1-token completion with the configured model**, because a catalogue lists models that do not answer: NVIDIA's `/models` lists models whose completions are 404. A model that does not exist is `ai_model_invalid`; one that takes longer than 30 s to say one token is `ai_timeout`.
+- **Models.** There is no list to pick from. What works is a model that follows instructions well enough to return JSON from a long prompt: `moonshotai/kimi-k3` on NVIDIA's catalogue did in tests, small or "reasoning-only" models often return empty content, and some models time out. The error says which.
+
+**Where the address comes from, and what is trusted.** The address of a key a person typed (admin or personal) is hostile input, because the server calls it:
+
+- `https` only, at most 200 characters, no user name or password, no query or fragment, a path of `/v1` type.
+- The transport (`server/ai/net-guard.mjs`) resolves the host itself and refuses a host that has any address outside global unicast: loopback, private, link-local (the cloud metadata address), CGNAT, multicast, IPv6 unique-local, IPv4-mapped and NAT64 forms of those, 6to4 and Teredo, and the names `localhost`, `*.localhost`, `*.local`, `*.internal`. An IP literal is checked before any connection. The connection is made to the address that was checked (the lookup hands the socket only checked addresses), so a DNS answer that changes between the check and the connect changes nothing.
+- No redirect is ever followed (a 3xx is `ai_unavailable`), the response is capped at 4 MB, and every request has a timeout. The key is sent only to the configured origin, in the `Authorization` header, and a response body is never copied into an error, a log line, an audit row or the status of anything.
+- The same checks run when the key is saved, at Test key and at every run, so a stored address cannot be redirected to another host without entering the key again.
+
+The operator's environment is trusted: `TABULA_AI_PROVIDER=openai-compatible` with `TABULA_AI_BASE_URL` (an `http://` or local address is allowed there, for a model server on the same machine) and `TABULA_AI_MODEL` (any model id) in open mode. In accounts mode those variables are ignored with a warning: each key carries its own.
+
+**Storage.** `ai_keys` has a nullable `model` column next to `base_url` (a migration of its own; an Anthropic key leaves both empty and uses the workspace's `ai.model`). A key replaces the address and the model with it. Audit rows (`ai.key.set`, `ai.key.test`) carry the provider, and for this kind the host and the model id, never the key or the whole address.
+
+**Key screens.** Both "Your AI key" and the admin AI tab have a provider choice. For OpenAI-compatible they add **Base URL** and **Model** and check the same rules as the server before **Save key** enables. The admin Anthropic model setting is hidden while the workspace key is OpenAI-compatible: the model shown is the key's. On the wire, the model of a personal key is `model`; the admin body already has `model` (the Anthropic setting), so there the key's model is `keyModel`.
+
 
 ## Keys (BYOK)
 
@@ -82,7 +120,7 @@ A second adapter: `POST <baseUrl>/v1/chat/completions` with `response_format: { 
 
 | Mode | Key | Set by |
 | --- | --- | --- |
-| Open mode | `TABULA_AI_API_KEY` (and `TABULA_AI_PROVIDER`, default `anthropic`) | The operator, in the environment |
+| Open mode | `TABULA_AI_API_KEY` (and `TABULA_AI_PROVIDER`, default `anthropic`; `openai-compatible` also needs `TABULA_AI_BASE_URL` and `TABULA_AI_MODEL`) | The operator, in the environment |
 | Accounts mode | **Workspace key** | A workspace owner or admin, in the admin dashboard |
 | Accounts mode | **Personal key** | Each person, in their account menu, only when an admin allows personal keys |
 
@@ -90,23 +128,23 @@ Resolution for a run in accounts mode: the person's own key if they set one and 
 
 ### Storage
 
-- Table `ai_keys(id, scope 'workspace'|'user', user_id NULL, provider, base_url NULL, ciphertext, nonce, key_version, hint, created_at, created_by, last_used_at)` in the directory (a migration after the one TAB-67 adds). One row per scope (and per user).
+- Table `ai_keys(id, scope 'workspace'|'user', user_id NULL, provider, base_url NULL, model NULL, ciphertext, nonce, key_version, hint, created_at, created_by, last_used_at)` in the directory (a migration after the one TAB-67 adds). One row per scope (and per user).
 - **Encrypted with AES-256-GCM** under a key-encryption key from `TABULA_AI_SECRET` (32 bytes, base64; the relay refuses to start with a malformed one). Each row has a random 96-bit nonce, and the associated data binds the row's scope and user, so a ciphertext copied to another row does not decrypt. Without `TABULA_AI_SECRET`, saving a key is refused (`ai_unconfigured`) and the admin UI says why.
 - `hint` is the last four characters, the only part ever shown again.
-- **Never returned.** `GET` endpoints return `{ provider, hint, createdAt, lastUsedAt }`. There is no endpoint that reveals a key, to anyone.
+- **Never returned.** `GET` endpoints return `{ provider, baseUrl, model, hint, createdAt, lastUsedAt }`. There is no endpoint that reveals a key, to anyone.
 - **Never synced, never logged.** Keys are not in any Yjs document, `.drift` file or export. The request and error loggers redact `authorization`, `x-api-key` and the `apiKey` body field; a test asserts that a known key never appears in logs, audit rows or responses.
-- **Verified on save** with a cheap call (`models.list()` for Anthropic). A key that fails is not stored (`ai_key_invalid`).
+- **Verified on save** with a cheap call (`models.list()` for Anthropic; for an OpenAI-compatible provider `/models` and a 1-token completion with the model). A key that fails is not stored (`ai_key_invalid`, `ai_model_invalid`, `ai_timeout`).
 - **Rotation.** `TABULA_AI_SECRET_PREVIOUS` decrypts rows written under the old secret, which are re-encrypted on next use; `key_version` says which secret wrote a row. The steps are in "Rotating TABULA_AI_SECRET" below.
 - Deleting a person removes their key (foreign key cascade). Deleting the workspace key is immediate; runs in flight finish.
 
 ### Endpoints
 
 ```
-GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|'platform'|null, model, credits?: {...} }
-PUT    /api/ai/keys/me   { provider, apiKey, baseUrl? }   -> { provider, hint }      (when personal keys are allowed)
+GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|'platform'|null, provider, model, credits?: {...} }   (`model` is the key's own for an OpenAI-compatible key)
+PUT    /api/ai/keys/me   { provider, apiKey, baseUrl?, model? }   -> { provider, hint, baseUrl, model }      (when personal keys are allowed; baseUrl and model only for openai-compatible, and then both)
 POST   /api/ai/keys/me/test                              -> { ok: true, provider, checkedAt } (when personal keys are allowed)
 DELETE /api/ai/keys/me                                    -> 204
-PUT    /api/admin/ai     { enabled?, features?, model?, personalKeys?, apiKey?, provider?, baseUrl? }   (owner or admin) -> settings, key hint
+PUT    /api/admin/ai     { enabled?, features?, model?, personalKeys?, apiKey?, provider?, baseUrl?, keyModel? }   (owner or admin; `model` is the Anthropic model, `keyModel` the key's own) -> settings, key hint
 POST   /api/admin/ai/key/test                             -> { ok: true, provider, checkedAt } (owner or admin)
 DELETE /api/admin/ai/key                                  -> 204
 POST   /api/ai/run       { feature, boardId, input }      -> text/event-stream
@@ -216,7 +254,7 @@ The control plane already owns Stripe for seats. It adds an AI allowance to each
 
 This is the first slice of phase 1 (TAB-97). The text above is the design; these are the points where the code adds to it or chose between options.
 
-**Environment.** `TABULA_AI_API_KEY`, `TABULA_AI_OPEN` (open mode), `TABULA_AI_SECRET`, `TABULA_AI_SECRET_PREVIOUS`, `TABULA_AI_PROVIDER` (only `anthropic`) and `TABULA_AI_MODEL` (default `claude-opus-5-5`); the old `MIRA_` spellings still work. In accounts mode `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored with a warning, because the workspace key lives in the directory. The config keeps the secrets out of anything that prints or serialises it.
+**Environment.** `TABULA_AI_API_KEY`, `TABULA_AI_OPEN` (open mode), `TABULA_AI_SECRET`, `TABULA_AI_SECRET_PREVIOUS`, `TABULA_AI_PROVIDER` (`anthropic` or `openai-compatible`), `TABULA_AI_BASE_URL` (openai-compatible only) and `TABULA_AI_MODEL` (default `claude-opus-5-5`; any model id for openai-compatible); the old `MIRA_` spellings still work. In accounts mode `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored with a warning, because the workspace key lives in the directory. The config keeps the secrets out of anything that prints or serialises it.
 
 > **Open mode and cost.** With `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1`, anyone who has a board link can run the AI features and spend the operator's key, because open mode has no accounts. Use it for a private instance or behind something that decides who may reach it, and set a spending limit in the provider's console.
 
@@ -340,7 +378,7 @@ Not in this slice, each to follow on the same ghost overlay and resolve flow:
 It asserts, and prints `PASS` or `FAIL` for each step and a last line `REPORT: PASS=n FAIL=n BLOCKED=n`. The exit code is 1 unless every step passed and nothing was blocked (the app did not build, Chromium is missing, a relay or the stub did not start).
 
 - **At 390 and 1024 wide:** a ready create proposal with the panel closed and open, after one sticky was unticked, one text edited and one colour changed (the ghosts follow), with every item unticked, a cluster proposal where a peer edited one sticky after it arrived ("Changed since", unticked, disabled), and after Add selected (the added objects carry `proposedBy`, and the properties panel reads "Proposed by AI (Generate ideas) for …"). Each state is a screenshot in `tabula-review/ai-review/` (git-ignored; `-- --out <folder>` to move them), taken for a person to look at: the asserts do not judge a layout.
-- **Show:** with the preview panned off screen the view does not move by itself, and the bar's Show brings the preview into view (its label row inside the viewport, its own Show pressable). `-- --theme <id>` takes the same shots in another theme from `src/themes.ts` (the colours are asserted for the default theme only). `-- --runner "Alexandria Montgomery-Li"` runs it with a long reviewer name (at most 40 characters), which is how the label rows are checked at 360. `-- --widths 360,390,1024` sets the widths of the single-person scenario (default 390 and 1024); at every width it asserts that none of the bar's preview-row buttons is cut off.
+- **Show:** with the preview panned off screen the view does not move by itself, and the bar's Show brings the preview into view (its label row inside the viewport, its own Show pressable). `-- --theme <id>` takes the same shots in another theme from `src/themes.ts` (the colours are asserted for the default theme only). `-- --provider openai-compatible` runs the same scenario with the relay in open mode pointed at `scripts/lib/openai-stub.mjs`, a fake OpenAI-style server (`/models` and `/chat/completions`, with modes for a server that honours `json_object`, one that rejects it with a 400, fenced or prose answers, errors and refusals); the check then asserts that every call went to that stub with the `json_object` format. `-- --runner "Alexandria Montgomery-Li"` runs it with a long reviewer name (at most 40 characters), which is how the label rows are checked at 360. `-- --widths 360,390,1024` sets the widths of the single-person scenario (default 390 and 1024); at every width it asserts that none of the bar's preview-row buttons is cut off.
 - **Show on the label row, and a preview that all changed:** with the preview half out of the view, the label row's own Show brings it back. When a peer changes every sticky of a cluster preview, the peer's and the runner's views swap its ghosts for the short row; the peer's Discard settles the run for both.
 - **Two people on one board:** A asks and both see the preview; B reviews it and A still sees the original; B adds the subset; both boards then hold the same objects, written once, with `proposedBy`; the preview is gone for A; one Undo for B removes every added object for both.
 - **Every page:** the console and page errors of each browser context are printed (`CONSOLE`, `PAGEERROR`). They are listed, not asserted.

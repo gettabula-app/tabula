@@ -18,12 +18,13 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { startAnthropicStub } from './lib/anthropic-stub.mjs';
+import { startOpenAiStub } from './lib/openai-stub.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>] [--widths <list>] [--runner <name>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --widths    the viewport widths of the single-person scenario, comma separated (default 390,1024)\n  --runner    the name of the reviewer (default "Reviewer <width>"), for a long name; at most 40 characters\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
+const USAGE = 'Usage: npm run check:ai-review -- [--no-build] [--out <folder>] [--theme <id>] [--widths <list>] [--runner <name>] [--provider <kind>]\n  --no-build  reuse an existing dist/ instead of running npm run build:app\n  --out       where the screenshots go (default tabula-review/ai-review)\n  --widths    the viewport widths of the single-person scenario, comma separated (default 390,1024)\n  --provider  the AI provider the relay is pointed at: anthropic (default) or openai-compatible, each against its own local stub\n  --runner    the name of the reviewer (default "Reviewer <width>"), for a long name; at most 40 characters\n  --theme     the theme of the shots, an id from src/themes.ts (default "default"); the colours are asserted for the default only';
 let options;
 try {
-  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, widths: { type: 'string' }, runner: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
+  options = parseArgs({ options: { 'no-build': { type: 'boolean' }, out: { type: 'string' }, theme: { type: 'string' }, widths: { type: 'string' }, runner: { type: 'string' }, provider: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: false }).values;
 } catch (err) {
   console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
@@ -50,8 +51,15 @@ const reviewerName = (width) => options.runner ?? `Reviewer ${width}`;
 const SHOTS = path.resolve(options.out ?? path.join(root, 'tabula-review', 'ai-review'));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-ai-review-'));
 let DIST = path.join(root, 'dist');
+const PROVIDER = options.provider ?? 'anthropic';
+if (!['anthropic', 'openai-compatible'].includes(PROVIDER)) {
+  console.error(`bad provider "${PROVIDER}"\n${USAGE}`);
+  process.exit(2);
+}
+const OPENAI = PROVIDER === 'openai-compatible';
 const API_KEY = 'a-fake-key-for-tests';
-const MODEL = 'claude-haiku-5-5';
+// an OpenAI-compatible model id is free text, with a slash like the ones of a hosted catalogue
+const MODEL = OPENAI ? 'tabula-stub/json-1' : 'claude-haiku-5-5';
 const NOW = Date.UTC(2026, 0, 15, 10, 0, 0);
 const BASE_NOTES = [
   { id: 'seed-note-1', text: 'Fast feedback helped the team', x: -400, y: -180, fill: '#FFE16B' },
@@ -135,7 +143,7 @@ async function startRelay(baseUrl) {
       TABULA_AI_API_KEY: API_KEY,
       TABULA_AI_OPEN: '1',
       TABULA_AI_MODEL: MODEL,
-      ANTHROPIC_BASE_URL: baseUrl,
+      ...(OPENAI ? { TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_BASE_URL: baseUrl } : { ANTHROPIC_BASE_URL: baseUrl }),
       // open mode counts AI runs per client address (20 an hour), so every browser context below names its own address in
       // x-forwarded-for and the relay reads it; one machine can then run the check for many themes and widths in an hour
       TABULA_TRUST_PROXY: '1',
@@ -850,7 +858,8 @@ async function main() {
     throw new Error('playwright is not installed. Run npm ci, then once: npx playwright install chromium');
   });
   browser = await launchBrowser(chromium);
-  stub = await startAnthropicStub({ apiKey: API_KEY, model: MODEL, answers: { generate: { objects: GENERATED, frame: { title: 'Summary' } }, cluster: GROUP_PROPOSAL } });
+  const startStub = OPENAI ? startOpenAiStub : startAnthropicStub;
+  stub = await startStub({ apiKey: API_KEY, model: MODEL, answers: { generate: { objects: GENERATED, frame: { title: 'Summary' } }, cluster: GROUP_PROPOSAL } });
   relay = await startRelay(stub.base);
   const cfg = await fetch(`${relay.base}/api/ai/config`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json());
   check('setup: Open mode enables the requested AI model', { enabled: cfg.enabled, model: cfg.model, features: cfg.features }, {
@@ -872,20 +881,20 @@ async function main() {
 
   // each width asks generate twice and cluster twice, and the two-person scenario asks generate once
   const expectedFeatures = [...WIDTHS.flatMap(() => ['generate', 'generate', 'cluster', 'cluster']), 'generate'];
-  check('setup: every provider call went to the local Anthropic stub', {
+  check(`setup: every provider call went to the local ${OPENAI ? 'OpenAI-compatible' : 'Anthropic'} stub`, {
     count: stub.calls.length,
     hosts: [...new Set(stub.calls.map((c) => c.path))],
     models: [...new Set(stub.calls.map((c) => c.model))],
-    keysMatched: stub.calls.every((c) => c.apiKeyMatched),
+    keysMatched: stub.calls.every((c) => (OPENAI ? c.keyMatched : c.apiKeyMatched)),
     features: stub.calls.map((c) => c.feature),
-    formats: stub.calls.map((c) => c.requestFormat),
+    formats: stub.calls.map((c) => (OPENAI ? c.format : c.requestFormat)),
   }, {
     count: expectedFeatures.length,
-    hosts: ['/v1/messages'],
+    hosts: [OPENAI ? '/v1/chat/completions' : '/v1/messages'],
     models: [MODEL],
     keysMatched: true,
     features: expectedFeatures,
-    formats: expectedFeatures.map(() => 'json_schema'),
+    formats: expectedFeatures.map(() => (OPENAI ? 'json_object' : 'json_schema')),
   }, (a, e) => a.count === e.count && isDeepStrictEqual(a.hosts, e.hosts) && isDeepStrictEqual(a.models, e.models) && a.keysMatched && isDeepStrictEqual(a.features, e.features) && isDeepStrictEqual(a.formats, e.formats));
 }
 

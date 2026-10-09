@@ -1,7 +1,8 @@
 // AI settings of a workspace (accounts mode), kept in the directory's `settings` table under ai.* keys, and the strict
 // checks of what the admin console and the account menu may send (docs/ai.md, "Privacy and admin controls").
 
-import { MODELS } from './anthropic.mjs';
+import { DEFAULT_MODEL, MODELS } from './anthropic.mjs';
+import { checkBaseUrl, checkModelId } from './base-url.mjs';
 import { PROVIDERS } from './providers.mjs';
 
 export const FEATURES = ['generate', 'summarise', 'cluster'];
@@ -20,7 +21,9 @@ const KEY = {
   perWorkspaceHour: 'ai.limits.perWorkspaceHour',
 };
 const SETTING_FIELDS = ['enabled', 'features', 'model', 'personalKeys', 'membersOnly', 'limits'];
-const KEY_FIELDS = ['apiKey', 'provider', 'baseUrl'];
+// the admin body already has `model` (the workspace's Anthropic model), so the model of a key is `keyModel` there
+const KEY_FIELDS = ['apiKey', 'provider', 'baseUrl', 'model'];
+const ADMIN_KEY_FIELDS = ['apiKey', 'provider', 'baseUrl', 'keyModel'];
 const API_KEY_RE = new RegExp(`^\\S{${API_KEY_MIN},${API_KEY_MAX}}$`);
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -50,7 +53,8 @@ export function readAiSettings(directory, config) {
   return {
     enabled: get('enabled') === '1',
     features: storedFeatures(get('features')),
-    model: MODELS.includes(model) ? model : config.ai.model,
+    // an Anthropic id: a key of another provider carries its own model, which the screens and a run read from the key
+    model: MODELS.includes(model) ? model : MODELS.includes(config.ai.model) ? config.ai.model : DEFAULT_MODEL,
     personalKeys: get('personalKeys') === '1',
     membersOnly: get('membersOnly') === '1',
     limits: {
@@ -77,11 +81,14 @@ export function writeAiSettings(directory, patch) {
 export const aiEnabledFor = (settings, user) => settings.enabled && !(settings.membersOnly && user.role === 'guest');
 export const personalKeysFor = (settings, user) => settings.personalKeys && !(settings.membersOnly && user.role === 'guest');
 
-/** `{ key: { apiKey, provider } }` or `{ error }` for the key fields (the base URL is not supported in v1). */
-function checkKey(body, { required }) {
+/**
+ * `{ key: { apiKey, provider, baseUrl, model } }` or `{ error }` for the key fields. Anthropic has a fixed address and the
+ * workspace's model setting, so it takes neither; an OpenAI-compatible server needs both, and they come with the key.
+ */
+function checkKey(body, { required, modelField = 'model' }) {
   if (body.apiKey === undefined) {
     if (required) return { error: 'apiKey is required' };
-    for (const name of ['provider', 'baseUrl']) {
+    for (const name of ['provider', 'baseUrl', modelField]) {
       if (body[name] !== undefined && body[name] !== null) return { error: `${name} applies together with apiKey` };
     }
     return { key: null };
@@ -89,8 +96,18 @@ function checkKey(body, { required }) {
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
   if (!API_KEY_RE.test(apiKey)) return { error: `apiKey must be ${API_KEY_MIN} to ${API_KEY_MAX} characters without spaces` };
   if (body.provider !== undefined && !PROVIDERS.includes(body.provider)) return { error: `provider must be one of ${PROVIDERS.join(', ')}` };
-  if (body.baseUrl !== undefined && body.baseUrl !== null) return { error: 'A custom base URL is not supported yet' };
-  return { key: { apiKey, provider: body.provider ?? PROVIDERS[0] } };
+  const provider = body.provider ?? PROVIDERS[0];
+  if (provider !== 'openai-compatible') {
+    for (const name of ['baseUrl', modelField]) {
+      if (body[name] !== undefined && body[name] !== null) return { error: `${name} applies to the openai-compatible provider only` };
+    }
+    return { key: { apiKey, provider, baseUrl: null, model: null } };
+  }
+  const url = checkBaseUrl(body.baseUrl);
+  if (url.error) return { error: url.error };
+  const model = checkModelId(body[modelField]);
+  if (model.error) return { error: model.error.replace(/^model /, `${modelField} `) };
+  return { key: { apiKey, provider, baseUrl: url.baseUrl, model: model.model } };
 }
 
 function checkLimits(limits) {
@@ -118,7 +135,7 @@ export function validateKeyBody(body) {
 export function validateAdminAi(body) {
   if (!isObject(body)) return { error: 'The request body must be a JSON object' };
   for (const name of Object.keys(body)) {
-    if (!SETTING_FIELDS.includes(name) && !KEY_FIELDS.includes(name)) return { error: `Unknown field: ${name.slice(0, 40)}` };
+    if (!SETTING_FIELDS.includes(name) && !ADMIN_KEY_FIELDS.includes(name)) return { error: `Unknown field: ${name.slice(0, 40)}` };
   }
   const patch = {};
   for (const name of ['enabled', 'personalKeys', 'membersOnly']) {
@@ -142,7 +159,7 @@ export function validateAdminAi(body) {
     if (checked.error) return checked;
     patch.limits = checked.patch;
   }
-  const checkedKey = checkKey(body, { required: false });
+  const checkedKey = checkKey(body, { required: false, modelField: 'keyModel' });
   if (checkedKey.error) return checkedKey;
   if (Object.keys(patch).length === 0 && !checkedKey.key) return { error: 'Nothing to change' };
   return { patch, key: checkedKey.key };

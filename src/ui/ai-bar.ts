@@ -913,6 +913,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     return h('div', { class: 'tray aibar-pop', role: 'dialog', 'aria-label': 'Model and cost', tabindex: -1 },
       h('div', { class: 'aibar-label' }, 'Model'),
       h('div', { class: 'aibar-note' }, h('b', null, modelLabel(config.model)), h('br'), CHOSEN_BY_ADMIN, isAdmin() ? [' ', h('a', { class: 'link', href: '#/admin/ai' }, 'AI settings')] : null),
+      config.provider === 'openai-compatible' ? h('div', { class: 'aibar-note' }, 'Tabula does not know the price of this model. Your provider bills your key.') : null,
       h('div', { class: 'aibar-label' }, 'Visibility'),
       visibility,
       h('div', { class: 'aibar-label' }, 'This run'),

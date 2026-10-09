@@ -23,6 +23,11 @@ export const MODEL_OPTIONS: { value: string; label: string }[] = [
 
 export const PROVIDER = 'anthropic';
 export const PROVIDER_LABEL = 'Anthropic';
+export const OPENAI_COMPATIBLE_PROVIDER = 'openai-compatible';
+export const PROVIDER_OPTIONS: { value: string; label: string }[] = [
+  { value: PROVIDER, label: 'Anthropic' },
+  { value: OPENAI_COMPATIBLE_PROVIDER, label: 'OpenAI-compatible (NVIDIA, OpenAI, OpenRouter, local)' },
+];
 
 /** The same bounds the server enforces (server/ai/settings.mjs). */
 export const KEY_MIN = 8;
@@ -32,13 +37,63 @@ export const LIMIT_CAPS = { perPersonHour: 1000, perWorkspaceHour: 10_000 } as c
 export type LimitName = keyof typeof LIMIT_CAPS;
 export const LIMIT_LABELS: Record<LimitName, string> = { perPersonHour: 'Runs per person per hour', perWorkspaceHour: 'Runs per workspace per hour' };
 
+const publicAddressProblem = (raw: string): string | null => {
+  const baseUrl = raw.trim();
+  if (!baseUrl) return 'Enter a base URL.';
+  if (baseUrl.length > 200) return 'A base URL has at most 200 characters.';
+  if (!/^https:\/\//i.test(baseUrl)) return 'Base URL must be an HTTPS address.';
+
+  let address: URL;
+  try {
+    address = new URL(baseUrl);
+  } catch {
+    return 'Base URL must be an HTTPS address.';
+  }
+  if (address.protocol !== 'https:' || !address.hostname) return 'Base URL must be an HTTPS address.';
+  if (address.username || address.password) return 'Base URL cannot include a username or password.';
+  if (baseUrl.includes('?') || baseUrl.includes('#')) return 'Base URL cannot include a query or fragment.';
+
+  const host = address.hostname.toLowerCase().replace(/\.$/, '');
+  if (host === 'localhost' || ['.localhost', '.local', '.internal'].some((suffix) => host.endsWith(suffix)) || privateAddress(host)) {
+    return 'Base URL cannot use a local or private address.';
+  }
+  return null;
+};
+
+function privateAddress(host: string): boolean {
+  if (host.startsWith('[') && host.endsWith(']')) return privateIpv6(host.slice(1, -1));
+  const parts = host.split('.');
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return false;
+  const octets = parts.map(Number);
+  const [a, b] = octets;
+  return a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+function privateIpv6(host: string): boolean {
+  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host)) return true;
+  const mapped = host.match(/^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/i);
+  if (!mapped) return false;
+  const high = Number.parseInt(mapped[1], 16);
+  const low = Number.parseInt(mapped[2], 16);
+  return privateAddress(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+}
+
 /** Why a key cannot be saved yet, or null. The server checks the same rules, and then asks the provider. */
-export function keyProblem(raw: string): string | null {
+export function keyProblem(raw: string, provider = PROVIDER, baseUrl = '', model = ''): string | null {
   const key = raw.trim();
   if (!key) return 'Paste the API key.';
   if (/\s/.test(key)) return 'A key has no spaces.';
   if (key.length < KEY_MIN) return `A key has at least ${KEY_MIN} characters.`;
   if (key.length > KEY_MAX) return `A key has at most ${KEY_MAX} characters.`;
+  if (provider === OPENAI_COMPATIBLE_PROVIDER) {
+    const addressProblem = publicAddressProblem(baseUrl);
+    if (addressProblem) return addressProblem;
+    const id = model.trim();
+    if (!id) return 'Enter a model id.';
+    if (id.length > 100) return 'A model id has at most 100 characters.';
+    if (!/^[a-z\d]/i.test(id)) return 'A model id starts with a letter or digit.';
+    if (!/^[a-z\d][a-z\d._:/@+-]*$/i.test(id)) return 'A model id uses only letters, digits, ., _, :, /, @, + and -.';
+  }
   return null;
 }
 
@@ -94,9 +149,22 @@ export function patchOf(saved: AdminAi, draft: AdminDraft): AdminAiPatch | null 
 
 export const modelLabel = (id: string): string => MODEL_OPTIONS.find((o) => o.value === id)?.label ?? id;
 
-/** "Anthropic key ending …a1b2": all the app ever shows of a stored key. */
-export function keyLine(info: Pick<AiKeyInfo, 'provider' | 'hint'>): string {
-  return `${info.provider === PROVIDER ? PROVIDER_LABEL : info.provider} key ending …${info.hint}`;
+/** A host without its path, credentials, query or fragment; only HTTPS addresses are useful here. */
+export function hostOf(baseUrl: string | null | undefined): string | null {
+  if (!baseUrl) return null;
+  try {
+    const address = new URL(baseUrl);
+    return address.protocol === 'https:' && address.host ? address.host : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A stored key is shown only by its hint, provider and non-secret endpoint/model details. */
+export function keyLine(info: Pick<AiKeyInfo, 'provider' | 'hint' | 'baseUrl' | 'model'>): string {
+  const provider = info.provider === PROVIDER ? PROVIDER_LABEL : info.provider === OPENAI_COMPATIBLE_PROVIDER ? 'OpenAI-compatible' : info.provider;
+  const details = [hostOf(info.baseUrl), info.model?.trim() || null].filter((part): part is string => part !== null);
+  return `${provider} key ending …${info.hint}${details.map((part) => ` · ${part}`).join('')}`;
 }
 
 /** When the key was added and last used, for the line under it. */
@@ -116,6 +184,8 @@ export function keyTestErrorMessage(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) return null;
   const e = error as { code?: unknown; status?: unknown; facts?: Record<string, unknown> };
   if (e.code === 'ai_key_invalid') return 'The AI key was rejected.';
+  if (e.code === 'ai_model_invalid') return 'The provider does not know this model or this address. Check the base URL and the model.';
+  if (e.code === 'ai_bad_output') return 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.';
   if (e.code === 'ai_unavailable') return "Anthropic isn't responding. Try again in a moment.";
   if (e.code === 'ai_key_unreadable') return "The key can't be read. Enter it again.";
   if (e.status === 429 || e.code === 'ai_rate_limited' || e.code === 'rate_limited') {

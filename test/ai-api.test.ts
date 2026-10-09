@@ -120,6 +120,7 @@ describe('GET /api/ai/config', () => {
       enabled: false,
       features: ['generate', 'summarise', 'cluster'],
       keySource: null,
+      provider: null,
       model: 'claude-opus-5-5',
       personalKeys: false,
       hasSecret: true,
@@ -438,7 +439,7 @@ describe('personal keys', () => {
     const mine = newKey();
     const res = await w.call(member, 'PUT', '/api/ai/keys/me', { provider: 'anthropic', apiKey: mine });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ provider: 'anthropic', hint: mine.slice(-4) });
+    expect(res.body).toEqual({ provider: 'anthropic', hint: mine.slice(-4), baseUrl: null, model: null });
     expect(res.text).not.toContain(mine);
     expect(w.providers.at(-1)).toEqual({ kind: 'anthropic', apiKey: mine });
 
