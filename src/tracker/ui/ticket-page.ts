@@ -171,6 +171,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   let cache: TrackerTicketCache = opts.store.ticket(opts.key);
   let snapshot: TrackerStoreSnapshot = opts.store.snapshot();
   let destroyed = false;
+  let refetchedSeq = -1;
   let titleEditing = false;
   let titleDraft = '';
   let descriptionEditing = false;
@@ -227,7 +228,28 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   void opts.store.loadTicket(opts.key).catch(() => undefined);
   void opts.store.loadMeta().then(() => { if (!destroyed) { snapshot = opts.store.snapshot(); render(); } }).catch(() => undefined);
 
-  function ticket(): TrackerTicket | undefined { return cache.detail?.ticket ?? cache.ticket; }
+  // List and poll rows are slim (no creator, labels, relations). The page needs the full ticket, so a slim copy is completed from the detail
+  // and defaults, and the full ticket is fetched once for that updatedSeq. Without this a conflict plus a poll crashed the page.
+  function ticket(): TrackerTicket | undefined {
+    const raw = cache.ticket ?? cache.detail?.ticket;
+    const detail = cache.detail?.ticket;
+    if (!raw) return detail;
+    const merged = !detail ? raw : raw.updatedSeq >= detail.updatedSeq ? { ...detail, ...raw } : detail;
+    if (merged.creator && merged.labels && merged.relations && merged.links && merged.aliases) return merged;
+    if (!destroyed && refetchedSeq !== merged.updatedSeq) {
+      refetchedSeq = merged.updatedSeq;
+      void opts.store.loadTicket(opts.key, true).catch(() => undefined);
+    }
+    return {
+      ...merged,
+      creator: merged.creator ?? { type: 'user', id: null, name: 'Unknown' },
+      labels: merged.labels ?? [],
+      relations: merged.relations ?? [],
+      links: merged.links ?? [],
+      aliases: merged.aliases ?? [],
+      description: merged.description ?? '',
+    };
+  }
   function meta(): TrackerMeta | undefined { return snapshot.meta; }
   function archived(): boolean { return Boolean(ticket()?.archivedAt); }
   function canRestore(): boolean { return opts.me.canWrite && !snapshot.readOnly; }
@@ -668,7 +690,8 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     if (current.due && current.due < today && current.assignee?.userId === opts.me.userId && current.state.category !== 'completed' && current.state.category !== 'canceled') {
       idButton.classList.add('tk-header-key--overdue');
     }
-    idButton.append(keyChip(current.key));
+    idButton.replaceChildren(keyChip(current.key), h('span', { class: 'tk-copy-glyph', 'aria-hidden': 'true' }, '⧉'));
+    idButton.setAttribute('data-tip', 'Copy link');
     header.append(idButton);
     const stateButton = fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); }, 'ticket-state');
     stateButton.prepend(stateGlyph(current.state.category, current.state.key));
@@ -684,6 +707,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const tools = h('div', { class: 'tk-header-tools' });
     const moreButton = button('More ticket actions', 'tk-icon-button', false, () => { menuOpen = !menuOpen; render(); }, 'ticket-menu');
     moreButton.textContent = '⋯';
+    moreButton.setAttribute('data-tip', 'More actions');
     moreButton.setAttribute('aria-expanded', String(menuOpen));
     tools.append(moreButton);
     if (menuOpen) {
@@ -694,7 +718,10 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       else menu.append(describeDisabled(button('Restore', 'tk-menu-item', !canRestore(), () => archive(false)), !canRestore(), permissionReason()));
       header.appendChild(menu);
     }
-    tools.append(button('Close ticket', 'tk-icon-button', false, () => opts.onClose(), 'ticket-close'));
+    const closeButton = button('Close ticket', 'tk-icon-button', false, () => opts.onClose(), 'ticket-close');
+    closeButton.textContent = '×';
+    closeButton.setAttribute('data-tip', 'Close ticket');
+    tools.append(closeButton);
     header.appendChild(tools);
     root.appendChild(header);
 
