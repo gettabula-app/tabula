@@ -120,6 +120,18 @@ async function stateOf(s: Server, cookie: string | undefined, board: string, id:
   return { res, doc };
 }
 
+function savedObjectCount(s: Server, board: string): number | null {
+  const file = path.join(s.dir, `${board}.yjs`);
+  if (!fs.existsSync(file)) return null;
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, fs.readFileSync(file));
+    return doc.getMap('objects').size;
+  } finally {
+    doc.destroy();
+  }
+}
+
 // ---------------------------------------------------------------- websocket
 
 const wsFor = (s: Server, cookie?: string) =>
@@ -218,7 +230,7 @@ describe('version history in open mode', { timeout: 40_000 }, () => {
     const target = (await list(s, undefined, board))[0];
 
     put(c, 6, 4);
-    await sleep(1300); // saved by the relay; the interval keeps it from being another automatic version
+    await until(() => savedObjectCount(s, board) === 10, 20_000); // the interval keeps it from being another automatic version
     const begun = await call(s, undefined, 'POST', `${versionsUrl(board)}/${target.id}/begin-restore`, {});
     expect(begun.status).toBe(200);
     expect(begun.body.preRestore).toMatchObject({ kind: 'pre-restore', objects: 10, from: target.id });
@@ -447,7 +459,7 @@ describe('version history in accounts mode', { timeout: 60_000 }, () => {
     const c = connect(s, board, editor.cookie);
     await synced(c);
     put(c, 5, 3);
-    await sleep(1300);
+    await until(() => savedObjectCount(s, board) === 8, 20_000);
     const begun = await call(s, editor.cookie, 'POST', `${versionsUrl(board)}/${target.id}/begin-restore`, {});
     expect(begun.body.preRestore).toMatchObject({ kind: 'pre-restore', objects: 8, by: editor.user.id, from: target.id });
     c.doc.transact(() => {

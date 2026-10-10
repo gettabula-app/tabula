@@ -1,12 +1,5 @@
 {
-  "about": "Per-test time limit on the Windows CI shards (TAB-201), checked by scripts/test-timings.mjs --budget. The test timeout is 60 s; a test slower than half of it fails the job by name, so it is made cheaper before it becomes a flaky timeout. Set from five main runs (15 Windows samples per test, 2026-10-09): every test but the two exempted ones stayed under 23 s. An exemption needs its own limit and a reason; remove it once the test is fast.",
+  "about": "Per-test time limit on the Windows CI shards (TAB-201), checked by scripts/test-timings.mjs --budget. The test timeout is 60 s; a test slower than half of it fails the job by name, so it is made cheaper before it becomes a flaky timeout. Set from five main runs (15 Windows samples per test, 2026-10-09): every test stayed under 23 s.",
   "maxTestSeconds": 30,
-  "exempt": [
-    {
-      "file": "relay-save.test.ts",
-      "test": "writes the room file within about 30 seconds",
-      "maxSeconds": 40,
-      "reason": "Waits for the relay's 30 s maximum save delay by design (30.3 s on Windows)."
-    }
-  ]
+  "exempt": []
 }

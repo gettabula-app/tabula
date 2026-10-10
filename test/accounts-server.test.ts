@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
 import * as syncProtocol from 'y-protocols/sync';
@@ -1201,22 +1203,33 @@ describe('other server configurations', () => {
   });
 
   it('extends a session cookie as it slides, and ignores X-Forwarded-For unless TABULA_TRUST_PROXY=1', async () => {
-    const short = await launch({ TABULA_SESSION_DAYS: '0.00004', TABULA_TRUST_PROXY: '0' }); // about 3.5 seconds
+    const sessionMs = 24 * 60 * 60 * 1000;
+    const sessionServer = await launch({ TABULA_SESSION_DAYS: '1', TABULA_TRUST_PROXY: '0' });
     const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
-      fetch(short.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+      fetch(sessionServer.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
     expect((await post('/api/auth/request', { email: OWNER })).status).toBe(200);
-    const mail = JSON.parse(fs.readFileSync(path.join(short.dir, 'outbox.jsonl'), 'utf8').trim().split('\n').pop()!) as Mail;
+    const mail = JSON.parse(fs.readFileSync(path.join(sessionServer.dir, 'outbox.jsonl'), 'utf8').trim().split('\n').pop()!) as Mail;
     const verify = await post('/api/auth/verify', { token: tokenOf(mail) });
     expect(verify.status).toBe(200);
     const issued = verify.headers.getSetCookie()[0];
     const cookie = /tabula_session=[^;]+/.exec(issued)![0];
 
-    const early = await fetch(`${short.base}/api/me`, { headers: { cookie } });
+    const early = await fetch(`${sessionServer.base}/api/me`, { headers: { cookie } });
     expect(early.status).toBe(200);
     expect(early.headers.get('set-cookie')).toBeNull();
-    await sleep(2000); // past half of the lifetime, before the end
-    const later = await fetch(`${short.base}/api/me`, { headers: { cookie } });
+
+    // Put this session past its refresh threshold directly instead of waiting for the wall clock.
+    const tokenHash = crypto.createHash('sha256').update(cookie.slice(cookie.indexOf('=') + 1)).digest('hex');
+    const db = new DatabaseSync(path.join(sessionServer.dir, 'directory.sqlite'));
+    try {
+      const changed = db.prepare('UPDATE sessions SET last_seen = expires_at - ? WHERE token_hash = ?').run(sessionMs * 3, tokenHash);
+      expect(changed.changes).toBe(1);
+    } finally {
+      db.close();
+    }
+
+    const later = await fetch(`${sessionServer.base}/api/me`, { headers: { cookie } });
     expect(later.status).toBe(200);
     const refreshed = later.headers.get('set-cookie')!;
     expect(refreshed.startsWith(`${cookie};`)).toBe(true);
