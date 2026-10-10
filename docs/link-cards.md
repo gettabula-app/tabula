@@ -199,9 +199,11 @@ None. The card draws its image and icon from `/api/boards/:id/assets/:hash` (`'s
 | What | Limit |
 |---|---|
 | Address | 2,048 characters, `http`/`https`, ports 80/443 |
+| Response headers | 16 KiB; an oversized or malformed response is `unreachable` |
 | Redirects | 3 |
 | Time | 5 s for the page, 5 s for image and icon together, 2 s per DNS lookup |
 | HTML | 1 MB decoded, reading stops at `</head>` |
+| Content encoding | A single supported encoding is accepted case-insensitively; stacked or unknown encodings are `unreachable` |
 | Preview image | 2 MB, PNG/JPEG/GIF/WebP, the asset store's pixel cap |
 | Icon | 256 KB, PNG/JPEG/GIF/WebP |
 | Title / description / site name | 300 / 1,000 / 100 characters |
