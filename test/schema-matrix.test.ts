@@ -5,7 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { CHAT_MIGRATIONS, openChat } from '../server/chat.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
-import { migrate } from '../server/schema.mjs';
+import { migrate, maxReaderOf } from '../server/schema.mjs';
 
 type Migration = string | { sql: string; minReader: number };
 type Store = {
@@ -103,7 +103,7 @@ for (const store of stores) {
       } finally {
         db.close();
       }
-      expect(state).toEqual({ version: store.migrations.length, minReader: store.migrations.length - 1, legacy: false });
+      expect(state).toEqual({ version: store.migrations.length, minReader: maxReaderOf(store.migrations), legacy: false });
       expect(snapshot(copy)).toEqual(before);
 
       // Chat has one migration, so generation zero has no tables to read; the state assertion above checks min_reader 0 is readable.

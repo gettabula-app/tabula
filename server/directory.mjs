@@ -341,9 +341,11 @@ export const MIGRATIONS = [
   INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES ('trk_default', 'TAB', 1, 0);
   `,
   // Tracker slice 6: the notifications table is the in-app inbox and the email outbox in one (docs/tracker-architecture.md
-  // section 6, Notification fan-out). Expand-only. One row per person per event: `dedupe_key` is `ev:<event id>` for event
-  // notices and `due:<ticket id>:<due date>` for due-soon notices. `suppressed_at` marks a notice whose recipient lost access.
-  `
+  // section 6, Notification fan-out). Purely additive (new table and indexes, foreign keys only CASCADE), so the build before
+  // it still reads the file and `minReader` stays at 11, which keeps a rollback to v5.0.1 possible. One row per person per
+  // event: `dedupe_key` is `ev:<event id>` for event notices and `due:<ticket id>:<due date>` for due-soon notices.
+  // `suppressed_at` marks a notice whose recipient lost access.
+  { minReader: 11, sql: `
   CREATE TABLE notifications (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -364,7 +366,7 @@ export const MIGRATIONS = [
   CREATE INDEX notifications_ticket ON notifications(ticket_id);
   CREATE INDEX notifications_email_due ON notifications(next_email_at)
     WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
-  `,
+  ` },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

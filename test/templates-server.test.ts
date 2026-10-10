@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import fs from 'node:fs';
 import { CLEAN_SVG, HOSTILE_SVG } from './svg-payloads';
 import os from 'node:os';
@@ -369,7 +370,7 @@ describe('templates in the directory', () => {
     dirs.push(dir);
     const file = path.join(dir, 'directory.sqlite');
     const old = new DatabaseSync(file);
-    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migration);
+    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migrationSql(migration));
     old.exec('PRAGMA user_version = 5');
     old.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ana', 'member', 0, 1)").run();
     old.close();

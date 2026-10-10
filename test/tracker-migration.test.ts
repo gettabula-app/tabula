@@ -83,9 +83,9 @@ describe('tracker migration 12', () => {
     }
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     const state = readSchemaState(upgraded.db);
-    expect(state).toEqual({ version: MIGRATIONS.length, minReader: MIGRATIONS.length - 1, legacy: false });
-    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: MIGRATIONS.length, maxReader: MIGRATIONS.length - 1 }, disk: { schema: MIGRATIONS.length, minReader: MIGRATIONS.length - 1 } });
-    expect(maxReaderOf(MIGRATIONS)).toBe(MIGRATIONS.length - 1);
+    expect(state).toEqual({ version: MIGRATIONS.length, minReader: 11, legacy: false });
+    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: MIGRATIONS.length, maxReader: 11 }, disk: { schema: MIGRATIONS.length, minReader: 11 } });
+    expect(maxReaderOf(MIGRATIONS)).toBe(11);
     upgraded.close();
 
     const reopened = open(file);
