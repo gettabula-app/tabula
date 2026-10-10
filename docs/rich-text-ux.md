@@ -1,6 +1,6 @@
 # Rich text: UX (popover, keys, lists, phones, look)
 
-Status: draft for Johan. Companion to the architecture spec, `docs/rich-text.md` (tech lead). It uses that spec's command names (`toggle-mark`, `set-alignment`, `set-list`, state `on | off | mixed`) and its shortcut hooks; where this file proposes something different it says so. To be appended to, or linked from, `docs/rich-text.md` as its UX section.
+Status: draft for Johan; the open points with the tech lead are settled (their `docs/rich-text.md` §18 reconciles this file, commit 4da81b2). Companion to the architecture spec, `docs/rich-text.md` (tech lead). It uses that spec's command names (`toggle-mark`, `set-alignment`, `set-list`, state `on | off | mixed`) and its shortcut hooks; where this file proposes something different it says so. To be appended to, or linked from, `docs/rich-text.md` as its UX section.
 
 Scope: the formatting controls for text elements: bold, italic, underline, strikethrough; bullet and numbered lists; align left, centre, right. Nothing here changes what a text element is. Typography choices (font, size, colour) stay object-level, as in the architecture spec's recommendation.
 
@@ -26,7 +26,7 @@ Scope: the formatting controls for text elements: bold, italic, underline, strik
 - **If there is no room above** (element near the top of the viewport, under the top bars) it goes **below** the element, again clear of the bottom handles. If neither fits (a very tall element filling the view) it **pins to the top of the visible canvas**, under the top bars, so it is never off screen. The existing `placePopover` logic in `src/ui/popover-layout.ts` and `visibleHeight()` (visual viewport) are used; nothing new is invented.
 - It follows the element while the camera pans or zooms (re-placed on each frame, no animation), but **does not scale with zoom**: the controls stay 44 px on touch and 32 px with a mouse at any zoom.
 - Pointer-events: the popover swallows pointerdown so the canvas never sees it, and holds the editor's blur (the same `holdBlur` mechanism the emoji bar uses), so a click on a control does not commit and close the edit.
-- It does not overlap the **emoji bar** (`Add emoji`): that bar sits below the element; on a text element the emoji button joins the popover as its last control and the separate bar is not shown for text (one fewer thing on screen). Proposal; see question 4.
+- It does not overlap the **emoji bar** (`Add emoji`): that bar sits below the element; on a text element the emoji button joins the popover as its last control and the separate bar is not shown for text (one fewer thing on screen). Agreed with the tech lead.
 
 ### 2.3 Layout
 
@@ -88,7 +88,7 @@ The shortcuts are the architecture spec's hooks (the only change is noted below)
 | `Tab`, `Shift+Tab` | Move focus into and out of the popover (see below) |
 
 - **Board shortcuts never fire** while the editor or popover has focus (the architecture spec's rule); the text editor's keydown already stops propagation, the popover does the same.
-- **Reaching the popover from the keyboard**: `Tab` from the editor moves focus to the first control (Bold); arrows move along the row (roving tabindex, `Home`/`End` to the ends), `Space`/`Enter` press, `Tab` again leaves to the next focusable thing (the emoji control is last in the row), `Shift+Tab` or `Esc` returns to the editor with the selection restored. This **changes the editor's current "Tab commits"** behaviour to "Tab goes to the controls; Esc commits": proposed because a keyboard-only user otherwise cannot reach the controls at all. Confirm with tech lead and Johan (question 2).
+- **Reaching the popover from the keyboard**: `Tab` from the editor moves focus to the first control (Bold); arrows move along the row (roving tabindex, `Home`/`End` to the ends), `Space`/`Enter` press, `Tab` again leaves to the next focusable thing (the emoji control is last in the row), `Shift+Tab` or `Esc` returns to the editor with the selection restored. This **changes the editor's current "Tab commits"** behaviour to "Tab goes to the controls; Esc commits": proposed because a keyboard-only user otherwise cannot reach the controls at all. Agreed with the tech lead (section 9).
 - Chord conflicts: `Cmd+Shift+L/E/R` and `Cmd+Shift+7/8` can be taken by a browser or OS (the architecture spec marks this OPEN). They are checked on macOS Safari/Chrome/Firefox and Windows Chrome/Edge/Firefox before the freeze; where a chord is taken the control still works and the tooltip shows only the shortcuts that actually work on that platform.
 
 ## 4. Lists
@@ -103,7 +103,7 @@ Lists are paragraph attributes, depth 1 in v1 (no nesting; the architecture spec
 | `Backspace` | elsewhere | Normal deletion. |
 | `Delete` | at the end of an item | Merges the next paragraph into this one (keeps this item's list kind). |
 | `Tab` | in an item | Not an indent in v1 (no nesting): it moves focus to the popover as in section 3. Indent and outdent (`Tab`/`Shift+Tab`, or `Cmd+]`/`Cmd+[`) are reserved for when nesting is added. |
-| `Shift+Enter` | in an item | A soft line break inside the same item (no new marker), if the data model supports soft breaks; otherwise it behaves as Enter (question 3). |
+| `Shift+Enter` | in an item | Same as `Enter`: there is no soft line break in v1 (every newline is a paragraph, decided with the tech lead), so it starts a new item. A soft break is a follow-up. |
 | Typing `- `, `* ` or `1. ` | at an empty paragraph | Starts a bullet or numbered list and removes the typed characters. One undo restores the literal characters (the architecture spec's open question 5). Not applied to pasted or remote text. |
 | Toggle (button or `Cmd+Shift+8/7`) | selection across several paragraphs | All touched paragraphs become that list kind; if all already are, all are cleared; mixed kinds become the pressed kind. |
 
@@ -143,11 +143,16 @@ Follows the architecture spec's section 12. In addition:
 - Visual states (Chromium, WebKit, Firefox at 360, 390, 1280; five themes for contrast): popover over a text element, over one near the top (flips below), pressed and mixed states, two-row phone layout, docked above the keyboard (the `emojiKeyboard` Proxy helper), list editing sequence.
 - Keyboard-only run: reach the popover with Tab, press every control, return with Esc, undo each.
 
-## 9. Questions for Johan and tech lead
+## 9. Settled and open
 
-1. **Which elements get the popover first?** Text elements only (proposed, matches the architecture spec's recommendation), or stickies and shapes too?
-2. **Tab.** Proposed: `Tab` moves into the popover and `Esc` commits, so keyboard users can reach the controls; it replaces "Tab commits". Alternative: keep "Tab commits" and add a dedicated chord (e.g. `Alt+F10`) to focus the popover.
-3. **Soft line break.** Does the data model have a line break inside a paragraph (`Shift+Enter`), or is every newline a new paragraph?
-4. **Emoji control.** Fold it into the popover for text elements (proposed) or keep the separate "Add emoji" bar?
-5. **Auto-format `- ` and `1. `.** On (proposed, with undo restoring the literal), or off in v1?
-6. **Strikethrough shortcut.** `Cmd+Shift+X` as asked; it is `Cmd+Shift+S` in some editors and `Ctrl+Shift+X` is free in major browsers. Keep as asked.
+Settled with the tech lead:
+- **Tab** moves focus into the popover and `Esc` returns to the editor (a change from "Tab commits", only for rich-capable objects). `Alt+F10` is the fallback if testing finds Tab-in disruptive.
+- **No soft line break** in v1; `Shift+Enter` acts like `Enter`.
+- **Emoji** is the last control of the popover on text elements.
+- **Mixed** is `aria-pressed="mixed"`.
+- **List keys** and the **phone** layout as written above.
+
+For Johan:
+1. **Which elements get the popover first?** Text elements only (proposed, matches the architecture spec), or stickies and shapes too?
+2. **Auto-format `- ` and `1. `** at an empty paragraph (with undo restoring the literal characters), or literal in v1? (The architecture spec's open question 5.)
+3. **Strikethrough shortcut** as asked, `Cmd+Shift+X`.
