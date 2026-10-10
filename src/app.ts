@@ -645,7 +645,7 @@ export class BoardApp {
         if (g && o.label && Math.hypot(p.x - g.mid.x, p.y - g.mid.y) < 16 / this.zoom) return o;
         continue;
       }
-      if (o.type === 'frame' && opts.frames === false) continue;
+      if ((o.type === 'frame' || o.type === 'tracker') && opts.frames === false) continue;
       // lanes and cards sit 8 apart and 16 apart: no slack around them, or the one below takes clicks meant for its neighbour
       if (hitBox(this.store.placed(o), p, this.store.isLaidOut(o) ? 0 : tol)) return o;
     }
@@ -685,7 +685,7 @@ export class BoardApp {
       if (step?.mode === 'private-write' && !this.store.getFlow().reveal) o.privateStep = step.id;
     }
     if (type === 'frame') o.font = meta.headingFont;
-    if (type !== 'frame') {
+    if (type !== 'frame' && type !== 'tracker') {
       const f = this.frameAt(center(o));
       if (f) o.parent = f.id;
     }
@@ -1940,14 +1940,15 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const min = 8;
-    if (r - l < min) {
-      if (h.includes('w')) l = r - min;
-      else r = l + min;
+    const minW = o0.type === 'tracker' ? 480 : 8;
+    const minH = o0.type === 'tracker' ? 360 : 8;
+    if (r - l < minW) {
+      if (h.includes('w')) l = r - minW;
+      else r = l + minW;
     }
-    if (b - t < min) {
-      if (h.includes('n')) t = b - min;
-      else b = t + min;
+    if (b - t < minH) {
+      if (h.includes('n')) t = b - minH;
+      else b = t + minH;
     }
     const w = r - l, hh = b - t;
     const c0 = center(o0);
@@ -2230,7 +2231,7 @@ export class BoardApp {
       return;
     }
     if (hit) {
-      if (hit.type === 'frame' || hit.type === 'icon' || hit.type === 'image' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
+      if (hit.type === 'frame' || hit.type === 'tracker' || hit.type === 'icon' || hit.type === 'image' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
         if (hit.type === 'frame') this.editor.start(hit.id);
         return;
       }

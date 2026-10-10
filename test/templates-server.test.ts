@@ -54,9 +54,11 @@ describe('constants that mirror the client', () => {
     const uml = /export type UmlType =([^;]+);/.exec(types)![1];
     const names = [...base.matchAll(/'([^']+)'/g), ...uml.matchAll(/'([^']+)'/g)].map((m) => m[1]);
     // a template never holds an image: its assets belong to the board it came from (docs/images.md, Templates)
-    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.filter((n) => n !== 'image').sort());
+    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.filter((n) => n !== 'image' && n !== 'tracker').sort());
     expect(names).toContain('image');
     expect(OBJ_TYPES).toContain('image');
+    expect(names).toContain('tracker');
+    expect(OBJ_TYPES).toContain('tracker');
   });
 
   it('lists the same relations as UmlRelation, and the step modes of StepMode but poll', () => {
@@ -200,6 +202,9 @@ describe('content that is refused', () => {
     expect(problem(content([sticky('a', { type: 'script' })]))).toMatch('unknown type');
     expect(problem(content([sticky('a', { type: undefined })]))).toMatch('unknown type');
     expect(problem(content([sticky('a', { type: '__proto__' })]))).toMatch('unknown type');
+    expect(problem(content([{
+      id: 'tracker', type: 'tracker', x: 0, y: 0, w: 1280, h: 800, rotation: 0, z: '1', trackerId: 'workspace', view: 'inbox',
+    }]))).toMatch('Templates cannot contain tracker frames');
     expect(problem(content(['text']))).toMatch('not an object');
   });
 
