@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -1074,6 +1074,77 @@ const STATES = {
     }
     await assertTrackerLayout(page);
   },
+  async 'tracker-real-server'({ page, base, tracker }) {
+    if (!tracker?.tickets?.length) throw new Error('tracker-real-server: real tracker fixture is missing');
+    const openAllIssues = async () => {
+      await page.goto(`${base}/t/all`);
+      await page.locator('.trk-route-root .trk-shell').waitFor();
+      await page.locator('.trk-list-row').nth(2).waitFor();
+    };
+    const assertRows = async () => {
+      const shellText = await page.locator('.trk-shell').innerText();
+      if (/\b0 issues\b/i.test(shellText)) throw new Error('tracker-real-server: All issues shows 0 issues');
+      for (const ticket of tracker.tickets) {
+        const row = page.locator(`.trk-list-row[data-key="${ticket.key}"]`);
+        await row.waitFor();
+        const key = (await row.locator('.trk-col-key').innerText()).replace(/\s+/g, '');
+        const title = (await row.locator('.trk-col-title').innerText()).trim();
+        const state = (await row.locator('.trk-col-state').innerText()).trim();
+        if (key !== ticket.key || !title.includes(ticket.title) || !state.includes(ticket.state.name)) {
+          throw new Error(`tracker-real-server: row ${ticket.key} does not match API data (${JSON.stringify({ key, title, state })})`);
+        }
+      }
+    };
+
+    await openAllIssues();
+    await assertRows();
+    if (!tracker.dialogIssueCreated) {
+      await page.getByRole('button', { name: /New issue/ }).click();
+      await page.locator('.trk-new-issue-back[role="dialog"], .trk-new-issue-back .modal[role="dialog"]').first().waitFor();
+      await page.getByLabel('Issue title').fill(tracker.dialogIssueTitle);
+      await page.getByRole('button', { name: 'Create issue', exact: true }).click();
+      await page.locator('.trk-list-row').nth(3).waitFor();
+      tracker.dialogIssueCreated = true;
+    }
+    const createdRow = page.locator('.trk-list-row').filter({ hasText: tracker.dialogIssueTitle }).first();
+    await createdRow.waitFor();
+    const createdState = (await createdRow.locator('.trk-col-state').innerText()).trim();
+    if (!createdState.includes('To do')) throw new Error(`tracker-real-server: dialog-created ticket has unexpected state ${createdState}`);
+    if (await page.locator('.trk-list-row').count() !== 4) throw new Error('tracker-real-server: expected exactly four real issues after dialog creation');
+
+    const first = tracker.tickets[0];
+    await page.goto(`${base}/t/${first.key}`);
+    const ticketTitle = page.locator('.tk-title');
+    await ticketTitle.waitFor();
+    if (!(await ticketTitle.innerText()).includes(first.title)) throw new Error(`tracker-real-server: ${first.key} detail did not show its real title`);
+
+    tracker.guestCheckActive = true;
+    try {
+      await page.context().clearCookies();
+      await page.context().addCookies([{ ...tracker.guestSession, url: base, httpOnly: true, sameSite: 'Lax' }]);
+      await page.goto(`${base}/t/all`);
+      await page.locator('.home-title').waitFor();
+      const guestAccess = await page.evaluate(async () => {
+        const me = await fetch('/api/me', { cache: 'no-store' }).then((response) => response.json());
+        const trackerResponse = await fetch('/api/tracker/meta', { cache: 'no-store' });
+        return { me, trackerStatus: trackerResponse.status };
+      });
+      if (Object.hasOwn(guestAccess.me, 'tracker') || guestAccess.trackerStatus !== 404) {
+        throw new Error(`tracker-real-server: guest tracker access was not hidden (${JSON.stringify({ tracker: guestAccess.me.tracker, status: guestAccess.trackerStatus })})`);
+      }
+      if (await page.locator('.trk-shell, .trk-route-root, [aria-label="Tracker"]').count()) {
+        throw new Error('tracker-real-server: guest page exposed tracker UI');
+      }
+    } finally {
+      tracker.guestCheckActive = false;
+    }
+
+    await page.context().clearCookies();
+    await page.context().addCookies([{ ...tracker.ownerSession, url: base, httpOnly: true, sameSite: 'Lax' }]);
+    await openAllIssues();
+    await assertRows();
+    await assertTrackerLayout(page);
+  },
   async 'tracker-filter-open'({ page, base }) {
     await openTrackerMockShell(page, base);
     await page.getByLabel('Filter or search').fill('sta');
@@ -2068,16 +2139,38 @@ const STATES = {
       const body = element.closest('.modal-body');
       const panelRect = element.getBoundingClientRect();
       const bodyRect = body.getBoundingClientRect();
-      const copy = element.querySelector('button');
+      const buttons = [...element.querySelectorAll('button')];
+      const copy = buttons.find((button) => button.textContent?.trim() === 'Copy code');
+      const radiusToken = getComputedStyle(document.documentElement).getPropertyValue('--radius-md').trim();
+      const panelRadius = getComputedStyle(element).borderRadius;
+      const copyButtons = ['Copy code', 'Copy link'].map((label) => {
+        const button = buttons.find((candidate) => candidate.textContent?.trim() === label);
+        if (!button) return { label, missing: true, height: 0, minHeight: 0 };
+        const rect = button.getBoundingClientRect();
+        return { label, missing: false, height: rect.height, minHeight: Number.parseFloat(getComputedStyle(button).minHeight) };
+      });
       return {
         panel: { top: panelRect.top, bottom: panelRect.bottom },
         body: { top: bodyRect.top, bottom: bodyRect.bottom },
         fits: panelRect.top >= bodyRect.top && panelRect.bottom <= bodyRect.bottom,
         copyFocused: copy?.textContent?.trim() === 'Copy code' && document.activeElement === copy,
+        panelRadius,
+        radiusToken,
+        radiusMatches: radiusToken !== '' && panelRadius === radiusToken,
+        copyButtons,
       };
     });
     if (!visible.fits) throw new Error(`share-code-phone: new code panel is clipped by the modal body: ${JSON.stringify(visible)}`);
     if (!visible.copyFocused) throw new Error('share-code-phone: focus did not move to Copy code');
+    if (!visible.radiusMatches) {
+      throw new Error(`share-code-phone: panel border-radius does not match --radius-md: ${JSON.stringify({ panelRadius: visible.panelRadius, radiusToken: visible.radiusToken })}`);
+    }
+    if (width <= 480) {
+      const tooSmall = visible.copyButtons.find((button) => button.missing || !Number.isFinite(button.height) || button.height < 44 || !Number.isFinite(button.minHeight) || button.minHeight < 44);
+      if (tooSmall) {
+        throw new Error(`share-code-phone: ${tooSmall.label} target must have a 44px height and min-height: ${JSON.stringify(tooSmall)}`);
+      }
+    }
     return { noPark: true };
   },
   async 'empty-menu'(env) {
@@ -3445,7 +3538,7 @@ const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'share-code-phone': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -3462,7 +3555,7 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes, tracker }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
@@ -3470,6 +3563,7 @@ function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) 
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
     if (chat) env.TABULA_CHAT = 'on';
     if (joinCodes) env.TABULA_JOIN_CODES = 'on';
+    if (tracker) env.TABULA_TRACKER = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -3554,6 +3648,57 @@ async function prepareAccounts({ base, dataDir }) {
   return { session: { name: cookie.slice(0, eq), value: cookie.slice(eq + 1) }, cookie };
 }
 
+async function prepareTrackerRealFixture({ base, dataDir, owner }) {
+  const tickets = [];
+  const titles = ['Render a real tracker issue list', 'Show the real tracker state', 'Open a real tracker ticket'];
+  for (const [index, title] of titles.entries()) {
+    const response = await postJson(base, 'tracker/tickets', {
+      title,
+      state: 'todo',
+      idempotencyKey: `visual-${process.pid}-${Date.now()}-${index}`,
+    }, owner.cookie);
+    tickets.push((await response.json()).ticket);
+  }
+
+  const team = await (await postJson(base, 'teams', { name: 'Visual tracker access' }, owner.cookie)).json();
+  const invite = await (await postJson(base, `teams/${team.id}/invites`, { role: 'member' }, owner.cookie)).json();
+  const email = `visual-guest-${process.pid}@example.test`;
+  await postJson(base, 'auth/request', { email, invite: invite.token });
+  const verified = await postJson(base, 'auth/verify', { token: await readLoginToken(dataDir) });
+  const guest = await verified.json();
+  const [guestPair] = verified.headers.getSetCookie()[0].split(';');
+  const guestCookie = guestPair.trim();
+  const separator = guestCookie.indexOf('=');
+  await postJson(base, `members/${guest.user.id}`, { role: 'guest' }, owner.cookie, 'PATCH');
+
+  return {
+    tickets,
+    ownerSession: owner.session,
+    guestSession: { name: guestCookie.slice(0, separator), value: guestCookie.slice(separator + 1) },
+    dialogIssueTitle: 'Create an issue from the real tracker dialog',
+    dialogIssueCreated: false,
+  };
+}
+
+async function startSharedRelay(options, relays) {
+  const relay = newRelayHandle();
+  relays.push(relay);
+  await startRelay(relay, options);
+  const owner = options.mode === 'accounts' ? await prepareAccounts(relay) : null;
+  return {
+    relay,
+    owner,
+    base: relay.base,
+    mode: options.mode,
+    outDir: options.outDir,
+    session: owner?.session ?? null,
+    dataDir: relay.dataDir,
+    chat: null,
+    hasChat: options.chat === true,
+    touch: options.touch,
+  };
+}
+
 // ---------------------------------------------------------------- browser
 
 // Fonts come from Fontshare (the app's own choice). They are fetched once per run and replayed, so the run does not
@@ -3566,20 +3711,14 @@ async function serveOutside(route) {
   if (!url.hostname.endsWith('fontshare.com')) return route.abort();
   const key = url.href;
   if (!fontCache.has(key)) {
-    fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => {
-      try {
-        return {
-          status: res.status(),
-          headers: {
-            ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
-            ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
-          },
-          body: await res.body(),
-        };
-      } catch {
-        return null;
-      }
-    }, () => null));
+    fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => ({
+      status: res.status(),
+      headers: {
+        ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+        ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
+      },
+      body: await res.body(),
+    })).catch(() => null));
   }
   const cached = await fontCache.get(key);
   return cached ? route.fulfill(cached) : route.abort();
@@ -3628,13 +3767,32 @@ async function capture({ browser, state, theme, width, file, shared }) {
     offlineFontCatalogue: state === 'paste-text' || state === 'text-scale-touch',
   });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
+  const consoleErrors = [];
+  const httpErrors = [];
+  const onConsole = (message) => {
+    if (message.type() === 'error') {
+      const location = message.location();
+      const expectedGuestMeta404 = shared.tracker?.guestCheckActive === true
+        && location.url === `${shared.base}/api/tracker/meta`
+        && /404/.test(message.text());
+      if (!expectedGuestMeta404) consoleErrors.push(`${message.text()}${location.url ? ` (${location.url})` : ''}`);
+    }
+  };
+  const onResponse = (response) => {
+    if (response.status() >= 400) httpErrors.push(`${response.status()} ${response.url()}`);
+  };
+  if (state === 'tracker-real-server') page.on('response', onResponse);
+  if (state === 'tracker-real-server') page.on('console', onConsole);
   try {
-    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, outDir: shared.outDir, browserName: browser.browserType().name(), theme, width });
+    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, tracker: shared.tracker, outDir: shared.outDir, browserName: browser.browserType().name(), theme, width });
     // a state that holds the mouse down or keeps an input focused would be undone by parking
     if (shot?.noPark) { /* left as it is */ }
     else if (shot?.keepFocus) await page.mouse.move(1, 1);
     else await park(page);
     await settle(page);
+    if (state === 'tracker-real-server' && (consoleErrors.length || errors.length)) {
+      throw new Error(`tracker-real-server: browser console errors: ${[...consoleErrors, ...errors].slice(0, 4).join('; ')}; HTTP errors: ${httpErrors.slice(0, 8).join('; ') || 'none'}`);
+    }
     result.overflow = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth);
     await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide', fullPage: FULL_PAGE.has(state) });
   } catch (err) {
@@ -3642,6 +3800,8 @@ async function capture({ browser, state, theme, width, file, shared }) {
     result.file = file.replace(/\.png$/, '-FAILED.png');
     await page.screenshot({ path: path.join(shared.outDir, result.file), animations: 'disabled' }).catch(() => undefined);
   } finally {
+    if (state === 'tracker-real-server') page.off('response', onResponse);
+    if (state === 'tracker-real-server') page.off('console', onConsole);
     await context.close().catch(() => undefined);
   }
   return result;
@@ -3776,11 +3936,11 @@ async function main() {
   }
   const started = Date.now();
   let browser = null;
-  let relay = null;
+  const relays = [];
   let closing = null;
   const cleanup = () => (closing ??= (async () => {
     await browser?.close().catch(() => undefined);
-    if (relay) await stopRelay(relay);
+    for (const relay of [...relays].reverse()) await stopRelay(relay);
   })());
   const interrupted = () => cleanup().finally(() => process.exit(130));
   process.on('SIGINT', interrupted);
@@ -3792,17 +3952,39 @@ async function main() {
     browser = await launchChromium();
     const distDir = ensureBuilt(options.noBuild);
     fs.mkdirSync(options.outDir, { recursive: true });
-    relay = newRelayHandle();
-    const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    const joinCodes = options.mode === 'accounts' && options.states.some((state) => ['join-short-code', 'share-code-phone'].includes(state));
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
-    const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
-    if (options.mode === 'accounts') {
-      const owner = await prepareAccounts(relay);
-      shared.session = owner.session;
-      if (chat) shared.chat = await seedChat(relay, owner.cookie);
+    const standardStates = options.states.filter((state) => state !== 'tracker-real-server');
+    const standardShared = standardStates.length ? await startSharedRelay({
+      mode: options.mode,
+      distDir,
+      frameable: options.frameable,
+      chat: options.mode === 'accounts' && standardStates.some((state) => CHAT_STATES.has(state)),
+      joinCodes: options.mode === 'accounts' && standardStates.some((state) => ['join-short-code', 'share-code-phone'].includes(state)),
+      tracker: false,
+      outDir: options.outDir,
+      touch: options.touch,
+    }, relays) : null;
+    if (standardShared?.hasChat) standardShared.chat = await seedChat(standardShared.relay, standardShared.owner.cookie);
+
+    let trackerShared = null;
+    if (options.states.includes('tracker-real-server')) {
+      trackerShared = await startSharedRelay({
+        mode: 'accounts',
+        distDir,
+        frameable: options.frameable,
+        chat: false,
+        joinCodes: false,
+        tracker: true,
+        outDir: options.outDir,
+        touch: options.touch,
+      }, relays);
+      trackerShared.tracker = await prepareTrackerRealFixture({
+        base: trackerShared.base,
+        dataDir: trackerShared.dataDir,
+        owner: trackerShared.owner,
+      });
     }
     for (const state of options.states) {
+      const shared = state === 'tracker-real-server' ? trackerShared : standardShared;
       for (const theme of options.themes) {
         for (const width of options.widths) {
           if (PHONE_ONLY_STATES.has(state) && width >= 600) continue;
