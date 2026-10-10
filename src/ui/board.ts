@@ -53,6 +53,7 @@ import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
 import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink } from './share-logic';
 import { trackPanelTop } from './panel-top';
+import { trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -258,6 +259,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
     ),
   );
+  // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
+  const railTools = rail.querySelector<HTMLElement>('.rail-tools');
+  if (railTools) trackMoreY(railTools);
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
