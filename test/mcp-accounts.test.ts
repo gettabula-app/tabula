@@ -7,7 +7,7 @@ import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { MCP_SERVER_NAME } from '../server/mcp.mjs';
-import { createHarness, sleep, until, type Account, type Body } from './mcp-harness';
+import { createHarness, until, type Account, type Body } from './mcp-harness';
 
 // docs/mcp.md. The relay runs as a child process exactly as `npm start` would, in accounts mode with MCP on.
 
@@ -31,6 +31,44 @@ let thread: string; // a comment thread on the board
 const sticky = (extra: Record<string, unknown> = {}) => ({ type: 'sticky', text: 'a', x: 0, y: 0, ...extra });
 const tokenOf = async (a: Account, scope: 'read' | 'comment' | 'write', boardIds?: string[]) =>
   (await h.newToken(a.cookie, { scope, ...(boardIds ? { boardIds } : {}) })).token;
+
+/**
+ * An allowed write by the owner over the same socket, after a refused request: updates of one connection are processed in order,
+ * so once an observer sees this one, everything a refused request might have changed has arrived too. In a comments room only
+ * threads are allowed, so the marker is a thread there and a meta key in a board room.
+ */
+function writeBarrier(doc: Y.Doc, room: 'board' | 'comments') {
+  const key = `__test_timing_barrier_${Math.random().toString(36).slice(2)}`;
+  doc.transact(() => {
+    if (room === 'board') {
+      doc.getMap('meta').set(key, 'x');
+    } else {
+      const thread = new Y.Map<unknown>([['id', key], ['createdAt', 1], ['text', 'timing barrier'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+      thread.set('replies', new Y.Map());
+      doc.getMap('threads').set(key, thread);
+    }
+  });
+  const seenBy = (observer: Y.Doc) => (room === 'board' ? observer.getMap('meta').get(key) === 'x' : (observer.getMap('threads') as Y.Map<unknown>).has(key));
+  return { key, seenBy };
+}
+
+const encodeState = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+/** The content of a room's documents without the barrier marker: the board's objects and meta, or the comments' threads. */
+function contentWithout(doc: Y.Doc, room: 'board' | 'comments', barrierKey: string) {
+  const without = (map: Y.Map<unknown>) => {
+    const json = map.toJSON() as Record<string, unknown>;
+    delete json[barrierKey];
+    return json;
+  };
+  return room === 'board'
+    ? { objects: doc.getMap('objects').toJSON(), meta: without(doc.getMap('meta')) }
+    : { threads: without(doc.getMap('threads')) };
+}
+function contentOfState(state: string, room: 'board' | 'comments') {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Buffer.from(state, 'base64'));
+  return contentWithout(doc, room, '');
+}
 /** Everything a person's token can do needs boards named for workspace owners. */
 const tokenFor = (a: Account, scope: 'read' | 'comment' | 'write') => tokenOf(a, scope, a === wsOwner && scope !== 'read' ? [board] : undefined);
 
@@ -443,7 +481,10 @@ describe('authorisation', () => {
     const liveComments = h.connect(`${board}~comments`, alice.cookie);
     await live.synced();
     await liveComments.synced();
-    const state = () => [Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64'), Buffer.from(Y.encodeStateAsUpdate(liveComments.doc)).toString('base64')];
+    const boardObserver = h.connect(board, alice.cookie);
+    const commentsObserver = h.connect(`${board}~comments`, alice.cookie);
+    await Promise.all([boardObserver.synced(), commentsObserver.synced()]);
+    const state = () => [encodeState(live.doc), encodeState(liveComments.doc)];
 
     for (const scope of ['read', 'comment', 'write'] as const) {
       const token = await tokenFor(account, scope);
@@ -459,8 +500,12 @@ describe('authorisation', () => {
         const res = await h.tool(token, c.name, c.args);
         expect(res.error, `${c.name} as ${kind} with ${scope}`).toBe(verdict(c.need));
       }
-      await sleep(80);
-      expect(state(), `${kind} ${scope} left the rooms alone`).toEqual(before);
+      const boardBarrier = writeBarrier(live.doc, 'board');
+      const commentsBarrier = writeBarrier(liveComments.doc, 'comments');
+      await until(() => boardBarrier.seenBy(boardObserver.doc) && commentsBarrier.seenBy(commentsObserver.doc), 20_000);
+      const unchanged = [contentOfState(before[0], 'board'), contentOfState(before[1], 'comments')];
+      expect([contentWithout(live.doc, 'board', boardBarrier.key), contentWithout(liveComments.doc, 'comments', commentsBarrier.key)], `${kind} ${scope} left the rooms alone`).toEqual(unchanged);
+      expect([contentWithout(boardObserver.doc, 'board', boardBarrier.key), contentWithout(commentsObserver.doc, 'comments', commentsBarrier.key)], `${kind} ${scope} left the observed rooms alone`).toEqual(unchanged);
 
       for (const c of calls.filter((x) => verdict(x.need) === 'ok')) {
         const res = await h.tool(token, c.name, c.args);
@@ -962,6 +1007,8 @@ describe('a read-only hosted workspace', () => {
 
     const extra = await cloud.newToken(member.cookie, { scope: 'read' });
     expect((await limits({ readOnly: true })).status).toBe(200);
+    const beforeBoard = (await cloud.tool(writeToken, 'get_board', { boardId: mine })).data;
+    const beforeComments = (await cloud.tool(writeToken, 'list_comments', { boardId: mine })).data;
     const live = cloud.connect(mine, member.cookie);
     await live.synced();
     const before = Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64');
@@ -977,8 +1024,12 @@ describe('a read-only hosted workspace', () => {
       expect(res.error).toBe('read_only');
       expect(res.data.message).toBe('This workspace is read-only. Ask the workspace owner to check billing.');
     }
-    await sleep(100);
-    expect(Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64')).toBe(before);
+    // These following reads observe the state after every refused MCP request; the read-only relay cannot accept a socket marker.
+    const afterBoard = await cloud.tool(writeToken, 'get_board', { boardId: mine });
+    const afterComments = await cloud.tool(writeToken, 'list_comments', { boardId: mine });
+    expect(afterBoard.data).toEqual(beforeBoard);
+    expect(afterComments.data).toEqual(beforeComments);
+    expect(encodeState(live.doc)).toBe(before);
 
     expect((await cloud.tool(writeToken, 'get_board', { boardId: mine })).data).toMatchObject({ writable: false, board: { access: 'read' } });
     expect((await cloud.tool(writeToken, 'list_comments', { boardId: mine })).error).toBeUndefined();

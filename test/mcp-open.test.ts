@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import * as Y from 'yjs';
-import { createHarness, sleep, until, type Body } from './mcp-harness';
+import { createHarness, until, type Body } from './mcp-harness';
 
 // docs/mcp.md, open mode: no accounts, one shared token with a fixed scope, off unless asked for.
 
@@ -9,6 +9,29 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const SHARED = 's'.repeat(24) + 'h'.repeat(24);
 const sticky = (extra: Record<string, unknown> = {}) => ({ type: 'sticky', text: 'a', x: 0, y: 0, ...extra });
+
+function writeBarrier(doc: Y.Doc) {
+  const key = '__test_timing_barrier';
+  const value = `${Date.now()}-${Math.random()}`;
+  const origin = {};
+  let update: Uint8Array | undefined;
+  const capture = (next: Uint8Array, gotOrigin: unknown) => {
+    if (gotOrigin === origin) update = next;
+  };
+  doc.on('update', capture);
+  doc.transact(() => doc.getMap('meta').set(key, value), origin);
+  doc.off('update', capture);
+  if (!update) throw new Error('timing barrier produced no update');
+  return { key, value, update };
+}
+
+const encodeState = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+function stateAfter(before: Uint8Array, update: Uint8Array) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, before);
+  Y.applyUpdate(doc, update);
+  return encodeState(doc);
+}
 
 describe('off by default', () => {
   const off = createHarness({});
@@ -110,7 +133,10 @@ describe('with the default scope (read)', () => {
     expect(view.data.board).toMatchObject({ id: board, title: 'Open board', role: null, access: 'read' });
     expect(view.data.objects.map((o: Body) => o.text)).toEqual(['from a browser']);
     expect(view.data.writable).toBe(false);
-    const before = Buffer.from(Y.encodeStateAsUpdate(h.savedDoc(board))).toString('base64');
+    const before = Y.encodeStateAsUpdate(h.savedDoc(board));
+    const barrierWriter = h.connect(board);
+    const observer = h.connect(board);
+    await Promise.all([barrierWriter.synced(), observer.synced()]);
     for (const [name, args] of [
       ['create_objects', { boardId: board, objects: [sticky()] }],
       ['update_objects', { boardId: board, updates: [{ id: 'o1', text: 'x' }] }],
@@ -120,8 +146,13 @@ describe('with the default scope (read)', () => {
     ] as const) {
       expect((await h.tool(SHARED, name, args)).error).toBe('forbidden');
     }
-    await sleep(1300);
-    expect(Buffer.from(Y.encodeStateAsUpdate(h.savedDoc(board))).toString('base64')).toBe(before);
+    const barrier = writeBarrier(barrierWriter.doc);
+    await until(() => observer.doc.getMap('meta').get(barrier.key) === barrier.value
+      && h.savedDoc(board).getMap('meta').get(barrier.key) === barrier.value, 15_000);
+    const expected = stateAfter(before, barrier.update);
+    expect(encodeState(barrierWriter.doc)).toBe(expected);
+    expect(encodeState(observer.doc)).toBe(expected);
+    expect(encodeState(h.savedDoc(board))).toBe(expected);
   });
 
   it('knows no board it was not shown, and never makes a room', async () => {
