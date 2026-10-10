@@ -107,9 +107,10 @@ export function toast(msg: string, ms = 2600, action?: { label: string; onClick:
   } else box.textContent = msg;
   box.classList.toggle('has-action', !!action);
   // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
-  const bar = document.querySelector('.flowbar.show');
+  // (and above the poll card that docks over the bar, which the toast would otherwise hide the foot of)
+  const tops = [...document.querySelectorAll('.flowbar.show, .poll-card:not([hidden])')].map((e) => e.getBoundingClientRect().top);
   const safeBottom = safeInsets().bottom;
-  const base = bar ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
+  const base = tops.length ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - Math.min(...tops) + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
   box.style.bottom = `max(${base}, var(--ai-top, 0px))`;
   box.classList.add('show');
   clearTimeout(toastTimer);

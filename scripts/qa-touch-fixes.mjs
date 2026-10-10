@@ -130,6 +130,38 @@ if (want('selvote')) {
   await ctx.close();
 }
 
+if (want('toast')) {
+  // the "Dot vote started" and "Poll started" toasts appear while the session bar opens: they must sit above it, never over its buttons
+  for (const [w, h] of [[1280, 800], [1024, 700]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+    const page = await ctx.newPage();
+    await page.goto(`${base}/?debug#/b/qtoast${w}`);
+    await page.waitForFunction(() => window.__board);
+    await sleep(800);
+    await page.getByRole('button', { name: 'Start a dot vote' }).click();
+    await page.getByRole('button', { name: 'Start on everything' }).evaluate((e) => e.click());
+    await sleep(350);
+    const r = await page.evaluate(() => { const t = document.querySelector('.toast.show')?.getBoundingClientRect(); const f = document.querySelector('.flowbar.show')?.getBoundingClientRect(); const box = (x) => x && { l: Math.round(x.left), t: Math.round(x.top), r: Math.round(x.right), b: Math.round(x.bottom) }; return { toast: box(t), bar: box(f) }; });
+    const hit = r.toast && r.bar && r.toast.l < r.bar.r && r.toast.r > r.bar.l && r.toast.t < r.bar.b && r.toast.b > r.bar.t;
+    record(`the dot-vote toast does not sit over the session bar (${w}x${h})`, !!r.toast && !!r.bar && !hit, JSON.stringify(r));
+    // a quick poll: the toast must not hide the foot of the poll card either
+    await page.getByRole('button', { name: 'Finish' }).first().click().catch(() => {});
+    await sleep(300);
+    await page.getByRole('button', { name: /quick poll/i }).first().click();
+    const pop = page.locator('.poll-pop');
+    const inputs = pop.locator('input[type=text], input:not([type]), textarea');
+    await inputs.nth(0).fill('Q?');
+    await inputs.nth(1).fill('Ja');
+    await inputs.nth(2).fill('Nej');
+    await pop.getByRole('button', { name: /start poll/i }).click();
+    await sleep(500);
+    const pr = await page.evaluate(() => { const t = document.querySelector('.toast.show')?.getBoundingClientRect(); const c = document.querySelector('.poll-card:not([hidden])')?.getBoundingClientRect(); const f = document.querySelector('.flowbar.show')?.getBoundingClientRect(); const box = (x) => x && { t: Math.round(x.top), b: Math.round(x.bottom), l: Math.round(x.left), r: Math.round(x.right) }; return { toast: box(t), card: box(c), bar: box(f) }; });
+    const over = (a2, b2) => a2 && b2 && a2.l < b2.r && a2.r > b2.l && a2.t < b2.b && a2.b > b2.t;
+    record(`the poll toast covers neither the poll card nor the session bar (${w}x${h})`, !!pr.toast && !!pr.card && !over(pr.toast, pr.card) && !over(pr.toast, pr.bar), JSON.stringify(pr));
+    await ctx.close();
+  }
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);
