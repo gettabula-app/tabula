@@ -189,7 +189,7 @@ export class BoardApp {
   openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
-  /** Set by the board UI: closes its open library drawer when Escape reaches it. */
+  /** Set by the board UI: closes its open library drawer or Comments/Chat tray when Escape reaches it. */
   closeEscapeDrawer: (() => boolean) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
@@ -2248,7 +2248,7 @@ export class BoardApp {
           overlayOpen: !!document.querySelector('.popover, .modal-back'),
           dragging: !!this.drag || !!this.longPress,
           groupOpen: !!this.scope,
-          drawerOpen: !!document.querySelector('.drawer.show'),
+          drawerOpen: document.querySelector<HTMLElement>('.drawer.show, .side-tray.show')?.dataset.tab ?? null,
         });
         if (action === 'overlay' || action === 'none') return;
         if (action === 'drag') {

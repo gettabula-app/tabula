@@ -35,6 +35,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     stop.abort();
     stop = new AbortController();
     tab = tab === t ? null : t;
+    drawer.dataset.tab = tab ?? '';
     drawer.classList.toggle('show', !!tab);
     listeners.forEach((l) => l(tab));
     if (!tab) return drawer.replaceChildren();

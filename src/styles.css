@@ -566,6 +566,13 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
   .top-right { top: calc(64px + var(--safe-top)); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
+  /* the Steps list fills the window from under the top bars, so its message sits over the top bars (two lines at most) for its 2.6 s instead of over the list */
+  body:has(.popover.wide) .toast { top: calc(8px + var(--safe-top)); width: max-content; padding: 8px 12px; font-size: 13px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
+  /* the narrowest phones (320 px): the bar would run under the tool rail, so its gaps and the Share padding give way until it starts right of the rail */
+  @media (max-width: 340px) {
+    .top-right { gap: 2px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); }
+    .top-right .btn.primary { padding-left: 10px; padding-right: 10px; }
+  }
   .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }

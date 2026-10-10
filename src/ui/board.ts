@@ -274,9 +274,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   app.closeEscapeDrawer = () => {
     const tab = library.tab;
-    if (!tab) return false;
-    library.open(null);
-    rail.querySelector<HTMLElement>(`[data-drawer="${tab}"]`)?.focus();
+    if (tab) {
+      library.open(null);
+      (tab === 'shapes' ? shapesBtn : rail.querySelector<HTMLElement>(`[data-drawer="${tab}"]`))?.focus();
+      return true;
+    }
+    const sideTab = sideTray.current();
+    if (!sideTab) return false;
+    sideTray.hide();
+    (sideTab === 'comments' ? comments.button : chat?.button)?.focus();
     return true;
   };
   app.lifetime.signal.addEventListener('abort', () => { app.closeEscapeDrawer = null; }, { once: true });
