@@ -8,6 +8,13 @@ const MODEL = 'gpt-stub';
 const FENCE = String.fromCharCode(96).repeat(3);
 const ANSWERS = { generate: { text: 'generated' }, cluster: { groups: [{ title: 'Theme', ids: ['a', 'b'] }] } };
 const stubs: Array<{ server: Server; base: string; calls: any[]; setMode(mode: string): void }> = [];
+const waitFor = async (condition: () => boolean, timeoutMs = 10_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for local stub request');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
 
 afterEach(async () => {
   for (const stub of stubs.splice(0).reverse()) {
@@ -158,7 +165,7 @@ describe('OpenAI-compatible stub', () => {
       headers: { authorization: 'Bearer ' + KEY },
       signal: controller.signal,
     });
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await waitFor(() => stub.calls.length === 1);
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(stub.calls).toHaveLength(1);

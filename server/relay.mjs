@@ -31,7 +31,7 @@ import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
-import { saveDelay } from './save-delay.mjs';
+import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
@@ -58,11 +58,7 @@ const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
-// Test-only: lets child-relay tests exercise the max-wait save without waiting 30 seconds; invalid values keep the default.
-const requestedTestSaveMaxWaitMs = Number(process.env.TABULA_TEST_SAVE_MAX_WAIT_MS);
-const SAVE_MAX_WAIT_MS = Number.isSafeInteger(requestedTestSaveMaxWaitMs) && requestedTestSaveMaxWaitMs > 0 && requestedTestSaveMaxWaitMs <= 2_147_483_647
-  ? requestedTestSaveMaxWaitMs
-  : 30_000;
+const SAVE_MAX_WAIT_MS = saveMaxWaitMs(); // 30 s; the test-only TABULA_TEST_SAVE_MAX_WAIT_MS can only shorten it (server/save-delay.mjs)
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
@@ -241,13 +237,14 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
       import('./chat-routes.mjs'),
       import('./chat-retention.mjs'),
       import('./chat-notify.mjs'),
+      import('./chat-limits.mjs'),
     ]);
     const store = () => {
       if (maintenance) throw new Error('the workspace is being restored');
@@ -267,7 +264,7 @@ if (config.authEnabled) {
     // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
     const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
-    chat = { store, access, hub: chatHub, notifier: chatNotifier };
+    chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
       if (maintenance || typeof userId !== 'string') return;

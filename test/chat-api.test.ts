@@ -11,6 +11,7 @@ const CLOUD_TOKEN = 'chat-test-cloud-token-0123456789abcdef';
 const h = createHarness({
   accounts: true,
   settings: { CHAT: 'on', CLOUD_TOKEN, CLOUD_URL: 'http://127.0.0.1:9', CLOUD_WORKSPACE_ID: 'chat-ws' },
+  env: { NODE_ENV: 'test', TABULA_TEST_CHAT_BURST_WINDOW_MS: '600000' },
 });
 let owner: Account;
 
@@ -312,7 +313,7 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     const { board, person } = await setup();
     const ana = await person('commenter');
     const ben = await person('commenter');
-    // sent together, so they all land inside the two second burst window
+    // The relay's test-only ten-minute window prevents a loaded runner pause from expiring the burst mid-test.
     const statuses = (await Promise.all(Array.from({ length: 7 }, (_, i) => send(ana, board, `quick ${i}`)))).map((r) => r.status);
     expect(statuses.filter((s) => s === 201)).toHaveLength(5);
     expect(statuses.filter((s) => s === 429)).toHaveLength(2);

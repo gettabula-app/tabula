@@ -171,7 +171,7 @@ describe('with the write scope', () => {
     expect((comments.doc.getMap('threads').get(said.data.threadId) as Y.Map<unknown>).toJSON()).toMatchObject({ authorId: 'mcp', authorName: 'AI tool', text: 'hello from a tool' });
     expect((await h.tool(SHARED, 'reply_to_comment', { boardId: 'open-board-2', threadId: said.data.threadId, text: 'and a reply' })).error).toBeUndefined();
 
-    await sleep(200);
+    await until(() => h.output().includes('mcp.create_objects'), 20_000);
     const log = h.output();
     expect(log).toContain('mcp.create_objects');
     expect(log).toContain('board=open-board-2');

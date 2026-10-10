@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { saveDelay } from '../server/save-delay.mjs';
+import { saveDelay, saveMaxWaitMs } from '../server/save-delay.mjs';
 
 const DEBOUNCE = 1000;
 const MAX_WAIT = 30_000;
@@ -44,5 +44,18 @@ describe('saveDelay (a debounce with a maximum wait)', () => {
   it('never returns a negative delay, even if the clock went backwards', () => {
     expect(delay(T0 - 5000, T0)).toBe(DEBOUNCE);
     expect(delay(T0 + MAX_WAIT * 3, T0)).toBe(0);
+  });
+});
+
+describe('saveMaxWaitMs (the test-only TABULA_TEST_SAVE_MAX_WAIT_MS)', () => {
+  it('defaults to 30 seconds and only ever shortens the wait', () => {
+    expect(saveMaxWaitMs({})).toBe(30_000);
+    expect(saveMaxWaitMs({ TABULA_TEST_SAVE_MAX_WAIT_MS: '2000' })).toBe(2000);
+    expect(saveMaxWaitMs({ TABULA_TEST_SAVE_MAX_WAIT_MS: '30000' })).toBe(30_000);
+  });
+
+  it('keeps the default for anything above it or invalid, so a stray value cannot delay saves', () => {
+    const values = ['30001', '2147483647', '99999999999', '0', '-5', '1.5', 'abc', '', ' ', 'Infinity', 'NaN'];
+    expect(values.map((value) => saveMaxWaitMs({ TABULA_TEST_SAVE_MAX_WAIT_MS: value }))).toEqual(values.map(() => 30_000));
   });
 });
