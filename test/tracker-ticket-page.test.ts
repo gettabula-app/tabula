@@ -85,6 +85,27 @@ function inputByLabel(host: FakeElement, label: string): FakeElement | undefined
 }
 
 describe('ticket page', () => {
+  it('survives a slim ticket row (no creator, labels or relations) in the cache and asks for the full ticket', async () => {
+    browser = installTrackerUiBrowser();
+    const issue = ticket();
+    const api = createMockTrackerApi({ meta: META, tickets: [issue], now: () => NOW });
+    store = createTrackerStore(api, { pollMs: 60_000, now: () => NOW });
+    const real = store;
+    const slim = { ...issue, creator: undefined, labels: undefined, relations: undefined, links: undefined, aliases: undefined } as unknown as TrackerTicket;
+    const loadTicket = vi.fn(real.loadTicket);
+    const wrapped = {
+      ...real,
+      ticket: (key: string) => ({ ...real.ticket(key), ticket: slim, detail: undefined }),
+      watchTicket: (key: string, listener: Parameters<typeof real.watchTicket>[1]) => real.watchTicket(key, (next) => listener({ ...next, ticket: slim, detail: undefined })),
+      loadTicket,
+    };
+    const host = browser.mount() as unknown as HTMLElement;
+    mounted = mountTicketPage(host, { store: wrapped as typeof real, key: issue.key, mode: 'page', onClose: () => {}, onNavigate: () => {}, me: { userId: 'user-me', canWrite: true } });
+    await until(() => Boolean(host.querySelector('.tk-title')));
+    expect(host.querySelector('.tk-title')?.textContent).toBe('Original title');
+    expect(loadTicket).toHaveBeenCalledWith('TAB-1', true);
+  });
+
   it('renders a ticket and edits its title with Enter while Escape cancels', async () => {
     const { host, store: tracker } = await setup();
     expect(host.querySelector('.tk-title')?.textContent).toBe('Original title');
