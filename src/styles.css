@@ -528,6 +528,9 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* a wide panel open above the session bar (the Steps list) would sit under the toast and hide its buttons: the toast takes the top of the window instead, below the top bars */
+body:has(.popover.wide) .toast { bottom: auto; top: calc(72px + var(--safe-top)); transform: translate(-50%, -12px); }
+body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .toast, .toast.show { transform: translate(-50%, 0); transition: opacity 80ms linear; } .timer-fill { transition: none; } }
 
 /* z-index -1: the hint lies under everything else in the chrome (drawers, dialogs, focus cards), which it is appended after */
