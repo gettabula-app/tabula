@@ -2,7 +2,7 @@
 
 **Your AI key** lets you save your own API key in Tabula: an Anthropic key, or a key for any service that speaks the OpenAI API (NVIDIA's catalogue, OpenAI, OpenRouter, or a model server of your own). When personal keys are allowed, AI uses your key in preference to the workspace key.
 
-> AI can use a workspace key, or your key when an admin allows personal keys. AI also needs to be enabled for you. The board shows AI controls only when a key or plan credits are available.
+> AI can use a workspace key, or your key when an admin allows personal keys. AI also needs to be enabled for you. The board shows AI controls only when a key or plan credits are available. On a hosted plan with AI credits, runs with no key use the credits; **Admin → AI** says so before a workspace key is added, and a key you or the workspace has saved is always used first.
 
 ## When you see it
 

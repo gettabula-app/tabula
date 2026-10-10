@@ -1,6 +1,6 @@
 # The AI bar
 
-The AI bar is where you ask the AI to work on your board: summarise it, cluster stickies into groups, or generate ideas. It appears when AI is enabled for you and you have a workspace key, an allowed personal key, or AI credits through your plan. Credits are not available yet.
+The AI bar is where you ask the AI to work on your board: summarise it, cluster stickies into groups, or generate ideas. It appears when AI is enabled for you and you have a workspace key, an allowed personal key, or AI credits through your plan. On a hosted workspace whose plan includes AI credits, runs without a key use those credits: the bar then says **Uses AI credits**, and it tells you what to do when the credits or a request limit stop a run. A saved personal or workspace key always comes first.
 
 If AI cannot run for you, the board shows no AI bar, button, shortcut or menu item. Workspace owners and admins set up AI in **Admin → AI**. Viewers and commenters do not see the bar, because they cannot add what it proposes. See [Your AI key](ai-keys.md).
 
