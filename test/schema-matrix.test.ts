@@ -5,7 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { CHAT_MIGRATIONS, openChat } from '../server/chat.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
-import { migrate, maxReaderOf } from '../server/schema.mjs';
+import { maxReaderOf, migrate } from '../server/schema.mjs';
 
 type Migration = string | { sql: string; minReader: number };
 type Store = {

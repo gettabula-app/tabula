@@ -57,12 +57,48 @@ function creatorInfo(db, row) {
   return { type: 'system', id: row.created_by_id ?? null, name: 'System' };
 }
 
-function ticketJson(db, row) {
+function relationRows(db, actor, ticketId) {
+  return db.prepare(
+    `SELECT r.kind, r.ticket_id, r.related_ticket_id,
+            source.key AS source_key, target.key AS target_key,
+            source.id AS source_id, target.id AS target_id
+       FROM ticket_relations r
+       JOIN tickets source ON source.id = r.ticket_id
+       JOIN tickets target ON target.id = r.related_ticket_id
+      WHERE (r.ticket_id = ? OR r.related_ticket_id = ?)
+        AND r.kind IN ('blocks', 'relates_to', 'duplicates')
+      ORDER BY r.created_at, r.id`,
+  ).all(ticketId, ticketId).flatMap((row) => {
+    const currentIsSource = row.ticket_id === ticketId;
+    const other = currentIsSource
+      ? { id: row.target_id, key: row.target_key }
+      : { id: row.source_id, key: row.source_key };
+    try {
+      ticketAccess(actor, { id: other.id });
+    } catch {
+      return [];
+    }
+    const kind = row.kind === 'relates_to'
+      ? 'relates_to'
+      : row.kind === 'blocks'
+        ? (currentIsSource ? 'blocks' : 'blocked_by')
+        : (currentIsSource ? 'duplicates' : 'duplicated_by');
+    return [{ kind, key: other.key }];
+  });
+}
+
+function ticketJson(db, row, actor) {
   const assignee = row.assignee_user_id
     ? db.prepare('SELECT name FROM users WHERE id = ?').get(row.assignee_user_id)
     : null;
   const parent = row.parent_ticket_id
     ? db.prepare('SELECT key FROM tickets WHERE id = ?').get(row.parent_ticket_id)
+    : null;
+  const project = row.project_id
+    ? db.prepare('SELECT id, name FROM projects WHERE id = ?').get(row.project_id)
+    : null;
+  const milestone = row.milestone_id
+    ? db.prepare('SELECT id, name, due_at FROM milestones WHERE id = ?').get(row.milestone_id)
     : null;
   return {
     id: row.id,
@@ -75,12 +111,16 @@ function ticketJson(db, row) {
     assignee: assignee ? { userId: row.assignee_user_id, name: assignee.name } : null,
     creator: creatorInfo(db, row),
     labels: labelRows(db, row.id),
-    project: null,
-    milestone: null,
+    project: project ? { id: project.id, name: project.name } : null,
+    milestone: milestone ? {
+      id: milestone.id,
+      name: milestone.name,
+      due: milestone.due_at == null ? null : new Date(milestone.due_at).toISOString().slice(0, 10),
+    } : null,
     estimate: row.estimate == null ? null : row.estimate,
     due: row.due_date ?? null,
     parent: parent?.key ?? null,
-    relations: [],
+    relations: relationRows(db, actor, row.id),
     links: [],
     aliases: aliases(db, row.id),
     archivedAt: row.archived_at ?? null,
@@ -142,6 +182,47 @@ function resolveAssignee(db, actor, value, path) {
   if (matches.length === 1) return matches[0].id;
   if (db.prepare('SELECT 1 FROM users WHERE id = ?').get(name)) throw invalid(path, 'Pass a member name or email, not a user id');
   throw invalid(path, 'No active workspace member matches this name or email');
+}
+
+function resolveProject(db, value, path = 'project') {
+  if (value === undefined || value === null) return null;
+  const name = cleanText(value, { path, min: 1, max: 100 });
+  const project = db.prepare('SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE AND archived_at IS NULL').get(name);
+  if (!project) throw invalid(path, 'No active project matches this name');
+  return project;
+}
+
+function resolveMilestone(db, value, project, path = 'milestone') {
+  if (value === undefined || value === null) return null;
+  const name = cleanText(value, { path, min: 1, max: 100 });
+  const matches = project
+    ? db.prepare(
+      `SELECT m.id, m.name, m.project_id, p.name AS project_name
+         FROM milestones m JOIN projects p ON p.id = m.project_id
+        WHERE m.project_id = ? AND m.name = ? COLLATE NOCASE
+          AND m.archived_at IS NULL AND p.archived_at IS NULL`,
+    ).all(project.id, name)
+    : db.prepare(
+      `SELECT m.id, m.name, m.project_id, p.name AS project_name
+         FROM milestones m JOIN projects p ON p.id = m.project_id
+        WHERE m.name = ? COLLATE NOCASE AND m.archived_at IS NULL AND p.archived_at IS NULL`,
+    ).all(name);
+  if (matches.length > 1) throw invalid(path, 'Milestone name is ambiguous; specify its project');
+  if (matches.length === 1) return matches[0];
+  throw invalid(path, project ? 'No active milestone in this project matches the name' : 'No active milestone matches this name');
+}
+
+function resolveProjectAndMilestone(db, projectValue, milestoneValue, { projectProvided = false, milestoneProvided = false } = {}) {
+  let project = projectProvided ? resolveProject(db, projectValue) : null;
+  let milestone = milestoneProvided ? resolveMilestone(db, milestoneValue, project) : null;
+  if (milestone && !project) {
+    project = db.prepare('SELECT id, name FROM projects WHERE id = ? AND archived_at IS NULL').get(milestone.project_id) ?? null;
+    if (!project) throw invalid('milestone', 'Milestone project is archived or unavailable');
+  }
+  if (project && milestone && project.id !== milestone.project_id) {
+    throw invalid('milestone', 'Milestone must belong to the selected project');
+  }
+  return { project, milestone };
 }
 
 function resolveLabels(db, values, path = 'labels') {
@@ -217,8 +298,8 @@ export function createTicket({
   labels = [],
   due = null,
   parent = null,
-  project = null,
-  milestone = null,
+  project,
+  milestone,
   idempotencyKey: rawKey = null,
   source = 'app',
   readOnly = () => false,
@@ -226,13 +307,12 @@ export function createTicket({
 } = {}) {
   requireWritable(readOnly);
   requireTrackerWrite(actor);
-  if (project !== null || milestone !== null) throw invalid(project !== null ? 'project' : 'milestone', 'Projects and milestones are not available yet');
   const db = getDb({ directory, db: dbArg });
   const idempotencyKey = validIdempotencyKey(rawKey);
   const prior = idempotentTicket(db, actor, source, idempotencyKey);
   if (prior) {
     requireTicketRead(actor, prior);
-    return ticketJson(db, ticketRow(db, prior.id));
+    return ticketJson(db, ticketRow(db, prior.id), actor);
   }
   const cleanTitle = cleanText(title, { path: 'title', min: 1, max: 200, singleLine: true });
   const cleanDescription = cleanText(description, { path: 'description', max: 20_000, trim: false });
@@ -242,6 +322,10 @@ export function createTicket({
   if (labelRowsResolved.length > 20) throw limitExceeded('A ticket can have at most 20 labels', 'labels');
   const dueDate = dueValue(due);
   const parentRow = resolveParent(db, parent);
+  const associations = resolveProjectAndMilestone(db, project, milestone, {
+    projectProvided: project !== undefined && project !== null,
+    milestoneProvided: milestone !== undefined && milestone !== null,
+  });
   const state = stateReference === undefined
     ? db.prepare("SELECT id, state_key FROM ticket_states WHERE workflow_id = 'wf_default' AND is_default = 1 AND archived_at IS NULL").get()
     : stateByReference(db, stateReference);
@@ -258,6 +342,8 @@ export function createTicket({
     labels: labelRowsResolved.map((label) => label.name),
     due: dueDate,
     parent: parentRow?.key ?? null,
+    project: associations.project?.id ?? null,
+    milestone: associations.milestone?.id ?? null,
   };
   const allocated = allocateTicket({
     directory,
@@ -276,19 +362,21 @@ export function createTicket({
       labels: labelRowsResolved,
       dueDate,
       parentTicketId: parentRow?.id ?? null,
+      projectId: associations.project?.id ?? null,
+      milestoneId: associations.milestone?.id ?? null,
       eventAfter: fieldValues,
     },
   });
   const row = ticketRow(db, allocated.ticketId ?? allocated.key);
   requireTicketRead(actor, row);
-  return ticketJson(db, row);
+  return ticketJson(db, row, actor);
 }
 
 /** @param {any} options */
 export function getTicket({ directory, db: dbArg, actor, key } = {}) {
   const db = getDb({ directory, db: dbArg });
   const row = visibleRow(db, actor, key);
-  return ticketJson(db, row);
+  return ticketJson(db, row, actor);
 }
 
 export { listTickets, searchTickets };
@@ -313,6 +401,8 @@ function currentFieldValue(db, row, field) {
     case 'labels': return currentLabelNames(db, row.id);
     case 'due': return row.due_date ?? null;
     case 'parent': return row.parent_ticket_id ? db.prepare('SELECT key FROM tickets WHERE id = ?').get(row.parent_ticket_id)?.key ?? null : null;
+    case 'project': return row.project_id ?? null;
+    case 'milestone': return row.milestone_id ?? null;
     case 'archived': return row.archived_at !== null && row.archived_at !== undefined;
     default: return undefined;
   }
@@ -335,10 +425,6 @@ export function updateTicket({
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw invalid('patch', 'Must be an object');
   const allowed = new Set(['title', 'description', 'priority', 'assignee', 'labels', 'due', 'parent', 'archived', 'project', 'milestone']);
   for (const field of Object.keys(patch)) if (!allowed.has(field)) throw invalid(`patch.${field}`, 'Unsupported ticket field');
-  for (const field of ['project', 'milestone']) {
-    if (patch[field] !== undefined && patch[field] !== null) throw invalid(`patch.${field}`, `${field} is not available yet`);
-  }
-  if (patch.project !== undefined || patch.milestone !== undefined) throw invalid('patch', 'Projects and milestones are not available yet');
   if (patch.archived !== undefined && typeof patch.archived !== 'boolean') throw invalid('patch.archived', 'Must be true or false');
   if (ifUpdatedSeq !== undefined && (!Number.isInteger(ifUpdatedSeq) || ifUpdatedSeq < 0)) throw invalid('ifUpdatedSeq', 'Must be a non-negative event sequence');
 
@@ -359,6 +445,40 @@ export function updateTicket({
       changed.push(field);
       if (column) columns.push({ column, value });
     };
+
+    if (patch.project !== undefined || patch.milestone !== undefined) {
+      let projectRow = row.project_id
+        ? db.prepare('SELECT id, name FROM projects WHERE id = ?').get(row.project_id) ?? null
+        : null;
+      let projectId = row.project_id ?? null;
+      let milestoneId = row.milestone_id ?? null;
+      const projectChangedByRequest = patch.project !== undefined;
+      if (projectChangedByRequest) {
+        projectRow = resolveProject(db, patch.project, 'patch.project');
+        projectId = projectRow?.id ?? null;
+      }
+      if (patch.milestone !== undefined) {
+        if (patch.milestone === null) {
+          milestoneId = null;
+        } else {
+          const milestoneRow = resolveMilestone(db, patch.milestone, projectRow, 'patch.milestone');
+          if (!projectRow) {
+            projectRow = db.prepare('SELECT id, name FROM projects WHERE id = ? AND archived_at IS NULL').get(milestoneRow.project_id) ?? null;
+            if (!projectRow) throw invalid('patch.milestone', 'Milestone project is archived or unavailable');
+            projectId = projectRow.id;
+          }
+          milestoneId = milestoneRow.id;
+        }
+      } else if (projectChangedByRequest && milestoneId && projectId !== row.project_id) {
+        if (!projectId || !db.prepare(
+          'SELECT 1 FROM milestones WHERE id = ? AND project_id = ? AND archived_at IS NULL',
+        ).get(milestoneId, projectId)) {
+          throw invalid('patch.milestone', 'Set a milestone in the new project or clear the current milestone');
+        }
+      }
+      if (projectId !== row.project_id) set('project', 'project_id', projectId);
+      if (milestoneId !== row.milestone_id) set('milestone', 'milestone_id', milestoneId);
+    }
 
     if (patch.title !== undefined) set('title', 'title', cleanText(patch.title, { path: 'patch.title', min: 1, max: 200, singleLine: true }));
     if (patch.description !== undefined) set('description', 'description', cleanText(patch.description, { path: 'patch.description', max: 20_000, trim: false }));
@@ -404,7 +524,7 @@ export function updateTicket({
         columns.push({ column: 'archived_at', value: patch.archived ? now : null });
       }
     }
-    if (!changed.length) return ticketJson(db, row);
+    if (!changed.length) return ticketJson(db, row, actor);
     if (ifUpdatedSeq !== undefined && row.updated_seq !== ifUpdatedSeq) {
       throw conflict(`Ticket changed since sequence ${ifUpdatedSeq}; current sequence is ${row.updated_seq}`, 'ifUpdatedSeq');
     }
@@ -426,7 +546,7 @@ export function updateTicket({
          event_seq = excluded.event_seq, actor_type = excluded.actor_type, actor_id = excluded.actor_id`,
     ).run(row.id, field, seq, info.type, info.id);
     refreshTicketSearch(db, row.id);
-    return ticketJson(db, ticketRow(db, row.id));
+    return ticketJson(db, ticketRow(db, row.id), actor);
   });
 }
 
@@ -442,7 +562,7 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
     if (row.archived_at !== null) throw conflict('Archived tickets cannot be transitioned');
     const target = stateByReference(db, targetState);
     if (!target) throw invalid('state', 'No active workflow state matches this name or key');
-    if (target.id === row.state_id) return ticketJson(db, row);
+    if (target.id === row.state_id) return ticketJson(db, row, actor);
     if (ifUpdatedSeq !== undefined && row.updated_seq !== ifUpdatedSeq) {
       throw conflict(`Ticket changed since sequence ${ifUpdatedSeq}; current sequence is ${row.updated_seq}`, 'ifUpdatedSeq');
     }
@@ -458,7 +578,7 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
        ON CONFLICT(ticket_id, field) DO UPDATE SET event_seq = excluded.event_seq, actor_type = excluded.actor_type, actor_id = excluded.actor_id`,
     ).run(row.id, seq, info.type, info.id);
     refreshTicketSearch(db, row.id);
-    return ticketJson(db, ticketRow(db, row.id));
+    return ticketJson(db, ticketRow(db, row.id), actor);
   });
 }
 

@@ -75,7 +75,7 @@ describe('tracker version capability and release reader', () => {
   it('declares the latest schema with v5.0.1 as its oldest reader and lets that build open it', () => {
     const latest = MIGRATIONS.length;
     const v501 = MIGRATIONS.slice(0, 11);
-    expect(latest).toBeGreaterThanOrEqual(13);
+    expect(latest).toBeGreaterThanOrEqual(14);
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const db = new DatabaseSync(':memory:');
     try {
@@ -85,6 +85,7 @@ describe('tracker version capability and release reader', () => {
       expect(canRead(state, 11)).toBe(true);
       // the v5.0.1 build knows 11 migrations: it opens the file, changes nothing and its own tables still work
       expect(migrate(db, v501, 'v5.0.1 directory build')).toEqual(state);
+      expect(migrate(db, MIGRATIONS.slice(0, latest - 1), 'previous directory build')).toEqual(state);
       expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(latest);
       db.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('u1', 'a@example.com', 'A', 'owner', 1)").run();
       expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toEqual({ n: 1 });
