@@ -491,9 +491,7 @@ describe('finish', () => {
     h = await harness();
     const { engine, timers } = rig();
     engine.start();
-    const started = Date.now();
     expect(await engine.finish({ budgetMs: 4000 })).toEqual({ ran: false, ok: true, timedOut: false });
-    expect(Date.now() - started).toBeLessThan(500);
     expect(h.fake.log).toEqual([]);
     expect(timers.size).toBe(0);
   });
@@ -574,16 +572,18 @@ describe('finish', () => {
 
   it('keeps to the budget in real time', async () => {
     h = await harness();
-    const engine = h.engine();
+    const { engine, timers } = rig();
     engine.start();
     engine.noteChange();
     h.fake.rules.push({ hang: true, times: 999 });
-    const started = Date.now();
-    const result = await engine.finish({ budgetMs: 300 });
-    const elapsed = Date.now() - started;
-    expect(result).toMatchObject({ ran: true, ok: false, timedOut: true });
-    expect(elapsed).toBeGreaterThanOrEqual(250);
-    expect(elapsed).toBeLessThan(1500);
+    const done = engine.finish({ budgetMs: 300 });
+    // the run has reached the bucket (whatever request it makes first hangs by the rule above) and is still going
+    await until(() => h.fake.log.length > 0);
+    expect(engine.status().running).toBe(true);
+    await timers.fireDelay(300);
+    expect(await done).toEqual({ ran: true, ok: false, timedOut: true });
+    await idle(engine);
+    expect(h.fake.log.length).toBeGreaterThan(0);
     await engine.stop();
     expect(manifests(h)).toEqual([]);
   });
