@@ -8,7 +8,9 @@ Owner column: Q&A (QA) runs everything below; "TL" is tech lead for the version 
 
 ## 0. Before you start
 
-- [ ] TL says the workspace is on v5 and gives the release label. Write it here: `________`
+- [ ] TL says the workspace is on v5. **tabulahq** is `v5` (TL gives the main SHA); **acme** waits for the card-height fix and is `v5.0.1`: write acme's label only after TL confirms it. Write them here: tabulahq `________`, acme `________`.
+- [ ] Confirm the label: TL pastes the control plane's `imageVersion` and `imageRef` (the exact image digest) for the workspace; compare the digest with the one in the release row. On the instance, ask developer which field carries the release label in v5 (v4's Admin showed `0.1.0`, so do not rely on that line).
+- [ ] **The MCP round trip (section 3) starts only after TL's message that the upgrade is verified.** Sections 1, 2, 4 and 5 may start once TL says the workspace is upgraded.
 - [ ] You have the workspace address and a sign-in e-mail that is an owner or admin of it.
 - [ ] A scratch board name for this run, for example `v5-accept-YYYY-MM-DD`. Never run the MCP part on the HQ board or any real board.
 
@@ -45,7 +47,7 @@ On tabulahq, create the scratch board, then:
 - [ ] A card made by the agent shows an **agent owner badge** (octagonal) on the card, in the card dialog and in the phone list sheet.
 - [ ] **Scope**: with the write token, `list_boards` shows only the scratch board; asking for the HQ board answers not found.
 - [ ] **Revoke**: revoke `v5-write` in the app, run `whoami` or any call with it: it is refused at once (401).
-- [ ] Revoke `v5-read` as well. Leave the scratch board in place for the manager to delete.
+- [ ] Revoke `v5-read` as well, then delete the scratch board. No token with workspace-wide scope is ever made for this, and nothing is made on HQ.
 
 ## 4. The AI button rule
 
