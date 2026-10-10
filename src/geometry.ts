@@ -1,6 +1,6 @@
 import type { BaseObj, ConnectorObj, End, Id, Obj, Point, Rect, Side } from './types';
 import { isBox, isConnector } from './types';
-import { shapeAnchor, shapeSideCurve } from './shapes';
+import { shapeAnchor, shapePolygon, shapeSideCurve } from './shapes';
 
 export const EPS = 1e-6;
 
@@ -66,6 +66,21 @@ export function toLocal(o: BaseObj, p: Point): Point {
   return { x: q.x - o.x, y: q.y - o.y };
 }
 
+/** Point expressed in the mirrored object's content coordinates, after removing rotation and the content mirror. */
+export function toFlippedLocal(o: BaseObj, p: Point): Point {
+  const q = toLocal(o, p);
+  return { x: o.flipX === true ? o.w - q.x : q.x, y: o.flipY === true ? o.h - q.y : q.y };
+}
+
+function pointInPolygon(p: Point, vertices: readonly Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const a = vertices[i], b = vertices[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 export function distToSegment(p: Point, a: Point, b: Point): number {
   const ab = sub(b, a);
   const l2 = ab.x * ab.x + ab.y * ab.y;
@@ -90,8 +105,12 @@ export function pathPoints(o: BaseObj): Point[] {
 
 /** Hit test for a box-like object. `tol` is in world units. */
 export function hitBox(o: BaseObj, p: Point, tol: number): boolean {
-  if (o.type === 'path') return distToPolyline(p, pathPoints(o)) <= tol + (o.strokeWidth || 2) / 2;
-  const l = toLocal(o, p);
+  if (o.type === 'path') {
+    const local = toFlippedLocal(o, p);
+    const points = pathPoints(o).map((q) => ({ x: q.x - o.x, y: q.y - o.y }));
+    return distToPolyline(local, points) <= tol + (o.strokeWidth || 2) / 2;
+  }
+  const l = o.type === 'frame' ? toLocal(o, p) : toFlippedLocal(o, p);
   if (o.type === 'frame') {
     // Frames are grabbed by their title bar or border, so clicks inside them can
     // still start a marquee selection of their contents.
@@ -100,10 +119,18 @@ export function hitBox(o: BaseObj, p: Point, tol: number): boolean {
     const nearEdge = inside && (l.x < tol + 4 || l.y < tol + 4 || l.x > o.w - tol - 4 || l.y > o.h - tol - 4);
     return inTitle || nearEdge;
   }
-  if (o.type === 'shape' && o.kind === 'ellipse') {
+  if ((o.type === 'shape' && o.kind === 'ellipse') || o.type === 'uml-usecase' || o.type === 'uml-initial' || o.type === 'uml-final') {
     const rx = o.w / 2 + tol, ry = o.h / 2 + tol;
     const dx = l.x - o.w / 2, dy = l.y - o.h / 2;
     return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1;
+  }
+  if (o.type === 'shape') {
+    const polygon = shapePolygon(o.kind || 'rect', o.w, o.h);
+    if (polygon) {
+      const vertices = polygon.map(([x, y]) => ({ x, y }));
+      const outline = [...vertices, vertices[0]];
+      return pointInPolygon(l, vertices) || distToPolyline(l, outline) <= tol + (o.strokeWidth || 2) / 2;
+    }
   }
   return l.x >= -tol && l.y >= -tol && l.x <= o.w + tol && l.y <= o.h + tol;
 }
