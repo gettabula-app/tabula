@@ -23,7 +23,7 @@ import {
   objectVisibility,
 } from './board-ops.mjs';
 import {
-  commentTicket, createLabel, createTicket, getTicket, listLabels, listStates, listTickets, searchTickets,
+  commentTicket, createLabel, createTicket, findTicketByIdempotency, getTicket, listLabels, listStates, listTickets, searchTickets,
   transitionTicket, updateTicket,
 } from './tracker/tickets.mjs';
 
@@ -75,7 +75,12 @@ function createWindowLimiter(max, now) {
     hit(key) {
       const t = now();
       const list = recent(key, t);
-      if (list.length >= max) return retryAfter(list, t);
+      // a key in use goes to the back of the map, so the bound below forgets the key idle longest, never one that is busy
+      hits.delete(key);
+      if (list.length >= max) {
+        hits.set(key, list);
+        return retryAfter(list, t);
+      }
       hits.set(key, [...list, t]);
       if (hits.size > MAX_LIMITER_KEYS) hits.delete(hits.keys().next().value);
       return 0;
@@ -1790,8 +1795,14 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       const wait = tool?.mutating ? writes.hit(actor.tokenId) : 0;
       if (wait) return limited(id, wait);
       if (tool?.name === 'create_ticket') {
-        const createWait = ticketCreates.hit(actor.tokenId);
-        if (createWait) return limited(id, createWait);
+        const args = params.arguments;
+        const retry = typeof args === 'object' && args !== null && !Array.isArray(args) && findTicketByIdempotency({
+          directory, actor: trackerActor(actor), source: 'mcp', idempotencyKey: args.idempotencyKey,
+        });
+        if (!retry) {
+          const createWait = ticketCreates.hit(actor.tokenId);
+          if (createWait) return limited(id, createWait);
+        }
       }
       const done = tool?.mutating && snapshotBarrier
         ? await snapshotBarrier.runWriter(() => callTool(actor, params))
