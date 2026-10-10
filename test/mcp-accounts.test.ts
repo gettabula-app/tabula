@@ -730,8 +730,11 @@ describe('editing', () => {
     expect(fs.existsSync(h.roomFile(`${mine}~comments`))).toBe(false);
 
     await h.tool(token, 'create_objects', { boardId: mine, objects: [sticky({ text: 'kept' })] });
-    expect(await health()).toBe(base + 1);
-    await until(async () => (await health()) === base, 12_000);
+    // The room a write loads is gone again 1.2 s after the last use (ROOM_UNLOAD_MS above), and on a loaded runner the reply and this
+    // request can be more than that apart, so "one room is loaded right now" cannot be asserted without a race. What the write must
+    // leave behind is stable: the room goes after the idle delay, and what was written is on disk (a room was loaded to save it).
+    await until(async () => (await health()) === base, 30_000);
+    await until(() => fs.existsSync(h.roomFile(mine)), 30_000);
     expect(h.savedDoc(mine).getMap('objects').size).toBe(1);
     // and it loads again from disk for the next reader
     expect((await h.tool(token, 'get_board', { boardId: mine })).data.counts.total).toBe(1);
