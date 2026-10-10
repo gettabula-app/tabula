@@ -28,9 +28,97 @@ export interface TrackerMeta {
   members: TrackerMember[];
   me: { userId: string; canWrite: boolean; canDeleteAnyComment?: boolean };
   /** Slice 2 metadata is optional while older servers only expose core ticket fields. */
-  projects?: Array<{ id: string; name: string; archivedAt?: number | null }>;
-  milestones?: Array<{ id: string; name: string; due: string | null; projectId?: string }>;
+  projects?: TrackerProject[];
+  milestones?: TrackerMilestone[];
+  views?: TrackerSavedViewSummary[];
   canCreateLabels?: boolean;
+}
+
+export interface TrackerProject {
+  id: string;
+  name: string;
+  description?: string;
+  state?: string;
+  owner?: { userId: string; name: string } | null;
+  createdAt?: number;
+  updatedAt?: number;
+  archivedAt?: number | null;
+  ticketCount?: number;
+  doneCount?: number;
+}
+
+export interface TrackerMilestone {
+  id: string;
+  projectId: string;
+  projectName?: string | null;
+  name: string;
+  description?: string;
+  due: string | null;
+  state?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  archivedAt?: number | null;
+  ticketCount?: number;
+  doneCount?: number;
+}
+
+export interface TrackerSavedViewSummary {
+  id: string;
+  name: string;
+  shared: boolean;
+  mine: boolean;
+}
+
+export interface TrackerSavedView extends TrackerSavedViewSummary {
+  ownerUserId?: string;
+  owner?: { userId: string; name: string };
+  ownerName?: string;
+  filter: string[];
+  sort?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface TrackerProjectInput {
+  name: string;
+  description?: string;
+  state?: string;
+  ownerId?: string | null;
+}
+
+export interface TrackerProjectPatch {
+  name?: string;
+  description?: string;
+  state?: string;
+  ownerId?: string | null;
+  archived?: boolean;
+}
+
+export interface TrackerMilestoneInput {
+  name: string;
+  description?: string;
+  due: string;
+  state?: string;
+}
+
+export interface TrackerMilestonePatch {
+  name?: string;
+  description?: string;
+  due?: string | null;
+  state?: string;
+  archived?: boolean;
+}
+
+export interface TrackerSavedViewInput {
+  name: string;
+  filter: string[];
+  shared?: boolean;
+}
+
+export interface TrackerSavedViewPatch {
+  name?: string;
+  filter?: string[];
+  shared?: boolean;
 }
 
 export interface TrackerAssignee { userId: string; name: string }
@@ -103,7 +191,7 @@ export interface TrackerEvent {
   ticketKey: string;
   eventType: string;
   at: number;
-  actor: { userId?: string | null; name?: string; type?: string; provider?: string } | null;
+  actor: { id?: string | null; userId?: string | null; name?: string; type?: string; provider?: string } | null;
   field?: string;
   from?: unknown;
   to?: unknown;
@@ -146,6 +234,7 @@ export interface TrackerCreateInput {
 export interface TrackerPatch {
   title?: string;
   description?: string;
+  state?: string;
   priority?: TrackerPriority;
   assignee?: string | null;
   labels?: string[];
@@ -157,7 +246,13 @@ export interface TrackerPatch {
   ifUpdatedSeq?: number;
 }
 export interface TrackerBulkPatch extends Omit<TrackerPatch, 'ifUpdatedSeq'> {}
-export interface TrackerBulkItemResult { key: string; ok: boolean; ticket?: TrackerTicket; error?: TrackerErrorCode | string }
+export interface TrackerBulkItemResult {
+  key: string;
+  ok: boolean;
+  ticket?: TrackerTicket;
+  before?: TrackerBulkPatch;
+  error?: TrackerErrorCode | string | { error?: string; message?: string; path?: string };
+}
 export interface TrackerBulkResult {
   results: TrackerBulkItemResult[];
   batchId: string;
@@ -213,22 +308,26 @@ export interface TrackerNotificationPrefs {
   prefs: Record<TrackerNotificationKind, TrackerNotifyChoice>;
 }
 
+export interface TrackerConflictActor { name: string; kind: string }
+
 export class TrackerError extends Error {
   readonly code: TrackerErrorCode;
   readonly path?: string;
   readonly current?: TrackerTicket;
+  readonly by?: TrackerConflictActor;
   readonly status?: number;
 
   constructor(
     code: TrackerErrorCode,
     message: string = code,
-    details: { path?: string; current?: TrackerTicket; status?: number } = {},
+    details: { path?: string; current?: TrackerTicket; by?: TrackerConflictActor; status?: number } = {},
   ) {
     super(message);
     this.name = 'TrackerError';
     this.code = code;
     this.path = details.path;
     this.current = details.current;
+    this.by = details.by;
     this.status = details.status;
   }
 }
