@@ -131,7 +131,7 @@ describe('tracker migration 13', () => {
     expect(upgraded.db.prepare("SELECT title, description FROM ticket_search WHERE ticket_id = 't1'").get())
       .toEqual({ title: 'Existing ticket', description: 'unchanged' });
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-    expect(readSchemaState(upgraded.db)).toEqual({ version: 13, minReader: 11, legacy: false });
+    expect(readSchemaState(upgraded.db)).toEqual({ version: MIGRATIONS.length, minReader: 11, legacy: false });
     expect(typeof MIGRATIONS[12]).toBe('string');
     for (const table of ['projects', 'milestones', 'ticket_relations', 'saved_views']) {
       expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined();
