@@ -211,6 +211,8 @@ describe('auditSentence', () => {
       'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
       'volume.adopt',
       'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+      'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
+      'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });
