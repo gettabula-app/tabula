@@ -17,7 +17,26 @@ Principles:
 
 Not in this spec: sprints/cycles, time tracking, SLAs, custom workflows beyond states, GitLab/Bitbucket (the integration model leaves room), a public issue portal.
 
-## 2. Contract (to freeze with the tech lead)
+## Decisions (frozen 2026-10-10)
+
+Johan: "go with your picks". The table matches the architecture spec's decisions (docs/tracker-architecture.md, 9b3fbc9) and says what each one means for the screens. These override any earlier text in this file.
+
+| # | Decision | UX effect |
+|---|---|---|
+| 1 | One workspace-wide prefix, `TAB`. | Keys are always `TAB-n`. No prefix picker in the New issue dialog, the Link dialog or settings. "Also known as" still shows old and imported ids. |
+| 2 | Default states: To do, In progress, In review, Done, Cancelled. Categories `completed` and `canceled`. | The state picker, glyph table and board lanes use these five; no Backlog lane in the tracker Board tab or in the default mapping. |
+| 3 | No cycles or estimates UI in v1. | No Estimate property, column, filter or sort anywhere; no sprint or cycle views. The field stays in the data. |
+| 4 | Plain text titles, Markdown descriptions and comments. | Titles have no formatting. Description and comments are Markdown text with Preview, not a rich-text editor (5.1, 5.2). Smaller build, simpler paste. |
+| 5 | Tickets are created online only. | New issue, Create tickets from stickies and the Link dialog's create option are disabled offline with a plain reason; drafts are kept. Edits to existing tickets work offline and sync (section 10). No provisional keys. |
+| 6 | Archive only, never delete. | No Delete anywhere; Archive, banner and Restore (5.1). |
+| 7 | Sign-in only, no public ticket links. | `/t/TAB-123` always asks for sign-in. No "Share ticket publicly". Copy link copies the signed-in link. |
+| 8 | A linked kanban shows the cards made on it; board guests get the ticket, with a warning when the audience is broader. | Default of 9.1 stands. **Linking an existing kanban**: the Link dialog's last step offers a checkbox **"Create tickets for the N existing cards"**, **on by default**, so linking never silently leaves old cards unlinked or silently changes them: the review step lists the keys that will be created, and unticking leaves those cards as plain cards. Cards created afterwards are tickets from the start. When a board has guests outside the workspace, the Link dialog and the card's **Ticket** section show: "N guests on this board will see these tickets." with the names, before the user confirms. |
+| 9 | GitHub App; only owners connect repos; logins mapped to members after a one-time link; merge to Done is OFF by default, configurable per repo; comment-only by default. | The Integrations screen's Connect and repo toggles are owner-only (admins see status). A **Link my GitHub account** row appears for each member until done (one click, one OAuth round trip); until then their PRs show the GitHub login. Merge rules start as "no change" per repo (7.4). |
+| 10 | Hosted: pending work runs on next wake; webhooks queue. | Integration events may arrive late on a hosted workspace that was asleep: the Integrations activity log shows "Received 14:03, applied 14:09" when the gap is over a minute; there is no spinner or promise of real time. |
+| 11 | Linear: import first, then a two-week dual run. | An **Import from Linear** screen (admin): connect, a dry-run report (counts, users matched, states mapped, losses), then run; imported tickets show "Imported from Linear" and their old ids as aliases. |
+| 12 | Theme: workspace theme, per-board override, then personal choice. Owners and admins set the workspace theme. The tracker follows its board. | Section 11, Theme. Owners and admins see **Workspace theme** in settings; the board menu keeps its Theme list, now showing "Board theme" with **Use workspace theme** as the first option. |
+
+## 2. Contract (frozen with the tech lead)
 
 Names here are **proposals**. Where the architecture spec already has a name, it wins and this section is edited to match. Marked ⟂ = must be identical in both specs.
 
@@ -28,7 +47,7 @@ Names here are **proposals**. Where the architecture spec already has a name, it
 | Tracker | One issue database for a workspace, shown by one or more tracker frames. `trackerId`. In v1 one tracker per workspace; the frame shows it. |
 | Tracker frame | The board object that renders a tracker. Type `tracker` (frame-like box; see 3.1). Fields: `trackerId`, `view` (current tab id), `focusKey` (open ticket key, optional). |
 | Ticket | An issue. Key `PREFIX-N` (`TAB-123`): `PREFIX` is the tracker prefix (2 to 5 capitals), `N` a never-reused integer. The key is permanent; renaming the prefix keeps old keys resolving. |
-| State | A named step of the workflow, each with a **category**: `backlog`, `unstarted`, `started`, `completed`, `canceled` (frozen with the architecture spec; the UI says "Done" and "Cancelled" in default state names, the category names are for code and API only). Default states: Backlog, Todo, In progress, In review, Done, Cancelled. |
+| State | A named step of the workflow, each with a **category**: `backlog`, `unstarted`, `started`, `completed`, `canceled` (frozen with the architecture spec; the UI says "Done" and "Cancelled" in default state names, the category names are for code and API only). Default states (frozen): To do, In progress, In review, Done, Cancelled (keys `todo`, `in_progress`, `in_review`, `done`, `cancelled`; categories unstarted, started, started, completed, canceled). **No Backlog state is seeded**; the `backlog` category exists for workspaces that add one. |
 | Project | A group of tickets with a name, lead, target date, and optional milestones. |
 | Milestone | A dated step inside a project. |
 | Relation | `blocks` / `blocked by`, `relates to`, `duplicate of` / `duplicated by`, `parent` / `sub-issue`. |
@@ -37,7 +56,7 @@ Names here are **proposals**. Where the architecture spec already has a name, it
 
 ### 2.2 Ticket fields ⟂
 
-`key`, `title` (one line, up to 200 code points), `description` (rich text: paragraphs, lists, code, links, @mentions, images; stored as Markdown), `state` (state id), `priority` (API names `none | urgent | high | medium | low`, stored as an integer 0 to 4 in that order), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number: stored, **no UI in v1**), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
+`key`, `title` (one line, up to 200 code points), `description` (Markdown text), `state` (state id), `priority` (API names `none | urgent | high | medium | low`, stored as an integer 0 to 4 in that order), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number: stored, **no UI in v1**), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
 
 Card fields that exist today and map: `text` → `title`, `desc` → `description`, `ownerId` → `assignee`, `due` → `due`, `labels` → `labels` (tracker labels replace the board label set for linked cards), lane → `state`.
 
@@ -143,7 +162,7 @@ Personal. A single list of **things that need you**, newest first, grouped by da
 
 ### 4.2 My issues
 
-A fixed view: assigned to me, not done. Same list as All issues with the filter locked to me, so every list feature works. Sub-tabs (a segmented control, `[` and `]`): **Active** (default: started + unstarted), **Backlog**, **Created by me**, **Following**. Grouped by state by default, ordered by priority then due date.
+A fixed view: assigned to me, not done. Same list as All issues with the filter locked to me, so every list feature works. Sub-tabs (a segmented control, `[` and `]`): **Active** (default: started + unstarted), **Created by me**, **Following**. Grouped by state by default, ordered by priority then due date.
 
 ### 4.3 All issues
 
@@ -215,7 +234,7 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 
 - **Header strip**: key (tabular, with a **copy link** action on click), state button (a picker), a **Subscribe / Subscribed** toggle (a bell button; `Shift+S`; subscribers get Inbox entries for comments, state changes and linked PRs; you are subscribed automatically when you create, are assigned, comment or are mentioned), then ⋯ (copy link, copy key, copy as Markdown, duplicate, move to project, **archive**; there is no delete), previous/next in the current list (`J`/`K`, also arrows in the strip), close.
 - **Title**: Bodoni Moda 800 (the one place it is used at app size; see 11), editable in place (click or `Enter`), one line that wraps.
-- **Description**: rich text; `Markdown` shortcuts on typing (`#`, `-`, `1.`, `` ` ``, `>`), `/` command menu for blocks, `@` mentions people, `TAB-` autocompletes ticket keys, paste an image to attach (workspace file store; size limit from architecture). Autosaves 800 ms after the last key; shows **Saved** / **Saving** / **Offline, will sync** in the header strip.
+- **Description**: Markdown text (no rich-text storage). One editing surface: a plain text area with Markdown shown as typed, a **Preview** toggle (`Cmd/Ctrl+Shift+P`) that renders it, and light helpers that insert text (`-` continues a list, `Tab` indents it, `@` mentions people, `TAB-` autocompletes ticket keys); paste an image to attach (workspace file store; size limit from architecture). Autosaves 800 ms after the last key; shows **Saved** / **Saving** / **Offline, will sync** in the header strip.
 - **Properties column**: each row is a label (small caps) and a value that opens a picker. Same keys as the list (`S A P L D M`). Read-only roles see plain values.
 - **Sub-issues**: a progress mini-bar ("2 of 4"), rows (key, state glyph, title, assignee), **+** adds one (inline title field), drag to reorder, `Enter` opens one. A sub-issue's page shows its parent as a breadcrumb in the header.
 - **Relations**: grouped by type; each row has the other ticket's key chip, state glyph, title, and a remove (×) on hover/focus. **+** opens a picker: choose relation type, then search tickets by key or title. `blocked by` an open ticket shows a **Blocked** mark on the ticket's list row. Duplicate: marking duplicate closes it (state Cancelled, category cancelled) after a confirm and keeps the pointer.
@@ -228,7 +247,7 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 
 One chronological feed, oldest first (so the composer sits at the bottom), with a filter **All / Comments / History** (default All; History collapses runs of field changes: "Mara changed state, assignee and priority · 3 changes").
 
-- **Comment**: author, time, body (the same rich text as the description, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
+- **Comment**: author, time, body (Markdown, rendered as the description is, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
 - **History rows**: a glyph, "Mara moved this from Todo to In progress", time. Field changes show old → new. Integration events are attributed to the integration ("GitHub · merged PR #482 moved this to Done" with the rule noted). **Actors that are not people** (an agent's access token, the GitHub integration, an import) never get a person's avatar: they show a square **label badge** ("Agent · claude-code", "GitHub", "Import") in the same place and the same grey, so a feed can be scanned for who is human. The ticket's creator line says "Created by Mara" or "Created by agent claude-code" / "Created from GitHub" / "Imported from Linear" from the `source` (`app`, `import`, `mcp`, `integration`).
 - **Resolve**: threads can be resolved (collapsed with "Resolved by Idris" and re-opened by a reply).
 - **Edit history**: edited comments show "edited" with the time; there is no per-edit diff in v1.
@@ -406,7 +425,7 @@ Entry: container ⋯ menu → **Link to tracker…** (also on the tracker's Boar
 A three-step dialog (a sheet on phone), each step a single decision:
 
 1. **Choose the tracker and where new tickets go**: tracker (one in v1; shown for the future), **Project** (optional; every new ticket from this board joins it) and **Team labels** to add (optional).
-2. **Map the lanes**: a two-column list, left each lane (name + card count), right a state picker (default: matched by name, else by the lane's **stage** `todo/doing/done` → Todo/In progress/Done; unmatched lanes default to Backlog with a visible "Check this" mark). A state can be picked for one lane only: a state already taken is shown greyed with "Used by Doing" in the picker, so the map is always unique. A warning line, not an error, for a state with no lane ("Cancelled has no lane: cards moved there in the tracker will leave the board"). Option: **Create lanes for states without one** (off by default).
+2. **Map the lanes**: a two-column list, left each lane (name + card count), right a state picker (default: matched by name, else by the lane's **stage** `todo/doing/done` → Todo/In progress/Done; unmatched lanes default to To do with a visible "Check this" mark). A state can be picked for one lane only: a state already taken is shown greyed with "Used by Doing" in the picker, so the map is always unique. A warning line, not an error, for a state with no lane ("Cancelled has no lane: cards moved there in the tracker will leave the board"). Option: **Create lanes for states without one** (off by default).
 3. **Review**: "**18 cards will become tickets** (TAB-124 to TAB-141). Their state follows the lane." with a table preview of the first 6 and **Link and create tickets**. The numbers are reserved at confirmation so concurrent linking cannot collide. A **Dry run** preview needs no click; Cancel changes nothing.
 
 Unlinking (⋯ → **Unlink from tracker**): asks "Keep the tickets (cards become plain cards that show the key) or delete cards' keys (tickets stay in the tracker, cards forget them)?" Default keep keys as plain text on the card.
@@ -455,7 +474,7 @@ The ticket page's **On canvas** property lists each linked card as "Sprint retro
 ### 9.6 Making a ticket from loose things
 
 - A **sticky** or **loose card** → **Turn into ticket** in the quick-action bar when the board has a linked kanban or a tracker (asks only which project and state if it can't infer): the sticky becomes a card in the kanban's lane and a ticket; the original text is the title.
-- **Selection of stickies → Create tickets** (one per note, in the linked kanban's first lane for Todo, or in the tracker's Backlog if no kanban is linked): the workshop-to-backlog move. Shows the count and the first titles before it runs; one undo step.
+- **Selection of stickies → Create tickets** (one per note, in the linked kanban's first lane for Todo, or in the tracker's first unstarted state, To do, if no kanban is linked): the workshop-to-backlog move. Shows the count and the first titles before it runs; one undo step.
 - Pasting a tracker deep link on the canvas makes a **ticket card** (linked card on the nearest linked kanban, or a free-standing card with the key) instead of a link preview.
 
 ## 10. States, loading, errors (the tracker as a whole)
@@ -465,7 +484,7 @@ The ticket page's **On canvas** property lists each linked card as "Sprint retro
 | First open, no tickets | **Inbox**: "Nothing needs you." (Bodoni, one line) + a grey sentence "Tickets that are assigned to you or mention you land here." **All issues**: "No issues yet." + **New issue** (`C`) + **Import from Linear / CSV** (admin). **Board**: the empty lanes with "+ New issue" in each. **Projects**: "Group tickets into projects with milestones." + **New project**. |
 | Loading | A skeleton of 8 rows (grey hairlines, no animation under reduced motion). The tabs, view bar and **New issue** are usable immediately. Under 200 ms nothing shows. |
 | Filter returns nothing | "No issues match." + the active chips and **Clear filters**. |
-| Offline | A thin grey line in the header: "Offline. Changes are saved here and will sync." All editing keeps working on loaded data; creating gives a temporary key "TAB-…" that becomes the real number on sync (see open questions). |
+| Offline | A thin grey line in the header: "Offline. Changes are saved here and will sync." Editing existing tickets keeps working on loaded data and syncs later. **Creating a ticket needs a connection**: **New issue**, **Create tickets** and the Link dialog's create option are disabled while offline with "Needs a connection to get a ticket number." (the draft stays, so nothing typed is lost). There are no provisional keys, so numbers have no gaps. |
 | Sync conflict on a field | Last write wins; the loser sees a toast "Mara changed the title at the same time. Yours was kept / replaced" with **See history**. |
 | Ticket not found / no access | Page: "TAB-999 doesn't exist, or you don't have access." + **Go to All issues**. Never reveals which. |
 | Permission: read-only member | Properties show as plain text; composer says "You can read this tracker."; hidden actions, not disabled ones. |
@@ -502,8 +521,8 @@ The tracker lives inside a tool whose own chrome is the dark **ink toolbar**; th
 
 | Category | Glyph | Meaning |
 |---|---|---|
-| backlog | dashed circle | not planned |
-| unstarted (Todo) | empty circle | planned |
+| backlog (only if a workspace adds one) | dashed circle | not planned |
+| unstarted (To do) | empty circle | planned |
 | started (In progress) | circle with the right half filled | moving |
 | started (In review) | circle with three quarters filled | nearly |
 | completed | filled circle with a check | finished |
@@ -539,15 +558,11 @@ Priority is four ascending bars (filled = level; urgent is a filled square with 
 
 Each slice ships with a visual-check state at 360, 390 and 1280 in light and dark, and a keyboard-only test.
 
-## 14. Open questions for Johan
+## 14. Questions
 
-1. **One tracker or several?** v1 assumes one tracker per workspace (several frames can show it). Is "one prefix, `TAB`" right, or do teams need their own prefixes from day one (it changes keys and the Link dialog)?
-2. **Default state set.** Backlog / Todo / In progress / In review / Done / Cancelled, as in section 2.1. Do you want "In review" built in (the PR rule uses it), or only Todo / In progress / Done?
-3. **Linked kanban visibility.** The default of "Only cards made here" (9.1) keeps retro boards clean. Would you rather the board show the whole project?
-4. **Who owns the truth when offline?** Section 10 lets people create tickets offline with a provisional key. Is a provisional key acceptable, or should creating a ticket require a connection (simpler, and numbers stay gapless)?
-5. **Ticket description format.** Markdown with live shortcuts (proposed) or a plainer text-only field in v1? Rich text is the largest single build item.
-6. **GitHub identity.** Show the GitHub login as the actor, or map to workspace members by email when possible (needs a one-time "link GitHub account" step per person)?
-7. **Merge rule default.** The architecture spec ships GitHub as **comment only** until an owner opts in to automatic moves; the Integrations screen's rules (7.4) are then what the owner switches on. On merge: move to Done, or to a "Ready to release" state first?
-8. **Public ticket links.** Deep links need sign-in (proposed). Do you want a read-only share link for a single ticket, like a board share?
-9. **Import.** Is a Linear import (admin, one time) needed for the switch, in slice 6 or earlier?
-10. **Theme.** Decided by Johan: workspace theme plus a per-board override, and the tracker follows its board (§11). Open: who may set the workspace theme (admins only?), and may a person still pick their own theme when the board has one (proposed: a board or workspace theme wins for everyone on that board, so a shared screen looks the same to all)?
+Closed by the frozen decisions above: one prefix, default states, linked-kanban visibility (and the existing-card prompt), online-only creation, Markdown text, GitHub identity, merge default, sign-in only, Linear import, theme. Still open for Johan:
+
+1. **Who sees "guests will see these tickets"?** Everyone who links, or only owners and admins (proposed: whoever links)?
+2. **Personal theme vs board theme.** Does a board or workspace theme win for everyone on that board (proposed, so a shared screen looks the same to all), or may a person keep their own?
+3. **Workspace theme default for new workspaces.** The product default theme, or the paper light treatment of this spec?
+4. **Notifications.** Inbox only in v1 (proposed), or also email for mentions and assignments?
