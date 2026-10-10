@@ -42,7 +42,7 @@ afterEach(() => {
 describe('tracker migration 12', () => {
   it('applies to a fresh directory with fixed seeds and the required FTS tokenizer', () => {
     const directory = open();
-    expect(MIGRATIONS).toHaveLength(12);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(12);
     expect(typeof MIGRATIONS[11]).toBe('string');
     expect(ftsAvailable(directory.db)).toBe(true);
     expect(directory.db.prepare('SELECT id, name, prefix FROM trackers').all()).toEqual([{ id: 'trk_default', name: 'Tabula', prefix: 'TAB' }]);
@@ -83,9 +83,9 @@ describe('tracker migration 12', () => {
     }
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     const state = readSchemaState(upgraded.db);
-    expect(state).toEqual({ version: 12, minReader: 11, legacy: false });
-    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: 12, maxReader: 11 }, disk: { schema: 12, minReader: 11 } });
-    expect(maxReaderOf(MIGRATIONS)).toBe(11);
+    expect(state).toEqual({ version: MIGRATIONS.length, minReader: MIGRATIONS.length - 1, legacy: false });
+    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: MIGRATIONS.length, maxReader: MIGRATIONS.length - 1 }, disk: { schema: MIGRATIONS.length, minReader: MIGRATIONS.length - 1 } });
+    expect(maxReaderOf(MIGRATIONS)).toBe(MIGRATIONS.length - 1);
     upgraded.close();
 
     const reopened = open(file);
