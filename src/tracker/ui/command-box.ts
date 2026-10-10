@@ -2,6 +2,7 @@ import './tracker.css';
 import { h } from '../../ui/dom';
 import { popover } from '../../ui/common';
 import { parseTicketKey } from './keys-util';
+import { renderSnippet } from './snippet';
 
 export type CommandItemKind = 'tab' | 'ticket' | 'action' | 'view';
 export interface CommandItem {
@@ -9,6 +10,7 @@ export interface CommandItem {
   kind: CommandItemKind;
   label: string;
   hint?: string;
+  snippet?: string;
   key?: string;
   aliases?: readonly string[];
   run?: () => void;
@@ -124,7 +126,8 @@ export function openCommandBox(anchor: HTMLElement, options: CommandBoxOptions):
       const row = h('li', {
         class: `trk-command-option${active === index ? ' active' : ''}`,
         id: `${id}-option-${index}`, role: 'option', 'aria-selected': String(active === index),
-      }, h('span', null, item.label), item.hint ? h('span', { class: 'trk-muted' }, item.hint) : null);
+      }, h('span', null, item.label), item.hint ? h('span', { class: 'trk-muted' }, item.hint) : null,
+      item.snippet ? h('span', { class: 'trk-search-snippet' }, renderSnippet(item.snippet)) : null);
       row.addEventListener('pointerenter', () => { active = index; render(); });
       row.addEventListener('click', () => choose(item));
       list.appendChild(row);

@@ -1,6 +1,6 @@
 import type { Priority } from './glyphs';
 
-export type ListGroupBy = 'none' | 'state' | 'assignee' | 'project' | 'priority';
+export type ListGroupBy = 'none' | 'state' | 'assignee' | 'project' | 'priority' | 'label' | 'milestone' | 'due-week';
 export interface TrackerRow {
   key: string;
   title?: string;
@@ -64,6 +64,27 @@ function keyForGroup(row: TrackerRow, group: ListGroupBy): { key: string; label:
     const priority = row.priority ?? 'none';
     return { key: priority, label: priority === 'none' ? 'No priority' : `${priority[0].toUpperCase()}${priority.slice(1)}` };
   }
+  if (group === 'label') {
+    const labels = Array.isArray(row.labels) ? row.labels as Array<{ id?: string; name?: string }> : [];
+    const label = labels[0];
+    return label ? { key: label.id ?? label.name ?? 'label', label: label.name ?? 'Label' } : { key: 'none', label: 'No label' };
+  }
+  if (group === 'milestone') {
+    const milestone = row.milestone as null | { id?: string; name?: string } | undefined;
+    return milestone ? { key: milestone.id ?? milestone.name ?? 'milestone', label: milestone.name ?? 'Milestone' } : { key: 'none', label: 'No milestone' };
+  }
+  if (group === 'due-week') {
+    const due = typeof row.due === 'string' ? row.due : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return { key: 'none', label: 'No due date' };
+    const date = new Date(`${due}T00:00:00Z`);
+    const day = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - day + 3);
+    const weekYear = date.getUTCFullYear();
+    const firstThursday = new Date(Date.UTC(weekYear, 0, 4));
+    const week = 1 + Math.round(((date.getTime() - firstThursday.getTime()) / 86400000 - ((firstThursday.getUTCDay() + 6) % 7) + 3) / 7);
+    const key = `${weekYear}-W${String(week).padStart(2, '0')}`;
+    return { key, label: key };
+  }
   return { key: 'all', label: 'All issues' };
 }
 
@@ -93,10 +114,17 @@ export function buildListModel(options: BuildListModelOptions): ListRenderModel 
   const facetMap = new Map((options.facets?.[options.group] ?? []).map((facet) => [facet.key, facet]));
   const buckets = new Map<string, { label: string; rows: TrackerRow[] }>();
   for (const row of uniqueRows) {
-    const key = keyForGroup(row, options.group);
-    const bucket = buckets.get(key.key) ?? { label: key.label, rows: [] };
-    bucket.rows.push(row);
-    buckets.set(key.key, bucket);
+    const keys = options.group === 'label'
+      ? ((Array.isArray(row.labels) ? row.labels as Array<{ id?: string; name?: string }> : [])
+        .map((label) => ({ key: label.id ?? label.name ?? 'label', label: label.name ?? 'Label' }))
+        .filter((value, index, values) => values.findIndex((candidate) => candidate.key === value.key) === index))
+      : [];
+    const memberships = keys.length ? keys : [keyForGroup(row, options.group)];
+    for (const key of memberships) {
+      const bucket = buckets.get(key.key) ?? { label: key.label, rows: [] };
+      bucket.rows.push(row);
+      buckets.set(key.key, bucket);
+    }
   }
   const facetOrder = options.group === 'none' ? [{ key: 'all', label: 'All issues', count: uniqueRows.length }] : [...(options.facets?.[options.group] ?? [])];
   const descriptors = facetOrder.map((facet) => ({ key: facet.key, label: facet.label, count: facet.count }));
@@ -176,12 +204,12 @@ export function extendSelection(model: ListRenderModel, key: string): ListRender
   const anchorAt = model.visibleRows.findIndex((row) => row.key === model.anchorKey);
   const start = anchorAt < 0 ? model.cursorIndex : anchorAt;
   const lo = Math.min(Math.max(0, start), at), hi = Math.max(Math.max(0, start), at);
-  const selectedKeys = model.visibleRows.slice(lo, hi + 1).map((row) => row.key);
+  const selectedKeys = [...new Set(model.visibleRows.slice(lo, hi + 1).map((row) => row.key))];
   return { ...model, selectedKeys, anchorKey: model.anchorKey ?? model.cursorKey };
 }
 
 export function selectAll(model: ListRenderModel): ListRenderModel {
-  return { ...model, selectedKeys: model.visibleRows.map((row) => row.key), anchorKey: model.cursorKey };
+  return { ...model, selectedKeys: [...new Set(model.visibleRows.map((row) => row.key))], anchorKey: model.cursorKey };
 }
 
 /** J/K on the ticket page stays inside the currently rendered list and stops at either end. */
