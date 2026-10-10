@@ -909,8 +909,10 @@ On a linked card (flat, per `docs/kanban.md`): `extProvider: "tabula"`, `extKey:
 - Views: `/t/views/<viewId>`, `/t/inbox`, `/t/my`, `/t/board`, `/t/projects/<projectId>`.
 - A pasted `TAB-123` renders as a ticket chip only when the viewer can read the ticket; otherwise plain text.
 - Internal random ticket ids never appear in URLs.
+- The client resolves chips through the existing per-ticket detail endpoint and store cache. It does not add a batch REST endpoint: lookups run at most four at a time, are capped at 100 unique keys per call, and cache missing or unreadable results for 30 seconds. Both cases remain plain text.
+- Ticket and board-position routes use the ticket detail response's `resolvedKey` to replace an alias URL with the canonical key.
 
-**Assumption:** `/t/*` does not clash with an existing route in `src/main.ts`; check before freezing.
+The client treats a valid tracker path as a route when no explicit hash navigation is active. The existing `#/t/<id>/edit` template route remains a separate hash route.
 
 ### Tracker frame object
 

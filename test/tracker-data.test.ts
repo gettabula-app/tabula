@@ -1,0 +1,133 @@
+import { describe, expect, it } from 'vitest';
+import {
+  TrackerError,
+  createHttpTrackerApi,
+  createMockTrackerApi,
+  dueDateStatus,
+  formatFilter,
+  isTicketKey,
+  matchesFilters,
+  parseFilter,
+  priorityFromInt,
+  priorityToInt,
+  statesByCategory,
+  ticketKeyFromText,
+  type TrackerTicket,
+} from '../src/tracker-data';
+
+function ticket(overrides: Partial<TrackerTicket> = {}): TrackerTicket {
+  return {
+    id: 'ticket-1', key: 'TAB-1', trackerId: 'tracker-demo', title: 'Fix the tracker', description: '',
+    state: { id: 'state-todo', key: 'todo', name: 'To do', category: 'unstarted' }, priority: 'none',
+    assignee: { userId: 'user-me', name: 'You' }, creator: { type: 'user', id: 'user-me', name: 'You' },
+    labels: [{ id: 'label-ui', name: 'UI', color: '#fff' }], project: null, milestone: null, estimate: null,
+    due: '2026-10-09', parent: null, relations: [], links: [], aliases: [], archivedAt: null,
+    createdAt: 1, updatedAt: 2, updatedSeq: 3, ...overrides,
+  };
+}
+
+describe('tracker HTTP client', () => {
+  it('uses same-origin JSON and the write CSRF header and supports caller abort signals', async () => {
+    const calls: Array<{ path: string; init: RequestInit }> = [];
+    const fetchFn: typeof fetch = async (input, init = {}) => {
+      calls.push({ path: String(input), init });
+      return new Response(JSON.stringify({ ticket: ticket() }), { status: 201, headers: { 'content-type': 'application/json' } });
+    };
+    const api = createHttpTrackerApi(fetchFn);
+    const controller = new AbortController();
+    await api.createTicket({ title: 'Fix it', idempotencyKey: 'create-key-123' }, { signal: controller.signal });
+    expect(calls[0].path).toBe('/api/tracker/tickets');
+    expect(calls[0].init.credentials).toBe('same-origin');
+    expect(new Headers(calls[0].init.headers).get('x-tabula')).toBe('1');
+    expect(new Headers(calls[0].init.headers).get('content-type')).toBe('application/json');
+    expect(calls[0].init.signal).toBe(controller.signal);
+    expect(JSON.parse(String(calls[0].init.body))).toMatchObject({ title: 'Fix it', idempotencyKey: 'create-key-123' });
+
+    await api.listTickets({ filter: ['assignee:me', 'state:done'], q: 'crash', limit: 10 });
+    const query = new URL(calls[1].path, 'https://tabula.test').searchParams;
+    expect(query.getAll('filter')).toEqual(['assignee:me', 'state:done']);
+    expect(query.get('q')).toBe('crash');
+    expect(new Headers(calls[1].init.headers).has('x-tabula')).toBe(false);
+  });
+
+  it('maps HTTP codes, error fields, conflict tickets, malformed JSON, and network failures', async () => {
+    const respond = (status: number, body: unknown): typeof fetch => async () => new Response(JSON.stringify(body), { status });
+    const notFound = createHttpTrackerApi(respond(404, { error: 'other', message: 'missing' }));
+    await expect(notFound.getTicket('TAB-1')).rejects.toMatchObject({ name: 'TrackerError', code: 'not_found', status: 404 });
+
+    const current = ticket({ title: 'server title', updatedSeq: 9 });
+    const conflictApi = createHttpTrackerApi(respond(409, { error: 'conflict', message: 'stale edit', path: 'title', ticket: current }));
+    const conflictError = await conflictApi.patchTicket(current.key, { title: 'local' }).then(() => null, (error: unknown) => error);
+    expect(conflictError).toBeInstanceOf(TrackerError);
+    expect(conflictError).toMatchObject({ code: 'conflict', message: 'stale edit', path: 'title', current });
+
+    const readOnlyApi = createHttpTrackerApi(respond(403, { error: 'read_only', message: 'Workspace is locked.' }));
+    await expect(readOnlyApi.createTicket({ title: 'No', idempotencyKey: 'create-key-123' }))
+      .rejects.toMatchObject({ code: 'read_only', message: 'Workspace is locked.' });
+
+    const invalidJson = createHttpTrackerApi(async () => new Response('{', { status: 200 }));
+    await expect(invalidJson.meta()).rejects.toMatchObject({ code: 'internal' });
+    const network = createHttpTrackerApi(async () => { throw new Error('offline'); });
+    await expect(network.meta()).rejects.toMatchObject({ code: 'network', message: 'offline' });
+  });
+});
+
+describe('tracker mock API', () => {
+  it('allocates never-reused keys, honors idempotency, detects stale writes, and archives/restores', async () => {
+    let now = Date.UTC(2026, 9, 10);
+    const api = createMockTrackerApi({ now: () => now });
+    const input = { title: 'A first ticket', idempotencyKey: 'stable-create-001' };
+    const first = (await api.createTicket(input)).ticket;
+    expect(first.key).toBe('TAB-1');
+    expect((await api.createTicket(input)).ticket.key).toBe(first.key);
+    const edited = (await api.patchTicket(first.key, { title: 'Changed', ifUpdatedSeq: first.updatedSeq })).ticket;
+    expect(edited.title).toBe('Changed');
+    await expect(api.patchTicket(first.key, { title: 'stale', ifUpdatedSeq: first.updatedSeq }))
+      .rejects.toMatchObject({ code: 'conflict', current: edited });
+    now += 1000;
+    const archived = (await api.archiveTicket(first.key)).ticket;
+    expect(archived.archivedAt).toBe(now);
+    const ordinary = await api.listTickets();
+    expect(ordinary.tickets).toEqual([]);
+    expect((await api.listTickets({ filter: 'is:archived' })).tickets[0].key).toBe('TAB-1');
+    const restored = (await api.restoreTicket(first.key)).ticket;
+    expect(restored.archivedAt).toBeNull();
+    const second = (await api.createTicket({ title: 'Next', idempotencyKey: 'stable-create-002' })).ticket;
+    expect(second.key).toBe('TAB-2');
+    expect((await api.feed(0)).seq).toBeGreaterThan(first.updatedSeq);
+  });
+
+  it('supports filter basics, safe literal mark snippets, comments, subscriptions, and bulk before data', async () => {
+    const base = ticket();
+    const api = createMockTrackerApi({ tickets: [base], now: () => Date.UTC(2026, 9, 10) });
+    const dueRows = await api.listTickets({ filter: 'due:overdue' });
+    expect(dueRows.tickets.map((item) => item.key)).toEqual(['TAB-1']);
+    const searched = await api.listTickets({ q: 'tracker' });
+    expect(searched.tickets[0].snippet).toContain('<mark>tracker</mark>');
+    expect((await api.listTickets({ filter: 'state:done' })).tickets).toEqual([]);
+
+    const comment = await api.addComment('TAB-1', { body: 'A note', clientId: 'comment-client-01' });
+    expect(comment.ticket.updatedSeq).toBeGreaterThan(base.updatedSeq);
+    expect((await api.addComment('TAB-1', { body: 'duplicate retry', clientId: 'comment-client-01' })).comment.id).toBe(comment.comment.id);
+    expect(await api.setSubscription('TAB-1', true)).toEqual({ subscribed: true });
+    expect((await api.getTicket('TAB-1')).subscribed).toBe(true);
+    const bulk = await api.bulkTickets({ keys: ['TAB-1'], patch: { priority: 'high' } });
+    expect(bulk.results[0]).toMatchObject({ ok: true, ticket: { priority: 'high' } });
+    expect(bulk.before['TAB-1']).toMatchObject({ patch: { priority: 'none' } });
+    expect((await api.feed(0)).events.map((event) => event.eventType)).toContain('ticket.commented');
+  });
+});
+
+describe('tracker pure helpers', () => {
+  it('parses and formats filters, extracts keys, maps priorities, states, and due dates', () => {
+    const parsed = parseFilter(['assignee:me', 'state:done', 'label:UI', 'due:overdue', 'is:archived']);
+    expect(formatFilter(parsed)).toEqual(['assignee:me', 'state:done', 'label:UI', 'due:overdue', 'is:archived']);
+    expect(ticketKeyFromText('See tab-128 for details')).toBe('TAB-128');
+    expect(isTicketKey('TAB-128')).toBe(true);
+    expect(isTicketKey('TAB-0')).toBe(false);
+    expect(priorityFromInt(priorityToInt('high'))).toBe('high');
+    expect(statesByCategory([{ id: 'done', key: 'done', name: 'Done', category: 'completed', position: 2 }], 'completed')).toHaveLength(1);
+    expect(dueDateStatus('2026-10-09', '2026-10-10')).toBe('overdue');
+    expect(matchesFilters(ticket(), ['assignee:me', 'label:UI', 'due:overdue'], { me: 'user-me', today: '2026-10-10' })).toBe(true);
+  });
+});
