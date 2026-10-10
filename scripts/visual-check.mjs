@@ -1580,6 +1580,39 @@ const STATES = {
       await page.screenshot({ path: path.join(outDir, `image-placeholders-${name}-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
     }
     await fitTo(['ph-toobig-wide', 'ph-toobig-tall', 'ph-lost-wide', 'ph-lost-tall']);
+    // The label is what a person has to act on: 4.5:1 on its own fill, as drawn in this theme, not as computed from the theme table.
+    const ratios = await page.evaluate(() => {
+      const pixel = (css) => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 1;
+        const g = c.getContext('2d');
+        g.fillStyle = '#ff00ff';
+        g.fillStyle = css;
+        g.fillRect(0, 0, 1, 1);
+        return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      };
+      const lum = ([r, g, b]) => {
+        const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      return [...document.querySelectorAll('text')].filter((t) => t.textContent.startsWith('Not uploaded')).map((text) => {
+        const group = text.parentElement;
+        const rect = group.querySelector('rect');
+        const a = lum(pixel(getComputedStyle(text).fill));
+        const b = lum(pixel(getComputedStyle(rect).fill));
+        const box = text.getBoundingClientRect();
+        const px = parseFloat(getComputedStyle(text).fontSize) * (box.height ? box.height / text.getBBox().height : 1);
+        return { ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), px, tall: rect.getBoundingClientRect().height > 150, glyph: Boolean(group.querySelector('g.img-off')) };
+      });
+    });
+    if (ratios.length !== 4) throw new Error(`image-placeholders: expected 4 placeholder labels, found ${ratios.length}`);
+    // a short box at a low zoom may have no room for the glyph beside two lines of 12 px words; the tall ones always do
+    if (ratios.some((r) => r.tall && !r.glyph)) throw new Error(`image-placeholders: a tall placeholder has no glyph in ${theme}`);
+    for (const r of ratios) {
+      if (r.ratio < 4.5) throw new Error(`image-placeholders: label contrast ${r.ratio.toFixed(2)}:1 in ${theme} is below 4.5:1`);
+      if (r.px < 11.9) throw new Error(`image-placeholders: label is ${r.px.toFixed(1)} px on screen in ${theme}, below 12 px`);
+    }
+    console.log(`image-placeholders ${theme}: contrast ${ratios.map((r) => r.ratio.toFixed(1)).join(', ')}:1, label ${ratios.map((r) => r.px.toFixed(0)).join(', ')} px`);
   },
   async 'flip-menu'(env) {
     const { page, outDir, theme, width } = env;
