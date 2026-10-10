@@ -7,13 +7,13 @@ import {
 } from '../../tracker-data';
 import { announce } from '../../ui/announce';
 import { h } from '../../ui/dom';
-import { actorBadgeGlyph, priorityLabel, stateGlyph } from './glyphs';
+import { actorBadgeGlyph, priorityGlyph, priorityLabel, stateGlyph } from './glyphs';
 import { PLATFORM_MODIFIER, resolveKey, type PickerField } from './keys';
 import { openPicker, type PickerOption, type PickerResult } from './picker';
-import { avatar, dueChip, keyChip, labelChip, relativeTime } from './primitives';
+import { avatar, formatTrackerDate, keyChip, labelChip, relativeTime } from './primitives';
 import { ticketPath } from './keys-util';
 import { buildMarkdownDom, renderMarkdownSafe } from './ticket-markdown';
-import { describeEvent, type EventActorKind, type EventIcon } from './ticket-events';
+import { describeEvent, type EventActorKind } from './ticket-events';
 
 export interface TicketPageOptions {
   store: TrackerStore;
@@ -40,16 +40,61 @@ const FIELD_NAMES: Record<ConflictField, string> = {
   title: 'Title', description: 'Description', state: 'State', priority: 'Priority', assignee: 'Assignee', labels: 'Labels', due: 'Due date',
   parent: 'Parent', project: 'Project', milestone: 'Milestone',
 };
+const PROPERTY_NAMES: Record<string, string> = {
+  state: 'State', assignee: 'Assignee', priority: 'Priority', labels: 'Labels', due: 'Due', parent: 'Parent', project: 'Project', milestone: 'Milestone',
+};
 let localCommentSerial = 0;
 
 function button(label: string, className: string, disabled: boolean, onClick: (event: MouseEvent) => void, focusId?: string): HTMLButtonElement {
+  const stableFocusId = focusId ?? `${className.split(/\s+/u)[0] || 'button'}:${label.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-')}`;
   const el = h('button', {
     type: 'button', class: className, 'aria-label': label, disabled,
-    ...(focusId ? { 'data-focus-id': focusId } : {}),
+    'data-focus-id': stableFocusId,
   });
   el.textContent = label;
   el.addEventListener('click', onClick);
   return el;
+}
+
+type TicketIcon = 'copy' | 'link' | 'more' | 'close' | 'calendar' | 'attach' | 'send';
+
+function ticketIcon(name: TicketIcon): SVGSVGElement {
+  const namespace = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(namespace, 'svg');
+  svg.setAttribute('class', `tk-icon tk-icon--${name}${name === 'copy' ? ' tk-copy-icon' : ''}`);
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.4');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const append = (tag: 'path' | 'rect' | 'line' | 'circle', attrs: Record<string, string>) => {
+    const node = document.createElementNS(namespace, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    svg.appendChild(node);
+  };
+  if (name === 'copy') {
+    append('rect', { x: '5.25', y: '4.25', width: '8', height: '9.5', rx: '1' });
+    append('path', { d: 'M3 10.5V2.75h7' });
+  } else if (name === 'link') {
+    append('path', { d: 'M6.5 9.5 5.3 10.7a2.1 2.1 0 0 0 3 3l2.1-2.1M9.5 6.5l1.2-1.2a2.1 2.1 0 0 1 3 3l-2.1 2.1M6.5 9.5l3-3' });
+  } else if (name === 'more') {
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('stroke', 'none');
+    for (const cx of ['3', '8', '13']) append('circle', { cx, cy: '8', r: '1.1' });
+  } else if (name === 'close') append('path', { d: 'm4 4 8 8M12 4l-8 8' });
+  else if (name === 'calendar') {
+    append('rect', { x: '2.5', y: '3.5', width: '11', height: '10', rx: '1' });
+    append('line', { x1: '5', y1: '2', x2: '5', y2: '5' });
+    append('line', { x1: '11', y1: '2', x2: '11', y2: '5' });
+    append('line', { x1: '3', y1: '6.5', x2: '13', y2: '6.5' });
+  } else if (name === 'attach') append('path', { d: 'm6 8.5 4.7-4.7a2.1 2.1 0 0 1 3 3l-6.1 6.1a3.3 3.3 0 0 1-4.7-4.7l5.6-5.6' });
+  else append('path', { d: 'M2.5 8h10M8.5 3.5 13 8l-4.5 4.5' });
+  return svg;
 }
 
 function actorVisual(kind: EventActorKind, name: string): HTMLElement {
@@ -128,13 +173,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
     Boolean(el.closest?.('[contenteditable="true"], [role="combobox"], [role="listbox"], .popover'));
 }
 
-function displayEventIcon(kind: EventIcon): string {
-  const icons: Record<EventIcon, string> = {
-    state: '◐', assignee: '◎', relation: '↔', link: '↗', update: '·', comment: '▤', archive: '□', created: '＋',
-  };
-  return icons[kind];
-}
-
 function eventActorKey(event: TrackerEvent): string {
   const actor = event.actor as (NonNullable<TrackerEvent['actor']> & { id?: string | null }) | null;
   return actor?.userId ?? actor?.id ?? actor?.name ?? actor?.type ?? '';
@@ -189,6 +227,12 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   let selectedActivity: 'all' | 'comments' | 'history' = 'all';
   let loadingOlderPage = false;
   let menuOpen = false;
+  let morePropertiesOpen = false;
+  let creatingSubIssue = false;
+  let subIssueDraft = '';
+  let subIssueError = '';
+  let attachLinkOpen = false;
+  let attachmentUrlDraft = '';
   let dueEditing = false;
   let parentEditing = false;
   let creatingLabel = false;
@@ -272,6 +316,10 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   function fieldButton(label: string, name: string, onClick: (event: MouseEvent) => void, focusId?: string): HTMLButtonElement {
     const enabled = canWrite();
     const el = button(label, `tk-field-button${enabled ? '' : ' tk-disabled-value'}`, !enabled, onClick, focusId);
+    const propertyName = PROPERTY_NAMES[name] ?? name;
+    el.setAttribute('aria-label', `${propertyName}: ${label}`);
+    el.setAttribute('data-tip', `${propertyName}: ${label}`);
+    el.title = `${propertyName}: ${label}`;
     if (!enabled) el.setAttribute('aria-description', disabledReason());
     if (!enabled) el.setAttribute('aria-describedby', readonlyId);
     el.dataset.field = name;
@@ -391,6 +439,37 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       labelCreateError = error instanceof Error ? error.message : 'Could not create the label.';
       render();
     });
+  }
+  function createSubIssue(): void {
+    const current = ticket();
+    const title = subIssueDraft.trim();
+    if (!current || !title || !canWrite()) {
+      if (!title) { subIssueError = 'Title is required.'; render(); }
+      return;
+    }
+    subIssueError = '';
+    void opts.store.createTicket({ title, parent: current.key, state: current.state.key, priority: 'none' }).then((created) => {
+      creatingSubIssue = false;
+      subIssueDraft = '';
+      subIssueError = '';
+      announce(`Created sub-issue ${created.key}.`);
+      void opts.store.loadTicket(current.key, true).catch(() => undefined);
+      render();
+    }).catch((error: unknown) => {
+      subIssueError = error instanceof Error ? error.message : 'Could not create the sub-issue.';
+      render();
+    });
+  }
+  function addCommentLink(): void {
+    const link = attachmentUrlDraft.trim();
+    const safe = safeExternalUrl(link);
+    if (!safe) { localError = 'Use an http or https link.'; render(); return; }
+    saveCommentDraft(commentDraft ? `${commentDraft.replace(/\s+$/u, '')}\n${safe}` : safe);
+    attachmentUrlDraft = '';
+    attachLinkOpen = false;
+    localError = '';
+    render();
+    root.querySelector<HTMLTextAreaElement>('[data-focus-id="comment-input"]')?.focus();
   }
   function toggleSubscribe(): void {
     const current = ticket();
@@ -585,7 +664,8 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const iso = timeAt(at);
     if (Date.now() - at < 7 * 24 * 60 * 60_000) return relativeTime(Date.now(), iso);
     const date = new Date(at);
-    return h('time', { class: 'trk-relative-time', dateTime: iso, title: date.toLocaleString() }, Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleDateString());
+    const label = Number.isNaN(date.getTime()) ? 'Unknown time' : formatTrackerDate(date);
+    return h('time', { class: 'trk-relative-time', dateTime: iso, title: Number.isNaN(date.getTime()) ? label : `${label} · ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` }, label);
   }
   function ticketLookup(key: string): TrackerTicket | null {
     const cached = opts.store.ticket(key).ticket;
@@ -597,6 +677,31 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       onNavigate: (key) => opts.onNavigate(key),
       className: extraClass,
     });
+  }
+  function focusSnapshot(): { id: string } | { selector: string; index: number; label: string | null; href: string | null } | null {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !root.contains(active)) return null;
+    const id = active.getAttribute('data-focus-id');
+    if (id) return { id };
+    const classes = (active.className?.toString().split(/\s+/u).filter(Boolean) ?? []).map((name) => `.${name}`).join('');
+    const selector = `${active.tagName.toLocaleLowerCase()}${classes}`;
+    const matches = Array.from(root.querySelectorAll<HTMLElement>(selector));
+    return {
+      selector,
+      index: Math.max(0, matches.indexOf(active)),
+      label: active.getAttribute('aria-label') ?? active.textContent?.trim() ?? null,
+      href: active.getAttribute('href'),
+    };
+  }
+  function restoreFocus(target: ReturnType<typeof focusSnapshot>): void {
+    if (!target) return;
+    let next: HTMLElement | undefined;
+    if ('id' in target) next = Array.from(root.querySelectorAll<HTMLElement>('[data-focus-id]')).find((item) => item.getAttribute('data-focus-id') === target.id);
+    else {
+      const matches = Array.from(root.querySelectorAll<HTMLElement>(target.selector));
+      next = matches.find((item) => item.getAttribute('href') === target.href && (item.getAttribute('aria-label') ?? item.textContent?.trim() ?? null) === target.label) ?? matches[target.index];
+    }
+    next?.focus();
   }
   function relationRow(relation: { kind: TrackerRelationKind; key: string }): HTMLElement {
     const target = opts.store.ticket(relation.key).ticket;
@@ -614,8 +719,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   function render(): void {
     if (destroyed) return;
     const current = ticket();
-    const active = document.activeElement as HTMLElement | null;
-    const activeId = active && root.contains(active) ? active.getAttribute('data-focus-id') : null;
+    const restoreTarget = focusSnapshot();
     const oldActivity = root.querySelector<HTMLElement>('.tk-activity-list');
     const oldScrollTop = oldActivity?.scrollTop ?? 0;
     const oldAtBottom = !oldActivity || oldActivity.scrollHeight <= oldActivity.clientHeight || oldActivity.scrollHeight - oldActivity.clientHeight - oldScrollTop < 32;
@@ -643,7 +747,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
           h('span', { class: 'tk-skeleton tk-skeleton--wide' }), h('span', { class: 'tk-skeleton' }),
         ));
       }
-      if (activeId) root.querySelector<HTMLElement>(`[data-focus-id="${activeId}"]`)?.focus();
+      restoreFocus(restoreTarget);
       return;
     }
 
@@ -677,41 +781,35 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       root.appendChild(changed);
     }
     if (current.archivedAt) {
-      const archivedDate = new Date(current.archivedAt);
       root.appendChild(h('section', { class: 'tk-archived-banner', role: 'status' },
-        h('span', null, `Archived on ${Number.isNaN(archivedDate.getTime()) ? 'an earlier date' : archivedDate.toLocaleDateString()}.`),
+        h('span', null, `Archived on ${formatTrackerDate(current.archivedAt)}.`),
         describeDisabled(button('Restore', 'tk-button tk-button--secondary', !canRestore(), () => archive(false), 'restore-ticket'), !canRestore(), permissionReason()),
       ));
     }
 
     const header = h('header', { class: 'tk-header' });
-    const idButton = button(`Copy link to ${current.key}`, 'tk-header-key', false, () => copyLink(), 'ticket-key');
-    const today = new Date(Date.now()).toISOString().slice(0, 10);
-    if (current.due && current.due < today && current.assignee?.userId === opts.me.userId && current.state.category !== 'completed' && current.state.category !== 'canceled') {
-      idButton.classList.add('tk-header-key--overdue');
-    }
-    idButton.replaceChildren(keyChip(current.key), h('span', { class: 'tk-copy-glyph', 'aria-hidden': 'true' }, '⧉'));
-    idButton.setAttribute('data-tip', 'Copy link');
+    const idButton = button(`Copy key ${current.key}`, 'tk-header-key', false, () => { void copyText(current.key); }, 'ticket-key');
+    idButton.replaceChildren(keyChip(current.key), ticketIcon('copy'));
+    idButton.setAttribute('data-tip', 'Copy key');
     header.append(idButton);
-    const stateButton = fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); }, 'ticket-state');
-    stateButton.prepend(stateGlyph(current.state.category, current.state.key));
-    stateButton.append(h('span', { 'aria-hidden': 'true' }, ' ▾'));
-    header.append(stateButton);
     const subscribed = cache.subscribed ?? cache.detail?.subscribed ?? false;
-    const subscribeButton = fieldButton(subscribed ? 'Subscribed' : 'Subscribe', 'subscription', () => toggleSubscribe(), 'ticket-subscribe');
-    subscribeButton.classList.add('tk-subscribe-button');
+    const subscribeButton = button(subscribed ? 'Subscribed' : 'Subscribe', 'tk-subscribe-button', !writeable, () => toggleSubscribe(), 'ticket-subscribe');
     subscribeButton.setAttribute('aria-pressed', String(subscribed));
     subscribeButton.setAttribute('aria-label', `${subscribed ? 'Unsubscribe from' : 'Subscribe to'} ${current.key}`);
     subscribeButton.replaceChildren(bellIcon(), h('span', null, subscribed ? 'Subscribed' : 'Subscribe'));
     header.append(subscribeButton);
-    const tools = h('div', { class: 'tk-header-tools' });
+    const tools = h('div', { class: 'tk-header-tools', role: 'group', 'aria-label': 'Ticket actions' });
+    const copyLinkButton = button('Copy link', 'tk-icon-button', false, () => copyLink(), 'ticket-copy-link');
+    copyLinkButton.replaceChildren(ticketIcon('link'));
+    copyLinkButton.setAttribute('data-tip', 'Copy link');
+    tools.append(copyLinkButton);
     const moreButton = button('More ticket actions', 'tk-icon-button', false, () => { menuOpen = !menuOpen; render(); }, 'ticket-menu');
-    moreButton.textContent = '⋯';
+    moreButton.replaceChildren(ticketIcon('more'));
     moreButton.setAttribute('data-tip', 'More actions');
     moreButton.setAttribute('aria-expanded', String(menuOpen));
     tools.append(moreButton);
     if (menuOpen) {
-      const menu = h('div', { class: 'tk-more-menu', role: 'menu', 'aria-label': 'Ticket actions' });
+      const menu = h('div', { class: 'tk-more-menu', role: 'group', 'aria-label': 'More ticket actions' });
       menu.append(button('Copy link', 'tk-menu-item', false, () => copyLink()));
       menu.append(button('Copy key', 'tk-menu-item', false, () => copyText(current.key)));
       if (!current.archivedAt) menu.append(describeDisabled(button('Archive', 'tk-menu-item', !canRestore(), () => archive(true)), !canRestore(), permissionReason()));
@@ -719,7 +817,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       header.appendChild(menu);
     }
     const closeButton = button('Close ticket', 'tk-icon-button', false, () => opts.onClose(), 'ticket-close');
-    closeButton.textContent = '×';
+    closeButton.replaceChildren(ticketIcon('close'));
     closeButton.setAttribute('data-tip', 'Close ticket');
     tools.append(closeButton);
     header.appendChild(tools);
@@ -731,6 +829,11 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     } else if (cache.pending) root.appendChild(h('div', { class: 'tk-save-state', role: 'status' }, cache.offlineQueued ? 'Offline, will sync' : 'Saving…'));
     if (localError) root.appendChild(h('div', { class: 'tk-error-inline', role: 'alert' }, localError));
 
+    const childTickets = Object.values(snapshot.tickets).map((entry) => entry.ticket).filter((item): item is TrackerTicket => Boolean(item?.parent === current.key));
+    for (const list of Object.values(snapshot.lists)) for (const item of list.tickets) {
+      if (item.parent === current.key && !childTickets.some((child) => child.key === item.key)) childTickets.push(item);
+    }
+    const doneCount = childTickets.filter((item) => item.state.category === 'completed' || item.state.category === 'canceled').length;
     const layout = h('div', { class: 'tk-layout' });
     const main = h('div', { class: 'tk-main-column' });
     const titleHeading = h('section', { class: 'tk-title-section' });
@@ -747,16 +850,29 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       });
       titleHeading.append(input, button('Save title', 'tk-button tk-button--secondary', false, () => commitTitle()), button('Cancel title edit', 'tk-button tk-button--quiet', false, () => cancelTitle()));
     } else {
-      const title = h('h1', { class: 'tk-title', tabindex: writeable ? '0' : '-1', 'data-focus-id': 'ticket-title', 'aria-label': writeable ? 'Title, press Enter to edit' : 'Title' }, current.title);
+      const title = h('h1', { class: 'tk-title', role: 'button', 'aria-level': '1', tabindex: '0', 'data-focus-id': 'ticket-title' }, current.title);
       title.addEventListener('click', () => { if (writeable) editTitle(); });
       title.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter' && writeable) { event.preventDefault(); editTitle(); }
       });
       titleHeading.appendChild(title);
-      if (writeable) titleHeading.appendChild(button('Edit title', 'tk-title-edit', false, () => editTitle()));
     }
     const originInfo = origin(current);
-    titleHeading.appendChild(h('p', { class: 'tk-created-by' }, originInfo.actor ? actorVisual(originInfo.actor.kind, originInfo.actor.name) : null, h('span', null, originInfo.text), h('span', null, ' · '), activityTime(current.createdAt)));
+    titleHeading.appendChild(h('p', { class: 'tk-created-by' }, `${originInfo.text} · ${formatTrackerDate(current.createdAt)}`));
+    if (current.parent) {
+      const parent = opts.store.ticket(current.parent).ticket;
+      const parentChildren = Object.values(snapshot.tickets).map((entry) => entry.ticket).filter((item): item is TrackerTicket => Boolean(item?.parent === current.parent));
+      for (const list of Object.values(snapshot.lists)) for (const item of list.tickets) {
+        if (item.parent === current.parent && !parentChildren.some((child) => child.key === item.key)) parentChildren.push(item);
+      }
+      const parentDone = parentChildren.filter((item) => item.state.category === 'completed' || item.state.category === 'canceled').length;
+      const progressValue = `${parentDone}/${parentChildren.length || 1}`;
+      const parentLine = h('p', { class: 'tk-parent-line' }, 'Sub-issue of ');
+      const parentLink = button(`Open parent ${current.parent}`, 'tk-parent-link', false, () => opts.onNavigate(current.parent!));
+      parentLink.replaceChildren(keyChip(current.parent), h('span', null, parent?.title ?? ''));
+      parentLine.replaceChildren('Sub-issue of ', parentLink, h('span', { class: 'tk-progress-ring', role: 'img', 'aria-label': `${parentDone} of ${parentChildren.length || 1} sub-issues complete` }, progressValue));
+      titleHeading.appendChild(parentLine);
+    }
     if (current.aliases.length) {
       const aliases = h('p', { class: 'tk-aliases' }, h('span', null, 'Also known as '));
       current.aliases.forEach((alias, index) => {
@@ -766,11 +882,10 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       });
       titleHeading.appendChild(aliases);
     }
-    titleHeading.appendChild(h('hr', { class: 'trk-rule' }));
-    main.appendChild(titleHeading);
+    layout.appendChild(titleHeading);
 
     const descriptionSection = h('section', { class: 'tk-section tk-description-section', 'aria-labelledby': 'tk-description-heading' });
-    descriptionSection.append(h('h2', { id: 'tk-description-heading', class: 'tk-section-heading' }, 'Description'));
+    descriptionSection.append(h('h2', { id: 'tk-description-heading', class: 'tk-sr-only' }, 'Description'));
     if (descriptionEditing && writeable) {
       const editor = h('div', { class: 'tk-description-editor', 'data-focus-id': 'description-editor' });
       const tabs = h('div', { class: 'tk-editor-tabs', role: 'group', 'aria-label': 'Description editor mode' });
@@ -809,36 +924,71 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       editor.append(button('Save description', 'tk-button tk-button--secondary', false, () => commitDescription()), button('Cancel description edit', 'tk-button tk-button--quiet', false, () => cancelDescription()));
       descriptionSection.appendChild(editor);
     } else {
-      if (current.description) descriptionSection.appendChild(markdown(current.description, 'tk-description-body'));
-      else descriptionSection.appendChild(h('p', { class: 'tk-empty-copy' }, 'No description yet.'));
-      if (writeable) descriptionSection.appendChild(button(current.description ? 'Edit description' : 'Add description', 'tk-button tk-button--quiet', false, () => editDescription(), 'description-edit'));
+      if (current.description) {
+        const body = markdown(current.description, 'tk-description-body');
+        body.tabIndex = writeable ? 0 : -1;
+        if (writeable) body.setAttribute('role', 'button');
+        body.setAttribute('data-focus-id', 'description-body');
+        body.addEventListener('click', (event) => {
+          if ((event.target as HTMLElement | null)?.closest('a')) return;
+          if (writeable) editDescription();
+        });
+        body.addEventListener('keydown', (event: KeyboardEvent) => {
+          if (event.key === 'Enter' && writeable && !(event.target as HTMLElement | null)?.closest('a')) { event.preventDefault(); editDescription(); }
+        });
+        descriptionSection.appendChild(body);
+      } else if (writeable) {
+        const placeholder = button('Add description…', 'tk-description-placeholder', false, () => editDescription(), 'description-edit');
+        placeholder.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); editDescription(); } });
+        descriptionSection.appendChild(placeholder);
+      } else descriptionSection.appendChild(h('p', { class: 'tk-empty-copy' }, 'No description yet.'));
     }
     main.appendChild(descriptionSection);
 
     const subIssues = h('section', { class: 'tk-section tk-subissues-section', 'aria-labelledby': 'tk-subissues-heading' });
-    const childTickets = Object.values(snapshot.tickets).map((entry) => entry.ticket).filter((item): item is TrackerTicket => Boolean(item?.parent === current.key));
-    for (const list of Object.values(snapshot.lists)) for (const item of list.tickets) if (item.parent === current.key && !childTickets.some((child) => child.key === item.key)) childTickets.push(item);
-    const doneCount = childTickets.filter((item) => item.state.category === 'completed' || item.state.category === 'canceled').length;
-    subIssues.append(h('h2', { id: 'tk-subissues-heading', class: 'tk-section-heading' }, 'Sub-issues'));
+    if (childTickets.length) subIssues.append(h('div', { class: 'tk-section-head' },
+      h('h2', { id: 'tk-subissues-heading', class: 'tk-section-heading' }, 'Sub-issues'),
+      h('span', { class: 'tk-subissue-progress' }, `${doneCount}/${childTickets.length}`),
+    ));
     if (childTickets.length) {
-      subIssues.append(h('p', { class: 'tk-progress-copy' }, `${doneCount} of ${childTickets.length} complete`), h('div', { class: 'tk-progress-track', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(childTickets.length), 'aria-valuenow': String(doneCount), 'aria-label': 'Sub-issue progress' }, h('span', { style: { width: `${Math.round(doneCount / childTickets.length * 100)}%` } })));
       for (const child of childTickets) {
         const row = button(`${child.key} ${child.title}`, 'tk-subissue-row', false, () => opts.onNavigate(child.key));
         row.append(keyChip(child.key), stateGlyph(child.state.category, child.state.key), h('span', { class: 'tk-list-title' }, child.title), h('span', { class: 'tk-muted' }, child.assignee?.name ?? 'Unassigned'));
         subIssues.append(row);
       }
-    } else subIssues.appendChild(h('p', { class: 'tk-empty-copy' }, 'No sub-issues yet.'));
+    }
+    const addSubIssues = describeDisabled(button('+ Add sub-issues', 'tk-ghost-add tk-subissue-add', !writeable, () => {
+      creatingSubIssue = true;
+      subIssueDraft = '';
+      subIssueError = '';
+      render();
+      root.querySelector<HTMLInputElement>('[data-focus-id="subissue-title"]')?.focus();
+    }, 'add-subissues'), !writeable);
+    subIssues.appendChild(addSubIssues);
+    if (creatingSubIssue && writeable) {
+      const editor = h('div', { class: 'tk-subissue-editor' });
+      const input = h('input', { class: 'tk-inline-input', type: 'text', maxlength: 200, value: subIssueDraft, placeholder: 'Sub-issue title', 'aria-label': 'Sub-issue title', 'data-focus-id': 'subissue-title' });
+      input.addEventListener('input', () => { subIssueDraft = input.value; });
+      input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter') { event.preventDefault(); createSubIssue(); }
+        else if (event.key === 'Escape') { event.preventDefault(); creatingSubIssue = false; subIssueDraft = ''; subIssueError = ''; render(); }
+      });
+      editor.append(input, button('Create sub-issue', 'tk-button tk-button--primary', !subIssueDraft.trim(), () => createSubIssue()), button('Cancel', 'tk-button tk-button--quiet', false, () => { creatingSubIssue = false; subIssueDraft = ''; subIssueError = ''; render(); }));
+      if (subIssueError) editor.appendChild(h('p', { class: 'tk-error-inline', role: 'alert' }, subIssueError));
+      subIssues.appendChild(editor);
+    }
     main.appendChild(subIssues);
 
     const relations = h('section', { class: 'tk-section tk-relations-section', 'aria-labelledby': 'tk-relations-heading' });
-    const relationHead = h('div', { class: 'tk-section-head' }, h('h2', { id: 'tk-relations-heading', class: 'tk-section-heading' }, 'Relations'));
-    relationHead.appendChild(describeDisabled(button('Add relation', 'tk-button tk-button--quiet', !writeable, (event) => startRelationSearch(event.currentTarget as HTMLElement), 'add-relation'), !writeable));
-    relations.appendChild(relationHead);
     const groups = [...new Set(current.relations.map((relation) => relation.kind))];
+    const relationHead = h('div', { class: 'tk-section-head' });
+    if (groups.length || relationSearch) relationHead.appendChild(h('h2', { id: 'tk-relations-heading', class: 'tk-section-heading' }, 'Relations'));
+    relationHead.appendChild(describeDisabled(button('+ Add relation', 'tk-ghost-add', !writeable, (event) => startRelationSearch(event.currentTarget as HTMLElement), 'add-relation'), !writeable));
+    relations.appendChild(relationHead);
     if (groups.length) for (const kind of groups) {
-      relations.appendChild(h('h3', { class: 'tk-property-label' }, RELATION_LABELS[kind]));
+      relations.appendChild(h('h3', { class: 'tk-group-heading' }, RELATION_LABELS[kind]));
       current.relations.filter((relation) => relation.kind === kind).forEach((relation) => relations.appendChild(relationRow(relation)));
-    } else relations.appendChild(h('p', { class: 'tk-empty-copy' }, 'No relations yet.'));
+    }
     if (relationSearch) {
       const search = h('div', { class: 'tk-relation-search', role: 'group', 'aria-label': `Search tickets for ${RELATION_LABELS[relationSearch.kind].toLocaleLowerCase()}` });
       search.appendChild(h('label', { for: 'tk-relation-query', class: 'tk-property-label' }, `Find ticket to ${RELATION_LABELS[relationSearch.kind].toLocaleLowerCase()}`));
@@ -854,116 +1004,139 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     }
     main.appendChild(relations);
 
-    const linkedWork = h('section', { class: 'tk-section tk-linked-work-section', 'aria-labelledby': 'tk-linked-work-heading' });
-    linkedWork.appendChild(h('h2', { id: 'tk-linked-work-heading', class: 'tk-section-heading' }, 'Linked work'));
     const workLinks = current.links.filter((link) => link.kind !== 'card');
-    if (!workLinks.length) linkedWork.appendChild(h('p', { class: 'tk-empty-copy' }, 'No pull requests or commits are linked yet.'));
-    for (const link of workLinks) {
-      const href = safeExternalUrl(link.url);
-      const row = h('div', { class: 'tk-link-row' });
-      if (link.kind === 'pr') row.append(h('span', { class: 'tk-link-glyph' }, '↗'), h('span', { class: 'tk-property-label' }, `PR #${link.number}`), h('span', { class: 'tk-list-title' }, link.title), h('span', { class: 'tk-muted' }, link.state));
-      else row.append(h('span', { class: 'tk-link-glyph' }, '·'), h('span', { class: 'tk-property-label' }, link.sha.slice(0, 7)), h('span', { class: 'tk-list-title' }, link.title));
-      if (href) row.appendChild(h('a', { class: 'tk-external-link', href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Open ${link.kind === 'pr' ? `pull request ${link.number}` : 'commit'} in a new tab` }, 'Open'));
-      linkedWork.appendChild(row);
+    if (workLinks.length) {
+      const linkedWork = h('section', { class: 'tk-section tk-linked-work-section', 'aria-labelledby': 'tk-linked-work-heading' }, h('h2', { id: 'tk-linked-work-heading', class: 'tk-section-heading' }, 'Linked work'));
+      for (const link of workLinks) {
+        const href = safeExternalUrl(link.url);
+        const row = h('div', { class: 'tk-link-row' });
+        if (link.kind === 'pr') row.append(h('span', { class: 'tk-link-glyph', 'aria-hidden': 'true' }, '↗'), h('span', { class: 'tk-link-reference' }, `PR #${link.number}`), h('span', { class: 'tk-list-title' }, link.title), h('span', { class: 'tk-muted' }, link.state));
+        else row.append(h('span', { class: 'tk-link-glyph', 'aria-hidden': 'true' }, '·'), h('span', { class: 'tk-link-reference' }, link.sha.slice(0, 7)), h('span', { class: 'tk-list-title' }, link.title));
+        if (href) row.appendChild(h('a', { class: 'tk-external-link', href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Open ${link.kind === 'pr' ? `pull request ${link.number}` : 'commit'} in a new tab` }, 'Open'));
+        linkedWork.appendChild(row);
+      }
+      main.appendChild(linkedWork);
     }
-    main.appendChild(linkedWork);
 
-    const linkedCards = h('section', { class: 'tk-section tk-linked-cards-section', 'aria-labelledby': 'tk-linked-cards-heading' });
-    linkedCards.appendChild(h('h2', { id: 'tk-linked-cards-heading', class: 'tk-section-heading' }, 'Linked cards'));
     const cards = current.links.filter((link) => link.kind === 'card');
-    if (cards.length) cards.forEach((link) => linkedCards.appendChild(h('p', { class: 'tk-card-link-row' }, `Card ${link.cardId} · Board ${link.boardId}`)));
-    else linkedCards.appendChild(h('p', { class: 'tk-empty-copy' }, 'No cards are linked to this ticket yet.'));
-    main.appendChild(linkedCards);
+    if (cards.length) {
+      const linkedCards = h('section', { class: 'tk-section tk-linked-cards-section', 'aria-labelledby': 'tk-linked-cards-heading' }, h('h2', { id: 'tk-linked-cards-heading', class: 'tk-section-heading' }, 'Linked cards'));
+      cards.forEach((link) => linkedCards.appendChild(h('p', { class: 'tk-card-link-row' }, `Card ${link.cardId} · Board ${link.boardId}`)));
+      main.appendChild(linkedCards);
+    }
 
     const properties = h('aside', { class: 'tk-properties', 'aria-label': 'Ticket properties' });
     properties.appendChild(h('h2', { class: 'tk-section-heading' }, 'Properties'));
-    const propertyList = h('dl', { class: 'tk-property-list' });
-    const data = meta();
-    const propertyRow = (name: string, value: HTMLElement) => h('div', { class: 'tk-property-row' }, h('dt', { class: 'tk-property-label' }, name), h('dd', null, value));
-    const assigneeLabel = current.assignee?.name ?? 'Unassigned';
-    propertyList.append(
-      propertyRow('State', fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); })),
-      propertyRow('Assignee', fieldButton(assigneeLabel, 'assignee', (event) => { void openFieldPicker('assignee', event.currentTarget as HTMLElement); })),
-      propertyRow('Priority', fieldButton(priorityLabel(current.priority), 'priority', (event) => { void openFieldPicker('priority', event.currentTarget as HTMLElement); })),
-      propertyRow('Labels', (() => {
-        const control = h('div', { class: 'tk-label-property' });
-        const value = fieldButton(current.labels.map((label) => label.name).join(', ') || 'No labels', 'labels', (event) => { void openFieldPicker('labels', event.currentTarget as HTMLElement); });
-        value.replaceChildren(...current.labels.map((label) => labelChip(label.name, label.color)));
-        if (!current.labels.length) value.textContent = 'No labels';
-        control.appendChild(value);
-        if (data?.canCreateLabels) {
-          if (creatingLabel) {
-            const editor = h('div', { class: 'tk-inline-field tk-create-label' });
-            const input = describeDisabled(h('input', { class: 'tk-inline-input', type: 'text', value: labelDraft, maxlength: 64, placeholder: 'Label name', 'aria-label': 'New label name', 'data-focus-id': 'new-label-name', disabled: !writeable }), !writeable);
-            const save = button('Save label', 'tk-button tk-button--secondary', !writeable || !labelDraft.trim(), () => createTicketLabel());
-            input.addEventListener('input', () => {
-              labelDraft = input.value;
-              save.disabled = !canWrite() || !labelDraft.trim();
-            });
-            input.addEventListener('keydown', (event: KeyboardEvent) => {
-              if (event.key === 'Enter') { event.preventDefault(); createTicketLabel(); }
-              else if (event.key === 'Escape') { event.preventDefault(); creatingLabel = false; labelDraft = ''; labelCreateError = ''; render(); }
-            });
-            editor.append(input, describeDisabled(save, !writeable), button('Cancel label', 'tk-button tk-button--quiet', false, () => { creatingLabel = false; labelDraft = ''; labelCreateError = ''; render(); }));
-            if (labelCreateError) editor.appendChild(h('p', { class: 'tk-error-inline', role: 'alert' }, labelCreateError));
-            control.appendChild(editor);
-          } else {
-            control.appendChild(describeDisabled(button('Create label', 'tk-button tk-button--quiet tk-create-label-button', !writeable, () => {
-              creatingLabel = true;
-              labelDraft = '';
-              labelCreateError = '';
-              render();
-              root.querySelector<HTMLInputElement>('[data-focus-id="new-label-name"]')?.focus();
-            }), !writeable));
-          }
-        }
-        return control;
-      })()),
-      propertyRow('Due', (() => {
-        if (!dueEditing) return fieldButton(current.due ?? 'No due date', 'due', () => { dueEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]')?.focus(); });
-        const control = h('div', { class: 'tk-inline-field' });
-        const input = describeDisabled(h('input', { type: 'date', class: 'tk-inline-input', value: current.due ?? '', 'aria-label': 'Due date, YYYY-MM-DD', 'data-focus-id': 'due-input', disabled: !writeable }), !writeable);
-        input.addEventListener('keydown', (event: KeyboardEvent) => {
-          if (event.key === 'Escape') { event.preventDefault(); if (failedUpdate?.field === 'due') failedUpdate = null; localError = ''; dueEditing = false; render(); }
-        });
-        input.addEventListener('input', () => {
-          input.dataset.value = input.value;
-          if (failedUpdate?.field === 'due') failedUpdate = { ...failedUpdate, patch: { due: input.value || null }, mine: input.value || null };
-        });
-        control.append(input, describeDisabled(button('Save due date', 'tk-button tk-button--secondary', !writeable, () => {
-          const value = input.value.trim();
-          if (value && !isValidDueDate(value)) { localError = 'Use a valid YYYY-MM-DD date.'; render(); return; }
-          dueEditing = false; saveField('due', value || null);
-        }), !writeable), describeDisabled(button('Clear due date', 'tk-button tk-button--quiet', !writeable, () => { dueEditing = false; saveField('due', null); }), !writeable), button('Cancel due date', 'tk-button tk-button--quiet', false, () => { if (failedUpdate?.field === 'due') failedUpdate = null; localError = ''; dueEditing = false; render(); }));
-        return control;
-      })()),
-      propertyRow('Parent', (() => {
-        if (!parentEditing) return fieldButton(current.parent ?? 'No parent', 'parent', () => { parentEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="parent-input"]')?.focus(); });
-        const control = h('div', { class: 'tk-inline-field' });
-        const input = describeDisabled(h('input', { class: 'tk-inline-input', type: 'text', value: current.parent ?? '', placeholder: 'TAB-123', 'aria-label': 'Parent ticket key', 'data-focus-id': 'parent-input', disabled: !writeable }), !writeable);
-        input.addEventListener('input', () => {
-          input.dataset.value = input.value;
-          if (failedUpdate?.field === 'parent') failedUpdate = { ...failedUpdate, patch: { parent: input.value.trim() || null }, mine: input.value.trim() || null };
-        });
-        input.addEventListener('keydown', (event: KeyboardEvent) => {
-          if (event.key === 'Enter') { event.preventDefault(); parentEditing = false; saveField('parent', input.value.trim() || null); }
-          else if (event.key === 'Escape') { event.preventDefault(); if (failedUpdate?.field === 'parent') failedUpdate = null; localError = ''; parentEditing = false; render(); }
-        });
-        control.append(input, describeDisabled(button('Save parent', 'tk-button tk-button--secondary', !writeable, () => { parentEditing = false; saveField('parent', input.value.trim() || null); }), !writeable), describeDisabled(button('Clear parent', 'tk-button tk-button--quiet', !writeable, () => { parentEditing = false; saveField('parent', null); }), !writeable), button('Cancel parent', 'tk-button tk-button--quiet', false, () => { if (failedUpdate?.field === 'parent') failedUpdate = null; localError = ''; parentEditing = false; render(); }));
-        return control;
-      })()),
+    const propertyRow = (name: string, value: HTMLElement, focusId: string) => h('div', { class: `tk-property-row${focusId.startsWith('property-state') || focusId.startsWith('property-assignee') || focusId.startsWith('property-priority') || focusId.startsWith('property-due') ? ' tk-primary-property' : ''} tk-property-row--${name.toLocaleLowerCase().replace(/[^a-z]+/gu, '-')}`, 'data-property': focusId },
+      h('dt', { class: 'tk-property-name tk-sr-only' }, name), h('dd', null, value),
     );
-    if (data?.projects) {
-      propertyList.appendChild(propertyRow('Project', fieldButton(current.project?.name ?? 'No project', 'project', (event) => { void openFieldPicker('project', event.currentTarget as HTMLElement); })));
-    } else propertyList.appendChild(propertyRow('Project', h('span', { class: 'tk-readonly-value' }, current.project?.name ?? 'No project')));
-    if (data?.milestones) {
-      propertyList.appendChild(propertyRow('Milestone', fieldButton(current.milestone?.name ?? 'No milestone', 'milestone', (event) => { void openFieldPicker('milestone', event.currentTarget as HTMLElement); })));
-    } else propertyList.appendChild(propertyRow('Milestone', h('span', { class: 'tk-readonly-value' }, current.milestone?.name ?? 'No milestone')));
-    propertyList.appendChild(propertyRow('Created', h('span', { class: 'tk-readonly-value' }, new Date(current.createdAt).toLocaleDateString())));
-    if (current.due) propertyList.appendChild(propertyRow('Due status', dueChip(current.due, Date.now()) ?? h('span', { class: 'tk-readonly-value' }, 'No due date')));
-    properties.appendChild(propertyList);
-    main.insertBefore(properties, descriptionSection);
-    layout.appendChild(main);
+    const data = meta();
+    const primary = h('dl', { class: 'tk-property-list tk-primary-properties' });
+    const stateValue = fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); }, 'property-state');
+    stateValue.prepend(stateGlyph(current.state.category, current.state.key));
+    primary.appendChild(propertyRow('State', stateValue, 'property-state'));
+    const assigneeValue = fieldButton(current.assignee?.name ?? 'Assign', 'assignee', (event) => { void openFieldPicker('assignee', event.currentTarget as HTMLElement); }, 'property-assignee');
+    if (current.assignee) assigneeValue.prepend(avatar({ kind: 'person', name: current.assignee.name }));
+    else assigneeValue.classList.add('tk-property-value--empty');
+    primary.appendChild(propertyRow('Assignee', assigneeValue, 'property-assignee'));
+    const priorityValue = fieldButton(priorityLabel(current.priority), 'priority', (event) => { void openFieldPicker('priority', event.currentTarget as HTMLElement); }, 'property-priority');
+    if (current.priority !== 'none') priorityValue.prepend(priorityGlyph(current.priority));
+    primary.appendChild(propertyRow('Priority', priorityValue, 'property-priority'));
+    if (!dueEditing) {
+      const dueLabel = current.due ? formatTrackerDate(current.due, Date.now(), { relative: true }) : 'Set due date';
+      const dueValue = fieldButton(dueLabel, 'due', () => { dueEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]')?.focus(); }, 'property-due');
+      dueValue.prepend(ticketIcon('calendar'));
+      if (!current.due) dueValue.classList.add('tk-property-value--empty');
+      primary.appendChild(propertyRow('Due', dueValue, 'property-due'));
+    } else {
+      const control = h('div', { class: 'tk-inline-field' });
+      const input = describeDisabled(h('input', { type: 'date', class: 'tk-inline-input', value: current.due ?? '', 'aria-label': 'Due date, YYYY-MM-DD', 'data-focus-id': 'due-input', disabled: !writeable }), !writeable);
+      input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Escape') { event.preventDefault(); if (failedUpdate?.field === 'due') failedUpdate = null; localError = ''; dueEditing = false; render(); }
+      });
+      input.addEventListener('input', () => {
+        input.dataset.value = input.value;
+        if (failedUpdate?.field === 'due') failedUpdate = { ...failedUpdate, patch: { due: input.value || null }, mine: input.value || null };
+      });
+      control.append(input, describeDisabled(button('Save due date', 'tk-button tk-button--secondary', !writeable, () => {
+        const value = input.value.trim();
+        if (value && !isValidDueDate(value)) { localError = 'Use a valid YYYY-MM-DD date.'; render(); return; }
+        dueEditing = false; saveField('due', value || null);
+      }), !writeable), describeDisabled(button('Clear due date', 'tk-button tk-button--quiet', !writeable, () => { dueEditing = false; saveField('due', null); }), !writeable), button('Cancel due date', 'tk-button tk-button--quiet', false, () => { if (failedUpdate?.field === 'due') failedUpdate = null; localError = ''; dueEditing = false; render(); }));
+      primary.appendChild(propertyRow('Due', control, 'property-due'));
+    }
+    properties.appendChild(primary);
+    const moreToggle = button('More', 'tk-properties-more-toggle', false, () => {
+      morePropertiesOpen = !morePropertiesOpen;
+      moreToggle.setAttribute('aria-expanded', String(morePropertiesOpen));
+      more.dataset.expanded = String(morePropertiesOpen);
+    }, 'properties-more');
+    moreToggle.setAttribute('aria-expanded', String(morePropertiesOpen));
+    properties.appendChild(moreToggle);
+    const more = h('div', { class: 'tk-properties-more', 'data-expanded': String(morePropertiesOpen) });
+    const labels = h('section', { class: 'tk-property-group' }, h('h3', { class: 'tk-group-heading' }, 'Labels'));
+    const labelsRows = h('dl', { class: 'tk-property-list' });
+    const labelsValue = fieldButton(current.labels.map((label) => label.name).join(', ') || 'Add labels', 'labels', (event) => { void openFieldPicker('labels', event.currentTarget as HTMLElement); }, 'property-labels');
+    labelsValue.replaceChildren(...current.labels.map((label) => labelChip(label.name, label.color)));
+    if (!current.labels.length) { labelsValue.textContent = 'Add labels'; labelsValue.classList.add('tk-property-value--empty'); }
+    labelsRows.appendChild(propertyRow('Labels', labelsValue, 'property-labels'));
+    if (data?.canCreateLabels) {
+      if (creatingLabel) {
+        const editor = h('div', { class: 'tk-inline-field tk-create-label' });
+        const input = describeDisabled(h('input', { class: 'tk-inline-input', type: 'text', value: labelDraft, maxlength: 64, placeholder: 'Label name', 'aria-label': 'New label name', 'data-focus-id': 'new-label-name', disabled: !writeable }), !writeable);
+        const save = button('Save label', 'tk-button tk-button--primary', !writeable || !labelDraft.trim(), () => createTicketLabel());
+        input.addEventListener('input', () => { labelDraft = input.value; save.disabled = !canWrite() || !labelDraft.trim(); });
+        input.addEventListener('keydown', (event: KeyboardEvent) => {
+          if (event.key === 'Enter') { event.preventDefault(); createTicketLabel(); }
+          else if (event.key === 'Escape') { event.preventDefault(); creatingLabel = false; labelDraft = ''; labelCreateError = ''; render(); }
+        });
+        editor.append(input, describeDisabled(save, !writeable), button('Cancel label', 'tk-button tk-button--quiet', false, () => { creatingLabel = false; labelDraft = ''; labelCreateError = ''; render(); }));
+        if (labelCreateError) editor.appendChild(h('p', { class: 'tk-error-inline', role: 'alert' }, labelCreateError));
+        labelsRows.appendChild(editor);
+      } else labels.appendChild(describeDisabled(button('+ Create label', 'tk-ghost-add tk-create-label-button', !writeable, () => {
+        creatingLabel = true; labelDraft = ''; labelCreateError = ''; render();
+        root.querySelector<HTMLInputElement>('[data-focus-id="new-label-name"]')?.focus();
+      }), !writeable));
+    }
+    labels.appendChild(labelsRows);
+    more.appendChild(labels);
+    const projectGroup = h('section', { class: 'tk-property-group' }, h('h3', { class: 'tk-group-heading' }, 'Project'));
+    const projectRows = h('dl', { class: 'tk-property-list' });
+    const projectValue = data?.projects
+      ? fieldButton(current.project?.name ?? 'Add project', 'project', (event) => { void openFieldPicker('project', event.currentTarget as HTMLElement); }, 'property-project')
+      : h('span', { class: 'tk-readonly-value' }, current.project?.name ?? 'No project');
+    projectRows.appendChild(propertyRow('Project', projectValue, 'property-project'));
+    const milestoneValue = data?.milestones
+      ? fieldButton(current.milestone?.name ?? 'Add milestone', 'milestone', (event) => { void openFieldPicker('milestone', event.currentTarget as HTMLElement); }, 'property-milestone')
+      : h('span', { class: 'tk-readonly-value' }, current.milestone?.name ?? 'No milestone');
+    projectRows.appendChild(propertyRow('Milestone', milestoneValue, 'property-milestone'));
+    projectGroup.appendChild(projectRows);
+    more.appendChild(projectGroup);
+    const parentGroup = h('section', { class: 'tk-property-group' }, h('h3', { class: 'tk-group-heading' }, 'Parent / Related'));
+    const parentRows = h('dl', { class: 'tk-property-list' });
+    if (!parentEditing) {
+      const parentValue = fieldButton(current.parent ?? 'Set parent', 'parent', () => { parentEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="parent-input"]')?.focus(); }, 'property-parent');
+      if (!current.parent) parentValue.classList.add('tk-property-value--empty');
+      parentRows.appendChild(propertyRow('Parent', parentValue, 'property-parent'));
+    } else {
+      const control = h('div', { class: 'tk-inline-field' });
+      const input = describeDisabled(h('input', { class: 'tk-inline-input', type: 'text', value: current.parent ?? '', placeholder: 'TAB-123', 'aria-label': 'Parent ticket key', 'data-focus-id': 'parent-input', disabled: !writeable }), !writeable);
+      input.addEventListener('input', () => {
+        input.dataset.value = input.value;
+        if (failedUpdate?.field === 'parent') failedUpdate = { ...failedUpdate, patch: { parent: input.value.trim() || null }, mine: input.value.trim() || null };
+      });
+      input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter') { event.preventDefault(); parentEditing = false; saveField('parent', input.value.trim() || null); }
+        else if (event.key === 'Escape') { event.preventDefault(); if (failedUpdate?.field === 'parent') failedUpdate = null; localError = ''; parentEditing = false; render(); }
+      });
+      control.append(input, describeDisabled(button('Save parent', 'tk-button tk-button--secondary', !writeable, () => { parentEditing = false; saveField('parent', input.value.trim() || null); }), !writeable), describeDisabled(button('Clear parent', 'tk-button tk-button--quiet', !writeable, () => { parentEditing = false; saveField('parent', null); }), !writeable), button('Cancel parent', 'tk-button tk-button--quiet', false, () => { if (failedUpdate?.field === 'parent') failedUpdate = null; localError = ''; parentEditing = false; render(); }));
+      parentRows.appendChild(propertyRow('Parent', control, 'property-parent'));
+    }
+    parentGroup.appendChild(parentRows);
+    more.appendChild(parentGroup);
+    properties.appendChild(more);
+    layout.appendChild(properties);
+    main.appendChild(descriptionSection);
 
     const activitySection = h('section', { class: 'tk-section tk-activity-section', 'aria-labelledby': 'tk-activity-heading' });
     const activityHead = h('div', { class: 'tk-section-head' }, h('h2', { id: 'tk-activity-heading', class: 'tk-section-heading' }, 'Activity'));
@@ -1004,7 +1177,6 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
         const described = describeEvent(row.events.at(-1)!, { ticketKey: current.key, members: meta()?.members });
         const fields = [...new Set(row.events.flatMap(eventChangedFields))];
         const line = h('article', { class: 'tk-history-row' },
-          h('span', { class: 'tk-event-icon', 'aria-hidden': 'true' }, displayEventIcon('update')),
           actorVisual(described.actor.kind, described.actor.name),
           h('span', { class: 'tk-history-text' }, `${described.actor.name} changed ${fields.join(', ')} · ${row.events.length} changes`),
           activityTime(row.at),
@@ -1019,8 +1191,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       newComments = 0; render();
     }));
     const composer = h('div', { class: 'tk-comment-composer' });
-    composer.appendChild(h('label', { for: 'tk-comment-input', class: 'tk-property-label' }, 'Add a comment'));
-    const commentInput = h('textarea', { id: 'tk-comment-input', class: 'tk-comment-input', rows: 4, placeholder: writeable ? 'Write a comment in Markdown…' : reason, 'aria-label': 'Comment in Markdown', disabled: !writeable, 'aria-describedby': !writeable ? readonlyId : undefined, 'data-focus-id': 'comment-input' });
+    const commentInput = h('textarea', { id: 'tk-comment-input', class: 'tk-comment-input', rows: 3, placeholder: writeable ? 'Leave a comment…' : reason, 'aria-label': 'Comment in Markdown', disabled: !writeable, 'aria-describedby': !writeable ? readonlyId : undefined, 'data-focus-id': 'comment-input' });
     commentInput.value = commentDraft;
     commentInput.addEventListener('input', () => {
       saveCommentDraft(commentInput.value);
@@ -1028,18 +1199,42 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       if (submit) submit.disabled = !canWrite() || commentSending || !commentDraft.trim();
       if (commentError && submit) {
         commentError = '';
-        submit.textContent = 'Post comment';
         submit.setAttribute('aria-label', 'Post comment');
+        submit.replaceChildren(ticketIcon('send'), h('span', { class: 'tk-sr-only' }, 'Post comment'));
         root.querySelector('.tk-comment-composer .tk-error-inline')?.remove();
       }
     });
     commentInput.addEventListener('keydown', (event: KeyboardEvent) => {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); postComment(); }
     });
-    composer.append(commentInput, describeDisabled(button(commentError ? 'Retry comment' : commentSending ? 'Posting…' : 'Post comment', 'tk-button tk-button--primary tk-comment-submit', !writeable || commentSending || !commentDraft.trim(), () => postComment(), 'post-comment'), !writeable));
+    composer.appendChild(commentInput);
+    const composerActions = h('div', { class: 'tk-comment-actions-bar' });
+    const attachButton = button('Attach link to comment', 'tk-icon-button tk-comment-attach', !writeable, () => {
+      attachLinkOpen = !attachLinkOpen;
+      render();
+      if (attachLinkOpen) root.querySelector<HTMLInputElement>('[data-focus-id="comment-link"]')?.focus();
+    }, 'comment-attach');
+    attachButton.replaceChildren(ticketIcon('attach'));
+    attachButton.setAttribute('data-tip', 'Attach link');
+    composerActions.appendChild(describeDisabled(attachButton, !writeable));
+    const submitLabel = commentError ? 'Retry comment' : commentSending ? 'Posting…' : 'Post comment';
+    const submit = describeDisabled(button(submitLabel, 'tk-button tk-button--quiet tk-comment-submit', !writeable || commentSending || !commentDraft.trim(), () => postComment(), 'post-comment'), !writeable);
+    submit.setAttribute('aria-label', submitLabel);
+    submit.replaceChildren(ticketIcon('send'), h('span', { class: 'tk-sr-only' }, submitLabel));
+    composerActions.appendChild(submit);
+    composer.appendChild(composerActions);
+    if (attachLinkOpen) {
+      const attachForm = h('div', { class: 'tk-comment-link-form' });
+      const linkInput = h('input', { class: 'tk-inline-input', type: 'url', value: attachmentUrlDraft, placeholder: 'https://…', 'aria-label': 'Link URL to attach', 'data-focus-id': 'comment-link' });
+      linkInput.addEventListener('input', () => { attachmentUrlDraft = linkInput.value; });
+      linkInput.addEventListener('keydown', (event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); addCommentLink(); } else if (event.key === 'Escape') { event.preventDefault(); attachLinkOpen = false; attachmentUrlDraft = ''; render(); } });
+      attachForm.append(linkInput, button('Add link', 'tk-button tk-button--secondary', false, () => addCommentLink()), button('Cancel link', 'tk-button tk-button--quiet', false, () => { attachLinkOpen = false; attachmentUrlDraft = ''; render(); }));
+      composer.appendChild(attachForm);
+    }
     if (commentError) composer.appendChild(h('p', { class: 'tk-error-inline', role: 'alert' }, `Comment not sent. ${commentError}`));
     activitySection.appendChild(composer);
     main.appendChild(activitySection);
+    layout.appendChild(main);
     root.appendChild(layout);
 
     if (oldActivity) {
@@ -1048,14 +1243,13 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
         nextActivity.scrollTop = oldAtBottom ? nextActivity.scrollHeight : oldScrollTop;
       }
     }
-    if (activeId) root.querySelector<HTMLElement>(`[data-focus-id="${activeId}"]`)?.focus();
+    restoreFocus(restoreTarget);
   }
 
   function renderActivityItem(parent: HTMLElement, item: ActivityItem): void {
     if (item.kind === 'event') {
       const described = describeEvent(item.event, { ticketKey: opts.key, members: meta()?.members });
       parent.appendChild(h('article', { class: 'tk-history-row' },
-        h('span', { class: 'tk-event-icon', 'aria-hidden': 'true' }, displayEventIcon(described.icon)),
         actorVisual(described.actor.kind, described.actor.name), h('span', { class: 'tk-history-text' }, described.text), activityTime(item.at),
       ));
       return;

@@ -62,6 +62,8 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `templates` | `#/templates` |
 | `settings` | The Board settings dialog over the board |
 | `touch-targets` | A coarse-pointer state that measures target boxes and text-field font sizes on the boards home, quick bar, properties, font popover, settings dialog and canvas editor. Exceptions: checkboxes and radios use their associated label as the hit area; the canvas editor follows board zoom; the board canvas is a continuous gesture surface. `chat-composer` measures the chat tray when its pointer is coarse. |
+| `review-ticket-page` | The first seeded tracker ticket opened from All issues, showing the desktop ticket/peek layout. Checks contrast, borders, phone targets and horizontal overflow. |
+| `review-ticket-page-phone` | The first seeded tracker ticket at phone width, checking the compact primary property block, More disclosure, contrast, 44 px targets and overflow. Widths of 600 px and above skip this state. |
 | `kanban` | (open mode only, as are the other `kanban` states) A second seeded board (`visual-kanban`) with a kanban like the design mock's (four lanes, a WIP limit, a blocking lane, a done lane, labels, due dates, owners, a comment) beside a frame of notes; fitted to the window, on a phone to the kanban alone |
 | `kanban-card` | The same with a card selected |
 | `kanban-drag` | A card held down and dragged into another lane: placeholder, ghost and drop line (the mouse stays down, so the shot is not parked) |
