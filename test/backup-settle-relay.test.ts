@@ -271,7 +271,20 @@ describe('the final backup of a relay that is asked to stop', { timeout: 100_000
     const stoppedAt = Date.now();
     const exiting = timedExit(relay);
     await until(() => savedNote('late-room') === 'before shutdown', 5000, 'shutdown did not flush the first edit');
-    if (blocked) fs.mkdirSync(`${roomFile('late-room')}.tmp`);
+    if (blocked) {
+      // A directory where the save writes its temporary file makes every save fail. A save that is writing right now owns the name for a moment.
+      const tmp = `${roomFile('late-room')}.tmp`;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          fs.rmSync(tmp, { force: true });
+          fs.mkdirSync(tmp);
+          break;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 50) throw err;
+          await sleep(10);
+        }
+      }
+    }
     writer.getMap('objects').set('note', 'during backup stop');
     await until(() => watcher.getMap('objects').get('note') === 'during backup stop', 5000, 'the edit during backup stop did not sync');
     const exit = await exiting;

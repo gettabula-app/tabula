@@ -89,7 +89,7 @@ describe('the relay restoring a workspace', () => {
       } finally {
         saved.destroy();
       }
-    });
+    }, 30_000); // the failed save is retried every SAVE_RETRY_MS (5 s by default), so the unblocked save can take that long
     expect((await raw<{ value: string }>(s.dir, "SELECT value FROM settings WHERE key = 'fixture'"))[0].value).toBe('B');
   }, 60_000);
 
