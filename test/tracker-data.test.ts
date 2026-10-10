@@ -246,3 +246,15 @@ describe('tracker pure helpers', () => {
     expect(matchesFilters(ticket(), ['assignee:me', 'label:UI', 'due:overdue'], { me: 'user-me', today: '2026-10-10' })).toBe(true);
   });
 });
+
+describe('cloning a TrackerError', () => {
+  it('keeps the message, code, path, status, current ticket and conflict actor', async () => {
+    const { cloneTrackerData, TrackerError } = await import('../src/tracker-data');
+    const error = new TrackerError('conflict', 'This ticket changed.', { path: 'title', status: 409, by: { name: 'Olive', kind: 'user' } });
+    const copy = cloneTrackerData(error);
+    expect(copy).toBeInstanceOf(TrackerError);
+    expect(copy).not.toBe(error);
+    expect(copy.message).toBe('This ticket changed.');
+    expect(copy).toMatchObject({ code: 'conflict', path: 'title', status: 409, by: { name: 'Olive', kind: 'user' } });
+  });
+});
