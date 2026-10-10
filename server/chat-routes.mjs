@@ -6,7 +6,7 @@
 import { CHAT_KINDS, WORKSPACE_REF } from './chat-access.mjs';
 import { CHAT_SETTING_KEYS, REACTIONS, RETENTION_CHOICES, readChatSettings } from './chat.mjs';
 import { PREF_EMAIL_MENTIONS, emailsMentions } from './chat-notify.mjs';
-import { checkText, isClientId, isObjectId, resolveMentions } from './chat-text.mjs';
+import { checkText, isClientId, isObjectId, MAX_TEXT, resolveMentions, textLength } from './chat-text.mjs';
 
 export const CHAT_BODY_LIMIT = 16 * 1024;
 const PAGE_DEFAULT = 50;
@@ -82,6 +82,8 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
     const mayRead = (userId) => access(directory.getUser(userId), kind, ref)?.read === true;
     const resolved = resolveMentions(checked.text, mayRead);
     if ('error' in resolved) throw new HttpError(400, resolved.error, TEXT_ERRORS[resolved.error]);
+    // `@{a}` becomes the longer `@someone` when that person cannot read the channel; the limit is on what is stored
+    if (textLength(resolved.text) > MAX_TEXT) throw new HttpError(400, 'too_long', TEXT_ERRORS.too_long);
     return resolved;
   }
 

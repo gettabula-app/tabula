@@ -20,6 +20,8 @@ const rel = (hash: string) => path.join('assets', hash.slice(0, 2), hash);
 const unused = png(5);
 const young = png(6);
 const shown = png(7);
+const unreadable = png(8);
+const corrupt = png(9);
 
 const h = createHarness({ accounts: true, dir, env: { TABULA_TEST_ASSET_GC_DELAY_MS: '300' } });
 let owner: Account;
@@ -44,7 +46,11 @@ beforeAll(async () => {
   row('ghost', unused, 10 * DAY);
   row('ghost', young, 1 * DAY);
   row('kept', shown, 10 * DAY);
+  row('unreadable', unreadable, 10 * DAY);
+  row('corrupt', corrupt, 10 * DAY);
   d.close();
+  fs.mkdirSync(path.join(dir, 'unreadable.yjs'));
+  fs.writeFileSync(path.join(dir, 'corrupt.yjs'), 'damaged room bytes');
   const Y = await import('yjs');
   const doc = new Y.Doc();
   doc.getMap('objects').set('i', new Y.Map(Object.entries({ id: 'i', type: 'image', asset: sha(shown), mime: 'image/png', nw: 7, nh: 3, x: 0, y: 0, w: 1, h: 1 })));
@@ -66,5 +72,12 @@ describe('the collector in the relay', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].detail).toMatchObject({ rows: 1, files: 1 });
     expect(rows[0].detail.bytes).toBe(unused.length);
+  });
+
+  it('keeps images when the saved room cannot be read or decoded', async () => {
+    await until(() => !fs.existsSync(path.join(dir, rel(sha(unused)))));
+    expect((await h.api(owner.cookie, 'GET', '/api/me')).status).toBe(200);
+    expect(fs.existsSync(path.join(dir, rel(sha(unreadable))))).toBe(true);
+    expect(fs.existsSync(path.join(dir, rel(sha(corrupt))))).toBe(true);
   });
 });
