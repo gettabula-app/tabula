@@ -380,11 +380,7 @@ function makeReport(db, snapshot, options, tables) {
     if (issue.estimate != null && !fieldExists(db, 'tickets', 'estimate')) addLoss(loss, 'estimates', key);
     if (issue.projectId && !tables.projects) addLoss(loss, 'projects', key);
     if (issue.milestoneId && !tables.milestones) addLoss(loss, 'milestones', key);
-    if (issue.cycleId && !tables.milestones) addLoss(loss, 'cycles', key);
-    if (issue.cycleId && tables.milestones) {
-      const cycle = snapshot.cycles.find((row) => row.id === issue.cycleId);
-      if (!cycle?.startsAt || !cycle?.endsAt) addLoss(loss, 'cycles', key);
-    }
+    if (issue.cycleId) addLoss(loss, 'cycles', key);
     if (issue.relations.length && !tables.ticket_relations) addLoss(loss, 'relations', key);
     for (const relation of issue.relations) if (!['blocks', 'blocked', 'blocked_by', 'related', 'duplicate', 'duplicates', 'duplicated_by'].includes(relation.type.toLowerCase())) {
       addLoss(loss, 'unsupportedRelationTypes', key);
@@ -533,30 +529,60 @@ function labelsForIssue(db, issue, now, createdBy) {
   return [...unique.values()].map((label) => ensureLabel(db, label, now, createdBy));
 }
 
+const PROJECT_STATES = { backlog: 'planned', planned: 'planned', started: 'started', paused: 'paused', completed: 'completed', canceled: 'canceled', cancelled: 'canceled' };
+const MAX_ACTIVE_PROJECTS = 200;
+const MAX_MILESTONES_PER_PROJECT = 50;
+const MAX_RELATIONS_PER_TICKET = 100;
+
+/**
+ * Projects and milestones follow the slice 2 rules: states planned|started|paused|completed|canceled, active names unique ignoring
+ * case (a clash gets a numeric suffix), at most 200 active projects and 50 milestones per project, and a milestone always has a
+ * project. Cycles are never imported (no cycles in v1); they stay in the loss report.
+ */
 function insertProjectRows(db, snapshot, now, withProjects, withMilestones) {
-  if (withProjects) {
-    for (const project of snapshot.projects) {
-      db.prepare(`INSERT OR IGNORE INTO projects (id, name, description, state, owner_user_id, created_at, updated_at, archived_at)
-        VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`)
-        .run(project.id, project.name, project.description, project.state || 'started', millis(project.createdAt) || now, millis(project.updatedAt) || now, project.archivedAt ? millis(project.archivedAt) : null);
+  const stats = { projects: 0, renamedProjects: 0, skippedProjects: 0, milestones: 0, skippedMilestones: 0 };
+  if (!withProjects) return stats;
+  const activeNames = new Set(db.prepare('SELECT name FROM projects WHERE archived_at IS NULL').all().map((row) => String(row.name).toLowerCase()));
+  let active = Number(db.prepare('SELECT COUNT(*) AS n FROM projects WHERE archived_at IS NULL').get().n);
+  for (const project of snapshot.projects) {
+    if (db.prepare('SELECT 1 FROM projects WHERE id = ?').get(project.id)) continue;
+    const archivedAt = project.archivedAt ? millis(project.archivedAt) : null;
+    if (archivedAt === null && active >= MAX_ACTIVE_PROJECTS) { stats.skippedProjects++; continue; }
+    let name = project.name;
+    if (archivedAt === null) {
+      let n = 1;
+      while (activeNames.has(name.toLowerCase())) name = `${project.name} (${++n})`;
+      if (name !== project.name) stats.renamedProjects++;
+      activeNames.add(name.toLowerCase());
+      active++;
     }
+    db.prepare(`INSERT INTO projects (id, name, description, state, owner_user_id, created_at, updated_at, archived_at)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`)
+      .run(project.id, name, project.description, PROJECT_STATES[String(project.state ?? '').toLowerCase()] ?? 'started', millis(project.createdAt) || now, millis(project.updatedAt) || now, archivedAt);
+    stats.projects++;
   }
   if (withMilestones) {
     for (const milestone of snapshot.milestones) {
-      const projectId = withProjects ? milestone.projectId : null;
+      if (db.prepare('SELECT 1 FROM milestones WHERE id = ?').get(milestone.id)) continue;
+      const project = milestone.projectId ? db.prepare('SELECT id FROM projects WHERE id = ?').get(milestone.projectId) : null;
+      const count = project ? Number(db.prepare('SELECT COUNT(*) AS n FROM milestones WHERE project_id = ? AND archived_at IS NULL').get(project.id).n) : 0;
+      if (!project || (!milestone.archivedAt && count >= MAX_MILESTONES_PER_PROJECT)) { stats.skippedMilestones++; continue; }
       const targetDate = milestone.targetDate && validCalendarDate(milestone.targetDate) ? Date.parse(`${milestone.targetDate}T00:00:00.000Z`) : null;
-      db.prepare(`INSERT OR IGNORE INTO milestones (id, project_id, name, description, start_at, due_at, state, created_at, updated_at, archived_at)
-        VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`)
-        .run(milestone.id, projectId, milestone.name, milestone.description, targetDate, 'started', millis(milestone.createdAt) || now, millis(milestone.updatedAt) || now, milestone.archivedAt ? millis(milestone.archivedAt) : null);
-    }
-    for (const cycle of snapshot.cycles) {
-      if (!cycle.startsAt || !cycle.endsAt) continue;
-      const cycleId = `linear-cycle:${cycle.id}`;
-      db.prepare(`INSERT OR IGNORE INTO milestones (id, project_id, name, description, start_at, due_at, state, created_at, updated_at, archived_at)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(cycleId, cycle.name, cycle.description, millis(cycle.startsAt), millis(cycle.endsAt), cycle.completedAt ? 'completed' : 'started', millis(cycle.startsAt) || now, millis(cycle.endsAt) || now, cycle.archivedAt ? millis(cycle.archivedAt) : null);
+      db.prepare(`INSERT INTO milestones (id, project_id, name, description, start_at, due_at, state, created_at, updated_at, archived_at)
+        VALUES (?, ?, ?, ?, NULL, ?, 'started', ?, ?, ?)`)
+        .run(milestone.id, project.id, milestone.name, milestone.description, targetDate, millis(milestone.createdAt) || now, millis(milestone.updatedAt) || now, milestone.archivedAt ? millis(milestone.archivedAt) : null);
+      stats.milestones++;
     }
   }
+  return stats;
+}
+
+/** The project and milestone a ticket may carry: both must exist, and the milestone must belong to the project. */
+function ticketAssignment(db, projectId, milestoneId) {
+  const project = projectId && tableExists(db, 'projects') ? db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId) : null;
+  const milestone = project && milestoneId && tableExists(db, 'milestones')
+    ? db.prepare('SELECT id FROM milestones WHERE id = ? AND project_id = ?').get(milestoneId, project.id) : null;
+  return { projectId: project?.id ?? null, milestoneId: milestone?.id ?? null };
 }
 
 function addTicketAliases(db, issue, ticketId) {
@@ -609,8 +635,7 @@ function createAllocatedTicketRows(db, issue, numbering, actor, projectAvailable
   const isDone = issue.state.type === 'completed' || Boolean(issue.completedAt);
   const isCanceled = ['canceled', 'cancelled'].includes(issue.state.type) || Boolean(issue.canceledAt);
   const archivedAt = issue.archivedAt && !isDone && !isCanceled ? millis(issue.archivedAt) : null;
-  const projectId = projectAvailable ? issue.projectId : null;
-  const milestoneId = milestoneAvailable ? issue.milestoneId ?? (issue.cycleId ? `linear-cycle:${issue.cycleId}` : null) : null;
+  const { projectId, milestoneId } = ticketAssignment(db, projectAvailable ? issue.projectId : null, milestoneAvailable ? issue.milestoneId : null);
   db.prepare('UPDATE tickets SET estimate = ?, project_id = ?, milestone_id = ?, archived_at = ?, updated_at = ? WHERE id = ?')
     .run(issue.estimate, projectId, milestoneId, archivedAt, millis(issue.updatedAt), allocation.ticketId);
   addTicketAliases(db, issue, allocation.ticketId);
@@ -629,8 +654,7 @@ function createKeptTicketRows(db, issue, numbering, now, actor, projectAvailable
   const isDone = issue.state.type === 'completed' || Boolean(issue.completedAt);
   const isCanceled = ['canceled', 'cancelled'].includes(issue.state.type) || Boolean(issue.canceledAt);
   const archivedAt = issue.archivedAt && !isDone && !isCanceled ? millis(issue.archivedAt) : null;
-  const projectId = projectAvailable ? issue.projectId : null;
-  const milestoneId = milestoneAvailable ? issue.milestoneId ?? (issue.cycleId ? `linear-cycle:${issue.cycleId}` : null) : null;
+  const { projectId, milestoneId } = ticketAssignment(db, projectAvailable ? issue.projectId : null, milestoneAvailable ? issue.milestoneId : null);
   const ticketId = newId();
   db.prepare(`INSERT INTO tickets
     (id, prefix, number, key, title, description, state_id, tracker_id, priority, estimate, parent_ticket_id,
@@ -780,22 +804,45 @@ function addParentLinks(db, rows) {
   }
 }
 
+function relationReaches(db, fromId, targetId) {
+  return Boolean(db.prepare(`WITH RECURSIVE reach(id) AS (
+      SELECT related_ticket_id FROM ticket_relations WHERE ticket_id = ? AND kind = 'blocks'
+      UNION
+      SELECT r.related_ticket_id FROM ticket_relations r JOIN reach ON r.ticket_id = reach.id WHERE r.kind = 'blocks')
+    SELECT 1 FROM reach WHERE id = ? LIMIT 1`).get(fromId, targetId));
+}
+
+/**
+ * One row per pair, as relations.mjs stores them: blocked_by is blocks with the ends swapped, duplicated_by is duplicates swapped,
+ * relates_to is symmetric and stored once. A blocks cycle or a ticket over its limit of 100 relations is skipped and counted.
+ */
 function addRelations(db, rows) {
-  if (!tableExists(db, 'ticket_relations')) return;
+  const stats = { written: 0, existing: 0, skippedCycle: 0, skippedLimit: 0, missingTarget: 0 };
+  if (!tableExists(db, 'ticket_relations')) return stats;
+  const count = (id) => Number(db.prepare('SELECT COUNT(*) AS n FROM ticket_relations WHERE ticket_id = ? OR related_ticket_id = ?').get(id, id).n);
   for (const row of rows) {
     const externalId = row.aliases.find((alias) => alias.provider === 'linear')?.externalId;
     const ticketId = externalId ? sourceAlias(db, externalId) : null;
     if (!ticketId) continue;
     for (const relation of row.relations) {
-      const relatedTicketId = sourceAlias(db, relation.relatedIssueId);
-      if (!relatedTicketId || relatedTicketId === ticketId) continue;
+      const otherId = sourceAlias(db, relation.relatedIssueId);
+      if (!otherId) { stats.missingTarget++; continue; }
+      if (otherId === ticketId) continue;
       const kind = normalizedRelationKind(relation.type);
-      const id = relation.id ? `linear-relation-${relation.id}` : newId();
-      db.prepare(`INSERT OR IGNORE INTO ticket_relations (id, ticket_id, related_ticket_id, kind, created_at, created_by_type, created_by_id)
+      let from = ticketId, to = otherId, stored = kind;
+      if (kind === 'blocked_by') { from = otherId; to = ticketId; stored = 'blocks'; }
+      else if (kind === 'duplicated_by') { from = otherId; to = ticketId; stored = 'duplicates'; }
+      const exists = db.prepare('SELECT 1 FROM ticket_relations WHERE ticket_id = ? AND related_ticket_id = ? AND kind = ?');
+      if (exists.get(from, to, stored) || (stored === 'relates_to' && exists.get(to, from, stored))) { stats.existing++; continue; }
+      if (stored === 'blocks' && relationReaches(db, to, from)) { stats.skippedCycle++; continue; }
+      if (count(from) >= MAX_RELATIONS_PER_TICKET || count(to) >= MAX_RELATIONS_PER_TICKET) { stats.skippedLimit++; continue; }
+      db.prepare(`INSERT INTO ticket_relations (id, ticket_id, related_ticket_id, kind, created_at, created_by_type, created_by_id)
         VALUES (?, ?, ?, ?, ?, 'system', NULL)`)
-        .run(id, ticketId, relatedTicketId, kind, Date.now());
+        .run(newId(), from, to, stored, Date.now());
+      stats.written++;
     }
   }
+  return stats;
 }
 
 function preservedRows(db, snapshot) {
@@ -860,12 +907,7 @@ function backfillPreservedAssignments(db, rows, tables) {
     const externalId = row.aliases.find((alias) => alias.provider === 'linear')?.externalId;
     const ticketId = externalId ? sourceAlias(db, externalId) : null;
     if (!ticketId) continue;
-    const projectId = tables.projects && row.projectId && db.prepare('SELECT 1 FROM projects WHERE id = ?').get(row.projectId) ? row.projectId : null;
-    let milestoneId = null;
-    if (tables.milestones) {
-      if (row.milestoneId && db.prepare('SELECT 1 FROM milestones WHERE id = ?').get(row.milestoneId)) milestoneId = row.milestoneId;
-      else if (row.cycleId && db.prepare('SELECT 1 FROM milestones WHERE id = ?').get(`linear-cycle:${row.cycleId}`)) milestoneId = `linear-cycle:${row.cycleId}`;
-    }
+    const { projectId, milestoneId } = ticketAssignment(db, tables.projects ? row.projectId : null, tables.milestones ? row.milestoneId : null);
     const assignments = [];
     if (tables.projects && projectId) assignments.push(['project_id', projectId]);
     if (tables.milestones && milestoneId) assignments.push(['milestone_id', milestoneId]);
@@ -924,6 +966,8 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
   let batches = 0;
   const conflicts = [];
   const results = [];
+  let projectStats = null;
+  let relationStats = null;
   const allIssues = planned.numbering.strategy === 'allocate'
     ? [...snapshot.issues].sort((a, b) => millis(a.createdAt) - millis(b.createdAt) || a.number - b.number || a.id.localeCompare(b.id))
     : [...snapshot.issues];
@@ -937,7 +981,7 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
         const now = Date.now();
         ensureCounter(db, tracker.id, tracker.prefix, now);
         if (offset === 0) {
-          insertProjectRows(db, snapshot, now, tables.projects, tables.milestones);
+          projectStats = insertProjectRows(db, snapshot, now, tables.projects, tables.milestones);
           importLabelCatalog(db, snapshot, now, actorInfo(actor).userId);
         }
         const batchResults = [];
@@ -983,12 +1027,13 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
   }
   try {
     inTransaction({ db }, () => {
-      insertProjectRows(db, snapshot, Date.now(), tables.projects, tables.milestones);
+      const lateProjects = insertProjectRows(db, snapshot, Date.now(), tables.projects, tables.milestones);
+      if (!projectStats || lateProjects.projects || lateProjects.milestones) projectStats = projectStats ? Object.fromEntries(Object.entries(projectStats).map(([k, v]) => [k, v + lateProjects[k]])) : lateProjects;
       importLabelCatalog(db, snapshot, Date.now(), actorInfo(actor).userId);
       preserved = mergePreserved(db, priorPreserved, preservedRows(db, snapshot));
       backfillPreservedAssignments(db, preserved, tables);
       addParentLinks(db, preserved);
-      addRelations(db, preserved);
+      relationStats = addRelations(db, preserved);
       for (const issue of snapshot.issues) {
         const ticketId = sourceAlias(db, issue.id);
         if (ticketId) refreshTicketSearch(db, ticketId);
@@ -1004,7 +1049,7 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
   try { writePreserved(options.out, preserved); } catch {
     return { ok: false, errorCode: 'preserved_write_failed', created, updated, conflicts, batches, report: planned.report };
   }
-  return { ok: true, created, updated, conflicts, batches, results, report: planned.report };
+  return { ok: true, created, updated, conflicts, batches, results, projects: projectStats, relations: relationStats, report: planned.report };
 }
 
 function rowIsCreated(batchResults, issue) {

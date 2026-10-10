@@ -22,8 +22,10 @@ function newDirectory(file = ':memory:') {
   return directory;
 }
 
-function setup() {
+/** Slice 2 ships projects, milestones and ticket_relations; `full: false` drops them to exercise the probe-and-report path. */
+function setup({ full = false }: { full?: boolean } = {}) {
   const directory = newDirectory();
+  if (!full) directory.db.exec('DROP TABLE ticket_relations; DROP TABLE milestones; DROP TABLE projects;');
   const owner = directory.createUser({ email: 'owner@example.test', name: 'Workspace Owner', role: 'owner' });
   const member = directory.createUser({ email: 'ari@example.com', name: 'Ari Member', role: 'member' });
   return { directory, owner, member, actor: { id: owner.id, role: owner.role, name: owner.name } };
@@ -123,6 +125,8 @@ function addTargetTables(db: any) {
     );
   `);
 }
+
+const RELATION_COUNTS = [{ kind: 'blocks', count: 2 }, { kind: 'duplicates', count: 1 }, { kind: 'relates_to', count: 2 }];
 
 function setupTemp() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'linear-import-test-'));
@@ -226,7 +230,7 @@ describe('Linear import planning and writes', () => {
   });
 
   it('refuses to overwrite a Tabula edit in update mode and lists the key-field conflict', () => {
-    const { directory, actor } = setup();
+    const { directory, actor } = setup({ full: true });
     const snapshot = buildSnapshot(1);
     applyImport({ db: directory.db, snapshot, actor });
     updateTicket({ directory, actor, key: 'TAB-211', patch: { title: 'Edited in Tabula' }, now: Date.parse('2025-03-02T00:00:00.000Z') });
@@ -248,21 +252,42 @@ describe('Linear import planning and writes', () => {
     expect(JSON.stringify(result)).not.toContain('fixture failure');
   });
 
-  it('stores relations, projects, milestones and cycles when the section 1 tables exist', () => {
-    const { directory, actor } = setup();
-    addTargetTables(directory.db);
+  it('stores relations in the normalised slice 2 form, projects and milestones, and keeps cycles in the loss report', () => {
+    const { directory, actor } = setup({ full: true });
     const snapshot = buildSnapshot(12);
     const result = applyImport({ db: directory.db, snapshot, actor });
     expect(result.ok).toBe(true);
     expect(directory.db.prepare('SELECT id FROM projects').all()).toEqual([{ id: id(40) }]);
-    expect(directory.db.prepare('SELECT id FROM milestones ORDER BY id').all()).toEqual([{ id: id(42) }, { id: `linear-cycle:${id(41)}` }].sort((a: any, b: any) => a.id.localeCompare(b.id)));
-    expect(directory.db.prepare('SELECT kind, COUNT(*) AS count FROM ticket_relations GROUP BY kind ORDER BY kind').all()).toEqual([
-      { kind: 'blocked_by', count: 1 }, { kind: 'blocks', count: 1 }, { kind: 'duplicates', count: 1 }, { kind: 'relates_to', count: 2 },
-    ]);
+    expect(directory.db.prepare('SELECT id, project_id FROM milestones ORDER BY id').all()).toEqual([{ id: id(42), project_id: id(40) }]);
+    expect(directory.db.prepare('SELECT kind, COUNT(*) AS count FROM ticket_relations GROUP BY kind ORDER BY kind').all()).toEqual(RELATION_COUNTS);
+    expect(result.relations.written).toBe(RELATION_COUNTS.reduce((sum: number, row: any) => sum + row.count, 0));
+    expect(result.report.lossReport.cycles.count).toBeGreaterThan(0);
     const issue = directory.db.prepare('SELECT project_id, milestone_id FROM tickets WHERE key = ?').get('TAB-211');
     expect(issue).toEqual({ project_id: id(40), milestone_id: id(42) });
     expect(result.report.lossReport.projects.count).toBe(0);
     expect(result.report.lossReport.relations.count).toBe(0);
+  });
+
+  it('stores one normalised row per pair and skips blocks cycles and a milestone that is not in the ticket project', () => {
+    const { directory, actor } = setup({ full: true });
+    const snapshot = buildSnapshot(4);
+    const [a, b, c, d] = snapshot.issues;
+    for (const issue of snapshot.issues) issue.relations = [];
+    a.relations = [{ id: id(7001), type: 'blocks', relatedIssueId: b.id }, { id: id(7002), type: 'related', relatedIssueId: c.id }, { id: id(7003), type: 'duplicate', relatedIssueId: d.id }];
+    b.relations = [{ id: id(7004), type: 'blocks', relatedIssueId: a.id }, { id: id(7005), type: 'blocked', relatedIssueId: c.id }];
+    c.relations = [{ id: id(7006), type: 'related', relatedIssueId: a.id }];
+    d.relations = [{ id: id(7007), type: 'duplicated_by', relatedIssueId: a.id }];
+    const result = applyImport({ db: directory.db, snapshot, actor });
+    expect(result.ok).toBe(true);
+    expect(result.relations).toMatchObject({ skippedCycle: 1, written: 4 });
+    const rows = directory.db.prepare(`SELECT s.key AS from_key, t.key AS to_key, r.kind FROM ticket_relations r
+      JOIN tickets s ON s.id = r.ticket_id JOIN tickets t ON t.id = r.related_ticket_id ORDER BY s.key, t.key, r.kind`).all();
+    const key = (issue: any) => `TAB-${issue.number}`;
+    expect(rows.map((row: any) => `${row.from_key}>${row.to_key}:${row.kind}`).sort()).toEqual([
+      `${key(a)}>${key(b)}:blocks`, `${key(a)}>${key(c)}:relates_to`, `${key(a)}>${key(d)}:duplicates`, `${key(c)}>${key(b)}:blocks`,
+    ].sort());
+    expect(rows.some((row: any) => ['blocked_by', 'duplicated_by'].includes(row.kind))).toBe(false);
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM tickets WHERE milestone_id IS NOT NULL AND project_id IS NULL').get().n).toBe(0);
   });
 
   it('writes a private preserved sidecar with keys and source IDs only when target tables are absent', () => {

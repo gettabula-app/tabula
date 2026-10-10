@@ -94,3 +94,13 @@ Exit codes: `0` means the command completed, `1` means a command/authorization/i
 ## Reading losses
 
 The `lossReport` names affected Linear issue keys for data the current database cannot represent. Custom workflow state names are mapped to the default states and retained in the report. Estimates are retained in `tickets.estimate` where that column exists. Cycles become milestones only when the milestones table exists and the cycle has a date range. Projects, milestones, and relations are written only when their target tables exist; otherwise their source IDs and relationships remain in `preserved.jsonl` for a later delta/backfill. Unsupported relation kinds become `relates_to` and are listed. Attachments remain source URLs; files and Linear permission semantics are not copied. Private teams, deleted comments, and unmatched users are counted. The current GraphQL snapshot does not fetch reactions, so that loss category is marked as not queried and its count is unknown. Unmatched users stay unassigned; the importer never invites them.
+
+## Projects, milestones and relations (tracker slice 2)
+
+The importer writes `projects`, `milestones` and `ticket_relations` directly, inside the batch transaction, and follows the rules of the command layer:
+
+- Project states map to `planned`, `started`, `paused`, `completed` or `canceled`. A clash with an active project name (ignoring case) gets a numeric suffix. More than 200 active projects, or more than 50 active milestones in one project, are skipped and counted in the result (`projects.skippedProjects`, `projects.skippedMilestones`). A milestone without an imported project is skipped.
+- A ticket keeps its milestone only when the milestone belongs to the ticket's project.
+- Relations are stored one row per pair: `blocked` becomes `blocks` with the ends swapped, `duplicate` becomes `duplicates`, `related` and `similar` become one `relates_to` row. A `blocks` cycle or a ticket over its limit of 100 relations is skipped and counted (`relations.skippedCycle`, `relations.skippedLimit`).
+- Cycles are never imported: Tabula v1 has no cycles. They stay in the loss report with the affected issue keys.
+- If a table is missing (an older database), the data is listed in the loss report and kept in the local `preserved.jsonl`, and a later `delta` run writes it once the tables exist.
