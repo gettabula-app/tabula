@@ -1,0 +1,96 @@
+# Linear import runbook
+
+This runbook covers the recorded-fixture/API importer in `scripts/linear-import.mjs`. It uses the Linear GraphQL API, stores a mode-0600 source snapshot and reports, and never downloads attachment files.
+
+## Before you start
+
+1. Take and verify a workspace backup first. Follow [docs/backups.md](backups.md), and do not start cutover unless the section 9 backup go/no-go checklist in [docs/tracker-architecture.md](tracker-architecture.md#9-off-site-backups-precondition-to-cutover) passes.
+2. Stop the relay before a write command, or use a restored copy of the workspace database. The CLI refuses when it sees a live relay PID/lock marker. It cannot prove that an unmarked process is stopped, so the operator must still confirm this.
+3. Agree on the Linear freeze date, owner, state mapping, unmatched-user list, loss report, and two-week dual-run window.
+4. Make sure the target database is `<data-dir>/directory.sqlite` and that the `--actor-email` account exists with the active `owner` role.
+
+Set `LINEAR_API_KEY` in the invoking process environment using the operator's `scripts/env-get.mjs` flow. Do not put the key in a command argument, `.env` file, snapshot, report, or checkpoint. The importer reads the environment variable only inside its default HTTP transport and sends it in the Authorization header. A local fixture replay does not need a key.
+
+Every GraphQL list request, including issues, comments, projects, cycles, labels, users, workflow states, project milestones, relations, attachments, and teams, sends `includeArchived: true`. This is required because Linear archived completed issues; omitting the flag would hide the Done history.
+
+## Initial fetch and rehearsal
+
+Fetch a complete source snapshot. `--record` saves scrubbed GraphQL request/response fixtures for later replay; it does not save the Authorization header.
+
+```sh
+node scripts/linear-import.mjs fetch --out ./linear-work --record ./linear-recording
+```
+
+The command writes `snapshot.json`, `checkpoint.json`, and `last-fetch.json` with mode `0600`. If a fetch stops, rerun with `--resume`; the cursor/count checkpoint and separate private partial data let it continue. Use `--replay <recording-dir>` to read recorded responses without network access.
+
+Review the plan against the database without writing to it:
+
+```sh
+node scripts/linear-import.mjs dry-run \
+  --data-dir <data-dir> --snapshot ./linear-work/snapshot.json --out ./linear-work/report
+```
+
+The report includes issue totals split into active and archived, plus archived issues grouped by their original Linear state. It also lists target state mappings with original state names, priority handling, matched/unmatched user counts, label color conflicts, duplicate aliases, comment counts, attachment source URLs, batch sizes, and the loss report. It never includes ticket titles, descriptions, or comment bodies. The CSV and HTML reports follow the same rule; attachment source URLs are intentionally shown there as references.
+
+Resolve any duplicate alias or `keep` numbering collision before importing. `keep` is the default when every source team key is `TAB` and none of the incoming issue numbers collide; otherwise the importer allocates new `TAB` keys in issue creation order. Estimates are stored in `tickets.estimate` when available. A Linear archived completed or canceled issue stays a normal Done or Cancelled ticket with `archived_at` unset. Only an archived issue that is neither completed nor canceled receives `archived_at`.
+
+## Import and dual run
+
+Run the first import only after reviewing the report. `--yes` is required for every write command. Supply the workspace owner email; the CLI checks the owner role and calls the same tracker access predicate used by app writes.
+
+```sh
+node scripts/linear-import.mjs import \
+  --data-dir <data-dir> --snapshot ./linear-work/snapshot.json --out ./linear-work \
+  --actor-email <owner-email> --numbering keep --yes
+```
+
+The importer commits batches of 100 issues. A failed batch rolls back as a unit and the result identifies its batch number; earlier committed batches stay intact. Re-running is idempotent. A write prints a reminder to stop the relay/use a restored copy and to take a backup first.
+
+Keep Linear read-only for the agreed two-week dual-run. Compare source and Tabula counts, review unmatched users and losses with the owner, and spot-check at least 50 tickets, 20 comments, 10 relations, and every imported project and milestone. Record changes that must be mirrored. New work should be created in Tabula during the dual run.
+
+## Final delta, verification, and cutover
+
+Freeze Linear writes on the agreed date. Run the final delta from the last successful import cursor. The cursor is the snapshot fetch time and is written only after a successful import; delta fetches changed issues and comments with `updatedAt > since`, creates newly added issues, updates only selected fields, and appends comments idempotently.
+
+```sh
+node scripts/linear-import.mjs delta \
+  --data-dir <data-dir> --out ./linear-work --actor-email <owner-email> --yes
+```
+
+For a fixture rehearsal, pass `--snapshot <snapshot.json>` to `delta`; no network request is made. By default, delta updates no existing ticket fields; select them explicitly with `--fields title,description,state,priority,assignee,labels,due`. A field changed in Tabula after import is reported as a conflict and left untouched. Delta also backfills projects, milestones, and relations if their target tables have since been added.
+
+Fetch a final complete snapshot after the freeze, then verify that full snapshot:
+
+```sh
+node scripts/linear-import.mjs fetch --out ./linear-work/final
+node scripts/linear-import.mjs verify \
+  --data-dir <data-dir> --snapshot ./linear-work/final/snapshot.json
+```
+
+Verification compares issue and alias counts/uniqueness, comments, state distribution, parent links, labels, assignees, archived Done issues, relation samples when the table exists, and every project/milestone when the tables exist. It uses deterministic SHA-256 spot checks for ticket title/description/comment bodies but prints only check names, counts, and keys. Exit code `2` means a verification mismatch; investigate and rerun before cutover.
+
+Archive the final source snapshot and its reports under the workspace backup policy. Keep `preserved.jsonl` with that archive; it contains only source aliases, IDs, keys, relations, estimate, and parent IDs. It contains no ticket titles, descriptions, or comments. Do not cancel Linear until the off-site backup restore drill and all section 9 go/no-go items pass. After approval, disable the Linear token/integration and update internal links.
+
+## Flags and exit codes
+
+| Flag | Use |
+|---|---|
+| `--data-dir <dir>` | Opens `<dir>/directory.sqlite` through `openDirectory`; required for dry-run, import, delta, and verify. |
+| `--snapshot <file>` | Read a saved snapshot instead of fetching. Required for dry-run/import/verify; optional for delta. |
+| `--out <dir>` | Output directory for snapshots, checkpoints, reports, and the preserved sidecar. |
+| `--actor-email <email>` | Active workspace owner who authorizes writes. |
+| `--numbering keep\|allocate` | Preserve eligible Linear numbers or allocate in creation order. |
+| `--mode create\|update` | Create-only default, or explicitly update selected imported fields. |
+| `--fields <list>` | Update fields: `title,description,state,priority,assignee,labels,due`. |
+| `--since <ISO>` | Set the delta updatedAt cursor. Otherwise delta uses `last-success.json`. |
+| `--yes` | Required for import and delta database writes. |
+| `--max-issues <n>` | Rehearsal limit. A limited run does not advance the successful cursor. |
+| `--record <dir>` | Record scrubbed GraphQL exchanges for fixture replay. |
+| `--replay <dir>` | Use previously recorded GraphQL exchanges. |
+| `--resume` | Resume an incomplete fetch from its private checkpoint and partial data. |
+
+Exit codes: `0` means the command completed, `1` means a command/authorization/import failure or a refused write, and `2` means verification found a mismatch.
+
+## Reading losses
+
+The `lossReport` names affected Linear issue keys for data the current database cannot represent. Custom workflow state names are mapped to the default states and retained in the report. Estimates are retained in `tickets.estimate` where that column exists. Cycles become milestones only when the milestones table exists and the cycle has a date range. Projects, milestones, and relations are written only when their target tables exist; otherwise their source IDs and relationships remain in `preserved.jsonl` for a later delta/backfill. Unsupported relation kinds become `relates_to` and are listed. Attachments remain source URLs; files and Linear permission semantics are not copied. Private teams, deleted comments, and unmatched users are counted. The current GraphQL snapshot does not fetch reactions, so that loss category is marked as not queried and its count is unknown. Unmatched users stay unassigned; the importer never invites them.
