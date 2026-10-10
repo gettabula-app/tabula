@@ -141,24 +141,28 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
   });
 
-  it('checks the group depth of a deep frame chain in time that grows with the groups, not with groups times objects', () => {
+  it('checks group depth without rescanning the full object list for each parent', () => {
     const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
-    const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
-    // the fastest of a few runs, and a ratio to the same chain with one group, so a busy machine slows both alike
-    const fastest = (n: number) => {
-      const c = content([...frames, ...groups(n)]);
-      let best = Infinity;
-      for (let run = 0; run < 3; run++) {
-        const started = performance.now();
-        expect(validateTemplateContent(c).objectCount).toBe(1500 + n);
-        best = Math.min(best, performance.now() - started);
+    const groupCount = 500;
+    const objects = [...frames, ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }))];
+    const nativeFind = Array.prototype.find;
+    let candidateRows = 0;
+    (Array.prototype as any).find = function (this: unknown[], predicate: any, thisArg?: unknown) {
+      if (this.length < frames.length || (this[0] as { id?: unknown } | undefined)?.id !== 'f0') {
+        return (nativeFind as any).call(this, predicate, thisArg);
       }
-      return best;
+      return (nativeFind as any).call(this, (value: unknown, index: number, array: unknown[]) => {
+        candidateRows++;
+        return predicate.call(thisArg, value, index, array);
+      }, thisArg);
     };
-    const one = fastest(1);
-    const many = fastest(500);
-    // about 1.5 times as long; scanning every object at each step up the chain made it twenty times as long and more
-    expect(many / one).toBeLessThan(6);
+    try {
+      expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
+    } finally {
+      (Array.prototype as any).find = nativeFind;
+    }
+    // A scan for each parent step in the 1,500-frame chain visits hundreds of millions of rows. Allow two linear passes.
+    expect(candidateRows).toBeLessThanOrEqual(objects.length * 2);
   });
 
   it('accepts the colours the board writes', () => {

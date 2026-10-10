@@ -11,7 +11,7 @@ import { CREDS, KEY, KEY_OTHER, envFor } from '../backup-harness';
 import { startFakeS3, type FakeS3 } from '../backup-fake-s3';
 import { CONFIRM, filesOf } from '../restore-harness';
 import { makePng } from '../image-fixtures';
-import { createRelayKit, sleep, until, type Relay } from './drill-kit';
+import { createRelayKit, until, type Relay } from './drill-kit';
 
 // TAB-94, the ops runbook section 8, rehearsed locally: `npm run drill:local` (scripts/drill-local.mjs) runs this file
 // and prints a checklist of the runbook boxes from the test titles. Each title starts with its box id in brackets.
@@ -475,7 +475,7 @@ describe('local restore drill (runbook section 8)', () => {
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: list.backups[0].name, confirm: CONFIRM });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('unknown_key');
-    await sleep(300);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);
     expect(fs.readdirSync(dir).filter((n) => n.startsWith('.pre-restore-') || n.startsWith('.restore-'))).toEqual([]);
@@ -499,7 +499,7 @@ describe('local restore drill (runbook section 8)', () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('tamper');
     expect(res.body.message).toMatch(/\w+/);
-    await sleep(300);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);
     expect(fs.readdirSync(dir).filter((n) => n.startsWith('.pre-restore-') || n.startsWith('.restore-'))).toEqual([]);

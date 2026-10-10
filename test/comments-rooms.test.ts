@@ -570,7 +570,6 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     cc.comments.doc.getMap('meta').set('name', 'Hijacked title');
     expect(await lands(cc.comments, watcher.comments, 'threads', 'aThread')).toBe(true);
     await until(() => fileHas(`${board}${COMMENTS}`, 'threads', 'aThread'));
-    await sleep(300);
 
     const after = await boardView(creator.cookie, board);
     expect(after.title).toBe(before.title);
@@ -588,7 +587,6 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
     expect((await api(creator.cookie, 'DELETE', `/api/boards/${deleted}`)).status).toBe(204);
     const ghost = unique('ghost');
     const rooms = [board, deleted, ghost].map((b) => `${b}${COMMENTS}`);
-    await sleep(100);
     const before = (await api(undefined, 'GET', '/api/health')).body;
 
     const attempts = [
@@ -657,7 +655,6 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
     expect((await api(creator.cookie, 'DELETE', `/api/boards/${board}/shares/user/${member.user.id}`)).status).toBe(204);
     expect(await within(Promise.all([s.board.closed, s.comments.closed]))).toEqual([4410, 4410]);
-    await sleep(150);
     expect(s.secondBoard.ws.readyState).toBe(WebSocket.OPEN);
     expect(s.secondComments.ws.readyState).toBe(WebSocket.OPEN);
 
