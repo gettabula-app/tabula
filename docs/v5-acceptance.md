@@ -57,6 +57,8 @@ On tabulahq, create the scratch board, then:
 
 ## 5. Nothing else broke (tabulahq and acme)
 
+On a local build, `npm run build:app && node scripts/qa-regression-sweep.mjs` runs the comments, chat, Share, export and Admin lines below at 1280, 390 and 360 and exits 1 on any failure (it ignores only the sign-in 401, the font host and the unconfigured-backup 409 on the console). It cannot see the hosted-only parts (the Settings tab, billing text, backups against a real bucket): do those by hand on tabulahq.
+
 - [ ] Comments: add one, reply, resolve.
 - [ ] Chat (if on): send a message with åäö and an emoji.
 - [ ] Share dialog opens; the people list is right. Join codes stay off unless TL turned them on.
