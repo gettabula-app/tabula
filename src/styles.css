@@ -527,6 +527,9 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* a wide panel open above the session bar (the Steps list) would sit under the toast and hide its buttons: the toast takes the top of the window instead, below the top bars */
+body:has(.popover.wide) .toast { bottom: auto; top: calc(72px + var(--safe-top)); transform: translate(-50%, -12px); }
+body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .toast, .toast.show { transform: translate(-50%, 0); transition: opacity 80ms linear; } .timer-fill { transition: none; } }
 
 /* z-index -1: the hint lies under everything else in the chrome (drawers, dialogs, focus cards), which it is appended after */
@@ -595,6 +598,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   }
   .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 4px; font-size: 10.5px; }
   .flowbar.vote-compact > .remove-dots-toggle .ico { display: none; }
+  /* the narrowest phones (320 px): Remove dots is its minus icon, still named and shown pressed */
+  @media (max-width: 340px) {
+    .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
+    .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
+  }
   .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }

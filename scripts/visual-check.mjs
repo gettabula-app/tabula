@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1398,6 +1398,24 @@ const STATES = {
     });
     console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
+  },
+  // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
+  async 'steps-toast'(env) {
+    await STATES['flow-steps-overlap-edit'](env);
+    const result = await env.page.evaluate(async () => {
+      document.body.append(Object.assign(document.createElement('div'), { className: 'toast show', textContent: 'Dot vote started on 2 items, no limit. Click one to add a dot.' }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const toast = document.querySelector('.toast.show').getBoundingClientRect();
+      const pop = document.querySelector('.popover.wide').getBoundingClientRect();
+      const bar = document.querySelector('.flowbar.show').getBoundingClientRect();
+      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const failures = [];
+      if (hits(toast, pop)) failures.push(`the toast (${Math.round(toast.top)}-${Math.round(toast.bottom)}) covers the Steps list (${Math.round(pop.top)}-${Math.round(pop.bottom)})`);
+      if (hits(toast, bar)) failures.push('the toast covers the session bar');
+      return { failures, toast: { top: toast.top, bottom: toast.bottom }, popover: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`steps-toast ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`steps-toast: ${JSON.stringify(result.failures)}`);
   },
   async 'flow-steps-overlap'(env) {
     await STATES['flow-steps'](env);
