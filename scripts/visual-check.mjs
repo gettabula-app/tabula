@@ -2036,16 +2036,38 @@ const STATES = {
       const body = element.closest('.modal-body');
       const panelRect = element.getBoundingClientRect();
       const bodyRect = body.getBoundingClientRect();
-      const copy = element.querySelector('button');
+      const buttons = [...element.querySelectorAll('button')];
+      const copy = buttons.find((button) => button.textContent?.trim() === 'Copy code');
+      const radiusToken = getComputedStyle(document.documentElement).getPropertyValue('--radius-md').trim();
+      const panelRadius = getComputedStyle(element).borderRadius;
+      const copyButtons = ['Copy code', 'Copy link'].map((label) => {
+        const button = buttons.find((candidate) => candidate.textContent?.trim() === label);
+        if (!button) return { label, missing: true, height: 0, minHeight: 0 };
+        const rect = button.getBoundingClientRect();
+        return { label, missing: false, height: rect.height, minHeight: Number.parseFloat(getComputedStyle(button).minHeight) };
+      });
       return {
         panel: { top: panelRect.top, bottom: panelRect.bottom },
         body: { top: bodyRect.top, bottom: bodyRect.bottom },
         fits: panelRect.top >= bodyRect.top && panelRect.bottom <= bodyRect.bottom,
         copyFocused: copy?.textContent?.trim() === 'Copy code' && document.activeElement === copy,
+        panelRadius,
+        radiusToken,
+        radiusMatches: radiusToken !== '' && panelRadius === radiusToken,
+        copyButtons,
       };
     });
     if (!visible.fits) throw new Error(`share-code-phone: new code panel is clipped by the modal body: ${JSON.stringify(visible)}`);
     if (!visible.copyFocused) throw new Error('share-code-phone: focus did not move to Copy code');
+    if (!visible.radiusMatches) {
+      throw new Error(`share-code-phone: panel border-radius does not match --radius-md: ${JSON.stringify({ panelRadius: visible.panelRadius, radiusToken: visible.radiusToken })}`);
+    }
+    if (width <= 480) {
+      const tooSmall = visible.copyButtons.find((button) => button.missing || !Number.isFinite(button.height) || button.height < 44 || !Number.isFinite(button.minHeight) || button.minHeight < 44);
+      if (tooSmall) {
+        throw new Error(`share-code-phone: ${tooSmall.label} target must have a 44px height and min-height: ${JSON.stringify(tooSmall)}`);
+      }
+    }
     return { noPark: true };
   },
   async 'empty-menu'(env) {
