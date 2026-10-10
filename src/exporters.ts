@@ -5,7 +5,7 @@ import { strToU8, strFromU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
 import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer } from './types';
-import { SCHEMA_VERSION, isBox } from './types';
+import { SCHEMA_VERSION, isBox, isConnector } from './types';
 import type { FlowState, Store } from './store';
 import { threadVisible, type Comments, type Thread } from './comments';
 import { isWithheld, leaveOutWithheld, updateWithoutWithheld } from './private-select';
@@ -52,7 +52,7 @@ export function withCleanProposedBy<T extends Obj>(o: T): T {
  * and connectors that name them; the board's own backup keeps everything.
  */
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list(), opts: { leaveOutWithheld?: boolean } = {}): BoardJson {
-  const all = ids ? app.store.ordered().filter((o) => ids.includes(o.id)) : app.store.ordered();
+  const all = ids ? gatherForSnapshot(app, ids) : app.store.ordered();
   // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
   const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all)
     .map((o) => withCleanProposedBy(o.type === 'group' ? o : app.store.placed(o)));
@@ -375,6 +375,43 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
   }
   // hidden objects (TAB-198) are left out of pictures, as on the canvas; JSON and .drift keep them
   return app.store.shown().filter((o) => set.has(o.id));
+}
+
+/** A selected JSON snapshot keeps hidden board objects, while carrying the selected frame/group/container subtree. */
+function gatherForSnapshot(app: BoardApp, ids: Id[]): Obj[] {
+  const set = new Set(ids.filter((id) => app.store.get(id)));
+  const stack = [...set];
+  while (stack.length) {
+    const id = stack.pop()!;
+    const type = app.store.get(id)?.type;
+    if (type !== 'frame' && type !== 'group' && type !== 'container' && type !== 'lane') continue;
+    for (const child of app.store.childrenOf(id)) {
+      if (child.parent !== id || set.has(child.id)) continue;
+      set.add(child.id);
+      stack.push(child.id);
+    }
+  }
+  for (const id of ids) {
+    const seen = new Set<Id>([id]);
+    let parent = app.store.get(id)?.parent;
+    while (parent && !seen.has(parent)) {
+      seen.add(parent);
+      const ancestor = app.store.get(parent);
+      if (!ancestor) break;
+      set.add(parent);
+      parent = ancestor.parent;
+    }
+  }
+  for (const id of set) {
+    const o = app.store.get(id);
+    if (isConnector(o) && [o.from, o.to].some((end) => end.kind === 'bound' && !set.has(end.id))) set.delete(id);
+  }
+  for (const o of app.store.cache.values()) {
+    if (o.type !== 'connector' || set.has(o.id)) continue;
+    const c = o as Extract<Obj, { type: 'connector' }>;
+    if (c.from.kind === 'bound' && c.to.kind === 'bound' && set.has(c.from.id) && set.has(c.to.id)) set.add(o.id);
+  }
+  return app.store.ordered().filter((o) => set.has(o.id));
 }
 
 /** Fetch and consume a response within `ms`, so a slow font never stalls an export. */

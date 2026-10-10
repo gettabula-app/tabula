@@ -102,6 +102,37 @@ describe('frames and the rest', () => {
   });
 });
 
+describe('group sibling stacking', () => {
+  it('steps a group by its derived overlap rectangle and writes only the group key', () => {
+    const group: Obj = { id: 'g', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a0' };
+    const child = obj('child', 'a1', { parent: 'g', x: 10, w: 30 });
+    const sibling = obj('sibling', 'a2', { x: 20 });
+    const derived = new Map([['g', { x: 10, y: 0, w: 30, h: 10 }]]);
+    const bounds = (o: Obj) => derived.get(o.id) ?? { x: (o as BaseObj).x, y: (o as BaseObj).y, w: (o as BaseObj).w, h: (o as BaseObj).h };
+    const overlaps = (a: Obj, b: Obj) => {
+      const A = bounds(a), B = bounds(b);
+      return A.x < B.x + B.w && B.x < A.x + A.w;
+    };
+    const objects: Obj[] = [group, child, sibling];
+    const plan = planStep(objects, ['g'], 1, overlaps);
+    expect(plan?.map((patch) => patch.id)).toEqual(['g']);
+    const after = apply(objects, plan);
+    expect(after.find((o) => o.id === 'g')!.z > after.find((o) => o.id === 'sibling')!.z).toBe(true);
+    expect(after.find((o) => o.id === 'child')!.z).toBe('a1');
+  });
+
+  it('steps members within their entered group, ignoring overlapping objects outside that sibling row', () => {
+    const outer: Obj = { id: 'outer', type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a0' };
+    const first = obj('first', 'a1', { parent: 'outer' });
+    const outside = obj('outside', 'a2');
+    const second = obj('second', 'a3', { parent: 'outer' });
+    const objects: Obj[] = [outer, first, outside, second];
+    const after = apply(objects, planStep(objects, ['first'], 1, () => true));
+    expect(after.find((o) => o.id === 'first')!.z > after.find((o) => o.id === 'second')!.z).toBe(true);
+    expect(after.find((o) => o.id === 'outside')!.z).toBe('a2');
+  });
+});
+
 describe('Store.restack', () => {
   it('writes the keys in one undo step', () => {
     const store = new Store(new Y.Doc());

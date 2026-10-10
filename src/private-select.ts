@@ -7,6 +7,7 @@
 import * as Y from 'yjs';
 import { isConnector, type BaseObj, type Id, type Obj } from './types';
 import type { Store } from './store';
+import { copyPlan } from './groups';
 
 /** The part of Flow that decides whether private writing hides a note from this person. */
 export interface Hiding {
@@ -64,6 +65,13 @@ export function gatherObjects(store: Store, hiding: Hiding, ids: readonly Id[]):
     if (fromIn && toIn) set.add(o.id);
   }
   return store.ordered().filter((o) => set.has(o.id)).map((o) => structuredClone(o));
+}
+
+/** The clipboard view of a gathered selection: expand groups and omit connectors with a bound end outside the copy. */
+export function gatherCopyObjects(store: Store, hiding: Hiding, ids: readonly Id[]): Obj[] {
+  const objects = gatherObjects(store, hiding, ids);
+  const copyIds = new Set(copyPlan(objects.map((o) => o.id), (id) => store.get(id), (id) => store.childrenOf(id), objects));
+  return objects.filter((o) => copyIds.has(o.id));
 }
 
 /** `objs` without the notes private writing hides, and without connectors bound to one (they would name it). */
