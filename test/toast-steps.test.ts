@@ -11,4 +11,8 @@ describe('the toast beside a wide panel', () => {
     expect(css).toMatch(/body:has\(\.popover\.wide\) \.toast \{[^}]*bottom: auto;[^}]*top: calc\(72px \+ var\(--safe-top\)\)/);
     expect(css).toMatch(/body:has\(\.popover\.wide\) \.toast\.show \{[^}]*translate\(-50%, 0\)/);
   });
+
+  it('on a phone sits over the top bars in at most two lines, clear of the list that fills the window', () => {
+    expect(css).toMatch(/@media \(max-width: 860px\) \{[\s\S]*?body:has\(\.popover\.wide\) \.toast \{[^}]*top: calc\(8px \+ var\(--safe-top\)\);[^}]*width: max-content;/);
+  });
 });

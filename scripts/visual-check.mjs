@@ -1440,8 +1440,7 @@ const STATES = {
       const bar = document.querySelector('.flowbar.show').getBoundingClientRect();
       const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
       const failures = [];
-      // on a phone the Steps list reaches from under the top bars to the session bar, so there is no free strip for a 2.6 s message: only the wide layouts must clear it
-      if (innerWidth >= 600 && hits(toast, pop)) failures.push(`the toast (${Math.round(toast.top)}-${Math.round(toast.bottom)}) covers the Steps list (${Math.round(pop.top)}-${Math.round(pop.bottom)})`);
+      if (hits(toast, pop)) failures.push(`the toast (${Math.round(toast.top)}-${Math.round(toast.bottom)}) covers the Steps list (${Math.round(pop.top)}-${Math.round(pop.bottom)})`);
       if (hits(toast, bar)) failures.push('the toast covers the session bar');
       return { failures, toast: { top: toast.top, bottom: toast.bottom }, popover: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
     });
