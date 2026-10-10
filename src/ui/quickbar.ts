@@ -438,10 +438,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   const sessionWatch = new ResizeObserver(() => { if (shown) position(); });
   const watchSession = () => parent.querySelectorAll('.flowbar, .poll-card').forEach((el) => sessionWatch.observe(el));
   watchSession();
-  new MutationObserver(() => {
-    watchSession();
-    if (shown) position();
-  }).observe(parent, { subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(() => {
+      watchSession();
+      if (shown) position();
+    }).observe(parent, { subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+  }
 
   build();
   sync();
