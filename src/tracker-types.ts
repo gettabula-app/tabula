@@ -187,18 +187,30 @@ export interface TrackerFeedEvent {
 }
 export interface TrackerFeed { events: TrackerFeedEvent[]; seq: number }
 
+export type TrackerNotificationKind =
+  | 'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'due_soon' | 'relation_changed' | 'integration_activity';
+export type TrackerNotifyChoice = 'both' | 'app' | 'off';
+
 export interface TrackerInboxItem {
   id: string;
-  kind: string;
+  kind: TrackerNotificationKind;
   createdAt: number;
   readAt: number | null;
-  ticket: { key: string; title: string; state: Pick<TrackerState, 'name' | 'category'> };
+  ticket: {
+    key: string;
+    title: string;
+    state: Pick<TrackerState, 'name' | 'category'>;
+    assignee: { name: string } | null;
+    priority: TrackerPriority;
+  };
   actor: { name: string } | null;
-  preview: string;
+  preview: string | null;
+  detail: { state?: string; key?: string; relation?: string; text?: string; dueDate?: string } | null;
 }
 export interface TrackerInboxPage { items: TrackerInboxItem[]; nextCursor: string | null; unread: number }
 export interface TrackerNotificationPrefs {
-  [key: string]: boolean | string | number | null | undefined;
+  kinds: TrackerNotificationKind[];
+  prefs: Record<TrackerNotificationKind, TrackerNotifyChoice>;
 }
 
 export class TrackerError extends Error {

@@ -68,4 +68,20 @@ describe('tracker key resolver', () => {
     expect(resolveKey({ ...state, focusOwner: 'text', layers: ['work', 'ticket'] }, key('Escape')).action).toEqual({ type: 'escape', layer: 'ticket' });
     expect(resolveKey({ ...state, active: false }, key('j')).action).toBeNull();
   });
+
+  it('keeps shell shortcuts available while the inbox list has focus', () => {
+    const listbox = { classList: { contains: (name: string) => name === 'trk-inbox-list' } };
+    const inboxRow = {
+      tagName: 'DIV',
+      closest: (selector: string) => selector === '[role="listbox"]' || selector === '.trk-inbox-list' ? listbox : null,
+    } as unknown as HTMLElement;
+    const begin = resolveKey(state, key('g', { target: inboxRow }));
+    expect(begin.action?.type).toBe('sequence-pending');
+    expect(resolveKey({ ...state, pendingSequence: begin.pendingSequence }, key('i', { target: inboxRow })).action)
+      .toEqual({ type: 'switch-tab', tab: 'inbox' });
+    expect(resolveKey(state, key('c', { target: inboxRow })).action?.type).toBe('create');
+    expect(resolveKey(state, key('f', { target: inboxRow })).action?.type).toBe('open-filter');
+    expect(resolveKey(state, key('k', { ctrlKey: true, target: inboxRow })).action?.type).toBe('command-box');
+    expect(resolveKey(state, key('Escape', { target: inboxRow })).action?.type).toBe('escape');
+  });
 });
