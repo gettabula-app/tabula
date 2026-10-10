@@ -9,6 +9,13 @@ import { applyImport, BATCH_SIZE, normalizeSnapshot, planImport } from '../serve
 import { verifySnapshot } from '../scripts/linear-verify.mjs';
 import graphFixture from './fixtures/linear/graphql.json';
 
+
+/** Owner-only file modes exist on POSIX; Windows reports 0666 for every file, so the mode is only asserted elsewhere. */
+function expectPrivateFile(file: string) {
+  if (process.platform === 'win32') return;
+  expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+}
+
 const opened: any[] = [];
 const tempDirs: string[] = [];
 
@@ -306,7 +313,7 @@ describe('Linear import planning and writes', () => {
     expect(result.ok).toBe(true);
     expect(result.report.lossReport).toMatchObject({ projects: { count: 1 }, milestones: { count: 1 }, cycles: { count: 1 }, relations: { count: 1 } });
     const sidecar = fs.readFileSync(path.join(out, 'preserved.jsonl'), 'utf8');
-    expect(fs.statSync(path.join(out, 'preserved.jsonl')).mode & 0o777).toBe(0o600);
+    expectPrivateFile(path.join(out, 'preserved.jsonl'));
     expect(sidecar).toContain('TAB-211');
     expect(sidecar).toContain(id(40));
     expect(sidecar).toContain(id(1_009));
@@ -384,7 +391,7 @@ describe('Linear import planning and writes', () => {
     const dry = spawnSync(process.execPath, [cli, 'dry-run', '--data-dir', dataDir, '--snapshot', snapshotFile, '--out', path.join(root, 'reports')], { encoding: 'utf8' });
     expect(dry.status).toBe(0);
     expect(fs.readFileSync(database)).toEqual(before);
-    expect(fs.statSync(path.join(root, 'reports', 'report.json')).mode & 0o777).toBe(0o600);
+    expectPrivateFile(path.join(root, 'reports', 'report.json'));
 
     const refused = spawnSync(process.execPath, [cli, 'import', '--data-dir', dataDir, '--snapshot', snapshotFile, '--actor-email', 'owner@example.test'], { encoding: 'utf8' });
     expect(refused.status).toBe(1);
@@ -408,7 +415,7 @@ describe('Linear import planning and writes', () => {
     const cli = path.resolve('scripts/linear-import.mjs');
     const fetched = spawnSync(process.execPath, [cli, 'fetch', '--replay', replayDir, '--out', out], { encoding: 'utf8' });
     expect(fetched.status).toBe(0);
-    for (const name of ['snapshot.json', 'checkpoint.json', 'last-fetch.json']) expect(fs.statSync(path.join(out, name)).mode & 0o777).toBe(0o600);
+    for (const name of ['snapshot.json', 'checkpoint.json', 'last-fetch.json']) expectPrivateFile(path.join(out, name));
     const checkpoint = fs.readFileSync(path.join(out, 'checkpoint.json'), 'utf8');
     expect(checkpoint).toContain('"counts"');
     expect(checkpoint).toContain('"cursors"');

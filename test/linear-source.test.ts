@@ -7,6 +7,13 @@ import { planImport } from '../server/tracker/linear-import.mjs';
 import fixture from './fixtures/linear/graphql.json';
 import { createReplayTransport, fetchSnapshot } from '../scripts/lib/linear-source.mjs';
 
+
+/** Owner-only file modes exist on POSIX; Windows reports 0666 for every file, so the mode is only asserted elsewhere. */
+function expectPrivateFile(file: string) {
+  if (process.platform === 'win32') return;
+  expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+}
+
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -110,7 +117,7 @@ describe('Linear GraphQL source', () => {
     expect(error?.message).not.toContain(canary);
     const output = `${error?.message ?? ''}${JSON.stringify(checkpoint)}${fs.readFileSync(path.join(recordDir, '000001.json'), 'utf8')}`;
     expect(output).not.toContain(canary);
-    expect(fs.statSync(path.join(recordDir, '000001.json')).mode & 0o777).toBe(0o600);
+    expectPrivateFile(path.join(recordDir, '000001.json'));
     expect(() => JSON.parse(fs.readFileSync(path.join(recordDir, '000001.json'), 'utf8'))).not.toThrow();
   });
 
