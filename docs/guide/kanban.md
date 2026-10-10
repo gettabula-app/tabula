@@ -42,7 +42,7 @@ Put the address of a page on a card, for example the issue it came from, a docum
 
 Choose **Owner** in the card dialog, or **Owner** in the quick-action bar. You can pick yourself or a person who is on the board now or was named on it before, or type a name for someone who has no account; the name is kept even if the person later leaves. A card has one owner, and **Mine** in the filter shows the cards you own.
 
-A card owned by an AI tool has an eight-sided badge instead of a round one, in the card, the dialog and the list. The card dialog cannot make a card agent-owned or rename that owner: it is tied to the access token that took the card. See [Access tokens and AI tools](ai-tools.md#kanban-cards-from-an-ai-tool).
+A card owned by an AI tool has an eight-sided badge instead of a round one, in the card, the dialog and the list. The card dialog cannot make a card agent-owned or rename that owner: it is tied to the access token that took the card. Opening and saving such a card in the dialog keeps the agent as its owner; it is never turned into a person by saving. The same goes for a typed name with no account: saving the card does not replace it with you. See [Access tokens and AI tools](ai-tools.md#kanban-cards-from-an-ai-tool).
 
 ## Due dates and Overdue
 
