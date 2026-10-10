@@ -2,7 +2,7 @@
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
 import {
-  KANBAN, LIMITS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanLaneName, cleanOwnerName, codePointLength, isDueDate,
+  DEFAULT_KANBAN_LANES, KANBAN, LIMITS, OWNER_NAME_MAX, cleanCardTitle, cleanLaneName, cleanOwnerName, codePointLength, isDueDate,
   isLaneStage, isSafeHttpUrl, isWipLimit, kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck,
 } from '../shared/containers';
 export { OWNER_NAME_MAX };
@@ -15,11 +15,7 @@ import { STICKY_COLORS } from './palette';
 import { cardFillFromSticky, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
-export const DEFAULT_LANES = [
-  { name: 'To do', stage: STAGES[0] },
-  { name: 'Doing', stage: STAGES[1] },
-  { name: 'Done', stage: STAGES[2] },
-] as const;
+export const DEFAULT_LANES = DEFAULT_KANBAN_LANES;
 
 export interface NewObjectBase {
   z: string;
