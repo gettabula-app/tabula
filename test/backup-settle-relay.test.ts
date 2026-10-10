@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 import { CREDS, docBytes, envFor, harness, type Harness } from './backup-harness';
 import { freePort } from './free-port';
 import { makePng } from './image-fixtures';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/backups.md, When it runs. The relay as a child process next to the fake S3: a backup shortly after an edit
 // (settle) with no interval run, and a bounded final backup when the relay is asked to stop. The stop is the IPC
@@ -33,32 +33,21 @@ async function until(test: () => boolean | Promise<boolean>, ms: number, what: s
 
 /** Open mode unless `env` turns accounts on. The relay's data directory is the harness's, so the test can put files in it and read them back. */
 async function startRelay(env: Record<string, string> = {}): Promise<Relay> {
-  const port = await freePort();
-  const child = spawn(process.execPath, ['server/relay.mjs'], {
-    env: {
-      ...process.env, PORT: String(port), DATA_DIR: h.dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+  const started = await startRelayProcess({
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: h.dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`,
       // the first scheduled run is at least a minute away: a backup within seconds of an edit is not that one
       ...envFor(h.fake), ...env,
-    },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    }),
   });
-  let out = '';
-  let err = '';
-  child.stdout!.on('data', (d) => (out += d));
-  child.stderr!.on('data', (d) => (err += d));
-  const exited = new Promise<Exit>((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
-  const relay = { child, port, base: `http://127.0.0.1:${port}`, exited, out: () => out, err: () => err };
+  const child = started.proc;
+  const exited = new Promise<Exit>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve({ code: child.exitCode, signal: child.signalCode });
+    else child.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+  const relay = { child, port: started.port, base: `http://127.0.0.1:${started.port}`, exited, out: started.output, err: started.output };
   relays.push(relay);
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${err}`)), RELAY_START_MS);
-    child.stdout!.on('data', () => {
-      if (out.includes('Tabula relay on')) {
-        clearTimeout(timer);
-        resolve();
-      }
-    });
-    void exited.then(() => reject(new Error(`relay exited: ${err}`)));
-  });
   return relay;
 }
 

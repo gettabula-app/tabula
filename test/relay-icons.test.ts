@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { buildIcons } from '../scripts/build-icons.mjs';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
-const PORT = await freePort();
+let PORT = 0;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-relay-icons-'));
 const dist = path.join(root, 'dist');
 let relay: ChildProcess;
@@ -42,14 +41,17 @@ beforeAll(async () => {
   indexPath = `/icons/i/demo.${manifest.sets[0].idx}.json`;
   const index = readManifest(path.join(dist, 'icons', `i/demo.${manifest.sets[0].idx}.json.gz`));
   shardPath = `/icons/s/demo.0.${index.sh[0][0]}.json`;
-  relay = await new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(PORT), DATA_DIR: path.join(root, 'data'), DIST_DIR: dist, HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
+  const started = await startRelayProcess({
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>),
+      PORT: String(port),
+      DATA_DIR: path.join(root, 'data'),
+      DIST_DIR: dist,
+      HOST: '127.0.0.1',
+    }),
   });
+  PORT = started.port;
+  relay = started.proc;
 });
 
 afterAll(async () => {

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -11,16 +11,15 @@ import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
 import { createKeyRing } from '../server/ai/keys.mjs';
 import { openDirectory } from '../server/directory.mjs';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/ai.md, "Live runs", in accounts mode: the relay shapes the AI-run messages (type 6) for each socket's person.
 // Viewers see runs without the prompt, a private run reaches its runner only, and a socket whose access is removed
 // hears nothing more. The provider is a local HTTP server that answers like the Messages API; every key is made up.
 
 const RELAY = fileURLToPath(new URL('../server/relay.mjs', import.meta.url));
-const PORT = await freePort();
-const BASE = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let BASE = '';
 const SECRET = crypto.randomBytes(32).toString('base64');
 const newKey = () => `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
 const MSG_AI_RUNS = 6;
@@ -94,28 +93,25 @@ function seed() {
 
 async function start() {
   await new Promise<void>((r) => provider.listen(0, '127.0.0.1', r));
-  let out = '';
-  relay = spawn(process.execPath, [RELAY], {
+  const started = await startRelayProcess({
+    entry: RELAY,
     cwd: dir,
-    env: {
+    envFor: (port) => ({
       ...cleanEnv(),
-      PORT: String(PORT),
+      PORT: String(port),
       DATA_DIR: dir,
       HOST: '127.0.0.1',
       TABULA_AUTH: 'on',
       TABULA_OWNER_EMAIL: 'owner@example.com',
       TABULA_MAIL: 'file',
-      TABULA_BASE_URL: BASE,
+      TABULA_BASE_URL: `http://127.0.0.1:${port}`,
       TABULA_AI_SECRET: SECRET,
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${(provider.address() as AddressInfo).port}`,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    }),
   });
-  relay.stdout!.on('data', (d) => (out += d));
-  relay.stderr!.on('data', (d) => (out += d));
-  await until(() => out.includes('Tabula relay'), RELAY_START_MS).catch(() => {
-    throw new Error(`relay did not start: ${out}`);
-  });
+  PORT = started.port;
+  BASE = `http://127.0.0.1:${PORT}`;
+  relay = started.proc;
 }
 
 function connect(who: Person): Promise<Socket> {

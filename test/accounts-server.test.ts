@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,13 +10,12 @@ import * as encoding from 'lib0/encoding';
 import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // The relay runs as a child process in accounts mode, exactly as `npm start` would.
 
-const PORT = await freePort();
-const baseUrl = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let baseUrl = '';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-'));
 const outbox = path.join(dataDir, 'outbox.jsonl');
 const OWNER = 'owner@example.com';
@@ -30,28 +29,20 @@ let owner: Account;
 
 type Server = { port: number; base: string; dir: string; proc: ChildProcess };
 
-const startRelay = (port = PORT, dir = dataDir, env: Record<string, string> = {}) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DATA_DIR: dir,
-        HOST: '127.0.0.1',
-        TABULA_AUTH: 'on',
-        TABULA_OWNER_EMAIL: OWNER,
-        TABULA_MAIL: 'file',
-        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
-        TABULA_TRUST_PROXY: '1',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
+const startRelay = (dir = dataDir, env: Record<string, string> = {}) => startRelayProcess({
+  envFor: (port) => ({
+    ...(process.env as Record<string, string>),
+    PORT: String(port),
+    DATA_DIR: dir,
+    HOST: '127.0.0.1',
+    TABULA_AUTH: 'on',
+    TABULA_OWNER_EMAIL: OWNER,
+    TABULA_MAIL: 'file',
+    TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+    TABULA_TRUST_PROXY: '1',
+    ...env,
+  }),
+});
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -210,7 +201,10 @@ async function flush(from: ReturnType<typeof connect>, to: ReturnType<typeof con
 
 describe('accounts mode server', () => {
   beforeAll(async () => {
-    relay = await startRelay();
+    const started = await startRelay();
+    PORT = started.port;
+    baseUrl = `http://127.0.0.1:${PORT}`;
+    relay = started.proc;
     owner = await signIn(OWNER);
   });
 
@@ -1166,9 +1160,8 @@ describe('other server configurations', () => {
   const servers: Server[] = [];
 
   async function launch(env: Record<string, string>): Promise<Server> {
-    const port = await freePort();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-extra-'));
-    const proc = await startRelay(port, dir, env);
+    const { port, proc } = await startRelay(dir, env);
     const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
     servers.push(server);
     return server;

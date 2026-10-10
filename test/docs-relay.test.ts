@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
-const PORT = await freePort();
+let PORT = 0;
 let root = '';
 let relay: ChildProcess;
 
@@ -38,21 +37,17 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(dist, 'docs', 'images', 'a.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"OUTSIDE SECRET"}');
   fs.writeFileSync(path.join(dist, 'secret.txt'), 'OUTSIDE DOCS');
-  await new Promise<void>((resolve, reject) => {
-    relay = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', DIST_DIR: dist, DATA_DIR: path.join(root, 'data') },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const timer = setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-    relay.stdout!.on('data', (d) => {
-      if (String(d).includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve();
-      }
-    });
-    relay.stderr!.on('data', () => {});
-    relay.on('error', reject);
+  const started = await startRelayProcess({
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>),
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      DIST_DIR: dist,
+      DATA_DIR: path.join(root, 'data'),
+    }),
   });
+  PORT = started.port;
+  relay = started.proc;
 });
 
 afterAll(async () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,8 +7,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { isWindows } from './platform';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // A room is written a while after its last change (a second by default, SAVE_DEBOUNCE_MS here). A relay that is asked
 // to stop before then must write the room first. Windows cannot deliver SIGTERM (a kill ends the process at once), so
@@ -34,21 +33,21 @@ async function until(test: () => boolean, ms: number, what: string) {
 
 async function startRelay(): Promise<Relay> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-shutdown-'));
-  const port = await freePort();
-  const child = spawn(process.execPath, ['server/relay.mjs'], {
-    // The save waits longer than any test, so a room on disk can only come from the shutdown, however slow the runner.
-    env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', SAVE_DEBOUNCE_MS: '30000' },
+  const started = await startRelayProcess({
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>),
+      PORT: String(port),
+      DATA_DIR: dir,
+      HOST: '127.0.0.1',
+      TABULA_AUTH: 'off',
+      SAVE_DEBOUNCE_MS: '30000',
+    }),
   });
+  const child = started.proc;
   const exited = new Promise<Exit>((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
-  const relay = { child, dir, port, exited };
+  const relay = { child, dir, port: started.port, exited };
   relays.push(relay);
-  await new Promise<void>((resolve, reject) => {
-    child.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve());
-    child.stderr!.on('data', () => {});
-    child.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
   return relay;
 }
 

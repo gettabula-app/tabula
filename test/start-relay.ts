@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process';
 import { freePort } from './free-port';
 import { RELAY_START_MS } from './relay-timing';
 
@@ -14,6 +14,8 @@ export async function startRelayProcess({
   attempts = 3,
   startMs = RELAY_START_MS,
   spawnArgs = [],
+  cwd,
+  stdio = ['ignore', 'pipe', 'pipe'],
 }: {
   /** The whole environment of the relay for this port. */
   envFor: (port: number) => Record<string, string>;
@@ -22,12 +24,16 @@ export async function startRelayProcess({
   attempts?: number;
   startMs?: number;
   spawnArgs?: string[];
+  /** Preserve a test's working directory when the relay intentionally runs outside the repository. */
+  cwd?: string;
+  /** Preserve extra child channels such as the IPC channel used by shutdown tests. */
+  stdio?: StdioOptions;
 }): Promise<StartedRelay> {
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const port = await freePort();
     const outcome = await new Promise<{ started: StartedRelay } | { error: Error; portTaken: boolean }>((resolve) => {
-      const proc = spawn(process.execPath, [...spawnArgs, entry], { env: envFor(port), stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(process.execPath, [...spawnArgs, entry], { cwd, env: envFor(port), stdio });
       let output = '';
       let settled = false;
       const settle = (value: { started: StartedRelay } | { error: Error; portTaken: boolean }) => {
