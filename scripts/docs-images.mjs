@@ -462,7 +462,10 @@ const SHOTS = {
 
   async 'access-removed'({ browser, acc, people }) {
     const W = 1000, H = 520;
-    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.ana });
+    const { context, page } = await newPage(browser, {
+      base: acc.base, width: W, height: H, session: people.ana,
+      user: { id: 'docs-ana', name: ANA_USER.name, color: '#CE2C7D' },
+    });
     await openBoard(page, acc.base, 'teamnote');
     await page.evaluate(() => {
       const app = window.__board;
@@ -487,6 +490,15 @@ const SHOTS = {
     const dialog = page.getByRole('dialog');
     await dialog.getByText('People with access').first().waitFor();
     await dialog.locator('.share-people select').first().waitFor();
+    const stableOrigin = 'http://127.0.0.1:12345';
+    await dialog.getByRole('textbox', { name: 'Board link' }).evaluate((input, origin) => {
+      if (!input.value.startsWith(location.origin)) throw new Error('the board link did not use the local screenshot origin');
+      input.value = input.value.replace(location.origin, origin);
+    }, stableOrigin);
+    await dialog.locator('.modal-body .stack > p.muted.small').last().evaluate((line, origin) => {
+      if (!line.textContent?.includes(location.origin)) throw new Error('the relay note did not use the local screenshot origin');
+      line.textContent = line.textContent.replace(location.origin, origin);
+    }, stableOrigin);
     await park(page);
     await settle(page);
     await dialog.screenshot({ path: path.join(outDir, 'share-roles.png'), animations: 'disabled' });
