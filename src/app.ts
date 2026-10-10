@@ -192,6 +192,10 @@ export class BoardApp {
   openKanbanMenu: ((kind: KanbanMenuKind, id: Id, at: Rect) => void) | null = null;
   /** Set by the board UI: opens a kanban as a list (src/ui/container-sheet.ts), on one of its lanes. */
   openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
+  /** Set by the board UI while the workspace tracker is enabled: opens the registered kanban link flow. */
+  linkTrackerKanban: ((containerId: Id) => void) | null = null;
+  /** Set by the board UI while the workspace tracker is enabled: opens the registered unlink confirmation. */
+  unlinkTrackerKanban: ((containerId: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: closes its open library drawer or Comments/Chat tray when Escape reaches it. */
