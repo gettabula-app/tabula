@@ -4,7 +4,7 @@ import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { popover } from './common';
 
-export type ContextAction = 'front' | 'forward' | 'backward' | 'back' | 'group' | 'ungroup' | 'duplicate' | 'lock' | 'delete';
+export type ContextAction = 'front' | 'forward' | 'backward' | 'back' | 'group' | 'ungroup' | 'flipHorizontal' | 'flipVertical' | 'duplicate' | 'lock' | 'delete';
 
 export interface ContextItem { action: ContextAction; label: string; hint?: string; icon: IconName; danger?: boolean; disabled?: boolean; reason?: string; separatorBefore?: boolean }
 
@@ -13,7 +13,7 @@ type IconName = Parameters<typeof icon>[0];
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** The entries for a selection of `count` objects, all locked or not. */
-export function contextMenuItems({ count, locked, groupReason = 'Select at least two groupable items.', canUngroup = false }: { count: number; locked: boolean; groupReason?: string | null; canUngroup?: boolean }): ContextItem[] {
+export function contextMenuItems({ count, locked, groupReason = 'Select at least two groupable items.', canUngroup = false, flipHorizontalReason = null, flipVerticalReason = null }: { count: number; locked: boolean; groupReason?: string | null; canUngroup?: boolean; flipHorizontalReason?: string | null; flipVerticalReason?: string | null }): ContextItem[] {
   if (count === 0) return [];
   const mod = isMac() ? 'Cmd' : 'Ctrl';
   return [
@@ -23,6 +23,8 @@ export function contextMenuItems({ count, locked, groupReason = 'Select at least
     { action: 'back', label: 'Send to back', hint: '[', icon: 'back' },
     { action: 'group', label: 'Group', hint: `${mod}+G`, icon: 'group', disabled: groupReason !== null, reason: groupReason ?? undefined, separatorBefore: true },
     { action: 'ungroup', label: 'Ungroup', hint: `Shift+${mod}+G`, icon: 'ungroup', disabled: !canUngroup, reason: canUngroup ? undefined : 'Select one or more groups to ungroup.' },
+    { action: 'flipHorizontal', label: 'Flip horizontal', hint: 'Shift+H', icon: 'flipHorizontal', disabled: flipHorizontalReason !== null, reason: flipHorizontalReason ?? undefined, separatorBefore: true },
+    { action: 'flipVertical', label: 'Flip vertical', hint: 'Shift+V', icon: 'flipVertical', disabled: flipVerticalReason !== null, reason: flipVerticalReason ?? undefined },
     { action: 'duplicate', label: 'Duplicate', hint: `${mod}+D`, icon: 'dup', separatorBefore: true },
     { action: 'lock', label: locked ? 'Unlock' : 'Lock', icon: locked ? 'unlock' : 'lock' },
     { action: 'delete', label: 'Delete', hint: 'Del', icon: 'trash', danger: true },
@@ -36,6 +38,8 @@ const RUN: Record<ContextAction, (app: BoardApp) => void> = {
   back: (a) => a.sendToBack(),
   group: (a) => void a.groupSelection(),
   ungroup: (a) => void a.ungroupSelection(),
+  flipHorizontal: (a) => void a.flipSelection('horizontal'),
+  flipVertical: (a) => void a.flipSelection('vertical'),
   duplicate: (a) => a.duplicate(),
   lock: (a) => a.toggleLock(),
   delete: (a) => a.deleteSelection(),
@@ -53,6 +57,8 @@ export function openContextMenu(app: BoardApp, x: number, y: number, touch = fal
     locked: sel.length > 0 && sel.every((o) => o.locked),
     groupReason: app.groupReason(),
     canUngroup: app.canUngroupSelection(),
+    flipHorizontalReason: app.flipReason('horizontal'),
+    flipVerticalReason: app.flipReason('vertical'),
   });
   if (!items.length || app.readOnly) return;
   // the popover places itself against an element: a one pixel anchor at the pointer

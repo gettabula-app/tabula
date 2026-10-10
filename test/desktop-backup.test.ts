@@ -65,6 +65,20 @@ describe('a backup is a .drift file that restores the board', () => {
     expect(target.comments.list()[0].imported).toBeFalsy();
   });
 
+  it('round-trips flip flags through .drift JSON and CRDT state', async () => {
+    const { app } = fakeBoard([
+      { ...box('a', 'arrow'), kind: 'arrow-right', flipX: true, flipY: false },
+      { ...box('b', 'other'), kind: 'callout-round', flipY: true },
+    ]);
+    const bytes = await toDrift(app);
+    const imported = await readBoardFile(new File([bytes as BlobPart], 'flipped.drift'));
+    expect(imported.json.objects.find((o) => o.id === 'a')).toMatchObject({ flipX: true, flipY: false });
+    const target = freshTarget();
+    applyImported(target, imported, null);
+    expect(target.store.get('a')).toMatchObject({ flipX: true, flipY: false });
+    expect(target.store.get('b')).toMatchObject({ flipY: true });
+  });
+
   it('marks the comments of an imported file as imported by the person who opens it', async () => {
     const { app, comments } = fakeBoard([box('a', 'first')], 'Shared file');
     comments.addThread({ id: 'u1', name: 'Ann', color: '#112233' }, { x: 5, y: 6 }, 'Check this');

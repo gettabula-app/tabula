@@ -656,6 +656,8 @@ Require `idempotencyKey` on create, comment, transition, and link writes, unique
 
 ### Source and mapping
 
+**Archived issues (known, 2026-10-10):** Linear's AI archived every Done issue. Every Linear API query the importer makes (and the Linear-to-board script 01b9936) must pass `includeArchived: true`, or the Done history is silently missing; the dry-run report must count archived issues separately so a shortfall is visible.
+
 **RECOMMENDED:** Provide a CLI importer in the app repo using the Linear API for complete migration. Accept CSV export as a fallback when an API token cannot be provided. Keep the import credential local to the operator; never save it in a board or tracker row.
 
 Map:
@@ -805,6 +807,13 @@ Notes:
 ### Test strategy per slice
 
 This is the proposed test plan; it is not a request to run tests while drafting this spec. Unit coverage: migration safety, counter rollback/no reuse, categories, query grammar, event versions, idempotency, access, signatures, rotation, retries, and import mapping. Relay integration: use `test/start-relay.ts` as the relay process starter and `test/mcp-harness.ts` for signed-in MCP calls; extend `test/backup-harness.ts` for backup/restore. Cover Yjs updates, `roomAccess.write`, SQL failure, restart, and stale projections. UI E2E: frame/ticket flows, keyboard, comments/history, linked moves, offline reconnect, multi-board projection, viewer denial, deep links, search, notifications. Integration E2E: signatures, duplicate/expired delivery, repository allow-list, fork text, wake, DNS rebinding, retries, replay, rotation. Backup/restore: full encrypted snapshot, two projections, counter/alias, pending queues, FTS rebuild, history/copy, and key loss. Apply section 3 invariants and section 4 permissions to every affected slice.
+
+#### Slice 2 decisions
+
+- Ticket `project` references resolve by active project name, case-insensitively. A ticket milestone resolves within the selected project; without one, its name must identify exactly one active milestone so the project can be inferred. Clearing or changing a project with an incompatible current milestone requires clearing or changing both fields in the same update. Existing archived associations remain visible on the ticket, but cannot be newly assigned.
+- A ticket pair has one relation row. Relations store `blocks`, `duplicates` and symmetric `relates_to`; `blocked_by` and `duplicated_by` normalize to the inverse endpoint order. Reads render the viewer-facing inverse, and a relation write appends one event to each ticket. `cloned_from` remains a schema-reserved kind and is not accepted by this slice's command.
+- Saved-view query JSON is `{filter, sort}`. The only supported sort is `updated_desc`, matching `list_tickets` ordering and cursor semantics. Filter tokens are validated through the read-only `list_tickets` command path; later filter grammar additions can be consumed by saved views without changing their stored shape.
+- Ticket association changes use the normal `updated` ticket event. Project and milestone lifecycle rows do not have a separate event stream in this schema; this slice adds the `related` and `unrelated` ticket event types.
 
 ## 12. Contracts to freeze with design before building
 

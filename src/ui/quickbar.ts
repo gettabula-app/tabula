@@ -190,6 +190,24 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     return b;
   }
 
+  function moreActions() {
+    const flipItem = (axis: 'horizontal' | 'vertical') => {
+      const horizontal = axis === 'horizontal';
+      const reason = app.flipReason(axis);
+      const label = horizontal ? 'Flip horizontal' : 'Flip vertical';
+      return h('button', {
+        class: 'menu-item', type: 'button', role: 'menuitem', disabled: reason !== null,
+        'aria-keyshortcuts': horizontal ? 'Shift+H' : 'Shift+V',
+        'data-tip': reason ?? label,
+        'data-tip-key': horizontal ? 'shift+h' : 'shift+v',
+        onclick: () => { closePopover(); app.flipSelection(axis); },
+      }, icon(horizontal ? 'flipHorizontal' : 'flipVertical', 18), h('span', null, label), h('span', { class: 'menu-hint' }, horizontal ? 'Shift+H' : 'Shift+V'));
+    };
+    return h('div', { class: 'menu qb-action-menu', role: 'menu', 'aria-label': 'More actions' },
+      flipItem('horizontal'), flipItem('vertical'),
+    );
+  }
+
   function action(name: IconName, label: string, onClick: () => void, cls = '', key?: string) {
     return h('button', { class: `icon-btn${cls ? ` ${cls}` : ''}`, 'aria-label': label, 'data-tip-key': key, onclick: onClick }, icon(name, 18));
   }
@@ -393,14 +411,16 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([menu('stickers', 'React with a sticker', () => reactionPicker(app))]);
 
     lock = h('button', { class: 'icon-btn', onclick: () => app.toggleLock() });
-    more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));
+    let actions: HTMLButtonElement;
+    actions = h('button', { class: 'icon-btn', 'aria-label': 'More actions', 'aria-haspopup': 'menu', onclick: () => open(actions, moreActions()) }, icon('dots', 18));
+    more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('properties', 18));
     groups.push([
       lock,
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       ...(opts.demo || !canSaveTemplate(authState().mode) ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
       action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ]);
-    groups.push([more]);
+    groups.push([actions, more]);
 
     const parts = groups.filter((g) => g.length).flatMap((g, i) => (i ? [h('span', { class: 'qb-sep', 'aria-hidden': 'true' }), ...g] : g));
     bar.replaceChildren(...parts);

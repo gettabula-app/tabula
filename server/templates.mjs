@@ -203,6 +203,10 @@ function box(o, what, ids, labels) {
     out.x = 0; out.y = 0; out.w = 0; out.h = 0; out.rotation = 0;
     return out;
   }
+  for (const key of ['flipX', 'flipY']) {
+    if (o[key] !== undefined && typeof o[key] !== 'boolean') fail(`${what} ${key} must be a boolean.`);
+    if (typeof o[key] === 'boolean') out[key] = o[key];
+  }
   if (o.text !== undefined) out.text = text(o.text, `${what} text`, MAX_TEXT, { lines: true });
   style(o, what, out);
   if (o.font !== undefined) {
@@ -267,6 +271,7 @@ function box(o, what, ids, labels) {
 }
 
 function connector(o, what, ids) {
+  if (o.flipX !== undefined || o.flipY !== undefined) fail(`${what} cannot have flip flags.`);
   const out = {
     id: o.id,
     type: 'connector',
@@ -356,6 +361,7 @@ export function validateTemplateContent(raw) {
       cursor = parents.get(cursor);
     }
   }
+  const byId = new Map(objects.map((o) => [o.id, o]));
   for (const group of objects.filter((o) => o.type === 'group')) {
     let cursor = group;
     const seen = new Set([group.id]);
@@ -363,7 +369,7 @@ export function validateTemplateContent(raw) {
     while (cursor.parent) {
       if (seen.has(cursor.parent)) break; // the cycle error above already names this input
       seen.add(cursor.parent);
-      cursor = objects.find((o) => o.id === cursor.parent);
+      cursor = byId.get(cursor.parent);
       if (!cursor) break;
       if (cursor.type === 'group') depth++;
     }

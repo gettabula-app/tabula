@@ -14,11 +14,15 @@ Each numbered migration is either a SQL string or an object:
 { sql: `ALTER TABLE users DROP COLUMN legacy_name`, minReader: 5 }
 ```
 
-A string declares `minReader` as `n - 1`, where `n` is its 1-based migration number. An object declares it explicitly with an integer from 0 through `n`. Use `minReader: n` for a breaking change. Use `minReader: n - 1` for an object entry after reviewing it as expand-only. Lower values are for cases where older generations have also been checked.
+A string declares `minReader` as `n - 1`, where `n` is its 1-based migration number. An additive SQL string may start with `-- minReader: k` to preserve a lower, reviewed reader floor. An object declares it explicitly with an integer from 0 through `n`. Use `minReader: n` for a breaking change. Use `minReader: n - 1` for an object entry after reviewing it as expand-only. Lower values are for cases where older generations have also been checked.
 
 Expand-only changes include new tables, nullable columns, columns with a `DEFAULT`, and non-unique indexes. These can affect other SQL too: a unique index can make an older build's insert fail. Breaking changes include dropping tables, columns, indexes, triggers or views; renaming tables or columns; adding `NOT NULL` without a default; unique indexes; triggers; and data rewrites or removals. `INSERT` seed rows are allowed. `UPDATE` and `DELETE FROM` are treated as data changes.
 
 Table rebuilds are always breaking. SQLite uses the create-new, copy, drop, rename pattern to change a constraint such as `CHECK`; mark that migration with `minReader`, even when the copied rows still fit the new table.
+
+Directory migration 12 adds the nullable `access_tokens.tracker` capability and the tracker tables, indexes and seed rows. It is expand-only, so it records `min_reader = 11`; the release reports directory `schema: 12` and `maxReader: 11`. A build that knows schema 11 can open the migrated database unchanged. A v4 reader cannot open a schema-12 directory: it knows only four generations, below the recorded minimum reader of 11.
+
+Directory migration 13 adds projects, milestones, ticket relations and saved views with their indexes. It is an additive SQL string annotated `minReader: 11`; it preserves existing ticket rows and leaves the release at directory `schema: 13` and `maxReader: 11`.
 
 The migration lint runs in `test/migrations-lint.test.ts`. It flags SQL patterns that need review. A plain-string entry with a flagged pattern fails; make it an object and choose `minReader: n` for a breaking change or `minReader: n - 1` after review confirms it is expand-only. The lint is a review aid, so read the migration and consider behavior the patterns may not recognize.
 

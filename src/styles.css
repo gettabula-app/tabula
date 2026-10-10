@@ -605,6 +605,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 
 @media (max-width: 500px) {
+  .qb-action-menu .menu-item, .ctx-menu .menu-item { min-height: 44px; }
   /* A vote stays in one row (44px touch targets, TAB-273): reveal, undo mode, count, finish and Info. The step title and the other step buttons give way; the instruction opens below the row. */
   .flowbar.vote-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
   .flowbar.vote-compact > .flow-previous, .flowbar.vote-compact > .timer, .flowbar.vote-compact > .flow-timer-buttons,

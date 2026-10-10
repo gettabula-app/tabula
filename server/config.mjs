@@ -86,6 +86,13 @@ function loadChat(env, authEnabled, warn) {
   return mode === 'on';
 }
 
+// Tracker tools (docs/mcp.md). The directory migration runs independently; this switch only exposes the feature.
+function loadTracker(env) {
+  const mode = (env.TABULA_TRACKER ?? '').trim() || 'off';
+  if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_TRACKER must be on or off (got "${mode.slice(0, 20)}")`);
+  return mode === 'on';
+}
+
 // AI features (docs/ai.md). The secrets are not enumerable, so printing or serialising the config never shows them.
 // Open mode has no accounts to own a key, so it needs both the operator's key and the explicit TABULA_AI_OPEN=1: a key
 // alone never turns AI on, because anyone with a board link would then spend it.
@@ -250,6 +257,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const ai = loadAi(env, authEnabled, warn);
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);
+  const tracker = loadTracker(env);
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
   if (joinCodeMode === 'on' && !authEnabled) warn('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
@@ -278,6 +286,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     assets,
     ...(joinCodes ? { joinCodes: true } : {}),
     ...(chat ? { chat: true } : {}),
+    tracker,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),
   };

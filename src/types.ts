@@ -71,6 +71,10 @@ export interface BaseObj extends Partial<StyleFields> {
   w: number;
   h: number;
   rotation: number;
+  /** Mirror the drawn content across the box's vertical centre line. Geometry only; absent is false. */
+  flipX?: boolean;
+  /** Mirror the drawn content across the box's horizontal centre line. Geometry only; absent is false. */
+  flipY?: boolean;
   z: string;
   parent?: Id;
   locked?: boolean;

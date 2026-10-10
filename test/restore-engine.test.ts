@@ -4,7 +4,7 @@ import path from 'node:path';
 import { MIGRATIONS } from '../server/directory.mjs';
 import { RestoreError } from '../server/restore.mjs';
 import { DAY, HOUR, MIN, T0, docBytes, harness, type Harness } from './backup-harness';
-import { audits, backedUp, backupNow, becomeB, CONFIRM, filesOf, filled, forge, ownerOf, raw, reopen, rig, seedA, setting, sqliteBytes } from './restore-harness';
+import { audits, backedUp, backupNow, becomeB, CONFIRM, databaseOf, filesOf, filled, forge, ownerOf, raw, reopen, rig, seedA, setting, sqliteBytes } from './restore-harness';
 
 // docs/backups.md, Restoring. The whole-workspace restore against the fake S3 with the real backup engine.
 
@@ -165,6 +165,29 @@ describe('whole restore credential invalidation', () => {
 });
 
 describe('a whole restore', () => {
+  it('restores a legacy manifest with no barrier fields and logs that it is legacy', async () => {
+    h = await harness({ accounts: true });
+    seedA(h);
+    const database = await databaseOf(h);
+    const legacy = forge(h, [
+      { path: 'directory.sqlite', data: database },
+      ...[...filesOf(h.dir)].filter(([file]) => /^[^/]+\.yjs$/.test(file)).map(([file, data]) => ({ path: file, data })),
+    ], { at: T0 + HOUR });
+    const r = rig(h);
+
+    const result = await r.restore.restoreWorkspace({ manifest: legacy.name, confirm: CONFIRM, actor: ownerOf(h) });
+    expect(result).toMatchObject({ ok: true, restarting: true });
+    expect(await r.exited).toBe(75);
+    expect(h.logs.some((line: string) => String(line).includes(`legacy manifest ${legacy.name} has no snapshot barrier record; accepting it`))).toBe(true);
+    const restored = reopen(h);
+    try {
+      expect(setting(restored, 'fixture')).toBe('A');
+      expect(restored.getBoard('b1')).toMatchObject({ title: 'Roadmap' });
+    } finally {
+      restored.close();
+    }
+  });
+
   it('puts the backed up state back, ends every session, keeps the old data aside and leaves with code 75', async () => {
     const s = await scenario();
     expect(ownerOf(h)).toBeTruthy();

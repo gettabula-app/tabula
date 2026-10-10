@@ -69,10 +69,11 @@ Which data volume the instance runs on (`docs/backups.md`, Volumes and restores)
 
 ```
 GET /api/internal/version
-  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy }, updates: { auto: boolean } }
+  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy }, capabilities: { tracker: { fts5: boolean, enabled: boolean } }, updates: { auto: boolean } }
 ```
 
 The release label (`null` if `TABULA_VERSION` was not set), process start time in milliseconds, the schema generations and rollback limits this build declares, and the generations and legacy status of its database files. Each nested schema field has `directory` and `chat` values; chat is `null` when it is off. This endpoint contains no secrets. See [migrations.md](migrations.md) for the reader rule and release contract.
+`capabilities.tracker.fts5` reports the same SQLite tokenizer probe required by migration 12; `capabilities.tracker.enabled` reports whether `TABULA_TRACKER=on`. These fields let the control plane distinguish a compatible SQLite build from one with ticket tools enabled.
 `updates.auto` is the current automatic update setting, defaulting to `true`; security updates are always applied.
 
 **Contract for an adopt-volume action.** When the control plane swaps a machine's mount to another volume (a Tier 1 restore from a snapshot, or a move), it should:

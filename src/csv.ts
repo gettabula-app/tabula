@@ -41,6 +41,13 @@ export interface CsvSource {
 }
 
 /** The rows of these kanbans' cards, kanban by kanban, lane by lane, top to bottom; `position` counts from 1 in its lane. */
+// A time from the board document (a collaborator or a file wrote it): past the year 275760 a Date is invalid and
+// toISOString() throws, which would end the whole export, so such a value gives an empty cell like a missing one.
+function isoTime(ms: number | undefined): string {
+  const date = new Date(Number.isFinite(ms) ? ms! : NaN);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
 export function cardRows(src: CsvSource, containers: readonly Id[]): (string | number)[][] {
   const names = new Map(src.labels.map((l) => [l.id, l.name]));
   const rows: (string | number)[][] = [];
@@ -59,7 +66,7 @@ export function cardRows(src: CsvSource, containers: readonly Id[]): (string | n
           c.name ?? '', lane?.name ?? '', lane?.stage ?? '', i + 1, card.text ?? '', card.desc ?? '', card.ownerName ?? '',
           hasOwner ? card.ownerKind === 'agent' ? 'agent' : 'person' : '', card.due ?? '', isSafeHttpUrl(card.link) ? card.link : '',
           labels.join('; '), src.commentCount(id), card.createdBy ?? '',
-          Number.isFinite(card.updatedAt) ? new Date(card.updatedAt!).toISOString() : '', card.id,
+          isoTime(card.updatedAt), card.id,
         ]);
       });
     }

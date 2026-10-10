@@ -16,6 +16,26 @@
 
 **RECOMMENDED — Shared interchange:** Define one small Markdown subset and one parser/serializer module shared by the browser and server.
 
+## Decisions (frozen 2026-10-10)
+
+Johan: "go with your picks". These override any RECOMMENDED or OPEN text elsewhere in this file.
+
+| # | Decision | Effect |
+|---|---|---|
+| 1 | Text elements first, then stickies and shapes, cards later. | Slices B, D, E of section 15 in that order. |
+| 2 | No nested lists. | Depth 1. |
+| 3 | No fonts, sizes or colours inside text in v1. | Object-level style only. |
+| 4 | No links inside text in v1. | Pasted anchors keep their text, drop the href. |
+| 5 | Typing `- ` or `1. ` at an empty paragraph starts a list; one undo returns the literal characters. | Not applied to paste or remote inserts. |
+| 6 | A plain MCP text write flattens rich text and returns a warning. | `textMarkdown` is the format-preserving path. |
+| 7 | Selections are visible only while two people edit the same object. | Awareness `textSelection` is shown only to co-editors of that object. |
+| 8 | 20,000 characters on the board, 4,000 through MCP. | Section 3 limits. |
+| 9 | The alignment control with no selection inside the text aligns all paragraphs. | Updates the object default in the same transaction. |
+| 10 | YES to a client version floor: the relay refuses edits to rich boards from pre-gate clients. | New work item for slice B: a relay-side client version check on rich boards (open question 10 closed); the exact signal (hello message field or header) to be named in the slice. |
+| 11 | Tab moves into the popover; Esc returns to the text; Alt+F10 is the fallback. | Section 18. |
+| 12 | No soft line break; Shift+Enter acts like Enter. | Section 18. |
+| 13 | Emoji is the last button in the popover. | Design-side. |
+
 ## 0. Summary / decisions needed
 
 ### Summary
@@ -741,3 +761,5 @@ The designer's popover spec is a separate file, `docs/rich-text-ux.md` on branch
 | 6 | Phone | Agreed, no data impact. The popover reads state from `getRichTextState` and sends commands only. |
 
 The popover never writes Y.Text directly. It sends commands through the editor command layer and reads `RichTextState`.
+
+The popover UI spec is `docs/rich-text-ux.md` (branch `docs/rich-text-ux`, 7a74e45). The two files reference each other and merge together.

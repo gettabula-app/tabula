@@ -29,6 +29,7 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
+import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
@@ -53,6 +54,9 @@ const env = withLegacyEnv();
 const config = loadConfig(env);
 // Off-site backups (docs/backups.md): null unless TABULA_BACKUP_* is set; half a configuration stops the start here.
 const backupConfig = loadBackupConfig(env);
+const snapshotBarrier = backupConfig
+  ? createSnapshotBarrier({ maxHoldMs: backupConfig.snapshotMaxHoldSeconds * 1000 })
+  : null;
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
@@ -60,6 +64,9 @@ const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'))
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
 const SAVE_MAX_WAIT_MS = saveMaxWaitMs(); // 30 s; the test-only TABULA_TEST_SAVE_MAX_WAIT_MS can only shorten it (server/save-delay.mjs)
+// After a failed write (disk full, permissions), the next attempt. A finite value from 0.25 s to 60 s: a tiny one would spin the retry log,
+// an infinite one would never retry.
+const SAVE_RETRY_MS = Math.min(60_000, Math.max(250, Number(process.env.SAVE_RETRY_MS) > 0 ? Number(process.env.SAVE_RETRY_MS) : 5_000));
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
@@ -196,8 +203,9 @@ function boardState(id) {
   if (room) return Y.encodeStateAsUpdate(room.doc);
   try {
     return fs.readFileSync(path.join(DATA_DIR, `${id}.yjs`));
-  } catch {
-    return null;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
   }
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
@@ -227,7 +235,7 @@ if (config.authEnabled) {
     import('./api.mjs'),
     import('./cloud.mjs'),
   ]);
-  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
+  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier });
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -275,7 +283,7 @@ if (config.authEnabled) {
         log('chat: could not anonymise a removed member:', err?.message);
       }
     });
-    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
+    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
@@ -292,7 +300,15 @@ const openRoomState = (name) => {
   const room = rooms.get(name);
   return room ? Y.encodeStateAsUpdate(room.doc) : null;
 };
-const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
+const backup = createBackup({
+  config: backupConfig,
+  dataDir: DATA_DIR,
+  directory,
+  boardState: openRoomState,
+  snapshotBarrier,
+  prepareSnapshot: saveAllRooms,
+  log,
+});
 
 // Not documented: the relay tests give the restore engine a disk that is this full (0 to 1) instead of the real one, so the
 // retention they check (7 days, or until the next backup when the volume would pass 80%) does not depend on the machine.
@@ -309,7 +325,7 @@ const restore = createRestore({
   config: backupConfig,
   dataDir: DATA_DIR,
   log,
-  hooks: { enterMaintenance },
+  hooks: { saveRooms: saveAllRooms, enterMaintenance },
   exit: (code) => process.exit(code),
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
@@ -338,12 +354,16 @@ if (assets) {
     log,
   });
   const sweep = () => {
-    try {
-      const summary = gc.run();
-      if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
-    } catch (err) {
-      log('asset gc failed', scrubText(err?.message));
-    }
+    const collect = () => {
+      try {
+        const summary = gc.run();
+        if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
+      } catch (err) {
+        log('asset gc failed', scrubText(err?.message));
+      }
+    };
+    if (snapshotBarrier) void snapshotBarrier.runWriter(collect);
+    else collect();
   };
   setTimeout(sweep, Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) : 2 * 60 * 1000).unref();
   setInterval(sweep, 24 * 60 * 60 * 1000).unref();
@@ -352,13 +372,17 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier });
 }
 
 // ---------------------------------------------------------------- rooms
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+
+snapshotBarrier?.onRelease(() => {
+  for (const room of rooms.values()) room.releaseDeferredMessages();
+});
 
 // Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
 function liveStats() {
@@ -367,13 +391,14 @@ function liveStats() {
 
 // Every open room to its file; the one place both shutdown and a restore do it.
 function saveAllRooms() {
-  if (roomsFrozen) return;
-  for (const r of rooms.values()) r.save();
+  if (roomsFrozen) return true;
+  let saved = true;
+  for (const r of rooms.values()) if (!r.save()) saved = false;
+  return saved;
 }
 
-// A restore is about to replace the data directory. The order matters: sockets first (they stop editing), then every
-// room is saved for the last time, then nothing may save again, then the timers that use the database stop. The restore
-// engine stops the backups and closes the database next.
+// The restore engine just saved every room synchronously. Close sockets and freeze rooms before yielding, so no
+// edits can arrive between that save and the freeze. The restore engine stops the backups and closes the database next.
 async function enterMaintenance() {
   maintenance = true;
   for (const ws of wss.clients) {
@@ -387,7 +412,6 @@ async function enterMaintenance() {
   chatRetention?.stop();
   chatNotifier?.stop();
   closeChat();
-  saveAllRooms();
   roomsFrozen = true;
   for (const room of rooms.values()) {
     clearTimeout(room.saveTimer);
@@ -410,22 +434,31 @@ class Room {
     this.kind = parseRoom(name).kind;
     this.file = path.join(DATA_DIR, `${name}.yjs`);
     this.doc = new Y.Doc({ gc: true });
-    this.awareness = new awarenessProtocol.Awareness(this.doc);
-    this.awareness.setLocalState(null);
     /** @type {Map<import('ws').WebSocket, Set<number>>} */
     this.conns = new Map();
     this.saveTimer = null;
     this.unloadTimer = null;
     this.dirty = false;
     this.firstUnsavedAt = null;
+    this.pendingBarrierSave = false;
+    /** @type {Array<{ ws: import('ws').WebSocket, data: Buffer }>} */
+    this.deferredMessages = [];
 
-    if (fs.existsSync(this.file)) {
+    try {
+      let saved;
       try {
-        Y.applyUpdate(this.doc, fs.readFileSync(this.file));
+        saved = fs.readFileSync(this.file);
       } catch (err) {
-        log(`room ${name}: could not read saved state`, err);
+        if (err?.code !== 'ENOENT') throw err;
       }
+      if (saved) Y.applyUpdate(this.doc, saved);
+    } catch (err) {
+      // Keep unreadable state in place: an empty replacement would hide it from backups and image retention.
+      this.doc.destroy();
+      throw err;
     }
+    this.awareness = new awarenessProtocol.Awareness(this.doc);
+    this.awareness.setLocalState(null);
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
@@ -495,23 +528,30 @@ class Room {
     this.saveTimer = setTimeout(() => this.save(), delay);
   }
 
+  /** Writes the room to its file. False when the write failed: the edits stay in memory and the save is tried again. */
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (roomsFrozen) return;
-    this.firstUnsavedAt = null;
+    if (roomsFrozen) return true;
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      // Not a failure: the snapshot barrier holds writes for a moment and the save runs again when it is released.
+      this.pendingBarrierSave = true;
+      return true;
+    }
+    this.pendingBarrierSave = false;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
     try {
       fs.writeFileSync(tmp, bytes);
       renameSyncRetry(tmp, this.file);
     } catch (err) {
-      // A save that cannot finish must not take the relay down (this runs in a timer): keep the room dirty and try again.
-      log(`room ${this.name}: could not save, will retry`, err?.code ?? err?.message);
+      // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
+      log(`room ${this.name}: could not save, will retry in ${SAVE_RETRY_MS / 1000} s`, err?.code ?? err?.message);
       this.firstUnsavedAt ??= Date.now();
-      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), 2000);
-      return;
+      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
+      return false;
     }
+    this.firstUnsavedAt = null;
     // `changed`: something was edited since the last save. A save that only rewrites the same state (a room that is
     // unloaded, the save at shutdown) is not a change for the backups.
     const changed = this.dirty;
@@ -526,6 +566,7 @@ class Room {
     }
     history.onSave(this, bytes);
     if (changed) backup?.noteChange();
+    return true;
   }
 
   join(ws) {
@@ -566,7 +607,10 @@ class Room {
     clearTimeout(this.unloadTimer);
     this.unloadTimer = setTimeout(() => {
       if (this.conns.size === 0) {
-        this.save();
+        if (!this.save()) {
+          this.releaseIfIdle();
+          return;
+        }
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);
@@ -593,6 +637,19 @@ class Room {
 
 
   onMessage(ws, data) {
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed && ws.canWrite === true) {
+      try {
+        const peek = decoding.createDecoder(new Uint8Array(data));
+        if (decoding.readVarUint(peek) === MSG_SYNC && decoding.peekVarUint(peek) !== syncProtocol.messageYjsSyncStep1) {
+          // Queue client state updates while the disk copies are made. State-vector reads and awareness still flow, and
+          // the open socket stays connected. Replaying the frame after release lets the normal debounced save run.
+          this.deferredMessages.push({ ws, data: Buffer.from(new Uint8Array(data)) });
+          return;
+        }
+      } catch {
+        // The usual handler below logs malformed frames; do not turn a bad frame into an unbounded queued write.
+      }
+    }
     try {
       const dec = decoding.createDecoder(new Uint8Array(data));
       const type = decoding.readVarUint(dec);
@@ -616,6 +673,24 @@ class Room {
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
     }
+  }
+
+  releaseDeferredMessages() {
+    const queued = this.deferredMessages;
+    this.deferredMessages = [];
+    for (const { ws, data } of queued) this.onMessage(ws, data);
+    if (this.pendingBarrierSave) this.scheduleSave();
+  }
+}
+
+/** The room for a new socket, or null when it cannot be opened (its file cannot be read): the socket is closed. */
+function openRoom(ws, name) {
+  try {
+    return getRoom(name);
+  } catch (err) {
+    log(`room ${name}: could not open`, err?.message);
+    ws.close(1011, 'internal_error');
+    return null;
   }
 }
 
@@ -688,7 +763,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
 }
 
 function workspaceHint(readOnly) {
@@ -865,6 +940,10 @@ function noteOpenWrite(req, res) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
+    const runOpenWriter = (fn) => {
+      const method = String(req.method).toUpperCase();
+      return snapshotBarrier && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? snapshotBarrier.runWriter(fn) : fn();
+    };
     // TAB-103: with TABULA_SOURCE_POLICY=proxy only loopback and Fly's proxy range may talk to this instance. The health
     // check is left open, because the platform's own check may not come from either.
     if (!sourceGate.allows(req.socket.remoteAddress) && !(req.method === 'GET' && url.pathname === '/api/health')) {
@@ -894,13 +973,13 @@ async function onRequest(req, res) {
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
-        await openAiRun.handle(req, res);
+        await openAiRun.handle(req, res); // streams for minutes and writes through the room: no barrier lease
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
-        await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
-      } else if (openAssets && (await openAssets(req, res, url))) {
+        await runOpenWriter(() => openAiRun.resolve(req, res, url.pathname.split('/')[4]));
+      } else if (openAssets && (await runOpenWriter(() => openAssets(req, res, url)))) {
         // answered: an image upload or download of open mode
         noteOpenWrite(req, res);
-      } else if (await history.handleOpen(req, res)) {
+      } else if (await runOpenWriter(() => history.handleOpen(req, res))) {
         noteOpenWrite(req, res);
       } else {
         sendJson(res, 404, { error: 'not_found' });
@@ -1144,7 +1223,8 @@ server.on('upgrade', (req, socket, head) => {
 
     if (!config.authEnabled) {
       ws.canWrite = true;
-      const room = getRoom(name);
+      const room = openRoom(ws, name);
+      if (!room) return;
       ws.on('message', (data) => room.onMessage(ws, data));
       ws.on('close', () => room.leave(ws));
       room.join(ws);
@@ -1179,10 +1259,10 @@ server.on('upgrade', (req, socket, head) => {
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
+    const room = openRoom(ws, name);
+    if (!room) return;
     track(ws);
     if (ws.guest) armGuestExpiry(ws);
-
-    const room = getRoom(name);
     ws.on('message', (data) => {
       refresh(ws, false);
       if (!ws.denied) room.onMessage(ws, data);
@@ -1208,7 +1288,7 @@ const pinger = setInterval(() => {
   }
 }, PING_MS);
 
-// The rooms are saved first, so the files and the backup's view of the open rooms are final. Then the backup gets
+// The rooms are saved first, so the files include the state the final backup starts with. Then the backup gets
 // TABULA_BACKUP_SHUTDOWN_SECONDS to finish a run in progress and to back up what changed since the last one (a restore
 // holds maintenance and stops the backups itself). Whatever is still running after that is told to stop and given a
 // moment to let go of the database before it is closed; both waits are short, so a supervisor's kill timeout is not reached.
@@ -1216,22 +1296,26 @@ const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
-  saveAllRooms();
+  // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
+  const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());
+  let saved = saveNow();
   if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
     await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
-    // people were still editing while it ran
-    saveAllRooms();
   }
   const stopping = backup?.stop();
   restore?.stop();
-  history.close();
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
-  if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+  if (stopping) {
+    await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+    // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.
+    saved = saveNow();
+  }
+  history.close();
   closeChat();
   directory?.close();
-  process.exit(0);
+  process.exit(saved ? 0 : 1);
 }
 // Every way in shares one run, so a second signal while it winds down changes nothing.
 let shuttingDown = null;

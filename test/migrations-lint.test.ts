@@ -47,6 +47,7 @@ describe('migration SQL lint', () => {
     ]) {
       expect(lintMigration(sql)).toEqual([]);
     }
+    expect(lintMigration('CREATE TABLE labels (name TEXT); CREATE UNIQUE INDEX labels_active ON labels(name) WHERE archived_at IS NULL')).toEqual([]);
   });
 
   it('flags a table rebuild as breaking even when it changes only a CHECK constraint', () => {

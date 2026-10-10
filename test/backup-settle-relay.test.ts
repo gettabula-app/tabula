@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
@@ -32,8 +33,9 @@ async function until(test: () => boolean | Promise<boolean>, ms: number, what: s
 }
 
 /** Open mode unless `env` turns accounts on. The relay's data directory is the harness's, so the test can put files in it and read them back. */
-async function startRelay(env: Record<string, string> = {}): Promise<Relay> {
+async function startRelay(env: Record<string, string> = {}, preload?: string): Promise<Relay> {
   const started = await startRelayProcess({
+    spawnArgs: preload ? ['--import', pathToFileURL(preload).href] : [],
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     envFor: (port) => ({
       ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: h.dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`,
@@ -236,6 +238,64 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
 });
 
 describe('the final backup of a relay that is asked to stop', { timeout: 100_000 }, () => {
+  it.each([false, true])('flushes edits accepted while backup.stop waits, with a blocked final write: %s', async (blocked) => {
+    h = await harness({ seed: false });
+    h.write('gate-room.yjs', docBytes('holds the backup open'));
+    h.write('late-room.yjs', docBytes('before editing'));
+    const preload = path.join(h.dir, 'hold-backup-read.mjs');
+    fs.writeFileSync(preload, `
+      import fs from 'node:fs/promises';
+      const readFile = fs.readFile;
+      fs.readFile = async function (file, ...options) {
+        // the upload reads the staged copy the snapshot barrier made, after the writers were released
+        if (String(file).includes('.backup-snapshot-') && String(file).endsWith('gate-room.yjs')) {
+          process.send({ type: 'backup-read-blocked' });
+          await new Promise(() => {});
+        }
+        return readFile.call(this, file, ...options);
+      };
+    `);
+    const relay = await startRelay({ TABULA_BACKUP_SETTLE_SECONDS: '1', TABULA_BACKUP_SHUTDOWN_SECONDS: '0', SAVE_DEBOUNCE_MS: '30000' }, preload);
+    let readBlocked = false;
+    relay.child.on('message', (message: { type?: string }) => {
+      if (message.type === 'backup-read-blocked') readBlocked = true;
+    });
+    const writer = await connect(relay.port, 'late-room');
+    const watcher = await connect(relay.port, 'late-room');
+    writer.getMap('objects').set('note', 'before shutdown');
+    await until(() => watcher.getMap('objects').get('note') === 'before shutdown', 5000, 'the first edit did not sync');
+    // Naming the live version triggers a backup without flushing the room's 30-second save timer.
+    const named = await fetch(`${relay.base}/api/boards/late-room/versions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tabula': '1' }, body: JSON.stringify({ label: 'Start the backup' }) });
+    expect(named.status).toBe(201);
+    await until(() => readBlocked, 10_000, 'the backup did not reach the held read');
+    const stoppedAt = Date.now();
+    const exiting = timedExit(relay);
+    await until(() => savedNote('late-room') === 'before shutdown', 5000, 'shutdown did not flush the first edit');
+    if (blocked) {
+      // A directory where the save writes its temporary file makes every save fail. A save that is writing right now owns the name for a moment.
+      const tmp = `${roomFile('late-room')}.tmp`;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          fs.rmSync(tmp, { force: true });
+          fs.mkdirSync(tmp);
+          break;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 50) throw err;
+          await sleep(10);
+        }
+      }
+    }
+    writer.getMap('objects').set('note', 'during backup stop');
+    await until(() => watcher.getMap('objects').get('note') === 'during backup stop', 5000, 'the edit during backup stop did not sync');
+    const exit = await exiting;
+    const ms = Date.now() - stoppedAt;
+    expect(exit).toEqual({ code: blocked ? 1 : 0, signal: null });
+    expect(savedNote('late-room')).toBe(blocked ? 'before shutdown' : 'during backup stop');
+    // The held read never resolves: the existing two-second stop budget must still end shutdown.
+    expect(ms).toBeGreaterThanOrEqual(1800);
+    expect(ms).toBeLessThan(2000 + 2500);
+  });
+
   it('backs up what was edited moments ago, before it exits', async () => {
     h = await harness({ seed: false });
     // the room is written 30 seconds after an edit and settling is an hour away: only the shutdown can save and back it up

@@ -321,7 +321,8 @@ describe('access tokens over the API', () => {
     const mine = listed.body.find((t: Body) => t.id === made.body.id);
     expect(mine).toBeTruthy();
     expect(JSON.stringify(listed.body)).not.toContain(made.body.token);
-    expect(Object.keys(mine).sort()).toEqual(['boardIds', 'createdAt', 'expiresAt', 'hint', 'id', 'lastUsedAt', 'name', 'scope']);
+    expect(Object.keys(mine).sort()).toEqual(['boardIds', 'createdAt', 'expiresAt', 'hint', 'id', 'lastUsedAt', 'name', 'scope', 'tracker']);
+    expect(mine.tracker).toBeNull();
     expect((await h.api(bob.cookie, 'GET', '/api/me')).body.mcp).toBe(true);
 
     // used at least once: last_used_at shows it
@@ -812,6 +813,21 @@ describe('editing', () => {
 // ---------------------------------------------------------------- what the tools say and take
 
 describe('tools', () => {
+  it('creates, updates and reads flip flags over MCP', async () => {
+    const me = await newMember();
+    const board = await h.newBoard(me.cookie);
+    const token = await tokenOf(me, 'write');
+    const made = await h.tool(token, 'create_objects', {
+      boardId: board,
+      objects: [{ type: 'shape', x: 10, y: 20, kind: 'arrow-right', flipX: true, flipY: false }],
+    });
+    expect(made.error).toBeUndefined();
+    const id = made.data.created[0].id;
+    expect((await h.tool(token, 'get_objects', { boardId: board, ids: [id] })).data.objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect((await h.tool(token, 'update_objects', { boardId: board, updates: [{ id, flipX: false, flipY: true }] })).error).toBeUndefined();
+    expect((await h.tool(token, 'get_objects', { boardId: board, ids: [id] })).data.objects[0]).toMatchObject({ flipX: false, flipY: true });
+  });
+
   it('checks arguments strictly and says where the problem is', async () => {
     const me = await newMember();
     const board = await h.newBoard(me.cookie);

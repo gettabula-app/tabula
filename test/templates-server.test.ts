@@ -74,6 +74,15 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('preserves boolean flip flags through both template validators and rejects other values', () => {
+    const input = content([sticky('flipped', { flipX: true, flipY: false })]);
+    expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(validateContent(input).objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(() => validateTemplateContent(content([sticky('bad', { flipX: 'yes' })]))).toThrow(/flipX.*boolean/i);
+    expect(() => validateContent(content([sticky('bad', { flipY: 1 })]))).toThrow(/flipY.*boolean/i);
+    expect(() => validateContent(content([{ ...sticky('wire'), type: 'connector', flipX: true }]))).toThrow(/connector.*flip flags/i);
+  });
+
   it('keeps every built-in template as it is, and the client accepts what comes out', () => {
     for (const def of TEMPLATES) {
       const made = builtinToCustom(def, 'u1').content;
@@ -127,6 +136,26 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content([])).objectCount).toBe(0);
     const many = Array.from({ length: SERVER_MAX_OBJECTS }, (_, i) => sticky(`o${i}`));
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
+  });
+
+  it('checks the group depth of a deep frame chain in time that grows with the groups, not with groups times objects', () => {
+    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
+    // the fastest of a few runs, and a ratio to the same chain with one group, so a busy machine slows both alike
+    const fastest = (n: number) => {
+      const c = content([...frames, ...groups(n)]);
+      let best = Infinity;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(validateTemplateContent(c).objectCount).toBe(1500 + n);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    const one = fastest(1);
+    const many = fastest(500);
+    // about 1.5 times as long; scanning every object at each step up the chain made it twenty times as long and more
+    expect(many / one).toBeLessThan(6);
   });
 
   it('accepts the colours the board writes', () => {
