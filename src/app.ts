@@ -1,5 +1,5 @@
 import { planStep } from './z-order';
-import { gatherObjects, isWithheld, selectableIds } from './private-select';
+import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Group, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isBox, isConnector } from './types';
@@ -2513,18 +2513,19 @@ export class BoardApp {
 
   copy() {
     if (!this.selection.length) return;
-    this.clipboard = this.gather(this.selection);
+    this.clipboard = gatherCopyObjects(this.store, this.flow, this.selection);
     const payload = JSON.stringify({ driftboard: 1, objects: this.clipboard });
     navigator.clipboard?.writeText(payload).catch(() => undefined);
   }
 
   duplicate() {
     if (!this.selection.length) return;
-    this.insertObjects(this.gather(this.selection), { x: 24, y: 24 });
+    this.insertObjects(gatherCopyObjects(this.store, this.flow, this.selection), { x: 24, y: 24 });
   }
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
+    if (!objs.length) return [];
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
     const out = remapObjects(objs, map, offset, (id) => {
@@ -2538,6 +2539,7 @@ export class BoardApp {
     });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
+    this.store.undo.stopCapturing();
     this.announce(out.length === 1 ? 'Added 1 object' : `Added ${out.length} objects`);
     this.resetScopeSelection(out.filter((o) => !o.parent || !map.has(o.parent!)).map((o) => o.id).filter((id) => {
       const o = this.store.get(id);
@@ -2596,14 +2598,14 @@ export class BoardApp {
 
   /** One step forward: past the nearest object the selection overlaps (TAB-108). */
   bringForward() {
-    const moved = this.store.restack(planStep(this.store.ordered(), this.selection, 1, (a, b) => this.overlap(a, b)));
+    const moved = this.restack(planStep(this.store.ordered(), this.selection, 1, (a, b) => this.overlap(a, b)));
     if (moved) this.announce('Brought forward');
     return moved;
   }
 
   /** One step backward: below the nearest object the selection overlaps. */
   sendBackward() {
-    const moved = this.store.restack(planStep(this.store.ordered(), this.selection, -1, (a, b) => this.overlap(a, b)));
+    const moved = this.restack(planStep(this.store.ordered(), this.selection, -1, (a, b) => this.overlap(a, b)));
     if (moved) this.announce('Sent backward');
     return moved;
   }
@@ -2617,12 +2619,18 @@ export class BoardApp {
   }
 
   bringToFront() {
+    if (!this.selection.length) return;
+    this.store.undo.stopCapturing();
     this.store.bringToFront(this.selection);
+    this.store.undo.stopCapturing();
     if (this.selection.length) this.announce('Brought to front');
   }
 
   sendToBack() {
+    if (!this.selection.length) return;
+    this.store.undo.stopCapturing();
     this.store.sendToBack(this.selection);
+    this.store.undo.stopCapturing();
     if (this.selection.length) this.announce('Sent to back');
   }
 
@@ -2697,8 +2705,10 @@ export class BoardApp {
   }
 
   toggleLock() {
+    if (!this.selection.length) return;
     const lock = !this.selected().every((o) => o.locked);
     this.updateSelected({ locked: lock || undefined });
+    this.store.undo.stopCapturing();
     if (lock) {
       this.setSelection([]);
       this.notify('Locked. Long-press to unlock.');
@@ -2722,6 +2732,7 @@ export class BoardApp {
     if (this.readOnly || !this.store.get(id)) return;
     this.store.undo.stopCapturing();
     this.store.transact(() => this.store.update(id, { locked: locked || undefined }));
+    this.store.undo.stopCapturing();
     if (locked) this.setSelection(this.selection.filter((s) => s !== id));
   }
 
@@ -2735,7 +2746,9 @@ export class BoardApp {
   /** Writes stacking keys from the layers panel as one undo step. */
   restack(patches: { id: Id; z: string }[] | null): boolean {
     this.store.undo.stopCapturing();
-    return this.store.restack(patches);
+    const changed = this.store.restack(patches);
+    this.store.undo.stopCapturing();
+    return changed;
   }
 
   // ---------------------------------------------------------------- presence
