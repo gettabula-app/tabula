@@ -26,7 +26,11 @@ export interface TrackerMeta {
   states: TrackerState[];
   labels: TrackerLabel[];
   members: TrackerMember[];
-  me: { userId: string; canWrite: boolean };
+  me: { userId: string; canWrite: boolean; canDeleteAnyComment?: boolean };
+  /** Slice 2 metadata is optional while older servers only expose core ticket fields. */
+  projects?: Array<{ id: string; name: string; archivedAt?: number | null }>;
+  milestones?: Array<{ id: string; name: string; due: string | null; projectId?: string }>;
+  canCreateLabels?: boolean;
 }
 
 export interface TrackerAssignee { userId: string; name: string }
@@ -59,6 +63,7 @@ export interface TrackerTicket {
   priority: TrackerPriority;
   assignee: TrackerAssignee | null;
   creator: TrackerCreator;
+  source?: 'app' | 'import' | 'mcp' | 'integration';
   labels: TrackerLabel[];
   project: { id: string; name: string } | null;
   milestone: { id: string; name: string; due: string | null } | null;
@@ -146,6 +151,8 @@ export interface TrackerPatch {
   labels?: string[];
   due?: string | null;
   parent?: string | null;
+  project?: string | null;
+  milestone?: string | null;
   archived?: boolean;
   ifUpdatedSeq?: number;
 }

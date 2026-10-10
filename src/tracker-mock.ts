@@ -142,7 +142,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   function applyPatch(ticket: TrackerTicket, patch: TrackerPatch | TrackerBulkPatch): TrackerTicket {
     if (ticket.archivedAt !== null && patch.archived !== false) throw new TrackerError('read_only', 'Restore an archived ticket before editing it.');
     if (patch.title !== undefined) {
-      if (!patch.title.trim() || patch.title.includes('\n') || patch.title.length > 200) throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 characters.', { path: 'title' });
+      if (!patch.title.trim() || patch.title.includes('\n') || Array.from(patch.title).length > 200) throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 code points.', { path: 'title' });
       Object.assign(ticket, { title: patch.title.trim() });
     }
     if (patch.description !== undefined) ticket.description = patch.description;
@@ -160,6 +160,16 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       if (patch.parent !== null) resolveTicket(patch.parent);
       ticket.parent = patch.parent;
     }
+    if (patch.project !== undefined) {
+      const project = patch.project === null ? null : meta.projects?.find((item) => item.id === patch.project || item.name.toLocaleLowerCase() === patch.project?.toLocaleLowerCase());
+      if (patch.project !== null && !project) throw new TrackerError('invalid_input', `Unknown project: ${patch.project}`, { path: 'project' });
+      ticket.project = project ? { id: project.id, name: project.name } : null;
+    }
+    if (patch.milestone !== undefined) {
+      const milestone = patch.milestone === null ? null : meta.milestones?.find((item) => item.id === patch.milestone || item.name.toLocaleLowerCase() === patch.milestone?.toLocaleLowerCase());
+      if (patch.milestone !== null && !milestone) throw new TrackerError('invalid_input', `Unknown milestone: ${patch.milestone}`, { path: 'milestone' });
+      ticket.milestone = milestone ? { id: milestone.id, name: milestone.name, due: milestone.due } : null;
+    }
     if (patch.archived !== undefined) ticket.archivedAt = patch.archived ? (ticket.archivedAt ?? now()) : null;
     return ticket;
   }
@@ -173,6 +183,8 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     if ('labels' in patch) before.labels = ticket.labels.map((label) => label.id);
     if ('due' in patch) before.due = ticket.due;
     if ('parent' in patch) before.parent = ticket.parent;
+    if ('project' in patch) before.project = ticket.project?.id ?? null;
+    if ('milestone' in patch) before.milestone = ticket.milestone?.id ?? null;
     if ('archived' in patch) before.archived = ticket.archivedAt !== null;
     return before;
   }
@@ -282,7 +294,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     const commentsForTicket = comments.get(ticket.key.toLocaleUpperCase()) ?? [];
     const ticketEvents = [...events.values()].filter((event) => event.ticketKey === ticket.key).sort((a, b) => a.id - b.id);
     return {
-      ticket: copy(ticket), comments: copy(commentsForTicket), events: copy(ticketEvents),
+      ticket: copy(ticket), comments: copy(commentsForTicket.slice(-50)), events: copy(ticketEvents.slice(-50)),
       subscribed: subscriptions.has(ticket.key.toLocaleUpperCase()),
       ...(reference.trim().toLocaleUpperCase() !== ticket.key.toLocaleUpperCase() ? { resolvedKey: ticket.key } : {}),
     };
@@ -296,6 +308,17 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
 
   return {
     async meta() { return copy(meta); },
+    async createLabel(name: string) {
+      ensureWritable();
+      const cleanName = name.trim();
+      if (!cleanName || Array.from(cleanName).length > 64) throw new TrackerError('invalid_input', 'Label name must be 1 to 64 characters.', { path: 'name' });
+      if (meta.labels.some((label) => label.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase())) {
+        throw new TrackerError('conflict', 'A label with this name already exists.', { path: 'name' });
+      }
+      const label = { id: newId('label'), name: cleanName, color: null };
+      meta.labels.push(label);
+      return { label: copy(label) };
+    },
     async listTickets(query = {}) {
       const all = ticketList(query);
       const limit = Math.max(1, Math.min(100, Math.trunc(query.limit ?? 50)));
@@ -314,8 +337,8 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       if (typeof input.idempotencyKey !== 'string' || input.idempotencyKey.length < 8 || input.idempotencyKey.length > 64) {
         throw new TrackerError('invalid_input', 'Idempotency key must be 8 to 64 characters.', { path: 'idempotencyKey' });
       }
-      if (typeof input.title !== 'string' || !input.title.trim() || input.title.includes('\n') || input.title.trim().length > 200) {
-        throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 characters.', { path: 'title' });
+      if (typeof input.title !== 'string' || !input.title.trim() || input.title.includes('\n') || Array.from(input.title.trim()).length > 200) {
+        throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 code points.', { path: 'title' });
       }
       const state = input.state ? resolveState(input.state) : meta.states.find((item) => item.key === 'todo') ?? meta.states[0];
       if (!state) throw new TrackerError('internal', 'No states are configured.');
@@ -341,17 +364,21 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       const ticket = resolveTicket(key);
       const rows = comments.get(ticket.key.toLocaleUpperCase()) ?? [];
       const limit = Math.max(1, Math.min(100, Math.trunc(page.limit ?? 50)));
-      const offset = pageOffset(page.before);
-      const selected = rows.slice(offset, offset + limit);
-      return { comments: copy(selected), nextCursor: offset + limit < rows.length ? String(offset + limit) : null };
+      const found = page.before === undefined ? rows.length : rows.findIndex((comment) => comment.id === String(page.before));
+      const end = Math.max(0, found < 0 ? rows.length : found);
+      const start = Math.max(0, end - limit);
+      const selected = rows.slice(start, end);
+      return { comments: copy(selected), nextCursor: start > 0 ? rows[start].id : null };
     },
     async ticketEvents(key, page = {}) {
       const ticket = resolveTicket(key);
       const rows = [...events.values()].filter((event) => event.ticketKey === ticket.key).sort((a, b) => a.id - b.id);
       const limit = Math.max(1, Math.min(100, Math.trunc(page.limit ?? 50)));
-      const offset = pageOffset(page.before);
-      const selected = rows.slice(offset, offset + limit);
-      return { events: copy(selected), nextCursor: offset + limit < rows.length ? String(offset + limit) : null };
+      const found = page.before === undefined ? rows.length : rows.findIndex((event) => event.id === Number(page.before));
+      const end = Math.max(0, found < 0 ? rows.length : found);
+      const start = Math.max(0, end - limit);
+      const selected = rows.slice(start, end);
+      return { events: copy(selected), nextCursor: start > 0 ? String(rows[start].id) : null };
     },
     async patchTicket(key, patch) {
       ensureWritable();
