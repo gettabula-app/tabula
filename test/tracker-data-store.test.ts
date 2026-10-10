@@ -127,6 +127,21 @@ describe('tracker store writes', () => {
     store.destroy();
   });
 
+  it('refetches watched tickets on the first poll, so a change made between the load and that poll is not missed', async () => {
+    const api = createMockTrackerApi({ tickets: [ticket()] });
+    const timers = timerRig();
+    const store = createTrackerStore(api, { pollMs: 5000, setTimer: timers.setTimer, clearTimer: timers.clearTimer });
+    await store.loadTicket('TAB-1');
+    store.watchTicket('TAB-1', () => undefined);
+    // someone else comments after this page loaded and before its first poll
+    await api.addComment('TAB-1', { body: 'from the other page', clientId: 'bootstrap-comment-01' });
+    expect(store.ticket('TAB-1').detail?.comments.map((comment) => comment.body)).not.toContain('from the other page');
+    timers.fireNext();
+    await flushMicrotasks();
+    expect(store.ticket('TAB-1').detail?.comments.map((comment) => comment.body)).toContain('from the other page');
+    store.destroy();
+  });
+
   it('caches normalized list queries, paging, and facets', async () => {
     const seeded = [
       ticket({ id: 't1', key: 'TAB-1', updatedSeq: 1 }),
