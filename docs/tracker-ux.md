@@ -99,6 +99,10 @@ Every event has `id`, `at`, `actor` (user, or `{ kind: 'integration', provider }
 
 ### 2.5 Deep links ⟂
 
+The app currently routes with a hash router. Tracker links therefore use `#/t/...` and board links use
+`#/b/<board>?tracker=<trackerId>&t=<ticketKey>`; these hash routes preserve the app's existing navigation,
+sign-in gate, and refresh behavior. The path forms below remain the external route names in the product contract.
+
 - Ticket: `/t/TAB-123` on the workspace host. Opens the tracker (full screen on phone, the tracker frame focused on a canvas) with the ticket page open. Works for a signed-in member; others see the normal access screen.
 - Board position: `/b/<board>?tracker=<trackerId>&t=TAB-123` places the viewer at the tracker frame with the ticket open.
 - Tab or view: `/t/views/<viewId>`, `/t/inbox`, `/t/my`, `/t/board`, `/t/projects/<projectId>`.

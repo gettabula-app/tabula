@@ -40,6 +40,8 @@ import type { Desktop } from './desktop';
 import { seedDemo } from './demo/seed';
 import { mountDemoBanner } from './ui/demo-banner';
 import type { User } from './types';
+import { createTrackerStore, createHttpTrackerApi, type TrackerStore } from './tracker-data';
+import { mountTrackerShell } from './tracker/ui/shell';
 import './ui/touch.css';
 
 // `demo.ts` is evaluated before these imports so its storage/network shims protect module initializers too.
@@ -53,6 +55,7 @@ const RETURN_KEY = 'driftboard:return';
 
 const root = document.getElementById('app')!;
 const trackerFoundationVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).get('debug') === 'tracker-foundation';
+const trackerMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === '1';
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
@@ -281,6 +284,30 @@ async function route() {
     return;
   }
 
+  if (r.name === 'tracker') {
+    const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+    if (!me?.tracker) {
+      location.replace('#/');
+      return;
+    }
+    root.className = 'trk-route-root';
+    root.replaceChildren();
+    const store = createTrackerStore(createHttpTrackerApi());
+    const shell = mountTrackerShell(root, {
+      store, viewerId: me.user.id, trackerId: 'workspace', initialTab: r.tab,
+      initialViewId: r.viewId, initialTicketKey: r.ticketKey, fullScreen: true, boardName: 'Tracker', layoutWidth: window.innerWidth,
+      onTabChange: (tab) => history.replaceState(history.state, '', `#/t/${tab}`),
+      onTicketChange: (key) => {
+        const route = key ? `#/t/${encodeURIComponent(key)}` : `#/t/${r.tab}`;
+        history.replaceState(history.state, '', route);
+      },
+      onFullscreenChange: (fullScreen) => { if (!fullScreen) location.hash = '#/'; },
+    });
+    leavePage = () => { shell.destroy(); store.destroy(); };
+    if (location.search.includes('debug')) Object.assign(window, { __trackerStore: store, __trackerShell: shell });
+    return;
+  }
+
   if (r.name !== 'board') {
     root.className = 'home-root';
     const view = document.createElement('div');
@@ -347,7 +374,7 @@ async function route() {
   if (!DEMO && location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
   // the pictures of an imported board file go to this board's asset store in the background
   if (job?.imported?.assets) void app.images.adopt(job.imported.assets);
-  mountBoardUi(app, root, { home: () => (location.hash = '#/') });
+  mountBoardUi(app, root, { home: () => (location.hash = '#/') }, { trackerId: r.trackerId, ticketKey: r.ticketKey });
   const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
   root.appendChild(banner.el);
   // the banner wraps at large text sizes; the editing chrome sits below its real height
@@ -445,13 +472,25 @@ async function boot() {
   once.handle();
 }
 
-if (trackerFoundationVisual) {
+if (trackerMockVisual) {
+  root.className = 'trk-route-root';
+  root.replaceChildren();
+  void Promise.all([import('./tracker-mock'), import('./tracker/ui/visual-seed')]).then(([mock, seed]) => {
+    const store: TrackerStore = createTrackerStore(mock.createMockTrackerApi(seed.createTrackerVisualSeed()));
+    const shell = mountTrackerShell(root, {
+      store, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
+      onTabChange: (tab) => history.replaceState(history.state, '', `#/t/${tab}`),
+      onTicketChange: (key) => history.replaceState(history.state, '', key ? `#/t/${encodeURIComponent(key)}` : '#/t/all'),
+    });
+    Object.assign(window, { __trackerStore: store, __trackerShell: shell });
+  });
+} else if (trackerFoundationVisual) {
   void import('./tracker/ui/gallery').then(({ mountTrackerGallery }) => mountTrackerGallery(root));
 } else {
   if (!DEMO) loadCatalogue();
   boot();
 }
 
-if (!DEMO && !trackerFoundationVisual && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
+if (!DEMO && !trackerFoundationVisual && !trackerMockVisual && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);
 }

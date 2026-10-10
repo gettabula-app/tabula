@@ -8,6 +8,8 @@ import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
+import { createTrackerStore, createHttpTrackerApi, type TrackerStore } from '../tracker-data';
+import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
 import { leaveOutWithheld } from '../private-select';
@@ -32,6 +34,11 @@ import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
 import { csvKanbans, download, downloadCardsCsv, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
+
+const trackerBoardMockVisual = import.meta.env.MODE === 'visual' && (() => {
+  const query = new URLSearchParams(location.search);
+  return query.has('debug') && query.get('trackerMock') === 'board';
+})();
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
@@ -65,7 +72,7 @@ type IconName = keyof typeof ICONS;
  * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
  * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
  */
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean } = {}) {
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string } = {}) {
   const scratch = opts.scratch === true;
   const demo = opts.demo === true || DEMO;
   const chrome = h('div', { class: 'chrome' });
@@ -233,9 +240,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('flow', syncVote);
   const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
-  // Hidden command-palette hook; the future tracker UI can surface it after /api/me enables the feature.
+  // Tracker is a first-class insert action, gated by /api/me and absent on non-tracker workspaces.
   const trackerCommand = h('button', {
-    class: 'rail-btn', hidden: true, 'data-command': 'tracker:create-frame', 'aria-label': 'Create tracker frame',
+    class: 'rail-btn', hidden: true, 'data-command': 'tracker:create-frame', 'aria-label': 'Tracker', 'data-tip': 'Tracker',
     onclick: () => {
       const auth = authState();
       if ((auth.mode !== 'signed-in' && auth.mode !== 'offline') || auth.me?.tracker !== true || app.readOnly) return;
@@ -426,6 +433,59 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // A hosted workspace can turn read-only (or back) while the board is open: the badge names the reason.
   app.lifetime.signal.addEventListener('abort', onAuth(syncReadOnly), { once: true });
   syncReadOnly();
+
+  let trackerStore: TrackerStore | null = null;
+  let stopTrackerFrames: (() => void) | null = null;
+  let trackerVisualInit = false;
+  const mountTracker = (store: TrackerStore, viewerId: string) => {
+    trackerStore = store;
+    stopTrackerFrames = mountTrackerFrames({ app, store, viewerId, initialTrackerId: opts.trackerId, initialTicketKey: opts.ticketKey });
+    if (trackerBoardMockVisual) {
+      Object.assign(window, { __trackerStore: store });
+      const existing = [...app.store.cache.values()].some((obj) => obj.type === 'tracker');
+      if (!existing) {
+        const viewport = app.r.viewport();
+        createTrackerFrame(app.store, {
+          x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
+          y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
+        });
+      }
+    }
+  };
+  const syncTracker = () => {
+    const auth = authState();
+    const signedInWithTracker = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+    const enabled = !scratch && !demo && (signedInWithTracker || trackerBoardMockVisual);
+    trackerCommand.hidden = !enabled;
+    if (enabled && !trackerStore) {
+      if (trackerBoardMockVisual) {
+        if (!trackerVisualInit) {
+          trackerVisualInit = true;
+          void Promise.all([import('../tracker-mock'), import('../tracker/ui/visual-seed')]).then(([mock, seed]) => {
+            trackerVisualInit = false;
+            if (app.lifetime.signal.aborted || !trackerBoardMockVisual) return;
+            mountTracker(createTrackerStore(mock.createMockTrackerApi(seed.createTrackerVisualSeed())), 'visual-user');
+          }).catch((error: unknown) => console.error('Tracker visual mock failed to initialize.', error));
+        }
+      } else if (auth.mode === 'signed-in' || auth.mode === 'offline') {
+        mountTracker(createTrackerStore(createHttpTrackerApi()), auth.me!.user.id);
+      }
+    } else if (!enabled && trackerStore) {
+      stopTrackerFrames?.();
+      stopTrackerFrames = null;
+      trackerStore.destroy();
+      trackerStore = null;
+    }
+  };
+  const stopTrackerAuth = onAuth(syncTracker);
+  app.lifetime.signal.addEventListener('abort', () => {
+    stopTrackerAuth();
+    stopTrackerFrames?.();
+    trackerStore?.destroy();
+    stopTrackerFrames = null;
+    trackerStore = null;
+  }, { once: true });
+  syncTracker();
 
   // Drop .drift / .json files onto the board to import them.
   root.addEventListener('dragover', (e) => {

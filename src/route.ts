@@ -7,7 +7,8 @@ export type Route =
   | { name: 'home' }
   | { name: 'templates' }
   | { name: 'template-edit'; id: string }
-  | { name: 'board'; id: string }
+  | { name: 'board'; id: string; trackerId?: string; ticketKey?: string }
+  | { name: 'tracker'; tab: 'inbox' | 'my' | 'all' | 'board' | 'projects'; ticketKey?: string; viewId?: string; projectId?: string }
   | { name: 'signin' }
   | { name: 'verify'; token: string }
   | { name: 'invite'; token: string }
@@ -29,8 +30,25 @@ function isAuthRoute(route: Route): boolean {
 
 /** Maps a location hash to a route. Anything unrecognised is the home screen, as it always was. */
 export function parseRoute(hash: string): Route {
-  const board = hash.match(/^#\/b\/([A-Za-z0-9_-]{1,64})$/);
-  if (board) return { name: 'board', id: board[1] };
+  const board = hash.match(/^#\/b\/([A-Za-z0-9_-]{1,64})(?:\?(.*))?$/);
+  if (board) {
+    const query = new URLSearchParams(board[2] ?? '');
+    const trackerId = query.get('tracker') ?? undefined;
+    const ticketKey = query.get('t')?.toUpperCase();
+    return {
+      name: 'board', id: board[1],
+      ...(trackerId && /^[A-Za-z0-9_-]{1,64}$/.test(trackerId) ? { trackerId } : {}),
+      ...(ticketKey && /^[A-Z]{2,5}-[1-9]\d*$/.test(ticketKey) ? { ticketKey } : {}),
+    };
+  }
+  const trackerTicket = hash.match(/^#\/t\/([A-Z]{2,5}-[1-9]\d*)$/i);
+  if (trackerTicket) return { name: 'tracker', tab: 'all', ticketKey: trackerTicket[1].toUpperCase() };
+  const savedView = hash.match(/^#\/t\/views\/([A-Za-z0-9_-]{1,64})$/);
+  if (savedView) return { name: 'tracker', tab: 'all', viewId: savedView[1] };
+  const project = hash.match(/^#\/t\/projects(?:\/([A-Za-z0-9_-]{1,64}))?$/);
+  if (project) return { name: 'tracker', tab: 'projects', ...(project[1] ? { projectId: project[1] } : {}) };
+  const trackerTab = hash.match(/^#\/t\/(inbox|my|all|board)$/);
+  if (trackerTab) return { name: 'tracker', tab: trackerTab[1] as 'inbox' | 'my' | 'all' | 'board' };
   const edit = hash.match(/^#\/t\/([A-Za-z0-9_-]{1,64})\/edit$/);
   if (edit) return { name: 'template-edit', id: edit[1] };
   const invite = hash.match(/^#\/invite\/([A-Za-z0-9_-]+)$/);
@@ -55,7 +73,7 @@ export function parseRoute(hash: string): Route {
 export function resolveRoute(hash: string, mode: AuthState['mode'], pathname = '', search = ''): Route {
   const route = pathname === '/join'
     ? { name: 'join', code: new URLSearchParams(search).get('c') ?? '' } satisfies Route
-    : parseRoute(hash);
+    : pathname.startsWith('/t/') ? parseRoute(`#${pathname}${search}`) : parseRoute(hash);
   return mode === 'open' && (isAuthRoute(route) || route.name === 'admin' || route.name === 'chat') ? HOME : route;
 }
 
@@ -66,5 +84,6 @@ export function needsSignIn(route: Route, mode: AuthState['mode']): boolean {
 
 /** The hash worth coming back to after signing in. Only boards: the other routes are the gate itself or home. */
 export function returnHash(hash: string): string | null {
-  return parseRoute(hash).name === 'board' ? hash : null;
+  const route = parseRoute(hash);
+  return route.name === 'board' || route.name === 'tracker' ? hash : null;
 }
