@@ -67,7 +67,7 @@ describe('tracker REST route handlers', () => {
     ).run(ticket.id, alias);
     const [detailStatus, detail] = call('GET', `tracker/tickets/${alias}`) as [number, any];
     expect(detailStatus).toBe(200);
-    expect(detail).toMatchObject({ ticket: { key: ticket.key }, resolvedKey: ticket.key, comments: [], events: [{ eventType: 'created' }], subscribed: false });
+    expect(detail).toMatchObject({ ticket: { key: ticket.key }, resolvedKey: ticket.key, comments: [], events: [{ eventType: 'created' }], subscribed: true });
 
     const [commentStatus, commentPayload] = call('POST', `tracker/tickets/${ticket.key}/comments`, owner, { body: 'Route comment', clientId: 'route-comment-1' }) as [number, any];
     expect(commentStatus).toBe(201);
@@ -87,7 +87,7 @@ describe('tracker REST route handlers', () => {
 
     const auditRows = directory.listAudit(100).filter((row: any) => row.action.startsWith('tracker.ticket.'));
     expect(auditRows.map((row: any) => row.action)).toEqual(expect.arrayContaining([
-      'tracker.ticket.create', 'tracker.ticket.comment', 'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe', 'tracker.ticket.transition',
+      'tracker.ticket.create', 'tracker.ticket.comment', 'tracker.ticket.unsubscribe', 'tracker.ticket.transition',
     ]));
     expect(auditRows.every((row: any) => Object.keys(row.detail).every((key) => ['ticketId', 'commentId'].includes(key)))).toBe(true);
     expect(JSON.stringify(auditRows)).not.toContain('Route handler ticket');

@@ -75,9 +75,20 @@ function readHeads() {
 
 // ---------------------------------------------------------------- states
 
-async function openEmojiPickerForNote(env) {
+async function openEmojiPickerForNote(env, { clearPoll = false, frameNote = false, objectId = 'seed-note-1' } = {}) {
   await openSeedBoard(env);
-  await env.page.evaluate(() => window.__board.editor.start('seed-note-1'));
+  if (clearPoll) await env.page.keyboard.press('Escape');
+  if (frameNote) {
+    await env.page.evaluate((id) => {
+      const app = window.__board;
+      app.scope = null;
+      app.setSelection([id]);
+      app.zoomToSelection();
+    }, objectId);
+    await env.page.waitForTimeout(180);
+    await env.page.evaluate(() => window.__board.zoomTo(0.8));
+  }
+  await env.page.evaluate((id) => window.__board.editor.start(id), objectId);
   await env.page.locator('.edit-bar.show').waitFor();
   await env.page.waitForFunction(() => {
     const textarea = document.querySelector('.text-editor');
@@ -1905,7 +1916,7 @@ const STATES = {
   },
   async 'emoji-picker'(env) {
     const page = env.page;
-    await openEmojiPickerForNote(env);
+    await openEmojiPickerForNote(env, { clearPoll: true });
     const result = await page.evaluate(() => {
       const bar = document.querySelector('.edit-bar.show').getBoundingClientRect();
       const button = document.querySelector('.edit-emoji');
@@ -1946,6 +1957,7 @@ const STATES = {
   async 'emoji-tap'(env) {
     const page = env.page;
     await openSeedBoard(env);
+    await page.keyboard.press('Escape');
     await page.evaluate(() => window.__board.editor.start('seed-note-1'));
     await page.locator('.edit-bar.show').waitFor();
     await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
@@ -1959,7 +1971,7 @@ const STATES = {
   },
   async 'emoji-insert'(env) {
     const page = env.page;
-    await openEmojiPickerForNote(env);
+    await openEmojiPickerForNote(env, { clearPoll: true });
     await page.keyboard.type('rock');
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => !document.querySelector('.emoji-pop') && window.__board.store.get('seed-note-1').text.endsWith('🚀'));
@@ -2048,6 +2060,143 @@ const STATES = {
     if (!undone) throw new Error('frame-size: undo did not take back the typed width');
     await page.evaluate(() => window.__board.zoomToFit?.());
     console.log(`frame-size before ${before}, now ${await size()}`);
+  },
+  // Verify rounded chrome against unchanged board geometry across the requested views.
+  async 'radius-chrome'(env) {
+    const page = env.page;
+    const openCleanBoard = async () => {
+      await openSeedBoard(env);
+      // Earlier poll states can leave the latest closed poll in the idle bar; dismiss it through the app's normal Escape action.
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const app = window.__board;
+        app.scope = null;
+        app.setSelection([]);
+      });
+    };
+    const frameObject = async (id) => page.evaluate((objectId) => {
+      const app = window.__board;
+      app.scope = null;
+      app.setSelection([objectId]);
+      app.zoomToSelection();
+    }, id);
+    const zoomToProbe = async () => {
+      await page.waitForTimeout(180);
+      await page.evaluate(() => window.__board.zoomTo(0.8));
+    };
+    const addProbe = async () => page.evaluate(() => {
+      const app = window.__board;
+      const id = 'radius-chrome-probe';
+      if (app.store.get(id)) app.store.transact(() => app.store.remove([id]));
+      const font = app.store.getMeta().headingFont;
+      const z = app.store.get('seed-title')?.z;
+      if (!z) throw new Error('radius-chrome probe needs the seeded title z key');
+      app.store.transact(() => app.store.create({
+        id, type: 'text', x: 1400, y: -130, w: 640, h: 52, rotation: 0, z,
+        text: 'Radius check', fontSize: 40, fontWeight: 700, font,
+        createdBy: 'visual-radius', updatedAt: Date.now(),
+      }));
+    });
+    const removeProbe = async () => page.evaluate(() => {
+      const app = window.__board;
+      if (app?.store.get('radius-chrome-probe')) app.store.transact(() => app.store.remove(['radius-chrome-probe']));
+    }).catch(() => {});
+    const shot = async (part) => page.screenshot({
+      path: path.join(env.outDir, `radius-chrome-${env.theme}-${env.width}-${part}.png`),
+      animations: 'disabled', caret: 'hide',
+    });
+    const assertRadii = async (name, checks) => {
+      const result = await page.evaluate((entries) => {
+        const values = {};
+        const failures = [];
+        for (const [selector, expected] of entries) {
+          const el = document.querySelector(selector);
+          if (!el) { failures.push(`${selector} is missing`); continue; }
+          const actual = getComputedStyle(el).borderTopLeftRadius;
+          values[selector] = actual;
+          if (Number.parseFloat(actual) <= 0 || actual !== `${expected}px`) failures.push(`${selector} radius is ${actual}, expected ${expected}px`);
+        }
+        return { failures, values };
+      }, Object.entries(checks));
+      if (result.failures.length) throw new Error(`radius-chrome ${name}: ${result.failures.join('; ')}`);
+      console.log(`radius-chrome ${name} ${JSON.stringify(result.values)}`);
+    };
+
+    await openCleanBoard();
+    await addProbe();
+    try {
+    await frameObject('radius-chrome-probe');
+    await zoomToProbe();
+    await page.locator('.quickbar.show').waitFor();
+    await assertRadii('toolbar', {
+      '.top-left': 12, '.top-right': 12, '.rail': 12, '.quickbar': 12, '.zoom-tray': 12,
+      '.quickbar .icon-btn': 8, '.top-right .btn': 8,
+    });
+    await shot('toolbar');
+
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.locator('.menu').waitFor();
+    await assertRadii('menu', { '.menu': 12, '.menu-item': 8 });
+    const clipping = await page.evaluate(() => {
+      const menu = document.querySelector('.menu').getBoundingClientRect();
+      const rows = [...document.querySelectorAll('.menu .menu-item')];
+      const first = rows[0]?.getBoundingClientRect();
+      const last = rows.at(-1)?.getBoundingClientRect();
+      const contained = (r) => r && r.left >= menu.left && r.right <= menu.right && r.top >= menu.top && r.bottom <= menu.bottom;
+      return { rows: rows.length, first: first && { top: first.top, bottom: first.bottom }, last: last && { top: last.top, bottom: last.bottom }, failures: [!contained(first) && 'first menu item extends beyond its container', !contained(last) && 'last menu item extends beyond its container'].filter(Boolean) };
+    });
+    if (!clipping.rows || clipping.failures.length) throw new Error(`radius-chrome menu clipping: ${JSON.stringify(clipping)}`);
+    await shot('menu');
+    await page.keyboard.press('Escape');
+
+    await openEmojiPickerForNote(env, { clearPoll: true, frameNote: true, objectId: 'radius-chrome-probe' });
+    await assertRadii('emoji popover', { '.emoji-pop': 12, '.emoji-search': 8, '.emoji-cell': 4 });
+    await shot('popover');
+    await page.keyboard.press('Escape');
+
+    await openCleanBoard();
+    await page.getByRole('button', { name: 'Share', exact: true }).click();
+    await page.locator('.modal').waitFor();
+    await assertRadii('Share dialog', { '.modal': 14, '.modal input': 8, '.modal .icon-btn': 8, '.modal .btn': 8 });
+    // Keep a focused control in each engine's capture to inspect how its outline follows the computed radius.
+    await page.locator('.modal input').click();
+    const inputFocused = await page.locator('.modal input').evaluate((el) => document.activeElement === el);
+    if (!inputFocused) throw new Error('radius-chrome Share input did not receive focus');
+    const modalClipping = await page.locator('.modal').evaluate((el) => getComputedStyle(el).overflow);
+    if (modalClipping !== 'hidden') throw new Error(`radius-chrome Share dialog should clip nested content, got overflow ${modalClipping}`);
+    await shot('dialog');
+
+    await openCleanBoard();
+    await frameObject('radius-chrome-probe');
+    await zoomToProbe();
+    await page.evaluate(() => window.__board.editor.start('radius-chrome-probe'));
+    await page.locator('.text-editor[data-mode="text"]').waitFor();
+    const boardText = await page.evaluate(() => {
+      const editor = document.querySelector('.text-editor');
+      const object = document.querySelector('.canvas [data-id="radius-chrome-probe"]');
+      return { editor: getComputedStyle(editor).borderRadius, object: object && getComputedStyle(object).borderRadius };
+    });
+    if (!boardText.object || boardText.editor !== boardText.object || boardText.object !== '0px') {
+      throw new Error(`radius-chrome board text/editor geometry changed: ${JSON.stringify(boardText)}`);
+    }
+
+    await page.keyboard.press('Escape');
+    await frameObject('seed-conn-3');
+    const labelGeometry = await page.locator('.canvas [data-id="seed-conn-3"] rect[rx="4"]').getAttribute('rx');
+    if (labelGeometry !== '4') throw new Error('radius-chrome connector label pill geometry is missing or changed');
+    await page.evaluate(() => window.__board.editor.start('seed-conn-3'));
+    await page.locator('.text-editor[data-mode="label"]').waitFor();
+    await assertRadii('connector label editor', { '.text-editor[data-mode="label"]': 4 });
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Toggle minimap', exact: true }).click();
+    await page.locator('.minimap.show').waitFor();
+    await assertRadii('minimap', { '.minimap': 12, '.minimap canvas': 4 });
+    await shot('minimap');
+    } finally {
+      await page.keyboard.press('Escape').catch(() => {});
+      await removeProbe();
+    }
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);

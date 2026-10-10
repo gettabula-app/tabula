@@ -1,5 +1,6 @@
 import { ticketAccess, requireTicketRead, requireTicketWrite } from './access.mjs';
 import { appendTicketEvent } from './events.mjs';
+import { fanOut } from './notify.mjs';
 import { allocateTicket } from './ids.mjs';
 import { listTickets, refreshTicketSearch, searchTickets } from './search.mjs';
 import {
@@ -7,7 +8,7 @@ import {
   newId, notFound, requireWritable, validCalendarDate,
 } from './shared.mjs';
 
-const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);
+export const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);
 const PRIORITY_VALUE = new Map(PRIORITIES.map((name, value) => [name, value]));
 const TRACKER_TICKET = Object.freeze({ id: 'tracker-access-check' });
 
@@ -581,6 +582,7 @@ export function updateTicket({
     }
     const eventType = after.archived === true ? 'archived' : after.archived === false ? 'restored' : 'updated';
     const seq = appendTicketEvent({ db, ticketId: row.id, eventType, actor, source, createdAt: now, before, after, details });
+    fanOut({ db, ticketId: row.id, eventId: seq, eventType, actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(seq, row.id);
     const info = actorInfo(actor);
     for (const field of changed) db.prepare(
@@ -613,6 +615,7 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
     const after = { state: { id: target.id, key: target.state_key, name: target.name, category: target.category } };
     db.prepare('UPDATE tickets SET state_id = ?, updated_at = ? WHERE id = ?').run(target.id, now, row.id);
     const seq = appendTicketEvent({ db, ticketId: row.id, eventType: 'transitioned', actor, source, createdAt: now, before, after });
+    fanOut({ db, ticketId: row.id, eventId: seq, eventType: 'transitioned', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(seq, row.id);
     const info = actorInfo(actor);
     db.prepare(
@@ -667,6 +670,7 @@ export function commentTicket({ directory, db: dbArg, actor, key, body, clientId
       createdAt: now,
       details: { commentId, length: codePointLength(cleanBody) },
     });
+    fanOut({ db, ticketId: row.id, eventId: seq, eventType: 'commented', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, seq, row.id);
     refreshTicketSearch(db, row.id);
     return { id: commentId, ticketId: row.id, actorType: info.type, actorId: info.id, author, body: cleanBody, createdAt: now };

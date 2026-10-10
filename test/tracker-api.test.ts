@@ -143,7 +143,7 @@ describe('tracker session API', () => {
 
     const detail = await api(owner, 'GET', `/api/tracker/tickets/${ticket.key.toLowerCase()}`);
     expect(detail.status).toBe(200);
-    expect(detail.body).toMatchObject({ ticket: { id: ticket.id, title: 'Updated API ticket' }, subscribed: false });
+    expect(detail.body).toMatchObject({ ticket: { id: ticket.id, title: 'Updated API ticket' }, subscribed: true });
     expect(detail.body.comments).toEqual([expect.objectContaining({ id: comment.body.comment.id, body: 'A comment from the API' })]);
     expect(detail.body.events.map((event: Body) => event.eventType)).toEqual(expect.arrayContaining(['created', 'updated', 'transitioned', 'commented']));
   });

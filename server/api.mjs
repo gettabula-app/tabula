@@ -18,6 +18,8 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
+import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { OpsError } from './tracker/shared.mjs';
 import { ticketAccess } from './tracker/access.mjs';
@@ -204,7 +206,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
-  const trackerRoutes = config.authEnabled && config.tracker
+  const trackerApiRoutes = config.authEnabled && config.tracker
     ? createTrackerRoutes({ directory, compile, audit, cloud, now })
     : [];
   const trackerMutationWindows = new Map();
@@ -438,6 +440,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
+    })
+    : [];
+
+  const trackerRoutes = config.tracker
+    ? createTrackerInboxRoutes({
+        directory,
+        boardAccess: boardAccessForDirectory(directory),
+        compile,
+        errors: { HttpError, badRequest },
       })
     : [];
 
@@ -446,7 +457,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
-    ...trackerRoutes,
+    ...trackerApiRoutes,
 
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
@@ -1212,6 +1223,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // ---------------------------------------------------------- team chat (docs/chat.md)
 
     ...chatRoutes,
+
+    // ---------------------------------------------------------- tracker inbox and notification preferences (docs/mcp.md)
+
+    ...trackerRoutes,
 
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 
