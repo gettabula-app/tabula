@@ -1665,6 +1665,22 @@ const STATES = {
     await page.getByRole('button', { name: 'Join board' }).click();
     await waitForState('joined guest route', () => location.hash === '#/b/visual-seed');
     await waitForState('live editor guest', () => window.__board?.role === 'editor' && document.querySelector('.sync-status')?.textContent?.includes('Live'));
+    const liveGuestSession = await page.evaluate(() => sessionStorage.getItem('driftboard:guest-session'));
+    if (!liveGuestSession) throw new Error('guest-expired: live guest session was not stored');
+    const routePage = await page.context().newPage();
+    try {
+      await routePage.addInitScript((saved) => sessionStorage.setItem('driftboard:guest-session', saved), liveGuestSession);
+      await routePage.goto(base + '/?debug#/b/visual-seed');
+      await routePage.locator('.sync-status').filter({ hasText: 'Live' }).waitFor({ timeout: 15_000 });
+      await routePage.evaluate(() => { location.hash = '#/signin'; });
+      await routePage.waitForFunction(() => location.hash === '#/b/visual-seed' && document.querySelector('.board-root') && document.querySelector('.sync-status')?.textContent?.includes('Live'), null, { timeout: 15_000 });
+      const guardedRoute = await routePage.evaluate(() => ({ hash: location.hash, guestSession: sessionStorage.getItem('driftboard:guest-session') }));
+      if (guardedRoute.hash !== '#/b/visual-seed' || !guardedRoute.guestSession) {
+        throw new Error('guest-expired: live guest escaped its board route: ' + JSON.stringify(guardedRoute));
+      }
+    } finally {
+      await routePage.close();
+    }
     await page.locator('.comment-toggle').click();
     await page.locator('.side-tray.show .comment-row').first().waitFor({ timeout: 15_000 });
     await page.locator('.side-tray.show .comment-row').first().click();
@@ -1701,20 +1717,76 @@ const STATES = {
       }
       const state = await page.evaluate(() => {
         const status = document.querySelector('.sync-status');
+        const label = status?.querySelector('.sync-status-label');
+        const glyph = status?.querySelector('.ico');
+        const badge = document.querySelector('.readonly-badge');
+        const banner = document.querySelector('.workspace-banner');
+        const link = banner?.querySelector('.workspace-banner-signin');
         const card = document.querySelector('.comment-card');
+        const parseColor = (value) => {
+          const srgb = value.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%?)?\)$/);
+          if (srgb) return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255, srgb[4] === undefined ? 1 : Number(srgb[4])];
+          const parts = value.match(/[\d.]+/g)?.map(Number) ?? [];
+          return parts.length >= 3 ? [parts[0], parts[1], parts[2], parts[3] ?? 1] : null;
+        };
+        const luminance = (color) => {
+          const linear = (part) => { const c = part / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+          return 0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2]);
+        };
+        const contrast = (a, b) => {
+          const first = luminance(a), second = luminance(b);
+          return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+        };
+        const statusStyle = status ? getComputedStyle(status) : null;
+        const statusColor = statusStyle && parseColor(statusStyle.color);
+        const statusBg = statusStyle && parseColor(statusStyle.backgroundColor);
+        const boardBg = parseColor(getComputedStyle(document.querySelector('.board-root')).backgroundColor);
+        const composedStatusBg = statusBg && boardBg ? statusBg.slice(0, 3).map((channel, index) => channel * statusBg[3] + boardBg[index] * (1 - statusBg[3])) : null;
+        const linkStyle = link ? getComputedStyle(link) : null;
+        const linkBox = link?.getBoundingClientRect();
+        const bannerStyle = banner ? getComputedStyle(banner) : null;
+        const linkColor = linkStyle && parseColor(linkStyle.color);
+        const bannerColor = bannerStyle && parseColor(bannerStyle.backgroundColor);
         return {
           status: status?.textContent?.trim() ?? '',
           statusTip: status?.dataset.tip ?? '',
           statusLabel: status?.getAttribute('aria-label') ?? '',
+          visibleLabel: label?.textContent?.trim() ?? '',
+          labelDisplay: label ? getComputedStyle(label).display : 'missing',
+          glyphVisible: Boolean(glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0),
+          viewOnlyVisible: Boolean(badge?.textContent?.trim() === 'View only' && badge.getBoundingClientRect().height > 0),
+          statusContrast: statusColor && composedStatusBg ? contrast(statusColor, composedStatusBg) : null,
           commentText: card?.querySelector('.comment-msg .comment-text')?.textContent?.trim() ?? '',
           actions: [...(card?.querySelectorAll('button') ?? [])].map((button) => button.textContent?.trim() ?? ''),
           denied: window.__board.conn.denied,
           boardReadOnly: window.__board.store.readOnly,
           commentsReadOnly: window.__board.comments.readOnly(),
+          linkHeight: linkBox?.height ?? 0,
+          linkWidth: linkBox?.width ?? 0,
+          linkWeight: Number.parseInt(linkStyle?.fontWeight ?? '0', 10),
+          linkUnderline: linkStyle?.textDecorationLine.includes('underline') ?? false,
+          linkUnderlineThickness: Number.parseFloat(linkStyle?.textDecorationThickness ?? '0'),
+          bannerContrast: linkColor && bannerColor ? contrast(linkColor, bannerColor) : null,
         };
       });
-      if (!state.status.includes('Join link expired') || state.statusLabel !== 'This join link has expired or was revoked' || state.statusTip !== 'This join link has expired or was revoked. Comments are read only.') {
+      if (!state.status.includes('Join link expired') || state.statusLabel !== 'Join link expired' || state.statusTip !== 'This join link has expired or was revoked. Comments are read only.') {
         throw new Error('guest-expired ' + phase + ': expiry status is wrong: ' + JSON.stringify(state));
+      }
+      if (state.visibleLabel !== 'Join link expired' || state.glyphVisible !== true || state.viewOnlyVisible !== true) {
+        throw new Error('guest-expired ' + phase + ': responsive status contents are wrong: ' + JSON.stringify(state));
+      }
+      if ((width < 480 && state.labelDisplay !== 'none') || (width >= 480 && state.labelDisplay === 'none')) {
+        throw new Error('guest-expired ' + phase + ': status label visibility is wrong at ' + width + 'px: ' + JSON.stringify(state));
+      }
+      const themeScheme = readThemes().find(({ id }) => id === theme)?.scheme;
+      if (themeScheme === 'dark' && (state.statusContrast === null || state.statusContrast < 4.5)) {
+        throw new Error('guest-expired ' + phase + ': denied status contrast is below 4.5:1: ' + JSON.stringify(state));
+      }
+      if (!state.linkHeight || state.linkWeight < 700 || !state.linkUnderline || state.linkUnderlineThickness < 2 || state.bannerContrast === null || state.bannerContrast < 4.5) {
+        throw new Error('guest-expired ' + phase + ': sign-in link styles or contrast are wrong: ' + JSON.stringify(state));
+      }
+      if (width < 480 && (state.linkHeight < 44 || state.linkWidth < 44)) {
+        throw new Error('guest-expired ' + phase + ': phone sign-in tap target is too small: ' + JSON.stringify(state));
       }
       if (!state.commentText) throw new Error('guest-expired ' + phase + ': the comment thread is not visible');
       if (state.actions.some((action) => ['Reply', 'Edit', 'Delete'].includes(action))) {
@@ -1743,6 +1815,26 @@ const STATES = {
     await page.locator('.side-tray.show .comment-row').first().click();
     await page.locator('.comment-card .comment-msg').first().waitFor();
     await verifyExpiredGuest('after reload');
+    const guestSession = await page.evaluate(() => sessionStorage.getItem('driftboard:guest-session'));
+    if (!guestSession) throw new Error('guest-expired: ended guest session was not retained after reload');
+    const signInPage = await page.context().newPage();
+    try {
+      await signInPage.addInitScript((saved) => sessionStorage.setItem('driftboard:guest-session', saved), guestSession);
+      await signInPage.goto(base + '/?debug#/b/visual-seed');
+      await signInPage.locator('.workspace-banner-signin').waitFor({ timeout: 15_000 });
+      await signInPage.locator('.workspace-banner-signin').click();
+      await signInPage.getByRole('heading', { name: 'Sign in to Tabula' }).waitFor({ timeout: 15_000 });
+      const destination = await signInPage.evaluate(() => ({
+        hash: location.hash,
+        guestSession: sessionStorage.getItem('driftboard:guest-session'),
+        signInVisible: Boolean(document.querySelector('.signin')),
+      }));
+      if (destination.hash !== '#/signin' || destination.guestSession !== null || !destination.signInVisible) {
+        throw new Error('guest-expired: ended guest Sign in did not reach signed-out screen: ' + JSON.stringify(destination));
+      }
+    } finally {
+      await signInPage.close();
+    }
     return { noPark: true };
   },
   async 'guest-cursors'(env) {

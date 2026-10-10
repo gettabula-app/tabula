@@ -250,10 +250,14 @@ export function markGuestSessionEnded(expectedGuestId: string): boolean {
   return true;
 }
 
-export function setSignedOut() {
+export function leaveGuestSession() {
   clearGuestSession();
   forgetCaches();
   commit({ mode: 'signed-out' });
+}
+
+export function setSignedOut() {
+  leaveGuestSession();
 }
 
 export function cacheServerBoards(list: ServerBoard[]) {

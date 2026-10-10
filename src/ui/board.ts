@@ -122,8 +122,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
-    if (guestLinkRemoved) status.setAttribute('aria-label', 'This join link has expired or was revoked');
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-label' }, label));
+    if (guestLinkRemoved) status.setAttribute('aria-label', GUEST_ENDED_SYNC_LABEL);
     else status.removeAttribute('aria-label');
     status.dataset.tip = tip;
     // a change of state is announced; the count of people changing inside "live" is announced by name below

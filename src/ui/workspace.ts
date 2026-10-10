@@ -1,5 +1,5 @@
 import './workspace.css';
-import { authState, onAuth } from '../auth';
+import { authState, leaveGuestSession, onAuth } from '../auth';
 import { bannerText, workspaceOf } from '../cloud-logic';
 import { guestAccessEnded } from '../guest-access';
 import { h } from './dom';
@@ -21,7 +21,12 @@ export function createWorkspaceBanner(onVisible?: (visible: boolean) => void, no
         el.appendChild(document.createTextNode(' '));
         el.appendChild(h('a', {
           class: 'workspace-banner-signin', href: '#/signin',
-          style: { color: 'inherit', marginInlineStart: '0.5em', textDecoration: 'underline', textUnderlineOffset: '2px' },
+          onclick: (event: MouseEvent) => {
+            if (!guestAccessEnded(authState(), null)) return;
+            event.preventDefault();
+            leaveGuestSession();
+            location.hash = '#/signin';
+          },
         }, 'Sign in'));
       }
     }

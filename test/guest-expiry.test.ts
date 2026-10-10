@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError, type GuestJoin } from '../src/api';
 import { authState, initAuth, markGuestSessionEnded, setGuest, setSignedIn, setSignedOut } from '../src/auth';
+import { resolveRoute } from '../src/route';
+import { THEMES } from '../src/themes';
 import { BoardApp } from '../src/app';
 import { boardAccess } from '../src/cloud-logic';
 import { Comments } from '../src/comments';
@@ -16,6 +18,16 @@ import { installFakeBrowser, type FakeNode } from './fake-dom';
 
 const NOW = Date.UTC(2026, 9, 10, 12, 0, 0);
 const GUEST_KEY = 'driftboard:guest-session';
+const themeRgb = (color: string) => color.match(/[\da-f]{2}/gi)!.map((part) => Number.parseInt(part, 16));
+const themeMix = (first: string, second: string, amount: number) => themeRgb(first).map((channel, index) => channel * amount + themeRgb(second)[index] * (1 - amount));
+const themeLuminance = (color: number[]) => {
+  const linear = (part: number) => { const value = part / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2]);
+};
+const themeContrast = (first: number[], second: number[]) => {
+  const a = themeLuminance(first), b = themeLuminance(second);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+};
 const activeGuest = (guestId = 'guest_1', expiresAt = Date.now() + 60_000): GuestJoin => ({
   boardId: 'b1', guestId, name: 'Visitor', role: 'editor', expiresAt,
 });
@@ -84,6 +96,13 @@ afterEach(() => {
 });
 
 describe('guest expiry and relay refusal', () => {
+  it('keeps the denied status above AA contrast in every dark theme', () => {
+    for (const theme of THEMES.filter((candidate) => candidate.scheme === 'dark')) {
+      const foreground = themeMix(theme.vars['--danger'], theme.vars['--tray-text'], 0.70);
+      const background = themeMix(theme.vars['--tray-text'], theme.vars['--canvas'], 0.08);
+      expect(themeContrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
   it('keeps an expired guest terminal across an offline reload', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -353,7 +372,15 @@ describe('guest expiry and relay refusal', () => {
       expect(el.hidden).toBe(false);
       expect(el.textContent).toContain(GUEST_ENDED_BANNER);
       expect(el.querySelector('a.workspace-banner-signin')?.getAttribute('href')).toBe('#/signin');
-      expect(el.querySelector('a.workspace-banner-signin')?.textContent).toBe('Sign in');
+      const link = el.querySelector<HTMLAnchorElement>('a.workspace-banner-signin');
+      expect(link?.textContent).toBe('Sign in');
+      expect(link?.tagName).toBe('A');
+      expect(authState().mode).toBe('guest');
+      link?.click();
+      expect(authState()).toEqual({ mode: 'signed-out' });
+      expect(session.getItem(GUEST_KEY)).toBeNull();
+      expect(browser.location.hash).toBe('#/signin');
+      expect(resolveRoute(browser.location.hash, authState().mode)).toEqual({ name: 'signin' });
       dispose();
     } finally {
       browser.uninstall();
