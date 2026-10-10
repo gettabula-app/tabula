@@ -1,0 +1,13 @@
+{
+  "menu": "Meny",
+  "docs": "Guide",
+  "search": "Sök i guiden",
+  "results": "Sökresultat",
+  "guide": "Guide",
+  "overview": "Översikt",
+  "language": "Språk",
+  "notFoundTitle": "Sidan finns inte",
+  "notFound": "Den här sidan finns inte i guiden. Välj en sida i listan, eller <a href=\"{home}\">börja på översikten</a>.",
+  "notTranslated": "Den här sidan är inte översatt till {language} än. Du ser den engelska sidan.",
+  "suffix": "Tabula-guiden"
+}
