@@ -884,7 +884,9 @@ function serveStatic(req, res, url) {
     res.writeHead(403).end();
     return;
   }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  const appRoute = url.pathname === '/t' || url.pathname.startsWith('/t/')
+    || url.pathname === '/b' || url.pathname.startsWith('/b/');
+  if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
   const headers = {
     'content-type': MIME[ext] || 'application/octet-stream',

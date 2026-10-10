@@ -1179,4 +1179,84 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   };
 }
 
+export interface TrackerKeyResolverOptions { now?: () => number }
+export interface TrackerKeyResolver {
+  resolveKeys(keys: readonly string[]): Promise<void>;
+  destroy(): void;
+}
+
+const CHIP_KEY_RE = /^[A-Z]{2,5}-[1-9][0-9]{0,18}$/i;
+
+/**
+ * Resolve chip references using the existing per-ticket cache and detail endpoint. The REST API has no cheap batch
+ * summary endpoint, so this helper keeps that contract unchanged: four concurrent requests, at most 100 unique keys
+ * per call, and a 30-second negative cache for missing or unreadable tickets.
+ */
+export function createTrackerKeyResolver(
+  store: Pick<TrackerStore, 'ticket' | 'loadTicket'>,
+  options: TrackerKeyResolverOptions = {},
+): TrackerKeyResolver {
+  const now = options.now ?? Date.now;
+  const negativeUntil = new Map<string, number>();
+  const inFlight = new Map<string, Promise<void>>();
+  const queue: Array<{ key: string; finish: () => void }> = [];
+  let active = 0;
+  let disposed = false;
+
+  function drain(): void {
+    while (!disposed && active < 4 && queue.length > 0) {
+      const item = queue.shift()!;
+      active += 1;
+      void store.loadTicket(item.key).then(() => {
+        negativeUntil.delete(item.key);
+      }).catch(() => {
+        negativeUntil.set(item.key, now() + 30_000);
+        if (negativeUntil.size > 500) negativeUntil.delete(negativeUntil.keys().next().value!);
+      }).finally(() => {
+        active -= 1;
+        inFlight.delete(item.key);
+        item.finish();
+        drain();
+      });
+    }
+  }
+
+  function resolveKeys(keys: readonly string[]): Promise<void> {
+    if (disposed) return Promise.resolve();
+    const unique = [...new Set(keys.filter((key): key is string => typeof key === 'string' && CHIP_KEY_RE.test(key.trim()))
+      .map(cacheTicketKey))].slice(0, 100);
+    const pending: Promise<void>[] = [];
+    for (const key of unique) {
+      const cached = store.ticket(key);
+      if (cached.ticket || cached.detail || cached.loading) continue;
+      const expiry = negativeUntil.get(key);
+      if (expiry !== undefined) {
+        if (expiry > now()) continue;
+        negativeUntil.delete(key);
+      }
+      const existing = inFlight.get(key);
+      if (existing) { pending.push(existing); continue; }
+      let finish!: () => void;
+      const task = new Promise<void>((resolve) => { finish = resolve; });
+      inFlight.set(key, task);
+      queue.push({ key, finish });
+      pending.push(task);
+    }
+    drain();
+    return Promise.all(pending).then(() => undefined);
+  }
+
+  return {
+    resolveKeys,
+    destroy() {
+      disposed = true;
+      for (const item of queue.splice(0)) {
+        inFlight.delete(item.key);
+        item.finish();
+      }
+      negativeUntil.clear();
+    },
+  };
+}
+
 export { createMockTrackerApi } from './tracker-mock';
