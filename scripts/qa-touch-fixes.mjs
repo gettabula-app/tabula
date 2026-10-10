@@ -107,6 +107,29 @@ if (want('pollbar')) {
   });
 }
 
+if (want('selvote')) {
+  // iPad portrait: a tall selection, then a dot vote: the quick bar must not sit over the session bar
+  const ctx = await browser.newContext({ ...devices['iPad (gen 7)'] });
+  const page = await ctx.newPage();
+  await page.goto(`${base}/?debug#/b/qselvote`);
+  await page.waitForFunction(() => window.__board);
+  await sleep(800);
+  await page.evaluate(() => {
+    const b = window.__board;
+    // one note near the top of the board and one low down: the selection is tall, so the bar has no room above it
+    for (let i = 0; i < 2; i++) b.store.transact(() => b.store.create({ id: `v${i}`, type: 'sticky', x: 200 + i * 140, y: i === 0 ? 100 : 760, w: 120, h: 120, rotation: 0, z: `a${i}`, text: `v${i}`, color: 'yellow' }));
+    b.zoomTo(1);
+    b.r.flyToCenter({ x: 330, y: 480 }, 1);
+    b.setSelection(['v0', 'v1']);
+    b.flow.quickVote(Infinity);
+  });
+  await sleep(1500);
+  const r = await page.evaluate(() => { const q = document.querySelector('.quickbar.show')?.getBoundingClientRect(); const f = document.querySelector('.flowbar.show')?.getBoundingClientRect(); const box = (x) => x && { l: Math.round(x.left), t: Math.round(x.top), r: Math.round(x.right), b: Math.round(x.bottom) }; return { q: box(q), f: box(f), vh: innerHeight }; });
+  const hit = r.q && r.f && r.q.l < r.f.r && r.q.r > r.f.l && r.q.t < r.f.b && r.q.b > r.f.t;
+  record('iPad portrait: the quick bar does not cover the vote bar', !!r.q && !!r.f && !hit, JSON.stringify(r));
+  await ctx.close();
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);
