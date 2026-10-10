@@ -192,6 +192,10 @@ describe('access tokens in the directory', () => {
     const raw = new DatabaseSync(file);
     raw.exec(`
       PRAGMA foreign_keys = OFF;
+      DROP TABLE saved_views;
+      DROP TABLE ticket_relations;
+      DROP TABLE milestones;
+      DROP TABLE projects;
       DROP TABLE ticket_search;
       DROP TABLE ticket_comments;
       DROP TABLE ticket_events;
