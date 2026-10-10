@@ -143,7 +143,24 @@ Follows the architecture spec's section 12. In addition:
 - Visual states (Chromium, WebKit, Firefox at 360, 390, 1280; five themes for contrast): popover over a text element, over one near the top (flips below), pressed and mixed states, two-row phone layout, docked above the keyboard (the `emojiKeyboard` Proxy helper), list editing sequence.
 - Keyboard-only run: reach the popover with Tab, press every control, return with Esc, undo each.
 
-## 9. Settled and open
+## Decisions (frozen)
+
+Johan: "go with your picks". The tech lead holds the full list of 13 in `docs/rich-text.md`; these are the ones that decide the UX.
+
+| Decision | UX effect |
+|---|---|
+| Text elements first | The popover shows only on text elements in v1. Stickies, shapes and card text get it in a later slice with the same layout. |
+| No nesting | Lists are one level. `Tab` is not an indent. |
+| No fonts, sizes or colours per run | The popover has no font, size or colour control; the only controls are B, I, U, S, bullets, numbers, left, centre, right, emoji. |
+| No links | No link control and no `Cmd+K` inside text. Pasted links keep their text and lose the address. |
+| `- ` and `1. ` start a list | Typing them at an empty paragraph starts a bullet or numbered list. One undo restores the typed characters. Not applied to pasted or remote text. |
+| `Tab` goes to the popover | `Tab` from the editor moves into the popover, `Esc` returns to the editor, `Alt+F10` is the fallback. Applies only to objects that have the popover. |
+| No soft break | `Shift+Enter` acts like `Enter`; every newline is a paragraph. |
+| Emoji last | The emoji button is the last control in the popover; the separate "Add emoji" bar is not shown for text elements. |
+| Strikethrough | `Cmd/Ctrl+Shift+X`. |
+| Mixed state | `aria-pressed="mixed"` with a bar in the control. |
+
+## Settled with the tech lead, and what was open
 
 Settled with the tech lead:
 - **Tab** moves focus into the popover and `Esc` returns to the editor (a change from "Tab commits", only for rich-capable objects). `Alt+F10` is the fallback if testing finds Tab-in disruptive.
@@ -152,7 +169,4 @@ Settled with the tech lead:
 - **Mixed** is `aria-pressed="mixed"`.
 - **List keys** and the **phone** layout as written above.
 
-For Johan:
-1. **Which elements get the popover first?** Text elements only (proposed, matches the architecture spec), or stickies and shapes too?
-2. **Auto-format `- ` and `1. `** at an empty paragraph (with undo restoring the literal characters), or literal in v1? (The architecture spec's open question 5.)
-3. **Strikethrough shortcut** as asked, `Cmd+Shift+X`.
+Closed by the decisions above: elements first, auto-format, strikethrough chord. Nothing is open for Johan in this file.
