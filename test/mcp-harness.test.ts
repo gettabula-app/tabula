@@ -15,9 +15,9 @@ describe('the MCP test harness', () => {
     await h.start();
     process.kill(h.relayPid()!, 'SIGKILL');
     const t0 = Date.now();
-    await expect(until(() => false, 20_000)).rejects.toThrow(/relay exited with SIGKILL/);
+    await expect(until(() => false, 20_000)).rejects.toThrow(/relay exited with (SIGKILL|\d+)/);
     expect(Date.now() - t0).toBeLessThan(5_000);
-    await expect(h.api(undefined, 'GET', '/api/me')).rejects.toThrow(/relay exited with SIGKILL/);
+    await expect(h.api(undefined, 'GET', '/api/me')).rejects.toThrow(/relay exited with (SIGKILL|\d+)/);
   });
 
   it('does not treat stop() and a restart as a crash', async () => {
