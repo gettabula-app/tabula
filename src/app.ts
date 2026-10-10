@@ -2902,13 +2902,8 @@ export class BoardApp {
         el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 1.5l13 6-5.6 1.6L7 15z" fill="currentColor" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
         const label = document.createElement('div');
         label.className = 'remote-cursor-label';
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '4px';
-        label.style.margin = '14px 0 0 -2px';
         const name = document.createElement('span');
         name.className = 'remote-cursor-name';
-        name.style.margin = '0';
         label.appendChild(name);
         el.appendChild(label);
         this.r.cursorLayer.appendChild(el);
@@ -2922,11 +2917,6 @@ export class BoardApp {
       let guestBadge = label.querySelector('.remote-cursor-guest') as HTMLSpanElement | null;
       if (c.guest && !guestBadge) {
         guestBadge = guestMark('comment-badge comment-guest remote-cursor-guest') as HTMLSpanElement;
-        // `.remote-cursor span` styles the name pill; these inline overrides let the Guest mark keep its comment-badge look.
-        guestBadge.style.margin = '0';
-        guestBadge.style.borderRadius = 'var(--radius-xs)';
-        guestBadge.style.color = 'var(--on-signal)';
-        guestBadge.style.fontSize = '11.5px';
         label.appendChild(guestBadge);
       } else if (!c.guest) {
         guestBadge?.remove();

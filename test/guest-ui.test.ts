@@ -140,6 +140,52 @@ describe('guest board UI', () => {
     expect(member.querySelector('.comment-guest')).toBeNull();
   });
 
+  it('keeps remote cursor label presentation in CSS', () => {
+    const cursorLayer = browser!.document.createElement('div');
+    browser!.document.body.appendChild(cursorLayer);
+    type Cursor = { id: number; name: string; guest: boolean; color: string; p: { x: number; y: number } };
+    type Harness = BoardAppType & { cursorEls: Map<number, HTMLDivElement> };
+    const app = Object.assign(Object.create(BoardApp.prototype) as Harness, {
+      cursorEls: new Map<number, HTMLDivElement>(),
+      r: { cursorLayer, toScreen: (p: { x: number; y: number }) => ({ x: p.x, y: p.y }) },
+    });
+    const render = Reflect.get(BoardApp.prototype, 'renderCursors') as (this: Harness, cursors: Cursor[]) => void;
+    render.call(app, [
+      { id: 2, name: 'Sam', guest: true, color: '#2F6FED', p: { x: 10, y: 20 } },
+      { id: 3, name: 'Alex', guest: false, color: '#D64545', p: { x: 30, y: 40 } },
+    ]);
+
+    const guest = cursorLayer.querySelectorAll('.remote-cursor').find((el) => el.style.color === '#2F6FED')!;
+    const label = need(guest, '.remote-cursor-label');
+    const name = need(label, '.remote-cursor-name');
+    const badge = need(label, '.remote-cursor-guest');
+    const member = cursorLayer.querySelectorAll('.remote-cursor').find((el) => el.style.color === '#D64545')!;
+
+    expect(label.className).toBe('remote-cursor-label');
+    expect(name.className).toBe('remote-cursor-name');
+    expect(badge.classList.contains('comment-badge')).toBe(true);
+    expect(badge.classList.contains('comment-guest')).toBe(true);
+    expect(Object.keys(label.style)).toEqual([]);
+    expect(Object.keys(name.style)).toEqual(['background']);
+    expect(Object.keys(badge.style)).toEqual([]);
+    expect(Object.keys(guest.style).sort()).toEqual(['color', 'transform']);
+    for (const element of [label, name, badge]) {
+      expect(element.style.margin).toBeUndefined();
+      expect(element.style.borderRadius).toBeUndefined();
+      expect(element.style.fontSize).toBeUndefined();
+    }
+    expect(label.style.display).toBeUndefined();
+    expect(label.style.alignItems).toBeUndefined();
+    expect(label.style.gap).toBeUndefined();
+    expect(name.style.background).toBe('#2F6FED');
+    expect(badge.style.color).toBeUndefined();
+    expect(guest.style.color).toBe('#2F6FED');
+    expect(member.style.color).toBe('#D64545');
+
+    const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/@media \(forced-colors: active\) \{[^}]*\.remote-cursor-name, \.remote-cursor-guest, \.comment-avatar[^}]*forced-color-adjust: none;/);
+  });
+
   it('marks guest comments in the tray even when a member has the same name', async () => {
     mocks.authMode = 'signed-in';
     const actual = await vi.importActual<typeof import('../src/ui/comments')>('../src/ui/comments');
