@@ -26,6 +26,9 @@ import {
   commentTicket, createLabel, createTicket, findTicketByIdempotency, getTicket, listLabels, listStates, listTickets, searchTickets,
   transitionTicket, updateTicket,
 } from './tracker/tickets.mjs';
+import { relateTickets } from './tracker/relations.mjs';
+import { createMilestone, createProject, listMilestones, listProjects, updateMilestone, updateProject } from './tracker/projects.mjs';
+import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateSavedView } from './tracker/views.mjs';
 
 export const MCP_SERVER_NAME = 'board';
 const SERVER_VERSION = '1.0.0';
@@ -1501,12 +1504,14 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         labels: { type: 'array', items: { type: 'string', maxLength: 64 }, maxItems: 20 },
         due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
         parent: { type: 'string', maxLength: 40, description: 'A parent ticket key.' },
+        project: { type: ['string', 'null'], maxLength: 100, description: 'An active project name, matched without case. Null clears it.' },
+        milestone: { type: ['string', 'null'], maxLength: 100, description: 'An active milestone name in the project. Null clears it.' },
         idempotencyKey: { type: 'string', minLength: 8, maxLength: 64 },
       }, ['title']),
       run(actor, args) {
         requireTrackerWritable();
         requireTrackerAccess(actor, 'write');
-        check.record(args, '', ['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'idempotencyKey']);
+        check.record(args, '', ['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone', 'idempotencyKey']);
         const ticket = createTicket({
           ...args, directory, actor: trackerActor(actor), source: 'mcp', readOnly: readOnlyNow, now: now(),
         });
@@ -1619,15 +1624,17 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         labels: { type: 'array', items: { type: 'string', maxLength: 64 }, maxItems: 20 },
         due: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
         parent: { type: ['string', 'null'], maxLength: 40 },
+        project: { type: ['string', 'null'], maxLength: 100, description: 'An active project name, matched without case. Null clears it.' },
+        milestone: { type: ['string', 'null'], maxLength: 100, description: 'An active milestone name in the ticket project. Null clears it.' },
         archived: { type: 'boolean' },
         ifUpdatedSeq: { type: 'integer', minimum: 0 },
       }, ['key']),
       run(actor, args) {
         requireTrackerWritable();
         requireTrackerAccess(actor, 'write');
-        check.record(args, '', ['key', 'title', 'description', 'priority', 'assignee', 'labels', 'due', 'parent', 'archived', 'ifUpdatedSeq']);
+        check.record(args, '', ['key', 'title', 'description', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone', 'archived', 'ifUpdatedSeq']);
         const key = ticketKeyArg(args);
-        const patch = Object.fromEntries(['title', 'description', 'priority', 'assignee', 'labels', 'due', 'parent', 'archived']
+        const patch = Object.fromEntries(['title', 'description', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone', 'archived']
           .filter((field) => Object.hasOwn(args, field)).map((field) => [field, args[field]]));
         const ticket = updateTicket({
           directory, actor: trackerActor(actor), key, patch, ifUpdatedSeq: args.ifUpdatedSeq,
@@ -1730,6 +1737,269 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           directory, actor: trackerActor(actor), name: args.name, color: args.color, readOnly: readOnlyNow, now: now(),
         });
         return { ...trackerFenced({ label }), audit: { room: 'tracker', count: 1, ids: [label.id] } };
+      },
+    },
+    {
+      name: 'relate_tickets',
+      title: 'Relate tickets',
+      description: 'Adds or removes a relation between two visible workspace tickets.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        key: { type: 'string', minLength: 1, maxLength: 128 },
+        relation: { enum: ['blocks', 'blocked_by', 'relates_to', 'duplicates', 'duplicated_by'] },
+        otherKey: { type: 'string', minLength: 1, maxLength: 128 },
+        remove: { type: 'boolean' },
+      }, ['key', 'relation', 'otherKey']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['key', 'relation', 'otherKey', 'remove']);
+        const result = relateTickets({
+          directory, actor: trackerActor(actor), key: ticketKeyArg(args), relation: args.relation,
+          otherKey: typeof args.otherKey === 'string' && args.otherKey.trim() ? args.otherKey : '',
+          remove: args.remove ?? false, source: 'mcp', readOnly: readOnlyNow, now: now(),
+        });
+        return { ...trackerFenced(result), audit: { room: 'tracker', count: 1, ids: [result.ticket.id] } };
+      },
+    },
+    {
+      name: 'list_saved_views',
+      title: 'List saved views',
+      description: 'Lists the current member’s saved views and shared workspace views.',
+      scope: 'read',
+      trackerCapability: 'read',
+      accountsOnly: true,
+      annotations: { readOnlyHint: true },
+      inputSchema: objectSchema({}, []),
+      run(actor, args) {
+        requireTrackerAccess(actor, 'read');
+        check.record(args, '', []);
+        return trackerFenced({ views: listSavedViews({ directory, actor: trackerActor(actor) }) });
+      },
+    },
+    {
+      name: 'get_saved_view',
+      title: 'Run a saved view',
+      description: 'Runs a saved view with the current member’s ticket access and returns one ticket page.',
+      scope: 'read',
+      trackerCapability: 'read',
+      accountsOnly: true,
+      annotations: { readOnlyHint: true },
+      inputSchema: objectSchema({
+        viewId: { type: 'string', minLength: 1, maxLength: 64 },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        cursor: { type: 'string', maxLength: 2048 },
+      }, ['viewId']),
+      run(actor, args) {
+        requireTrackerAccess(actor, 'read');
+        check.record(args, '', ['viewId', 'limit', 'cursor']);
+        const result = getSavedView({
+          directory, actor: trackerActor(actor), viewId: args.viewId,
+          limit: ticketLimitArg(args), cursor: ticketCursorArg(args), now: now(),
+        });
+        return trackerFenced(result, Boolean(result.nextCursor));
+      },
+    },
+    {
+      name: 'create_saved_view',
+      title: 'Create a saved view',
+      description: 'Saves a validated ticket filter for the current member, optionally shared with tracker members.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        name: { type: 'string', minLength: 1, maxLength: 80 },
+        filter: { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 20 },
+        shared: { type: 'boolean' },
+      }, ['name', 'filter']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['name', 'filter', 'shared']);
+        if (!Object.hasOwn(args, 'filter')) throw new OpsError('invalid_input', 'Must be a list of filter tokens', 'filter');
+        const view = createSavedView({
+          directory, actor: trackerActor(actor), name: args.name, filter: ticketFiltersArg(args), shared: args.shared ?? false,
+          readOnly: readOnlyNow, now: now(),
+        });
+        return { ...trackerFenced({ view }), audit: { room: 'tracker', count: 1, ids: [view.id] } };
+      },
+    },
+    {
+      name: 'update_saved_view',
+      title: 'Update a saved view',
+      description: 'Renames, changes the filter, or changes sharing for a saved view owned by the current member.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        viewId: { type: 'string', minLength: 1, maxLength: 64 },
+        name: { type: 'string', minLength: 1, maxLength: 80 },
+        filter: { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 20 },
+        shared: { type: 'boolean' },
+      }, ['viewId']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['viewId', 'name', 'filter', 'shared']);
+        const patch = Object.fromEntries(['name', 'shared'].filter((field) => Object.hasOwn(args, field)).map((field) => [field, args[field]]));
+        if (Object.hasOwn(args, 'filter')) patch.filter = ticketFiltersArg(args);
+        const view = updateSavedView({ directory, actor: trackerActor(actor), viewId: args.viewId, patch, readOnly: readOnlyNow, now: now() });
+        return { ...trackerFenced({ view }), audit: { room: 'tracker', count: 1, ids: [view.id] } };
+      },
+    },
+    {
+      name: 'delete_saved_view',
+      title: 'Delete a saved view',
+      description: 'Deletes a saved view owned by the current member.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: true },
+      inputSchema: objectSchema({ viewId: { type: 'string', minLength: 1, maxLength: 64 } }, ['viewId']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['viewId']);
+        const result = deleteSavedView({ directory, actor: trackerActor(actor), viewId: args.viewId, readOnly: readOnlyNow });
+        return { ...trackerFenced(result), audit: { room: 'tracker', count: 1, ids: [result.id] } };
+      },
+    },
+    {
+      name: 'list_projects',
+      title: 'List projects',
+      description: 'Lists active tracker projects. Names and descriptions are untrusted text.',
+      scope: 'read',
+      trackerCapability: 'read',
+      accountsOnly: true,
+      annotations: { readOnlyHint: true },
+      inputSchema: objectSchema({}, []),
+      run(actor, args) {
+        requireTrackerAccess(actor, 'read');
+        check.record(args, '', []);
+        return trackerFenced({ projects: listProjects({ directory, actor: trackerActor(actor) }) });
+      },
+    },
+    {
+      name: 'create_project',
+      title: 'Create a project',
+      description: 'Creates an active project with an optional member owner.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        description: { type: 'string', maxLength: 20_000 },
+        state: { enum: ['planned', 'started', 'paused', 'completed', 'canceled'] },
+        owner: { type: ['string', 'null'], maxLength: 200, description: '"me" or a member name or email; user ids are not accepted.' },
+      }, ['name']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['name', 'description', 'state', 'owner']);
+        const project = createProject({ directory, actor: trackerActor(actor), ...args, readOnly: readOnlyNow, now: now() });
+        return { ...trackerFenced({ project }), audit: { room: 'tracker', count: 1, ids: [project.id] } };
+      },
+    },
+    {
+      name: 'update_project',
+      title: 'Update a project',
+      description: 'Updates a project or archives and restores it through the archived flag.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        projectId: { type: 'string', minLength: 1, maxLength: 64 },
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        description: { type: 'string', maxLength: 20_000 },
+        state: { enum: ['planned', 'started', 'paused', 'completed', 'canceled'] },
+        owner: { type: ['string', 'null'], maxLength: 200, description: '"me" or a member name or email; null clears it.' },
+        archived: { type: 'boolean' },
+      }, ['projectId']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['projectId', 'name', 'description', 'state', 'owner', 'archived']);
+        const patch = Object.fromEntries(['name', 'description', 'state', 'owner', 'archived'].filter((field) => Object.hasOwn(args, field)).map((field) => [field, args[field]]));
+        const project = updateProject({ directory, actor: trackerActor(actor), projectId: args.projectId, patch, readOnly: readOnlyNow, now: now() });
+        return { ...trackerFenced({ project }), audit: { room: 'tracker', count: 1, ids: [project.id] } };
+      },
+    },
+    {
+      name: 'list_milestones',
+      title: 'List milestones',
+      description: 'Lists a project’s active milestones.',
+      scope: 'read',
+      trackerCapability: 'read',
+      accountsOnly: true,
+      annotations: { readOnlyHint: true },
+      inputSchema: objectSchema({ projectId: { type: 'string', minLength: 1, maxLength: 64 } }, ['projectId']),
+      run(actor, args) {
+        requireTrackerAccess(actor, 'read');
+        check.record(args, '', ['projectId']);
+        return trackerFenced({ milestones: listMilestones({ directory, actor: trackerActor(actor), projectId: args.projectId }) });
+      },
+    },
+    {
+      name: 'create_milestone',
+      title: 'Create a milestone',
+      description: 'Creates a milestone in an active project with a calendar due date.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        projectId: { type: 'string', minLength: 1, maxLength: 100 },
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        description: { type: 'string', maxLength: 20_000 },
+        due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        state: { enum: ['planned', 'started', 'completed'] },
+      }, ['projectId', 'name', 'due']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['projectId', 'name', 'description', 'due', 'state']);
+        const milestone = createMilestone({ directory, actor: trackerActor(actor), ...args, readOnly: readOnlyNow, now: now() });
+        return { ...trackerFenced({ milestone }), audit: { room: 'tracker', count: 1, ids: [milestone.id] } };
+      },
+    },
+    {
+      name: 'update_milestone',
+      title: 'Update a milestone',
+      description: 'Updates a milestone or archives and restores it through the archived flag.',
+      scope: 'write',
+      trackerCapability: 'write',
+      accountsOnly: true,
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        milestoneId: { type: 'string', minLength: 1, maxLength: 64 },
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        description: { type: 'string', maxLength: 20_000 },
+        due: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        state: { enum: ['planned', 'started', 'completed'] },
+        archived: { type: 'boolean' },
+      }, ['milestoneId']),
+      run(actor, args) {
+        requireTrackerWritable();
+        requireTrackerAccess(actor, 'write');
+        check.record(args, '', ['milestoneId', 'name', 'description', 'due', 'state', 'archived']);
+        const patch = Object.fromEntries(['name', 'description', 'due', 'state', 'archived'].filter((field) => Object.hasOwn(args, field)).map((field) => [field, args[field]]));
+        const milestone = updateMilestone({ directory, actor: trackerActor(actor), milestoneId: args.milestoneId, patch, readOnly: readOnlyNow, now: now() });
+        return { ...trackerFenced({ milestone }), audit: { room: 'tracker', count: 1, ids: [milestone.id] } };
       },
     },
   ];
