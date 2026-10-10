@@ -68,6 +68,7 @@ export function remapObjects(
   return objs.map((o) => {
     const c = structuredClone(o) as Obj;
     c.id = idMap.get(o.id)!;
+    c.parent = c.parent ? idMap.get(c.parent) : undefined;
     if (isConnector(c)) {
       const fix = (e: End): End => {
         if (e.kind === 'free') return { kind: 'free', x: e.x + offset.x, y: e.y + offset.y };
@@ -81,7 +82,6 @@ export function remapObjects(
     } else {
       c.x += offset.x;
       c.y += offset.y;
-      c.parent = c.parent ? idMap.get(c.parent) : undefined;
       delete c.privateStep;
       // a rank names its parent (docs/kanban.md, Ranks): it follows the new id, and goes with a parent left behind
       if (c.rank !== undefined) {

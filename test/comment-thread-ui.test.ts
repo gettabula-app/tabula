@@ -100,4 +100,21 @@ describe('comment thread card', () => {
     expect(need(card, '.comment-name').textContent).toBe('Visual QA');
     expect(need(card, '.comment-guest').textContent).toBe('Guest');
   });
+
+  it('hides comment write controls after the comments document becomes read only', () => {
+    const guest: Author = { id: 'guest_session123', name: 'Guest visitor', color: '#2F6FED' };
+    const { app, card, comments, threadId } = mountThread(guest);
+    (app as unknown as { user: Author }).user = { ...guest };
+    comments.reply(threadId, guest, 'A reply by the guest');
+
+    comments.setReadOnly(true);
+
+    const buttons = card.querySelectorAll('button').map((button) => button.textContent);
+    expect(buttons).not.toContain('Reply');
+    expect(buttons).not.toContain('Edit');
+    expect(buttons).not.toContain('Delete');
+    expect(buttons).not.toContain('Resolve');
+    expect(card.querySelectorAll('textarea')).toHaveLength(0);
+    expect(card.textContent).toContain('You can read comments on this board but not add them.');
+  });
 });

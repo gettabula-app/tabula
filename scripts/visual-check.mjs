@@ -32,13 +32,13 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
                      kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
+                     backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -840,6 +840,42 @@ async function assertTouchTargets(page, stage) {
   console.log(`touch-targets ${stage}: ${report.measured} targets at least 44×44px; text fields at least 16px`);
 }
 
+/** The compact phone vote bar is ONE row, nothing sticks out of it, and the instructions stay folded away. */
+async function voteBarOneRow(env, label) {
+  await env.page.locator('.flowbar.vote-compact').waitFor();
+  await env.page.getByRole('button', { name: 'Remove dots' }).click();
+  await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
+  await env.page.locator('.toast.show').waitFor({ state: 'hidden' }).catch(() => {});
+  const rows = await env.page.evaluate(() => {
+    const bar = document.querySelector('.flowbar.vote-compact');
+    const b = bar.getBoundingClientRect();
+    const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
+    return { n: boxes.length, tops: new Set(boxes.map((x) => Math.round(x.top / 4))).size, out: boxes.filter((x) => x.right > b.right + 0.5 || x.left < b.left - 0.5).map((x) => x.name), boxes: boxes.map((x) => `${x.name}:${Math.round(x.left)}-${Math.round(x.right)}`), barW: b.width };
+  });
+  console.log(label, JSON.stringify(rows));
+  if (rows.tops !== 1) throw new Error(`${label}: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+  if (rows.out.length) throw new Error(`${label}: controls stick out of the vote bar: ${rows.out.join(', ')}`);
+}
+
+async function checkStepsOverlap(env, name) {
+    const result = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.show');
+      const pop = document.querySelector('.popover.wide');
+      const next = [...(bar?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.trim().startsWith('Next step'));
+      if (!bar || !pop || !next) return { failures: ['session bar, Steps popover or Next step button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const b = box(bar), p = box(pop), n = box(next);
+      const intersects = p.left < b.right && p.right > b.left && p.top < b.bottom && p.bottom > b.top;
+      const hit = document.elementFromPoint((n.left + n.right) / 2, (n.top + n.bottom) / 2);
+      const failures = [];
+      if (intersects) failures.push(`Steps popover intersects the session bar (${Math.round(p.top)}-${Math.round(p.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)})`);
+      if (hit !== next && !next.contains(hit)) failures.push(`Next step centre hits ${hit?.getAttribute('aria-label') ?? hit?.textContent?.trim() ?? hit?.tagName ?? 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, popover: { top: p.top, bottom: p.bottom }, bar: { top: b.top, bottom: b.bottom }, hit: hit?.textContent?.trim() };
+    });
+    console.log(`${name} ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`${name}: ${JSON.stringify(result.failures)}`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -848,6 +884,16 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'join-short-code'({ page, base }) {
+    // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
+    await page.context().clearCookies();
+    await page.goto(`${base}/join`);
+    const code = page.getByLabel('Join code');
+    await code.fill('ABC');
+    await page.getByLabel('Display name').fill('Visual guest');
+    await page.getByRole('button', { name: 'Join board' }).click();
+    await page.getByText('That code looks too short', { exact: true }).waitFor();
   },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
@@ -1134,18 +1180,17 @@ const STATES = {
   },
   async 'vote-running-touch'(env) {
     await STATES['vote-running'](env);
-    await env.page.locator('.flowbar.vote-compact').waitFor();
-    await env.page.getByRole('button', { name: 'Remove dots' }).click();
-    await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
-    await env.page.locator('.toast.show').waitFor({ state: 'hidden' });
-    // the compact bar is ONE row: every visible control sits on the same line (the instructions stay folded away)
-    const rows = await env.page.evaluate(() => {
-      const bar = document.querySelector('.flowbar.vote-compact');
-      const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
-      return { n: boxes.length, tops: new Set(boxes.map((b) => Math.round(b.top / 4))).size, boxes: boxes.map((b) => `${b.name}:${Math.round(b.left)}-${Math.round(b.right)}`), barW: bar.getBoundingClientRect().width };
+    await voteBarOneRow(env, 'vote-running-touch');
+  },
+  // the same bar when the vote is one step of a session: Next step takes the place of Finish and must still fit the row
+  async 'vote-running-touch-steps'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vs1', title: 'Vote', instructions: 'Click any note or shape to add a dot.', mode: 'vote' }, { id: 'vs2', title: 'Discuss', instructions: '', mode: 'discuss' }]);
+      f.goto(0);
     });
-    console.log('vote-running-touch', JSON.stringify(rows));
-    if (rows.tops !== 1) throw new Error(`vote-running-touch: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+    await voteBarOneRow(env, 'vote-running-touch-steps');
   },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {
@@ -1304,6 +1349,61 @@ const STATES = {
     await env.page.getByRole('button', { name: 'All steps' }).click();
     await env.page.locator('.step-list').waitFor();
   },
+  // QA's Firefox finding: the rail scrolls in a short window with no sign that it does. The edge with more behind it must fade (data-more-y plus a mask)
+  async 'rail-scroll-cue'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(async () => {
+      const tools = document.querySelector('.rail-tools');
+      if (!tools) return { failures: ['.rail-tools is missing'] };
+      const max = tools.scrollHeight - tools.clientHeight;
+      if (max <= 1) return { failures: [], scrolls: false, viewport: `${innerWidth}x${innerHeight}` };
+      const failures = [];
+      const mask = () => getComputedStyle(tools).maskImage || getComputedStyle(tools).webkitMaskImage || 'none';
+      const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      tools.scrollTop = 0; await settle();
+      if (tools.dataset.moreY !== 'down' || mask() === 'none') failures.push(`at the top: data-more-y is ${tools.dataset.moreY ?? 'missing'}, mask ${mask().slice(0, 20)}`);
+      tools.scrollTop = Math.floor(max / 2); await settle();
+      if (tools.dataset.moreY !== 'both' || mask() === 'none') failures.push(`in the middle: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = max; await settle();
+      if (tools.dataset.moreY !== 'up' || mask() === 'none') failures.push(`at the bottom: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = 0; await settle();
+      return { failures, scrolls: true, max, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
+  },
+  async 'flow-steps-overlap'(env) {
+    await STATES['flow-steps'](env);
+    await checkStepsOverlap(env, 'flow-steps-overlap');
+  },
+  // a long session: the Steps list is tall, so a popover that is only placed above the bar runs down over it (the reported case)
+  // QA's WebKit case: Add step with its form open and the new step set to Dot vote makes the Steps list taller still
+  async 'flow-steps-overlap-edit'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vc-q', title: 'Quick poll', mode: 'write', instructions: 'Answer.', durationSec: 120 }]);
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await env.page.getByRole('button', { name: 'Add step' }).click();
+    const select = env.page.getByLabel('Step 2 mode');
+    await select.selectOption('vote');
+    await env.page.waitForTimeout(300);
+    await checkStepsOverlap(env, 'flow-steps-overlap-edit');
+  },
+  async 'flow-steps-overlap-many'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps(Array.from({ length: 10 }, (_, i) => ({ id: `vc-m${i}`, title: `Step ${i + 1}: a longer title for the list`, mode: i % 3 === 1 ? 'vote' : 'write', instructions: 'Do the thing together.', durationSec: 180, votesPerPerson: i % 3 === 1 ? 3 : undefined })));
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await checkStepsOverlap(env, 'flow-steps-overlap-many');
+  },
   async 'chat-session'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
@@ -1320,6 +1420,32 @@ const STATES = {
     await STATES['flow-poll'](env);
     await env.page.locator('.chat-toggle').click();
     await env.page.getByRole('combobox', { name: 'Message' }).waitFor();
+  },
+  async 'chat-poll-overlap'(env) {
+    await resetChatMarker(env);
+    await STATES['flow-poll'](env);
+    await env.page.locator('.chat-toggle').click();
+    await env.page.locator('.side-tray.show .chat-composer').waitFor();
+    const result = await env.page.evaluate(() => {
+      const tray = document.querySelector('.side-tray.show');
+      const composer = tray?.querySelector('.chat-composer');
+      const surfaces = [...document.querySelectorAll('.poll-card:not([hidden]), .flowbar.show')];
+      if (!tray || !composer) return { failures: ['Chat tray or composer is missing'] };
+      const c = composer.getBoundingClientRect();
+      const hit = document.elementFromPoint((c.left + c.right) / 2, (c.top + c.bottom) / 2);
+      const failures = [];
+      const checks = surfaces.map((el) => {
+        const r = el.getBoundingClientRect();
+        const intersects = r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top;
+        const visible = getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+        if (visible && intersects) failures.push(`${el.className} visibly intersects the chat composer`);
+        return { name: el.className, intersects, visible };
+      });
+      if (!composer.contains(hit)) failures.push(`composer centre hits ${hit?.className || hit?.tagName || 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, surfaces: checks, hit: hit?.className || hit?.tagName };
+    });
+    console.log(`chat-poll-overlap ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`chat-poll-overlap: ${JSON.stringify(result.failures)}`);
   },
   async 'chat-object'(env) {
     await openSeedChat(env);
@@ -1357,6 +1483,19 @@ const STATES = {
   async templates({ page, base }) {
     await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
+  },
+  async 'templates-esc'(env) {
+    await openSeedBoard(env);
+    const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
+    await button.click();
+    await env.page.locator('.drawer.show').waitFor();
+    await env.page.keyboard.press('Escape');
+    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    const result = await env.page.evaluate(() => ({
+      open: !!document.querySelector('.drawer.show'),
+      focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
+    }));
+    if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);
   },
   async settings(env) {
     await openSeedBoard(env);
@@ -1802,11 +1941,11 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -1823,13 +1962,14 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable, chat }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
   if (mode === 'accounts') {
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
     if (chat) env.TABULA_CHAT = 'on';
+    if (joinCodes) env.TABULA_JOIN_CODES = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -2105,7 +2245,10 @@ async function launchChromium() {
     throw new UsageError('playwright is not installed. Run npm ci, then once: npx playwright install chromium', false);
   }
   try {
-    return await playwright.chromium.launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
+    // VISUAL_BROWSER=webkit or firefox runs the same states in another engine (cross-browser findings); the default is Chromium
+    const engine = process.env.VISUAL_BROWSER ?? 'chromium';
+    if (!['chromium', 'webkit', 'firefox'].includes(engine)) throw new UsageError(`VISUAL_BROWSER must be chromium, webkit or firefox, not ${engine}`, false);
+    return await playwright[engine].launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
   } catch (err) {
     if (/Executable doesn't exist/i.test(err.message)) throw new UsageError('Chromium for Playwright is not installed. Run once: npx playwright install chromium', false);
     throw err;
@@ -2138,7 +2281,8 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
+    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);

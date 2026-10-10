@@ -58,7 +58,7 @@ jobs:
       ADMIN_URL: ${{ secrets.ADMIN_URL || vars.ADMIN_URL }}
       IMAGE_REPO: registry.fly.io/tabula-app
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
+      digest: ${{ steps.digest.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
       - name: Check the label and what is configured
@@ -92,8 +92,10 @@ jobs:
           registry: registry.fly.io
           username: x
           password: ${{ secrets.FLY_API_TOKEN }}
+      # Keep the with: inputs here and in the retry step identical.
       - uses: docker/build-push-action@v7
         id: build
+        continue-on-error: true
         with:
           context: .
           push: ${{ steps.plan.outputs.push == 'true' }}
@@ -102,6 +104,39 @@ jobs:
             TABULA_VERSION=${{ env.TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Wait before retrying the image build
+        if: steps.build.outcome == 'failure'
+        run: sleep 90
+      - uses: docker/build-push-action@v7
+        id: build-retry
+        if: steps.build.outcome == 'failure'
+        continue-on-error: true
+        with:
+          context: .
+          push: ${{ steps.plan.outputs.push == 'true' }}
+          tags: ${{ env.IMAGE_REPO }}:${{ env.TAG }}
+          build-args: |
+            TABULA_VERSION=${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Select successful build digest
+        id: digest
+        if: steps.build.outcome == 'success' || steps.build-retry.outcome == 'success'
+        shell: bash
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          RETRY_DIGEST: ${{ steps.build-retry.outputs.digest }}
+        run: |
+          if [ "$BUILD_OUTCOME" = success ]; then
+            echo "digest=$BUILD_DIGEST" >> "$GITHUB_OUTPUT"
+          else
+            echo "digest=$RETRY_DIGEST" >> "$GITHUB_OUTPUT"
+          fi
+      # Fail the job if the image build has failed on both attempts.
+      - name: Fail if the image build retry failed
+        if: steps.build.outcome == 'failure' && steps.build-retry.outcome != 'success'
+        run: exit 1
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -113,7 +148,7 @@ jobs:
         if: steps.plan.outputs.push == 'true'
         shell: bash
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
         run: |
           args=(--version "$TAG" --digest "$DIGEST")
           if [ "$SECURITY" = true ]; then args+=(--security); fi
@@ -148,7 +183,7 @@ jobs:
         if: steps.plan.outputs.push == 'true' && steps.plan.outputs.register != 'true'
         shell: bash
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
         run: |
           {
             echo

@@ -97,6 +97,8 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const instructionText = voteInstructionText(step.instructions, voting && coarsePointer);
     bar.classList.toggle('vote-compact', compactVote);
+    // a poll step on a phone: the card above the bar needs the room, so the bar keeps the answered count, Reveal and Finish or Next
+    bar.classList.toggle('poll-compact', step.mode === 'poll' && typeof matchMedia === 'function' && matchMedia('(max-width: 500px)').matches);
     bar.classList.toggle('vote-instructions-open', compactVote && voteInstructionOpen);
 
     const timer = h('div', { class: `timer${rem !== null && rem <= 60_000 && rem > 0 ? ' warn' : ''}${rem === 0 ? ' done' : ''}`, role: 'timer', 'aria-label': rem !== null ? `${fmt(rem)} remaining` : 'No timer' },
@@ -158,7 +160,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
       ...(instruction ? [instruction] : []), ...(info ? [info] : []),
       askButton(app),
       f.active < f.steps.length - 1
-        ? h('button', { class: 'btn primary', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
+        ? h('button', { class: 'btn primary flow-next', 'aria-label': 'Next step', disabled: ro, onclick: () => app.flow.next() }, 'Next step', icon('next', 16))
         : h('button', { class: `btn primary${voting ? ' vote-finish' : ''}`, disabled: ro, onclick: () => finish(app) }, 'Finish'),
     );
 
@@ -233,7 +235,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const typing = !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
     const free = escapeHidesBar({
       selected: app.selection.length, tool: app.tool.kind, dragging: app.dragging || pressed, editing: app.editor.active,
-      threadOpen: app.openThreadId !== null, typing, dialogOpen: !!document.querySelector('[role="dialog"]'),
+      threadOpen: app.openThreadId !== null, typing, dialogOpen: !!document.querySelector('[role="dialog"], .drawer.show, .side-tray.show'),
     });
     if (!free) return;
     e.stopImmediatePropagation();
@@ -491,9 +493,9 @@ function openSteps(app: BoardApp, anchor: HTMLElement) {
     h('div', { class: 'pop-head' }, h('h3', null, 'Steps')),
     h('p', { class: 'muted small' }, 'Select a frame before adding a step to focus everyone on it.'),
     list,
-    h('div', { class: 'btn-row' }, addBtn,
+    h('div', { class: 'steps-foot btn-row' }, addBtn,
       h('button', { class: 'btn ghost', onclick: () => download(app.flow.summaryMarkdown(), `${safeName(app.store.getMeta().name)}-summary.md`, 'text/markdown') }, icon('download', 16), 'Summary'),
-      app.flow.state().active >= 0 ? h('button', { class: 'btn ghost', onclick: () => app.flow.end() }, 'End session') : null,
+      app.flow.state().active >= 0 ? h('button', { class: 'btn ghost', 'aria-label': 'End session', onclick: () => app.flow.end() }, 'End session') : null,
     ),
   ), { side: 'top', className: 'wide' });
 }

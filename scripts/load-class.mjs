@@ -12,6 +12,7 @@ import { performance } from 'node:perf_hooks';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
+import { hostLoad, hostLoadAdvice } from './lib/load-class-host.mjs';
 import { errorCount, percentile, summaryRows, verdict } from './lib/load-class-stats.mjs';
 import {
   assignAccountsToUsers,
@@ -626,8 +627,12 @@ function unexpectedStderrCount(lines) {
   ).length;
 }
 
-function printSummary(steps, out, chat, seconds, burstMs, target = null) {
+function printSummary(steps, out, chat, seconds, burstMs, host, target = null) {
   console.log(`Class load: ${target ? `target=${target.host} (includes network round trips), ` : ''}chat=${chat ? 'on' : 'off'}, ${seconds}s activity after a ${burstMs / 1000}s join burst`);
+  console.log(`host load: 1-minute average ${format(host.loadEnd, 2)} on ${host.cpus} cores (${host.level})`);
+  if (host.level === 'overloaded') {
+    console.log(`!!! latency not trustworthy: the machine was overloaded (load average ${format(host.loadEnd, 2)} on ${host.cpus} cores)`);
+  }
   console.log('Users (connected) | Relay RSS MB peak/end | CPU % avg/peak-5s | Sync ms p50/p95/max | Join p95 ms | Generator lag p95 ms | Chat posts attempted/sent | Errors | Verdict');
   for (const [index, row] of summaryRows(steps).entries()) {
     const step = steps[index];
@@ -667,8 +672,6 @@ async function main() {
   targetForRedaction = target;
   if (target.remote) {
     validateTargetOptions(target, options.users);
-    const hasReuse = options.users.some((users) => users > target.accountCount);
-    if (hasReuse && !options.chatExplicit) options.chat = false;
     const plan = targetPlanText(target, options.users, options.seconds, timings.burstMs);
     console.log(plan);
     const decision = targetRunDecision(target);
@@ -677,6 +680,20 @@ async function main() {
       process.exitCode = decision.exitCode;
       return;
     }
+  }
+
+  // os.loadavg() is [0, 0, 0] on Windows; hostLoad treats that as quiet.
+  const hostAtStart = hostLoad({ loadavg: os.loadavg(), cpus: os.cpus().length });
+  const hostAdvice = hostLoadAdvice(hostAtStart, { allowBusy: process.env.LOAD_CLASS_ALLOW_BUSY === '1' });
+  for (const line of hostAdvice.lines) console.error(line);
+  if (!hostAdvice.proceed) {
+    process.exitCode = 2;
+    return;
+  }
+
+  if (target.remote) {
+    const hasReuse = options.users.some((users) => users > target.accountCount);
+    if (hasReuse && !options.chatExplicit) options.chat = false;
     if (hasReuse && !options.chatExplicit) {
       console.log('*** CHAT DEFAULTED OFF: fewer accounts than users; set CHAT=on explicitly to include chat. ***');
     } else if (hasReuse && options.chat) {
@@ -721,8 +738,17 @@ async function main() {
     }
   }
 
+  const hostAtEnd = hostLoad({ loadavg: os.loadavg(), cpus: hostAtStart.cpus });
+  const host = {
+    loadStart: hostAtStart.load1,
+    loadEnd: hostAtEnd.load1,
+    cpus: hostAtStart.cpus,
+    level: hostAtEnd.level,
+  };
   const report = {
     generatedAt: new Date().toISOString(),
+    host,
+    trustworthy: hostAtEnd.level !== 'overloaded',
     ...(target.remote ? {
       target: {
         host: target.host,
@@ -740,7 +766,7 @@ async function main() {
   };
   fs.mkdirSync(path.dirname(options.out), { recursive: true });
   fs.writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`);
-  printSummary(steps, options.out, options.chat, options.seconds, timings.burstMs, target.remote ? target : null);
+  printSummary(steps, options.out, options.chat, options.seconds, timings.burstMs, host, target.remote ? target : null);
 }
 
 function runWorker(config) {

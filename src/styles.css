@@ -188,6 +188,10 @@ select.input {
 .rail-btn { width: 40px; height: 40px; position: relative; }
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
 .rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+/* a rail that scrolls fades the edge with more behind it (the tools scroll when the window is short and the scrollbar is hidden) */
+.rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); }
 .rail-end { display: flex; flex: none; flex-direction: column; align-items: center; gap: inherit; }
 /* Tall desktop rails fit their contents; flatten the wrappers there to preserve the original flow. */
 @media (min-width: 861px) and (min-height: 981px) {
@@ -445,6 +449,7 @@ select.input {
 .popover .dot-presets button { border-radius: 0; }
 .steps-pop { padding: 0 14px 14px; }
 .steps-pop .pop-head { padding: 16px 0 4px; }
+.steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
@@ -544,6 +549,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 .empty-hint .btn { background: rgba(29, 26, 18, 0.1); }
 .empty-hint .btn.primary { background: #18212B; color: #FFE16B; }
 
+/* The centered 560px poll card overlaps the 336px right tray through 1316px; let the tray's composer take the space. */
+@media (max-width: 1320px) {
+  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar, .poll-card) { visibility: hidden; }
+}
+
 /* ------------------------------------------------------------- home */
 
 /* The home and templates pages live in ui/home.css; this wordmark is also the sign-in screens'. */
@@ -584,16 +594,22 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar.vote-compact > .vote-reveal {
     order: 1; width: 44px; height: 44px; padding: 0; gap: 0; overflow: hidden; font-size: 0;
   }
-  .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 6px; font-size: 11px; }
+  .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 4px; font-size: 10.5px; }
   .flowbar.vote-compact > .remove-dots-toggle .ico { display: none; }
-  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0 6px; gap: 0; }
+  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
   .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
-  .flowbar.vote-compact > .vote-finish { order: 4; height: 44px; padding: 0 8px; font-size: 12px; }
+  .flowbar.vote-compact > .vote-finish { order: 4; height: 44px; padding: 0 6px; font-size: 12px; }
+  .flowbar.vote-compact > .flow-next { order: 4; width: 44px; height: 44px; padding: 0; gap: 0; overflow: hidden; font-size: 0; }
   .flowbar.vote-compact > .vote-info { order: 5; width: 44px; height: 44px; padding: 0; font-size: 11px; font-weight: 600; }
   .flowbar.vote-compact > .vote-instructions { order: 6; flex: 1 0 100%; padding: 4px 6px; color: var(--tray-muted); font-size: 12px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
   .flowbar.vote-compact > .vote-instructions[hidden] { display: none; }
+  /* A poll step: the poll card docks above the bar and needs the room, so the bar is the answered count and one row of buttons. */
+  .flowbar.poll-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
+  .flowbar.poll-compact > .flow-previous, .flowbar.poll-compact > .timer, .flowbar.poll-compact > .flow-timer-buttons,
+  .flowbar.poll-compact > .flow-ask, .flowbar.poll-compact > .flow-step { display: none; }
+  .flowbar.poll-compact > .poll-chip { flex: 1 0 100%; padding: 4px 8px; }
   .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
   .demo-banner-wide-copy { display: none; }
   .demo-banner-short-copy { display: block; }

@@ -13,7 +13,7 @@ By hand (a hotfix from a branch, or running a release again): Actions, **Release
 ## What the run does
 
 1. **CI gates.** The same jobs as a pull request (lint, typecheck, audit, tests on Linux, macOS and Windows, the build, the Docker build): `ci.yml` is called as a reusable workflow, so there is one definition. A tag no longer starts CI by itself; the release run does, once. The Docker job still publishes the semver tags to ghcr.io as before.
-2. **Build.** `docker build` with `--build-arg TABULA_VERSION=<tag>` (the Dockerfile already has the argument and puts it in the environment).
+2. **Build.** `docker build` with `--build-arg TABULA_VERSION=<tag>` (the Dockerfile already has the argument and puts it in the environment). If the image build fails, the workflow retries it once after 90 seconds.
 3. **Push**, only when `FLY_API_TOKEN` is set: `registry.fly.io/tabula-app:<tag>`. The digest of what was pushed is read from the build and printed.
 4. **Register**, only when pushing, when **register** is on (the default) and `ADMIN_TOKEN` and `ADMIN_URL` are set: `POST $ADMIN_URL/admin/releases` with the body from `scripts/release-body.mjs` (image by digest, version, schema generations, highest reader generation and `security: true` when asked). This is the logic of tabula-cloud's `scripts/release.sh`, without needing that repository.
 

@@ -12,15 +12,19 @@ try {
   /* no .env file */
 }
 const env = withLegacyEnv();
+// Keep the documented defaults while letting each dev session choose distinct relay and Vite ports.
+const relayPort = Number(env.PORT) || 8787;
+const vitePort = Number(env.VITE_PORT) || 5173;
+const viteOrigin = `http://localhost:${vitePort}`;
 const accountsEnv = accounts
   ? {
       TABULA_AUTH: 'on',
       TABULA_OWNER_EMAIL: env.TABULA_OWNER_EMAIL || 'owner@example.com',
-      TABULA_BASE_URL: 'http://localhost:5173',
+      TABULA_BASE_URL: viteOrigin,
       TABULA_MAIL: env.TABULA_MAIL || 'log',
     }
   : {};
-if (accounts) console.log(`accounts mode: sign in at http://localhost:5173 as ${accountsEnv.TABULA_OWNER_EMAIL}; the link is printed below`);
+if (accounts) console.log(`accounts mode: sign in at ${viteOrigin} as ${accountsEnv.TABULA_OWNER_EMAIL}; the link is printed below`);
 
 // The icon drawers read dist/icons, which `vite build` would empty; build it once if it is missing.
 if (!fs.existsSync('dist/icons/manifest.json.gz')) {
@@ -30,8 +34,12 @@ if (!fs.existsSync('dist/icons/manifest.json.gz')) {
 }
 
 const procs = [
-  spawn(process.execPath, ['server/relay.mjs'], { stdio: 'inherit', env: { ...env, ...accountsEnv, PORT: '8787' } }),
-  spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite'], { stdio: 'inherit', shell: process.platform === 'win32' }),
+  spawn(process.execPath, ['server/relay.mjs'], { stdio: 'inherit', env: { ...env, ...accountsEnv, PORT: String(relayPort) } }),
+  spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite'], {
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    env: { ...process.env, PORT: String(relayPort), VITE_PORT: String(vitePort) },
+  }),
 ];
 
 const stop = () => {

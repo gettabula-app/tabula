@@ -1,11 +1,13 @@
 import { h, icon } from './dom';
 import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
+import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
+import { placePopover } from './popover-layout';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; label?: string; onClose?: () => void } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
   const el = h('div', { class: `popover tray ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
@@ -16,25 +18,40 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   }
   document.body.appendChild(el);
   const place = () => {
-    const a = anchor.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     const safe = safeInsets();
-    const left = safe.left;
-    const right = safe.right;
-    const top = safe.top;
-    const bottom = safe.bottom;
+    if (opts.avoidAnchor) {
+      // never under the anchor (a finger is still on it); shorter and scrolling when the room is small
+      el.style.maxHeight = '';
+      el.style.overflowY = '';
+      const at = placeBesideAnchor(anchor.getBoundingClientRect(), { width: r.width, height: el.getBoundingClientRect().height }, { width: window.innerWidth, height: window.innerHeight }, safe);
+      el.style.maxHeight = `${at.maxHeight}px`;
+      el.style.overflowY = 'auto';
+      el.style.left = `${at.left}px`;
+      el.style.top = `${at.top}px`;
+      return;
+    }
     const side = opts.side ?? 'bottom';
-    let x = a.left, y = a.bottom + 8;
-    if (side === 'right') { x = a.right + 10; y = a.top; }
-    if (side === 'left') { x = a.left - r.width - 10; y = a.top; }
-    if (side === 'top') { x = a.left + a.width / 2 - r.width / 2; y = a.top - r.height - 10; }
-    x = Math.max(8 + left, Math.min(window.innerWidth - right - r.width - 8, x));
-    y = Math.max(8 + top, Math.min(window.innerHeight - bottom - r.height - 8, y));
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
+    // the session bar is drawn again when its steps change, which detaches the button the panel opened from: the bar itself is then the anchor
+    const bar = side === 'top' ? (anchor.closest<HTMLElement>('.flowbar.show') ?? document.querySelector<HTMLElement>('.flowbar.show')) : null;
+    const a = anchor.isConnected || !bar ? anchor.getBoundingClientRect() : bar.getBoundingClientRect();
+    if (!anchor.isConnected && !bar) return;
+    const avoidAbove = bar?.getBoundingClientRect();
+    const pos = placePopover(a, r, { width: window.innerWidth, height: window.innerHeight }, safe, side, avoidAbove);
+    if (pos.maxHeight === null) el.style.removeProperty('max-height');
+    else el.style.maxHeight = `${pos.maxHeight}px`;
+    el.style.left = `${pos.left}px`;
+    el.style.top = `${pos.top}px`;
   };
   place();
   requestAnimationFrame(place);
+  // a panel that grows after it opened (Add step in the Steps list, a longer list) is placed again, so a top panel keeps clear of the session bar instead
+  // of running down over it; the window can change size under it too
+  // (a menu placed beside a finger does not grow, and it resets its own height while placing, so it is left out)
+  const observer = typeof ResizeObserver === 'function' && !opts.avoidAnchor ? new ResizeObserver(() => place()) : null;
+  observer?.observe(el);
+  const onResize = () => place();
+  window.addEventListener('resize', onResize);
   const onDown = (e: PointerEvent) => {
     if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
   };
@@ -49,6 +66,8 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     el.remove();
     opener?.setAttribute('aria-expanded', 'false');
     if (giveBack) restoreFocus(anchor);
+    observer?.disconnect();
+    window.removeEventListener('resize', onResize);
     window.removeEventListener('pointerdown', onDown, true);
     window.removeEventListener('keydown', onKey, true);
     if (openPop?.el === el) openPop = null;
@@ -95,9 +114,10 @@ export function toast(msg: string, ms = 2600, action?: { label: string; onClick:
   } else box.textContent = msg;
   box.classList.toggle('has-action', !!action);
   // above the session bar while one is showing, so a toast never covers its buttons (at phone width it is tall)
-  const bar = document.querySelector('.flowbar.show');
+  // (and above the poll card that docks over the bar, which the toast would otherwise hide the foot of)
+  const tops = [...document.querySelectorAll('.flowbar.show, .poll-card:not([hidden])')].map((e) => e.getBoundingClientRect().top);
   const safeBottom = safeInsets().bottom;
-  const base = bar ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - bar.getBoundingClientRect().top + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
+  const base = tops.length ? `${Math.max(TOAST_BOTTOM + safeBottom, Math.round(innerHeight - Math.min(...tops) + 8))}px` : `${TOAST_BOTTOM + safeBottom}px`;
   box.style.bottom = `max(${base}, var(--ai-top, 0px))`;
   box.classList.add('show');
   clearTimeout(toastTimer);
