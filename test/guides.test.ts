@@ -439,9 +439,28 @@ describe('performance', () => {
       for (let col = 0; col < 40; col++) refs.push(rc(col * 140 + Math.floor(rnd() * 3) * 5, row * 110 + Math.floor(rnd() * 3) * 5, 80 + Math.floor(rnd() * 5) * 10, 50 + Math.floor(rnd() * 4) * 10));
     }
     const view = rc(-100, -100, 40 * 140 + 200, 25 * 110 + 200);
-    const t0 = performance.now();
     const s = session(refs, [rc(0, 0, 100, 60)], view);
     expect(s.rects).toHaveLength(1000);
+
+    // Count reference visits and sorted-index candidate checks directly, independent of runner speed.
+    let rectVisits = 0;
+    s.rects = new Proxy(s.rects, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^(0|[1-9]\d*)$/u.test(property)) rectVisits++;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    let indexChecks = 0;
+    for (const index of [s.xi, s.yi]) {
+      const vals = index.vals;
+      index.vals = new Proxy(vals, {
+        get(target, property) {
+          if (typeof property === 'string' && /^(0|[1-9]\d*)$/u.test(property)) indexChecks++;
+          return Reflect.get(target, property, target);
+        },
+      }) as Float64Array;
+    }
+
     let snapped = 0;
     for (let n = 0; n < 2000; n++) {
       const r = snapMove(s, rnd() * 5600, rnd() * 2750, 1);
@@ -453,8 +472,11 @@ describe('performance', () => {
       const r = snapResize(s, rect, handles[n % 8], 1);
       if (r.dx !== null || r.dy !== null) snapped++;
     }
-    const ms = performance.now() - t0;
     expect(snapped).toBeGreaterThan(100);
-    expect(ms).toBeLessThan(1500);
+    // 4,000 queries can do at most 14,000 full reference scans (move/resize axes and result marking),
+    // plus a margin for the few references returned by the sorted-index lookups.
+    expect(rectVisits).toBeLessThan(16_000_000);
+    // Binary searches over 3,000 sorted edge/centre values stay below this; a linear scan per query does not.
+    expect(indexChecks).toBeLessThan(2_000_000);
   });
 });
