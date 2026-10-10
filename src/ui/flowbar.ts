@@ -233,7 +233,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const typing = !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
     const free = escapeHidesBar({
       selected: app.selection.length, tool: app.tool.kind, dragging: app.dragging || pressed, editing: app.editor.active,
-      threadOpen: app.openThreadId !== null, typing, dialogOpen: !!document.querySelector('[role="dialog"]'),
+      threadOpen: app.openThreadId !== null, typing, dialogOpen: !!document.querySelector('[role="dialog"], .drawer.show, .side-tray.show'),
     });
     if (!free) return;
     e.stopImmediatePropagation();

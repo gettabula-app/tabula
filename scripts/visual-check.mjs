@@ -38,7 +38,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
                      kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -1347,6 +1347,32 @@ const STATES = {
     await env.page.locator('.chat-toggle').click();
     await env.page.getByRole('combobox', { name: 'Message' }).waitFor();
   },
+  async 'chat-poll-overlap'(env) {
+    await resetChatMarker(env);
+    await STATES['flow-poll'](env);
+    await env.page.locator('.chat-toggle').click();
+    await env.page.locator('.side-tray.show .chat-composer').waitFor();
+    const result = await env.page.evaluate(() => {
+      const tray = document.querySelector('.side-tray.show');
+      const composer = tray?.querySelector('.chat-composer');
+      const surfaces = [...document.querySelectorAll('.poll-card:not([hidden]), .flowbar.show')];
+      if (!tray || !composer) return { failures: ['Chat tray or composer is missing'] };
+      const c = composer.getBoundingClientRect();
+      const hit = document.elementFromPoint((c.left + c.right) / 2, (c.top + c.bottom) / 2);
+      const failures = [];
+      const checks = surfaces.map((el) => {
+        const r = el.getBoundingClientRect();
+        const intersects = r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top;
+        const visible = getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+        if (visible && intersects) failures.push(`${el.className} visibly intersects the chat composer`);
+        return { name: el.className, intersects, visible };
+      });
+      if (!composer.contains(hit)) failures.push(`composer centre hits ${hit?.className || hit?.tagName || 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, surfaces: checks, hit: hit?.className || hit?.tagName };
+    });
+    console.log(`chat-poll-overlap ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`chat-poll-overlap: ${JSON.stringify(result.failures)}`);
+  },
   async 'chat-object'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-object').first().waitFor();
@@ -1383,6 +1409,19 @@ const STATES = {
   async templates({ page, base }) {
     await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
+  },
+  async 'templates-esc'(env) {
+    await openSeedBoard(env);
+    const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
+    await button.click();
+    await env.page.locator('.drawer.show').waitFor();
+    await env.page.keyboard.press('Escape');
+    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    const result = await env.page.evaluate(() => ({
+      open: !!document.querySelector('.drawer.show'),
+      focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
+    }));
+    if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);
   },
   async settings(env) {
     await openSeedBoard(env);
@@ -1829,7 +1868,7 @@ const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
