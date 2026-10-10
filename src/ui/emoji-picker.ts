@@ -64,7 +64,7 @@ export async function openEmojiPicker(app: BoardApp, anchor: HTMLElement) {
     for (const item of items) {
       const cell = h('button', {
         class: 'emoji-cell', type: 'button', role: 'option', 'aria-label': item.n, 'aria-selected': 'false',
-        tabindex: '-1', title: item.n, 'data-emoji': item.e,
+        tabindex: '-1', 'data-tip': item.n, 'data-emoji': item.e,
         onclick: (event: MouseEvent) => choose(item, event),
         onkeydown: (event: KeyboardEvent) => {
           if (event.key === 'Enter' || event.key === ' ') {
