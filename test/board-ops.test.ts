@@ -8,7 +8,7 @@ import { KANBAN, LIMITS as KANBAN_LIMITS, rankBetween, sortedChildren } from '..
 import {
   LIMITS, OpsError, SHAPE_KINDS, STICKY_COLORS, addReply, addThread, aiAuthor, applyPlan, cleanForModel, fence, getObjectsDetail,
   hiddenIds, listThreads, planAddKanbanLane, planCreate, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel,
-  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, summariseBoard,
+  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, stripInvisible, summariseBoard,
 } from '../server/board-ops.mjs';
 
 const who = { createdBy: 'user-1', now: 1000 };
@@ -736,11 +736,59 @@ describe('the shared token', () => {
 });
 
 describe('text for the model', () => {
+  const blackFlag = '\u{1f3f4}';
+  const england = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}';
+  const scotland = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}';
+  const wales = '\u{1f3f4}\u{e0077}\u{e006c}\u{e0073}\u{e007f}';
+
   it('removes tag, zero-width, bidirectional and control characters, and cuts by code point', () => {
     const dirty = 'a\u{E0041}\u{200B}b\u{202E}c\u{2066}d\u{FEFF}e\u0007f\u{2028}g\th\ni';
     expect(cleanForModel(dirty, 100)).toEqual({ text: 'abcdefg\th\ni', truncated: false });
     expect(cleanForModel('😀'.repeat(5), 3)).toEqual({ text: '😀😀😀…', truncated: true });
     expect(cleanForModel(42, 5)).toEqual({ text: '', truncated: false });
+  });
+
+  it('keeps emoji joiners and complete subdivision flags', () => {
+    const samples = [
+      '👨‍👩‍👧‍👦', '🏳️‍🌈', '👩🏽‍💻', england, scotland, wales,
+    ];
+    expect(samples.map(stripInvisible)).toEqual(samples);
+  });
+
+  it('removes joiners unless they sit between emoji code points', () => {
+    expect(stripInvisible('a\u200Db')).toBe('ab');
+    expect(stripInvisible('\u200Da')).toBe('a');
+    expect(stripInvisible('a\u200D')).toBe('a');
+    expect(stripInvisible('a \u200D👩')).toBe('a 👩');
+    expect(stripInvisible('👩\u200D\u200D👩')).toBe('👩👩');
+    expect(stripInvisible('A\u200DB')).toBe('AB');
+  });
+
+  it('strips incomplete, misplaced and overlong tag runs and is idempotent', () => {
+    const tags = '\u{e0061}\u{e0062}';
+    const nineTags = '\u{e0061}'.repeat(9);
+    const mixed = `Family 👨‍👩‍👧‍👦 ${england} A${tags}\u{e007f}`;
+    expect(stripInvisible(tags)).toBe('');
+    expect(stripInvisible(`${blackFlag}${tags}`)).toBe(blackFlag);
+    expect(stripInvisible(`letter${tags}\u{e007f}`)).toBe('letter');
+    expect(stripInvisible(`${blackFlag}${nineTags}\u{e007f}`)).toBe(blackFlag);
+    const clean = stripInvisible(mixed);
+    expect(clean).toBe(`Family 👨‍👩‍👧‍👦 ${england} A`);
+    expect(stripInvisible(clean)).toBe(clean);
+  });
+
+  it('cleans MCP object and comment writes while retaining valid emoji sequences', () => {
+    const raw = `Family 👨‍👩‍👧‍👦 ${england} A\u200DB`;
+    const clean = `Family 👨‍👩‍👧‍👦 ${england} AB`;
+    const board = new Y.Doc();
+    const created = create(board, [{ type: 'sticky', ref: 'emoji', text: raw, x: 0, y: 0 }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+    update(board, [{ id: created.refs.emoji, text: raw }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+
+    const comments = new Y.Doc();
+    const { threadId } = addThread(comments, { author: AUTHOR, text: raw, anchor: { x: 0, y: 0 } }, 5000);
+    expect(new Comments(comments).get(threadId)?.text).toBe(clean);
   });
 
   it('fences with a fresh nonce, escapes the content, and cannot be closed from inside', () => {

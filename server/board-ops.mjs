@@ -69,24 +69,68 @@ export const AI_COLOR = 'var(--graphite, #5B6672)';
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_RE = /^[A-Za-z0-9_-]{1,32}$/;
 // Character classes by code point, not by regular expression: control characters other than newline and tab,
-// Unicode tag characters (invisible text), and zero-width and bidirectional controls.
+// Unicode tag characters except complete subdivision flags, and zero-width and bidirectional controls.
 const isControl = (cp) => cp <= 0x08 || (cp >= 0x0b && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f);
 const isTag = (cp) => cp >= 0xe0000 && cp <= 0xe007f;
+const isSubdivisionTag = (cp) => (cp >= 0xe0030 && cp <= 0xe0039) || (cp >= 0xe0061 && cp <= 0xe007a);
+const BLACK_FLAG = 0x1f3f4;
+const CANCEL_TAG = 0xe007f;
+const isEmojiModifier = (cp) => cp >= 0x1f3fb && cp <= 0x1f3ff;
+const isExtendedPictographic = (ch) => /\p{Extended_Pictographic}/u.test(ch);
 const isHidden = (cp) =>
-  (cp >= 0x200b && cp <= 0x200f) || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
+  (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
   (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp === 0xfeff;
-const isBadInput = (cp) => isControl(cp) || isTag(cp);
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
+
+/** Indices of tag characters that belong to complete subdivision-flag sequences. */
+function subdivisionTagMask(chars) {
+  const keep = Array.from({ length: chars.length }, () => false);
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i].codePointAt(0) !== BLACK_FLAG) continue;
+    let end = i + 1;
+    while (end < chars.length && isSubdivisionTag(chars[end].codePointAt(0))) end++;
+    const count = end - i - 1;
+    if (count < 1 || count > 8 || chars[end]?.codePointAt(0) !== CANCEL_TAG) continue;
+    for (let tag = i + 1; tag <= end; tag++) keep[tag] = true;
+  }
+  return keep;
+}
+
+function keepsEmojiJoiner(chars, index) {
+  if (index === 0 || index === chars.length - 1) return false;
+  let before = index - 1;
+  while (before >= 0) {
+    const cp = chars[before].codePointAt(0);
+    if (isEmojiModifier(cp) || cp === 0xfe0f) before--;
+    else break;
+  }
+  return before >= 0 && isExtendedPictographic(chars[before]) && isExtendedPictographic(chars[index + 1]);
+}
 
 /** Removes what a person cannot see but a model can read. */
 export function stripInvisible(value) {
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
   let out = '';
-  for (const ch of value) if (!isInvisible(ch.codePointAt(0))) out += ch;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const cp = ch.codePointAt(0);
+    if (isTag(cp)) {
+      if (keepTags[i]) out += ch;
+    } else if (cp === 0x200d) {
+      if (keepsEmojiJoiner(chars, i)) out += ch;
+    } else if (!isInvisible(cp)) out += ch;
+  }
   return out;
 }
 
 const hasBadInput = (value) => {
-  for (const ch of value) if (isBadInput(ch.codePointAt(0))) return true;
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
+  for (let i = 0; i < chars.length; i++) {
+    const cp = chars[i].codePointAt(0);
+    if (isControl(cp) || (isTag(cp) && !keepTags[i])) return true;
+  }
   return false;
 };
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_';
@@ -508,7 +552,9 @@ function text(v, path, min, max, length = (value) => value.length) {
   const measured = length(t);
   if (measured < min || measured > max) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
   if (hasBadInput(t)) throw invalid(path, 'Contains control or tag characters');
-  return t;
+  const clean = stripInvisible(t);
+  if (length(clean) < min) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
+  return clean;
 }
 
 function choice(v, list, path) {
