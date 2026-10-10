@@ -468,6 +468,8 @@ export interface TrackerStoreOptions {
   clearTimer?: (handle: unknown) => void;
   isVisible?: () => boolean;
   isOnline?: () => boolean;
+  /** Called with the error a watcher threw; the store logs it and carries on. */
+  onListenerError?: (error: unknown) => void;
 }
 
 export interface TrackerTicketCache {
@@ -668,16 +670,26 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     return { meta: meta ? cloneTrackerData(meta) : undefined, metaLoading, metaError, readOnly, tickets, lists, feedSeq };
   }
 
+  /** A broken watcher must never abort the mutation or the poll that notified it: its error is reported and the others still run. */
+  function deliver<T>(listener: (value: T) => void, value: T): void {
+    try {
+      listener(value);
+    } catch (error) {
+      try { options.onListenerError?.(error); } catch { /* the reporter itself must not throw into a mutation */ }
+      if (typeof console !== 'undefined') console.error('tracker store listener failed', error);
+    }
+  }
+
   function notify(): void {
     const full = snapshot();
-    for (const listener of generalListeners) listener(cloneTrackerData(full));
+    for (const listener of generalListeners) deliver(listener, cloneTrackerData(full));
     for (const [key, listeners] of ticketListeners) {
       const state = ticketCaches.get(key) ?? emptyTicketCache();
-      for (const listener of listeners) listener(cloneTrackerData(state));
+      for (const listener of listeners) deliver(listener, cloneTrackerData(state));
     }
     for (const [key, listeners] of listListeners) {
       const state = listCaches.get(key) ?? emptyListCache({}, key);
-      for (const listener of listeners) listener(cloneTrackerData(state));
+      for (const listener of listeners) deliver(listener, cloneTrackerData(state));
     }
   }
 
@@ -1784,7 +1796,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     const listeners = ticketListeners.get(normalized) ?? new Set();
     listeners.add(listener);
     ticketListeners.set(normalized, listeners);
-    listener(cloneTrackerData(ticketCache(normalized)));
+    deliver(listener, cloneTrackerData(ticketCache(normalized)));
     if (!ticketCache(normalized).detail) void loadTicket(key).catch(() => undefined);
     startWatching();
     return () => {
@@ -1800,7 +1812,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     listeners.add(listener);
     listListeners.set(key, listeners);
     watchQueries.set(key, cloneTrackerData(query));
-    listener(cloneTrackerData(listCache(query)));
+    deliver(listener, cloneTrackerData(listCache(query)));
     if (!loadedLists.has(key)) void loadList(query).catch(() => undefined);
     startWatching();
     return () => {

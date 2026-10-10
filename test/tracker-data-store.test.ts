@@ -355,3 +355,22 @@ describe('tracker store writes', () => {
     store.destroy();
   });
 });
+
+describe('a watcher that throws', () => {
+  it('does not abort the mutation that notified it, and the other watchers still run', async () => {
+    const api = createMockTrackerApi({ now: () => 1_000 });
+    const errors: unknown[] = [];
+    const store = createTrackerStore(api, { pollMs: 60_000, onListenerError: (error) => errors.push(error) });
+    await store.loadMeta();
+    const created = await store.createTicket({ title: 'Watchers', idempotencyKey: 'watcher-ticket-01' });
+    await store.loadTicket(created.key);
+    const seen: string[] = [];
+    store.watchTicket(created.key, () => { throw new Error('broken watcher'); });
+    store.watchTicket(created.key, (state) => seen.push(state.detail?.comments.map((comment) => comment.body).join(',') ?? ''));
+    const comment = await store.addComment(created.key, 'still posted', 'watcher-comment-01');
+    expect(comment.body).toBe('still posted');
+    expect(seen.at(-1)).toContain('still posted');
+    expect(errors.length).toBeGreaterThan(0);
+    store.destroy();
+  });
+});
