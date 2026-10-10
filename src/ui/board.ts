@@ -45,6 +45,7 @@ import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, chatAvailable, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
+import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
@@ -60,7 +61,7 @@ import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
-import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink } from './share-logic';
+import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
@@ -72,7 +73,7 @@ type IconName = keyof typeof ICONS;
  * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
  * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
  */
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string } = {}) {
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string; guestId?: string } = {}) {
   const scratch = opts.scratch === true;
   const demo = opts.demo === true || DEMO;
   const chrome = h('div', { class: 'chrome' });
@@ -98,10 +99,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const renderStatus = () => {
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
-    status.dataset.state = s;
+    const currentAuth = authState();
+    const deniedForGuest = denialForGuestSession(opts.guestId ?? null, currentAuth, app.conn.denied);
+    const guestLinkRemoved = guestAccessEnded(currentAuth, deniedForGuest);
+    status.dataset.state = guestLinkRemoved ? 'denied' : s;
     let label = 'Local only';
     let tip = 'Sync is off. Every change is saved on this device.';
-    if (s === 'live') {
+    if (guestLinkRemoved) {
+      app.comments.setReadOnly(true);
+      label = GUEST_ENDED_SYNC_LABEL;
+      tip = GUEST_ENDED_SYNC_TIP;
+    } else if (s === 'live') {
       label = others ? `Live with ${others}` : 'Live';
       tip = 'Connected to the relay. Changes sync in real time.';
     } else if (s === 'connecting') {
@@ -109,17 +117,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
     } else if (s === 'denied') {
       const restoring = app.conn.denied === 'restoring';
-      const guestLinkRemoved = isRemovedGuestLink(authState().mode, app.conn.denied);
-      if (guestLinkRemoved) app.comments.setReadOnly(true);
-      label = guestLinkRemoved ? 'Join link expired' : restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
-      tip = guestLinkRemoved
-        ? 'This join link has expired or was revoked. Comments are read only.'
-        : restoring
+      label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = restoring
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
-    if (s === 'denied' && isRemovedGuestLink(authState().mode, app.conn.denied)) status.setAttribute('aria-label', 'This join link has expired or was revoked');
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-label' }, label));
+    if (guestLinkRemoved) status.setAttribute('aria-label', GUEST_ENDED_SYNC_LABEL);
     else status.removeAttribute('aria-label');
     status.dataset.tip = tip;
     // a change of state is announced; the count of people changing inside "live" is announced by name below
@@ -129,6 +133,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let lastState: string | null = null;
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
+  app.lifetime.signal.addEventListener('abort', onAuth(renderStatus), { once: true });
   renderStatus();
 
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
