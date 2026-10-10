@@ -48,7 +48,7 @@ import { boardAccess, workspaceOf } from '../cloud-logic';
 import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
-import { SHORTCUTS } from '../shortcuts';
+import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
@@ -859,9 +859,10 @@ function openShortcuts(chat: boolean) {
   // the Ask AI row only for people who have the bar, the chat row only where the board has chat
   const listed = SHORTCUTS.filter((s) => (aiBarShown() || !s.ids.includes('mod+k')) && (chat || !s.ids.includes('m')));
   const groups = [...new Set(listed.map((s) => s.group))];
+  const platform = typeof navigator === 'undefined' ? '' : navigator.platform;
   const rows = groups.flatMap((group) => [
     h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
-    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, formatShortcutLabel(s.keys, platform))), h('td', null, s.action))),
   ]);
   dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }

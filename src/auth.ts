@@ -27,6 +27,11 @@ export function authState(): AuthState {
   return state;
 }
 
+/** Whether the existing /api/me answer identifies this instance as hosted (docs/images.md). */
+export function isHostedWorkspace(s: AuthState = state): boolean {
+  return (s.mode === 'signed-in' || s.mode === 'offline') && s.me?.workspace !== undefined;
+}
+
 export function joinCodesAvailable(): boolean {
   return joinCodesEnabled;
 }
