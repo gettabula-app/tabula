@@ -55,6 +55,7 @@ const toToken = (r) => ({
   name: r.name,
   scope: r.scope,
   boardIds: parseBoardIds(r.board_ids),
+  tracker: r.tracker ?? null,
   hint: r.hint,
   createdAt: r.created_at,
   expiresAt: r.expires_at,

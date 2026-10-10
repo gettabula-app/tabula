@@ -202,6 +202,7 @@ export function createTicket({
   actor,
   title,
   description = '',
+  state: stateReference,
   priority = 'none',
   assignee = null,
   labels = [],
@@ -232,8 +233,13 @@ export function createTicket({
   if (labelRowsResolved.length > 20) throw limitExceeded('A ticket can have at most 20 labels', 'labels');
   const dueDate = dueValue(due);
   const parentRow = resolveParent(db, parent);
-  const state = db.prepare("SELECT id, state_key FROM ticket_states WHERE workflow_id = 'wf_default' AND is_default = 1 AND archived_at IS NULL").get();
-  if (!state) throw new Error('Default ticket state seed is missing');
+  const state = stateReference === undefined
+    ? db.prepare("SELECT id, state_key FROM ticket_states WHERE workflow_id = 'wf_default' AND is_default = 1 AND archived_at IS NULL").get()
+    : stateByReference(db, stateReference);
+  if (!state) {
+    if (stateReference !== undefined) throw invalid('state', 'No active workflow state matches this name or key');
+    throw new Error('Default ticket state seed is missing');
+  }
   const fieldValues = {
     title: cleanTitle,
     description: cleanDescription,
@@ -446,12 +452,15 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
 }
 
 /** @param {any} options */
-export function commentTicket({ directory, db: dbArg, actor, key, body, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
+export function commentTicket({ directory, db: dbArg, actor, key, body, clientId: rawClientId = null, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
   const row = visibleRow(db, actor, key);
   requireTicketWrite(actor, row);
   if (row.archived_at !== null) throw conflict('Archived tickets cannot receive comments');
+  if (rawClientId !== null && (typeof rawClientId !== 'string' || codePointLength(rawClientId) < 1 || codePointLength(rawClientId) > 128)) {
+    throw invalid('clientId', 'Must be 1 to 128 characters');
+  }
   const cleanBody = cleanText(body, { path: 'body', min: 1, max: 20_000, trim: false });
   if (!cleanBody.trim()) throw invalid('body', 'Comment cannot be empty');
   const info = actorInfo(actor);
@@ -461,10 +470,21 @@ export function commentTicket({ directory, db: dbArg, actor, key, body, source =
     const fresh = ticketRow(db, row.id);
     requireTicketWrite(actor, fresh);
     if (fresh.archived_at !== null) throw conflict('Archived tickets cannot receive comments');
+    const info = actorInfo(actor);
+    if (rawClientId !== null) {
+      const prior = db.prepare(
+        `SELECT id, ticket_id, actor_type, actor_id, author_snapshot, body, created_at
+           FROM ticket_comments WHERE actor_type = ? AND actor_id IS ? AND client_id = ?`,
+      ).get(info.type, info.id, rawClientId);
+      if (prior) {
+        if (prior.ticket_id !== row.id) throw conflict('clientId was already used for another ticket', 'clientId');
+        return { id: prior.id, ticketId: prior.ticket_id, actorType: prior.actor_type, actorId: prior.actor_id, author: prior.author_snapshot, body: prior.body, createdAt: prior.created_at };
+      }
+    }
     db.prepare(
-      `INSERT INTO ticket_comments (id, ticket_id, actor_type, actor_id, author_snapshot, body, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(commentId, row.id, info.type, info.id, author, cleanBody, now);
+      `INSERT INTO ticket_comments (id, ticket_id, actor_type, actor_id, author_snapshot, body, created_at, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(commentId, row.id, info.type, info.id, author, cleanBody, now, rawClientId);
     const seq = appendTicketEvent({
       db,
       ticketId: row.id,
