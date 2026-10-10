@@ -54,3 +54,22 @@ export function recipientActor(userRow) {
     disabled: Boolean(userRow.disabled),
   };
 }
+
+/** Resolve ticket board links when the linked-kanban migration is present. */
+export function boardAccessForDirectory(directory) {
+  const db = directory?.db ?? directory;
+  if (!db || typeof db.prepare !== 'function') return null;
+  const linked = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ticket_links'").get();
+  if (!linked) return null;
+  return (ticketId, userId) => {
+    const links = db.prepare(
+      'SELECT board_id FROM ticket_links WHERE ticket_id = ? AND removed_at IS NULL ORDER BY board_id',
+    ).all(ticketId);
+    for (const link of links) {
+      const role = directory.boardRole(link.board_id, userId);
+      if (role === 'owner' || role === 'editor') return 'write';
+      if (role === 'viewer' || role === 'commenter') return 'read';
+    }
+    return null;
+  };
+}

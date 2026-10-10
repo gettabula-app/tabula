@@ -8,7 +8,7 @@ import {
   newId, requireWritable, validCalendarDate,
 } from './shared.mjs';
 
-const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);
+export const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);
 const PRIORITY_VALUE = new Map(PRIORITIES.map((name, value) => [name, value]));
 const TRACKER_TICKET = Object.freeze({ id: 'tracker-access-check' });
 
