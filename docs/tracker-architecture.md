@@ -4,6 +4,25 @@
 **Scope:** Architecture only. This file proposes no implementation changes.
 **Decision labels:** **DECIDED** comes from Johan’s product brief. **RECOMMENDED** is this architecture’s recommendation. **OPEN** needs Johan’s decision. Unless marked otherwise, prescriptive proposals below are recommendations.
 
+## Decisions (frozen 2026-10-10)
+
+Johan: "go with your picks". These override any RECOMMENDED or OPEN text elsewhere in this file; sections 1 to 14 are updated only where noted.
+
+| # | Decision | Effect on this spec |
+|---|---|---|
+| 1 | One workspace-wide prefix, `TAB`. | Section 2: no per-team or per-project prefixes. Open question 1 closed. |
+| 2 | Default states: To do, In progress, In review, Done, Cancelled. Categories `completed` and `canceled`. | State keys `todo`, `in_progress`, `in_review`, `done`, `cancelled`; categories unstarted, started, started, completed, canceled. The Backlog state of earlier drafts is not seeded. |
+| 3 | No cycles or estimates UI in v1. | The `estimate` column exists and is unused. Open question 7 closed. |
+| 4 | Plain text titles, Markdown descriptions and comments. | No rich-text storage. |
+| 5 | Tickets are created online only. | A create command needs a live connection to the server; the offline outbox queues edits to existing tickets only. Keys therefore have no gaps from abandoned offline creates. Section 3 offline row and section 2 gap rules apply to edits, not creates. |
+| 6 | Archive only, never delete. | Open question 3 closed (soft archive, links kept). |
+| 7 | Sign-in only, no public ticket links. | Deep links `/t/TAB-123` always require a session. No anonymous read. |
+| 8 | A linked kanban shows the cards made on it; board guests get the ticket, with a warning when the audience is broader. | Section 4 rule stands. **Interpretation to confirm:** linking an existing kanban does not silently turn its old cards into tickets; the Link dialog offers "Create tickets for the N existing cards" (default yes), and cards created afterwards are tickets from the start. |
+| 9 | GitHub App; only owners connect repos; GitHub logins are mapped to members after a one-time link; merge to Done is OFF by default, configurable per repo; comment-only by default. | Section 6b. Adds a `github_login` mapping per member (a row in the connection settings, or a `user_external_identities` table in slice 8). |
+| 10 | Hosted: pending work runs on next wake for now, a control-plane tick later. Inbound webhooks: queue in the control plane, or wake through the edge only if that path is verified. | Section 6 option C now, B later. Section 6b: B unless I verify that the edge wakes a stopped machine and the app persists before returning 2xx. |
+| 11 | Linear: import first, then a 2-week dual run. RPO 15 minutes, RTO 4 hours, restore drill before Linear is cancelled. A monotonic key floor in the control plane. | Sections 8 and 9. Open questions 4, 16 and 21 closed. The key floor is a control-plane table `workspace_key_floor(workspace_id, prefix, floor)` updated by the workspace on each allocation batch or daily; used at restore to set the counter to `max(restored, floor)`. |
+| 12 | Theme: workspace theme, per-board override, then personal choice. The tracker follows its board. Owners and admins set the workspace theme. | Design-side. The tracker frame renders with its board's resolved theme. |
+
 ## 0. Summary, goals, non-goals, glossary, and picture
 
 ### Summary
@@ -752,22 +771,37 @@ Use `TABULA_TRACKER=on` as an emergency rollout kill switch, not a hosted-only f
 
 **Assumption:** The control plane’s current release inventory, tick scheduler, and wake queue are not specified in this app repository. Check those contracts before adding a hosted tick or webhook queue.
 
-## 11. Rollout slices
+## 11. Rollout slices (slice plan, frozen order)
 
-Each slice can be enabled or rolled back independently. Rollback means disabling the new UI/API and using an old binary only while `min_reader` permits it. SQL data remains in backups and must not be deleted as a feature-flag rollback.
+Each slice is shippable and reversible on its own. Rollback means switching the new UI or API off with `TABULA_TRACKER` and keeping the data; SQL rows are never deleted as a rollback.
 
-| Slice | Scope | Reversible behavior | Size |
-|---|---|---|---|
-| 1. Tickets, IDs, events, MCP | Add migration 12; ticket CRUD core; workspace counter; immutable keys; event log; idempotency; list/get/search APIs and MCP tools. No UI. This is the smallest useful dogfood: agents can create, list, search, transition, and comment on tickets using MCP. | Disable tracker MCP tools/route; retain rows. Existing kanban is unchanged. | L |
-| 2. Workflows and core data | Default workflow, state categories, labels, projects, milestones, relations, saved views, filter parser, FTS5 rebuild. | Hide new commands/views; keep stored data. | M |
-| 3. Tracker frame and ticket page | Screen-sized `tracker` frame object; six tabs; ticket detail, comments, history, relations, deep links. | Feature flag hides frame UI; keep board object or render read-only fallback. | L |
-| 4. One-way linked projections | Link kanban, map lanes to states, project SQL ticket fields into cards, create ticket from linked card. | Unlink action removes projections while preserving tickets/cards. | L |
-| 5. Bidirectional synchronization | Linked-card commands, lane moves, field versions, relay guard, offline outbox, multi-board projection repair. | Disable linked writes; leave projections readable and allow unlink. | L |
-| 6. Permissions and durable notifications | `ticketAccess`, saved view access, inbox notifications, mail delivery outbox, preference controls, due-soon work. | Disable email/tick; keep in-app notifications and rows. | M |
-| 7. Backup and restore readiness | Include tracker data in snapshot validation; coherent snapshot/reconcile; restore drill and go/no-go dashboard. | Backup path is operational; no product data migration rollback. | L |
-| 8. GitHub inbound and webhooks | Generic integration tables/provider interface, owner connection screen, GitHub inbox and activity, outbound signed webhooks, replay and audit. | Disconnect providers and drain/disable queues; tickets remain complete. | L |
-| 9. Linear importer | Dry-run, API import, CSV fallback, aliases, attachments, verification script, cutover report. | Re-run import by stable source IDs; no source cancellation until checklist passes. | L |
-| 10. Harden, measure, cut over | Load tests, permission review, restore drill, accessibility, docs, operational limits, dual-run and final delta. | Keep Linear read-only and use feature flags while resolving issues. | M |
+### The migration gate
+
+Every migration below is expand-only, but each one raises the directory `min_reader` to at least 11 (`server/schema.mjs`). A v4 image (generation 10) cannot open such a database. So:
+
+> **Gate G (v4 retired):** no migration in this plan may be applied on a hosted volume while any workspace may still be rolled back to v4. Concretely: every workspace runs v5.0.1 or newer, v5.0.1 is promoted `current`, and the v4 release is withdrawn. Self-hosters are not affected, they back up before upgrading.
+
+Slices marked **M** carry a migration and need gate G. Slices without M can ship before gate G.
+
+| Slice | Scope | Migration | Flag | Size | Depends on |
+|---|---|---|---|---|---|
+| **0. Coherent snapshot barrier** | Pause ticket and board writes, save open rooms, copy `directory.sqlite` and room files to local snapshot files as one point, release, then upload (section 9). Manifest records the barrier time. Restore drill extended. | none | none | M | none. **Precondition for slice 1 reaching real data.** Off-site storage credentials are a separate precondition for cutover, not for building. |
+| **1. Tickets core (no UI)** | `trackers`, `ticket_workflows`, `ticket_states` (seeded: To do, In progress, In review, Done, Cancelled), `tickets`, `ticket_counters`, `ticket_field_versions`, `labels`, `ticket_labels`, `ticket_comments`, `ticket_events`, `ticket_aliases`, `ticket_subscriptions`, `ticket_search` (FTS5), idempotency. Key allocation in one transaction. Event log. Filter grammar and search. MCP tools: `create_ticket`, `get_ticket`, `list_tickets`, `search_tickets`, `update_ticket`, `transition_ticket`, `comment_ticket`. Tracker tokens scopes. `TABULA_TRACKER=on`. Read-only cloud state blocks writes. | **M (12)** | `TABULA_TRACKER` default off until slice 3 | L | gate G, slice 0 |
+| **2. Projects, relations, saved views** | `projects`, `milestones`, `ticket_relations`, `saved_views`; MCP `relate_tickets`, `list_saved_views`, `get_saved_view`, `create_saved_view`; filter grammar for project, milestone, relation. | **M (13)** | same | M | 1 |
+| **3. Tracker frame and ticket page** | `tracker` board object, tabs inbox/my/all/board/projects, ticket page (comments, history, relations, subscribe, archive/restore), deep links `/t/*`, ticket chips, keyboard model. Reads and writes through slice 1 and 2 APIs. | none | `TABULA_TRACKER` on for dogfood | L | 1, 2, frozen UX contracts |
+| **4. Linked kanbans, one-way projection** | `kanban_tracker_links`, `kanban_state_mappings`, `ticket_links`, `ticket_projection_outbox`; Link dialog; create ticket from a card created on a linked kanban; SQL to card projection; unlink. | **M (14)** | `TABULA_TRACKER` | L | 3 |
+| **5. Bidirectional sync** | Linked-card command path, relay guard (modelled on `comment-authz.mjs`), lane moves as state transitions, field versions, offline edit outbox (edits only), multi-board repair, projection repair on room load and restore. | none | same | L | 4 |
+| **6. Notifications and permissions hardening** | `notifications` table, in-app inbox, email outbox through `mailer`, preferences, `ticketAccess` complete for board guests, stale-notice suppression, due-soon on wake. | **M (15)** | same | M | 3 |
+| **7. Backup and restore readiness** | Tracker data in backup validation, `restoreBoardCopy` and history restore detach tracker identity, reconcile after restore, key floor in the control plane, restore drill with tickets, go/no-go dashboard. | none (control plane gets one table) | none | L | 0, 5 |
+| **8. Integrations and webhooks** | `integration_*`, `webhooks`, `webhook_deliveries`, member GitHub login mapping; GitHub App provider, inbox, `link.*` events, per-repo merge rule; signed outbound webhooks; queue-or-wake decision verified first. | **M (16)** | `TABULA_TRACKER_INTEGRATIONS` | L | 3 |
+| **9. Linear importer** | CLI, dry run, report, aliases, comments, relations, users matched by email, delta run, verification script. No migration. | none | none | L | 1, 2 |
+| **10. Harden, measure, cut over** | Load and permission review, restore drill passes, accessibility, docs, two-week dual run, final delta, cancel Linear after the section 9 checklist. | none | none | M | all above |
+
+Notes:
+- Migrations 12 to 16 may be merged into fewer migrations if slices ship together; the rule stays: expand-only, one gate.
+- **Smallest useful dogfood: slice 0 and slice 1.** Agents and the manager can create and move tickets through MCP before any UI exists; slice 3 gives people the UI. Linear stays the record until slice 10.
+- Slices 0, 3 (UI half), 5, 7 (client half), 9 and 10 do not touch the schema and can proceed in parallel with the gate being cleared.
+
 ### Test strategy per slice
 
 This is the proposed test plan; it is not a request to run tests while drafting this spec. Unit coverage: migration safety, counter rollback/no reuse, categories, query grammar, event versions, idempotency, access, signatures, rotation, retries, and import mapping. Relay integration: use `test/start-relay.ts` as the relay process starter and `test/mcp-harness.ts` for signed-in MCP calls; extend `test/backup-harness.ts` for backup/restore. Cover Yjs updates, `roomAccess.write`, SQL failure, restart, and stale projections. UI E2E: frame/ticket flows, keyboard, comments/history, linked moves, offline reconnect, multi-board projection, viewer denial, deep links, search, notifications. Integration E2E: signatures, duplicate/expired delivery, repository allow-list, fork text, wake, DNS rebinding, retries, replay, rotation. Backup/restore: full encrypted snapshot, two projections, counter/alias, pending queues, FTS rebuild, history/copy, and key loss. Apply section 3 invariants and section 4 permissions to every affected slice.
