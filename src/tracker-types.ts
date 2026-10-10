@@ -26,7 +26,11 @@ export interface TrackerMeta {
   states: TrackerState[];
   labels: TrackerLabel[];
   members: TrackerMember[];
-  me: { userId: string; canWrite: boolean };
+  me: { userId: string; canWrite: boolean; canDeleteAnyComment?: boolean };
+  /** Slice 2 metadata is optional while older servers only expose core ticket fields. */
+  projects?: Array<{ id: string; name: string; archivedAt?: number | null }>;
+  milestones?: Array<{ id: string; name: string; due: string | null; projectId?: string }>;
+  canCreateLabels?: boolean;
 }
 
 export interface TrackerAssignee { userId: string; name: string }
@@ -59,6 +63,7 @@ export interface TrackerTicket {
   priority: TrackerPriority;
   assignee: TrackerAssignee | null;
   creator: TrackerCreator;
+  source?: 'app' | 'import' | 'mcp' | 'integration';
   labels: TrackerLabel[];
   project: { id: string; name: string } | null;
   milestone: { id: string; name: string; due: string | null } | null;
@@ -146,6 +151,8 @@ export interface TrackerPatch {
   labels?: string[];
   due?: string | null;
   parent?: string | null;
+  project?: string | null;
+  milestone?: string | null;
   archived?: boolean;
   ifUpdatedSeq?: number;
 }
@@ -180,18 +187,30 @@ export interface TrackerFeedEvent {
 }
 export interface TrackerFeed { events: TrackerFeedEvent[]; seq: number }
 
+export type TrackerNotificationKind =
+  | 'assigned' | 'mentioned' | 'commented' | 'status_changed' | 'due_soon' | 'relation_changed' | 'integration_activity';
+export type TrackerNotifyChoice = 'both' | 'app' | 'off';
+
 export interface TrackerInboxItem {
   id: string;
-  kind: string;
+  kind: TrackerNotificationKind;
   createdAt: number;
   readAt: number | null;
-  ticket: { key: string; title: string; state: Pick<TrackerState, 'name' | 'category'> };
+  ticket: {
+    key: string;
+    title: string;
+    state: Pick<TrackerState, 'name' | 'category'>;
+    assignee: { name: string } | null;
+    priority: TrackerPriority;
+  };
   actor: { name: string } | null;
-  preview: string;
+  preview: string | null;
+  detail: { state?: string; key?: string; relation?: string; text?: string; dueDate?: string } | null;
 }
 export interface TrackerInboxPage { items: TrackerInboxItem[]; nextCursor: string | null; unread: number }
 export interface TrackerNotificationPrefs {
-  [key: string]: boolean | string | number | null | undefined;
+  kinds: TrackerNotificationKind[];
+  prefs: Record<TrackerNotificationKind, TrackerNotifyChoice>;
 }
 
 export class TrackerError extends Error {

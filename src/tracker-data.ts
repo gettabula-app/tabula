@@ -6,12 +6,16 @@ import {
   type TrackerCommentPage,
   type TrackerCreateInput,
   type TrackerEventPage,
+  type TrackerEvent,
   type TrackerFacets,
   type TrackerFeed,
   type TrackerInboxPage,
   type TrackerListQuery,
+  type TrackerLabel,
   type TrackerMeta,
   type TrackerNotificationPrefs,
+  type TrackerNotificationKind,
+  type TrackerNotifyChoice,
   type TrackerPatch,
   type TrackerPriority,
   type TrackerRelationKind,
@@ -32,11 +36,13 @@ export interface TrackerListOptions extends TrackerRequestOptions {}
 export interface TrackerPageOptions extends TrackerRequestOptions { before?: string | number; limit?: number }
 export interface TrackerInboxQuery { limit?: number; before?: string; unread?: boolean }
 export type TrackerInboxReadInput = { ids: string[] } | { all: true };
+export type TrackerNotificationPrefsUpdate = { prefs: Partial<Record<TrackerNotificationKind, TrackerNotifyChoice>> };
 export interface TrackerBulkInput { keys: string[]; patch: TrackerBulkPatch }
 
 /** Typed transport for every public tracker endpoint used by the app. */
 export interface TrackerApi {
   meta(options?: TrackerRequestOptions): Promise<TrackerMeta>;
+  createLabel(name: string, options?: TrackerRequestOptions): Promise<{ label: TrackerLabel }>;
   listTickets(query?: TrackerListQuery, options?: TrackerListOptions): Promise<TrackerTicketListPage>;
   ticketsUpdatedSince(seq: number, options?: TrackerRequestOptions): Promise<TrackerUpdatedTickets>;
   createTicket(input: TrackerCreateInput, options?: TrackerRequestOptions): Promise<{ ticket: TrackerTicket }>;
@@ -59,11 +65,54 @@ export interface TrackerApi {
   inboxUnread(options?: TrackerRequestOptions): Promise<{ unread: number }>;
   markInboxRead(input: TrackerInboxReadInput, options?: TrackerRequestOptions): Promise<{ updated: number; unread: number }>;
   notificationPrefs(options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
-  updateNotificationPrefs(patch: TrackerNotificationPrefs, options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
+  updateNotificationPrefs(patch: TrackerNotificationPrefsUpdate, options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeTrackerComment(value: unknown, ticketKey: string, clientId = ''): TrackerComment {
+  const row = isRecord(value) ? value : {};
+  const author = isRecord(row.author) ? row.author : {};
+  return {
+    ...row,
+    id: String(row.id ?? ''),
+    ticketKey: String(row.ticketKey ?? ticketKey),
+    author: {
+      userId: typeof author.userId === 'string' ? author.userId : typeof author.id === 'string' ? author.id : null,
+      name: typeof author.name === 'string' ? author.name : 'Unknown',
+    },
+    body: typeof row.body === 'string' ? row.body : '',
+    clientId: typeof row.clientId === 'string' ? row.clientId : clientId,
+    createdAt: Number(row.createdAt ?? row.at ?? 0),
+    editedAt: typeof row.editedAt === 'number' ? row.editedAt : null,
+  } as TrackerComment;
+}
+
+function normalizeTrackerEvent(value: unknown): TrackerEvent {
+  const row = isRecord(value) ? value : {};
+  const before = isRecord(row.before) ? row.before : {};
+  const after = isRecord(row.after) ? row.after : {};
+  const details = isRecord(row.details) ? row.details : {};
+  const changedFields = Object.keys(after);
+  const inferredField = changedFields.length === 1 ? changedFields[0] : undefined;
+  const field = typeof row.field === 'string' ? row.field : inferredField;
+  const actor = isRecord(row.actor) ? row.actor : null;
+  const relation = isRecord(row.relation) ? row.relation
+    : typeof details.relationKind === 'string' || typeof details.relatedTicketKey === 'string'
+      ? { kind: details.relationKind, key: details.relatedTicketKey }
+      : undefined;
+  return {
+    ...row,
+    id: Number(row.id ?? row.eventSeq ?? 0),
+    at: Number(row.at ?? row.createdAt ?? 0),
+    actor: actor as TrackerEvent['actor'],
+    ...(field ? { field } : {}),
+    ...(row.from !== undefined ? { from: row.from } : field && before[field] !== undefined ? { from: before[field] } : {}),
+    ...(row.to !== undefined ? { to: row.to } : field && after[field] !== undefined ? { to: after[field] } : {}),
+    ...(relation ? { relation } : {}),
+  } as TrackerEvent;
 }
 
 function isErrorCode(value: unknown): value is TrackerErrorCode {
@@ -135,6 +184,10 @@ export function createHttpTrackerApi(fetchFn: typeof fetch = fetch): TrackerApi 
 
   return {
     meta: (options) => request('GET', '/api/tracker/meta', undefined, options),
+    createLabel: async (name, options) => {
+      const result = await request<{ label: TrackerLabel }>('POST', '/api/tracker/labels', { name }, options);
+      return result;
+    },
     listTickets: (query = {}, options) => {
       const filters = typeof query.filter === 'string' ? [query.filter] : query.filter ?? [];
       return request('GET', `/api/tracker/tickets${queryString([
@@ -146,13 +199,38 @@ export function createHttpTrackerApi(fetchFn: typeof fetch = fetch): TrackerApi 
     },
     ticketsUpdatedSince: (seq, options) => request('GET', `/api/tracker/tickets${queryString([['updatedSince', seq]])}`, undefined, options),
     createTicket: (input, options) => request('POST', '/api/tracker/tickets', input, options),
-    getTicket: (key, options) => request('GET', `/api/tracker/tickets/${segment(key)}`, undefined, options),
-    ticketComments: (key, page = {}) => request('GET', `/api/tracker/tickets/${segment(key)}/comments${queryString([['before', page.before], ['limit', page.limit]])}`, undefined, page),
-    ticketEvents: (key, page = {}) => request('GET', `/api/tracker/tickets/${segment(key)}/events${queryString([['before', page.before], ['limit', page.limit]])}`, undefined, page),
+    getTicket: async (key, options) => {
+      const result = await request<Omit<TrackerTicketDetail, 'comments' | 'events'> & { comments: unknown[]; events: unknown[] }>(
+        'GET', `/api/tracker/tickets/${segment(key)}`, undefined, options,
+      );
+      return {
+        ...result,
+        comments: result.comments.map((comment) => normalizeTrackerComment(comment, result.ticket.key)),
+        events: result.events.map(normalizeTrackerEvent),
+      };
+    },
+    ticketComments: async (key, page = {}) => {
+      const result = await request<{ comments: unknown[]; nextBefore?: string | null; nextCursor?: string | null }>(
+        'GET', `/api/tracker/tickets/${segment(key)}/comments${queryString([['before', page.before], ['limit', page.limit]])}`, undefined, page,
+      );
+      return { comments: result.comments.map((comment) => normalizeTrackerComment(comment, key)), nextCursor: result.nextBefore ?? result.nextCursor ?? null };
+    },
+    ticketEvents: async (key, page = {}) => {
+      const result = await request<{ events: unknown[]; nextBefore?: string | null; nextCursor?: string | null }>(
+        'GET', `/api/tracker/tickets/${segment(key)}/events${queryString([['before', page.before], ['limit', page.limit]])}`, undefined, page,
+      );
+      return { events: result.events.map(normalizeTrackerEvent), nextCursor: result.nextBefore ?? result.nextCursor ?? null };
+    },
     patchTicket: (key, patch, options) => request('PATCH', `/api/tracker/tickets/${segment(key)}`, patch, options),
     transitionTicket: (key, state, options) => request('POST', `/api/tracker/tickets/${segment(key)}/transition`, { state }, options),
-    addComment: (key, input, options) => request('POST', `/api/tracker/tickets/${segment(key)}/comments`, input, options),
-    editComment: (id, body, options) => request('PATCH', `/api/tracker/comments/${segment(id)}`, { body }, options),
+    addComment: async (key, input, options) => {
+      const result = await request<{ comment: unknown; ticket: TrackerTicket }>('POST', `/api/tracker/tickets/${segment(key)}/comments`, input, options);
+      return { comment: normalizeTrackerComment(result.comment, result.ticket.key, input.clientId), ticket: result.ticket };
+    },
+    editComment: async (id, body, options) => {
+      const result = await request<{ comment: unknown }>('PATCH', `/api/tracker/comments/${segment(id)}`, { body }, options);
+      return { comment: normalizeTrackerComment(result.comment, '') };
+    },
     deleteComment: (id, options) => request('DELETE', `/api/tracker/comments/${segment(id)}`, undefined, options),
     setSubscription: (key, subscribed, options) => request(subscribed ? 'PUT' : 'DELETE', `/api/tracker/tickets/${segment(key)}/subscription`, undefined, options),
     feed: (since, options) => request('GET', `/api/tracker/feed${queryString([['since', since]])}`, undefined, options),
@@ -333,6 +411,11 @@ export interface TrackerTicketCache {
   pending: boolean;
   offlineQueued: boolean;
   subscribed?: boolean;
+  commentsHasMore?: boolean;
+  eventsHasMore?: boolean;
+  commentsBefore?: string;
+  eventsBefore?: string | number;
+  loadingOlderActivity?: boolean;
 }
 export interface TrackerListCache {
   query: TrackerListQuery;
@@ -363,17 +446,21 @@ export interface TrackerStore {
   subscribe(listener: (snapshot: TrackerStoreSnapshot) => void): () => void;
   snapshot(): TrackerStoreSnapshot;
   loadMeta(force?: boolean): Promise<TrackerMeta>;
+  createLabel(name: string): Promise<TrackerLabel>;
   loadList(query?: TrackerListQuery, options?: { force?: boolean }): Promise<TrackerListCache>;
   loadMore(query?: TrackerListQuery): Promise<TrackerListCache>;
   list(query?: TrackerListQuery): TrackerListCache;
   watchList(query: TrackerListQuery, listener: (state: TrackerListCache) => void): () => void;
   ticket(key: string): TrackerTicketCache;
   loadTicket(key: string, force?: boolean): Promise<TrackerTicketDetail>;
+  loadOlderActivity(key: string): Promise<TrackerTicketDetail>;
   watchTicket(key: string, listener: (state: TrackerTicketCache) => void): () => void;
   createTicket(input: Omit<TrackerCreateInput, 'idempotencyKey'> & { idempotencyKey?: string }): Promise<TrackerTicket>;
   updateTicket(key: string, patch: Omit<TrackerPatch, 'ifUpdatedSeq'>): Promise<TrackerTicket>;
   transitionTicket(key: string, state: string): Promise<TrackerTicket>;
   addComment(key: string, body: string, clientId?: string): Promise<TrackerComment>;
+  editComment(key: string, id: string, body: string): Promise<TrackerComment>;
+  deleteComment(key: string, id: string): Promise<void>;
   setSubscription(key: string, subscribed: boolean): Promise<boolean>;
   bulk(keys: string[], patch: TrackerBulkPatch): Promise<TrackerUndoBatch>;
   undo(batch: TrackerUndoBatch): Promise<TrackerBulkResult>;
@@ -410,6 +497,12 @@ function ticketWithPatch(ticket: TrackerTicket, patch: TrackerBulkPatch, meta: T
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.due !== undefined) next.due = patch.due;
   if (patch.parent !== undefined) next.parent = patch.parent;
+  if (patch.project !== undefined) {
+    next.project = patch.project === null ? null : cloneTrackerData(meta?.projects?.find((project) => project.id === patch.project || project.name.toLocaleLowerCase() === patch.project?.toLocaleLowerCase()) ?? next.project);
+  }
+  if (patch.milestone !== undefined) {
+    next.milestone = patch.milestone === null ? null : cloneTrackerData(meta?.milestones?.find((milestone) => milestone.id === patch.milestone || milestone.name.toLocaleLowerCase() === patch.milestone?.toLocaleLowerCase()) ?? next.milestone);
+  }
   if (patch.labels !== undefined) {
     next.labels = patch.labels.map((name) => meta?.labels.find((label) => label.id === name || label.name.toLocaleLowerCase() === name.toLocaleLowerCase()))
       .filter((label): label is NonNullable<typeof label> => Boolean(label))
@@ -436,6 +529,8 @@ function patchValuesBefore(ticket: TrackerTicket, patch: TrackerBulkPatch): Trac
   if ('labels' in patch) before.labels = ticket.labels.map((label) => label.name);
   if ('due' in patch) before.due = ticket.due;
   if ('parent' in patch) before.parent = ticket.parent;
+  if ('project' in patch) before.project = ticket.project?.id ?? null;
+  if ('milestone' in patch) before.milestone = ticket.milestone?.id ?? null;
   if ('archived' in patch) before.archived = ticket.archivedAt !== null;
   return before;
 }
@@ -452,6 +547,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   const ticketListeners = new Map<string, Set<(state: TrackerTicketCache) => void>>();
   const listListeners = new Map<string, Set<(state: TrackerListCache) => void>>();
   const ticketCaches = new Map<string, TrackerTicketCache>();
+  const ticketLoadPromises = new Map<string, Promise<TrackerTicketDetail>>();
   const listCaches = new Map<string, TrackerListCache>();
   const loadedLists = new Set<string>();
   const watchQueries = new Map<string, TrackerListQuery>();
@@ -629,6 +725,22 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     }
   }
 
+  async function createLabel(name: string): Promise<TrackerLabel> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    if (meta?.canCreateLabels === false) throw new TrackerError('forbidden', 'You cannot create tracker labels.');
+    try {
+      const result = await api.createLabel(name);
+      if (meta) meta = { ...meta, labels: [...meta.labels.filter((label) => label.id !== result.label.id), cloneTrackerData(result.label)] };
+      notify();
+      return cloneTrackerData(result.label);
+    } catch (caught) {
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      throw error;
+    }
+  }
+
   async function loadList(query: TrackerListQuery = {}, loadOptions: { force?: boolean } = {}): Promise<TrackerListCache> {
     const state = listCache(query);
     if ((loadedLists.has(state.key) || state.loading) && !loadOptions.force) return cloneTrackerData(state);
@@ -687,7 +799,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     }
   }
 
-  async function loadTicket(key: string, force = false): Promise<TrackerTicketDetail> {
+  async function loadTicketNow(key: string, force = false): Promise<TrackerTicketDetail> {
     const state = ticketCache(key);
     if (state.detail && !force) return cloneTrackerData(state.detail);
     const hadConflict = state.conflict !== undefined;
@@ -696,10 +808,33 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     notify();
     try {
       const detail = await api.getTicket(key);
+      const previousDetail = state.detail;
+      const previousCommentsHasMore = state.commentsHasMore;
+      const previousEventsHasMore = state.eventsHasMore;
+      const mergeActivity = <T extends { id: string | number; createdAt?: number; at?: number }>(
+        previous: T[], latest: T[], time: (item: T) => number,
+      ): T[] => {
+        const rows = new Map<string | number, T>();
+        for (const item of previous) rows.set(item.id, item);
+        for (const item of latest) rows.set(item.id, item);
+        return [...rows.values()].sort((left, right) => time(left) - time(right) || (
+          typeof left.id === 'number' && typeof right.id === 'number' ? left.id - right.id : String(left.id).localeCompare(String(right.id))
+        ));
+      };
+      const comments = previousDetail
+        ? mergeActivity(previousDetail.comments, detail.comments, (comment) => comment.createdAt)
+        : detail.comments;
+      const events = previousDetail
+        ? mergeActivity(previousDetail.events, detail.events, (event) => event.at)
+        : detail.events;
       const pendingTicket = state.pending ? state.ticket : undefined;
       const pendingSubscription = state.pending ? state.subscribed : undefined;
       state.ticket = cloneTrackerData(pendingTicket ?? detail.ticket);
-      state.detail = { ...cloneTrackerData(detail), ticket: cloneTrackerData(pendingTicket ?? detail.ticket) };
+      state.detail = { ...cloneTrackerData(detail), comments: cloneTrackerData(comments), events: cloneTrackerData(events), ticket: cloneTrackerData(pendingTicket ?? detail.ticket) };
+      state.commentsHasMore = previousDetail ? previousCommentsHasMore ?? detail.comments.length >= 50 : detail.comments.length >= 50;
+      state.eventsHasMore = previousDetail ? previousEventsHasMore ?? detail.events.length >= 50 : detail.events.length >= 50;
+      state.commentsBefore = state.commentsHasMore ? comments[0]?.id : undefined;
+      state.eventsBefore = state.eventsHasMore ? events[0]?.id : undefined;
       state.subscribed = pendingSubscription ?? detail.subscribed;
       state.detail.subscribed = state.subscribed;
       state.loading = false;
@@ -709,11 +844,71 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       }
       saveTicket(detail.ticket, { preserveLocal: true });
       notify();
-      return cloneTrackerData(detail);
+      return cloneTrackerData(state.detail);
     } catch (caught) {
       state.loading = false;
       state.error = asTrackerError(caught);
+      if (state.error.code === 'not_found' || state.error.code === 'forbidden') {
+        state.ticket = undefined;
+        state.detail = undefined;
+        state.subscribed = undefined;
+        state.conflict = undefined;
+      }
       setReadonlyFrom(state.error);
+      notify();
+      throw state.error;
+    }
+  }
+
+  function loadTicket(key: string, force = false): Promise<TrackerTicketDetail> {
+    const normalized = cacheTicketKey(key);
+    const cached = ticketCache(normalized);
+    if (cached.detail && !force) return Promise.resolve(cloneTrackerData(cached.detail));
+    const pending = ticketLoadPromises.get(normalized);
+    if (pending && !force) return pending.then(cloneTrackerData);
+    const request = loadTicketNow(key, force);
+    ticketLoadPromises.set(normalized, request);
+    return request.finally(() => {
+      if (ticketLoadPromises.get(normalized) === request) ticketLoadPromises.delete(normalized);
+    });
+  }
+
+  async function loadOlderActivity(key: string): Promise<TrackerTicketDetail> {
+    const state = ticketCache(key);
+    if (!state.detail) await loadTicket(key);
+    const current = state.detail;
+    if (!current) return cloneTrackerData(await loadTicket(key));
+    if (state.loadingOlderActivity) return cloneTrackerData(current);
+    const commentsBefore = state.commentsHasMore === false ? undefined : state.commentsBefore ?? current.comments[0]?.id;
+    const eventsBefore = state.eventsHasMore === false ? undefined : state.eventsBefore ?? current.events[0]?.id;
+    if (commentsBefore === undefined && eventsBefore === undefined) return cloneTrackerData(current);
+    state.loadingOlderActivity = true;
+    notify();
+    try {
+      const [commentsPage, eventsPage] = await Promise.all([
+        commentsBefore === undefined ? Promise.resolve(null) : api.ticketComments(key, { before: commentsBefore, limit: 50 }),
+        eventsBefore === undefined ? Promise.resolve(null) : api.ticketEvents(key, { before: eventsBefore, limit: 50 }),
+      ]);
+      if (state.detail) {
+        if (commentsPage) {
+          const known = new Set(state.detail.comments.map((comment) => comment.id));
+          state.detail.comments = [...commentsPage.comments.filter((comment) => !known.has(comment.id)), ...state.detail.comments];
+          state.commentsBefore = commentsPage.nextCursor ?? undefined;
+          state.commentsHasMore = commentsPage.nextCursor !== null;
+        } else state.commentsHasMore = false;
+        if (eventsPage) {
+          const known = new Set(state.detail.events.map((event) => event.id));
+          state.detail.events = [...eventsPage.events.filter((event) => !known.has(event.id)), ...state.detail.events];
+          state.eventsBefore = eventsPage.nextCursor ?? undefined;
+          state.eventsHasMore = eventsPage.nextCursor !== null;
+        } else state.eventsHasMore = false;
+      }
+      state.loadingOlderActivity = false;
+      notify();
+      return cloneTrackerData(state.detail ?? current);
+    } catch (caught) {
+      state.loadingOlderActivity = false;
+      state.error = asTrackerError(caught);
       notify();
       throw state.error;
     }
@@ -894,6 +1089,55 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       const error = asTrackerError(caught);
       if (state.detail) state.detail.comments = state.detail.comments.filter((comment) => comment.clientId !== clientId);
       return handleMutationFailure(key, state, prior, error);
+    }
+  }
+
+  async function editComment(key: string, id: string, body: string): Promise<TrackerComment> {
+    assertWritable();
+    const state = ticketCache(key);
+    if (!state.detail) await loadTicket(key);
+    if (!state.detail) throw new TrackerError('not_found', `No ticket found for ${key}.`);
+    const prior = cloneTrackerData(state.detail);
+    const existing = state.detail.comments.find((comment) => comment.id === id);
+    if (!existing) throw new TrackerError('not_found', `No comment found for ${id}.`);
+    const optimistic = { ...existing, body, editedAt: now() };
+    state.detail.comments = state.detail.comments.map((comment) => comment.id === id ? optimistic : comment);
+    notify();
+    try {
+      const result = await api.editComment(id, body);
+      if (state.detail) state.detail.comments = state.detail.comments.map((comment) => comment.id === id ? cloneTrackerData(result.comment) : comment);
+      notify();
+      return cloneTrackerData(result.comment);
+    } catch (caught) {
+      state.detail = prior;
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
+    }
+  }
+
+  async function deleteComment(key: string, id: string): Promise<void> {
+    assertWritable();
+    const state = ticketCache(key);
+    if (!state.detail) await loadTicket(key);
+    if (!state.detail) throw new TrackerError('not_found', `No ticket found for ${key}.`);
+    const prior = cloneTrackerData(state.detail);
+    const existing = state.detail.comments.find((comment) => comment.id === id);
+    if (!existing) throw new TrackerError('not_found', `No comment found for ${id}.`);
+    state.detail.comments = state.detail.comments.map((comment) => comment.id === id
+      ? { ...comment, body: '', deleted: true, deletedAt: now() }
+      : comment);
+    notify();
+    try {
+      await api.deleteComment(id);
+      notify();
+    } catch (caught) {
+      state.detail = prior;
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
     }
   }
 
@@ -1152,17 +1396,21 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     subscribe(listener) { generalListeners.add(listener); return () => generalListeners.delete(listener); },
     snapshot,
     loadMeta,
+    createLabel,
     loadList,
     loadMore,
     list(query = {}) { return cloneTrackerData(listCache(query)); },
     watchList,
     ticket(key) { return cloneTrackerData(ticketCache(key)); },
     loadTicket,
+    loadOlderActivity,
     watchTicket,
     createTicket,
     updateTicket,
     transitionTicket,
     addComment,
+    editComment,
+    deleteComment,
     setSubscription,
     bulk,
     undo,
