@@ -15,6 +15,13 @@ import { audits, backupNow, becomeB, filesOf, rig, seedA, setting, type Rig } fr
 const TOKEN = 'r'.repeat(48);
 let h: Harness;
 const servers: http.Server[] = [];
+async function until(fn: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!fn()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for deferred restore exit');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((resolve) => s.close(resolve))));
   await h?.close();
@@ -217,7 +224,7 @@ describe('restoring the workspace', () => {
     const res = await post(s, { manifest: s.manifest, confirm: 'RESTORE' });
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ ok: true, restarting: true, keepOldFor: '7 days' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => probe.code === 75);
     expect(probe).toMatchObject({ code: 75 });
     expect(probe.whenLeaving).toBeGreaterThanOrEqual(1);
   });

@@ -237,13 +237,14 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
       import('./chat-routes.mjs'),
       import('./chat-retention.mjs'),
       import('./chat-notify.mjs'),
+      import('./chat-limits.mjs'),
     ]);
     const store = () => {
       if (maintenance) throw new Error('the workspace is being restored');
@@ -263,7 +264,7 @@ if (config.authEnabled) {
     // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
     const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
-    chat = { store, access, hub: chatHub, notifier: chatNotifier };
+    chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
       if (maintenance || typeof userId !== 'string') return;

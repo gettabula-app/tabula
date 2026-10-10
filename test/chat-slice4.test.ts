@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
-import { createHarness, until, sleep, type Account } from './mcp-harness';
+import { createHarness, until, type Account } from './mcp-harness';
 
 // docs/chat.md, slice 4 over a real relay (accounts mode, TABULA_CHAT=on, mail in `file` mode so nothing leaves the machine):
 // reactions, mention notices, the mention email and the preference. The email waits ten minutes in production; here 400 ms.
@@ -176,7 +176,7 @@ describe('mention notices', { timeout: 60_000 }, () => {
 
 describe('the mention email', { timeout: 60_000 }, () => {
   it('is sent once when the person has no tab open and has not read it, with a generic subject', async () => {
-    const { ana, ben, path } = await team();
+    const { t, ana, ben, path } = await team();
     await h.api(ben.cookie, 'GET', '/api/chat/channels');
     const before = mailsTo(ben.email).length;
     await say(ana, path, `@{${ben.user.id}} can you check the room?`);
@@ -186,40 +186,56 @@ describe('the mention email', { timeout: 60_000 }, () => {
     expect(mail.text).toContain('can you check the room?');
     expect(mail.text).toContain('#/chat/team/');
     await say(ana, path, `@{${ben.user.id}} again`);
-    await sleep(900);
+    const cara = await h.joinTeam(owner.cookie, t.id);
+    const caraBefore = mailsTo(cara.email).length;
+    // This later positive email confirms the earlier duplicate's due timer has also been checked.
+    await say(ana, path, `@{${cara.user.id}} timer check`);
+    await until(() => mailsTo(cara.email).length > caraBefore, 8000);
     expect(mailsTo(ben.email).length).toBe(before + 1);
   });
 
   it('is not sent to a person who turned it off', async () => {
-    const { ana, ben, path } = await team();
+    const { t, ana, ben, path } = await team();
     expect((await h.api(ben.cookie, 'PUT', '/api/me/prefs', { emailMentions: false })).body).toEqual({ emailMentions: false });
     const before = mailsTo(ben.email).length;
     await say(ana, path, `@{${ben.user.id}} hello`);
-    await sleep(900);
+    const cara = await h.joinTeam(owner.cookie, t.id);
+    const caraBefore = mailsTo(cara.email).length;
+    await say(ana, path, `@{${cara.user.id}} timer check`);
+    await until(() => mailsTo(cara.email).length > caraBefore, 8000);
     expect(mailsTo(ben.email).length).toBe(before);
   });
 
   it('is not sent when the person opens the app before it is due', async () => {
-    const { ana, ben, path } = await team();
+    const { t, ana, ben, path } = await team();
     const before = mailsTo(ben.email).length;
     await say(ana, path, `@{${ben.user.id}} are you there`);
     const b = await ready(ben.cookie);
-    await sleep(900);
+    const cara = await h.joinTeam(owner.cookie, t.id);
+    const caraBefore = mailsTo(cara.email).length;
+    await say(ana, path, `@{${cara.user.id}} timer check`);
+    await until(() => mailsTo(cara.email).length > caraBefore, 8000);
     b.ws.terminate();
     expect(mailsTo(ben.email).length).toBe(before);
   });
 
   it('is not sent when the mention was read, or edited away', async () => {
-    const { ana, ben, path } = await team();
+    const { t, ana, ben, path } = await team();
     await h.api(ben.cookie, 'GET', '/api/chat/channels');
     const before = mailsTo(ben.email).length;
     const m = (await say(ana, path, `@{${ben.user.id}} one`)).body.message;
     await h.api(ben.cookie, 'PUT', `/api/chat/${path}/read`, { lastId: m.id });
-    await sleep(900);
+    const cara = await h.joinTeam(owner.cookie, t.id);
+    let caraBefore = mailsTo(cara.email).length;
+    await say(ana, path, `@{${cara.user.id}} read timer check`);
+    await until(() => mailsTo(cara.email).length > caraBefore, 8000);
     expect(mailsTo(ben.email).length).toBe(before);
     const n = (await say(ana, path, `@{${ben.user.id}} two`)).body.message;
     await h.api(ana.cookie, 'PATCH', `/api/chat/messages/${n.id}`, { text: 'two, nobody' });
-    await sleep(900);
+    const dan = await h.joinTeam(owner.cookie, t.id);
+    caraBefore = mailsTo(dan.email).length;
+    await say(ana, path, `@{${dan.user.id}} edit timer check`);
+    await until(() => mailsTo(dan.email).length > caraBefore, 8000);
     expect(mailsTo(ben.email).length).toBe(before);
   });
 });
