@@ -87,7 +87,24 @@ export function mountTrackerGallery(container: HTMLElement = document.body): HTM
     h('div', { class: 'trk-gallery-column' }, glyphSection, pickerSection),
     h('div', { class: 'trk-gallery-column' }, filterSection, listSection),
   );
-  root.append(header, grid);
+  const ticketPreview = h('section', { class: 'trk-gallery-section tk-page-gallery', 'aria-label': 'Ticket page states' },
+    h('h2', null, 'Ticket page · archive, conflict, and activity'),
+    h('div', { class: 'tk-page-gallery-grid' },
+      h('article', { class: 'trk tk-page tk-page--peek' },
+        h('div', { class: 'tk-archived-banner' }, h('span', null, 'Archived on Oct 8, 2026.'), h('button', { class: 'tk-button tk-button--secondary', type: 'button' }, 'Restore')),
+        h('header', { class: 'tk-header' }, keyChip('TAB-123'), h('button', { class: 'tk-field-button', type: 'button' }, stateGlyph('started', 'in_progress'), ' In progress'), h('button', { class: 'tk-field-button', type: 'button' }, 'Subscribed')),
+        h('h3', { class: 'tk-title' }, 'Keep the ticket context close to the work'),
+        h('p', { class: 'tk-created-by' }, avatar({ kind: 'person', name: 'Maya Chen' }), 'Created by Maya Chen'),
+        h('div', { class: 'tk-section' }, h('h2', { class: 'tk-section-heading' }, 'Activity'), h('article', { class: 'tk-history-row' }, h('span', { class: 'tk-event-icon' }, '◐'), avatar({ kind: 'github', name: 'GitHub' }), h('span', { class: 'tk-history-text' }, 'GitHub merged PR #482 and moved it to Done'), h('time', { class: 'trk-relative-time' }, '12 minutes ago'))),
+      ),
+      h('div', { class: 'tk-page-state-gallery' },
+        h('div', { class: 'tk-conflict-bar' }, h('strong', null, 'This ticket changed'), h('span', null, 'Yours: In review · Theirs: Done'), h('button', { class: 'tk-button tk-button--secondary', type: 'button' }, 'Keep mine'), h('button', { class: 'tk-button tk-button--quiet', type: 'button' }, 'Take theirs')),
+        h('div', { class: 'tk-loading', 'aria-label': 'Loading ticket example' }, h('span', { class: 'tk-skeleton tk-skeleton--wide' }), h('span', { class: 'tk-skeleton' }), h('span', { class: 'tk-skeleton tk-skeleton--wide' })),
+        h('p', { class: 'tk-empty-copy' }, 'No pull requests or commits are linked yet.'),
+      ),
+    ),
+  );
+  root.append(header, grid, ticketPreview);
   container.replaceChildren(root);
   void openPicker(pickerButton, { label: 'State', options: pickerOptions, value: 'in_progress' });
   return root;
