@@ -7,6 +7,7 @@ import { visibleColumns, facetsForGroup, trackerViewerState, mountTrackerShell }
 import { markdownInlineTokens, renderSafeMarkdown } from '../src/tracker/ui/new-issue';
 import { ticketChip, ticketChipValue } from '../src/tracker/ui/ticket-chip';
 import { buildListModel, selectAll, setGroupCollapsed, type TrackerRow } from '../src/tracker/ui/list-model';
+import * as listModelModule from '../src/tracker/ui/list-model';
 import { createTrackerVisualSeed } from '../src/tracker/ui/visual-seed';
 import { installTrackerUiBrowser, uiEvent } from './tracker-ui-test-helpers';
 import { FakeElement, FakeEvent, flush } from './fake-dom';
@@ -75,9 +76,11 @@ describe('tracker shell slice', () => {
     shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[1].click();
     await flush(40);
     expect(shell.state).toMatchObject({ tab: 'my', mySubtab: 'active', sort: { field: 'priority', direction: 'asc' } });
+    expect(shell.el.querySelector('.trk-filter-input')).not.toBeNull();
     expect(Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-list-row')).map((row) => row.getAttribute('data-key'))).toEqual(['TAB-800']);
     expect(shell.el.querySelector('.trk-filter-chip')?.textContent).toContain('assignee: Me');
     expect(list.mock.calls.some(([query]) => (query?.filter as string[] | undefined)?.includes('assignee:me'))).toBe(true);
+    expect(list.mock.calls.every(([query]) => Object.keys(query ?? {}).every((key) => ['filter', 'q', 'limit', 'cursor'].includes(key)))).toBe(true);
 
     shell.el.querySelector<HTMLButtonElement>('.trk-glyph-button')!.click();
     await flush();
@@ -135,6 +138,31 @@ describe('tracker shell slice', () => {
     store.destroy();
   });
 
+  it('renders the compact real-server ticket projection and groups it without facets', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const ticket = seed.tickets![0];
+    const listProjection = {
+      id: ticket.id, key: ticket.key, title: ticket.title,
+      state: { key: ticket.state.key, name: ticket.state.name, category: ticket.state.category },
+      assignee: ticket.assignee, project: null, due: ticket.due, archivedAt: null,
+      updatedAt: ticket.updatedAt, updatedSeq: ticket.updatedSeq, snippet: null,
+      commentCount: 0, subIssueCount: 0, subIssueDone: 0, blocked: false, prs: null,
+    } as unknown as TrackerTicket;
+    const api = createMockTrackerApi(seed);
+    vi.spyOn(api, 'listTickets').mockResolvedValue({ tickets: [listProjection], nextCursor: null });
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'real-list-viewer', trackerId: 'real-list-tracker', initialTab: 'all' });
+    await store.loadMeta();
+    await flush(40);
+    const row = shell.el.querySelector<HTMLElement>('.trk-list-row');
+    expect(row?.getAttribute('data-key')).toBe(ticket.key);
+    expect(shell.el.querySelector('.trk-group-heading')?.textContent).toContain(ticket.state.name);
+    expect(shell.el.querySelector('.trk-results-count')?.textContent).toBe('1 issue');
+    shell.destroy();
+    store.destroy();
+  });
+
   it('renders state lanes, moves cards by menu and keyboard, refreshes counts, and switches one lane at phone width', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
@@ -152,7 +180,7 @@ describe('tracker shell slice', () => {
     Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'In progress')!.click();
     await flush(60);
     expect(store.ticket('TAB-101').ticket?.state.key).toBe('in_progress');
-    expect(transition).toHaveBeenCalledWith('TAB-101', 'state-progress');
+    expect(transition).toHaveBeenCalledWith('TAB-101', 'in_progress');
     browser.document.querySelector<FakeElement>('.toast-action')!.click();
     await flush(60);
     expect(store.ticket('TAB-101').ticket?.state.key).toBe('todo');
@@ -176,6 +204,31 @@ describe('tracker shell slice', () => {
     store.destroy();
   });
 
+  it('shows a retryable list alert for request failures and retries the server query', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const ticket = seed.tickets![0];
+    const api = createMockTrackerApi(seed);
+    const listTickets = vi.spyOn(api, 'listTickets')
+      .mockRejectedValueOnce(new TrackerError('network', 'Relay request failed'))
+      .mockRejectedValueOnce(new TrackerError('network', 'Relay request failed'))
+      .mockResolvedValue({ tickets: [ticket], nextCursor: null });
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'list-error-viewer', trackerId: 'list-error-tracker', initialTab: 'all' });
+    await store.loadMeta();
+    await flush(40);
+    const alert = shell.el.querySelector('.trk-list-error') as unknown as FakeElement | null;
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.hasAttribute('hidden')).toBe(false);
+    expect(alert?.textContent).toContain('Could not load issues.');
+    alert?.querySelector<FakeElement>('button')?.click();
+    await flush(40);
+    expect(listTickets).toHaveBeenCalledTimes(3);
+    expect(shell.el.querySelector('.trk-list-row')?.getAttribute('data-key')).toBe(ticket.key);
+    shell.destroy();
+    store.destroy();
+  });
+
   it('rolls back a failed board move and shows the store error', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
@@ -191,6 +244,35 @@ describe('tracker shell slice', () => {
     await flush(50);
     expect(store.ticket('TAB-101').ticket?.state.key).toBe('todo');
     expect(browser.document.querySelector('.toast')?.textContent).toContain('Move denied.');
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('catches row-render exceptions and shows an actionable list error', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const ticket = seed.tickets![0];
+    const api = createMockTrackerApi(seed);
+    const build = listModelModule.buildListModel;
+    let failed = false;
+    vi.spyOn(listModelModule, 'buildListModel').mockImplementation((options) => {
+      if (!failed && options.pages.some((page) => page.some((row) => row.key === ticket.key))) {
+        failed = true;
+        throw new Error('List rendering failed');
+      }
+      return build(options);
+    });
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'render-error-viewer', trackerId: 'render-error-tracker', initialTab: 'all' });
+    await store.loadMeta();
+    await flush(40);
+    const alert = shell.el.querySelector('.trk-list-error') as unknown as FakeElement | null;
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.textContent).toContain('List rendering failed');
+    expect(alert?.querySelector<FakeElement>('button')?.textContent).toBe('Retry');
+    shell.el.querySelector<HTMLButtonElement>('.trk-list-error button')?.click();
+    await flush(40);
+    expect(shell.el.querySelector('.trk-list-row')?.getAttribute('data-key')).toBe(ticket.key);
     shell.destroy();
     store.destroy();
   });
@@ -323,7 +405,7 @@ describe('new issue dialog', () => {
     title.dispatchEvent(new FakeEvent('input'));
     modalBox.querySelector<FakeElement>('.trk-primary-button')!.click();
     await flush(40);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: 'New issue through the shell store', state: 'state-todo' }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: 'New issue through the shell store', state: 'todo' }));
     expect(modal.box.isConnected).toBe(false);
     store.destroy();
   });
@@ -342,6 +424,30 @@ describe('new issue dialog', () => {
     modalBox.querySelector('.trk-primary-button')!.click();
     await flush(40);
     expect(modalBox.querySelectorAll('.trk-new-properties button')[3].getAttribute('aria-invalid')).toBe('true');
+    modal.close();
+    store.destroy();
+  });
+
+  it('keeps a failed create visible, preserves the draft, and focuses the server field path', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    vi.spyOn(api, 'createTicket').mockRejectedValueOnce(new TrackerError('invalid_input', 'Unknown label: UI', { path: 'labels[0]' }));
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const modal = openNewIssueDialog({ store, meta: seed.meta!, viewerId: 'invalid-label-viewer', trackerId: 'invalid-label-tracker' });
+    const box = modal.box as unknown as FakeElement;
+    const title = box.querySelector<FakeElement>('.trk-new-title')!;
+    title.value = 'Keep this failed draft';
+    title.dispatchEvent(new FakeEvent('input'));
+    box.querySelector<FakeElement>('.trk-primary-button')!.click();
+    await flush(40);
+    expect(box.querySelector('.trk-inline-error')?.getAttribute('role')).toBe('alert');
+    expect(box.querySelector('.trk-inline-error')?.textContent).toContain('Unknown label: UI');
+    expect(box.isConnected).toBe(true);
+    expect(title.value).toBe('Keep this failed draft');
+    const labels = box.querySelectorAll<FakeElement>('.trk-new-properties button')[3];
+    expect(labels.getAttribute('aria-invalid')).toBe('true');
+    expect(browser.document.activeElement).toBe(labels);
     modal.close();
     store.destroy();
   });
@@ -409,6 +515,8 @@ describe('safe snippets and tracker error paths', () => {
   it('normalizes REST validation paths for the matching tracker controls', () => {
     expect(trackerErrorField('labels')).toBe('labels');
     expect(trackerErrorField('patch.labels')).toBe('labels');
+    expect(trackerErrorField('patch.labels[0]')).toBe('labels');
+    expect(trackerErrorField('assigneeId')).toBe('assignee');
     expect(trackerErrorField('query')).toBe('search');
     expect(trackerErrorField(undefined)).toBeNull();
   });

@@ -171,6 +171,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   let cache: TrackerTicketCache = opts.store.ticket(opts.key);
   let snapshot: TrackerStoreSnapshot = opts.store.snapshot();
   let destroyed = false;
+  let refetchedSeq = -1;
   let titleEditing = false;
   let titleDraft = '';
   let descriptionEditing = false;
@@ -227,7 +228,28 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   void opts.store.loadTicket(opts.key).catch(() => undefined);
   void opts.store.loadMeta().then(() => { if (!destroyed) { snapshot = opts.store.snapshot(); render(); } }).catch(() => undefined);
 
-  function ticket(): TrackerTicket | undefined { return cache.detail?.ticket ?? cache.ticket; }
+  // List and poll rows are slim (no creator, labels, relations). The page needs the full ticket, so a slim copy is completed from the detail
+  // and defaults, and the full ticket is fetched once for that updatedSeq. Without this a conflict plus a poll crashed the page.
+  function ticket(): TrackerTicket | undefined {
+    const raw = cache.ticket ?? cache.detail?.ticket;
+    const detail = cache.detail?.ticket;
+    if (!raw) return detail;
+    const merged = !detail ? raw : raw.updatedSeq >= detail.updatedSeq ? { ...detail, ...raw } : detail;
+    if (merged.creator && merged.labels && merged.relations && merged.links && merged.aliases) return merged;
+    if (!destroyed && refetchedSeq !== merged.updatedSeq) {
+      refetchedSeq = merged.updatedSeq;
+      void opts.store.loadTicket(opts.key, true).catch(() => undefined);
+    }
+    return {
+      ...merged,
+      creator: merged.creator ?? { type: 'user', id: null, name: 'Unknown' },
+      labels: merged.labels ?? [],
+      relations: merged.relations ?? [],
+      links: merged.links ?? [],
+      aliases: merged.aliases ?? [],
+      description: merged.description ?? '',
+    };
+  }
   function meta(): TrackerMeta | undefined { return snapshot.meta; }
   function archived(): boolean { return Boolean(ticket()?.archivedAt); }
   function canRestore(): boolean { return opts.me.canWrite && !snapshot.readOnly; }

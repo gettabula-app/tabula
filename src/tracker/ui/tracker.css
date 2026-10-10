@@ -327,6 +327,9 @@
 .trk-fullscreen-portal .trk-fullscreen-strip { flex: none; }
 .trk-route-root { position: fixed; z-index: 20000; inset: 0; width: 100vw; height: 100dvh; overflow: hidden; background: var(--paper-hi, var(--paper)); color: var(--ink); }
 .trk-route-root > .trk-shell { width: 100%; height: 100%; border: 0; }
+/* Global overlays are siblings of the full-screen route root, so lift them above its stacking context. */
+.trk-route-root ~ .popover { z-index: 20001; }
+.trk-route-root ~ .modal-back { z-index: 20002; }
 
 .trk-new-issue-back .modal { width: min(720px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); }
 .trk-new-issue { display: grid; gap: 14px; }
@@ -334,6 +337,10 @@
 .trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--graphite); font-size: 12px; }
 .trk-new-description { width: 100%; min-height: 160px; resize: vertical; padding: 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: var(--paper); }
 .trk-new-preview { min-height: 160px; padding: 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); overflow-wrap: anywhere; }
+.trk-new-issue-back .trk-new-issue { color: var(--tray-text); }
+.trk-new-issue-back .trk-new-description-head { color: var(--tray-muted); }
+.trk-new-issue-back .trk-new-title, .trk-new-issue-back .trk-new-description { color: var(--ink); }
+.trk-new-issue-back .trk-small-button { border-color: var(--tray-line); color: var(--tray-text); }
 .trk-markdown-preview > :first-child { margin-top: 0; }
 .trk-markdown-preview > :last-child { margin-bottom: 0; }
 .trk-markdown-preview code { padding: 1px 4px; border: 1px solid var(--rule); border-radius: var(--radius-xs, 4px); }

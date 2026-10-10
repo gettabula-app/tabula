@@ -134,11 +134,59 @@ function isTextTarget(target: EventTarget | null): boolean {
 }
 
 function stableQuery(state: TrackerViewerState): TrackerListQuery {
-  const supportedGroup = ['state', 'assignee', 'label'].includes(state.group) ? state.group : null;
+  // The REST list route currently accepts filters, q and limit. Grouping, facets and sorting are applied locally.
   const filters = state.tab === 'my' && state.mySubtab === 'active' ? ['assignee:me', ...state.filter] : [...state.filter];
   return {
-    filter: filters, q: state.queryText.trim() || undefined, limit: 50, includeFacets: true, group: supportedGroup,
-    sort: { ...state.sort },
+    filter: filters, q: state.queryText.trim() || undefined, limit: 50,
+  };
+}
+
+/** The server's list endpoint returns a compact projection; fill fields used by the shared row UI. */
+function ticketFromListRow(row: TrackerRow, meta: TrackerMeta, trackerId: string): TrackerTicket {
+  const partial = row as unknown as Partial<TrackerTicket>;
+  const listedState = partial.state as Partial<TrackerTicket['state']> | undefined;
+  const stateReference = listedState?.id ?? listedState?.key ?? listedState?.name;
+  const canonicalState = meta.states.find((item) => item.id === stateReference || item.key === stateReference || item.name === stateReference);
+  const categories = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const;
+  const category = listedState?.category;
+  const priorities: readonly TrackerPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
+  const updatedAt = typeof partial.updatedAt === 'number' && Number.isFinite(partial.updatedAt) ? partial.updatedAt : 0;
+  const labels = Array.isArray(partial.labels) ? partial.labels.filter((label) => label && typeof label.name === 'string') : [];
+  const assignee = partial.assignee && typeof partial.assignee.userId === 'string' && typeof partial.assignee.name === 'string'
+    ? partial.assignee : null;
+  const project = partial.project && typeof partial.project.id === 'string' && typeof partial.project.name === 'string'
+    ? partial.project : null;
+  const milestone = partial.milestone && typeof partial.milestone.id === 'string' && typeof partial.milestone.name === 'string'
+    ? partial.milestone : null;
+  return {
+    ...partial,
+    id: typeof partial.id === 'string' ? partial.id : `list:${row.key}`,
+    key: row.key,
+    trackerId: typeof partial.trackerId === 'string' ? partial.trackerId : trackerId,
+    title: typeof partial.title === 'string' ? partial.title : row.key,
+    description: typeof partial.description === 'string' ? partial.description : '',
+    state: {
+      id: typeof listedState?.id === 'string' ? listedState.id : canonicalState?.id ?? stateReference ?? 'unknown',
+      key: typeof listedState?.key === 'string' ? listedState.key : canonicalState?.key ?? stateReference ?? 'unknown',
+      name: typeof listedState?.name === 'string' ? listedState.name : canonicalState?.name ?? String(stateReference ?? 'Unknown state'),
+      category: categories.includes(category as (typeof categories)[number]) ? category as TrackerTicket['state']['category'] : canonicalState?.category ?? 'unstarted',
+    },
+    priority: priorities.includes(partial.priority as TrackerPriority) ? partial.priority! : 'none',
+    assignee,
+    creator: partial.creator ?? { type: 'system', id: null, name: 'System' },
+    labels,
+    project,
+    milestone,
+    estimate: typeof partial.estimate === 'number' ? partial.estimate : null,
+    due: typeof partial.due === 'string' ? partial.due : null,
+    parent: typeof partial.parent === 'string' ? partial.parent : null,
+    relations: Array.isArray(partial.relations) ? partial.relations : [],
+    links: Array.isArray(partial.links) ? partial.links : [],
+    aliases: Array.isArray(partial.aliases) ? partial.aliases : [],
+    archivedAt: typeof partial.archivedAt === 'number' ? partial.archivedAt : null,
+    createdAt: typeof partial.createdAt === 'number' ? partial.createdAt : updatedAt,
+    updatedAt,
+    updatedSeq: typeof partial.updatedSeq === 'number' ? partial.updatedSeq : 0,
   };
 }
 
@@ -264,6 +312,23 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     errorBanner.hidden = false;
   };
 
+  const showListError = (message: string) => {
+    if (!errorHost || !root.contains(errorHost)) { showError(message); return; }
+    const target = errorHost;
+    const displayMessage = message.startsWith('Could not load') ? message : `Could not load issues. ${message}`;
+    target.replaceChildren(h('span', null, displayMessage), h('button', {
+      class: 'trk-small-button', type: 'button', onclick: () => {
+        target.hidden = true;
+        void options.store.loadList(stableQuery(state), { force: true }).catch((error: unknown) =>
+          showListError(error instanceof Error ? error.message : 'Could not load issues.'));
+      },
+    }, 'Retry'));
+    target.hidden = false;
+    if (skeletonHost) skeletonHost.hidden = true;
+    if (listRenderHost) listRenderHost.replaceChildren();
+    if (resultsHost) resultsHost.textContent = 'Issues unavailable';
+  };
+
   const renderTabs = () => {
     tabs.replaceChildren(...TABS.map((tab) => h('button', {
       class: `trk-tab${state.tab === tab.id ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -284,6 +349,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const getMeta = (): TrackerMeta | undefined => meta ?? options.store.snapshot().meta;
   const listFacets = (cache: typeof currentCache): ListFacets | undefined => facetsForGroup(state.group, cache.facets);
   const stopBoardWatch = () => { stopBoard.forEach((stop) => stop()); stopBoard = []; boardCaches.clear(); };
+  const showBoardError = (message: string, query?: TrackerListQuery) => {
+    const host = boardErrorHost;
+    if (!host) { showListError(message); return; }
+    host.replaceChildren(h('span', null, message), h('button', {
+      class: 'trk-small-button', type: 'button', onclick: () => {
+        if (!query) { host.hidden = true; showError(message); return; }
+        void options.store.loadList(query, { force: true }).catch((error: unknown) =>
+          showBoardError(error instanceof Error ? error.message : 'Could not load board issues.', query));
+      },
+    }, 'Retry'));
+    host.hidden = false;
+  };
 
   const startWatch = () => {
     stopList?.();
@@ -292,11 +369,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     currentCache = options.store.list(query);
     stopList = options.store.watchList(query, (cache) => {
       currentCache = cache;
-      drawRows(cache);
-      publishCurrentSnapshot();
-      if (cache.error) {
-        if (cache.error.code === 'invalid_filter') filterController?.setError(cache.error.message);
-        showError(cache.error.message);
+      try {
+        filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+        drawRows(cache);
+        publishCurrentSnapshot();
+      } catch (error) {
+        showListError(error instanceof Error ? error.message : 'Could not render issues.');
       }
     });
   };
@@ -315,18 +393,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (!info) return;
     try {
       if (field === 'state') {
-        const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.id, label: item.name })), value: ticket.state.id });
-        if (typeof picked === 'string' && picked !== ticket.state.id) {
+        const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.key, label: item.name })), value: ticket.state.key });
+        if (typeof picked === 'string' && picked !== ticket.state.key) {
           const next = await options.store.transitionTicket(ticket.key, picked);
-          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.id));
+          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.key));
           announce(`${next.key} moved to ${next.state.name}`);
         }
       } else if (field === 'assignee') {
-        const picked = await openPicker<string>(anchor, { label: 'Assignee', options: info.members.map((item) => ({ value: item.userId, label: item.name })), value: ticket.assignee?.userId ?? null });
-        if ((picked === null || typeof picked === 'string') && picked !== (ticket.assignee?.userId ?? null)) {
+        const picked = await openPicker<string>(anchor, { label: 'Assignee', options: info.members.map((item) => ({ value: item.name, label: item.name })), value: ticket.assignee?.name ?? null });
+        if ((picked === null || typeof picked === 'string') && picked !== (ticket.assignee?.name ?? null)) {
           await options.store.updateTicket(ticket.key, { assignee: picked });
-          recordUndo('Assignee changed', () => options.store.updateTicket(ticket.key, { assignee: ticket.assignee?.userId ?? null }));
-          announce(`${ticket.key} assigned to ${picked === null ? 'no one' : info.members.find((member) => member.userId === picked)?.name ?? picked}`);
+          recordUndo('Assignee changed', () => options.store.updateTicket(ticket.key, { assignee: ticket.assignee?.name ?? null }));
+          announce(`${ticket.key} assigned to ${picked === null ? 'no one' : picked}`);
         }
       } else if (field === 'priority') {
         const priorities: TrackerPriority[] = ['urgent', 'high', 'medium', 'low', 'none'];
@@ -336,11 +414,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Priority changed', () => options.store.updateTicket(ticket.key, { priority: ticket.priority }));
         }
       } else if (field === 'labels') {
-        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.id), options: info.labels.map((item) => ({ value: item.id, label: item.name })) });
+        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name })) });
         if (Array.isArray(picked)) {
           const labels = picked.filter((value): value is string => typeof value === 'string');
           await options.store.updateTicket(ticket.key, { labels });
-          recordUndo('Labels changed', () => options.store.updateTicket(ticket.key, { labels: ticket.labels.map((label) => label.id) }));
+          recordUndo('Labels changed', () => options.store.updateTicket(ticket.key, { labels: ticket.labels.map((label) => label.name) }));
         }
       } else if (field === 'due') {
         const today = new Date().toISOString().slice(0, 10);
@@ -351,10 +429,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Due date changed', () => options.store.updateTicket(ticket.key, { due: ticket.due }));
         }
       } else {
-        const projects = [...new Map(currentCache.tickets.flatMap((row) => row.project ? [[row.project.id, row.project.name] as const] : [])).entries()]
-          .map(([id, name]) => ({ value: id, label: name }));
+        const projects = [...new Map(currentCache.tickets.flatMap((row) => row.project ? [[row.project.name, row.project.name] as const] : [])).entries()]
+          .map(([name, label]) => ({ value: name, label }));
         if (!projects.length) { toast('Projects are not available yet.'); return; }
-        const picked = await openPicker<string>(anchor, { label: 'Project', options: projects, value: ticket.project?.id ?? null });
+        const picked = await openPicker<string>(anchor, { label: 'Project', options: projects, value: ticket.project?.name ?? null });
         if (picked !== undefined) toast('Project updates are not available in the tracker store yet.');
       }
     } catch (caught) {
@@ -375,7 +453,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       let undoBatch: Awaited<ReturnType<TrackerStore['bulk']>> | undefined;
       if (patch.state) {
         // The current bulk store contract has no state field; transition one ticket at a time until that API lands.
-        const before = state.selectedKeys.map((key) => [key, currentCache.tickets.find((ticket) => ticket.key === key)?.state.id] as const);
+        const before = state.selectedKeys.map((key) => [key, currentCache.tickets.find((ticket) => ticket.key === key)?.state.key] as const);
         const transitioned: string[] = [];
         try {
           for (const key of state.selectedKeys) {
@@ -411,24 +489,25 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const bulkPicker = (anchor: HTMLElement, field: 'state' | 'assignee' | 'priority' | 'labels' | 'due') => {
     const info = getMeta();
     if (!info || !state.selectedKeys.length) return;
-    if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.id, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
-    else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.userId, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
+    if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.key, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
+    else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.name, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
     else if (field === 'priority') renderMenu(anchor, 'Priority', ['urgent', 'high', 'medium', 'low', 'none'].map((value) => ({ value, label: priorityLabel(value as TrackerPriority) })), '', (value) => void doBulk({ priority: value as TrackerPriority }, anchor));
-    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.id, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
+    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
     else renderMenu(anchor, 'Due date', [{ value: '__none', label: 'No date' }, { value: new Date().toISOString().slice(0, 10), label: 'Today' }], '', (value) => void doBulk({ due: value === '__none' ? null : value }, anchor));
   };
 
   const issuesForView = (cache: typeof currentCache): TrackerTicket[] => {
-    if (state.tab !== 'my') return cache.tickets;
+    const tickets = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
+    if (state.tab !== 'my') return tickets;
     const me = getMeta()?.me.userId;
     if (!me) return [];
-    if (state.mySubtab === 'created') return cache.tickets.filter((ticket) => ticket.creator.type === 'user' && ticket.creator.id === me);
-    return cache.tickets.filter((ticket) => ticket.assignee?.userId === me && ticket.state.category !== 'completed' && ticket.state.category !== 'canceled');
+    if (state.mySubtab === 'created') return tickets.filter((ticket) => ticket.creator.type === 'user' && ticket.creator.id === me);
+    return tickets.filter((ticket) => ticket.assignee?.userId === me && ticket.state.category !== 'completed' && ticket.state.category !== 'canceled');
   };
   const facetsForIssues = (cache: typeof currentCache, tickets: readonly TrackerTicket[]): ListFacets | undefined => {
     if (state.tab !== 'my' || state.group !== 'state' || !meta) return listFacets(cache);
     return { state: meta.states.slice().sort((a, b) => a.position - b.position).map((item) => ({
-      key: item.id, label: item.name, count: tickets.filter((ticket) => ticket.state.id === item.id).length,
+      key: item.id, label: item.name, count: tickets.filter((ticket) => ticket.state.key === item.key).length,
     })) };
   };
   const lockedFilterChips = (): FilterChip[] => state.tab === 'my'
@@ -437,7 +516,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       : [{ field: 'creator', value: 'me', locked: true }]
     : [];
 
-  const drawRows = (cache: typeof currentCache) => {
+  const renderRows = (cache: typeof currentCache) => {
     if (!listRenderHost || !resultsHost || !skeletonHost || !errorHost) return;
     if (!meta) {
       skeletonHost.hidden = false;
@@ -451,6 +530,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const sortPlan: ListSortPlan = state.tab === 'my'
       ? [{ field: primarySort, direction: state.sort.direction }, ...(primarySort === 'due' ? [] : [{ field: 'due' as const, direction: 'asc' as const }])]
       : { field: primarySort, direction: state.sort.direction };
+    filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+    if (cache.error) {
+      showListError(cache.error.message || 'Could not load issues.');
+      const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
+      if (searchInput) {
+        if (trackerErrorField(cache.error.path) === 'search') searchInput.setAttribute('aria-invalid', 'true');
+        else searchInput.removeAttribute('aria-invalid');
+      }
+      skeletonHost.hidden = true;
+      return;
+    }
+    errorHost.hidden = true;
     listModel = buildListModel({
       pages: [tickets as unknown as TrackerRow[]], facets: facetsForIssues(cache, tickets), group: state.group, sort: sortPlan,
       collapsedGroups: state.collapsedGroups, cursorKey: state.cursorKey, selectedKeys: state.selectedKeys, anchorKey: state.anchorKey,
@@ -459,15 +550,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.selectedKeys = listModel.selectedKeys;
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
-    errorHost.hidden = !cache.error;
-    if (cache.error) errorHost.textContent = cache.error.message;
     const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
-    if (searchInput) {
-      if (cache.error && trackerErrorField(cache.error.path) === 'search') searchInput.setAttribute('aria-invalid', 'true');
-      else searchInput.removeAttribute('aria-invalid');
-    }
-    if (cache.error?.code === 'invalid_filter') filterController?.setError(cache.error.message);
-    else if (!cache.error) filterController?.setError(null);
+    searchInput?.removeAttribute('aria-invalid');
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
     if (!cache.loading && tickets.length === 0) {
       const myEmpty = state.tab === 'my' && !filterActive && !cache.nextCursor;
@@ -478,7 +562,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         : filterActive ? 'No issues match.' : 'No issues yet.';
       listRenderHost.replaceChildren(h('div', { class: 'trk-empty-state' },
         h('h2', null, emptyMessage),
-        cache.nextCursor ? h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
+        cache.nextCursor ? h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
         filterActive
           ? h('button', { class: 'trk-small-button', type: 'button', onclick: () => { state.filter = []; state.queryText = ''; filterController?.setChips(lockedFilterChips()); if (filterController) filterController.focusSearch(); watchQuery(); } }, 'Clear filters')
           : (!readOnly ? h('button', { class: 'trk-primary-button', type: 'button', onclick: () => openCreate() }, '+ New issue') : null),
@@ -512,7 +596,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       }
       if (group.collapsed) continue;
       for (const raw of group.rows) {
-        const ticket = raw as unknown as TrackerTicket;
+        const ticket = ticketFromListRow(raw, meta, options.trackerId);
         const selectedHere = state.selectedKeys.includes(ticket.key);
         const cursor = state.cursorKey === ticket.key;
         const cells: Node[] = [];
@@ -557,11 +641,16 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }
     listRenderHost.replaceChildren(...rows);
     listRenderHost.setAttribute('aria-rowcount', String(model.visibleRows.length));
-    if (cache.nextCursor) listRenderHost.appendChild(h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more'));
+    if (cache.nextCursor) listRenderHost.appendChild(h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more'));
     const facets = facetsForIssues(cache, tickets)?.[state.group];
     const total = state.tab === 'my' ? tickets.length : facets?.reduce((sum, facet) => sum + facet.count, 0) ?? tickets.length;
     resultsHost.textContent = cache.nextCursor ? `${total}+ issues` : `${total} ${total === 1 ? 'issue' : 'issues'}`;
     announce(selected ? `${selected} selected` : '');
+  };
+
+  const drawRows = (cache: typeof currentCache) => {
+    try { renderRows(cache); }
+    catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
   };
 
   const publishCurrentSnapshot = () => {
@@ -672,7 +761,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const info = getMeta();
     if (!info || readOnly) return;
     openNewIssueDialog({ store: options.store, meta: info, viewerId: options.viewerId, trackerId: options.trackerId,
-      defaultState: defaultState ?? (state.group === 'state' ? state.cursorKey ? options.store.list(stableQuery(state)).tickets.find((item) => item.key === state.cursorKey)?.state.id : undefined : undefined),
+      defaultState: defaultState ?? (state.group === 'state' ? state.cursorKey ? options.store.list(stableQuery(state)).tickets.find((item) => item.key === state.cursorKey)?.state.key : undefined : undefined),
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       onCreated: (key) => { options.onCreated?.(key); startWatch(); announce(`${key} created`); },
     });
@@ -727,18 +816,16 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const boardStates = () => (getMeta()?.states ?? []).filter((item) => item.category !== 'canceled').slice().sort((a, b) => a.position - b.position);
-  const boardQuery = (item: TrackerState): TrackerListQuery => ({
-    filter: [`state:${item.key}`], limit: 50, group: null, sort: { field: 'priority', direction: 'asc' },
-  });
+  const boardQuery = (item: TrackerState): TrackerListQuery => ({ filter: [`state:${item.key}`], limit: 50 });
   const refreshBoard = async () => {
     const queries = [...boardCaches.values()].map((entry) => entry.query);
     await Promise.all(queries.map((query) => options.store.loadList(query, { force: true })));
   };
-  const moveBoardTicket = async (ticket: TrackerTicket, stateId: string, anchor?: HTMLElement) => {
-    if (readOnly || ticket.state.id === stateId) return;
-    const previous = ticket.state.id;
+  const moveBoardTicket = async (ticket: TrackerTicket, stateKey: string, anchor?: HTMLElement) => {
+    if (readOnly || ticket.state.key === stateKey) return;
+    const previous = ticket.state.key;
     try {
-      const moved = await options.store.transitionTicket(ticket.key, stateId);
+      const moved = await options.store.transitionTicket(ticket.key, stateKey);
       await refreshBoard();
       recordUndo('State changed', async () => {
         await options.store.transitionTicket(ticket.key, previous);
@@ -752,43 +839,48 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
   const moveBoardByStep = (ticket: TrackerTicket, direction: -1 | 1, anchor?: HTMLElement) => {
     const lanes = boardStates();
-    const at = lanes.findIndex((item) => item.id === ticket.state.id);
+    const at = lanes.findIndex((item) => item.key === ticket.state.key);
     const target = lanes[at + direction];
-    if (target) void moveBoardTicket(ticket, target.id, anchor);
+    if (target) void moveBoardTicket(ticket, target.key, anchor);
   };
   const renderBoardContents = () => {
     if (!boardLaneStrip || !boardLanesHost || !meta) return;
     const lanes = boardStates();
     const phone = layoutWidth <= 600 || (typeof window !== 'undefined' && window.innerWidth <= 600);
-    if (!lanes.some((item) => item.id === boardLaneKey)) boardLaneKey = lanes[0]?.id ?? null;
-    const countFor = (item: TrackerState) => boardCaches.get(item.id)?.cache.tickets.length ?? 0;
+    if (!lanes.some((item) => item.key === boardLaneKey)) boardLaneKey = lanes[0]?.key ?? null;
+    const countFor = (item: TrackerState) => boardCaches.get(item.key)?.cache.tickets.length ?? 0;
     boardLaneStrip.hidden = !phone;
     boardLaneStrip.replaceChildren(...(phone ? lanes.map((item) => h('button', {
-      class: `trk-board-state-tab${item.id === boardLaneKey ? ' active' : ''}`, type: 'button', role: 'tab',
-      'aria-selected': String(item.id === boardLaneKey), 'aria-label': `${item.name}, ${countFor(item)} issues`,
-      onclick: () => { boardLaneKey = item.id; renderBoardContents(); },
+      class: `trk-board-state-tab${item.key === boardLaneKey ? ' active' : ''}`, type: 'button', role: 'tab',
+      'aria-selected': String(item.key === boardLaneKey), 'aria-label': `${item.name}, ${countFor(item)} issues`,
+      onclick: () => { boardLaneKey = item.key; renderBoardContents(); },
     }, stateGlyph(item.category, item.key), h('span', null, item.name), h('span', { class: 'trk-board-lane-count' }, String(countFor(item))))) : []));
-    const visibleLanes = phone ? lanes.filter((item) => item.id === boardLaneKey) : lanes;
+    const visibleLanes = phone ? lanes.filter((item) => item.key === boardLaneKey) : lanes;
     boardLanesHost.classList.toggle('is-phone-lane', phone);
     boardLanesHost.replaceChildren(...visibleLanes.map((item) => {
-      const entry = boardCaches.get(item.id);
+      const entry = boardCaches.get(item.key);
       const cache = entry?.cache ?? options.store.list(boardQuery(item));
       const count = `${cache.tickets.length}${cache.nextCursor ? '+' : ''}`;
+      const normalized = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
+      const sortedRows = buildListModel({
+        pages: [normalized as unknown as TrackerRow[]], group: 'none', sort: { field: 'priority', direction: 'asc' },
+      }).visibleRows;
+      const tickets = sortedRows.map((row) => ticketFromListRow(row, meta!, options.trackerId));
       const header = h('header', { class: 'trk-board-lane-header' },
         stateGlyph(item.category, item.key), h('h2', null, item.name), h('span', { class: 'trk-board-lane-count' }, count),
         readOnly ? null : h('button', {
           class: 'trk-board-add', type: 'button', 'aria-label': `New issue in ${item.name}`,
-          onclick: () => openCreate(item.id),
+          onclick: () => openCreate(item.key),
         }, '+'),
       );
-      const cards = cache.tickets.map((ticket) => {
+      const cards = tickets.map((ticket) => {
         const moveButton = h('button', {
           class: 'trk-board-move', type: 'button', 'aria-label': `Move ${ticket.key} to…`,
           onclick: async (event: Event) => {
             event.stopPropagation();
             const anchor = event.currentTarget as HTMLElement;
             const picked = await openPicker<string>(anchor, {
-              label: `Move ${ticket.key} to`, options: meta!.states.map((stateOption) => ({ value: stateOption.id, label: stateOption.name })), value: ticket.state.id,
+              label: `Move ${ticket.key} to`, options: meta!.states.map((stateOption) => ({ value: stateOption.key, label: stateOption.name })), value: ticket.state.key,
             });
             if (typeof picked === 'string') void moveBoardTicket(ticket, picked, anchor);
           },
@@ -819,15 +911,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
-          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.')),
+          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
         }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
       );
       return h('section', { class: 'trk-board-lane', 'data-state': item.key, 'aria-label': `${item.name}, ${cache.tickets.length} issues` }, header, laneBody);
     }));
     if (boardErrorHost) {
-      const error = [...boardCaches.values()].find((entry) => entry.cache.error)?.cache.error;
-      boardErrorHost.hidden = !error;
-      boardErrorHost.textContent = error?.message ?? '';
+      const entry = [...boardCaches.values()].find((value) => value.cache.error);
+      boardErrorHost.hidden = !entry?.cache.error;
+      if (entry?.cache.error) {
+        boardErrorHost.replaceChildren(h('span', null, entry.cache.error.message), h('button', {
+          class: 'trk-small-button', type: 'button', onclick: () => void options.store.loadList(entry.query, { force: true }).catch((error: unknown) =>
+            showBoardError(error instanceof Error ? error.message : 'Could not load board issues.', entry.query)),
+        }, 'Retry'));
+      } else boardErrorHost.replaceChildren();
     }
   };
   const startBoardWatch = () => {
@@ -836,10 +933,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (state.tab !== 'board' || !meta) return;
     for (const item of boardStates()) {
       const query = boardQuery(item);
-      boardCaches.set(item.id, { state: item, query, cache: options.store.list(query) });
+      boardCaches.set(item.key, { state: item, query, cache: options.store.list(query) });
       stopBoard.push(options.store.watchList(query, (cache) => {
-        boardCaches.set(item.id, { state: item, query, cache });
-        renderBoardContents();
+        boardCaches.set(item.key, { state: item, query, cache });
+        try { renderBoardContents(); }
+        catch (error) { showBoardError(error instanceof Error ? error.message : 'Could not render board issues.', query); }
       }));
     }
     renderBoardContents();
@@ -928,7 +1026,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     openCommandBox(commandButton, {
       items,
       searchTickets: async (query): Promise<CommandItem[]> => {
-        const cache = await options.store.loadList({ q: query, limit: 10, group: null });
+        const cache = await options.store.loadList({ q: query, limit: 10 });
         return cache.tickets.map((ticket) => ({ id: `ticket:${ticket.key}`, kind: 'ticket', label: `${ticket.key} ${ticket.title}`, key: ticket.key, hint: ticket.state.name, snippet: ticket.snippet }));
       },
       onSelect: (item) => {
@@ -966,7 +1064,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       const row = action.edge === 'first' ? listModel.visibleRows[0] : listModel.visibleRows.at(-1)!;
       state.cursorKey = row.key; listModel = moveCursorTo(listModel, row.key); drawRows(currentCache);
     } else if (action.type === 'page') {
-      if (action.direction > 0) void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.'));
+      if (action.direction > 0) void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.'));
       else listRenderHost?.scrollTo({ top: 0 });
     } else if (action.type === 'toggle-selection' && listModel) {
       listModel = toggleSelection(listModel); state.selectedKeys = listModel.selectedKeys; state.anchorKey = listModel.anchorKey;
