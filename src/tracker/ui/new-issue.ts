@@ -96,12 +96,15 @@ export interface NewIssueDialogOptions {
 export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () => void; box: HTMLElement } {
   const draftKey = `${options.trackerId}:${options.viewerId}`;
   const states = [...options.meta.states].sort((a, b) => a.position - b.position);
-  const defaultState = options.defaultState && states.some((state) => state.id === options.defaultState || state.key === options.defaultState)
-    ? options.defaultState
-    : states.find((state) => state.key === 'todo')?.id ?? states[0]?.id ?? '';
+  const stateKey = (reference: string | undefined): string =>
+    states.find((state) => state.id === reference || state.key === reference || state.name === reference)?.key ?? reference ?? '';
+  const defaultState = stateKey(options.defaultState) || states.find((state) => state.key === 'todo')?.key || states[0]?.key || '';
   const draft = drafts.get(draftKey) ?? {
     issueTitle: '', description: '', state: defaultState, assignee: null, priority: 'none' as TrackerPriority, labels: [], due: null,
   };
+  draft.state = stateKey(draft.state) || defaultState;
+  draft.assignee = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? draft.assignee;
+  draft.labels = draft.labels.map((reference) => options.meta.labels.find((label) => label.id === reference || label.name.toLocaleLowerCase() === reference.toLocaleLowerCase())?.name ?? reference);
   drafts.set(draftKey, draft);
 
   const title = h('input', { class: 'trk-new-title', type: 'text', maxlength: '200', placeholder: 'Issue title', 'aria-label': 'Issue title', value: draft.issueTitle });
@@ -116,8 +119,8 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const labelsButton = h('button', { class: 'trk-small-button', type: 'button' });
   const dueButton = h('button', { class: 'trk-small-button', type: 'button' });
   const refreshProperties = () => {
-    stateButton.textContent = states.find((state) => state.id === draft.state || state.key === draft.state)?.name ?? 'To do';
-    assigneeButton.textContent = options.meta.members.find((member) => member.userId === draft.assignee)?.name ?? 'No one';
+    stateButton.textContent = states.find((state) => state.key === draft.state)?.name ?? 'To do';
+    assigneeButton.textContent = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
     priorityButton.textContent = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
     labelsButton.textContent = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
     dueButton.textContent = draft.due ?? 'Due date';
@@ -126,11 +129,11 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   refreshProperties();
 
   stateButton.addEventListener('click', async () => {
-    const value = await openPicker(stateButton, { label: 'State', options: states.map((state) => ({ value: state.id, label: state.name })), value: draft.state });
+    const value = await openPicker(stateButton, { label: 'State', options: states.map((state) => ({ value: state.key, label: state.name })), value: draft.state });
     if (typeof value === 'string') { draft.state = value; refreshProperties(); }
   });
   assigneeButton.addEventListener('click', async () => {
-    const value = await openPicker(assigneeButton, { label: 'Assignee', options: options.meta.members.map((member) => ({ value: member.userId, label: member.name })), value: draft.assignee });
+    const value = await openPicker(assigneeButton, { label: 'Assignee', options: options.meta.members.map((member) => ({ value: member.name, label: member.name })), value: draft.assignee });
     if (value === null || typeof value === 'string') { draft.assignee = value; refreshProperties(); }
   });
   priorityButton.addEventListener('click', async () => {
@@ -140,7 +143,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   labelsButton.addEventListener('click', async () => {
     const value = await openPicker<string>(labelsButton, {
       label: 'Labels', multi: true, selected: draft.labels,
-      options: options.meta.labels.map((label) => ({ value: label.id, label: label.name })),
+      options: options.meta.labels.map((label) => ({ value: label.name, label: label.name })),
     });
     if (Array.isArray(value)) { draft.labels = value.filter((item): item is string => typeof item === 'string'); refreshProperties(); }
   });
