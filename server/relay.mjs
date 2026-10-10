@@ -546,7 +546,7 @@ class Room {
       renameSyncRetry(tmp, this.file);
     } catch (err) {
       // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
-      log(`room ${this.name}: could not save, trying again in ${SAVE_RETRY_MS / 1000} s`, err?.code ?? err?.message);
+      log(`room ${this.name}: could not save, will retry in ${SAVE_RETRY_MS / 1000} s`, err?.code ?? err?.message);
       this.firstUnsavedAt ??= Date.now();
       if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
       return false;
