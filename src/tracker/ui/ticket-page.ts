@@ -81,7 +81,7 @@ function ticketIcon(name: TicketIcon): SVGSVGElement {
     append('rect', { x: '5.25', y: '4.25', width: '8', height: '9.5', rx: '1' });
     append('path', { d: 'M3 10.5V2.75h7' });
   } else if (name === 'link') {
-    append('path', { d: 'M6.5 9.5 5.3 10.7a2.1 2.1 0 0 0 3 3l2.1-2.1M9.5 6.5l1.2-1.2a2.1 2.1 0 0 1 3 3l-2.1 2.1M6.5 9.5l3-3' });
+    append('path', { d: 'M7 5H5a3 3 0 0 0 0 6h2M9 5h2a3 3 0 0 1 0 6H9M5.75 8h4.5' });
   } else if (name === 'more') {
     svg.setAttribute('fill', 'currentColor');
     svg.setAttribute('stroke', 'none');
