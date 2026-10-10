@@ -11,7 +11,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
+import { hasLayout, isSafeHttpUrl, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
 import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
@@ -299,6 +299,7 @@ const ICON_FILTER = '<path d="M4 6h16M7 12h10M10 18h4"/>';
 const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
 const ICON_DOTS = '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>';
 const ICON_COMMENT = '<path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/>';
+const ICON_LINK = '<path d="M10 13.5l4-4M8.5 15.5l-1 1a3 3 0 01-4.2-4.2l3-3a3 3 0 014.2 0M15.5 8.5l1-1a3 3 0 014.2 4.2l-3 3a3 3 0 01-4.2 0"/>';
 
 /** `text` cut to fit `max` pixels, with an ellipsis when it had to be cut. */
 function clip(text: string, font: string, max: number): string {
@@ -318,7 +319,7 @@ const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
 /** The title lines a card draws at width `w`: its first line of text, wrapped, at most three, the last cut with an ellipsis. */
 export function cardTitleLines(o: BaseObj, w: number): string[] {
   const font = cardFont(o);
-  const max = w - cardPadLeft(o) - CARD.padX;
+  const max = w - cardPadLeft(o) - CARD.padX - (isSafeHttpUrl(o.link) ? 24 : 0);
   const title = (o.text ?? '').split('\n')[0].trim();
   const lines = wrap(title || ' ', font, max);
   if (lines.length <= CARD.titleLines) return lines;
@@ -528,6 +529,15 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   inner += edge === 'ghost'
     ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
     : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+  if (isSafeHttpUrl(o.link) && edge === 'hairline') {
+    const hit = 24;
+    const x = w - CARD.padX - hit, y = CARD.padY - 4;
+    const title = (o.text ?? '').trim() || 'Untitled card';
+    inner += `<a class="k-card-link" data-card-link="true" href="${escapeXml(o.link!)}" target="_blank" rel="noopener noreferrer" tabindex="0" aria-label="Open link: ${escapeXml(title)}">` +
+      `<rect class="k-card-link-focus" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="var(--paper)" fill-opacity="0.001" pointer-events="all"/>` +
+      `<rect class="k-card-link-focus-ring" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="none" stroke="none"/>` +
+      `<title>Open link: ${escapeXml(title)}</title>${kIcon(ICON_LINK, x + 5, y + 5, 14, K.meta)}</a>`;
+  }
   const fam = escapeXml(fontFamily(o.font));
   const lines = cardTitleLines(o, w);
   let y = CARD.padY;
@@ -576,11 +586,21 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       let right = w - CARD.padX;
       if (o.ownerName || o.ownerId) {
         const ring = kanbanColor(ctx.ownerColor?.(o)) ?? undefined;
+        const agent = o.ownerKind === 'agent';
         const x = right - 24;
-        inner += `<g><title>${escapeXml(o.ownerName || 'Owner')}${ring ? '' : ' (no account)'}</title><rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
-        inner += ring
-          ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
-          : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        const agentPoints = `${n(x + 6)},${n(cy - 11)} ${n(x + 18)},${n(cy - 11)} ${n(x + 23)},${n(cy - 6)} ${n(x + 23)},${n(cy + 6)} ${n(x + 18)},${n(cy + 11)} ${n(x + 6)},${n(cy + 11)} ${n(x + 1)},${n(cy + 6)} ${n(x + 1)},${n(cy - 6)}`;
+        inner += `<g data-owner-kind="${agent ? 'agent' : 'person'}"><title>${escapeXml(o.ownerName || 'Owner')}${agent ? ' (agent)' : ''}${ring ? '' : ' (no account)'}</title>`;
+        if (agent) {
+          inner += `<polygon points="${agentPoints}" ${fillStyle(K.paper)}/>`;
+          inner += ring
+            ? `<polygon points="${agentPoints}" ${strokeStyle(ring)} stroke-width="2"/>`
+            : `<polygon points="${agentPoints}" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        } else {
+          inner += `<rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
+          inner += ring
+            ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
+            : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        }
         inner += `<text x="${n(x + 12)}" y="${n(cy + 3.5)}" font-family="${fam}" font-size="10" font-weight="700" letter-spacing="0.2" text-anchor="middle" ${fillStyle(K.ink)}>${escapeXml(initials(o.ownerName))}</text></g>`;
         right = x - 6;
       }

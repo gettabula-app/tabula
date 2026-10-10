@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { STICKY_COLORS } from '../src/palette';
 import {
-  KANBAN, LABEL_COLORS, LIMITS, hasLayout, isMixedRank, layoutAll, layoutContainer, needsNormalising, normaliseRanks, orphanHome, planInsert,
+  CARD_LINK_MAX, KANBAN, LABEL_COLORS, LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName, codePointLength, isDueDate, isSafeHttpUrl, hasLayout, isMixedRank, layoutAll, layoutContainer, needsNormalising, normaliseRanks, orphanHome, planInsert,
   rankBetween, ranksBetween, sortedChildren, splitRank, unknownFeatures, wipCheck,
   featureKey, featuresOf, isFeatureKey,
 } from '../shared/containers';
@@ -35,6 +35,32 @@ const lane = (id: string, key: string, extra: Record<string, unknown> = {}): Obj
 const card = (id: string, laneId: string, key: string, extra: Record<string, unknown> = {}): Obj => ({ id, type: 'card', parent: laneId, rank: `${key}@${laneId}`, h: 72, ...extra });
 const keyOf = (rank: string) => splitRank(rank)!.key;
 const ids = (list: { id: string }[]) => list.map((o) => o.id);
+
+describe('shared kanban card rules', () => {
+  it('keeps owner kinds, lane stages, and normalised code-point limits in one shared definition', () => {
+    expect(OWNER_KINDS).toEqual(['person', 'agent']);
+    expect(STAGES).toEqual(['todo', 'doing', 'done']);
+    expect(CARD_LINK_MAX).toBe(2000);
+    expect(OWNER_NAME_MAX).toBe(80);
+    expect(cleanCardTitle('  first\n\t second  ')).toBe('first second');
+    expect(cleanOwnerName('  Ana\n  María  ')).toBe('Ana María');
+    expect(codePointLength('😀'.repeat(81))).toBe(81);
+  });
+
+  it('accepts only explicit, credential-free HTTP(S) links up to the shared limit', () => {
+    expect(isSafeHttpUrl('https://trusted.com/path?q=1')).toBe(true);
+    expect(isSafeHttpUrl(`https://example.com/${'x'.repeat(CARD_LINK_MAX - 'https://example.com/'.length)}`)).toBe(true);
+    for (const url of [
+      'example.com', 'https://u:p@h.com', 'https://trusted.com@evil.com/', 'http://', 'https://a.com/x y',
+      'https://a.com/\\evil', 'https://a.com/\u200bhidden', `https://example.com/${'x'.repeat(CARD_LINK_MAX)}`,
+    ]) expect(isSafeHttpUrl(url)).toBe(false);
+  });
+
+  it('accepts real due dates only from 1900 through 2200', () => {
+    for (const date of ['1900-01-01', '2000-02-29', '2200-12-31']) expect(isDueDate(date)).toBe(true);
+    for (const date of ['1899-12-31', '2201-01-01', '1900-02-29', '2026-02-30', '2026-1-01']) expect(isDueDate(date)).toBe(false);
+  });
+});
 
 describe('ranks', () => {
   it('writes the parent into the rank and orders by key', () => {

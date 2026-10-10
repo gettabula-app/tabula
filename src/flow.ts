@@ -5,6 +5,7 @@ import { newId, type FlowState } from './store';
 import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 import { mdText } from './md-text';
+import { isSafeHttpUrl } from '../shared/containers';
 
 /** What a new dot vote covers (TAB-232). */
 export type VoteScope = { kind: 'all' } | { kind: 'stickies' } | { kind: 'selection'; ids: Id[] };
@@ -523,9 +524,11 @@ export class Flow {
         out.push(`### ${line(lane.name) || 'Lane'}${notes ? ` (${notes})` : ''}`, '');
         if (!cards.length) out.push('_No cards_');
         for (const k of cards) {
-          const who = [line(k.ownerName), k.due].filter(Boolean).join(', ');
+          const owner = k.ownerName ? `${line(k.ownerName)}${k.ownerKind === 'agent' ? ' (agent)' : ''}` : k.ownerKind === 'agent' && k.ownerId ? '(agent)' : '';
+          const who = [owner, k.due].filter(Boolean).join(', ');
+          const link = isSafeHttpUrl(k.link) ? ` [link](<${k.link.replace(/[()<>]/g, (ch) => ({ '(': '%28', ')': '%29', '<': '%3C', '>': '%3E' })[ch]!) }>)` : '';
           const n = totals.get(k.id);
-          out.push(`- ${line(k.text) || 'Untitled card'}${who ? ` (${who})` : ''}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+          out.push(`- ${line(k.text) || 'Untitled card'}${who ? ` (${who})` : ''}${link}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
         }
         out.push('');
       }

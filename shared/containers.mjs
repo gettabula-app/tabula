@@ -15,6 +15,51 @@ import { safeColor } from './colors.mjs';
 export const CONTAINER_TYPES = Object.freeze(['container', 'lane', 'card']);
 export const isContainerType = (type) => CONTAINER_TYPES.includes(type);
 
+/** Card owner kinds, shared by the browser, the MCP reader and the MCP writer. */
+export const OWNER_KINDS = Object.freeze(['person', 'agent']);
+/** Lane stages, shared by the browser and the MCP tools. */
+export const STAGES = Object.freeze(['todo', 'doing', 'done']);
+export const CARD_LINK_MAX = 2000;
+export const OWNER_NAME_MAX = 80;
+
+/** Collapse whitespace and trim a card title. Line breaks are whitespace and become spaces. */
+export function cleanCardTitle(value) {
+  return typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+}
+
+/** Collapse whitespace and trim an owner name. */
+export function cleanOwnerName(value) {
+  return typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+}
+
+/** Count Unicode code points, matching the user-visible title and owner-name limits. */
+export function codePointLength(value) {
+  return [...value].length;
+}
+
+/** A single explicit, visible HTTP(S) URL of at most 2,000 characters; credentials and deceptive userinfo are refused. */
+export function isSafeHttpUrl(value) {
+  if (typeof value !== 'string' || !value || value.length > CARD_LINK_MAX || /[\p{White_Space}\p{Cc}\p{Cf}\\]/u.test(value)) return false;
+  if (!/^https?:\/\/[^/?#]+/i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !!url.hostname && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+/** A real calendar date in YYYY-MM-DD format, limited to years 1900 through 2200. */
+export function isDueDate(value) {
+  if (typeof value !== 'string') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+  if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 /** Board features this code understands. A board that lists another one opens read-only (docs/kanban.md, Version skew). */
 export const FEATURES = Object.freeze({ containers: 'containers' });
 export const KNOWN_FEATURES = Object.freeze(Object.values(FEATURES));
@@ -398,10 +443,10 @@ export function wipCheck(lane, cards, moving) {
 // ---------------------------------------------------------------- templates (docs/kanban.md, Templates)
 
 /**
- * Card fields a template never carries: it names no people and no dates, and the Linear and Jira link is reserved. Saving
- * a template strips them; a template that has them anyway is refused.
+ * Card fields a template never carries: it names no people or agents, no due dates or card links, and tracker links are
+ * reserved. Saving a template strips them; a template that has them anyway is refused.
  */
-export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'due', 'extProvider', 'extKey', 'extUrl']);
+export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extProvider', 'extKey', 'extUrl']);
 
 const TEMPLATE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // on one line: no control character and no line or paragraph separator

@@ -91,6 +91,18 @@ describe('the lane menu', () => {
 });
 
 describe('the Filter popover', () => {
+  it('puts an Overdue quick chip beside Mine and toggles the personal due filter', () => {
+    const { app, container } = setup();
+    openFilterPopover(app as unknown as BoardApp, container, at);
+    const buttons = menu()!.querySelectorAll('button');
+    const mine = buttons.find((b) => textOf(b) === 'Mine')!;
+    const overdue = buttons.find((b) => textOf(b) === 'Overdue')!;
+    expect(mine.parentNode).toBe(overdue.parentNode);
+    overdue.click();
+    expect(app.setKanbanFilter).toHaveBeenLastCalledWith(container, expect.objectContaining({ due: ['overdue'] }));
+    expect(overdue.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('waits for a pause in typing before it filters, and keeps what was typed on close', () => {
     vi.useFakeTimers();
     const { app, container } = setup();

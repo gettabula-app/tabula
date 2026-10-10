@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { cardContentHeight, kanbanHeaderControls, objectMarkup, type MarkupCtx } from '../src/markup';
+import { cardBody, cardContentHeight, cardTitleLines, kanbanHeaderControls, objectMarkup, type MarkupCtx } from '../src/markup';
 import { Store } from '../src/store';
 import { addCard, newKanban } from '../src/containers';
 import type { BaseObj, Id } from '../src/types';
 import { USER_COLORS } from '../src/palette';
-import { resolveColorMix, resolveCssVars } from '../src/exporters';
+import type { BoardApp } from '../src/app';
+import { exportSvg, resolveColorMix, resolveCssVars } from '../src/exporters';
 import { LABEL_COLORS, kanbanColor, validLabel } from '../shared/containers';
 
 // docs/kanban.md, slice 2 (Rendering and Visual design): what a container, a lane and a card draw.
@@ -158,6 +159,44 @@ describe('a card', () => {
     expect(free).not.toContain(USER_COLORS[2]);
   });
 
+  it('draws agent owners with a distinct polygon badge shape instead of the person square', () => {
+    const { store, ids } = board();
+    store.transact(() => store.update(ids[0], { ownerName: 'Build agent', ownerId: 'agent-1' }));
+    const person = draw(store, ids[0]);
+    expect(person).toContain('data-owner-kind="person"');
+    store.transact(() => store.update(ids[0], { ownerKind: 'agent' }));
+    const agent = draw(store, ids[0]);
+    expect(agent).toContain('data-owner-kind="agent"');
+    expect(agent).toContain('<polygon points=');
+    expect(agent).toContain('>BA</text>');
+  });
+
+  it('puts a 24 by 24 keyboard-focusable safe external link on the card face', () => {
+    const { store, ids } = board();
+    store.transact(() => store.update(ids[0], { link: 'https://example.com/docs?a=1&b=2', text: 'Read plan' }));
+    const svg = draw(store, ids[0]);
+    expect(svg).toContain('class="k-card-link"');
+    expect(svg).toContain('data-card-link="true"');
+    expect(svg).toContain('href="https://example.com/docs?a=1&amp;b=2"');
+    expect(svg).toContain('target="_blank"');
+    expect(svg).toContain('rel="noopener noreferrer"');
+    expect(svg).toContain('tabindex="0"');
+    expect(svg).toContain('aria-label="Open link: Read plan"');
+    expect(svg).toContain('<title>Open link: Read plan</title>');
+    expect(svg).toMatch(/class="k-card-link-focus"[^>]*width="24" height="24"/);
+    const credentialLink = objectMarkup({ ...store.getPlaced(ids[0])!, link: 'https://user:pass@example.com/' }, ctxFor(store));
+    expect(credentialLink).not.toContain('k-card-link');
+  });
+
+  it('does not emit or reserve a link for a credential URL when markup receives raw data', () => {
+    const { store, ids } = board();
+    const card = store.get(ids[0]) as BaseObj;
+    const withoutLink = { ...card, link: undefined };
+    const unsafe = { ...card, link: 'https://user:pass@example.com/private' };
+    expect(cardBody(unsafe, ctxFor(store))).not.toContain('data-card-link');
+    expect(cardTitleLines(unsafe, card.w)).toEqual(cardTitleLines(withoutLink, card.w));
+  });
+
   it('shows the comment count in the meta row, and has no meta row without a due date or an owner', () => {
     const { store, ids } = board();
     expect(draw(store, ids[0], { commentCount: () => 3 })).not.toContain('3 comments');
@@ -193,6 +232,19 @@ describe('a card', () => {
 });
 
 describe('in an export', () => {
+  it('keeps the card anchor in a standalone SVG export', () => {
+    const { store, container, ids } = board();
+    store.transact(() => store.update(ids[0], { link: 'https://example.com/a(b)?q=1' }));
+    const app = {
+      store,
+      r: { contentBounds: () => ({ x: 0, y: 0, w: 500, h: 500 }), ctx: ctxFor(store) },
+    } as unknown as BoardApp;
+    const svg = exportSvg(app, [container], { fontCss: '' }).svg;
+    expect(svg).toContain('<a class="k-card-link" data-card-link="true" href="https://example.com/a(b)?q=1"');
+    expect(svg).toContain('aria-label="Open link: Write the guide"');
+    expect(svg).toContain('<path');
+  });
+
   it('leaves no theme variable behind once the variables are replaced by their fallbacks', () => {
     const { store, container, lanes, ids } = board();
     store.transact(() => {

@@ -4,9 +4,10 @@
 
 import type { BaseObj, Id, Label } from './types';
 import type { ContainerLayout } from '../shared/containers';
+import { isSafeHttpUrl } from '../shared/containers';
 
 export const CSV_COLUMNS = [
-  'container', 'lane', 'stage', 'position', 'title', 'description', 'owner', 'due', 'labels', 'comments', 'created_by', 'updated_at', 'id',
+  'container', 'lane', 'stage', 'position', 'title', 'description', 'owner', 'owner_kind', 'due', 'link', 'labels', 'comments', 'created_by', 'updated_at', 'id',
 ] as const;
 
 /** The byte order mark the file starts with (docs/kanban.md: one format, for Excel). */
@@ -53,8 +54,10 @@ export function cardRows(src: CsvSource, containers: readonly Id[]): (string | n
         const card = src.get(id);
         if (card?.type !== 'card') return;
         const labels = (card.labels ?? []).map((l) => names.get(l)).filter((n): n is string => !!n);
+        const hasOwner = !!(card.ownerName || card.ownerId);
         rows.push([
-          c.name ?? '', lane?.name ?? '', lane?.stage ?? '', i + 1, card.text ?? '', card.desc ?? '', card.ownerName ?? '', card.due ?? '',
+          c.name ?? '', lane?.name ?? '', lane?.stage ?? '', i + 1, card.text ?? '', card.desc ?? '', card.ownerName ?? '',
+          hasOwner ? card.ownerKind === 'agent' ? 'agent' : 'person' : '', card.due ?? '', isSafeHttpUrl(card.link) ? card.link : '',
           labels.join('; '), src.commentCount(id), card.createdBy ?? '',
           Number.isFinite(card.updatedAt) ? new Date(card.updatedAt!).toISOString() : '', card.id,
         ]);

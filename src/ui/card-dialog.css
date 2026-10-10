@@ -10,7 +10,20 @@
 .k-stack { display: grid; gap: 8px; }
 .k-due { display: flex; gap: 8px; align-items: center; }
 .k-due .input { flex: 1 1 auto; min-width: 0; }
+.k-link-field { display: flex; gap: 8px; align-items: center; }
+.k-link-field .input { flex: 1 1 auto; min-width: 0; }
+.k-owner-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.k-owner-kind-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px;
+  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.k-owner-kind-btn.on { border-color: var(--tray-text); background: var(--tray-hover); }
+.k-owner-kind-btn:disabled { cursor: default; }
+.k-owner-kind-mark { display: inline-block; width: 12px; height: 12px; flex: none; border: 1px solid currentColor; }
+.k-owner-kind-mark.agent { clip-path: polygon(25% 0, 75% 0, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0 75%, 0 25%); }
 .k-due .btn[hidden], .k-owner-name[hidden] { display: none; }
+.k-link-field .btn[hidden] { display: none; }
 .modal .k-card-form .input[readonly] { border-style: dashed; }
 .modal .k-card-form .input:disabled { opacity: 1; border-style: dashed; color: var(--tray-text); }
 .k-note { padding: 8px 0 8px 12px; border-left: 2px solid var(--tray-text); color: var(--tray-text); }
@@ -89,6 +102,7 @@
   .k-card-dialog .k-actions .btn.danger { margin-left: 0; }
   .k-row2 { grid-template-columns: 1fr; }
   .k-card-form .input, .k-card-form .btn { min-height: 40px; }
+  .k-owner-kind-btn { min-height: 40px; }
   .k-chip { height: 40px; }
   /* TAB-210: while the body scrolls on, a soft fade over its foot says there is more; gone at the end */
   .k-card-dialog .modal-body.k-more .k-actions::before {

@@ -2,7 +2,9 @@
 // one, what a lane's count says, what a due chip says, how tall a card is, and when the board draws in low detail.
 // No DOM and no store: the callers pass rectangles from the shared layout (shared/containers.mjs).
 
-import { KANBAN, kanbanColor, type ContainerLayout, type Rect } from '../../shared/containers';
+import { KANBAN, STAGES as STAGE_VALUES, isDueDate as sharedIsDueDate, kanbanColor, type ContainerLayout, type Rect } from '../../shared/containers';
+
+export const isDueDate = sharedIsDueDate;
 
 /** Below this zoom card text becomes bars and a lane header shows only its name (docs/kanban.md, Rendering). */
 export const LOW_DETAIL_ZOOM = 0.4;
@@ -223,8 +225,8 @@ export function localToday(now = new Date()): string {
  * before today and the lane is not done; today and tomorrow are "soon"; in a done lane it is plain, with a check.
  */
 export function dueChip(due: string | undefined, today: string, done: boolean): DueChip | null {
-  const d = due ? dayNumber(due) : null;
-  const t = dayNumber(today);
+  const d = isDueDate(due) ? dayNumber(due) : null;
+  const t = isDueDate(today) ? dayNumber(today) : null;
   if (d === null || t === null) return null;
   const diff = d - t;
   const date = new Date(d * DAY);
@@ -246,9 +248,6 @@ export function initials(name: string | undefined): string {
 }
 
 // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
-
-/** Whether a value is a calendar date as `due` stores it, `YYYY-MM-DD` and a real day. */
-export const isDueDate = (v: unknown): v is string => typeof v === 'string' && dayNumber(v) !== null;
 
 /**
  * A sticky's text as a card's title and description (docs/kanban.md, Sticky to card and back): the first line is the
@@ -358,7 +357,7 @@ export interface OwnerOption {
 export function ownerOptions(
   me: { id: string; name: string } | null,
   present: readonly { id: string; name: string }[],
-  assigned: readonly { ownerId?: string; ownerName?: string }[],
+  assigned: readonly { ownerId?: string; ownerName?: string; ownerKind?: string }[],
 ): OwnerOption[] {
   const people = new Map<string, OwnerOption>();
   const add = (id: string, name: string, isMe = false) => {
@@ -367,12 +366,12 @@ export function ownerOptions(
   };
   if (me) add(me.id, me.name, true);
   for (const p of present) add(p.id, p.name);
-  for (const a of assigned) if (a.ownerId) add(a.ownerId, a.ownerName ?? '');
+  for (const a of assigned) if (a.ownerKind !== 'agent' && a.ownerId) add(a.ownerId, a.ownerName ?? '');
   const names = new Map<string, OwnerOption>();
   const taken = new Set([...people.values()].map((p) => p.name.toLowerCase()));
   for (const a of assigned) {
     const n = (a.ownerName ?? '').trim();
-    if (a.ownerId || !n || taken.has(n.toLowerCase()) || names.has(n.toLowerCase())) continue;
+    if (a.ownerKind === 'agent' || a.ownerId || !n || taken.has(n.toLowerCase()) || names.has(n.toLowerCase())) continue;
     names.set(n.toLowerCase(), { key: `name:${n}`, name: n });
   }
   const all = [...people.values(), ...names.values()];
@@ -388,16 +387,16 @@ export function ownerKey(card: { ownerId?: string; ownerName?: string }): string
 
 // ---------------------------------------------------------------- lanes and discipline (docs/kanban.md, slice 4)
 
-export type Stage = 'todo' | 'doing' | 'done';
+export type Stage = typeof STAGE_VALUES[number];
 
 /** The lane stages, in menu order (docs/kanban.md, Lanes). Only `done` changes how cards draw. */
 export const STAGES: readonly { key: Stage; label: string }[] = [
-  { key: 'todo', label: 'To do' },
-  { key: 'doing', label: 'Doing' },
-  { key: 'done', label: 'Done' },
+  { key: STAGE_VALUES[0], label: 'To do' },
+  { key: STAGE_VALUES[1], label: 'Doing' },
+  { key: STAGE_VALUES[2], label: 'Done' },
 ];
 
-export const isStage = (v: unknown): v is Stage => v === 'todo' || v === 'doing' || v === 'done';
+export const isStage = (v: unknown): v is Stage => typeof v === 'string' && STAGE_VALUES.includes(v as Stage);
 
 /** Whether a lane's change of stage changes how its cards draw: their due chips read differently in a done lane. */
 export const stageRedrawsCards = (before: unknown, after: unknown) => (before === 'done') !== (after === 'done');
@@ -511,8 +510,8 @@ const mondayOf = (day: number) => day - ((new Date(day * DAY).getUTCDay() + 6) %
 /** Which due buckets a card is in: overdue as its chip says (never in a done lane), today, this week (Monday to Sunday), none. */
 export function dueBuckets(due: string | undefined, today: string, done: boolean): Set<DueBucket> {
   const out = new Set<DueBucket>();
-  const d = due ? dayNumber(due) : null;
-  const t = dayNumber(today);
+  const d = isDueDate(due) ? dayNumber(due) : null;
+  const t = isDueDate(today) ? dayNumber(today) : null;
   if (d === null) {
     out.add('none');
     return out;
