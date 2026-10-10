@@ -20,8 +20,8 @@ describe('parseRoute', () => {
     ['#', home],
     ['#/', home],
     ['#/b/abc123', board('abc123')],
-    ['#/b/abc123?tracker=tracker_1&t=TAB-123', { name: 'board', id: 'abc123', trackerId: 'tracker_1', ticketKey: 'TAB-123' }],
-    ['#/b/abc123?tracker=tracker_1&t=TAB-000', { name: 'board', id: 'abc123', trackerId: 'tracker_1' }],
+    ['#/b/abc123?tracker=tracker_1&t=TAB-123', home],
+    ['#/b/abc123?tracker=tracker_1&t=TAB-000', home],
     ['#/b/A_b-9', board('A_b-9')],
     ['#/b/' + 'a'.repeat(64), board('a'.repeat(64))],
     ['#/b/' + 'a'.repeat(65), home],
@@ -35,15 +35,15 @@ describe('parseRoute', () => {
     ['#/templates?x=1', home],
     ['#/template', home],
     ['#/t/abc123/edit', templateEdit('abc123')],
-    ['#/t/TAB-123', { name: 'tracker', tab: 'all', ticketKey: 'TAB-123' }],
-    ['#/t/tab-123', { name: 'tracker', tab: 'all', ticketKey: 'TAB-123' }],
-    ['#/t/inbox', { name: 'tracker', tab: 'inbox' }],
-    ['#/t/my', { name: 'tracker', tab: 'my' }],
-    ['#/t/all', { name: 'tracker', tab: 'all' }],
-    ['#/t/board', { name: 'tracker', tab: 'board' }],
-    ['#/t/projects', { name: 'tracker', tab: 'projects' }],
-    ['#/t/projects/project-1', { name: 'tracker', tab: 'projects', projectId: 'project-1' }],
-    ['#/t/views/view_2', { name: 'tracker', tab: 'all', viewId: 'view_2' }],
+    ['#/t/TAB-123', home],
+    ['#/t/tab-123', home],
+    ['#/t/inbox', home],
+    ['#/t/my', home],
+    ['#/t/all', home],
+    ['#/t/board', home],
+    ['#/t/projects', home],
+    ['#/t/projects/project-1', home],
+    ['#/t/views/view_2', home],
     ['#/t/A_b-9/edit', templateEdit('A_b-9')],
     ['#/t/' + 'a'.repeat(64) + '/edit', templateEdit('a'.repeat(64))],
     ['#/t/' + 'a'.repeat(65) + '/edit', home],
@@ -105,7 +105,7 @@ describe('resolveRoute', () => {
     ['#/chat', home],
     ['#/chat/team/t1', home],
     ['#/b/abc', board('abc')],
-    ['#/t/inbox', { name: 'tracker', tab: 'inbox' }],
+    ['#/t/inbox', home],
     ['#/templates', templates],
     ['#/t/abc/edit', templateEdit('abc')],
     ['#/', home],
@@ -122,7 +122,7 @@ describe('resolveRoute', () => {
     ['signed-in', '#/signin/verify?token=abc', verify('abc')],
     ['signed-out', '#/invite/abc', invite('abc')],
     ['offline', '#/b/abc', board('abc')],
-    ['signed-in', '#/t/inbox', { name: 'tracker', tab: 'inbox' }],
+    ['signed-in', '#/t/inbox', home],
     ['signed-in', '#/chat', { name: 'chat' }],
     ['offline', '#/chat/team/t1', { name: 'chat', kind: 'team', ref: 't1' }],
     ['signed-in', '#/templates', templates],
@@ -139,8 +139,20 @@ describe('resolveRoute', () => {
     expect(resolveRoute('', 'signed-out', '/join', '?c=ABCD2345')).toEqual(join('ABCD2345'));
   });
 
-  it('accepts the clean tracker path form as well as the hash route', () => {
-    expect(resolveRoute('', 'signed-in', '/t/TAB-123')).toEqual({ name: 'tracker', tab: 'all', ticketKey: 'TAB-123' });
+  it('accepts the clean tracker path form', () => {
+    expect(resolveRoute('', 'signed-in', '/t/TAB-123')).toEqual({ name: 'tracker', target: { kind: 'ticket', key: 'TAB-123' } });
+  });
+
+  it.each<[string, string, Route]>([
+    ['/t/inbox', '', { name: 'tracker', target: { kind: 'view', view: 'inbox' } }],
+    ['/t/my', '', { name: 'tracker', target: { kind: 'view', view: 'my' } }],
+    ['/t/board', '', { name: 'tracker', target: { kind: 'view', view: 'board' } }],
+    ['/t/all', '', { name: 'tracker', target: { kind: 'view', view: 'all' } }],
+    ['/t/projects/project-1', '', { name: 'tracker', target: { kind: 'view', view: 'projects', id: 'project-1' } }],
+    ['/t/views/view_2', '', { name: 'tracker', target: { kind: 'view', view: 'views', id: 'view_2' } }],
+    ['/b/abc123', '?tracker=tracker_1&t=TAB-123', { name: 'board', id: 'abc123', trackerPosition: { trackerId: 'tracker_1', key: 'TAB-123' } }],
+  ])('resolves path route %s%s', (pathname, search, route) => {
+    expect(resolveRoute('', 'signed-in', pathname, search)).toEqual(route);
   });
 });
 
@@ -150,7 +162,7 @@ describe('needsSignIn', () => {
     ['templates', templates],
     ['template-edit', templateEdit('abc')],
     ['board', board('abc')],
-    ['tracker', { name: 'tracker', tab: 'all' }],
+    ['tracker', { name: 'tracker', target: { kind: 'view', view: 'all' } }],
     ['signin', signin],
     ['verify', verify('abc')],
     ['invite', invite('abc')],
@@ -183,7 +195,7 @@ describe('returnHash', () => {
     ['', null],
     ['#/templates', null],
     ['#/t/abc/edit', null],
-    ['#/t/TAB-123', '#/t/TAB-123'],
+    ['#/t/TAB-123', null],
     ['#/signin', null],
     ['#/signin/verify?token=abc', null],
     ['#/invite/abc', null],

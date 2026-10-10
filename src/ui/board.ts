@@ -8,7 +8,7 @@ import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
-import { createTrackerStore, createHttpTrackerApi, type TrackerStore } from '../tracker-data';
+import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
 import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
@@ -437,9 +437,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let trackerStore: TrackerStore | null = null;
   let stopTrackerFrames: (() => void) | null = null;
   let trackerVisualInit = false;
-  const mountTracker = (store: TrackerStore, viewerId: string) => {
+  const mountTracker = (store: TrackerStore, api: TrackerApi, viewerId: string) => {
     trackerStore = store;
-    stopTrackerFrames = mountTrackerFrames({ app, store, viewerId, initialTrackerId: opts.trackerId, initialTicketKey: opts.ticketKey });
+    stopTrackerFrames = mountTrackerFrames({ app, store, api, viewerId, initialTrackerId: opts.trackerId, initialTicketKey: opts.ticketKey });
     if (trackerBoardMockVisual) {
       Object.assign(window, { __trackerStore: store });
       const existing = [...app.store.cache.values()].some((obj) => obj.type === 'tracker');
@@ -464,11 +464,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
           void Promise.all([import('../tracker-mock'), import('../tracker/ui/visual-seed')]).then(([mock, seed]) => {
             trackerVisualInit = false;
             if (app.lifetime.signal.aborted || !trackerBoardMockVisual) return;
-            mountTracker(createTrackerStore(mock.createMockTrackerApi(seed.createTrackerVisualSeed())), 'visual-user');
+            const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
+            mountTracker(createTrackerStore(api), api, 'visual-user');
           }).catch((error: unknown) => console.error('Tracker visual mock failed to initialize.', error));
         }
       } else if (auth.mode === 'signed-in' || auth.mode === 'offline') {
-        mountTracker(createTrackerStore(createHttpTrackerApi()), auth.me!.user.id);
+        const api = createHttpTrackerApi();
+        mountTracker(createTrackerStore(api), api, auth.me!.user.id);
       }
     } else if (!enabled && trackerStore) {
       stopTrackerFrames?.();

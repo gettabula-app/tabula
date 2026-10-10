@@ -11,6 +11,8 @@ import { createTrackerVisualSeed } from '../src/tracker/ui/visual-seed';
 import { installTrackerUiBrowser } from './tracker-ui-test-helpers';
 import { FakeElement, FakeEvent, flush } from './fake-dom';
 import { openNewIssueDialog } from '../src/tracker/ui/new-issue';
+import { renderSnippet } from '../src/tracker/ui/snippet';
+import { trackerErrorField } from '../src/tracker/ui/error-path';
 import type { TrackerTicket } from '../src/tracker-types';
 
 let browser: ReturnType<typeof installTrackerUiBrowser> | null = null;
@@ -31,9 +33,10 @@ describe('tracker shell slice', () => {
   it('switches tabs and renders the mock All issues list through the shared shell', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
-    const store = createTrackerStore(createMockTrackerApi(seed), { isVisible: () => false });
+    const api = createMockTrackerApi(seed);
+    const store = createTrackerStore(api, { isVisible: () => false });
     const mount = browser.mount() as unknown as HTMLElement;
-    const shell = mountTrackerShell(mount, { store, viewerId: 'visual-user', trackerId: 'tracker-demo', windowId: 'frame-1', initialTab: 'all' });
+    const shell = mountTrackerShell(mount, { store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', windowId: 'frame-1', initialTab: 'all' });
     await store.loadMeta();
     await store.loadList({ filter: [], limit: 50, includeFacets: true, group: 'state', sort: { field: 'updatedAt', direction: 'desc' } });
     expect(shell.el.querySelectorAll('.trk-list-row').length).toBe(seed.tickets?.length);
@@ -41,6 +44,7 @@ describe('tracker shell slice', () => {
     inbox.click();
     expect(shell.state.tab).toBe('inbox');
     expect(shell.el.textContent).toContain('Not available yet.');
+    expect(shell.el.querySelector('.trk-unread-count')?.textContent).toBe('0');
     shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[2].click();
     expect(shell.state.tab).toBe('all');
     shell.destroy();
@@ -103,7 +107,7 @@ describe('tracker shell slice', () => {
     const api = createMockTrackerApi(seed);
     vi.spyOn(api, 'patchTicket').mockRejectedValueOnce(new TrackerError('conflict', 'conflict', { current }));
     const store = createTrackerStore(api, { isVisible: () => false });
-    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, viewerId: 'conflict-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'conflict-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
     await store.loadMeta();
     await store.loadList({ limit: 50, group: 'state' });
     await flush();
@@ -121,8 +125,9 @@ describe('tracker shell slice', () => {
   it('shows the selection bulk bar and undoes an archived mock ticket', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
-    const store = createTrackerStore(createMockTrackerApi(seed), { isVisible: () => false });
-    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, viewerId: 'bulk-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
+    const api = createMockTrackerApi(seed);
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'bulk-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
     await store.loadMeta();
     await store.loadList({ limit: 50, group: 'state' });
     await flush();
@@ -178,6 +183,24 @@ describe('new issue dialog', () => {
     expect(modal.box.isConnected).toBe(false);
     store.destroy();
   });
+
+  it('maps an unprefixed create error path to its issue field', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    vi.spyOn(api, 'createTicket').mockRejectedValueOnce(new TrackerError('invalid_input', 'Choose valid labels.', { path: 'labels' }));
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const modal = openNewIssueDialog({ store, meta: seed.meta!, viewerId: 'path-viewer', trackerId: 'path-tracker' });
+    const modalBox = modal.box as unknown as FakeElement;
+    const title = modalBox.querySelector('.trk-new-title')!;
+    title.value = 'Issue with invalid labels';
+    title.dispatchEvent(new FakeEvent('input'));
+    modalBox.querySelector('.trk-primary-button')!.click();
+    await flush(40);
+    expect(modalBox.querySelectorAll('.trk-new-properties button')[3].getAttribute('aria-invalid')).toBe('true');
+    modal.close();
+    store.destroy();
+  });
 });
 
 describe('frame interaction thresholds', () => {
@@ -211,13 +234,38 @@ describe('safe Markdown preview and ticket chips', () => {
     expect(preview.textContent).toContain('<script>alert(1)</script>');
   });
 
-  it('builds a one-line state chip with a stable hash ticket link', () => {
+  it('builds a one-line state chip with a canonical path ticket link', () => {
     const ticket = createTrackerVisualSeed().tickets![0] as TrackerTicket;
-    expect(ticketChipValue(ticket)).toMatchObject({ key: ticket.key, title: ticket.title, href: `#/t/${ticket.key}` });
+    expect(ticketChipValue(ticket)).toMatchObject({ key: ticket.key, title: ticket.title, href: `/t/${ticket.key}` });
     browser = installTrackerUiBrowser();
     const chip = ticketChip(ticket);
     expect(chip.tagName.toLowerCase()).toBe('a');
-    expect(chip.getAttribute('href')).toBe(`#/t/${ticket.key}`);
+    expect(chip.getAttribute('href')).toBe(`/t/${ticket.key}`);
     expect(chip.getAttribute('aria-label')).toContain(ticket.state.name);
+  });
+});
+
+describe('safe snippets and tracker error paths', () => {
+  it('renders only balanced exact marks and keeps hostile or malformed text inert', () => {
+    browser = installTrackerUiBrowser();
+    const samples = [
+      '<mark><img src=x onerror=alert(1)> title</mark>',
+      'stray </mark> and <mark>unfinished',
+      '',
+      '<mark>outer <mark>nested</mark></mark>',
+    ];
+    const fragments = samples.map(renderSnippet);
+    for (const fragment of fragments) expect(fragment.querySelector('img')).toBeNull();
+    expect(fragments[0].querySelectorAll('mark')).toHaveLength(1);
+    expect(fragments[1].textContent).toBe('stray </mark> and <mark>unfinished');
+    expect(fragments[2].childNodes).toHaveLength(0);
+    expect(fragments[3].querySelector('img')).toBeNull();
+  });
+
+  it('normalizes REST validation paths for the matching tracker controls', () => {
+    expect(trackerErrorField('labels')).toBe('labels');
+    expect(trackerErrorField('patch.labels')).toBe('labels');
+    expect(trackerErrorField('query')).toBe('search');
+    expect(trackerErrorField(undefined)).toBeNull();
   });
 });

@@ -188,6 +188,7 @@
 .trk-tab { display: inline-flex; min-width: 68px; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--graphite); font-weight: 600; white-space: nowrap; }
 .trk-tab.active { border-bottom-color: var(--signal); color: var(--ink); }
 .trk-tab-glyph { display: inline-grid; width: 19px; place-items: center; font-size: 18px; line-height: 1; }
+.trk-unread-count { min-width: 1ch; color: var(--graphite); font-size: 11px; font-variant-numeric: tabular-nums; }
 .trk-header-actions { display: flex; flex: none; align-items: center; gap: 8px; padding: 6px 10px; }
 .trk-command-trigger, .trk-primary-button, .trk-icon-button, .trk-small-button, .trk-view-button, .trk-view-name {
   min-height: 36px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: transparent; color: var(--ink); font: inherit;
@@ -233,6 +234,8 @@
 .trk-title-link:hover { text-decoration: underline; }
 .trk-title-link, .trk-col-title .trk-label-chip { flex: none; }
 .trk-title-link { flex: 0 1 auto; }
+.trk-search-snippet { min-width: 0; overflow: hidden; color: var(--graphite); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.trk-search-snippet mark { background: color-mix(in srgb, var(--signal) 22%, var(--paper)); color: inherit; }
 .trk-state-value, .trk-cell-button, .trk-glyph-button, .trk-avatar-button { display: inline-flex; min-width: 0; min-height: 28px; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
 .trk-state-value span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trk-glyph-button { min-width: 30px; justify-content: center; }
@@ -255,6 +258,13 @@
 .trk-ticket-stub h1 { margin: 16px 0 2px; font-size: clamp(24px, 4vw, 34px); }
 .trk-ticket-stub p { margin: 0; }
 .trk-ticket-back { min-height: 40px; padding: 0 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: transparent; color: var(--ink); }
+.trk-peek-layout { display: grid; flex: 1 1 auto; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr); }
+.trk-peek-list { display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.trk-peek-list > .trk-all-issues { min-width: 0; }
+.trk-peek-panel { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--rule); }
+.trk-ticket-page-host { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; }
+.trk-ticket-page { width: 100%; min-height: 100%; }
+.trk-ticket-page-peek { padding: 20px clamp(18px, 2vw, 32px); }
 .trk-live-region { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .trk-skeleton-list { padding: 0 12px; }
 .trk-skeleton-row { display: grid; min-height: 36px; grid-template-columns: 42px 88px minmax(140px, 1fr) 130px; align-items: center; gap: 12px; border-bottom: 1px solid var(--rule); }

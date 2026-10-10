@@ -1,6 +1,8 @@
 import './tracker.css';
-import { h } from '../../ui/dom';
+import { buildTrackerPath } from '../../tracker-route';
+import { chipModel } from '../../tracker-chips';
 import type { TrackerTicket } from '../../tracker-types';
+import { h } from '../../ui/dom';
 import { stateGlyph } from './glyphs';
 
 export interface TicketChipValue {
@@ -12,19 +14,20 @@ export interface TicketChipValue {
   href: string;
 }
 
-/** Small pure projection used by comments, descriptions, and chat renderers. */
+/** DOM-facing projection of the shared tracker chip model. */
 export function ticketChipValue(ticket: Pick<TrackerTicket, 'key' | 'title' | 'state'>): TicketChipValue {
+  const model = chipModel(ticket.key, () => ticket as TrackerTicket);
   return {
-    key: ticket.key,
-    title: ticket.title,
-    stateName: ticket.state.name,
+    key: model.key,
+    title: model.title,
+    stateName: model.state?.name ?? ticket.state.name,
     stateKey: ticket.state.key,
-    stateCategory: ticket.state.category,
-    href: `#/t/${encodeURIComponent(ticket.key)}`,
+    stateCategory: model.state?.category ?? ticket.state.category,
+    href: buildTrackerPath({ kind: 'ticket', key: model.key }) ?? '/t/' + encodeURIComponent(model.key),
   };
 }
 
-/** DOM builder: all ticket strings remain text nodes, and the app's hash route is preserved. */
+/** DOM builder over the shared chip model; ticket text stays in text nodes. */
 export function ticketChip(ticket: Pick<TrackerTicket, 'key' | 'title' | 'state'>): HTMLAnchorElement {
   const value = ticketChipValue(ticket);
   return h('a', {

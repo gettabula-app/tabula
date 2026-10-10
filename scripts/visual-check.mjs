@@ -1142,8 +1142,11 @@ const STATES = {
     const frame = await openTrackerMockFrame(env);
     await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
     await env.page.keyboard.press('Enter');
-    await env.page.locator('.trk-fullscreen-portal .trk-shell, .trk-frame-wrap.is-work .trk-shell').waitFor();
-    await env.page.getByRole('tab', { name: 'All issues' }).click();
+    await env.page.locator('.trk-route-root .trk-shell, .trk-frame-wrap.is-work .trk-shell').waitFor();
+    const allIssuesTab = env.width <= 600
+      ? env.page.locator('.trk-route-root [role="tab"][aria-label="All issues"]')
+      : env.page.locator('.trk-frame-wrap.is-work [role="tab"][aria-label="All issues"]');
+    await allIssuesTab.click();
     await env.page.locator('.trk-list-row').first().waitFor();
     if (env.width > 600 && !(await env.page.locator('.trk-frame-wrap.is-work').count())) throw new Error('tracker-frame-work: work surface is not mounted over the frame');
     await assertTrackerLayout(env.page);
@@ -1160,14 +1163,14 @@ const STATES = {
       await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-open').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: open chip: ${error.message}`); });
       await env.page.locator('.trk-frame-wrap.is-work').waitFor();
       await env.page.locator('.trk-frame-wrap.is-work .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
-      await env.page.locator('.trk-fullscreen-portal').waitFor();
+      await env.page.locator('.trk-route-root').waitFor();
     } else {
-      await env.page.locator('.trk-fullscreen-portal').waitFor();
+      await env.page.locator('.trk-route-root').waitFor();
     }
     const afterOpen = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterOpen.x || before.y !== afterOpen.y || before.zoom !== afterOpen.zoom) throw new Error('tracker-frame-fullscreen: opening full screen moved the board camera');
-    await env.page.locator('.trk-fullscreen-portal .trk-fullscreen-strip button').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: back to board: ${error.message}`); });
-    await env.page.locator('.trk-fullscreen-portal').waitFor({ state: 'detached' });
+    await env.page.locator('.trk-route-root .trk-fullscreen-strip button').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: back to board: ${error.message}`); });
+    await env.page.locator('.trk-route-root').waitFor({ state: 'detached' });
     const afterClose = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterClose.x || before.y !== afterClose.y || before.zoom !== afterClose.zoom) throw new Error('tracker-frame-fullscreen: closing full screen changed the board camera');
     if (env.width > 600) {
@@ -1176,7 +1179,7 @@ const STATES = {
       await env.page.evaluate((id) => window.__board.setSelection([id]), frame.id);
       await env.page.keyboard.press('Enter');
     }
-    await env.page.locator('.trk-fullscreen-portal').waitFor();
+    await env.page.locator('.trk-route-root').waitFor();
     return { noPark: true };
   },
   async 'tracker-foundation'({ page, base, width }) {

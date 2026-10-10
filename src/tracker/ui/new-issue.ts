@@ -1,9 +1,10 @@
 import './tracker.css';
 import { dialog, toast } from '../../ui/common';
 import { h } from '../../ui/dom';
-import type { TrackerMeta, TrackerPriority } from '../../tracker-types';
+import { TrackerError, type TrackerMeta, type TrackerPriority } from '../../tracker-types';
 import type { TrackerStore } from '../../tracker-data';
 import { openPicker } from './picker';
+import { trackerErrorField } from './error-path';
 
 export interface MarkdownInlineToken { type: 'text' | 'link' | 'code' | 'strong' | 'em'; text: string; href?: string }
 
@@ -186,6 +187,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     busy = true;
     createButton.disabled = anotherButton.disabled = true;
     error.hidden = true;
+    for (const control of [title, description, stateButton, assigneeButton, priorityButton, labelsButton, dueButton]) control.removeAttribute('aria-invalid');
     try {
       const ticket = await options.store.createTicket({
         title: cleanTitle, description: description.value, state: draft.state || undefined, priority: draft.priority,
@@ -206,6 +208,13 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     } catch (caught) {
       error.textContent = caught instanceof Error ? caught.message : 'Could not create the issue.';
       error.hidden = false;
+      const field = caught instanceof TrackerError ? trackerErrorField(caught.path) : null;
+      const fieldControl: Record<string, HTMLElement> = {
+        title, description, state: stateButton, assignee: assigneeButton, priority: priorityButton, labels: labelsButton, due: dueButton,
+      };
+      const invalidControl = field ? fieldControl[field] : undefined;
+      invalidControl?.setAttribute('aria-invalid', 'true');
+      invalidControl?.focus({ preventScroll: true });
     } finally {
       busy = false;
       createButton.disabled = anotherButton.disabled = !options.meta.me.canWrite;
