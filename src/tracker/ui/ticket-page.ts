@@ -1136,7 +1136,6 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     more.appendChild(parentGroup);
     properties.appendChild(more);
     layout.appendChild(properties);
-    main.appendChild(descriptionSection);
 
     const activitySection = h('section', { class: 'tk-section tk-activity-section', 'aria-labelledby': 'tk-activity-heading' });
     const activityHead = h('div', { class: 'tk-section-head' }, h('h2', { id: 'tk-activity-heading', class: 'tk-section-heading' }, 'Activity'));

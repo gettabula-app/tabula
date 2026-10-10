@@ -230,7 +230,8 @@
   .trk.tk-page .tk-ghost-add { opacity: 1; }
   .trk.tk-page .tk-properties-more[data-expanded='false'] { display: none; }
   .trk.tk-page .tk-properties-more[data-expanded='true'] { display: block; }
-  .trk.tk-page .tk-section { margin-top: 24px; }
+  .trk.tk-page .tk-section { margin-top: 20px; }
+  .trk.tk-page .tk-subissues-section, .trk.tk-page .tk-relations-section { margin-top: 4px; }
   .trk.tk-page .tk-activity-section { margin-top: 28px; }
   .trk.tk-page .tk-icon-button, .trk.tk-page .tk-header-key, .trk.tk-page .tk-subscribe-button { min-width: 44px; min-height: 44px; }
   .trk.tk-page .tk-header-key { justify-content: flex-start; }
