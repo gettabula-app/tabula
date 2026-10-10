@@ -52,6 +52,12 @@ POST   /api/join
 
 Creation, revocation and successful use write audit actions `join-code.created`, `join-code.revoked` and `join-code.used`. Each row records the board, code record id and relevant role or expiry data; none records the code itself.
 
+## Re-running the QA
+
+Run `npm run qa:join-codes` for the API and websocket checks. Add `-- --ui` to run the browser flows twice at each configured width, including code creation, spaced-code joining, guest presence and comments, revocation, expiry, and the feature-off state. For screenshots, pass `-- --ui --widths 1280,390 --out <folder>`; the default widths are `1280,390`.
+
+The script starts an accounts-mode relay on a free local port with a temporary data directory, then stops it and removes the data when it finishes. The API run uses the repository's installed dependencies and takes about 20 seconds. The browser run also needs a built app (`npm run build:app`) and Playwright's Chromium; it takes about a minute for the default widths. Screenshots are saved only when `--out` is supplied.
+
 ## Later work
 
 - TODO: QR code image for a join link.

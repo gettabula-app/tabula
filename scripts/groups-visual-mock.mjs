@@ -86,11 +86,62 @@ const bar = (grouped) => `<div class="qbar" style="top:192px"><span class="sw"><
 const touchMulti = () => ({ svg: scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1" stroke-dasharray="5 4"') + handles(pad(G, 6), 16).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, ''), html: bar(false) });
 const touchGroup = () => ({ svg: scene() + [A, B, C].map((r) => rect(r, 'fill="none" stroke="var(--group-member-line)" stroke-width="1"')).join('') + rect(pad(G, 6), 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(pad(G, 6), 16), html: bar(true) });
 
+// slice 3: transforming a group. Resize scales the members about the corner opposite the one dragged; rotate turns them about the group's centre and
+// the box is the new union, upright again (docs/groups.md). The live chip names what the gesture is doing.
+const sceneIn = (transform, ids = ['A', 'B', 'C', 'conn']) => `<g transform="${transform}">${scene(ids)}</g>`;
+const SCALE = 1.25;
+const scaledG = { x: G.x, y: G.y, w: G.w * SCALE, h: G.h * SCALE };
+const resizeLive = (size = 9, touch = false) => {
+  const out = pad(scaledG, 6);
+  const corner = { x: out.x + out.w, y: out.y + out.h };
+  const label = `${Math.round(scaledG.w)} × ${Math.round(scaledG.h)} · ${Math.round(SCALE * 100)}%`;
+  // the chip sits below and left of the dragged corner on a pointer, and well above the finger on touch
+  const at = touch ? { x: corner.x - 120, y: corner.y - 58 } : { x: corner.x - 118, y: corner.y + 12 };
+  return scene(['D']) + sceneIn(`translate(${G.x} ${G.y}) scale(${SCALE}) translate(${-G.x} ${-G.y})`) +
+    rect(pad(G, 6), 'fill="none" stroke="var(--group-line-soft)" stroke-width="1" stroke-dasharray="4 4"') +
+    rect(out, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(out, size).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, '') +
+    chip(at.x, at.y, label, 116) + (touch ? '' : cursor(corner.x + 2, corner.y + 2));
+};
+const ANGLE = 20;
+const rot = (pt, c, deg) => { const a = (deg * Math.PI) / 180, dx = pt.x - c.x, dy = pt.y - c.y; return { x: c.x + dx * Math.cos(a) - dy * Math.sin(a), y: c.y + dx * Math.sin(a) + dy * Math.cos(a) }; };
+const rotatedUnion = (c, deg) => {
+  const pts = [];
+  for (const r of [A, B]) for (const [x, y] of [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]) pts.push(rot({ x, y }, c, deg));
+  const cc = rot({ x: 175, y: 149 }, c, deg);
+  pts.push({ x: cc.x - 25, y: cc.y - 25 }, { x: cc.x + 25, y: cc.y + 25 });
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+};
+const rotateLive = (size = 9, touch = false) => {
+  const c = { x: G.x + G.w / 2, y: G.y + G.h / 2 };
+  const box = pad(rotatedUnion(c, ANGLE), 6);
+  // the handle is dragged out to the right of the box here, so the mock stays inside the panel; it is a circle on the stem above the box at rest
+  const ptr = { x: box.x + box.w + 26, y: box.y + box.h * 0.3 };
+  const stem = `<path d="M${c.x} ${c.y} L${ptr.x} ${ptr.y}" stroke="var(--group-line-soft)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  const handle = `<circle cx="${ptr.x}" cy="${ptr.y}" r="${touch ? 8 : 5}" fill="var(--group-handle)" stroke="var(--group-line)" stroke-width="1.5"/>`;
+  const at = touch ? { x: ptr.x - 30, y: ptr.y - 56 } : { x: ptr.x + 12, y: ptr.y + 8 };
+  return scene(['D']) + sceneIn(`rotate(${ANGLE} ${c.x} ${c.y})`) + stem +
+    rect(pad(G, 6), 'fill="none" stroke="var(--group-line-soft)" stroke-width="1" stroke-dasharray="4 4"') +
+    rect(box, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(box, size).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, '') +
+    handle + chip(at.x, at.y, `${ANGLE}°`, 38) + (touch ? '' : cursor(ptr.x + 3, ptr.y + 3));
+};
+const resizeMin = () => {
+  const s = 24 / Math.min(G.w, G.h);
+  const sg = { x: G.x, y: G.y, w: G.w * s, h: G.h * s };
+  const out = pad(sg, 6);
+  return scene(['D']) + sceneIn(`translate(${G.x} ${G.y}) scale(${s}) translate(${-G.x} ${-G.y})`) +
+    rect(pad(G, 6), 'fill="none" stroke="var(--group-line-soft)" stroke-width="1" stroke-dasharray="4 4"') +
+    rect(out, 'fill="none" stroke="var(--group-line)" stroke-width="1.5"') + handles(out, 9).replace(/<path d="M[^"]*v-18[^>]*>|<circle[^>]*r="5"[^>]*>/g, '') +
+    chip(out.x + out.w + 10, out.y + out.h - 8, 'Smallest size', 86);
+};
+
 const STATES = {
   'selected': { title: 'Selected: one item, several items today, a group', rows: [['One item', single], ['Several items (today)', multi], ['A group', groupSel]] },
   'hover': { title: 'Hover before the click', rows: [['An item (today)', hoverSingle], ['A member of an unselected group', hoverGroup]] },
   'inside': { title: 'Inside a group', rows: [['Entered a group', inside1], ['Entered a group within it', inside2]] },
   'locked': { title: 'A locked group', rows: [['At rest: nothing shows (as for any locked item)', lockedIdle], ['Pointer over it', lockedHover]] },
+  'transform': { title: 'Transforming a group: resize, rotate, the smallest size', rows: [['Resize from a corner (dashed: where it was)', () => resizeLive()], ['Rotate (dashed: where it was; the box is the new union)', () => rotateLive()], ['The smallest size, 24 units', resizeMin]] },
+  'transform-touch': { title: 'Transforming on touch: 16 px handles, the chip clear of the finger', rows: [['Resize', () => resizeLive(16, true)], ['Rotate', () => rotateLive(16, true)]] },
   'touch': { title: 'Quick-action bar on touch (44 px targets, 16 px handles)', rows: [['Three notes selected: Group', touchMulti], ['A group selected: Ungroup', touchGroup]] },
 };
 

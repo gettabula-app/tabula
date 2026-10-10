@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardRole, Me, Member, Share, Team, TeamMember } from '../src/api';
-import { DEFAULT_SHARE_ROLE, SHARE_ROLES, buildCandidates, canManageJoinCodes, canManageShares, shareRoleLabel, sortShares } from '../src/ui/share-logic';
+import { DEFAULT_SHARE_ROLE, SHARE_ROLES, buildCandidates, canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink, shareRoleLabel, sortShares } from '../src/ui/share-logic';
 
 const team = (id: string, name: string, memberCount = 2, archived = false): Team => ({ id, name, role: 'member', memberCount, archived });
 const tm = (userId: string, name: string, email = `${userId}@example.com`): TeamMember => ({ userId, name, email, role: 'member' });
@@ -20,6 +20,25 @@ const base = {
 };
 const keys = (list: { type?: string; principalType?: string; id?: string; principalId?: string }[]) =>
   list.map((c) => `${c.type ?? c.principalType}:${c.id ?? c.principalId}`);
+
+describe('guest-only board controls', () => {
+  it.each(['unknown', 'open', 'signed-out', 'signed-in', 'offline'] as const)('keeps profile and template controls for %s sessions', (mode) => {
+    expect(canChangeProfile(mode)).toBe(true);
+    expect(canSaveTemplate(mode)).toBe(true);
+  });
+
+  it('hides profile and template controls from guests', () => {
+    expect(canChangeProfile('guest')).toBe(false);
+    expect(canSaveTemplate('guest')).toBe(false);
+  });
+
+  it('recognises a removed guest link without treating other denials as one', () => {
+    expect(isRemovedGuestLink('guest', 'access_removed')).toBe(true);
+    expect(isRemovedGuestLink('guest', 'no_access')).toBe(false);
+    expect(isRemovedGuestLink('signed-in', 'access_removed')).toBe(false);
+    expect(isRemovedGuestLink('guest', null)).toBe(false);
+  });
+});
 
 describe('canManageShares', () => {
   it.each([

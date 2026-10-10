@@ -16,6 +16,7 @@ import { mountMentionNotices } from './ui/mention-notice';
 import { mountTitleBadge } from './ui/title-badge';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
+import { onceForLocation } from './nav-dedupe';
 import { renderJoin } from './ui/join';
 import { renderAdmin } from './ui/admin';
 import { showRestoring } from './ui/restoring';
@@ -436,9 +437,11 @@ async function boot() {
       console.error('The desktop features did not start; carrying on as a plain web page.', e);
     }
   }
-  window.addEventListener('hashchange', route);
-  window.addEventListener('popstate', route);
-  route();
+  // one navigation fires both hashchange and popstate: route once per location
+  const once = onceForLocation(() => void route(), () => location.href);
+  window.addEventListener('hashchange', once.handle);
+  window.addEventListener('popstate', once.handle);
+  once.handle();
 }
 
 if (!DEMO) loadCatalogue();

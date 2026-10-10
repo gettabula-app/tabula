@@ -3,6 +3,7 @@
   position: fixed; z-index: 40; width: 320px; max-width: min(340px, calc(100vw - 24px - var(--safe-left) - var(--safe-right))); padding: 12px; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 10px;
 }
+.comment-card :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .comment-head > .icon-btn { margin-left: auto; }
 .comment-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

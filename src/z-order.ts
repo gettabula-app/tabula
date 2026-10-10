@@ -3,7 +3,8 @@
 //
 // "Overlaps" is a question for the caller (it knows how big a connector or a frame title is); this module only asks it.
 // Frames always paint below everything else whatever their key, so a step only ever compares an object with the objects
-// of its own kind: a frame is stepped among frames, anything else among the rest.
+// of its own kind: a frame is stepped among frames, anything else among the rest. Groups are one sibling item; their
+// derived rectangle is supplied by the caller's overlap function, and their members stay in their own sibling row.
 import { generateNKeysBetween } from 'fractional-indexing';
 import type { Id, Obj } from './types';
 
@@ -61,10 +62,22 @@ function betweenKeys(lo: string | null, hi: string | null, n: number): string[] 
 export function planStep(objects: Obj[], ids: Iterable<Id>, direction: 1 | -1, overlaps: (a: Obj, b: Obj) => boolean): ZPatch[] | null {
   const selected = new Set(ids);
   const sorted = [...objects].sort(cmp);
+  const byId = new Map(sorted.map((o) => [o.id, o]));
   const patches: ZPatch[] = [];
-  for (const kind of [(o: Obj) => o.type === 'frame', (o: Obj) => o.type !== 'frame']) {
-    const row = sorted.filter(kind);
-    const step = stepWithin(row, selected, direction, overlaps);
+  const buckets = new Map<Id | undefined, Map<boolean, Set<Id>>>();
+  for (const id of selected) {
+    const o = byId.get(id);
+    if (!o) continue;
+    const frame = o.type === 'frame';
+    let byKind = buckets.get(o.parent);
+    if (!byKind) buckets.set(o.parent, (byKind = new Map()));
+    let bucket = byKind.get(frame);
+    if (!bucket) byKind.set(frame, (bucket = new Set()));
+    bucket.add(id);
+  }
+  for (const [parent, byKind] of buckets) for (const [frame, bucket] of byKind) {
+    const row = sorted.filter((o) => o.parent === parent && (o.type === 'frame') === frame);
+    const step = stepWithin(row, bucket, direction, overlaps);
     if (step) patches.push(...step);
   }
   return patches.length ? patches : null;

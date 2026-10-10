@@ -26,7 +26,7 @@ export function mountJoinCodes(boardId: string): HTMLElement {
   const role = h('select', { class: 'input', 'aria-label': 'Guest role' },
     h('option', { value: 'commenter' }, 'Commenter'),
     h('option', { value: 'editor' }, 'Editor'));
-  const expiry = h('select', { class: 'input', 'aria-label': 'Code expiry' },
+  const expiry = h('select', { class: 'input', 'aria-label': 'Expires after' },
     ...[3, 6, 12, 24].map((hours) => h('option', { value: String(hours), selected: hours === 3 }, `${hours} hours`)));
   const maxUses = h('input', { class: 'input join-code-uses', type: 'number', min: '1', max: '1000', value: '100', 'aria-label': 'Maximum uses' });
   const create = h('button', { class: 'btn primary', type: 'submit' }, 'Create code');

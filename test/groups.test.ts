@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GROUP_MAX_DEPTH, GROUP_MAX_MEMBERS, GROUP_MAX_PER_BOARD, GROUP_NAME_MAX,
-  ancestorsOf, descendantsOf, effectiveLocked, frameOf, groupDepth, groupFitsLimits, groupPlan, isGroup, liftToScope, membersBounds,
+  ancestorsOf, copyPlan, descendantsOf, effectiveLocked, frameOf, groupDepth, groupFitsLimits, groupPlan, isGroup, liftToScope, membersBounds,
   outermostGroup, pick, topLevelAncestors, ungroupPlan,
 } from '../src/groups';
 import { referenceRects } from '../src/guides';
@@ -75,6 +75,20 @@ describe('group parent walks', () => {
     expect(effectiveLocked(get('own')!, get)).toBe(true);
     expect(effectiveLocked(get('frame')!, get)).toBe(true);
     expect(effectiveLocked({ ...box('frame-child'), parent: 'frame' }, get)).toBe(false);
+  });
+});
+
+describe('group copy plans', () => {
+  it('copies nested groups and their members, carries internal connectors and skips an outside end', () => {
+    const objects: Obj[] = [
+      group('outer'), box('a', 'outer'), group('inner', 'outer'), box('b', 'inner'),
+      { ...connector('member-line', 'inner'), from: { kind: 'bound', id: 'a', anchor: 'auto' }, to: { kind: 'bound', id: 'b', anchor: 'auto' } },
+      { ...connector('external-line', 'inner'), from: { kind: 'bound', id: 'b', anchor: 'auto' }, to: { kind: 'bound', id: 'outside', anchor: 'auto' } },
+      box('outside'),
+      { ...connector('between', undefined), from: { kind: 'bound', id: 'a', anchor: 'auto' }, to: { kind: 'bound', id: 'b', anchor: 'auto' } },
+    ];
+    const { get, children } = access(objects);
+    expect(copyPlan(['outer'], get, children, objects)).toEqual(['outer', 'a', 'inner', 'b', 'member-line', 'between']);
   });
 });
 

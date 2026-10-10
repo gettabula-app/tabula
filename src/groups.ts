@@ -58,6 +58,34 @@ export function descendantsOf(id: Id, get: GetObject, childrenOf: ListChildren):
   return out;
 }
 
+/**
+ * Plans the objects that travel when ids are copied. Groups carry their full subtree, and only connectors whose bound ends
+ * stay inside that subtree travel with it. `all` supplies stable paint order for the returned ids.
+ */
+export function copyPlan(ids: readonly Id[], get: GetObject, childrenOf: ListChildren, all: readonly Obj[]): Id[] {
+  const set = new Set(ids.filter((id) => !!get(id)));
+  const stack = [...set];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (!isGroup(get(id))) continue;
+    for (const child of childrenOf(id)) {
+      if (child.parent !== id || set.has(child.id)) continue;
+      set.add(child.id);
+      if (isGroup(child)) stack.push(child.id);
+    }
+  }
+
+  for (const id of set) {
+    const o = get(id);
+    if (isConnector(o) && [o.from, o.to].some((end) => end.kind === 'bound' && !set.has(end.id))) set.delete(id);
+  }
+  for (const o of all) {
+    if (!isConnector(o) || set.has(o.id)) continue;
+    if (o.from.kind === 'bound' && o.to.kind === 'bound' && set.has(o.from.id) && set.has(o.to.id)) set.add(o.id);
+  }
+  return all.filter((o) => set.has(o.id)).map((o) => o.id);
+}
+
 /** The nearest frame ancestor, following parent links through any number of groups. */
 export function frameOf(o: Obj, get: GetObject): BaseObj | undefined {
   return parentWalk(o, get).ancestors.find((parent): parent is BaseObj => parent.type === 'frame');

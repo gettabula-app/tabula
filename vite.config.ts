@@ -51,17 +51,21 @@ const demoConfigPlugin = {
   },
 };
 
-// In dev, the relay runs on 8787 and Vite proxies the sync socket to it,
-// so the client always connects to same-origin /sync (and /chat, the team chat socket).
+// In dev, PORT selects the relay and VITE_PORT selects Vite; both keep their documented defaults.
+const relayPort = Number(process.env.PORT) || 8787;
+const vitePort = Number(process.env.VITE_PORT) || 5173;
+
+// Vite proxies sync and API requests to the selected relay port.
 export default defineConfig({
   plugins: [docsPages, demoConfigPlugin, demoBuildPlugin()],
   server: {
-    port: 5173,
+    port: vitePort,
+    strictPort: true,
     proxy: {
-      '/sync': { target: 'ws://localhost:8787', ws: true },
-      '/chat': { target: 'ws://localhost:8787', ws: true },
-      '/api': { target: 'http://localhost:8787' },
-      '/icons': { target: 'http://localhost:8787' },
+      '/sync': { target: `ws://localhost:${relayPort}`, ws: true },
+      '/chat': { target: `ws://localhost:${relayPort}`, ws: true },
+      '/api': { target: `http://localhost:${relayPort}` },
+      '/icons': { target: `http://localhost:${relayPort}` },
     },
   },
   build: { target: 'es2022', sourcemap: true },

@@ -88,6 +88,30 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 - Icons, on the 24 px grid, 2 px stroke, `currentColor` (the SVG is in `scripts/groups-visual-mock.mjs`): **Group** is four corner brackets round a small square; **Ungroup** is two separate squares joined by a dashed path. Slice 2 adds them to `src/ui/icons.ts` as `group` and `ungroup`.
 - Keyboard users have the same buttons, in the same bar, in tab order after the text controls. `aria-label` "Group" and "Ungroup"; the chip's name chip is `aria-hidden` (the layers panel and the selection announcement carry the name).
 
+## 6. Transforming a group: resize, rotate, and what the gesture says (slice 3)
+
+`transform.png` (pointer) and `transform-touch.png` (touch). It fills the `TODO(slice 3)` in `render.ts`: the handles and the live chip of a selected group. Behaviour is in [groups.md](groups.md) (Resize, Rotate); this is how it looks.
+
+**Handles.** The selected group's solid box (section 1) gets the same handles as a single item, built from the existing tokens: eight squares (corners and edge midpoints) 9 px with a 2 px radius, fill `--group-handle`, stroke 1.5 px `--group-line`, and the rotate circle 10 px across on a 1 px stem 24 px above the top edge. Every one scales the group **proportionally** (groups.md), so the edge handles do not stretch one axis: they differ from the corners only in where the anchor is. On touch (`pointer: coarse`) the squares are **16 px** and the circle 16 px, each with a 44 px hit area that never reaches into a neighbouring handle (on a small group the edge handles drop out, leaving the four corners and the rotate circle, so targets never overlap).
+
+**During the gesture.**
+- The members move live; the **solid box follows** (the new union, upright again after a rotate, as groups.md says) and the handles stay on it.
+- A **ghost of where it was**: the old box as a 1 px dashed (4 4) line in `--group-line-soft`, so you see how far you went. Nothing else is drawn for the old state.
+- A **live chip** (the tray chip of section 1, 11 px, tabular figures) says what the gesture is doing, and replaces the "Group · N" chip while the gesture runs (the name chip hides, as in section 1):
+  - resize: `<width> × <height> · <scale>%` in world units, for example `253 × 163 · 125%`, placed 12 px below and left of the dragged corner so it is never under the pointer;
+  - rotate: `<angle>°`, for example `20°`, placed 12 px right of and below the rotate circle; with Shift held it snaps to 15° and the chip adds nothing else;
+  - at the floor of 24 units the chip reads `Smallest size` and the box stops: no colour change, the words are the signal.
+- A dashed 1 px `--group-line-soft` ray from the group's centre to the rotate circle while turning, so the pivot is visible.
+- The quick-action bar and the other chips hide during the gesture (as for a drag) and come back on release.
+
+**On touch** the chip sits **at least 56 px above the finger** and moves further up when it would cover members or leave the viewport (it is clamped 8 px inside, under the top bars); it is never under the thumb. The rotate circle is 16 px; dragging it works from anywhere in its 44 px area.
+
+**Theme and contrast.** Nothing new is drawn in a colour of its own: `--group-line` (handles, solid box), `--group-line-soft` (ghost and ray), the tray pair (chip). The 2 px canvas casing under the box (section 1) applies to the solid box here too.
+
+**Not in this slice.** No numeric entry, no visible grid for snapping beyond the existing guides, no animation on release (the box simply is where it is).
+
+**For the visual-check states** (developer): `group-resize` and `group-rotate`, each held mid-gesture (pointer down, moved, not released) at 1280 and, with touch, at 360 and 390 across the five themes; `group-resize-min` for the floor. They should read the chip text from the DOM or the overlay and fail if it is missing during a gesture, and fail if a handle's hit area (44 px on touch) overlaps another's.
+
 ## What changes in code (for slice 2)
 
 | Where | Change |
@@ -96,7 +120,7 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 | `src/render.ts` | `WIRE` to `'var(--wire, #2F6FED)'` for outlines and handles; handle fill `var(--group-handle, #fff)`; group selection: solid box plus members at `--group-member-line` plus chip; hover: `--group-hover` on the group's rectangle; entered: dim wash between outside and members plus dashed bounds; locked hover: `--group-locked` and the tray-coloured badge |
 | `src/ui/quickbar.ts`, `src/ui/icons.ts` | Group and Ungroup buttons and the two icons |
 | `test/css-colors.test.ts` | no new allowlist entries: every colour here is a variable (the SVG strings in `render.ts` are outside that test, so add a small test that the group overlay contains no `#` literal) |
-| `scripts/visual-check.mjs` | states `group-selected`, `group-hover`, `group-entered`, `group-locked` (and the touch bar at 360 and 390), across the five themes |
+| `scripts/visual-check.mjs` | (slice 3 states are in section 6) states `group-selected`, `group-hover`, `group-entered`, `group-locked` (and the touch bar at 360 and 390), across the five themes |
 
 ## Open points
 
