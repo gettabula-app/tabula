@@ -138,7 +138,7 @@ Personal. A single list of **things that need you**, newest first, grouped by da
 - Assigned to you, mentioned you, commented on a ticket you follow, state changed on a ticket you follow, a PR you authored was merged, a ticket you created was closed.
 - Each row: unread dot, ticket key, title, one-line reason ("Mara commented", "PR #482 merged"), time. Unread rows are bold.
 - **Actions** (keyboard in 6): `E` mark done (removes it), `U` mark unread, `S` snooze (to this afternoon, tomorrow, next week, pick a date), `Enter` open the ticket peek, `X` select, `Shift+E` mark all in the selection done.
-- A row for a ticket that was deleted or lost access says "No longer available" and offers only Mark done.
+- A row for a ticket the person can no longer open says "No longer available" (it lost access) and offers only Mark done.
 - Counts: the tab shows the unread count (a numeral; never a red badge unless something is overdue and assigned to you).
 
 ### 4.2 My issues
@@ -213,7 +213,7 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 └───────────────────────────────────────────────┴────────────────────┘
 ```
 
-- **Header strip**: key (tabular, with a **copy link** action on click), state button (a picker), then ⋯ (copy link, copy key, copy as Markdown, duplicate, move to project, archive, delete), previous/next in the current list (`J`/`K`, also arrows in the strip), close.
+- **Header strip**: key (tabular, with a **copy link** action on click), state button (a picker), a **Subscribe / Subscribed** toggle (a bell button; `Shift+S`; subscribers get Inbox entries for comments, state changes and linked PRs; you are subscribed automatically when you create, are assigned, comment or are mentioned), then ⋯ (copy link, copy key, copy as Markdown, duplicate, move to project, **archive**; there is no delete), previous/next in the current list (`J`/`K`, also arrows in the strip), close.
 - **Title**: Bodoni Moda 800 (the one place it is used at app size; see 11), editable in place (click or `Enter`), one line that wraps.
 - **Description**: rich text; `Markdown` shortcuts on typing (`#`, `-`, `1.`, `` ` ``, `>`), `/` command menu for blocks, `@` mentions people, `TAB-` autocompletes ticket keys, paste an image to attach (workspace file store; size limit from architecture). Autosaves 800 ms after the last key; shows **Saved** / **Saving** / **Offline, will sync** in the header strip.
 - **Properties column**: each row is a label (small caps) and a value that opens a picker. Same keys as the list (`S A P L D M`). Read-only roles see plain values.
@@ -221,13 +221,15 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 - **Relations**: grouped by type; each row has the other ticket's key chip, state glyph, title, and a remove (×) on hover/focus. **+** opens a picker: choose relation type, then search tickets by key or title. `blocked by` an open ticket shows a **Blocked** mark on the ticket's list row. Duplicate: marking duplicate closes it (state Cancelled, category cancelled) after a confirm and keeps the pointer.
 - **Linked work** (7.1): PRs and commits from GitHub, and the **On canvas** link (9.5).
 - **Activity** (5.2): comments and history in one feed.
+- **Also known as**: under the title, one quiet grey line ("Also known as ENG-45, OLD-12") for old prefixes and imported Linear ids; each opens this ticket when used in a link or search. Absent when there are none. Search and ⌘K match aliases.
+- **Archived**: an archived ticket is hidden from every ordinary view and search (the filter has **Include archived**). Its page shows a banner across the top, "Archived on 12 Oct. Restore", with a **Restore** button (state and card come back); fields are read-only until restored.
 
 ### 5.2 Comments and history
 
 One chronological feed, oldest first (so the composer sits at the bottom), with a filter **All / Comments / History** (default All; History collapses runs of field changes: "Mara changed state, assignee and priority · 3 changes").
 
 - **Comment**: author, time, body (the same rich text as the description, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
-- **History rows**: a glyph, "Mara moved this from Todo to In progress", time. Field changes show old → new. Integration events are attributed to the integration ("GitHub · merged PR #482 moved this to Done" with the rule noted). Agent edits are attributed to the agent.
+- **History rows**: a glyph, "Mara moved this from Todo to In progress", time. Field changes show old → new. Integration events are attributed to the integration ("GitHub · merged PR #482 moved this to Done" with the rule noted). **Actors that are not people** (an agent's access token, the GitHub integration, an import) never get a person's avatar: they show a square **label badge** ("Agent · claude-code", "GitHub", "Import") in the same place and the same grey, so a feed can be scanned for who is human. The ticket's creator line says "Created by Mara" or "Created by agent claude-code" / "Created from GitHub" / "Imported from Linear" from the `source` (`app`, `import`, `mcp`, `integration`).
 - **Resolve**: threads can be resolved (collapsed with "Resolved by Idris" and re-opened by a reply).
 - **Edit history**: edited comments show "edited" with the time; there is no per-edit diff in v1.
 - **Unsent drafts** are kept per ticket in the browser.
@@ -267,7 +269,7 @@ The tracker captures keys only in Work mode or full screen. On the canvas, with 
 | `S A P L D M` | State, assignee, priority, labels, due, project pickers on the cursor row or selection |
 | `Cmd/Ctrl+Shift+C` | Copy the ticket link; `Cmd/Ctrl+Alt+C` copies the key `TAB-123`. **Copy branch name** (`tab-123-frame-size-presets`) is in the ⋯ menu and ⌘K |
 | `Home / End`, `PgUp / PgDn` | First/last, page |
-| `Delete` / `Backspace` | Archive (with undo toast; real delete is in ⋯ and needs a confirm) |
+| `Delete` / `Backspace` | Archive (with undo toast). Tickets are never deleted |
 
 ### 6.3 On the canvas
 
@@ -360,7 +362,7 @@ Reached from the tracker's ⋯ menu (**Integrations**) and the workspace setting
 | Webhook delivery failing | Activity log row **Failed: could not apply (retrying)**; after retries stop, **Failed** and a **Retry** button for admins. Never silent. |
 | Rate limited | "GitHub is slow to answer. Updates are delayed." (a grey banner, auto-clears). |
 | Permission lost on a repo | The repo row shows **No access** and its toggle is disabled. |
-| A ticket is archived/deleted that has links | Links are kept with the ticket; for a deleted ticket the PR row stays in the activity log as **Ignored: ticket deleted**. |
+| A ticket with links is archived | Links are kept with the ticket; new PR events still link to it and show on the archived ticket, but rules do not change its state. |
 | Merged PR but the ticket was moved by someone since | The rule only applies if the ticket is not completed/canceled; otherwise history shows "PR #482 merged · no state change (already Done)". |
 | Two PRs for one ticket | Both show; the chip shows the open one. A merge applies its rule once, a later merge applies to a ticket already done and so does nothing. |
 | Offline | The Integrations screen is read-only with "You are offline." |
@@ -395,7 +397,7 @@ A kanban container can be **linked** to a tracker. After linking:
 - **The ticket is the source of truth** for title, description, state, assignee, due, labels, priority. The card is a **view** of it. Moving a card between lanes changes the ticket's state; changing the ticket's state moves the card to the lane mapped to it.
 - **Position** within a lane (`rank`) and the card's canvas look stay on the board; they are not tickets' data.
 - A new ticket created in the tracker **appears on the linked kanban** in the lane for its state if the container opts in: **Show tickets: All / Filtered (a saved view) / Only cards made here** (default **Only cards made here**, so linking a retro board does not fill it with 400 backlog tickets).
-- Deleting a card asks: **Delete the card only (ticket stays)** or **Delete card and archive ticket** (default: card only). Deleting a ticket removes its card from the board (the card is an object; history keeps it for restore).
+- Deleting a card asks: **Delete the card only (ticket stays)** or **Delete card and archive ticket** (default: card only). Archiving a ticket in the tracker removes its card from the board's lanes (the card object is kept by history for restore); **Restore** on the ticket brings the card back to its lane.
 
 ### 9.2 The linking flow
 
@@ -469,7 +471,7 @@ The ticket page's **On canvas** property lists each linked card as "Sprint retro
 | Permission: read-only member | Properties show as plain text; composer says "You can read this tracker."; hidden actions, not disabled ones. |
 | Rate or size limit | "That's too long (4,000 characters max)." right at the field with the count. |
 | Save failure | The header strip says **Not saved. Retry** (a button); the draft stays on screen; nothing is dropped silently. |
-| Destructive actions | Archive is undoable by toast; **Delete** needs a confirm naming the ticket key. |
+| Destructive actions | Archive is undoable by toast. Tickets cannot be deleted. Removing a card's link to a ticket is a separate action (9.2, 9.3) and never archives the ticket. |
 
 Empty-state headlines are the **only** body-adjacent use of Bodoni Moda besides ticket titles and numerals; they are one line, never a paragraph, never an illustration, with one clear next action.
 
