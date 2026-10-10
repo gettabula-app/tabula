@@ -226,6 +226,7 @@ let chatHub = null;
 let chatStore = null;
 let chatRetention = null;
 let chatNotifier = null;
+let trackerNotifier = null;
 let joinCodeService = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
@@ -285,6 +286,19 @@ if (config.authEnabled) {
     });
     chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
+  }
+  if (config.tracker) {
+    const { createTrackerNotifier, trackerTickMsFromTestEnv } = await import('./tracker/outbox.mjs');
+    const { boardAccessForDirectory } = await import('./tracker/access.mjs');
+    trackerNotifier = createTrackerNotifier({
+      directory,
+      mailer: createMailer(config),
+      baseUrl: config.baseUrl,
+      log,
+      boardAccess: boardAccessForDirectory(directory),
+      intervalMs: trackerTickMsFromTestEnv(env),
+    });
+    trackerNotifier.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
@@ -411,6 +425,7 @@ async function enterMaintenance() {
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
+  trackerNotifier?.stop();
   closeChat();
   roomsFrozen = true;
   for (const room of rooms.values()) {
@@ -1309,6 +1324,7 @@ async function stopRelay() {
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
+  trackerNotifier?.stop();
   if (stopping) {
     await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
     // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.
