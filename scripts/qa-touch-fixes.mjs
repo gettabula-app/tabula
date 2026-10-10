@@ -175,6 +175,28 @@ if (want('votebar')) {
   });
 }
 
+if (want('tipregion')) {
+  // the tooltip portal sits under <body>, outside every landmark: it is hidden from the reading order and still described by aria-describedby
+  //   node scripts/qa-touch-fixes.mjs --only tipregion [--axe path/to/axe.min.js]   (axe is optional; it is not a dependency)
+  const axeArg = process.argv.indexOf('--axe');
+  const axeSrc = axeArg > 0 ? fs.readFileSync(process.argv[axeArg + 1], 'utf8') : null;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: Boolean(axeSrc) });
+  const page = await ctx.newPage();
+  await page.goto(`${base}/?debug#/b/qtip`);
+  await page.waitForFunction(() => window.__board);
+  await sleep(800);
+  await page.getByRole('button', { name: 'Hand', exact: true }).hover();
+  await sleep(1200);
+  const facts = await page.evaluate(() => { const tip = document.querySelector('[role=tooltip]'); const target = document.querySelector('[aria-describedby]'); return { hidden: tip?.getAttribute('aria-hidden'), described: !!target && (target.getAttribute('aria-describedby') || '').includes(tip?.id ?? '#'), visible: !!tip && getComputedStyle(tip).visibility !== 'hidden' && tip.getBoundingClientRect().width > 0 }; });
+  record('tooltip is aria-hidden and still the description of its target while it shows', facts.hidden === 'true' && facts.described, JSON.stringify(facts));
+  if (axeSrc) {
+    await page.addScriptTag({ content: axeSrc });
+    const bad = await page.evaluate(async () => { const r = await window.axe.run(document, { runOnly: { type: 'rule', values: ['region'] } }); return r.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' '))).filter((t) => /tip/.test(t)); });
+    record('axe region: the tooltip is not reported outside a landmark', bad.length === 0, bad.join(' | '));
+  }
+  await ctx.close();
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);

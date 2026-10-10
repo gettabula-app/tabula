@@ -24,7 +24,8 @@ export function installTooltips(): void {
   if (document.getElementById(ID)) return;
   const label = h('span', { class: 'tip-label' });
   const keys = h('span', { class: 'tip-key' });
-  const tip = h('div', { id: ID, class: 'tip', role: 'tooltip' }, label, keys);
+  // hidden from the page's reading order (it is not inside a landmark); its text reaches a screen reader through the target's aria-describedby while it shows
+  const tip = h('div', { id: ID, class: 'tip', role: 'tooltip', 'aria-hidden': 'true' }, label, keys);
   document.body.appendChild(tip);
 
   let anchor: HTMLElement | null = null;
