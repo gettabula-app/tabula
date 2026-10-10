@@ -199,7 +199,9 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     options = ownerOptions({ id: app.user.id, name: app.user.name }, present, assigned);
     if (focused !== owner && !(focused === ownerName && !ownerName.hidden)) {
       const cur = ownerKey(card);
-      const currentMissing = !!cur && !options.some((o) => o.key === cur);
+      // Agent owners are never person choices, even if an id or name happens to match one. Keep their current
+      // identity as a separate selected option so opening the dialog cannot make it look like the person choice.
+      const currentMissing = !!cur && (card.ownerKind === 'agent' || !options.some((o) => o.key === cur));
       owner.replaceChildren(
         h('option', { value: '' }, 'No owner'),
         ...options.map((o) => h('option', { value: o.key }, o.me ? `${o.name} (you)` : o.name)),

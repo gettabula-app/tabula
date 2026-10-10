@@ -342,7 +342,7 @@ export function readingOrder<T extends { id: string; x: number; y: number; w: nu
 }
 
 export interface OwnerOption {
-  /** `id:<user id>` for a person, `name:<name>` for a name with no account. */
+  /** `id:<user id>` for a person, `name:<name>` for a name with no account; agents are current-only dialog options. */
   key: string;
   id?: string;
   name: string;
@@ -352,7 +352,8 @@ export interface OwnerOption {
 /**
  * Who the owner picker offers (docs/kanban.md, Owners): the viewer, the people in the room now and everyone already
  * named as an owner on this board, each once; nothing from a directory. People by id, names without an id by name
- * (ignoring case, and left out when a person of that name is listed). The viewer first, then by name.
+ * (ignoring case, and left out when a person of that name is listed). Agent identities are not person choices; the
+ * dialog keeps only the current agent as a separate option. The viewer first, then by name.
  */
 export function ownerOptions(
   me: { id: string; name: string } | null,
@@ -378,11 +379,12 @@ export function ownerOptions(
   return all.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name) || (a.key < b.key ? -1 : 1)));
 }
 
-/** The picker key of a card's current owner, or '' for none. */
-export function ownerKey(card: { ownerId?: string; ownerName?: string }): string {
-  if (card.ownerId) return `id:${card.ownerId}`;
+/** The picker key of a card's current owner, or '' for none. Agent identities never collide with people. */
+export function ownerKey(card: { ownerId?: string; ownerName?: string; ownerKind?: string }): string {
+  const kind = card.ownerKind === 'agent' ? 'agent:' : '';
+  if (card.ownerId) return `${kind}id:${card.ownerId}`;
   const n = (card.ownerName ?? '').trim();
-  return n ? `name:${n}` : '';
+  return n ? `${kind}name:${n}` : '';
 }
 
 // ---------------------------------------------------------------- lanes and discipline (docs/kanban.md, slice 4)
