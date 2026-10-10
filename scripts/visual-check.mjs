@@ -2541,6 +2541,11 @@ const STATES = {
       await removeProbe();
     }
   },
+  async 'review-ticket-page'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.locator('.trk-title-link').first().click();
+    await page.waitForTimeout(1200);
+  },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
     const result = await env.page.evaluate(async () => {
