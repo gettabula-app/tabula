@@ -30,7 +30,7 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
@@ -268,7 +268,7 @@ async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
   const conn = scratchBoard(`template-${tpl.id}`, user);
   loadTemplate(conn.store, tpl, user.id);
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   current = app;
   if (!DEMO && location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountTemplateEditor(app, root, tpl);
@@ -490,7 +490,7 @@ async function route() {
   }
 
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   app.role = role ?? null;
   app.deleted = deleted;
   current = app;

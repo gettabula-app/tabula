@@ -306,6 +306,7 @@ const ICON_CHECK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
 const ICON_LOCK = '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>';
 const ICON_FILTER = '<path d="M4 6h16M7 12h10M10 18h4"/>';
 const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
+const ICON_IMAGE_OFF = '<path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M3 17l5-5 4 4 3-3 6 6"/><path d="M3 3l18 18"/>';
 const ICON_DOTS = '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>';
 const ICON_COMMENT = '<path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/>';
 const ICON_LINK = '<path d="M10 13.5l4-4M8.5 15.5l-1 1a3 3 0 01-4.2-4.2l3-3a3 3 0 014.2 0M15.5 8.5l1-1a3 3 0 014.2 4.2l-3 3a3 3 0 01-4.2 0"/>';
@@ -650,6 +651,12 @@ function containerMarkup(o: BaseObj, ctx: MarkupCtx) {
   return container?.type === 'container' && hasLayout((container as BaseObj).layout) ? laneMarkup(o, ctx) : unknownContainerMarkup(o);
 }
 
+/**
+ * The zoom a failed image's placeholder is drawn for: the largest half-octave step at or below the camera zoom, so the label
+ * (12 px on screen at that zoom) is never under 12 px at the real one, and the placeholder is redrawn only when the step changes.
+ */
+export const placeholderZoom = (zoom: number): number => (zoom > 0 && Number.isFinite(zoom) ? 2 ** (Math.floor(Math.log2(zoom) * 2) / 2) : 1);
+
 /** An image: its pixels through `<image>` (never as markup, so nothing in the file can run), or a placeholder that says why not. */
 function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const state: ImageState = ctx.imageState?.(o) ?? { kind: 'loading' };
@@ -662,13 +669,59 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   }
   const label = state.kind === 'loading' ? 'Loading' : FAILED_LABEL[state.why];
   const size = o.nw && o.nh ? `${Math.round(o.nw)} × ${Math.round(o.nh)}` : '';
-  const fs = Math.max(10, Math.min(14, o.w / 12));
-  const lines = [label, size].filter(Boolean);
-  const text = o.w >= 80 && o.h >= 40
-    ? lines.map((t, i) => `<text x="${n(o.w / 2)}" y="${n(o.h / 2 + (i - (lines.length - 1) / 2) * fs * 1.4)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs)}" style="fill:var(--graphite, #5B6672)">${escapeXml(t)}</text>`).join('')
+  // The label is what a person has to act on, so it reads at 4.5:1 on its own fill in every theme (ink at 85% over the paper), is
+  // never smaller than 12 px on screen whatever the zoom, and grows with the box. An "image off" glyph above it carries the meaning
+  // when the words are small. The glyph is dropped before the dimensions line when the box is too short for both.
+  const zoom = placeholderZoom(ctx.zoom ?? 1);
+  const floor = 12 / zoom;
+  const fs = Math.max(floor, Math.min(28, o.w / 14, o.h / 5));
+  const glyph = state.kind === 'failed' ? 20 / zoom : 0;
+  const gap = glyph ? 6 / zoom : 0;
+  const lines = [label, size].filter(Boolean).join('\n');
+  const fit = (width: number, height: number) => fitText(lines, 'satoshi', 600, fs, Math.max(1, width), Math.max(1, height), floor);
+  // The glyph goes above the label; in a box too short for both it goes beside it; in one too small for either it is left out.
+  let place: 'above' | 'beside' | 'none' = 'none';
+  let layout = fit(o.w - 16, o.h - 16);
+  if (glyph > 0) {
+    const stacked = fit(o.w - 16, o.h - 16 - glyph - gap);
+    if (stacked.height + glyph + gap <= o.h - 8) {
+      place = 'above';
+      layout = stacked;
+    } else {
+      const side = fit(o.w - 16 - glyph - gap, o.h - 16);
+      if (side.height <= o.h - 8 && Math.max(...side.lines.map((t) => measure(t, fontCss('satoshi', side.size, 600)))) + glyph + gap <= o.w - 16) {
+        place = 'beside';
+        layout = side;
+      }
+    }
+  }
+  const ink = 'color-mix(in srgb, var(--ink, #18212B) 85%, var(--paper, #FFFFFF))';
+  const textStyle = `fill:${ink};font-family:var(--ui, 'Instrument Sans', ui-sans-serif, system-ui, sans-serif);font-weight:600`;
+  const widest = Math.max(0, ...layout.lines.map((t) => measure(t, fontCss('satoshi', layout.size, 600))));
+  let textX = o.w / 2;
+  let textTop = (o.h - layout.height) / 2;
+  let glyphX = 0;
+  let glyphY = 0;
+  if (place === 'above') {
+    const block = layout.height + glyph + gap;
+    glyphY = (o.h - block) / 2;
+    glyphX = o.w / 2 - glyph / 2;
+    textTop = glyphY + glyph + gap;
+  } else if (place === 'beside') {
+    const left = (o.w - (glyph + gap + widest)) / 2;
+    glyphX = left;
+    glyphY = (o.h - glyph) / 2;
+    textX = left + glyph + gap + widest / 2;
+  }
+  const showText = o.w >= 80 && o.h >= 40;
+  const text = showText
+    ? layout.lines.map((t, i) => `<text x="${n(textX)}" y="${n(textTop + (i + 0.5) * layout.lineHeight)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(layout.size)}" style="${textStyle}">${escapeXml(t)}</text>`).join('')
+    : '';
+  const icon = showText && place !== 'none'
+    ? `<g class="img-off" transform="translate(${n(glyphX)} ${n(glyphY)}) scale(${n(glyph / 24)})" style="fill:none;stroke:${ink}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICON_IMAGE_OFF}</g>`
     : '';
   const box = `<rect x="0" y="0" width="${w}" height="${h}" style="fill:color-mix(in srgb, var(--graphite, #5B6672) 12%, var(--paper, #FFFFFF));stroke:var(--rule, #D5DBE2)" stroke-width="1" stroke-dasharray="4 3"/>`;
-  return wrapG(o, title + mirroredContent(o, box) + text, 1);
+  return wrapG(o, title + mirroredContent(o, box) + icon + text, 1);
 }
 
 function iconMarkup(o: BaseObj) {
