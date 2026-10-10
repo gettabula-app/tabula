@@ -1474,10 +1474,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     body: rpcError(id, -32000, 'Too many requests. Slow down and retry later.', { error: 'rate_limited', retryAfterSec: wait }),
   });
 
+  // A body above the limit is read and thrown away (up to DRAIN_BYTES) before the 413 goes out: answering while the client
+  // is still writing makes some systems reset the connection, and the client then sees a reset instead of the 413.
+  const DRAIN_BYTES = 4 * LIMITS.bodyBytes;
   function readBody(req) {
     return new Promise((resolve, reject) => {
       const tooLarge = () => new HttpFail(413, 'payload_too_large', 'The request body is too large.');
-      if (Number(req.headers['content-length']) > LIMITS.bodyBytes) {
+      if (Number(req.headers['content-length']) > DRAIN_BYTES) {
         req.resume();
         reject(tooLarge());
         return;
@@ -1492,10 +1495,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       };
       req.on('data', (chunk) => {
         size += chunk.length;
-        if (size > LIMITS.bodyBytes) done(reject, tooLarge());
-        else if (!settled) chunks.push(chunk);
+        if (size <= LIMITS.bodyBytes) chunks.push(chunk);
+        else if (size > DRAIN_BYTES) done(reject, tooLarge());
       });
-      req.on('end', () => done(resolve, Buffer.concat(chunks).toString('utf8')));
+      req.on('end', () => (size > LIMITS.bodyBytes ? done(reject, tooLarge()) : done(resolve, Buffer.concat(chunks).toString('utf8'))));
       req.on('error', (err) => done(reject, err));
       req.on('close', () => done(reject, new HttpFail(400, 'bad_request', 'The request was aborted.')));
     });

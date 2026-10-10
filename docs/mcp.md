@@ -33,7 +33,7 @@ Shape of the endpoint:
 - **Stateless.** No `Mcp-Session-Id`, no server-initiated messages. Every `POST /mcp` carries one JSON-RPC message and is answered with `application/json`, never an SSE stream. A JSON array (a batch) is refused with `400`: batching was dropped from the protocol in the 2025-06-18 revision. `GET /mcp` and `DELETE /mcp` answer `405` with `Allow: POST`. Statelessness means no session table, nothing to leak or expire, and a revoked token stops working on the very next request.
 - Bearer token in `Authorization` only. A token in a query string or body is never read. The `Cookie` header is never read and `auth.authenticate` is never called on `/mcp`; the CSRF header is neither needed nor looked at.
 - **Any request with an `Origin` header is refused** (`403 forbidden_origin`). Legitimate MCP clients are not browsers and send none; this is the DNS-rebinding guard the MCP specification asks for, and it also keeps a web page from driving the endpoint.
-- Request body at most 256 KiB (`413`), `Content-Type: application/json` (`415`). The API's 64 KiB limit is too small for 100 objects.
+- Request body at most 256 KiB (`413`; a body up to 1 MiB is read and discarded before the 413 goes out, so the client sees the 413 and not a connection reset; larger bodies are refused at once), `Content-Type: application/json` (`415`). The API's 64 KiB limit is too small for 100 objects.
 - Responses carry `cache-control: no-store` and `x-content-type-options: nosniff`.
 - `/mcp` is not under `/api/`, so without a branch it would fall through to the single-page app and answer `200 index.html`. The relay therefore handles the path explicitly, enabled or not (`404 {error: 'not_found'}` when off).
 
