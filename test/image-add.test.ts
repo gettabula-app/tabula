@@ -114,7 +114,7 @@ describe('hosted image preparation', () => {
     expect(mocks.toasts).toHaveBeenCalledTimes(1);
     expect(toast).toHaveBeenCalledWith(
       count === 1
-        ? '1 image is over 1 MB and may not upload to this workspace yet. Use smaller images.'
+        ? '1 image is over 1 MB and may not upload to this workspace yet. Use a smaller image.'
         : '2 images are over 1 MB and may not upload to this workspace yet. Use smaller images.',
       8000,
     );

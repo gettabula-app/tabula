@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -1538,6 +1538,48 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  /** The two "Not uploaded" placeholder labels on a 417x100 and a 704x473 image, the sizes that were seen failing on acme (TAB-127). */
+  async 'image-placeholders'(env) {
+    const { page, base, outDir, theme, width } = env;
+    // a board of its own for each theme: the relay keeps what the first theme added
+    await page.goto(`${base}/?debug#/b/image-placeholders-${theme}-${width}`);
+    await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+    await page.waitForFunction(() => {
+      const provider = window.__board.conn.provider;
+      return !provider || provider.synced;
+    }, null, { timeout: 15_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const pending = (n) => `pending:visual-${n}`;
+      const objects = [
+        { id: 'ph-toobig-wide', type: 'image', x: 0, y: 0, w: 417, h: 100, asset: pending(1), mime: 'image/png', nw: 417, nh: 100, z: 'p1' },
+        { id: 'ph-toobig-tall', type: 'image', x: 460, y: 0, w: 704, h: 473, asset: pending(2), mime: 'image/png', nw: 704, nh: 473, z: 'p2' },
+        { id: 'ph-lost-wide', type: 'image', x: 0, y: 520, w: 417, h: 100, asset: pending(3), mime: 'image/png', nw: 417, nh: 100, z: 'p3' },
+        { id: 'ph-lost-tall', type: 'image', x: 460, y: 520, w: 704, h: 473, asset: pending(4), mime: 'image/png', nw: 704, nh: 473, z: 'p4' },
+      ];
+      store.transact(() => objects.forEach((o) => {
+        if (!store.get(o.id)) store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+      }));
+      app.r.imageState = (o) => ({ kind: 'failed', why: String(o.id).includes('lost') ? 'lost' : 'toobig' });
+      app.r.invalidateObjects(objects.map((o) => o.id));
+    });
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    const fitTo = async (ids) => {
+      await page.evaluate((list) => {
+        const app = window.__board;
+        const bounds = app.r.contentBounds(list);
+        if (bounds) app.r.fit(bounds, 60, 1);
+      }, ids);
+      await page.waitForTimeout(250);
+    };
+    for (const [name, ids] of [['wide', ['ph-toobig-wide', 'ph-lost-wide']], ['tall', ['ph-toobig-tall', 'ph-lost-tall']]]) {
+      await fitTo(ids);
+      await page.screenshot({ path: path.join(outDir, `image-placeholders-${name}-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    }
+    await fitTo(['ph-toobig-wide', 'ph-toobig-tall', 'ph-lost-wide', 'ph-lost-tall']);
   },
   async 'flip-menu'(env) {
     const { page, outDir, theme, width } = env;

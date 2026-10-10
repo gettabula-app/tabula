@@ -14,7 +14,7 @@ export type ImageState =
 
 export const FAILED_LABEL: Record<Extract<ImageState, { kind: 'failed' }>['why'], string> = {
   not_uploaded: 'Image not uploaded yet',
-  lost: 'Not uploaded. Add this image again',
+  lost: 'Not uploaded: add this image again',
   toobig: IMAGE_UPLOAD_MESSAGES.tooBigLabel,
   offline: 'Offline',
   denied: 'No access to this image',

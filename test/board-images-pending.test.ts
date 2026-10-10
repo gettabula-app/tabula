@@ -106,11 +106,11 @@ describe('BoardImages pending uploads', () => {
     const deps = mocks.deps as QueueDeps;
     expect(deps.hostedWorkspace).toBe(true);
     deps.onTooBig?.({ id: 'pending:large', boardId: 'b1', objectId: 'o1', hash: 'h', tries: 3, nextAt: 0, at: 0, sizeBlocked: true, refused: 413, notified: true });
-    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB and could not be uploaded. Hosted workspaces accept uploads up to 1 MB for now. Use a smaller image.', 8000);
+    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB, which is the upload limit for now. Use a smaller image.', 8000);
     deps.onRefused?.({ id: 'pending:redirect', boardId: 'b1', objectId: 'o2', hash: 'h', tries: 5, nextAt: 0, at: 0 }, 307, '');
-    expect(toast).toHaveBeenLastCalledWith('An image could not be uploaded (the server answered 307). It will be tried again when you open this board.', 6000);
+    expect(toast).toHaveBeenLastCalledWith('An image could not be uploaded (error 307). It will be tried again when you open this board.', 6000);
     deps.onRefused?.({ id: 'pending:large', boardId: 'b1', objectId: 'o3', hash: 'h', tries: 0, nextAt: 0, at: 0 }, 413, 'payload_too_large');
-    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB and could not be uploaded. Hosted workspaces accept uploads up to 1 MB for now. Use a smaller image.', 6000);
+    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB, which is the upload limit for now. Use a smaller image.', 6000);
     lifetime.abort();
   });
 

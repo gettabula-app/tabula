@@ -71,7 +71,7 @@ describe('ImageLoader', () => {
     loader.state(object);
     await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'lost' }), { timeout: 20_000 });
     expect(uploadState).toHaveBeenCalledWith(`pending:${state}`);
-    expect(FAILED_LABEL.lost).toBe('Not uploaded. Add this image again');
+    expect(FAILED_LABEL.lost).toBe('Not uploaded: add this image again');
   });
 
   it('shows and retries a pending image blocked by the hosted size limit', async () => {

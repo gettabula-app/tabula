@@ -2,10 +2,10 @@
 export const IMAGE_UPLOAD_MESSAGES = {
   actionOverLimit(count: number): string {
     return count === 1
-      ? '1 image is over 1 MB and may not upload to this workspace yet. Use smaller images.'
+      ? '1 image is over 1 MB and may not upload to this workspace yet. Use a smaller image.'
       : `${count} images are over 1 MB and may not upload to this workspace yet. Use smaller images.`;
   },
-  tooBig: 'This image is over 1 MB and could not be uploaded. Hosted workspaces accept uploads up to 1 MB for now. Use a smaller image.',
+  tooBig: 'This image is over 1 MB, which is the upload limit for now. Use a smaller image.',
   tooBigLabel: 'Not uploaded: over 1 MB',
   serverTooBig: 'An image you added is too large for this server.',
   refused: {
@@ -18,7 +18,7 @@ export const IMAGE_UPLOAD_MESSAGES = {
     return hostedWorkspace ? this.tooBig : this.serverTooBig;
   },
   retryExhausted(status: number): string {
-    return `An image could not be uploaded (the server answered ${status}). It will be tried again when you open this board.`;
+    return `An image could not be uploaded (error ${status}). It will be tried again when you open this board.`;
   },
   lost(count: number): string {
     return count === 1
