@@ -153,10 +153,16 @@ export interface ComboOptions<T> {
 export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
   const listId = nextId('combo-list');
   const current = o.options.find((x) => o.value !== null && x.value === o.value);
+  const cloneOptionIcon = (source?: HTMLElement) => {
+    if (!source) return null;
+    const copy = source.cloneNode(true) as HTMLElement;
+    copy.classList.add('combo-option-icon');
+    return copy;
+  };
   const button = h('button', {
     class: 'input combo', type: 'button', role: 'combobox', 'aria-label': o.label, 'aria-haspopup': 'listbox',
     'aria-expanded': 'false', 'aria-controls': listId,
-  }, h('span', { class: 'combo-value', style: current?.style ?? o.style }, current?.label ?? 'Mixed'), icon('chevron', 16));
+  }, cloneOptionIcon(current?.icon), h('span', { class: 'combo-value', style: current?.style ?? o.style }, current?.label ?? 'Mixed'), icon('chevron', 16));
 
   let list: HTMLElement | null = null;
   let active = -1;
@@ -234,7 +240,7 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
       }
       const row = h('li', {
         id: `${listId}-${i}`, class: 'combo-opt', role: 'option', 'aria-selected': String(opt.value === o.value),
-      }, opt.icon ?? null, h('span', { style: opt.style }, opt.label));
+      }, cloneOptionIcon(opt.icon), h('span', { style: opt.style }, opt.label));
       row.addEventListener('pointerenter', (e) => {
         lastPointer = e.pointerType;
         if (e.pointerType !== 'touch') setActive(i, true);
