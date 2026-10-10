@@ -1000,9 +1000,23 @@ const STATES = {
         end: { x: svg.left + handle.x + 14, y: svg.top + handle.y },
       };
     });
-    await page.mouse.move(drag.start.x, drag.start.y);
-    await page.mouse.down();
-    await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    if (process.env.VISUAL_BROWSER === 'firefox' && page.viewportSize().width < 600) {
+      // Firefox's touch emulation turns Playwright's mouse into mouse events with no pointer events, so feed the pointer drag directly.
+      await page.evaluate(({ start, end }) => {
+        const svg = window.__board.r.svg;
+        svg.setPointerCapture = () => {};
+        const fire = (type, pt) => svg.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: pt.x, clientY: pt.y,
+        }));
+        fire('pointermove', start);
+        fire('pointerdown', start);
+        for (let i = 1; i <= 5; i++) fire('pointermove', { x: start.x + (end.x - start.x) * i / 5, y: start.y });
+      }, drag);
+    } else {
+      await page.mouse.move(drag.start.x, drag.start.y);
+      await page.mouse.down();
+      await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    }
     await page.waitForFunction(() => {
       const width = window.__board.store.getPlaced('visual-resize-size-target')?.w;
       return width !== undefined && width !== 100;
