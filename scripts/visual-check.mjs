@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, guest-expired, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -1526,6 +1526,120 @@ const STATES = {
     await page.getByLabel('Display name').fill('Visual guest');
     await page.getByRole('button', { name: 'Join board' }).click();
     await page.getByText('That code looks too short', { exact: true }).waitFor();
+  },
+  async 'guest-expired'(env) {
+    const { page, base, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    const waitForState = async (label, predicate) => {
+      try {
+        await page.waitForFunction(predicate, null, { timeout: 15_000 });
+      } catch {
+        const diagnostic = await page.evaluate(() => {
+          const app = window.__board;
+          return { hash: location.hash, user: app?.user?.name, role: app?.role, connection: app?.conn.status, denied: app?.conn.denied, comments: app?.comments.list().length, status: document.querySelector('.sync-status')?.textContent };
+        });
+        throw new Error('guest-expired: timed out waiting for ' + label + ': ' + JSON.stringify(diagnostic));
+      }
+    };
+    const ownerCookies = await page.context().cookies(base);
+    const ownerCookie = ownerCookies.map(({ name, value }) => name + '=' + value).join('; ');
+    if (!ownerCookie) throw new Error('guest-expired: owner session cookie is missing');
+
+    const created = await postJson(base, 'boards/' + BOARD_ID + '/join-codes', { role: 'editor', expiresInHours: 3, maxUses: 10 }, ownerCookie);
+    const joinCode = await created.json();
+    if (!joinCode.code || !joinCode.id) throw new Error('guest-expired: join-code API did not return a code and id');
+    await page.context().clearCookies();
+    await page.goto(base + '/join?c=' + encodeURIComponent(joinCode.code) + '&debug');
+    await page.evaluate(() => {
+      const replaceState = history.replaceState.bind(history);
+      history.replaceState = (state, title, url) => {
+        const nextUrl = typeof url === 'string' && url.startsWith('/#/b/') ? '/?debug' + url.slice(1) : url;
+        return replaceState(state, title, nextUrl);
+      };
+    });
+    await page.getByLabel('Display name').fill('Visual Guest');
+    await page.getByRole('button', { name: 'Join board' }).click();
+    await waitForState('joined guest route', () => location.hash === '#/b/visual-seed');
+    await waitForState('live editor guest', () => window.__board?.role === 'editor' && document.querySelector('.sync-status')?.textContent?.includes('Live'));
+    await page.locator('.comment-toggle').click();
+    await page.locator('.side-tray.show .comment-row').first().waitFor({ timeout: 15_000 });
+    await page.locator('.side-tray.show .comment-row').first().click();
+    await page.locator('.comment-card .comment-msg').first().waitFor();
+
+    const revoked = await fetch(base + '/api/boards/' + BOARD_ID + '/join-codes/' + encodeURIComponent(joinCode.id), {
+      method: 'DELETE',
+      headers: { cookie: ownerCookie, 'x-tabula': '1' },
+    });
+    if (revoked.status !== 204) throw new Error('guest-expired: join-code revoke answered ' + revoked.status + ': ' + await revoked.text());
+
+    const bannerText = 'This join link has expired. You can still look around, but not edit.';
+    const readOnlyText = 'You can read comments on this board but not add them.';
+    const waitForBanner = () => page.waitForFunction((expected) => {
+      const banner = document.querySelector('.workspace-banner');
+      return Boolean(banner && !banner.hidden && banner.textContent?.includes(expected));
+    }, bannerText, { timeout: 15_000 });
+    const verifyExpiredGuest = async (phase) => {
+      await waitForBanner();
+      await page.getByText(readOnlyText, { exact: true }).waitFor({ timeout: 15_000 });
+      const allowedDenials = phase === 'after reload' ? ['access_removed', 'unauthenticated'] : ['access_removed'];
+      try {
+        await page.waitForFunction((denials) => {
+          const app = window.__board;
+          return Boolean(app && denials.includes(app.conn.denied) && app.store.readOnly && app.comments.readOnly());
+        }, allowedDenials, { timeout: 15_000 });
+      } catch {
+        const diagnostic = await page.evaluate(() => {
+          const app = window.__board;
+          const status = document.querySelector('.sync-status');
+          return { user: app?.user?.name, role: app?.role, connection: app?.conn.status, denied: app?.conn.denied, status: status?.textContent, statusLabel: status?.getAttribute('aria-label'), statusTip: status?.dataset.tip, boardReadOnly: app?.store.readOnly, commentsReadOnly: app?.comments.readOnly(), comments: app?.comments.list().length };
+        });
+        throw new Error('guest-expired ' + phase + ': terminal-state wait timed out: ' + JSON.stringify(diagnostic));
+      }
+      const state = await page.evaluate(() => {
+        const status = document.querySelector('.sync-status');
+        const card = document.querySelector('.comment-card');
+        return {
+          status: status?.textContent?.trim() ?? '',
+          statusTip: status?.dataset.tip ?? '',
+          statusLabel: status?.getAttribute('aria-label') ?? '',
+          commentText: card?.querySelector('.comment-msg .comment-text')?.textContent?.trim() ?? '',
+          actions: [...(card?.querySelectorAll('button') ?? [])].map((button) => button.textContent?.trim() ?? ''),
+          denied: window.__board.conn.denied,
+          boardReadOnly: window.__board.store.readOnly,
+          commentsReadOnly: window.__board.comments.readOnly(),
+        };
+      });
+      if (!state.status.includes('Join link expired') || state.statusLabel !== 'This join link has expired or was revoked' || state.statusTip !== 'This join link has expired or was revoked. Comments are read only.') {
+        throw new Error('guest-expired ' + phase + ': expiry status is wrong: ' + JSON.stringify(state));
+      }
+      if (!state.commentText) throw new Error('guest-expired ' + phase + ': the comment thread is not visible');
+      if (state.actions.some((action) => ['Reply', 'Edit', 'Delete'].includes(action))) {
+        throw new Error('guest-expired ' + phase + ': read-only thread exposes a write action: ' + JSON.stringify(state.actions));
+      }
+      if (!state.boardReadOnly || !state.commentsReadOnly || !allowedDenials.includes(state.denied)) {
+        throw new Error('guest-expired ' + phase + ': revoked guest access did not become read-only: ' + JSON.stringify(state));
+      }
+      return state;
+    };
+
+    await verifyExpiredGuest('before reload');
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(150);
+    await page.screenshot({
+      path: path.join(outDir, 'guest-expired-' + theme + '-' + width + '-before-reload.png'),
+      animations: 'disabled',
+      caret: 'hide',
+    });
+
+    await page.reload();
+    await waitForState('reloaded board', () => Boolean(window.__board));
+    await waitForBanner();
+    await page.locator('.comment-toggle').click();
+    await page.locator('.side-tray.show .comment-row').first().waitFor({ timeout: 15_000 });
+    await page.locator('.side-tray.show .comment-row').first().click();
+    await page.locator('.comment-card .comment-msg').first().waitFor();
+    await verifyExpiredGuest('after reload');
+    return { noPark: true };
   },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
@@ -3376,7 +3490,7 @@ const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -3719,7 +3833,7 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    const joinCodes = options.mode === 'accounts' && options.states.some((state) => ['join-short-code', 'guest-expired'].includes(state));
     await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {

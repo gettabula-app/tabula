@@ -1,6 +1,7 @@
 import './workspace.css';
 import { authState, onAuth } from '../auth';
 import { bannerText, workspaceOf } from '../cloud-logic';
+import { guestAccessEnded } from '../guest-access';
 import { h } from './dom';
 
 /**
@@ -11,8 +12,19 @@ import { h } from './dom';
 export function createWorkspaceBanner(onVisible?: (visible: boolean) => void, notice?: () => string | null): { el: HTMLElement; dispose: () => void } {
   const el = h('div', { class: 'workspace-banner', role: 'status' });
   const paint = () => {
-    const text = notice?.() ?? bannerText(workspaceOf(authState()));
-    el.textContent = text ?? '';
+    const auth = authState();
+    const text = notice?.() ?? bannerText(workspaceOf(auth));
+    el.replaceChildren();
+    if (text) {
+      el.appendChild(document.createTextNode(text));
+      if (guestAccessEnded(auth, null)) {
+        el.appendChild(document.createTextNode(' '));
+        el.appendChild(h('a', {
+          class: 'workspace-banner-signin', href: '#/signin',
+          style: { color: 'inherit', marginInlineStart: '0.5em', textDecoration: 'underline', textUnderlineOffset: '2px' },
+        }, 'Sign in'));
+      }
+    }
     el.title = text ?? '';
     el.hidden = text === null;
     onVisible?.(text !== null);

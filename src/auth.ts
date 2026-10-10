@@ -147,8 +147,8 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
     return commit(cached ? { mode: 'offline', me: cached } : { mode: 'open' });
   }
   if (!authEnabled) {
-    const guest = readGuestSession();
-    return commit(guest?.ended ? { mode: 'guest', guest } : { mode: 'open' });
+    clearGuestSession();
+    return commit({ mode: 'open' });
   }
 
   try {

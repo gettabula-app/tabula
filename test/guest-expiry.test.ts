@@ -127,6 +127,18 @@ describe('guest expiry and relay refusal', () => {
     expect(result).toMatchObject({ mode: 'guest', guest: { guestId: 'guest_1', ended: true } });
   });
 
+  it.each([false, true])('clears a stored guest and opens the board when auth is disabled (ended: %s)', async (ended) => {
+    const session = storage();
+    session.setItem(GUEST_KEY, JSON.stringify({ ...activeGuest(), ...(ended ? { ended: true } : {}) }));
+    vi.stubGlobal('sessionStorage', session);
+    vi.stubGlobal('localStorage', storage());
+
+    const result = await initAuth({ config: async () => ({ authEnabled: false }) as never, me: async () => ({}) as never });
+
+    expect(result).toEqual({ mode: 'open' });
+    expect(session.getItem(GUEST_KEY)).toBeNull();
+  });
+
   it('makes an unauthorized guest refresh terminal instead of dropping guest identity', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -154,6 +166,28 @@ describe('guest expiry and relay refusal', () => {
 
     expect(result).toMatchObject({ mode: 'guest', guest: { guestId: 'guest_revoked', ended: true } });
     expect(JSON.parse(session.getItem(GUEST_KEY) ?? 'null')).toMatchObject({ guestId: 'guest_revoked', ended: true });
+  });
+
+  it('keeps a revoked guest read-only after reload when the identity request returns 401', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const session = storage();
+    session.setItem(GUEST_KEY, JSON.stringify({ ...activeGuest('guest_revoked'), ended: true }));
+    vi.stubGlobal('sessionStorage', session);
+    vi.stubGlobal('localStorage', storage());
+
+    const result = await initAuth({
+      config: async () => ({ authEnabled: true }) as never,
+      me: async () => { throw new ApiError(401, 'unauthenticated', 'ended'); },
+    });
+    const store = new Store(new Y.Doc());
+    const comments = new Comments(new Y.Doc());
+
+    applyConnectionAccess({ store, comments }, boardAccess('editor', null), result, null, NOW);
+
+    expect(result).toMatchObject({ mode: 'guest', guest: { guestId: 'guest_revoked', ended: true } });
+    expect(store.readOnly).toBe(true);
+    expect(comments.readOnly()).toBe(true);
   });
 
   it.each(['unauthenticated', 'no_access', 'access_removed'] as const)('classifies a known guest after a %s denial only', (reason) => {
@@ -290,10 +324,36 @@ describe('guest expiry and relay refusal', () => {
       markGuestSessionEnded('guest_1');
 
       expect(el.hidden).toBe(false);
-      expect(el.textContent).toBe('This join link has expired. You can still look around, but not edit.');
+      expect(el.textContent).toBe('This join link has expired. You can still look around, but not edit. Sign in');
       expect([GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP]).toEqual([
         'Join link expired', 'This join link has expired or was revoked. Comments are read only.',
       ]);
+      dispose();
+    } finally {
+      browser.uninstall();
+    }
+  });
+
+  it('provides a sign-in path from a terminal guest banner after an identity 401', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const browser = installFakeBrowser();
+    const session = storage();
+    session.setItem(GUEST_KEY, JSON.stringify({ ...activeGuest(), ended: true }));
+    vi.stubGlobal('sessionStorage', session);
+    vi.stubGlobal('localStorage', storage());
+    try {
+      await initAuth({
+        config: async () => ({ authEnabled: true }) as never,
+        me: async () => { throw new ApiError(401, 'unauthenticated', 'ended'); },
+      });
+      const { el, dispose } = createWorkspaceBanner(undefined, () => guestAccessEnded(authState(), null, NOW) ? GUEST_ENDED_BANNER : null);
+      browser.mount().appendChild(el as unknown as FakeNode);
+
+      expect(el.hidden).toBe(false);
+      expect(el.textContent).toContain(GUEST_ENDED_BANNER);
+      expect(el.querySelector('a.workspace-banner-signin')?.getAttribute('href')).toBe('#/signin');
+      expect(el.querySelector('a.workspace-banner-signin')?.textContent).toBe('Sign in');
       dispose();
     } finally {
       browser.uninstall();
