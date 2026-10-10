@@ -269,6 +269,11 @@ const K = {
   lane: 'color-mix(in srgb, var(--canvas-ink, #18212B) 5%, var(--canvas, #EEF1F4))',
   meta: 'color-mix(in srgb, var(--canvas-ink, #18212B) 82%, var(--canvas, #EEF1F4))',
   cardMeta: 'color-mix(in srgb, var(--ink, #18212B) 72%, var(--paper, #FFFFFF))',
+  linked: 'var(--canvas-ink, #18212B)',
+  linkedBadge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 8%, var(--paper, #FFFFFF))',
+  linkedBadgeInk: 'var(--ink, #18212B)',
+  unmappedBadge: 'color-mix(in srgb, var(--signal, #FFD23F) 24%, var(--paper, #FFFFFF))',
+  canceledBadge: 'color-mix(in srgb, var(--danger, #D41E24) 15%, var(--paper, #FFFFFF))',
   edge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 28%, transparent)',
   dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
 };
@@ -324,12 +329,15 @@ function clip(text: string, font: string, max: number): string {
 
 const cardFont = (o: BaseObj) => fontCss(o.font, CARD.titleSize, 500);
 const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
+type CardTrackerProjection = { title?: string; state?: { key?: string; name?: string; category?: string } };
+const cardProjection = (o: BaseObj): CardTrackerProjection | undefined => (o as BaseObj & { tracker?: CardTrackerProjection }).tracker;
+const cardTitle = (o: BaseObj) => o.extProvider === 'tabula' ? cardProjection(o)?.title ?? o.text ?? '' : o.text ?? '';
 
 /** The title lines a card draws at width `w`: its first line of text, wrapped, at most three, the last cut with an ellipsis. */
 export function cardTitleLines(o: BaseObj, w: number): string[] {
   const font = cardFont(o);
   const max = w - cardPadLeft(o) - CARD.padX - (isSafeHttpUrl(o.link) ? 24 : 0);
-  const title = (o.text ?? '').split('\n')[0].trim();
+  const title = cardTitle(o).split('\n')[0].trim();
   const lines = wrap(title || ' ', font, max);
   if (lines.length <= CARD.titleLines) return lines;
   const kept = lines.slice(0, CARD.titleLines);
@@ -341,7 +349,8 @@ const hasMeta = (o: BaseObj) => !!(o.due || o.ownerName || o.ownerId);
 
 /** The height a card needs at width `w`, which its writer stores as `h` (docs/kanban.md, Layout: nothing measures on read). */
 export function cardContentHeight(o: BaseObj, w: number): number {
-  return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o) });
+  return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o) })
+    + (o.extProvider === 'tabula' ? CARD.titleLine : 0);
 }
 
 export interface HeaderControls {
@@ -535,13 +544,15 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   const padL = cardPadLeft(o);
   let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(K.paper)}/>`;
   if (accent) inner += `<rect x="0" y="0" width="${CARD.accent}" height="${n(h)}" ${fillStyle(accent)}/>`;
+  const linked = o.extProvider === 'tabula';
+  if (linked) inner += `<rect x="0" y="0" width="3" height="${n(h)}" ${fillStyle(K.linked)}/>`;
   inner += edge === 'ghost'
     ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
     : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
   if (isSafeHttpUrl(o.link) && edge === 'hairline') {
     const hit = 24;
     const x = w - CARD.padX - hit, y = CARD.padY - 4;
-    const title = (o.text ?? '').trim() || 'Untitled card';
+    const title = cardTitle(o).trim() || 'Untitled card';
     inner += `<a class="k-card-link" data-card-link="true" href="${escapeXml(o.link!)}" target="_blank" rel="noopener noreferrer" tabindex="0" aria-label="Open link: ${escapeXml(title)}">` +
       `<rect class="k-card-link-focus" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="var(--paper)" fill-opacity="0.001" pointer-events="all"/>` +
       `<rect class="k-card-link-focus-ring" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="none" stroke="none"/>` +
@@ -550,6 +561,36 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   const fam = escapeXml(fontFamily(o.font));
   const lines = cardTitleLines(o, w);
   let y = CARD.padY;
+  if (linked) {
+    const projection = cardProjection(o);
+    const key = o.extKey ?? '';
+    const keyFont = fontCss(o.font, 9, 700);
+    const keyWidth = key ? measure(key, keyFont) : 0;
+    const headerBaseline = CARD.padY + 9;
+    let right = cardPadLeft(o) + keyWidth + (key ? 10 : 0);
+    if (key) inner += `<text x="${cardPadLeft(o)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="700" letter-spacing="0.3" ${fillStyle(K.cardMeta)}>${escapeXml(key)}</text>`;
+    if (projection?.state?.name) {
+      const stateText = projection.state.name;
+      const stateWidth = Math.min(measure(stateText, keyFont), Math.max(40, w - right - CARD.padX - 8));
+      const stateHeight = 14;
+      const stateFill = projection.state.category === 'canceled' ? K.canceledBadge : K.linkedBadge;
+      inner += `<g><rect x="${n(right)}" y="${n(CARD.padY - 1)}" width="${n(stateWidth + 10)}" height="${stateHeight}" rx="3" ${fillStyle(stateFill)}/>`;
+      inner += `<text x="${n(right + 5)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="600" ${fillStyle(K.linkedBadgeInk)}>${escapeXml(clip(stateText, keyFont, stateWidth))}</text></g>`;
+      right += stateWidth + 18;
+      const lane = o.parent ? ctx.get(o.parent) : undefined;
+      const container = lane?.parent ? ctx.get(lane.parent) : undefined;
+      const map = container?.type === 'container' ? (container as BaseObj & { ext?: { map?: Record<string, string> } }).ext?.map : undefined;
+      const laneStateKey = lane?.type === 'lane' ? map?.[lane.id] : undefined;
+      const stateUnmapped = lane?.type === 'lane' && (!laneStateKey || laneStateKey !== projection.state.key);
+      if (stateUnmapped) {
+        const text = 'Unmapped state';
+        const markerWidth = measure(text, keyFont);
+        inner += `<g><rect x="${n(right)}" y="${n(CARD.padY - 1)}" width="${n(markerWidth + 10)}" height="${stateHeight}" rx="3" ${fillStyle(K.unmappedBadge)}/>`;
+        inner += `<text x="${n(right + 5)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="600" ${fillStyle(K.linkedBadgeInk)}>${escapeXml(text)}</text></g>`;
+      }
+    }
+    y += CARD.titleLine;
+  }
   if (ctx.editingId !== o.id) {
     if (low) {
       lines.forEach((_, i) => (inner += `<rect x="${padL}" y="${n(y + i * CARD.titleLine + 3)}" width="${n((w - padL - CARD.padX) * (i === lines.length - 1 && lines.length > 1 ? 0.6 : 0.8))}" height="12" ${fillStyle(K.cardMeta)}/>`));

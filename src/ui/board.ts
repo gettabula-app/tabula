@@ -9,6 +9,7 @@ import type { GridType } from '../types';
 import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
+import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
 import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
@@ -75,6 +76,30 @@ type IconName = keyof typeof ICONS;
 export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string } = {}) {
   const scratch = opts.scratch === true;
   const demo = opts.demo === true || DEMO;
+  let trackerStore: TrackerStore | null = null;
+  const trackerEnabled = () => {
+    const auth = authState();
+    return !scratch && !demo && (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+  };
+  app.linkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    const layout = app.store.containerLayout(kanbanId);
+    const lanes = (layout?.lanes ?? []).map((laneId) => ({ id: laneId, name: app.store.get(laneId)?.name ?? 'Lane', cardCount: layout?.cards.get(laneId)?.length ?? 0 }));
+    openRegisteredLinkDialog({
+      boardId: app.conn.id, kanbanId, store,
+      kanban: { name: app.store.get(kanbanId)?.name ?? 'Kanban', lanes, cardCount: lanes.reduce((n, lane) => n + lane.cardCount, 0) },
+    });
+  };
+  app.unlinkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    void store.listLinks(app.conn.id).then((links) => {
+      const link = links.find((candidate) => candidate.kanbanId === kanbanId);
+      if (!link) return app.notify('This kanban is no longer linked to the tracker.');
+      if (!openRegisteredUnlinkConfirm({ boardId: app.conn.id, kanbanId, link, store })) app.notify('The unlink confirmation is unavailable.');
+    }).catch((error: unknown) => app.notify(error instanceof Error ? error.message : 'Could not load tracker links.'));
+  };
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
@@ -434,7 +459,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.lifetime.signal.addEventListener('abort', onAuth(syncReadOnly), { once: true });
   syncReadOnly();
 
-  let trackerStore: TrackerStore | null = null;
   let stopTrackerFrames: (() => void) | null = null;
   let trackerVisualInit = false;
   const mountTracker = (store: TrackerStore, api: TrackerApi, viewerId: string) => {
