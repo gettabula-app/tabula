@@ -16,8 +16,9 @@ export function createWindowCounter({ windowMs = HOUR_MS, now = Date.now } = {})
 
   function recent(key, t) {
     const list = (hits.get(key) ?? []).filter((ts) => ts > t - windowMs);
-    if (list.length === 0) hits.delete(key);
-    else hits.set(key, list);
+    // a key in use goes to the back of the map, so the bound in record forgets the key idle longest
+    hits.delete(key);
+    if (list.length > 0) hits.set(key, list);
     return list;
   }
 
@@ -30,7 +31,9 @@ export function createWindowCounter({ windowMs = HOUR_MS, now = Date.now } = {})
     },
     record(key) {
       const t = now();
-      hits.set(key, [...recent(key, t), t]);
+      const list = recent(key, t);
+      hits.delete(key);
+      hits.set(key, [...list, t]);
       if (hits.size > MAX_KEYS) hits.delete(hits.keys().next().value);
     },
     undo(key) {

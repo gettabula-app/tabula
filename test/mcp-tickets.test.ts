@@ -184,6 +184,15 @@ describe('MCP tracker capability', () => {
     expect(fenced.data).toMatchObject({ cleaned: true, truncated: true });
   });
 
+  it('rejects empty and punctuation-only search queries with the query path', async () => {
+    const reader = await makeToken(member, 'read');
+    for (const query of ['', '... ---']) {
+      const result = await h.tool(reader.token, 'search_tickets', { query });
+      expect(result.error).toBe('invalid_input');
+      expect(result.data).toMatchObject({ message: 'Enter something to search for', path: 'query' });
+    }
+  });
+
   it('returns not_found for every ticket operation by a guest owner with a tracker capability', async () => {
     const guestToken = await makeToken(guest, 'write');
     const memberRead = await makeToken(member, 'read');
@@ -207,12 +216,17 @@ describe('MCP tracker capability', () => {
     for (const [name, args] of attempts) expect((await h.tool(guestToken.token, name, args)).error).toBe('not_found');
   });
 
-  it('enforces the 10 create_ticket calls per minute limit per token', async () => {
+  it('does not charge idempotent create retries against the 10 per minute cap', async () => {
     const writer = await makeToken(member, 'write');
+    let firstId = '';
     for (let i = 0; i < 10; i++) {
       const made = await h.tool(writer.token, 'create_ticket', { title: `Rate cap ${i}`, idempotencyKey: `rate-cap-${i}-key` });
       expect(made.error).toBeUndefined();
+      if (i === 0) firstId = made.data.ticket.id;
     }
+    const retry = await h.tool(writer.token, 'create_ticket', { title: 'Ignored retry title', idempotencyKey: 'rate-cap-0-key' });
+    expect(retry.error).toBeUndefined();
+    expect(retry.data.ticket.id).toBe(firstId);
     const limited = await h.call(writer.token, 'tools/call', { name: 'create_ticket', arguments: { title: 'Rate cap extra' } });
     expect(limited.status).toBe(429);
     expect(limited.body.error.data).toMatchObject({ error: 'rate_limited' });

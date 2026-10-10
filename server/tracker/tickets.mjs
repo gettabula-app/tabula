@@ -115,6 +115,14 @@ function validIdempotencyKey(value) {
   return value;
 }
 
+/** Read-only check used by MCP dispatch so idempotent creates do not consume the create quota. */
+/** @param {any} options */
+export function findTicketByIdempotency({ directory, db: dbArg, actor, idempotencyKey, source = 'app' } = {}) {
+  if (typeof idempotencyKey !== 'string' || codePointLength(idempotencyKey) < 8 || codePointLength(idempotencyKey) > 64) return false;
+  const db = getDb({ directory, db: dbArg });
+  return Boolean(idempotentTicket(db, actor, source, idempotencyKey));
+}
+
 function resolveAssignee(db, actor, value, path) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') throw invalid(path, 'Use "me", a member name, or an email address');
