@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -972,7 +972,216 @@ async function pressZoom(page, factor) {
   await page.evaluate(([f, phone]) => window.__board.zoomBy(phone && innerWidth < 500 ? f * 2 : f), [factor, true]);
 }
 
+async function openTrackerMockShell(page, base) {
+  await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
+  await page.locator('.trk-route-root .trk-shell').waitFor();
+  await page.locator('.trk-list-row').first().waitFor();
+}
+
+async function openTrackerMockFrame(env) {
+  await openSeedBoard(env, '?debug&trackerMock=board');
+  const { page } = env;
+  await page.waitForFunction(() => window.__trackerStore && [...window.__board.store.cache.values()].some((obj) => obj.type === 'tracker'));
+  const frame = await page.evaluate(() => [...window.__board.store.cache.values()].find((obj) => obj.type === 'tracker'));
+  if (!frame) throw new Error('tracker-frame: visual mock frame was not created');
+  return frame;
+}
+
+async function assertTrackerLayout(page) {
+  const result = await page.evaluate(() => {
+    const failures = [];
+    const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth;
+    if (overflow > 0) failures.push(`horizontal overflow ${overflow}px`);
+    const shell = document.querySelector('.trk-shell');
+    if (!shell) failures.push('tracker shell is missing');
+    if (innerWidth <= 500) {
+      const small = [...document.querySelectorAll('.trk button')].filter((button) => button.getClientRects().length).find((button) => {
+        const box = button.getBoundingClientRect();
+        return box.width < 44 || box.height < 44;
+      });
+      if (small) {
+        const box = small.getBoundingClientRect();
+        failures.push(`phone target ${Math.round(box.width)}×${Math.round(box.height)}px: ${small.getAttribute('aria-label') || small.textContent.trim()}`);
+      }
+    }
+    const color = (value) => {
+      const match = value.match(/rgba?\(([^)]+)\)/i);
+      if (!match) return null;
+      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
+      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
+    };
+    const luminance = ([r, g, b]) => {
+      const linear = (n) => { const x = n / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const background = (element) => {
+      for (let at = element; at; at = at.parentElement) {
+        const parsed = color(getComputedStyle(at).backgroundColor);
+        if (parsed && parsed[3] >= 0.99) return parsed;
+      }
+      return color(getComputedStyle(document.documentElement).backgroundColor) ?? [255, 255, 255, 1];
+    };
+    const textElements = [...document.querySelectorAll('.trk .trk-tabs [role="tab"], .trk .trk-header-actions button, .trk .trk-view-bar button, .trk .trk-list-header, .trk .trk-list-row, .trk .trk-group-heading, .trk .trk-filter-chip, .trk .trk-label-chip, .trk .trk-key-chip, .trk .trk-selection-bar, .trk .trk-new-issue-back .modal button')];
+    for (const element of textElements) {
+      if (!element.getClientRects().length || !element.textContent.trim()) continue;
+      const foreground = color(getComputedStyle(element).color);
+      if (!foreground) continue;
+      const bg = background(element);
+      const ratio = (Math.max(luminance(foreground), luminance(bg)) + 0.05) / (Math.min(luminance(foreground), luminance(bg)) + 0.05);
+      if (ratio < 4.5) failures.push(`text contrast ${ratio.toFixed(2)}:1 for ${element.className || element.tagName}`);
+    }
+    return { failures, overflow };
+  });
+  if (result.failures.length) throw new Error(`tracker layout: ${result.failures.join('; ')}`);
+}
+
 const STATES = {
+  async 'tracker-fullscreen'({ page, base }) {
+    await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
+    await page.locator('.trk-route-root .trk-shell').waitFor();
+    await page.locator('.trk-list-row').first().waitFor();
+    if (!(await page.locator('.trk-fullscreen-strip').isVisible())) throw new Error('tracker-fullscreen: full-screen board strip is missing');
+    await assertTrackerLayout(page);
+  },
+  async 'tracker-all-issues'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.locator('.trk-group-heading').first().waitFor();
+    await page.locator('.trk-row-select').first().click();
+    await page.locator('.trk-selection-bar:not([hidden])').waitFor();
+    await page.getByRole('button', { name: 'Filter', exact: true }).click();
+    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
+    await assertTrackerLayout(page);
+  },
+  async 'tracker-filter-open'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.getByRole('button', { name: 'Filter', exact: true }).click();
+    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-picker-open'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.locator('.trk-state-value').first().click();
+    await page.locator('.trk-pop').waitFor();
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-new-issue'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.getByRole('button', { name: /New issue/ }).click();
+    await page.locator('.trk-new-issue-back[role="dialog"], .trk-new-issue-back .modal[role="dialog"]').first().waitFor();
+    await page.getByLabel('Issue title').fill('Keep the current camera after expanding');
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.locator('.trk-new-preview:not([hidden])').waitFor();
+    if (await page.locator('.trk-new-preview script').count()) throw new Error('tracker-new-issue: preview inserted an executable script node');
+    return { noPark: true };
+  },
+  async 'tracker-phone'({ page, base, width }) {
+    if (width > 500) throw new Error('tracker-phone is only valid at phone widths');
+    await openTrackerMockShell(page, base);
+    await page.getByRole('button', { name: 'Filter', exact: true }).click();
+    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
+    const sheet = await page.locator('.trk-filter-editor').evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
+    });
+    if (sheet.left !== 0 || sheet.width < width - 1 || sheet.bottom < page.viewportSize().height - 90) throw new Error(`tracker-phone: filter is not a bottom sheet ${JSON.stringify(sheet)}`);
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-phone-new-issue'({ page, base, width }) {
+    if (width > 500) throw new Error('tracker-phone-new-issue is only valid at phone widths');
+    await openTrackerMockShell(page, base);
+    await page.getByRole('button', { name: /New issue/ }).click();
+    await page.locator('.trk-new-issue-back .modal[role="dialog"]').waitFor();
+    const sheet = await page.locator('.trk-new-issue-back .modal').evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
+    });
+    if (sheet.left !== 0 || sheet.width < width - 1 || sheet.bottom < page.viewportSize().height - 90) throw new Error(`tracker-phone-new-issue: create form is not a full sheet ${JSON.stringify(sheet)}`);
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-keyboard'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.keyboard.press('Tab');
+    await page.waitForFunction(() => document.activeElement?.closest('.trk-shell'));
+    const focusRingVisible = await page.evaluate(() => {
+      const outline = getComputedStyle(document.activeElement).outline;
+      return outline !== 'none' && outline.includes('solid') && !outline.includes('transparent');
+    });
+    if (!focusRingVisible) throw new Error('tracker-keyboard: focus ring is not visible on the shell control');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('s');
+    await page.locator('.trk-pop').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('.trk-pop').waitFor({ state: 'detached' });
+    await page.keyboard.press('Enter');
+    await page.locator('.trk-ticket-stub h1').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('.trk-list-row').first().waitFor();
+    return { noPark: true };
+  },
+  async 'tracker-frame-overview'(env) {
+    const frame = await openTrackerMockFrame(env);
+    if (env.width > 600) {
+      await env.page.evaluate((id) => { window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
+      await env.page.keyboard.press('Enter');
+      await env.page.locator('.trk-frame-wrap.is-work .trk-shell').waitFor();
+      await env.page.getByRole('tab', { name: 'All issues' }).click();
+      await env.page.locator('.trk-frame-wrap .trk-list-row').first().waitFor();
+      await env.page.keyboard.press('Escape');
+      await env.page.waitForFunction(() => !document.querySelector('.trk-frame-wrap')?.classList.contains('is-work'));
+    } else {
+      await env.page.evaluate((id) => window.__board.setSelection([id]), frame.id);
+    }
+    return { noPark: true };
+  },
+  async 'tracker-frame-work'(env) {
+    const frame = await openTrackerMockFrame(env);
+    await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
+    await env.page.keyboard.press('Enter');
+    await env.page.locator('.trk-route-root .trk-shell, .trk-frame-wrap.is-work .trk-shell').waitFor();
+    const allIssuesTab = env.width <= 600
+      ? env.page.locator('.trk-route-root [role="tab"][aria-label="All issues"]')
+      : env.page.locator('.trk-frame-wrap.is-work [role="tab"][aria-label="All issues"]');
+    await allIssuesTab.click();
+    await env.page.locator('.trk-list-row').first().waitFor();
+    if (env.width > 600 && !(await env.page.locator('.trk-frame-wrap.is-work').count())) throw new Error('tracker-frame-work: work surface is not mounted over the frame');
+    await assertTrackerLayout(env.page);
+    return { noPark: true };
+  },
+  async 'tracker-frame-fullscreen'(env) {
+    const frame = await openTrackerMockFrame(env);
+    await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
+    await env.page.keyboard.press('Enter');
+    await env.page.getByRole('tab', { name: 'All issues' }).click();
+    await env.page.locator('.trk-list-row').first().waitFor();
+    const before = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
+    if (env.width > 600) {
+      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-open').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: open chip: ${error.message}`); });
+      await env.page.locator('.trk-frame-wrap.is-work').waitFor();
+      await env.page.locator('.trk-frame-wrap.is-work .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
+      await env.page.locator('.trk-route-root').waitFor();
+    } else {
+      await env.page.locator('.trk-route-root').waitFor();
+    }
+    const afterOpen = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
+    if (before.x !== afterOpen.x || before.y !== afterOpen.y || before.zoom !== afterOpen.zoom) throw new Error('tracker-frame-fullscreen: opening full screen moved the board camera');
+    await env.page.locator('.trk-route-root .trk-fullscreen-strip button').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: back to board: ${error.message}`); });
+    await env.page.locator('.trk-route-root').waitFor({ state: 'detached' });
+    const afterClose = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
+    if (before.x !== afterClose.x || before.y !== afterClose.y || before.zoom !== afterClose.zoom) throw new Error('tracker-frame-fullscreen: closing full screen changed the board camera');
+    if (env.width > 600) {
+      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: reopen expand: ${error.message}`); });
+    } else {
+      await env.page.evaluate((id) => window.__board.setSelection([id]), frame.id);
+      await env.page.keyboard.press('Enter');
+    }
+    await env.page.locator('.trk-route-root').waitFor();
+    return { noPark: true };
+  },
   async 'tracker-foundation'({ page, base, width }) {
     await page.goto(`${base}/?debug=tracker-foundation`);
     await page.getByRole('main', { name: 'Tracker UI foundation gallery' }).waitFor();
@@ -3127,7 +3336,7 @@ const STATES = {
 const FULL_PAGE = new Set(['tracker-foundation', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));

@@ -2,7 +2,7 @@ import type { BaseObj, Point } from './types';
 import { newId } from './store';
 import type { Store } from './store';
 
-export const TRACKER_FRAME_DEFAULT_SIZE = { w: 1280, h: 800 } as const;
+export const TRACKER_FRAME_DEFAULT_SIZE = { w: 1440, h: 900 } as const;
 export const TRACKER_FRAME_MIN_SIZE = { w: 480, h: 360 } as const;
 
 /** The SVG snapshot hook; the tracker UI can register its own static frame renderer later. */

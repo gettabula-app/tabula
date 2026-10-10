@@ -354,6 +354,9 @@ export class FakeDocument {
   createTextNode(text: string) {
     return new FakeText(text);
   }
+  createDocumentFragment(): DocumentFragment {
+    return new FakeElement('fragment') as unknown as DocumentFragment;
+  }
   getElementById(id: string) {
     return this.documentElement.querySelector(`#${id}`);
   }
