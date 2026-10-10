@@ -291,8 +291,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // Sticky colour tray appears while the sticky tool is active.
   const stickyTray = h('div', { class: 'tray tool-tray sticky-tray', 'aria-label': 'Sticky note colour' });
+  // On a phone the open tray covers a good part of the board (taps under it are swallowed), so a picked colour closes it
+  // and the sticky tool stays on; choosing the tool again, or coming back to it, shows it again.
+  let stickyTrayDismissed = false;
+  let stickyWas = false;
+  const narrowScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
   const renderStickyTray = () => {
-    const show = app.tool.kind === 'sticky' && !app.readOnly;
+    const isSticky = app.tool.kind === 'sticky';
+    if (!isSticky || !stickyWas) stickyTrayDismissed = false;
+    stickyWas = isSticky;
+    const show = isSticky && !app.readOnly && !stickyTrayDismissed;
     stickyTray.classList.toggle('show', show);
     if (!show) return;
     stickyTray.style.top = `${stickyBtn.getBoundingClientRect().top - 6}px`;
@@ -305,6 +313,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('div', { class: 'tray-label' }, 'Note colour'),
       stickyColorField(app, app.stickyColor, (c) => {
         app.stickyColor = c;
+        if (narrowScreen()) stickyTrayDismissed = true;
         renderStickyTray();
       }, { label: 'Sticky note colour', size: 'lg' }),
       ...(generate ? [generate] : []),
@@ -312,6 +321,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   app.on('tool', renderStickyTray);
   app.on('meta', renderStickyTray);
+  stickyBtn.addEventListener('click', () => {
+    stickyTrayDismissed = false;
+    renderStickyTray();
+  });
   onAiBarChange(app, (why) => { if (why === 'mount') renderStickyTray(); });
 
   // Pen options appear while drawing.
