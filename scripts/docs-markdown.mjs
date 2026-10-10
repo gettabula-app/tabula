@@ -17,6 +17,9 @@ export function slugify(text) {
  * Returns the URL to use, or null when it must be dropped: only http(s), relative paths and #fragments pass.
  * Relative `x.md` and `x.md#y` become `${linkBase}x` and `${linkBase}x#y`; `index.md` becomes `linkBase`.
  */
+// Where relative images resolve; set per renderMarkdown call (the renderer is synchronous). A translated page lives under /docs/sv/ but its screenshots stay in /docs/images/.
+let imageBase = null;
+
 function safeUrl(raw, linkBase, kind) {
   const url = raw.trim();
   if (!url || url.includes('\\') || [...url].some((ch) => ch <= ' ' || ch === '\u007f')) return null;
@@ -24,7 +27,7 @@ function safeUrl(raw, linkBase, kind) {
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url);
   if (scheme) return /^https?$/i.test(scheme[1]) ? url : null;
   if (url.startsWith('#')) return kind === 'link' ? url : null;
-  if (kind === 'image') return url.startsWith('/') ? url : linkBase + url.replace(/^\.\//, '');
+  if (kind === 'image') return url.startsWith('/') ? url : (imageBase ?? linkBase) + url.replace(/^\.\//, '');
   const md = /^(?:\.\/)?([^#?]*?)\.md(#.*)?$/.exec(url);
   if (!md) return url;
   return (md[1] === 'index' ? linkBase : linkBase + md[1]) + (md[2] ?? '');
@@ -122,7 +125,8 @@ const startsBlock = (line, next) =>
   !line.trim() || FENCE.test(line) || HEADING.test(line) || LIST_ITEM.test(line) || /^\s*>/.test(line)
   || (line.includes('|') && next !== undefined && TABLE_SEP.test(next) && next.includes('-'));
 
-export function renderMarkdown(src, { linkBase = '/docs/' } = {}) {
+export function renderMarkdown(src, { linkBase = '/docs/', imageBase: images = null } = {}) {
+  imageBase = images;
   // Comments go before parsing, but never inside fenced code.
   const lines = [];
   let fenced = false;
