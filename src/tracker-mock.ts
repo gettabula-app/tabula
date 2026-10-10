@@ -1,5 +1,5 @@
 import { TrackerError } from './tracker-types';
-import type { TrackerApi, TrackerBulkInput, TrackerInboxReadInput } from './tracker-data';
+import type { TrackerApi, TrackerBulkInput, TrackerInboxReadInput, TrackerNotificationPrefsUpdate } from './tracker-data';
 import {
   type TrackerBulkPatch,
   type TrackerBulkResult,
@@ -8,9 +8,11 @@ import {
   type TrackerEvent,
   type TrackerFeed,
   type TrackerFeedEvent,
-  type TrackerInboxPage,
+  type TrackerInboxItem,
   type TrackerListQuery,
   type TrackerMeta,
+  type TrackerNotificationKind,
+  type TrackerNotifyChoice,
   type TrackerNotificationPrefs,
   type TrackerProject,
   type TrackerProjectInput,
@@ -34,6 +36,7 @@ export interface TrackerMockSeed {
   tickets?: TrackerTicket[];
   comments?: Record<string, TrackerComment[]>;
   events?: TrackerEvent[];
+  inbox?: TrackerInboxItem[];
   now?: () => number;
   notificationPrefs?: TrackerNotificationPrefs;
 }
@@ -68,6 +71,36 @@ function isValidDate(value: string): boolean {
 function compare(a: string, b: string): number { return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }); }
 function escapeSnippet(text: string): string { return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
 
+const NOTIFICATION_KINDS: TrackerNotificationKind[] = [
+  'assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity',
+];
+const DEFAULT_NOTIFICATION_PREFS: Record<TrackerNotificationKind, TrackerNotifyChoice> = {
+  assigned: 'both', mentioned: 'both', commented: 'app', status_changed: 'app', due_soon: 'both',
+  relation_changed: 'app', integration_activity: 'app',
+};
+
+function encodeInboxCursor(item: TrackerInboxItem): string {
+  const bytes = new TextEncoder().encode(JSON.stringify({ createdAt: item.createdAt, id: item.id }));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+}
+
+function decodeInboxCursor(value: string): { createdAt: number; id: string } {
+  try {
+    const base64 = value.replaceAll('-', '+').replaceAll('_', '/');
+    const binary = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const decoded: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (decoded && typeof decoded === 'object' && 'createdAt' in decoded && 'id' in decoded
+      && typeof decoded.createdAt === 'number' && Number.isSafeInteger(decoded.createdAt)
+      && typeof decoded.id === 'string' && decoded.id) {
+      return { createdAt: decoded.createdAt, id: decoded.id };
+    }
+  } catch { /* A malformed cursor is reported below. */ }
+  throw new TrackerError('invalid_input', 'Must be a valid inbox cursor', { path: 'before' });
+}
+
 /** A stateful, server-shaped API for demos and deterministic client tests. */
 export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   const now = seed.now ?? Date.now;
@@ -90,7 +123,11 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   let nextNumber = 1;
   let serial = 0;
   let batchSerial = 0;
-  let preferences: TrackerNotificationPrefs = copy(seed.notificationPrefs ?? { email: true, mentions: true, assignments: true });
+  let preferences: TrackerNotificationPrefs = copy(seed.notificationPrefs ?? {
+    kinds: NOTIFICATION_KINDS,
+    prefs: DEFAULT_NOTIFICATION_PREFS,
+  });
+  const inboxItems = copy(seed.inbox ?? []);
   const projects = new Map<string, TrackerProject>((meta.projects ?? []).map((project) => [project.id, copy(project)]));
   const milestones = new Map<string, TrackerMilestone>((meta.milestones ?? []).map((milestone) => [milestone.id, copy(milestone)]));
   const views = new Map<string, TrackerSavedView>((meta.views ?? []).map((view) => [view.id, {
@@ -692,16 +729,47 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       return { ticket: copy(ticket) };
     },
     async inbox(query = {}) {
-      const limit = Math.max(1, Math.min(100, Math.trunc(query.limit ?? 50)));
-      const all: TrackerInboxPage['items'] = [];
-      const unread = 0;
-      const offset = pageOffset(query.before);
-      const items = query.unread ? all.filter((item) => item.readAt === null) : all;
-      return { items: copy(items.slice(offset, offset + limit)), nextCursor: offset + limit < items.length ? String(offset + limit) : null, unread };
+      const requestedLimit = query.limit ?? 30;
+      const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(50, Math.floor(requestedLimit))) : 30;
+      const cursor = query.before ? decodeInboxCursor(query.before) : null;
+      const unread = inboxItems.reduce((count, item) => count + (item.readAt === null ? 1 : 0), 0);
+      const items = inboxItems
+        .filter((item) => !query.unread || item.readAt === null)
+        .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));
+      const start = cursor
+        ? items.findIndex((item) => item.createdAt < cursor.createdAt || (item.createdAt === cursor.createdAt && item.id.localeCompare(cursor.id) < 0))
+        : 0;
+      const offset = start < 0 ? items.length : start;
+      const page = items.slice(offset, offset + limit);
+      return {
+        items: copy(page),
+        nextCursor: offset + limit < items.length && page.length ? encodeInboxCursor(page[page.length - 1]) : null,
+        unread,
+      };
     },
-    async inboxUnread() { return { unread: 0 }; },
-    async markInboxRead(_input: TrackerInboxReadInput) { return { updated: 0, unread: 0 }; },
+    async inboxUnread() {
+      return { unread: inboxItems.reduce((count, item) => count + (item.readAt === null ? 1 : 0), 0) };
+    },
+    async markInboxRead(input: TrackerInboxReadInput) {
+      if ('all' in input && input.all) {
+        const pending = inboxItems.filter((item) => item.readAt === null);
+        const at = now();
+        for (const item of pending) item.readAt = at;
+        return { updated: pending.length, unread: inboxItems.filter((item) => item.readAt === null).length };
+      }
+      const requestedIds = 'ids' in input ? input.ids : [];
+      if (requestedIds.length > 100) throw new TrackerError('invalid_input', 'ids must be an array of up to 100 notification ids');
+      const ids = [...new Set(requestedIds)];
+      const wanted = new Set(ids);
+      const pending = inboxItems.filter((item) => wanted.has(item.id) && item.readAt === null);
+      const at = now();
+      for (const item of pending) item.readAt = at;
+      return { updated: pending.length, unread: inboxItems.filter((item) => item.readAt === null).length };
+    },
     async notificationPrefs() { return copy(preferences); },
-    async updateNotificationPrefs(patch) { preferences = { ...preferences, ...copy(patch) }; return copy(preferences); },
+    async updateNotificationPrefs(patch: TrackerNotificationPrefsUpdate) {
+      preferences = { ...preferences, prefs: { ...preferences.prefs, ...copy(patch.prefs) } };
+      return copy(preferences);
+    },
   };
 }

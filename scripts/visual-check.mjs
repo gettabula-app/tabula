@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -1248,6 +1248,41 @@ const STATES = {
       await page.keyboard.press('Escape');
       await page.locator('.trk-pop').waitFor({ state: 'detached' });
     }
+  },
+  async 'tracker-inbox'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=populated`);
+    await page.getByRole('main', { name: 'Tracker inbox gallery' }).waitFor();
+    await page.getByRole('listbox', { name: 'Inbox notices' }).waitFor();
+    await page.locator('.trk-inbox-row').nth(6).waitFor();
+  },
+  async 'tracker-inbox-empty'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=empty`);
+    await page.getByText('Nothing needs you.', { exact: true }).waitFor();
+  },
+  async 'tracker-inbox-loading'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=loading`);
+    await page.locator('.trk-inbox-skeleton-row').nth(2).waitFor();
+  },
+  async 'tracker-inbox-error'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=error`);
+    await page.getByText('Could not load your inbox.').waitFor();
+    await page.getByRole('button', { name: 'Retry', exact: true }).waitFor();
+  },
+  async 'tracker-inbox-long-list'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=long-list`);
+    await page.getByRole('button', { name: 'Load more' }).click();
+    await page.locator('.trk-inbox-row').nth(47).waitFor();
+  },
+  async 'tracker-inbox-narrow'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=narrow`);
+    await page.locator('.trk-inbox-row').nth(6).waitFor();
+    const reason = page.locator('.trk-inbox-reason').first();
+    if (await reason.isVisible()) throw new Error('tracker inbox reason text should be hidden below 720px');
+  },
+  async 'tracker-notification-prefs'({ page, base }) {
+    await page.goto(`${base}/?debug=tracker-foundation&inbox=prefs`);
+    await page.locator('.trk-prefs').waitFor();
+    await page.getByRole('radiogroup', { name: 'Assigned to me' }).waitFor();
   },
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -3333,10 +3368,11 @@ const STATES = {
   },
 };
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
-const FULL_PAGE = new Set(['tracker-foundation', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
+const FULL_PAGE = new Set(['tracker-foundation', 'tracker-inbox-long-list', 'tracker-notification-prefs', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue']);
+const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
@@ -3695,6 +3731,7 @@ async function main() {
       for (const theme of options.themes) {
         for (const width of options.widths) {
           if (PHONE_ONLY_STATES.has(state) && width >= 600) continue;
+          if (NARROW_STATES.has(state) && width >= 720) continue;
           results.push(await capture({ browser, state, theme, width, file: `${state}-${theme}-${width}.png`, shared }));
         }
       }

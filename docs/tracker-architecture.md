@@ -654,6 +654,7 @@ Require `idempotencyKey` on create, comment, transition, and link writes, unique
 
 ## 8. Linear importer
 
+Operator procedure: [docs/linear-import.md](linear-import.md).
 ### Source and mapping
 
 **Archived issues (known, 2026-10-10):** Linear's AI archived every Done issue. Every Linear API query the importer makes (and the Linear-to-board script 01b9936) must pass `includeArchived: true`, or the Done history is silently missing; the dry-run report must count archived issues separately so a shortfall is visible.
