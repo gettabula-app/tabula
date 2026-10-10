@@ -2,8 +2,8 @@
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
 import {
-  KANBAN, LIMITS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName, codePointLength, isDueDate, isSafeHttpUrl,
-  kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck,
+  KANBAN, LIMITS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanLaneName, cleanOwnerName, codePointLength, isDueDate,
+  isLaneStage, isSafeHttpUrl, isWipLimit, kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck,
 } from '../shared/containers';
 export { OWNER_NAME_MAX };
 import type { Store } from './store';
@@ -12,7 +12,7 @@ import type { BaseObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
-import { cardFillFromSticky, isStage, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
+import { cardFillFromSticky, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
 export const DEFAULT_LANES = [
@@ -577,18 +577,18 @@ export function structureRefusal(store: Store, containerId: Id): string | null {
 export function laneFields(patch: LanePatch): Partial<BaseObj> | null {
   const out: Partial<BaseObj> = {};
   if (patch.name !== undefined) {
-    const name = patch.name.replace(/\s+/g, ' ').trim().slice(0, LIMITS.laneName).trim();
+    const name = cleanLaneName(patch.name);
     if (!name) return null;
     out.name = name;
   }
   // every colour goes through kanbanColor: a palette key or a checked colour, never the raw value
   if (patch.fill !== undefined) out.fill = patch.fill === null ? undefined : kanbanColor(patch.fill) ?? undefined;
   if (patch.stage !== undefined) {
-    if (patch.stage !== null && !isStage(patch.stage)) return null;
+    if (patch.stage !== null && !isLaneStage(patch.stage)) return null;
     out.stage = patch.stage ?? undefined;
   }
   if (patch.wip !== undefined) {
-    if (patch.wip !== null && !(Number.isInteger(patch.wip) && patch.wip >= LIMITS.wipMin && patch.wip <= LIMITS.wipMax)) return null;
+    if (patch.wip !== null && !isWipLimit(patch.wip)) return null;
     out.wip = patch.wip ?? undefined;
     if (patch.wip === null) out.wipMode = undefined;
   }

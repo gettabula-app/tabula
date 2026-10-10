@@ -97,6 +97,13 @@ export const LIMITS: {
   readonly wipMax: 99;
 };
 
+export function cleanLabelName(value: unknown): string;
+export function cleanLaneName(value: unknown): string;
+export function labelNameTaken(labels: Iterable<{ id?: string; name?: string }>, name: unknown, exceptId?: string | null): boolean;
+export function isLaneStage(value: unknown): value is 'todo' | 'doing' | 'done';
+export function isWipLimit(value: unknown): value is number;
+export function validLabelColor(value: unknown): string | null;
+
 export const LABEL_COLORS: readonly ['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey'];
 
 export function kanbanColor(value: unknown, fallback?: string | null): string | null;

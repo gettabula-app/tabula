@@ -113,6 +113,35 @@ export const LIMITS = Object.freeze({
   wipMax: 99,
 });
 
+/** A label name as stored by the app: whitespace collapsed, trimmed and capped at 40 Unicode code points. */
+export function cleanLabelName(value) {
+  return typeof value === 'string' ? [...value.replace(/\s+/g, ' ').trim()].slice(0, LIMITS.labelName).join('').trim() : '';
+}
+
+/** A lane name as stored by the app: whitespace collapsed, trimmed and capped at 60 characters. */
+export function cleanLaneName(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, LIMITS.laneName).trim() : '';
+}
+
+/** Whether a normalized label name is already used, ignoring case and optionally the label being renamed. */
+export function labelNameTaken(labels, name, exceptId = null) {
+  const normalized = cleanLabelName(name).toLowerCase();
+  if (!normalized) return false;
+  for (const label of labels) {
+    if (label?.id !== exceptId && typeof label?.name === 'string' && cleanLabelName(label.name).toLowerCase() === normalized) return true;
+  }
+  return false;
+}
+
+/** A lane stage accepted by the board UI and MCP. */
+export const isLaneStage = (value) => STAGES.includes(value);
+
+/** A WIP limit accepted by the lane editor. */
+export const isWipLimit = (value) => Number.isInteger(value) && value >= LIMITS.wipMin && value <= LIMITS.wipMax;
+
+/** A label colour accepted by the board UI, canonicalized by the shared safe colour grammar. */
+export const validLabelColor = (value) => kanbanColor(value, null);
+
 /** Palette keys for board labels: the sticky swatches (a test keeps them equal to src/palette.ts), coloured by theme tokens. */
 export const LABEL_COLORS = Object.freeze(['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey']);
 
@@ -135,14 +164,14 @@ export function kanbanColor(value, fallback = null) {
 export const LABEL_DEFAULT_COLOR = 'grey';
 
 /**
- * A board label as it may be used, or null: an id and a name of at most 40 characters; a colour that `kanbanColor`
+ * A board label as it may be used, or null: an id and a name of at most 40 Unicode code points; a colour that `kanbanColor`
  * refuses becomes the default one. Anything read from the `labels` map goes through this first, since any client can write that map.
  * @returns {{ id: string, name: string, color: string, order: number } | null}
  */
 export function validLabel(value) {
   if (!value || typeof value !== 'object') return null;
   const { id, name, color, order } = value;
-  if (typeof id !== 'string' || !id || typeof name !== 'string' || name.length > LIMITS.labelName) return null;
+  if (typeof id !== 'string' || !id || typeof name !== 'string' || codePointLength(name) > LIMITS.labelName) return null;
   return { id, name, color: kanbanColor(color, LABEL_DEFAULT_COLOR), order: Number.isFinite(order) ? order : 0 };
 }
 
@@ -462,8 +491,8 @@ const refuse = (message) => {
   throw new TemplateKanbanError(message);
 };
 
-function line(v, what, max, min = 1) {
-  if (typeof v !== 'string' || v.trim().length < min || v.length > max || LINE_BREAK.test(v)) refuse(`${what} must be text of ${min ? `1 to ${max}` : `at most ${max}`} characters, on one line.`);
+function line(v, what, max, min = 1, length = (value) => value.length) {
+  if (typeof v !== 'string' || v.trim().length < min || length(v) > max || LINE_BREAK.test(v)) refuse(`${what} must be text of ${min ? `1 to ${max}` : `at most ${max}`} characters, on one line.`);
   return v;
 }
 
@@ -474,7 +503,7 @@ function intIn(v, what, min, max) {
 
 /**
  * A template's label list (docs/kanban.md, Templates: a small list merged by name into the board's labels when the
- * template is used), checked and rebuilt: at most 30, each an id, a name of 1 to 40 characters on one line and a
+ * template is used), checked and rebuilt: at most 30, each an id, a name of 1 to 40 Unicode code points on one line and a
  * colour `kanbanColor` accepts. Throws an Error naming what is wrong.
  * @returns {{ id: string, name: string, color: string }[]}
  */
@@ -491,7 +520,7 @@ export function templateLabels(list) {
     ids.add(l.id);
     const color = kanbanColor(l.color);
     if (color === null) refuse(`${what} has a colour the board cannot draw.`);
-    return { id: l.id, name: line(l.name, `${what} name`, LIMITS.labelName), color };
+    return { id: l.id, name: line(l.name, `${what} name`, LIMITS.labelName, 1, codePointLength), color };
   });
 }
 
