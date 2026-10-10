@@ -1,0 +1,14 @@
+.edit-bar.qb {
+  position: fixed;
+  z-index: 14;
+  top: 0;
+  left: 0;
+  display: none;
+  align-items: center;
+  padding: 4px;
+  will-change: transform;
+}
+
+.edit-bar.qb.show { display: flex; }
+.edit-bar .edit-emoji { width: 44px; height: 44px; }
+.edit-bar :focus-visible { outline-offset: -2px; }
