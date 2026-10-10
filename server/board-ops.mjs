@@ -69,24 +69,68 @@ export const AI_COLOR = 'var(--graphite, #5B6672)';
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_RE = /^[A-Za-z0-9_-]{1,32}$/;
 // Character classes by code point, not by regular expression: control characters other than newline and tab,
-// Unicode tag characters (invisible text), and zero-width and bidirectional controls.
+// Unicode tag characters except complete subdivision flags, and zero-width and bidirectional controls.
 const isControl = (cp) => cp <= 0x08 || (cp >= 0x0b && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f);
 const isTag = (cp) => cp >= 0xe0000 && cp <= 0xe007f;
+const isSubdivisionTag = (cp) => (cp >= 0xe0030 && cp <= 0xe0039) || (cp >= 0xe0061 && cp <= 0xe007a);
+const BLACK_FLAG = 0x1f3f4;
+const CANCEL_TAG = 0xe007f;
+const isEmojiModifier = (cp) => cp >= 0x1f3fb && cp <= 0x1f3ff;
+const isExtendedPictographic = (ch) => /\p{Extended_Pictographic}/u.test(ch);
 const isHidden = (cp) =>
-  (cp >= 0x200b && cp <= 0x200f) || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
+  (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
   (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp === 0xfeff;
-const isBadInput = (cp) => isControl(cp) || isTag(cp);
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
+
+/** Indices of tag characters that belong to complete subdivision-flag sequences. */
+function subdivisionTagMask(chars) {
+  const keep = Array.from({ length: chars.length }, () => false);
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i].codePointAt(0) !== BLACK_FLAG) continue;
+    let end = i + 1;
+    while (end < chars.length && isSubdivisionTag(chars[end].codePointAt(0))) end++;
+    const count = end - i - 1;
+    if (count < 1 || count > 8 || chars[end]?.codePointAt(0) !== CANCEL_TAG) continue;
+    for (let tag = i + 1; tag <= end; tag++) keep[tag] = true;
+  }
+  return keep;
+}
+
+function keepsEmojiJoiner(chars, index) {
+  if (index === 0 || index === chars.length - 1) return false;
+  let before = index - 1;
+  while (before >= 0) {
+    const cp = chars[before].codePointAt(0);
+    if (isEmojiModifier(cp) || cp === 0xfe0f) before--;
+    else break;
+  }
+  return before >= 0 && isExtendedPictographic(chars[before]) && isExtendedPictographic(chars[index + 1]);
+}
 
 /** Removes what a person cannot see but a model can read. */
 export function stripInvisible(value) {
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
   let out = '';
-  for (const ch of value) if (!isInvisible(ch.codePointAt(0))) out += ch;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const cp = ch.codePointAt(0);
+    if (isTag(cp)) {
+      if (keepTags[i]) out += ch;
+    } else if (cp === 0x200d) {
+      if (keepsEmojiJoiner(chars, i)) out += ch;
+    } else if (!isInvisible(cp)) out += ch;
+  }
   return out;
 }
 
 const hasBadInput = (value) => {
-  for (const ch of value) if (isBadInput(ch.codePointAt(0))) return true;
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
+  for (let i = 0; i < chars.length; i++) {
+    const cp = chars[i].codePointAt(0);
+    if (isControl(cp) || (isTag(cp) && !keepTags[i])) return true;
+  }
   return false;
 };
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_';
@@ -508,7 +552,9 @@ function text(v, path, min, max, length = (value) => value.length) {
   const measured = length(t);
   if (measured < min || measured > max) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
   if (hasBadInput(t)) throw invalid(path, 'Contains control or tag characters');
-  return t;
+  const clean = stripInvisible(t);
+  if (length(clean) < min) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
+  return clean;
 }
 
 function choice(v, list, path) {
@@ -1066,7 +1112,16 @@ function fontOf(doc, key, fallback) {
   return typeof v === 'string' && v ? v : fallback;
 }
 
-function parseEnd(v, path, { allowRef, get, refs }) {
+const KANBAN_END_TYPES = new Set(['lane', 'container']);
+const KANBAN_END_MESSAGE = 'Connect to a card, not to a lane or the kanban';
+
+function sameEnd(a, b) {
+  if (!a || a.kind !== b.kind) return false;
+  if (a.kind === 'bound') return a.id === b.id && (a.anchor ?? 'auto') === b.anchor;
+  return a.x === b.x && a.y === b.y;
+}
+
+function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
   if (!isRecord(v)) throw invalid(path, 'Must be an object: {id}, {ref} or {x, y}');
   if (Object.hasOwn(v, 'ref')) {
     if (!allowRef) throw invalid(at(path, 'ref'), 'A ref is only allowed in create_objects');
@@ -1074,6 +1129,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const hit = typeof v.ref === 'string' ? refs.get(v.ref) : undefined;
     if (!hit) throw invalid(at(path, 'ref'), 'No object in this call has that ref');
     if (hit.type === 'connector') throw invalid(at(path, 'ref'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(hit.type)) throw invalid(path, KANBAN_END_MESSAGE);
     return { kind: 'bound', id: hit.id, anchor: v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side')) };
   }
   if (Object.hasOwn(v, 'id')) {
@@ -1082,6 +1138,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const target = get(id);
     if (!target) throw notFound('No such object to attach to', at(path, 'id'));
     if (target.type === 'connector') throw invalid(at(path, 'id'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(target.type)) throw invalid(path, KANBAN_END_MESSAGE);
     const side = v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side'));
     return { kind: 'bound', id, anchor: side };
   }
@@ -1332,7 +1389,14 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'route': sets.set(key, choice(v, ROUTES, fieldPath)); break;
         case 'startHead': case 'endHead': sets.set(key, choice(v, HEADS, fieldPath)); break;
         case 'dash': sets.set(key, choice(v, DASHES, fieldPath)); break;
-        case 'from': case 'to': sets.set(key, parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map() })); break;
+        case 'from': case 'to': {
+          const end = parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map(), allowKanbanTarget: true });
+          if (end.kind === 'bound' && KANBAN_END_TYPES.has(get(end.id)?.type) && !sameEnd(current[key], end)) {
+            throw invalid(fieldPath, KANBAN_END_MESSAGE);
+          }
+          sets.set(key, end);
+          break;
+        }
         case 'parent': {
           const parentId = idString(v, fieldPath);
           const parentType = get(parentId)?.type;

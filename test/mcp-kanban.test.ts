@@ -661,6 +661,97 @@ describe('kanban MCP card tools', () => {
     expect((await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total).toBe(before);
   });
 
+  it('refuses new or changed connector ends on lanes and kanbans while preserving existing ends', async () => {
+    const token = await addToken('connector end rules');
+    const live = await watcher();
+    const cleanupIds = new Set<string>();
+    const encoded = () => Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64');
+    const rememberCreated = (result: Body) => {
+      for (const item of result.data?.created ?? []) cleanupIds.add(item.id);
+    };
+    try {
+      const cardConnector = await h.tool(token.token, 'create_objects', {
+        boardId: board, objects: [{ type: 'connector', from: { id: cardId }, to: { x: 20, y: 30 } }],
+      });
+      rememberCreated(cardConnector);
+      expect(cardConnector.error).toBeUndefined();
+      const cardConnectorId = cardConnector.data.created[0].id as string;
+      await until(() => live.doc.getMap('objects').has(cardConnectorId));
+      expect((live.doc.getMap('objects').get(cardConnectorId) as Y.Map<unknown>).get('from')).toEqual({
+        kind: 'bound', id: cardId, anchor: 'auto',
+      });
+
+      for (const [end, targetId] of [
+        ['from', todoId], ['to', todoId], ['from', kanbanId], ['to', kanbanId],
+      ] as const) {
+        const before = encoded();
+        const connector: Record<string, unknown> = { type: 'connector', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } };
+        connector[end] = { id: targetId };
+        const refused = await h.tool(token.token, 'create_objects', { boardId: board, objects: [connector] });
+        rememberCreated(refused);
+        expect(refused.error).toBe('invalid_input');
+        expect(refused.data).toMatchObject({
+          message: 'Connect to a card, not to a lane or the kanban', path: `objects[0].${end}`,
+        });
+        expect(encoded()).toBe(before);
+      }
+
+      for (const [end, targetId] of [
+        ['from', todoId], ['to', todoId], ['from', kanbanId], ['to', kanbanId],
+      ] as const) {
+        const before = encoded();
+        const patch: Record<string, unknown> = { id: cardConnectorId };
+        patch[end] = { id: targetId };
+        const refused = await h.tool(token.token, 'update_objects', { boardId: board, updates: [patch] });
+        expect(refused.error).toBe('invalid_input');
+        expect(refused.data).toMatchObject({
+          message: 'Connect to a card, not to a lane or the kanban', path: `updates[0].${end}`,
+        });
+        expect(encoded()).toBe(before);
+      }
+
+      const legacyId = h.unique('legacy-kanban-connector');
+      cleanupIds.add(legacyId);
+      live.doc.transact(() => {
+        live.doc.getMap('objects').set(legacyId, new Y.Map(Object.entries({
+          id: legacyId, type: 'connector', z: 'zz-legacy', label: 'Before edit', route: 'elbow',
+          startHead: 'none', endHead: 'arrow', createdBy: 'local',
+          from: { kind: 'bound', id: kanbanId, anchor: 'auto' },
+          to: { kind: 'bound', id: cardId, anchor: 'auto' },
+        })));
+      }, 'local');
+      await until(() => h.savedDoc(board).getMap('objects').has(legacyId));
+
+      const labelEdit = await h.tool(token.token, 'update_objects', {
+        boardId: board, updates: [{ id: legacyId, label: 'After edit' }],
+      });
+      expect(labelEdit.error).toBeUndefined();
+      await until(() => (live.doc.getMap('objects').get(legacyId) as Y.Map<unknown>)?.get('label') === 'After edit');
+      const sameEnd = await h.tool(token.token, 'update_objects', {
+        boardId: board, updates: [{ id: legacyId, from: { id: kanbanId } }],
+      });
+      expect(sameEnd.error).toBeUndefined();
+
+      const beforeBatch = encoded();
+      const batch = await h.tool(token.token, 'create_objects', {
+        boardId: board,
+        objects: [
+          { type: 'connector', from: { id: cardId }, to: { x: 2, y: 3 } },
+          { type: 'connector', from: { x: 4, y: 5 }, to: { id: todoId } },
+        ],
+      });
+      rememberCreated(batch);
+      expect(batch.error).toBe('invalid_input');
+      expect(batch.data).toMatchObject({
+        message: 'Connect to a card, not to a lane or the kanban', path: 'objects[1].to',
+      });
+      expect(encoded()).toBe(beforeBatch);
+    } finally {
+      if (cleanupIds.size) await h.tool(token.token, 'delete_objects', { boardId: board, ids: [...cleanupIds] });
+      live.provider.destroy();
+    }
+  });
+
   it('returns the same not_found for hidden generic update targets as for a missing id', async () => {
     const token = await addToken('hidden generic updates');
     const live = await watcher();

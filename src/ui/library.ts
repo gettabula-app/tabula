@@ -170,7 +170,9 @@ function umlTab(app: BoardApp) {
   const rels = (Object.keys(RELATIONS) as UmlRelation[]).map((k) => {
     const r = RELATIONS[k];
     const from: End = { kind: 'free', x: 4, y: 10 }, to: End = { kind: 'free', x: 92, y: 10 };
-    const c: ConnectorObj = { id: 'p', type: 'connector', z: 'a', from, to, route: 'straight', startHead: r.startHead, endHead: r.endHead, dash: r.dash, strokeWidth: 1.5, stroke: 'currentColor' };
+    // Connector markup validates stored colours with safeColor; `currentColor` is intentionally outside that grammar
+    // and falls back to canvas ink, which disappears on this tray. Give the generated SVG the tray's theme ink instead.
+    const c: ConnectorObj = { id: 'p', type: 'connector', z: 'a', from, to, route: 'straight', startHead: r.startHead, endHead: r.endHead, dash: r.dash, strokeWidth: 1.5, stroke: 'var(--tray-text, #E9EDF2)' };
     return h('button', {
       class: 'rel-row', 'data-tip': `Draw a ${r.label.toLowerCase()} connector`,
       onclick: () => app.setTool({ kind: 'connector', relation: k }),
