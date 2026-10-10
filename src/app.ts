@@ -39,6 +39,7 @@ import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
+import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 
@@ -2309,6 +2310,11 @@ export class BoardApp {
       if (typing) return;
       const mod = e.metaKey || e.ctrlKey;
       const ro = this.readOnly;
+      if (e.shiftKey && !e.altKey && !mod && (k === 'h' || k === 'v')) {
+        e.preventDefault();
+        if (!ro) this.flipSelection(k === 'h' ? 'horizontal' : 'vertical');
+        return;
+      }
       if (mod && k === 'g') {
         e.preventDefault();
         if (!ro) {
@@ -2439,6 +2445,34 @@ export class BoardApp {
   }
 
   // ---------------------------------------------------------------- commands
+
+  /** Why a mirror command is disabled, also used by both menus to show the same explanation. */
+  flipReason(_axis: FlipAxis): string | null {
+    return flipDisabledReason(this.selected(), this.selectedLeaves(), this.readOnly);
+  }
+
+  /** Mirrors the selected leaves about their overall bounds as one undoable board edit. */
+  flipSelection(axis: FlipAxis): boolean {
+    if (this.readOnly) return false;
+    const reason = this.flipReason(axis);
+    if (reason) {
+      this.notify(reason);
+      return false;
+    }
+    const bounds = this.r.contentBounds(this.selection);
+    if (!bounds) return false;
+    const about = center(bounds);
+    const participants = this.selectedLeaves().filter((o) => !effectiveLocked(o, (id) => this.store.get(id)));
+    const visibleConnectors = this.store.shown().filter((o): o is ConnectorObj => isConnector(o) &&
+      !effectiveLocked(o, (id) => this.store.get(id)) && !this.flow.isHidden(o as BaseObj));
+    const patches = planFlip(participants, visibleConnectors, axis, about);
+    if (!patches.length) return false;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => patches.forEach(({ id, patch }) => this.store.update(id, patch)));
+    this.store.undo.stopCapturing();
+    this.announce(axis === 'horizontal' ? 'Flipped horizontally' : 'Flipped vertically');
+    return true;
+  }
 
   /** Alt+Shift+arrow on selected texts: one undo step, announced. False when the selection holds no text to resize. */
   private resizeTextByKey(key: TextKey): boolean {

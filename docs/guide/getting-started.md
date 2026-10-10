@@ -126,6 +126,8 @@ On Mac, use `Cmd` where the table says `Ctrl`. The board menu lists every shortc
 | `Ctrl+]` | Bring forward one step (`Cmd+]` on Mac) |
 | `Ctrl+[` | Send backward one step (`Cmd+[` on Mac) |
 | `[` | Send to back |
+| `Shift+H` | Flip the selection horizontally |
+| `Shift+V` | Flip the selection vertically |
 | `Ctrl+Z` | Undo |
 | `Shift+Ctrl+Z` or `Ctrl+Y` | Redo |
 

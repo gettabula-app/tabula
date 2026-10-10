@@ -145,7 +145,7 @@ Follows the architecture spec's section 12. In addition:
 
 ## Decisions (frozen)
 
-Johan: "go with your picks". The tech lead holds the full list of 13 in `docs/rich-text.md`; these are the ones that decide the UX.
+Johan: "go with your picks". The tech lead's full list of 13 is in `docs/rich-text.md` (8704561); these are the ones that decide the UX. The rest (plain MCP writes flatten with a warning, selections shown only to co-editors, 20,000 / 4,000 character limits, relay client-version floor) have no screen of their own.
 
 | Decision | UX effect |
 |---|---|
@@ -158,6 +158,7 @@ Johan: "go with your picks". The tech lead holds the full list of 13 in `docs/ri
 | No soft break | `Shift+Enter` acts like `Enter`; every newline is a paragraph. |
 | Emoji last | The emoji button is the last control in the popover; the separate "Add emoji" bar is not shown for text elements. |
 | Strikethrough | `Cmd/Ctrl+Shift+X`. |
+| Alignment with no selection in the text (frozen #9) | The existing alignment control in the properties panel and quick-action bar, used while the text element is selected but not being edited, aligns **all** paragraphs and updates the object's default alignment in one transaction. Inside the editor, the popover's alignment still applies to the paragraphs touched by the caret or selection (section 2.5). |
 | Mixed state | `aria-pressed="mixed"` with a bar in the control. |
 
 ## Settled with the tech lead, and what was open

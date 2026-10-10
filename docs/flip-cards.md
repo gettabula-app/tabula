@@ -232,6 +232,8 @@ Slices 1 and 2 give a working card; 3 is what makes it a facilitation tool; 4 is
 
 If Johan meant **mirroring a shape or image horizontally or vertically**, that is a different and smaller feature. It should be its own issue and does not block flip cards. A sketch so it can be sized:
 
+Mirror flip is now available as **Flip horizontal** and **Flip vertical** (`flipX` and `flipY`, with `Shift+H` and `Shift+V`). Text is never mirrored, and connector anchors follow the visible sides. For a two-sided card, the action is **Turn over** in every menu, tooltip, announcement and shortcut; it never uses `Shift+H` or `Shift+V`. Mirror flip on a two-sided card mirrors shapes on both faces and never mirrors text.
+
 - **Fields**: `flipX` and `flipY` booleans on box objects (shapes, icons, images, stickers), absent meaning false.
 - **Rendering**: `wrapG` today applies translate and rotate only. A mirror adds `scale(-1, 1)` or `scale(1, -1)` about the box centre, applied to the **outline only**, never to the text (mirrored text is unreadable), so the text layer is drawn in a sibling group. Icons and stickers mirror their artwork; an image mirrors its bitmap.
 - **Order with rotation**: mirror first, then rotate. The rotation direction flips visually when mirrored once; the rotate handle and `rotation` field keep meaning "clockwise on screen" so people are not surprised.

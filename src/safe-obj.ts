@@ -131,7 +131,11 @@ export function safeObj<T extends Obj>(o: T): T {
   if ('attributes' in out) out.attributes = members(out.attributes);
   if ('operations' in out) out.operations = members(out.operations);
   if ('labels' in out && !(Array.isArray(out.labels) && out.labels.every((l) => typeof l === 'string'))) delete out.labels;
-  for (const k of ['locked', 'sticker', 'hidden']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  for (const k of ['locked', 'sticker', 'hidden', 'flipX', 'flipY']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  if (o.type === 'connector' || o.type === 'group') {
+    delete out.flipX;
+    delete out.flipY;
+  }
   if (o.type === 'card') {
     if (!out.ownerId && !out.ownerName) delete out.ownerKind;
     // Free-text owners are people. A racing kind-only write must not make one look like a token-owned agent.

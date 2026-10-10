@@ -74,6 +74,15 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('preserves boolean flip flags through both template validators and rejects other values', () => {
+    const input = content([sticky('flipped', { flipX: true, flipY: false })]);
+    expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(validateContent(input).objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(() => validateTemplateContent(content([sticky('bad', { flipX: 'yes' })]))).toThrow(/flipX.*boolean/i);
+    expect(() => validateContent(content([sticky('bad', { flipY: 1 })]))).toThrow(/flipY.*boolean/i);
+    expect(() => validateContent(content([{ ...sticky('wire'), type: 'connector', flipX: true }]))).toThrow(/connector.*flip flags/i);
+  });
+
   it('keeps every built-in template as it is, and the client accepts what comes out', () => {
     for (const def of TEMPLATES) {
       const made = builtinToCustom(def, 'u1').content;

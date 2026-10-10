@@ -29,6 +29,8 @@ function handledKeys(): Set<string> {
     if (!key.startsWith('arrow')) ids.add(key);
   }
   for (const [, n] of body.matchAll(/e\.shiftKey && e\.code === 'Digit(\d)'/g)) ids.add(`shift+${n}`);
+  if (/e\.shiftKey && [^{]*k === 'h'/.test(body)) ids.add('shift+h');
+  if (/e\.shiftKey && [^{]*k === 'v'/.test(body)) ids.add('shift+v');
   if (body.includes("k.startsWith('arrow')")) ids.add('arrows');
   if (body.includes("e.code === 'Space'")) ids.add('space');
   return ids;
@@ -71,5 +73,12 @@ describe('keyboard shortcuts dialog', () => {
     const row = (id: string) => SHORTCUTS.find((s) => s.ids.includes(id));
     expect(row(']')?.action).toMatch(/bring to front/i);
     expect(row('[')?.action).toMatch(/send to back/i);
+  });
+
+  it('documents the flip shortcuts without taking the plain hand and select keys', () => {
+    expect(SHORTCUTS.find((s) => s.ids.includes('shift+h'))?.action).toMatch(/flip.*horizontally/i);
+    expect(SHORTCUTS.find((s) => s.ids.includes('shift+v'))?.action).toMatch(/flip.*vertically/i);
+    expect(TOOL_KEYS.h).toEqual({ kind: 'hand' });
+    expect(TOOL_KEYS.v).toEqual({ kind: 'select' });
   });
 });

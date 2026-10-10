@@ -185,6 +185,11 @@ describe('keys', () => {
     expect(keyIntent('L', { ...NONE, shift: true })).toBe('lock');
   });
 
+  it('lets Shift+H and Shift+V reach the board flip shortcuts', () => {
+    expect(keyIntent('H', { ...NONE, shift: true })).toBeNull();
+    expect(keyIntent('V', { ...NONE, shift: true })).toBeNull();
+  });
+
   it('moves the row with Alt and the up and down arrows', () => {
     expect(keyIntent('ArrowUp', { ...NONE, alt: true })).toBe('moveUp');
     expect(keyIntent('ArrowDown', { ...NONE, alt: true })).toBe('moveDown');

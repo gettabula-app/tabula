@@ -113,6 +113,20 @@ describe('create', () => {
     expect(zs.every((z) => z > (fresh.get('old') as any).z)).toBe(true);
   });
 
+  it('creates and updates box flip flags as booleans and returns them from object reads', () => {
+    const d = new Y.Doc();
+    const made = create(d, [{ type: 'shape', x: 10, y: 20, flipX: true, flipY: false }]);
+    const id = made.created[0].id;
+    expect(new Store(d).get(id)).toMatchObject({ flipX: true, flipY: false });
+    expect(getObjectsDetail(d, [id]).objects[0]).toMatchObject({ flipX: true, flipY: false });
+
+    update(d, [{ id, flipX: false, flipY: true }]);
+    expect(getObjectsDetail(d, [id]).objects[0]).toMatchObject({ flipX: false, flipY: true });
+    expect(failure(() => planCreate(new Y.Doc(), [{ type: 'shape', x: 0, y: 0, flipX: 'true' }], who)).path).toBe('objects[0].flipX');
+    expect(failure(() => planUpdate(d, [{ id, flipY: 1 }])).path).toBe('updates[0].flipY');
+    expect(failure(() => planUpdate(d, [{ id, flipX: null }])).path).toBe('updates[0].flipX');
+  });
+
   it('takes fonts from the board settings', () => {
     const d = new Y.Doc();
     d.getMap('meta').set('bodyFont', 'inter');

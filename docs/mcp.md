@@ -186,7 +186,7 @@ End       { id: string, side?: 'top'|'right'|'bottom'|'left' }   an object (side
         | { ref: string, side? }                                  an object created earlier or later in the same create_objects call
         | { x: number, y: number }                                a free point; stored as { kind: 'free', x, y }
 Parent    string (the id of an existing frame) | { ref: string } (a frame created in the same call)
-Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?, fill?, parent?, hidden?: true, locked?: true }   boxes
+Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?, fill?, parent?, hidden?: true, locked?: true, flipX?: boolean, flipY?: boolean }   boxes
           { id, type: 'connector', from: End, to: End, route, startHead, endHead, label?, dash?, relation? }                     connectors (End as stored)
 ```
 
@@ -226,10 +226,10 @@ Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 deci
 `{ boardId, objects: Item[1..100] }`. Every item has a `type` and an optional `ref` (1 to 32 characters of `[A-Za-z0-9_-]`, unique in the call) that connectors in the same call can point at.
 
 ```
-{ type: 'sticky',    text, x, y, w? = 192, h? = 192, color?, parent? }
-{ type: 'shape',     kind? = 'rect', text?, x, y, w? = 160, h? = 100, fill?, stroke?, parent? }      kind: any ShapeKind in src/types.ts
-{ type: 'text',      text, x, y, w? = 240, fontSize? = 20, parent? }                                   h computed from the text like the template builder
-{ type: 'frame',     name, x, y, w? = 960, h? = 600, fill?, parent? }
+{ type: 'sticky',    text, x, y, w? = 192, h? = 192, color?, parent?, flipX?, flipY? }
+{ type: 'shape',     kind? = 'rect', text?, x, y, w? = 160, h? = 100, fill?, stroke?, parent?, flipX?, flipY? }      kind: any ShapeKind in src/types.ts
+{ type: 'text',      text, x, y, w? = 240, fontSize? = 20, parent?, flipX?, flipY? }                                   h computed from the text like the template builder
+{ type: 'frame',     name, x, y, w? = 960, h? = 600, fill?, parent?, flipX?, flipY? }
 { type: 'connector', from: End, to: End, label?, route? = 'elbow', startHead? = 'none', endHead? = 'arrow', dash?, stroke? }
 ```
 
@@ -237,20 +237,20 @@ Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label`
 
 Result: `{ created: [{ref?, id, type}], refs: {ref: id}, objectCount }`. New objects are placed above everything else: `z` comes from `generateNKeysBetween` over the current maximum (`fractional-indexing` is already a dependency), in input order. Fonts come from the board's `meta` (`bodyFont`, `headingFont` for frames) like the app does. The call fails with `limit_exceeded` if the board would exceed 5,000 objects.
 
-Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. Text may not contain control characters (other than newline and tab) or tag characters, except a complete subdivision flag sequence. Only sticky, shape, text, frame and connector objects can be created. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused here; use the kanban tools to create lanes and cards. Icon bodies are SVG (see "Not in this slice").
+Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. `flipX` and `flipY` are optional booleans on box objects. They mirror drawn content; sticky notes and text remain readable, and the board UI disables flips for frames, containers, lanes and cards. Text may not contain control characters (other than newline and tab) or tag characters, except a complete subdivision flag sequence. Only sticky, shape, text, frame and connector objects can be created. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused here; use the kanban tools to create lanes and cards. Icon bodies are SVG (see "Not in this slice").
 
 ### `update_objects`
 
 `{ boardId, updates: [{ id, ...fields }][1..100] }`. Fields that may change, by type:
 
 ```
-sticky       x y w h rotation(deg) parent(frame or group id | null), text, color
-shape        x y w h rotation(deg) parent(frame or group id | null), text, kind, fill, stroke, strokeWidth
-text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, textColor
-frame        x y w h rotation(deg) parent(frame or group id | null), name, fill
+sticky       x y w h rotation(deg) parent(frame or group id | null), text, color, flipX, flipY
+shape        x y w h rotation(deg) parent(frame or group id | null), text, kind, fill, stroke, strokeWidth, flipX, flipY
+text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, textColor, flipX, flipY
+frame        x y w h rotation(deg) parent(frame or group id | null), name, fill, flipX, flipY
 connector    from, to, label, route, startHead, endHead, dash, stroke
 group        name only
-icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id | null)
+icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id | null), flipX, flipY
 ```
 
 `null` clears an optional field; `type`, `id` and reserved fields such as `createdBy`, `updatedAt`, `proposedBy` and `locked` cannot change. A field that does not belong to the object's type is `invalid_input` with its field path. An unknown field is refused for every type. A changed connector end cannot target a lane or kanban container; this is `invalid_input` at `updates[n].from` or `updates[n].to`. Existing connectors already bound to a lane or container remain supported: leaving that end unchanged (including setting the same end again) or changing another field such as the label succeeds. Cards remain valid connector ends. Cards are refused with a pointer to `update_kanban_card`; lanes use `update_kanban_lane`; containers are refused here because their geometry is derived, and `create_kanban` creates one with its lanes. Each accepted field is set on its own `Y.Map` key, so an edit to `text` by the AI and a simultaneous move by a person both survive. `updatedAt` is set. Moving a frame does not move its children; update them too. A `parent` must be an existing frame or group on this board, and a parent that would create a cycle is refused. **If any id is unknown or any target is `locked`, the whole call fails (`not_found` / `conflict`) and nothing changes.**
