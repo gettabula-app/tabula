@@ -12,12 +12,12 @@ import { clientIpOf } from './client-ip.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
   codePointLength, isDueDate, isLaneStage, isSafeHttpUrl, isWipLimit, LABEL_COLORS,
-  cleanLabelName, cleanLaneName, rankBetween, sortedChildren, validLabel, validLabelColor, wipCheck,
+  cleanLabelName, cleanLaneName, planInsert, sortedChildren, validLabel, validLabelColor, wipCheck,
 } from '../shared/containers.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
   addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
-  listThreads, planAddKanbanLane, planCreate, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel, planDeleteKanbanLane,
+  listThreads, planAddKanbanLane, planCreate, planCreateKanban, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel, planDeleteKanbanLane,
   planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, planUseTemplate, resolveAnchor, summariseBoard,
   objectVisibility,
 } from './board-ops.mjs';
@@ -350,11 +350,11 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     return lane;
   }
 
-  function visibleCard(state, cardId) {
+  function visibleCard(state, cardId, path = 'cardId') {
     const card = state.byId.get(cardId);
-    if (card?.type !== 'card' || !state.isVisible(card)) throw new OpsError('not_found', 'Card not found', 'cardId');
+    if (card?.type !== 'card' || !state.isVisible(card)) throw new OpsError('not_found', 'Card not found', path);
     const lane = state.lanes.find((item) => item.id === card.parent);
-    if (!lane) throw new OpsError('not_found', 'Card not found', 'cardId');
+    if (!lane) throw new OpsError('not_found', 'Card not found', path);
     return { card, lane };
   }
 
@@ -493,6 +493,151 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   };
   const afterLaneInput = (value, path) => value === null ? null : check.idString(value, path);
 
+  function addCardInput(doc, raw, path) {
+    const field = (key) => path ? `${path}.${key}` : key;
+    check.record(raw, path, ['laneId', 'stage', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind', 'afterCardId']);
+    const input = { ...raw, title: cardTitleInput(check.required(raw, 'title', path), field('title')) };
+    if (raw.description !== undefined) input.description = check.text(raw.description, field('description'), 0, KANBAN_LIMITS.description);
+    if (raw.due !== undefined && !isDueDate(raw.due)) throw new OpsError('invalid_input', 'Must be a real date in YYYY-MM-DD format from 1900 to 2200', field('due'));
+    if (raw.link !== undefined) input.link = linkValue(raw.link, field('link'));
+    if (raw.ownerKind !== undefined) input.ownerKind = check.choice(raw.ownerKind, OWNER_KINDS, field('ownerKind'));
+    if (raw.ownerName !== undefined && raw.ownerName !== null) {
+      input.ownerName = ownerNameInput(raw.ownerName, field('ownerName'));
+      if (!input.ownerName) throw new OpsError('invalid_input', 'Owner name cannot be empty; use null to clear an owner', field('ownerName'));
+    }
+    if (raw.labels !== undefined) input.labels = checkedCardLabels(doc, raw.labels, field('labels'));
+    if (raw.afterCardId !== undefined && raw.afterCardId !== null) input.afterCardId = check.idString(raw.afterCardId, field('afterCardId'));
+    return input;
+  }
+
+  function cardInsertionIndex(state, lane, afterCardId, path, excludingId = null) {
+    const cards = state.allCardsByLane.get(lane.id) ?? [];
+    const remaining = cards.filter((card) => card.id !== excludingId);
+    if (afterCardId === undefined) return remaining.length;
+    if (afterCardId === null) return 0;
+    const id = check.idString(afterCardId, path);
+    if (id === excludingId) throw new OpsError('invalid_input', 'A card cannot be placed after itself', path);
+    if (!(state.cardsByLane.get(lane.id) ?? []).some((card) => card.id === id)) {
+      throw new OpsError('not_found', 'Card not found in the target lane', path);
+    }
+    const index = remaining.findIndex((card) => card.id === id);
+    if (index < 0) throw new OpsError('not_found', 'Card not found in the target lane', path);
+    return index + 1;
+  }
+
+  function addCardPlan(doc, actor, kanbanId, raw, path = '') {
+    const field = (key) => path ? `${path}.${key}` : key;
+    const input = addCardInput(doc, raw, path);
+    const state = kanbanView(doc, kanbanId);
+    const lane = resolveCardLane(state, input, path);
+    if (state.map.size >= LIMITS.boardObjects) throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, path || 'kanbanId');
+    const cardsOnBoard = state.all.filter((object) => object.type === 'card');
+    if (cardsOnBoard.length >= KANBAN_LIMITS.cards) throw new OpsError('limit_exceeded', `A board holds at most ${KANBAN_LIMITS.cards} cards`, path || 'kanbanId');
+    const laneCards = state.allCardsByLane.get(lane.id) ?? [];
+    if (laneCards.length >= KANBAN_LIMITS.cardsPerLane) throw new OpsError('limit_exceeded', `A lane holds at most ${KANBAN_LIMITS.cardsPerLane} cards`, field('laneId'));
+    let id = newObjectId();
+    while (state.map.has(id)) id = newObjectId();
+    const afterPath = field('afterCardId');
+    const index = cardInsertionIndex(state, lane, input.afterCardId, afterPath);
+    const wip = wipCheck(lane, laneCards.map((card) => ({ id: card.id })), [id]);
+    if (!wip.ok) throw new OpsError('wip_limit', `This lane is at its WIP limit (${laneCards.length}/${wip.limit}).`, field(input.laneId === undefined ? 'stage' : 'laneId'));
+    const insertion = planInsert(laneCards, lane.id, index, 1);
+    if (insertion.repairs.some((repair) => state.byId.get(repair.id)?.locked === true)) {
+      throw new OpsError('conflict', 'A locked card prevents the lane order from being repaired', afterPath);
+    }
+    const owner = ownerChanges(actor, null, input, path);
+    const stamp = now();
+    const fields = {
+      id, type: 'card', parent: lane.id, rank: insertion.ranks[0], text: input.title,
+      x: (Number(lane.x) || 0) + KANBAN.lanePad, y: Number(lane.y) || 0,
+      w: Math.max(8, (Number(lane.w) || KANBAN.laneW) - KANBAN.lanePad * 2),
+      // Initial fallback only: an editor client measures the content in its browser and shares the corrected height.
+      h: KANBAN.cardH,
+      rotation: 0, z: typeof lane.z === 'string' ? lane.z : '', createdBy: actor.createdBy, updatedAt: stamp,
+      ...(input.description ? { desc: input.description } : {}), ...(input.due ? { due: input.due } : {}),
+      ...(input.link ? { link: input.link } : {}), ...(input.labels === undefined ? {} : { labels: input.labels }),
+      ...owner.sets,
+    };
+    for (const key of owner.unsets) delete fields[key];
+    const ops = insertion.repairs.flatMap((repair) => [
+      { op: 'set', id: repair.id, key: 'parent', value: repair.parent },
+      { op: 'set', id: repair.id, key: 'rank', value: repair.rank },
+    ]);
+    ops.push({ op: 'create', id, fields });
+    return {
+      ops,
+      result: cardOutput(doc, fields, lane),
+      audit: { count: 1 + insertion.repairs.length, ids: [id, ...insertion.repairs.map((repair) => repair.id)] },
+    };
+  }
+
+  function moveCardPlan(doc, actor, kanbanId, input, path = '') {
+    const field = (key) => path ? `${path}.${key}` : key;
+    check.record(input, path, ['cardId', 'laneId', 'stage', 'afterCardId']);
+    const cardId = check.idString(check.required(input, 'cardId', path), field('cardId'));
+    const state = kanbanView(doc, kanbanId);
+    const { card, lane: oldLane } = visibleCard(state, cardId, field('cardId'));
+    if (card.locked === true) throw new OpsError('conflict', 'The object is locked', field('cardId'));
+    if (card.ownerKind === 'agent' && card.ownerId !== actor.tokenId) {
+      throw new OpsError('conflict', 'The card is assigned to another agent', field('cardId'));
+    }
+    const lane = resolveCardLane(state, input, path);
+    if (lane.id === oldLane.id && input.afterCardId === undefined) {
+      return { ops: [], result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [] } };
+    }
+    const targetCards = state.allCardsByLane.get(lane.id) ?? [];
+    const index = cardInsertionIndex(state, lane, input.afterCardId, field('afterCardId'), card.id);
+    const others = targetCards.filter((item) => item.id !== card.id);
+    const desired = [...others.slice(0, index), card, ...others.slice(index)];
+    if (lane.id === oldLane.id && desired.every((item, i) => item.id === targetCards[i]?.id)) {
+      return { ops: [], result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [] } };
+    }
+    if (lane.id !== oldLane.id) {
+      const wip = wipCheck(lane, targetCards.map((item) => ({ id: item.id })), [card.id]);
+      if (!wip.ok) throw new OpsError('wip_limit', `This lane is at its WIP limit (${targetCards.length}/${wip.limit}).`, field(input.laneId === undefined ? 'stage' : 'laneId'));
+    }
+    const insertion = planInsert(others, lane.id, index, 1);
+    if (insertion.repairs.some((repair) => state.byId.get(repair.id)?.locked === true)) {
+      throw new OpsError('conflict', 'A locked card prevents the lane order from being repaired', field('afterCardId'));
+    }
+    const stamp = now();
+    const ops = insertion.repairs.flatMap((repair) => [
+      { op: 'set', id: repair.id, key: 'parent', value: repair.parent },
+      { op: 'set', id: repair.id, key: 'rank', value: repair.rank },
+    ]);
+    ops.push({ op: 'set', id: card.id, key: 'parent', value: lane.id });
+    ops.push({ op: 'set', id: card.id, key: 'rank', value: insertion.ranks[0] });
+    ops.push({ op: 'set', id: card.id, key: 'updatedAt', value: stamp });
+    const moved = { ...card, parent: lane.id, rank: insertion.ranks[0], updatedAt: stamp };
+    return {
+      ops,
+      result: { moved: true, card: cardOutput(doc, moved, lane) },
+      audit: { count: 1 + insertion.repairs.length, ids: [card.id, ...insertion.repairs.map((repair) => repair.id)] },
+    };
+  }
+
+  function sequentialCardPlan(doc, steps, build) {
+    const draft = new Y.Doc();
+    Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+    const ops = [];
+    const results = [];
+    const ids = [];
+    let count = 0;
+    try {
+      for (const { item, path } of steps) {
+        const plan = build(draft, item, path);
+        applyPlan(draft, plan);
+        ops.push(...plan.ops);
+        results.push(plan.result);
+        ids.push(...plan.audit.ids);
+        count += plan.audit.count;
+      }
+      return { ops, result: results, audit: { count, ids } };
+    } finally {
+      draft.destroy();
+    }
+  }
+
   /** @type {{ name: string, title: string, description: string, scope: 'read' | 'comment' | 'write', mutating?: boolean, accountsOnly?: boolean, annotations: object, inputSchema: object, run: (actor: any, args: any) => any }[]} */
   const tools = [
     {
@@ -597,6 +742,37 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const boardId = boardArgs(args, ['ids']);
         const ids = [...new Set(check.listOf(check.required(args, 'ids', ''), 'ids', 1, LIMITS.getIds).map((id, i) => check.idString(id, `ids[${i}]`)))];
         return fenced(makeCtx(actor, boardId).readBoard((doc) => getObjectsDetail(doc, ids)));
+      },
+    },
+    {
+      name: 'create_kanban',
+      title: 'Create a kanban',
+      description:
+        'Creates a kanban and its lanes with the same sizes and defaults as the board app. Without lanes it starts with To do, Doing and Done. Without x and y it is placed to the right of existing top-level board content with an 80 pixel gap. A parent may be a visible frame or group; locked ancestors prevent creation.',
+      scope: 'write',
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        boardId: boardIdSchema,
+        name: { type: 'string', minLength: 1, maxLength: KANBAN_LIMITS.containerName },
+        x: num('Left edge. Give x and y together, or omit both to place beside existing content.'),
+        y: num('Top edge. Give x and y together, or omit both to place beside existing content.'),
+        parent: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$', description: 'A visible frame or group on this board.' },
+        lanes: {
+          type: 'array', minItems: 1, maxItems: KANBAN_LIMITS.lanes,
+          items: objectSchema({
+            name: { type: 'string', minLength: 1, maxLength: KANBAN_LIMITS.laneName },
+            stage: { type: ['string', 'null'], enum: [...STAGES, null] },
+            wip: { type: ['integer', 'null'], minimum: KANBAN_LIMITS.wipMin, maximum: KANBAN_LIMITS.wipMax },
+            wipBlock: { type: 'boolean', description: 'Whether the WIP limit blocks incoming cards; requires wip.' },
+          }, ['name']),
+        },
+      }, ['boardId']),
+      run(actor, args) {
+        const boardId = boardArgs(args, ['name', 'x', 'y', 'parent', 'lanes']);
+        const input = {};
+        for (const key of ['name', 'x', 'y', 'parent', 'lanes']) if (Object.hasOwn(args, key)) input[key] = args[key];
+        return boardPlan(actor, boardId, (doc) => planCreateKanban(doc, input, { createdBy: actor.createdBy, now: now() }));
       },
     },
     {
@@ -828,7 +1004,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'add_kanban_card',
       title: 'Add a kanban card',
       description:
-        'Adds one card at the end of a lane in a kanban. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. Existing lanes only. ownerKind person can name a person; ownerKind agent assigns this token to itself. Links must use http or https.',
+        'Adds one card to a lane in a kanban. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. Omit afterCardId to append, pass null to put it first, or name a visible card in the target lane to insert after. ownerKind person can name a person; ownerKind agent assigns this token to itself. Links must use http or https.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
@@ -838,6 +1014,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           kanbanId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           laneId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           stage: { enum: STAGES },
+          afterCardId: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{1,64}$', description: 'Insert after this visible card in the target lane. Omit to append, or pass null to insert first.' },
           title: { type: 'string', minLength: 1 },
           description: { type: 'string', maxLength: KANBAN_LIMITS.description },
           due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
@@ -850,54 +1027,16 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         ['boardId', 'kanbanId', 'title'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['kanbanId', 'laneId', 'stage', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
+        const boardId = boardArgs(args, ['kanbanId', 'laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
-        const title = cardTitleInput(check.required(args, 'title', ''), 'title');
-        const normalizedInput = { ...args, title };
-        if (args.description !== undefined) normalizedInput.description = check.text(args.description, 'description', 0, KANBAN_LIMITS.description);
-        if (args.due !== undefined && !isDueDate(args.due)) throw new OpsError('invalid_input', 'Must be a real date in YYYY-MM-DD format from 1900 to 2200', 'due');
-        if (args.link !== undefined) normalizedInput.link = linkValue(args.link, 'link');
-        if (args.ownerKind !== undefined) normalizedInput.ownerKind = check.choice(args.ownerKind, OWNER_KINDS, 'ownerKind');
-        if (args.ownerName !== undefined && args.ownerName !== null) {
-          normalizedInput.ownerName = ownerNameInput(args.ownerName, 'ownerName');
-          if (!normalizedInput.ownerName) throw new OpsError('invalid_input', 'Owner name cannot be empty; use null to clear an owner', 'ownerName');
+        const fields = {};
+        for (const key of ['laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']) {
+          if (Object.hasOwn(args, key)) fields[key] = args[key];
         }
-        const done = makeCtx(actor, boardId).writeBoard((doc) => {
-          const state = kanbanView(doc, kanbanId);
-          const lane = resolveCardLane(state, normalizedInput);
-          if (state.map.size >= LIMITS.boardObjects) throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'kanbanId');
-          const cardsOnBoard = state.all.filter((o) => o.type === 'card');
-          if (cardsOnBoard.length >= KANBAN_LIMITS.cards) throw new OpsError('limit_exceeded', `A board holds at most ${KANBAN_LIMITS.cards} cards`, 'kanbanId');
-          const cardsInLane = cardsOnBoard.filter((o) => o.parent === lane.id);
-          if (cardsInLane.length >= KANBAN_LIMITS.cardsPerLane) throw new OpsError('limit_exceeded', `A lane holds at most ${KANBAN_LIMITS.cardsPerLane} cards`, 'laneId');
-          let id = newObjectId();
-          while (state.map.has(id)) id = newObjectId();
-          const laneCards = state.allCardsByLane.get(lane.id) ?? [];
-          const wip = wipCheck(lane, laneCards.map((card) => ({ id: card.id })), [id]);
-          if (!wip.ok) throw new OpsError('wip_limit', `This lane is at its WIP limit (${laneCards.length}/${wip.limit}).`, 'laneId');
-          const owner = ownerChanges(actor, null, normalizedInput);
-          const fields = {
-            id, type: 'card', parent: lane.id, rank: rankBetween(laneCards.at(-1)?.rank ?? null, null, lane.id),
-            text: title, x: (Number(lane.x) || 0) + KANBAN.lanePad, y: Number(lane.y) || 0,
-            w: Math.max(8, (Number(lane.w) || KANBAN.laneW) - KANBAN.lanePad * 2),
-            // Initial fallback only: an editor client measures the content in its browser and shares the corrected height.
-            h: KANBAN.cardH,
-            rotation: 0, z: typeof lane.z === 'string' ? lane.z : '', createdBy: actor.createdBy, updatedAt: now(),
-            ...(normalizedInput.description ? { desc: normalizedInput.description } : {}),
-            ...(normalizedInput.due ? { due: normalizedInput.due } : {}),
-            ...(normalizedInput.link ? { link: normalizedInput.link } : {}),
-            ...(normalizedInput.labels === undefined ? {} : { labels: checkedCardLabels(doc, normalizedInput.labels, 'labels') }),
-            ...owner.sets,
-          };
-          for (const key of owner.unsets) delete fields[key];
-          state.map.set(id, new Y.Map(Object.entries(fields).filter(([, value]) => value !== undefined)));
-          const card = { ...fields, id };
-          return {
-            result: cardOutput(doc, card, lane),
-            audit: { count: 1, ids: [id] },
-          };
+        return boardPlan(actor, boardId, (doc) => {
+          const plan = addCardPlan(doc, actor, kanbanId, fields);
+          return { ...plan, result: { card: plan.result } };
         });
-        return { ...fenced({ card: done.result }), audit: { room: 'board', boardId, ...done.audit } };
       },
     },
     {
@@ -982,7 +1121,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'move_kanban_card',
       title: 'Move a kanban card',
       description:
-        'Moves one card to a lane in the same kanban and appends it after that lane’s cards. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. It never creates lanes. Hidden or locked cards cannot be moved.',
+        'Moves one card to a lane in the same kanban. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. Omit afterCardId to append when changing lanes, pass null to put it first, or name a visible card in the target lane to insert after. A card can be reordered within its lane. Hidden, locked and cards assigned to another agent cannot be moved.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -993,30 +1132,88 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           cardId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           laneId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           stage: { enum: STAGES },
+          afterCardId: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{1,64}$', description: 'Insert after this visible card in the target lane. Omit to append, or pass null to insert first.' },
         },
         ['boardId', 'kanbanId', 'cardId'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['kanbanId', 'cardId', 'laneId', 'stage']);
+        const boardId = boardArgs(args, ['kanbanId', 'cardId', 'laneId', 'stage', 'afterCardId']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
-        const cardId = check.idString(check.required(args, 'cardId', ''), 'cardId');
-        const done = makeCtx(actor, boardId).writeBoard((doc) => {
-          const state = kanbanView(doc, kanbanId);
-          const { card, lane: oldLane } = visibleCard(state, cardId);
-          if (card.locked === true) throw new OpsError('conflict', 'The object is locked', 'cardId');
-          const lane = resolveCardLane(state, args);
-          if (lane.id === oldLane.id) return { result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [card.id] } };
-          const targetCards = (state.allCardsByLane.get(lane.id) ?? []).filter((item) => item.id !== card.id);
-          const wip = wipCheck(lane, targetCards.map((item) => ({ id: item.id })), [card.id]);
-          if (!wip.ok) throw new OpsError('wip_limit', `This lane is at its WIP limit (${targetCards.length}/${wip.limit}).`, 'laneId');
-          const rank = rankBetween(targetCards.at(-1)?.rank ?? null, null, lane.id);
-          card.map.set('parent', lane.id);
-          card.map.set('rank', rank);
-          card.map.set('updatedAt', now());
-          const moved = { ...card, parent: lane.id, rank, updatedAt: now() };
-          return { result: { moved: true, card: cardOutput(doc, moved, lane) }, audit: { count: 1, ids: [card.id] } };
+        const input = {};
+        for (const key of ['cardId', 'laneId', 'stage', 'afterCardId']) if (Object.hasOwn(args, key)) input[key] = args[key];
+        return boardPlan(actor, boardId, (doc) => {
+          const plan = moveCardPlan(doc, actor, kanbanId, input);
+          return plan;
         });
-        return { ...fenced(done.result), audit: { room: 'board', boardId, ...done.audit } };
+      },
+    },
+    {
+      name: 'add_kanban_cards',
+      title: 'Add kanban cards',
+      description:
+        'Adds up to 25 cards in one all-or-nothing change. Each card uses the same fields and validation as add_kanban_card. WIP blocking is checked in input order. Omit afterCardId to append, pass null to put a card first, or name a visible card in its target lane to insert after.',
+      scope: 'write',
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      inputSchema: objectSchema({
+        boardId: boardIdSchema,
+        kanbanId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
+        cards: {
+          type: 'array', minItems: 1, maxItems: 25,
+          items: objectSchema({
+            laneId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
+            stage: { enum: STAGES },
+            afterCardId: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{1,64}$' },
+            title: { type: 'string', minLength: 1 },
+            description: { type: 'string', maxLength: KANBAN_LIMITS.description },
+            due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+            labels: { type: 'array', items: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, maxItems: KANBAN_LIMITS.labelsPerCard, uniqueItems: true },
+            link: { type: 'string', maxLength: CARD_LINK_MAX },
+            ownerId: { type: 'string', maxLength: 64 }, ownerName: { type: 'string' }, ownerKind: { enum: OWNER_KINDS },
+          }, ['title']),
+        },
+      }, ['boardId', 'kanbanId', 'cards']),
+      run(actor, args) {
+        const boardId = boardArgs(args, ['kanbanId', 'cards']);
+        const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
+        const cards = check.listOf(check.required(args, 'cards', ''), 'cards', 1, 25);
+        const steps = cards.map((item, i) => ({ item, path: `cards[${i}]` }));
+        return boardPlan(actor, boardId, (doc) => {
+          const plan = sequentialCardPlan(doc, steps, (draft, item, path) => addCardPlan(draft, actor, kanbanId, item, path));
+          return { ...plan, result: { cards: plan.result } };
+        });
+      },
+    },
+    {
+      name: 'move_kanban_cards',
+      title: 'Move kanban cards',
+      description:
+        'Moves up to 25 cards in one all-or-nothing change. Each move uses the same lane and card protections as move_kanban_card. WIP blocking is checked in input order. Omit afterCardId to append when changing lanes, pass null to put a card first, or name a visible card in the target lane to insert after.',
+      scope: 'write',
+      mutating: true,
+      annotations: { readOnlyHint: false, destructiveHint: true },
+      inputSchema: objectSchema({
+        boardId: boardIdSchema,
+        kanbanId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
+        moves: {
+          type: 'array', minItems: 1, maxItems: 25,
+          items: objectSchema({
+            cardId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
+            laneId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
+            stage: { enum: STAGES },
+            afterCardId: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_-]{1,64}$' },
+          }, ['cardId']),
+        },
+      }, ['boardId', 'kanbanId', 'moves']),
+      run(actor, args) {
+        const boardId = boardArgs(args, ['kanbanId', 'moves']);
+        const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
+        const moves = check.listOf(check.required(args, 'moves', ''), 'moves', 1, 25);
+        const steps = moves.map((item, i) => ({ item, path: `moves[${i}]` }));
+        return boardPlan(actor, boardId, (doc) => {
+          const plan = sequentialCardPlan(doc, steps, (draft, item, path) => moveCardPlan(draft, actor, kanbanId, item, path));
+          return { ...plan, result: { moves: plan.result } };
+        });
       },
     },
     {
@@ -1277,10 +1474,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     body: rpcError(id, -32000, 'Too many requests. Slow down and retry later.', { error: 'rate_limited', retryAfterSec: wait }),
   });
 
+  // A body above the limit is read and thrown away (up to DRAIN_BYTES) before the 413 goes out: answering while the client
+  // is still writing makes some systems reset the connection, and the client then sees a reset instead of the 413.
+  const DRAIN_BYTES = 4 * LIMITS.bodyBytes;
   function readBody(req) {
     return new Promise((resolve, reject) => {
       const tooLarge = () => new HttpFail(413, 'payload_too_large', 'The request body is too large.');
-      if (Number(req.headers['content-length']) > LIMITS.bodyBytes) {
+      if (Number(req.headers['content-length']) > DRAIN_BYTES) {
         req.resume();
         reject(tooLarge());
         return;
@@ -1295,10 +1495,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       };
       req.on('data', (chunk) => {
         size += chunk.length;
-        if (size > LIMITS.bodyBytes) done(reject, tooLarge());
-        else if (!settled) chunks.push(chunk);
+        if (size <= LIMITS.bodyBytes) chunks.push(chunk);
+        else if (size > DRAIN_BYTES) done(reject, tooLarge());
       });
-      req.on('end', () => done(resolve, Buffer.concat(chunks).toString('utf8')));
+      req.on('end', () => (size > LIMITS.bodyBytes ? done(reject, tooLarge()) : done(resolve, Buffer.concat(chunks).toString('utf8'))));
       req.on('error', (err) => done(reject, err));
       req.on('close', () => done(reject, new HttpFail(400, 'bad_request', 'The request was aborted.')));
     });

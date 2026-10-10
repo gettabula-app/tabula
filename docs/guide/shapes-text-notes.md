@@ -58,6 +58,7 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 - `Esc` or `Ctrl+Enter` (`Cmd+Enter` on Mac) finishes.
 - `Tab` finishes.
 - In shapes, notes and text boxes, `Enter` starts a new line. In frame names and connector labels, `Enter` finishes.
+- Select **Add emoji** in the small bar beside the text box to open the emoji picker: type to search, use the arrow keys or tap to choose one, and it goes in at the cursor. Recent emoji come first. Emoji made of several parts, such as flags and families, stay in one piece when a line wraps, and they come out whole in PNG and Markdown exports and for everyone else on the board.
 
 ### Alignment
 

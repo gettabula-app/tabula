@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1440];
+const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1280, 1440];
 // VISUAL_HEIGHT=390 npm run visual ... forces one window height for every width (a short landscape phone: --widths 844)
 const heightFor = (width) => Number(process.env.VISUAL_HEIGHT) || (width <= 500 ? 844 : 800);
 const BOARD_ID = 'visual-seed';
@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -66,6 +66,64 @@ function readThemes() {
 }
 
 // ---------------------------------------------------------------- states
+
+async function openEmojiPickerForNote(env) {
+  await openSeedBoard(env);
+  await env.page.evaluate(() => window.__board.editor.start('seed-note-1'));
+  await env.page.locator('.edit-bar.show').waitFor();
+  await env.page.waitForFunction(() => {
+    const textarea = document.querySelector('.text-editor');
+    return textarea && document.activeElement === textarea && textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length;
+  });
+  await env.page.locator('.text-editor').press('End');
+  await env.page.getByRole('button', { name: 'Add emoji' }).click();
+  await env.page.locator('.emoji-pop').waitFor();
+}
+
+/** The soft keyboard shrinks the visual viewport (not the window): the bar and the picker must stay in what is left, clear of the top bars. */
+async function emojiKeyboard(env, noteTop) {
+  const page = env.page;
+  await openSeedBoard(env);
+  await page.evaluate(() => {
+    window.__kb = 0;
+    const real = window.visualViewport;
+    const vv = new Proxy(real, { get(t, k) { if (k === 'height') return window.innerHeight - window.__kb; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+    Object.defineProperty(window, 'visualViewport', { get: () => vv, configurable: true });
+    window.__board.editor.start('seed-note-1');
+  });
+  await page.locator('.edit-bar.show').waitFor();
+  if (noteTop !== null) {
+    // pan so the note sits near the top of the screen, as on a phone where the board is zoomed on its first notes
+    await page.evaluate((top) => {
+      const app = window.__board;
+      const now = document.querySelector('.text-editor').getBoundingClientRect().top;
+      app.r.setCamera({ y: app.r.cam.y + (now - top) / app.zoom });
+    }, noteTop);
+    await page.waitForTimeout(200);
+  }
+  await page.evaluate(() => { window.__kb = 300; window.visualViewport.dispatchEvent(new Event('resize')); });
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Add emoji' }).click();
+  await page.locator('.emoji-pop').waitFor();
+  await page.waitForTimeout(300);
+  const result = await page.evaluate(() => {
+    const visible = innerHeight - window.__kb;
+    const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const bar = box('.edit-bar.show'), pop = box('.emoji-pop'), search = document.querySelector('.emoji-pop [aria-label="Search emoji"]').getBoundingClientRect();
+    const failures = [];
+    if (bar.bottom > visible) failures.push(`the Add emoji bar ends at ${Math.round(bar.bottom)}, under the keyboard (${visible} visible)`);
+    if (pop.bottom > visible) failures.push(`the picker ends at ${Math.round(pop.bottom)}, under the keyboard (${visible} visible)`);
+    if (search.bottom > visible || search.height < 40) failures.push('the search field is under the keyboard or squeezed');
+    if (pop.height < 200) failures.push(`the picker is only ${Math.round(pop.height)} px tall`);
+    for (const sel of ['.top-left', '.top-right']) {
+      const r = document.querySelector(sel)?.getBoundingClientRect();
+      if (r && bar.left < r.right && bar.right > r.left && bar.top < r.bottom && bar.bottom > r.top) failures.push(`the Add emoji bar is under ${sel}`);
+    }
+    return { failures, visible, bar: { top: bar.top, bottom: bar.bottom }, pop: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+  });
+  console.log(`emoji-keyboard ${JSON.stringify(result)}`);
+  if (result.failures.length) throw new Error(`emoji-keyboard: ${JSON.stringify(result.failures)}`);
+}
 
 // Pending Fontshare stylesheets and the fonts that follow them are the only thing that changes the picture after load.
 const settle = (page) =>
@@ -1487,6 +1545,166 @@ const STATES = {
     await STATES.admin(env);
     await pressRoles(env.page);
   },
+  // sticky notes with emoji: the sequences that break when text is cut between code points (ZWJ families, skin tones, flags, keycaps), and a row too long for the note
+  async 'emoji-text'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const set = (id, text) => app.store.transact(() => app.store.update(id, { text }));
+      set('seed-note-1', 'Ship it \u{1F680} \u{1F44D}\u{1F3FD}');
+      set('seed-note-2', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} family \u{1F1F8}\u{1F1EA} 1\uFE0F\u20E3');
+      set('seed-note-3', '\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}1\uFE0F\u20E3\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}');
+      app.zoomToFit();
+      app.zoomBy(2.4);
+    });
+    await settle(env.page);
+  },
+  async 'emoji-picker'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const result = await page.evaluate(() => {
+      const bar = document.querySelector('.edit-bar.show').getBoundingClientRect();
+      const button = document.querySelector('.edit-emoji');
+      const buttonBox = button.getBoundingClientRect();
+      const picker = document.querySelector('.emoji-pop');
+      const pickerBox = picker.getBoundingClientRect();
+      const noteBox = document.querySelector('.text-editor').getBoundingClientRect();
+      const search = picker.querySelector('[aria-label="Search emoji"]');
+      const buttons = [...document.querySelectorAll('.edit-emoji, .emoji-cell')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { width: box.width, height: box.height, label: el.getAttribute('aria-label') };
+      });
+      const hit = document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
+      const outside = (box) => box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
+      return {
+        pickerHeight: pickerBox.height, overNote: !(pickerBox.right <= noteBox.left || pickerBox.left >= noteBox.right || pickerBox.bottom <= noteBox.top || pickerBox.top >= noteBox.bottom),
+        barOutside: outside(bar), pickerOutside: outside(pickerBox), pickerWidth: pickerBox.width, windowWidth: innerWidth,
+        small: buttons.filter((box) => box.width < 44 || box.height < 44), hitButton: hit === button, searchFocused: document.activeElement === search,
+      };
+    });
+    if (result.barOutside) throw new Error('emoji-picker: edit bar is outside the window');
+    if (result.pickerOutside) throw new Error('emoji-picker: picker is outside the window');
+    if (result.overNote) throw new Error('emoji-picker: the picker covers the note being edited');
+    if (result.pickerHeight < 220) throw new Error(`emoji-picker: the picker is only ${Math.round(result.pickerHeight)} px tall, under four rows`);
+    if (result.pickerWidth > result.windowWidth) throw new Error(`emoji-picker: picker width ${result.pickerWidth} exceeds ${result.windowWidth}`);
+    if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
+    if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
+    if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  async 'emoji-keyboard'(env) {
+    await emojiKeyboard(env, null);
+  },
+  // a note high on the screen: neither side has room for the panel, so it docks above the keyboard
+  async 'emoji-keyboard-high'(env) {
+    await emojiKeyboard(env, 126);
+  },
+  // a finger on Add emoji: WebKit drops the click of a tap whose pointerdown was cancelled, so the picker never opened
+  async 'emoji-tap'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.locator('.edit-bar.show').waitFor();
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
+    const box = await page.locator('.edit-emoji').boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    const opened = await page.locator('.emoji-pop').waitFor({ timeout: 3000 }).then(() => true, () => false);
+    const active = await page.evaluate(() => window.__board.editor.active);
+    console.log(`emoji-tap ${JSON.stringify({ opened, active })}`);
+    if (!opened) throw new Error('emoji-tap: a touch tap on Add emoji did not open the picker');
+    if (!active) throw new Error('emoji-tap: the tap ended the edit');
+  },
+  async 'emoji-insert'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    await page.keyboard.type('rock');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && window.__board.store.get('seed-note-1').text.endsWith('🚀'));
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const textarea = document.querySelector('.text-editor');
+      let recent = [];
+      try {
+        recent = JSON.parse(localStorage.getItem('tabula.emoji.recent') || '[]');
+      } catch {
+        recent = [];
+      }
+      return {
+        text: app.store.get('seed-note-1').text, active: app.editor.active, focused: document.activeElement === textarea,
+        caretAtEnd: textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length,
+        pickerOpen: !!document.querySelector('.emoji-pop'), recentFirst: recent[0],
+      };
+    });
+    if (!result.text.endsWith('🚀')) throw new Error('emoji-insert: sticky text does not end with the matching rocket emoji');
+    if (!result.active) throw new Error('emoji-insert: editing ended after insertion');
+    if (!result.focused) throw new Error('emoji-insert: focus did not return to the textarea');
+    if (!result.caretAtEnd) throw new Error('emoji-insert: textarea caret is not after the emoji');
+    if (result.pickerOpen) throw new Error('emoji-insert: picker stayed open');
+    if (result.recentFirst !== '🚀') throw new Error('emoji-insert: recent emoji did not move to the front');
+  },
+  async 'emoji-esc'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const before = await page.evaluate(() => window.__board.store.get('seed-note-1').text);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && document.activeElement === document.querySelector('.text-editor'));
+    const afterPickerEscape = await page.evaluate(() => ({
+      active: window.__board.editor.active, focused: document.activeElement === document.querySelector('.text-editor'),
+      text: window.__board.store.get('seed-note-1').text,
+    }));
+    if (!afterPickerEscape.active || !afterPickerEscape.focused || afterPickerEscape.text !== before) {
+      throw new Error(`emoji-esc: first Escape changed the edit state: ${JSON.stringify(afterPickerEscape)}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__board.editor.active);
+    const afterEditorEscape = await page.evaluate(() => ({ active: window.__board.editor.active, text: window.__board.store.get('seed-note-1').text }));
+    if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
+  },
+  // frame size presets: pick one in the inspector, type an exact size, undo
+  async 'frame-size'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const b = window.__board;
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 1, fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.setSelection(['k-frame']);
+    });
+    const size = () => page.evaluate(() => { const o = window.__board.store.get('k-frame'); return `${o.w}x${o.h}`; });
+    const combo = page.getByRole('combobox', { name: 'Frame size' });
+    if (!await combo.count()) await page.getByRole('button', { name: 'More properties' }).click().catch(() => {});
+    await combo.waitFor({ timeout: 5000 }).catch(async (e) => { console.log(await page.evaluate(() => JSON.stringify({ sel: window.__board.selected().map((o) => o.type), props: document.querySelector('.props')?.className, text: document.querySelector('.props')?.innerText.slice(0, 200) }))); throw e; });
+    const before = await size();
+    await combo.click();
+    for (const [label, want] of [['A4 portrait', '794x1123'], ['1920 × 1080', '1920x1080'], ['390 × 844', '390x844'], ['Letter landscape', '1056x816']]) {
+      if (!await combo.getAttribute('aria-expanded').then((v) => v === 'true')) await combo.click();
+      const opt = page.getByRole('option', { name: label, exact: true });
+      await opt.scrollIntoViewIfNeeded();
+      const box = await opt.boundingBox();
+      // Firefox at phone width sends a mouse click at the list to the board's quick bar behind it (no pointerdown reaches the list), so there the option is activated by its click event
+      if (process.env.VISUAL_BROWSER === 'firefox' && page.viewportSize().width < 600) await opt.dispatchEvent('click');
+      else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(200);
+      const got = await size();
+      if (got !== want) throw new Error(`frame-size: ${label} gave ${got}, wanted ${want}`);
+      await page.waitForFunction(([l]) => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes(l)), [label], { timeout: 3000 })
+        .catch(async () => { throw new Error(`frame-size: the box shows "${await combo.textContent()}" after choosing ${label}`); });
+    }
+    const width = page.getByRole('spinbutton', { name: 'Frame width' });
+    await width.fill('700');
+    await width.press('Enter');
+    await page.waitForFunction(() => window.__board.store.get('k-frame').w === 700);
+    await page.waitForFunction(() => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes('Custom')), null, { timeout: 3000 })
+      .catch(() => { throw new Error('frame-size: a typed width should read Custom'); });
+    await page.waitForFunction(() => !window.__board.styleEdit.active, null, { timeout: 3000 });
+    // the number field's Enter and blur both commit, which can leave one empty undo step above the real one
+    let undone = false;
+    for (let i = 0; i < 3 && !undone; i++) {
+      await page.evaluate(() => window.__board.store.undo.undo());
+      undone = (await page.evaluate(() => window.__board.store.get('k-frame').w)) !== 700;
+    }
+    if (!undone) throw new Error('frame-size: undo did not take back the typed width');
+    await page.evaluate(() => window.__board.zoomToFit?.());
+    console.log(`frame-size before ${before}, now ${await size()}`);
+  },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
     const result = await env.page.evaluate(async () => {
@@ -2199,7 +2417,7 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));

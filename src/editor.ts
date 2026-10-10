@@ -43,13 +43,22 @@ export class TextEditor {
   private mode: EditMode = 'text';
   private unsubCam: (() => void) | null = null;
   private original = '';
+  private selectionStart = 0;
+  private selectionEnd = 0;
+  private blurHeld = false;
 
   constructor(private app: BoardApp) {
     this.ta = document.createElement('textarea');
     this.ta.className = 'text-editor';
     this.ta.spellcheck = true;
     this.ta.setAttribute('aria-label', 'Edit text');
-    this.ta.addEventListener('input', () => this.onInput());
+    this.ta.addEventListener('input', () => {
+      this.rememberSelection();
+      this.onInput();
+    });
+    this.ta.addEventListener('keyup', () => this.rememberSelection());
+    this.ta.addEventListener('pointerup', () => this.rememberSelection());
+    this.ta.addEventListener('select', () => this.rememberSelection());
     this.ta.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
         e.preventDefault();
@@ -65,12 +74,50 @@ export class TextEditor {
       }
       e.stopPropagation();
     });
-    this.ta.addEventListener('blur', () => this.commit());
+    this.ta.addEventListener('blur', () => {
+      this.rememberSelection();
+      if (!this.blurHeld) this.commit();
+    });
     app.r.root.appendChild(this.ta);
   }
 
   get active() {
     return this.id !== null;
+  }
+
+  get textMode(): boolean {
+    return this.active && this.mode === 'text';
+  }
+
+  get textarea() {
+    return this.ta;
+  }
+
+  private rememberSelection() {
+    this.selectionStart = this.ta.selectionStart;
+    this.selectionEnd = this.ta.selectionEnd;
+  }
+
+  holdBlur(on: boolean) {
+    this.blurHeld = on;
+  }
+
+  focus() {
+    if (!this.active) return;
+    this.ta.focus({ preventScroll: true });
+    this.ta.setSelectionRange(this.selectionStart, this.selectionEnd);
+  }
+
+  insertAtCursor(text: string) {
+    if (!this.textMode) return;
+    const start = Math.min(this.selectionStart, this.ta.value.length);
+    const end = Math.min(Math.max(start, this.selectionEnd), this.ta.value.length);
+    this.ta.setRangeText(text, start, end, 'end');
+    this.ta.dispatchEvent(new Event('input', { bubbles: true }));
+    this.ta.focus({ preventScroll: true });
+    const caret = start + text.length;
+    this.ta.setSelectionRange(caret, caret);
+    this.rememberSelection();
   }
 
   start(id: Id) {
@@ -93,6 +140,7 @@ export class TextEditor {
       this.original = o.text ?? '';
     }
     this.ta.value = this.original;
+    this.selectionStart = this.selectionEnd = 0;
     this.ta.dataset.mode = this.mode;
     this.ta.style.display = 'block';
     this.app.r.setEditing(id);
@@ -102,6 +150,7 @@ export class TextEditor {
     requestAnimationFrame(() => {
       this.ta.focus();
       this.ta.select();
+      this.rememberSelection();
     });
     this.app.emit('editing');
   }
@@ -235,6 +284,7 @@ export class TextEditor {
     const o = this.app.store.get(id);
     const v = this.ta.value;
     this.ta.style.display = 'none';
+    this.blurHeld = false;
     this.ta.blur();
     if (o && this.mode === 'class' && isBox(o)) {
       const parsed = parseClass(v);

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
@@ -174,6 +175,24 @@ describe('the endpoint', () => {
     expect(big.body.error).toBe('payload_too_large');
 
     expect(origin.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('reads an oversized body before it answers 413, so the client never sees a reset', async () => {
+    const { token } = await h.newToken(alice.cookie, { scope: 'read' });
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: { pad: 'x'.repeat(300 * 1024) } });
+    const head = `POST /mcp HTTP/1.1\r\nhost: 127.0.0.1\r\nauthorization: Bearer ${token}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n`;
+    const socket = net.connect(h.port, '127.0.0.1');
+    let answered = '';
+    socket.on('data', (d) => { answered += String(d); });
+    await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+    // headers and the first part of the body, then wait: a server that answers now is answering while the client still writes
+    socket.write(head + body.slice(0, 1000));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(answered).toBe('');
+    socket.write(body.slice(1000));
+    await until(() => /\r\n\r\n/.test(answered) && /payload_too_large/.test(answered));
+    expect(answered).toMatch(/^HTTP\/1\.1 413 /);
+    socket.destroy();
   });
 
   it('gives one answer to every kind of bad credential', async () => {
@@ -516,6 +535,7 @@ describe('authorisation', () => {
       const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments', 'list_kanban_cards', 'list_templates']
         .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? [
           'create_objects', 'update_objects', 'delete_objects', 'use_template', 'add_kanban_card', 'update_kanban_card', 'move_kanban_card',
+          'create_kanban', 'add_kanban_cards', 'move_kanban_cards',
           'create_kanban_label', 'update_kanban_label', 'delete_kanban_label', 'add_kanban_lane', 'update_kanban_lane', 'delete_kanban_lane',
         ] : [])
         .sort();

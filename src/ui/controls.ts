@@ -101,7 +101,14 @@ export function numberField(o: NumberFieldOptions): HTMLInputElement {
       show();
       return;
     }
-    value = clampValue(n, o);
+    const next = clampValue(n, o);
+    // Enter commits from keydown, and the browser then fires `change` for the same text (Chromium does): the second one is
+    // not a new value and must not write again, or it leaves an empty step above the real one in the undo history
+    if (next === value && !pending) {
+      show();
+      return;
+    }
+    value = next;
     pending = true;
     show();
     commit();

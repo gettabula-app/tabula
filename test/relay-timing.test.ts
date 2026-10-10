@@ -26,7 +26,8 @@ describe('how tests start a relay', () => {
   it('uses one start limit in every test file that starts a relay', () => {
     const starters = sources.filter((s) => s.text.includes('relay.mjs'));
     expect(starters.length).toBeGreaterThan(10);
-    expect(starters.filter((s) => !s.text.includes('RELAY_START_MS')).map((s) => s.f)).toEqual([]);
+    // through the shared starter (test/start-relay.ts, which uses the limit itself) or with the limit named in the file
+    expect(starters.filter((s) => !s.text.includes('RELAY_START_MS') && !s.text.includes('startRelayProcess')).map((s) => s.f)).toEqual([]);
   });
 
   it('takes ports from the system, not from a fixed range picked at random', () => {

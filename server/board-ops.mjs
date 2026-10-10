@@ -6,9 +6,9 @@ import crypto from 'node:crypto';
 import * as Y from 'yjs';
 import { generateNKeysBetween } from 'fractional-indexing';
 import {
-  KANBAN, LABEL_COLORS, LABEL_DEFAULT_COLOR, LIMITS as KANBAN_LIMITS, OWNER_NAME_MAX, STAGES, TEMPLATE_STRIPPED,
+  DEFAULT_KANBAN_LANES, KANBAN, LABEL_COLORS, LABEL_DEFAULT_COLOR, LIMITS as KANBAN_LIMITS, OWNER_NAME_MAX, STAGES, TEMPLATE_STRIPPED,
   cleanLabelName, cleanLaneName, cleanOwnerName, codePointLength, isLaneStage, isWipLimit, labelNameTaken, layoutAll,
-  planInsert, sortedChildren, validLabel, validLabelColor, wipCheck,
+  layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 
@@ -698,6 +698,120 @@ function laneIdInState(state, laneId) {
 
 function wipLimitError(path, beforeCount, limit) {
   return new OpsError('wip_limit', `This lane is at its WIP limit (${beforeCount}/${limit}).`, path);
+}
+
+/** Plans a new kanban with the same default lanes, ranks and derived size as the board app.
+ * @param {{createdBy?: string, now?: number}} [options]
+ */
+export function planCreateKanban(doc, input, options = {}) {
+  const { createdBy, now = Date.now() } = /** @type {{createdBy?: string, now?: number}} */ (options);
+  record(input, '', ['name', 'x', 'y', 'parent', 'lanes']);
+  const objects = objectsOf(doc);
+  const existing = [];
+  objects.forEach((value) => {
+    if (value instanceof Y.Map) existing.push(value.toJSON());
+  });
+  const containers = existing.filter((object) => object.type === 'container').length;
+  if (containers >= KANBAN_LIMITS.containers) {
+    throw new OpsError('limit_exceeded', `A board holds at most ${KANBAN_LIMITS.containers} kanbans`, 'boardId');
+  }
+
+  const rawLanes = input.lanes === undefined ? DEFAULT_KANBAN_LANES : input.lanes;
+  if (Array.isArray(rawLanes) && rawLanes.length > KANBAN_LIMITS.lanes) {
+    throw new OpsError('limit_exceeded', `A kanban holds at most ${KANBAN_LIMITS.lanes} lanes`, 'lanes');
+  }
+  const laneInputs = listOf(rawLanes, 'lanes', 1, KANBAN_LIMITS.lanes);
+  const laneFields = laneInputs.map((lane, i) => {
+    const path = `lanes[${i}]`;
+    record(lane, path, ['name', 'stage', 'wip', 'wipBlock']);
+    const name = cleanLaneName(text(required(lane, 'name', path), at(path, 'name'), 1, KANBAN_LIMITS.laneName));
+    if (!name) throw invalid(at(path, 'name'), 'A lane needs a name');
+    let stage;
+    if (lane.stage !== undefined && lane.stage !== null) stage = choice(lane.stage, STAGES, at(path, 'stage'));
+    let wip;
+    if (lane.wip !== undefined && lane.wip !== null) wip = integer(lane.wip, at(path, 'wip'), KANBAN_LIMITS.wipMin, KANBAN_LIMITS.wipMax);
+    if (lane.wipBlock !== undefined && typeof lane.wipBlock !== 'boolean') throw invalid(at(path, 'wipBlock'), 'Must be a boolean');
+    if (lane.wipBlock !== undefined && wip === undefined) throw invalid(at(path, 'wipBlock'), 'wipBlock needs a WIP limit in the same call');
+    return { name, ...(stage === undefined ? {} : { stage }), ...(wip === undefined ? {} : { wip, ...(lane.wipBlock === true ? { wipMode: 'block' } : {}) }) };
+  });
+
+  let name = 'Kanban';
+  if (input.name !== undefined) {
+    name = text(input.name, 'name', 1, KANBAN_LIMITS.containerName, codePointLength).replace(/\s+/gu, ' ').trim();
+    if (!name) throw invalid('name', 'A kanban needs a name');
+    if (codePointLength(name) > KANBAN_LIMITS.containerName) {
+      throw invalid('name', `A kanban name must be at most ${KANBAN_LIMITS.containerName} characters`);
+    }
+  }
+
+  const board = readAll(doc);
+  const all = [...board.boxes, ...board.connectors];
+  const byId = new Map(all.map((object) => [object.id, object]));
+  let parent;
+  if (input.parent !== undefined) {
+    const parentId = idString(input.parent, 'parent');
+    parent = byId.get(parentId);
+    const visible = objectVisibility(all, isRevealed(doc)).isVisible;
+    if ((parent?.type !== 'frame' && parent?.type !== 'group') || !visible(parent)) {
+      throw notFound('Parent not found', 'parent');
+    }
+    const seen = new Set();
+    for (let current = parent; current && !seen.has(current.id); current = byId.get(current.parent)) {
+      if (current.locked === true) throw conflict('A locked parent prevents creating a kanban inside it', 'parent');
+      seen.add(current.id);
+    }
+  }
+
+  let x;
+  let y;
+  if ((input.x === undefined) !== (input.y === undefined)) throw invalid(input.x === undefined ? 'x' : 'y', 'Give both x and y, or neither');
+  if (input.x !== undefined) {
+    x = coordinate(input.x, 'x');
+    y = coordinate(input.y, 'y');
+  } else {
+    const roots = all.filter((object) => typeof object.parent !== 'string' && [object.x, object.y, object.w, object.h].every(Number.isFinite));
+    x = roots.length ? r2(Math.round(Math.max(...roots.map((object) => object.x + object.w)) + 80)) : 0;
+    y = roots.length ? r2(Math.round(Math.min(...roots.map((object) => object.y)))) : 0;
+    x = coordinate(x, 'x');
+    y = coordinate(y, 'y');
+  }
+
+  if (objects.size + laneFields.length + 1 > LIMITS.boardObjects) {
+    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'lanes');
+  }
+
+  const taken = new Set();
+  const id = freshKanbanId(doc, taken);
+  taken.add(id);
+  const laneIds = laneFields.map(() => {
+    const laneId = freshKanbanId(doc, taken);
+    taken.add(laneId);
+    return laneId;
+  });
+  const ranks = ranksBetween(null, null, laneFields.length, id);
+  const z = topKeys(objects, 1)[0];
+  const container = {
+    id, type: 'container', layout: 'kanban', name, x, y, w: 0, h: 0, rotation: 0, z,
+    createdBy, updatedAt: now, font: fontOf(doc, 'headingFont', 'cabinet-grotesk'),
+    ...(parent ? { parent: parent.id } : {}),
+  };
+  const lanes = laneFields.map((fields, i) => ({
+    id: laneIds[i], type: 'lane', parent: id, rank: ranks[i], ...fields,
+    x: 0, y: 0, w: 0, h: 0, rotation: 0, z, createdBy, updatedAt: now,
+    font: fontOf(doc, 'bodyFont', 'satoshi'),
+  }));
+  const layout = layoutContainer(container, lanes, []);
+  container.w = layout.w;
+  container.h = layout.h;
+  for (const lane of lanes) Object.assign(lane, layout.rects.get(lane.id));
+  return {
+    ops: [{ op: 'create', id, fields: container }, ...lanes.map((lane) => ({ op: 'create', id: lane.id, fields: lane }))],
+    result: {
+      kanban: { id, name, x, y, w: container.w, h: container.h },
+      lanes: lanes.map((lane) => laneOutput(lane, 0)),
+    },
+    audit: { count: lanes.length + 1, ids: [id, ...laneIds] },
+  };
 }
 
 /** Plans a board label create; names, colours and duplicates use the shared app rules. */
