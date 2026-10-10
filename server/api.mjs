@@ -466,7 +466,6 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           },
         } : {}),
         ...(config.mcp ? { mcp: true } : {}),
-        ...(config.tracker === true ? { tracker: true } : {}),
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
