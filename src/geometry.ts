@@ -1,6 +1,6 @@
 import type { BaseObj, ConnectorObj, End, Id, Obj, Point, Rect, Side } from './types';
 import { isBox, isConnector } from './types';
-import { shapeAnchor, shapePolygon, shapeSideCurve } from './shapes';
+import { shapeAnchor, shapeSideCurve } from './shapes';
 
 export const EPS = 1e-6;
 
@@ -72,15 +72,6 @@ export function toFlippedLocal(o: BaseObj, p: Point): Point {
   return { x: o.flipX === true ? o.w - q.x : q.x, y: o.flipY === true ? o.h - q.y : q.y };
 }
 
-function pointInPolygon(p: Point, vertices: readonly Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
-    const a = vertices[i], b = vertices[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-}
-
 export function distToSegment(p: Point, a: Point, b: Point): number {
   const ab = sub(b, a);
   const l2 = ab.x * ab.x + ab.y * ab.y;
@@ -119,18 +110,10 @@ export function hitBox(o: BaseObj, p: Point, tol: number): boolean {
     const nearEdge = inside && (l.x < tol + 4 || l.y < tol + 4 || l.x > o.w - tol - 4 || l.y > o.h - tol - 4);
     return inTitle || nearEdge;
   }
-  if ((o.type === 'shape' && o.kind === 'ellipse') || o.type === 'uml-usecase' || o.type === 'uml-initial' || o.type === 'uml-final') {
+  if (o.type === 'shape' && o.kind === 'ellipse') {
     const rx = o.w / 2 + tol, ry = o.h / 2 + tol;
     const dx = l.x - o.w / 2, dy = l.y - o.h / 2;
     return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1;
-  }
-  if (o.type === 'shape') {
-    const polygon = shapePolygon(o.kind || 'rect', o.w, o.h);
-    if (polygon) {
-      const vertices = polygon.map(([x, y]) => ({ x, y }));
-      const outline = [...vertices, vertices[0]];
-      return pointInPolygon(l, vertices) || distToPolyline(l, outline) <= tol + (o.strokeWidth || 2) / 2;
-    }
   }
   return l.x >= -tol && l.y >= -tol && l.x <= o.w + tol && l.y <= o.h + tol;
 }
@@ -141,6 +124,26 @@ const SIDE_DIR: Record<Side, Point> = {
   top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 },
 };
 
+/** The content side that appears on a visual side after mirroring the object's geometry. */
+function contentSide(o: BaseObj, side: Side): Side {
+  let out = side;
+  if (o.flipX === true) out = out === 'left' ? 'right' : out === 'right' ? 'left' : out;
+  if (o.flipY === true) out = out === 'top' ? 'bottom' : out === 'bottom' ? 'top' : out;
+  return out;
+}
+
+/** Map a point from the unflipped content frame back to the visible local frame. */
+function visibleLocal(o: BaseObj, p: Point): Point {
+  return { x: o.flipX === true ? o.w - p.x : p.x, y: o.flipY === true ? o.h - p.y : p.y };
+}
+
+/** Map a content direction through the same mirror used by the drawn geometry. */
+function visibleDirection(o: BaseObj, dir: Point): Point {
+  const x = o.flipX === true ? -dir.x : dir.x;
+  const y = o.flipY === true ? -dir.y : dir.y;
+  return { x: x === 0 ? 0 : x, y: y === 0 ? 0 : y };
+}
+
 export function sideAnchor(o: BaseObj, side: Side): { p: Point; dir: Point } {
   const c = center(o);
   const local: Record<Side, Point> = {
@@ -148,11 +151,13 @@ export function sideAnchor(o: BaseObj, side: Side): { p: Point; dir: Point } {
     bottom: { x: c.x, y: o.y + o.h }, left: { x: o.x, y: c.y },
   };
   if (o.type === 'shape') {
-    const lp = shapeAnchor(o.kind || 'rect', o.w, o.h, side);
+    const content = contentSide(o, side);
+    const lp = visibleLocal(o, shapeAnchor(o.kind || 'rect', o.w, o.h, content));
     local[side] = { x: o.x + lp.x, y: o.y + lp.y };
   }
   const r = o.rotation || 0;
-  return { p: rotate(local[side], c, r), dir: rotate(SIDE_DIR[side], { x: 0, y: 0 }, r) };
+  const localDir = visibleDirection(o, SIDE_DIR[contentSide(o, side)]);
+  return { p: rotate(local[side], c, r), dir: rotate(localDir, { x: 0, y: 0 }, r) };
 }
 
 /** How far, in board units, a click on a connection dot looks for a shape to connect to before making a new one. */
@@ -417,12 +422,16 @@ const ELLIPSE_TYPES = new Set(['uml-usecase', 'uml-initial', 'uml-final']);
  */
 export function slotAnchor(o: BaseObj, side: Side, slot: EndSlot): Point | null {
   const kind = o.type === 'shape' ? o.kind || 'rect' : ELLIPSE_TYPES.has(o.type) ? 'ellipse' : 'rect';
-  const curve = shapeSideCurve(kind, o.w, o.h, side);
+  const content = contentSide(o, side);
+  const curve = shapeSideCurve(kind, o.w, o.h, content);
   if (!curve || curve.span <= 0) return null;
   const gap = Math.min(curve.span / (slot.count + 1), FAN_GAP);
-  const local = curve.at((slot.index - (slot.count - 1) / 2) * gap);
+  const d = (slot.index - (slot.count - 1) / 2) * gap;
+  const alongIsMirrored = side === 'top' || side === 'bottom' ? o.flipX === true : o.flipY === true;
+  const local = curve.at(alongIsMirrored ? -d : d);
   if (!local) return null;
-  return rotate({ x: o.x + local.x, y: o.y + local.y }, center(o), o.rotation || 0);
+  const visible = visibleLocal(o, local);
+  return rotate({ x: o.x + visible.x, y: o.y + visible.y }, center(o), o.rotation || 0);
 }
 
 /** The end with its attachment moved to its slot, when it shares its side with others; the direction stays the side's. */

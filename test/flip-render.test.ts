@@ -70,14 +70,31 @@ describe('flipped SVG rendering', () => {
     expect(svg).toContain('>E</tspan>');
   });
 
-  it('maps hit tests through the visible local mirror for asymmetric shapes and paths', () => {
+  it('keeps shape hit tests bounding-box based and maps path hits through the visible mirror', () => {
     const arrow = base('shape', { kind: 'arrow-right', flipX: true, rotation: 0 });
     expect(hitBox(arrow, { x: 30, y: 30 }, 0)).toBe(true);
-    expect(hitBox({ ...arrow, flipX: undefined }, { x: 30, y: 30 }, 0)).toBe(false);
+    expect(hitBox({ ...arrow, flipX: undefined }, { x: 30, y: 30 }, 0)).toBe(true);
 
     const path = base('path', { points: [10, 5, 70, 55], flipX: true, rotation: 0 });
     expect(hitBox(path, { x: 20, y: 75 }, 0)).toBe(true);
     expect(hitBox(path, { x: 80, y: 75 }, 0)).toBe(false);
+  });
+
+  it('keeps polygon and UML hit tests bounding-box based while ellipses stay precise', () => {
+    const corner = { x: 11, y: 21 };
+    const diamond = base('shape', { kind: 'diamond', flipX: true, rotation: 0 });
+    const initial = base('uml-initial', { flipX: true, rotation: 0 });
+    const usecase = base('uml-usecase', { flipY: true, rotation: 0 });
+    const ellipse = base('shape', { kind: 'ellipse', flipX: true, rotation: 0 });
+
+    expect(hitBox(diamond, corner, 0)).toBe(true);
+    expect(hitBox({ ...diamond, flipX: undefined }, corner, 0)).toBe(true);
+    expect(hitBox(initial, corner, 0)).toBe(true);
+    expect(hitBox({ ...initial, flipX: undefined }, corner, 0)).toBe(true);
+    expect(hitBox(usecase, corner, 0)).toBe(true);
+    expect(hitBox({ ...usecase, flipY: undefined }, corner, 0)).toBe(true);
+    expect(hitBox(ellipse, corner, 0)).toBe(false);
+    expect(hitBox({ ...ellipse, flipX: undefined }, corner, 0)).toBe(false);
   });
 
   it('drops nonboolean flip flags before rendering', () => {

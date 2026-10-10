@@ -1215,6 +1215,8 @@ const STATES = {
         { id: 'flip-path', type: 'path', x: -150, y: 150, w: 130, h: 70, rotation: 0, points: [0, 55, 30, 10, 65, 48, 95, 18, 130, 60], stroke: '#D64545', strokeWidth: 5, z: 'z4' },
         { id: 'flip-icon', type: 'icon', x: 30, y: 155, w: 80, h: 80, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path fill="currentColor" d="M3 3h8v18H3zM13 3h8v8h-8zM13 13h8v8h-8z"/>', z: 'z5' },
         { id: 'flip-connector', type: 'connector', from: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, to: { kind: 'bound', id: 'flip-triangle', anchor: 'left' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'z6' },
+        { id: 'flip-arrow-check', type: 'connector', from: { kind: 'free', x: 0, y: 45 }, to: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, route: 'straight', startHead: 'none', endHead: 'none', z: 'z7' },
+        { id: 'flip-callout-check', type: 'connector', from: { kind: 'bound', id: 'flip-callout', anchor: 'top' }, to: { kind: 'free', x: 180, y: -70 }, route: 'curved', startHead: 'none', endHead: 'none', z: 'z8' },
       ];
       store.transact(() => {
         for (const o of objects) {
@@ -1233,16 +1235,54 @@ const STATES = {
     await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Flip horizontal' }).click();
     await page.waitForFunction(() => window.__board.store.get('flip-arrow')?.flipX === true && window.__board.store.get('flip-icon')?.flipX === true);
+    await page.evaluate(() => window.__board.setSelection(['flip-callout']));
+    await page.locator('.quickbar.show').waitFor();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Flip vertical' }).click();
+    await page.waitForFunction(() => window.__board.store.get('flip-callout')?.flipY === true);
+    await page.waitForTimeout(120);
     const state = await page.evaluate(() => {
       const app = window.__board;
-      const connector = app.store.get('flip-connector');
+      const elbow = app.store.get('flip-connector');
+      const arrow = app.store.get('flip-arrow-check');
+      const callout = app.store.get('flip-callout-check');
+      const screenPoint = (path, atEnd) => {
+        const length = path.getTotalLength();
+        const point = path.getPointAtLength(atEnd ? length : 0);
+        return new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM());
+      };
+      const outlineDistance = (shapeId, point) => {
+        const outline = document.querySelector(`.objects [data-id="${shapeId}"] path`);
+        const length = outline?.getTotalLength() ?? 0;
+        if (!outline || !length) return Infinity;
+        const count = Math.max(300, Math.ceil(length * 2));
+        let closest = Infinity;
+        for (let i = 0; i <= count; i++) {
+          const p = outline.getPointAtLength((length * i) / count);
+          const screen = new DOMPoint(p.x, p.y).matrixTransform(outline.getScreenCTM());
+          closest = Math.min(closest, Math.hypot(screen.x - point.x, screen.y - point.y));
+        }
+        return closest;
+      };
+      const routePath = (id) => document.querySelector(`.objects [data-id="${id}"] path`);
+      const elbowRoute = routePath('flip-connector');
+      const arrowRoute = routePath('flip-arrow-check');
+      const calloutRoute = routePath('flip-callout-check');
+      const outlineErrors = {
+        arrowElbow: outlineDistance('flip-arrow', screenPoint(elbowRoute, false)),
+        arrowStraight: outlineDistance('flip-arrow', screenPoint(arrowRoute, true)),
+        calloutCurved: outlineDistance('flip-callout', screenPoint(calloutRoute, false)),
+      };
       return {
         flags: ['flip-arrow', 'flip-callout', 'flip-triangle', 'flip-path', 'flip-icon'].map((id) => app.store.get(id)?.flipX),
-        ends: [connector.from.anchor, connector.to.anchor],
+        verticalCallout: app.store.get('flip-callout')?.flipY,
+        ends: [elbow.from.anchor, elbow.to.anchor, arrow.to.anchor, callout.from.anchor],
+        outlineErrors,
         text: app.store.get('flip-callout')?.text,
       };
     });
-    if (state.flags.some((flag) => flag !== true) || state.ends[0] !== 'left' || state.ends[1] !== 'right' || state.text !== 'Still readable') {
+    if (state.flags.some((flag) => flag !== true) || state.verticalCallout !== true || state.ends.join(',') !== 'left,right,right,top' ||
+        Object.values(state.outlineErrors).some((distance) => distance > 1.5) || state.text !== 'Still readable') {
       throw new Error(`flip-visual: incorrect result: ${JSON.stringify(state)}`);
     }
     await page.waitForTimeout(200);
