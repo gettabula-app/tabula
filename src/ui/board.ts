@@ -611,7 +611,13 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   rovingRadios(themeGroup);
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));
+  // First in the menu: it is not a board action, and the person who is lost looks at the top. A quiet accent (the icon and a heavier label) in styles.css marks it.
+  const guide = !DEMO && !demo
+    ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
+      icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
+    : null;
   const pop = popover(anchor, h('div', { class: 'menu' },
+    guide,
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
@@ -655,7 +661,6 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     }),
     h('div', { class: 'list-label' }, 'Help'),
     item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
-    !DEMO && !demo ? item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab') : null,
     fileInput,
   ), { side: 'bottom' });
 }

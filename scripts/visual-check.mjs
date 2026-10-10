@@ -2234,6 +2234,26 @@ const STATES = {
     if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
     await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
   },
+  // the board menu opens with the User guide: first, an accent of at least 3:1 on its icon, the same button and name
+  async 'board-menu-guide'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.locator('.menu').waitFor();
+    const r = await env.page.evaluate(() => {
+      const rgb = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const menu = document.querySelector('.menu');
+      const first = menu.querySelector('.menu-item');
+      const icon = first.querySelector('.ico');
+      const bg = getComputedStyle(menu.closest('.popover') ?? menu).backgroundColor;
+      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.firstElementChild === first, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
+    });
+    console.log(`board-menu-guide ${JSON.stringify(r)}`);
+    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the first entry is not the User guide button (${JSON.stringify(r)})`);
+    if (r.ratio < 3) throw new Error(`board-menu-guide: the accent is ${r.ratio.toFixed(2)}:1, under 3:1`);
+    if (Number(r.weight) < 600) throw new Error(`board-menu-guide: the label is not heavier (${r.weight})`);
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
