@@ -1,8 +1,8 @@
 import { actorInfo, getDb, invalid } from './shared.mjs';
 
-const EVENT_TYPES = new Set(['created', 'updated', 'transitioned', 'commented', 'archived', 'restored']);
-const CHANGE_FIELDS = new Set(['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'archived']);
-const DETAIL_FIELDS = new Set(['commentId', 'length', 'ownerUserId']);
+const EVENT_TYPES = new Set(['created', 'updated', 'transitioned', 'commented', 'archived', 'restored', 'related', 'unrelated']);
+const CHANGE_FIELDS = new Set(['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone', 'relations', 'archived']);
+const DETAIL_FIELDS = new Set(['commentId', 'length', 'ownerUserId', 'relatedTicketKey', 'relationKind']);
 
 function changedFields(value, path) {
   if (value == null) return null;

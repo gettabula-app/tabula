@@ -272,6 +272,8 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     expect(await err({ text: 'x', replyTo: 'one' })).toEqual([400, 'bad_request']);
     const many = Array.from({ length: 11 }, (_, i) => `@{user${i}}`).join(' ');
     expect(await err({ text: many })).toEqual([400, 'too_many_mentions']);
+    // the limit holds for what is stored: 500 mentions of nobody in the channel would become 4,000 characters of @someone
+    expect(await err({ text: '@{a}'.repeat(500) })).toEqual([400, 'too_long']);
 
     const huge = await h.api(ana.cookie, 'POST', url(board), { clientId: cid(), text: 'x'.repeat(17 * 1024) });
     expect(huge.status).toBe(413);

@@ -39,10 +39,10 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('tracker migration 12', () => {
+describe('tracker migration 13', () => {
   it('applies to a fresh directory with fixed seeds and the required FTS tokenizer', () => {
     const directory = open();
-    expect(MIGRATIONS).toHaveLength(12);
+    expect(MIGRATIONS).toHaveLength(13);
     expect(typeof MIGRATIONS[11]).toBe('string');
     expect(ftsAvailable(directory.db)).toBe(true);
     expect(directory.db.prepare('SELECT id, name, prefix FROM trackers').all()).toEqual([{ id: 'trk_default', name: 'Tabula', prefix: 'TAB' }]);
@@ -83,8 +83,8 @@ describe('tracker migration 12', () => {
     }
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     const state = readSchemaState(upgraded.db);
-    expect(state).toEqual({ version: 12, minReader: 11, legacy: false });
-    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: 12, maxReader: 11 }, disk: { schema: 12, minReader: 11 } });
+    expect(state).toEqual({ version: 13, minReader: 11, legacy: false });
+    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: 13, maxReader: 11 }, disk: { schema: 13, minReader: 11 } });
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     upgraded.close();
 
@@ -103,6 +103,50 @@ describe('tracker migration 12', () => {
     expect(db.prepare('PRAGMA table_info(access_tokens)').all().map((column) => column.name)).not.toContain('tracker');
     expect(db.prepare("SELECT email FROM users WHERE id = 'u1'").get()).toEqual({ email: 'ada@example.com' });
     db.close();
+  });
+
+  it('adds migration 13 to a schema-12 database without changing existing tickets or their search and event rows', () => {
+    const file = path.join(tmp(), 'schema-12-with-ticket.sqlite');
+    const prior = new DatabaseSync(file);
+    try {
+      prior.exec('PRAGMA foreign_keys = ON');
+      migrate(prior, MIGRATIONS.slice(0, 12), 'directory schema 12');
+      prior.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 0, 1)").run();
+      prior.prepare(
+        `INSERT INTO tickets (id, prefix, number, key, title, description, state_id, tracker_id, created_at, updated_at,
+                              created_by_type, created_by_id, updated_seq, source)
+         VALUES ('t1', 'TAB', 1, 'TAB-1', 'Existing ticket', 'unchanged', 'st_todo', 'trk_default', 2, 3, 'user', 'u1', 4, 'app')`,
+      ).run();
+      prior.prepare("INSERT INTO ticket_events (ticket_id, event_type, schema_version, actor_type, actor_id, source, created_at, after_json) VALUES ('t1', 'created', 1, 'user', 'u1', 'app', 2, '{\"title\":\"Existing ticket\"}')").run();
+      prior.prepare("INSERT INTO ticket_search (ticket_id, title, description, comments, identifiers, aliases) VALUES ('t1', 'Existing ticket', 'unchanged', '', 'TAB-1', '')").run();
+    } finally {
+      prior.close();
+    }
+
+    const upgraded = open(file);
+    expect(upgraded.db.prepare("SELECT id, key, title, description, project_id, milestone_id, updated_seq FROM tickets WHERE id = 't1'").get())
+      .toEqual({ id: 't1', key: 'TAB-1', title: 'Existing ticket', description: 'unchanged', project_id: null, milestone_id: null, updated_seq: 4 });
+    expect(upgraded.db.prepare("SELECT event_type, after_json FROM ticket_events WHERE ticket_id = 't1'").get())
+      .toEqual({ event_type: 'created', after_json: '{"title":"Existing ticket"}' });
+    expect(upgraded.db.prepare("SELECT title, description FROM ticket_search WHERE ticket_id = 't1'").get())
+      .toEqual({ title: 'Existing ticket', description: 'unchanged' });
+    expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(readSchemaState(upgraded.db)).toEqual({ version: 13, minReader: 11, legacy: false });
+    expect(typeof MIGRATIONS[12]).toBe('string');
+    for (const table of ['projects', 'milestones', 'ticket_relations', 'saved_views']) {
+      expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined();
+    }
+    expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'projects_active_name'").get()).toBeDefined();
+    expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'milestones_project_due'").get()).toBeDefined();
+    expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'ticket_relations_normalized'").get()).toBeDefined();
+    expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'saved_views_shared_updated'").get()).toBeDefined();
+    upgraded.db.prepare("INSERT INTO projects (id, name, state, created_at, updated_at) VALUES ('p1', 'Name', 'planned', 1, 1)").run();
+    expect(() => upgraded.db.prepare("INSERT INTO projects (id, name, state, created_at, updated_at) VALUES ('p2', 'name', 'planned', 1, 1)").run())
+      .toThrow(/UNIQUE constraint failed/);
+    expect(() => upgraded.db.prepare(
+      `INSERT INTO ticket_relations (id, ticket_id, related_ticket_id, kind, created_at, created_by_type)
+       VALUES ('self', 't1', 't1', 'relates_to', 1, 'user')`,
+    ).run()).toThrow(/CHECK constraint failed/);
   });
 
   it('validates nullable token tracker scopes in code', () => {
