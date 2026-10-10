@@ -1,5 +1,7 @@
 /** Three result rows of about 53 px, the least list the poll card shows before it scrolls. */
 export const POLL_LIST_MIN = 160;
+/** On a short screen (under 700 px high) two result rows are enough, so the card does not grow over the session bar. */
+export const POLL_LIST_MIN_SHORT = 100;
 
 /**
  * Where the poll card sits and how tall it may be. It docks above the session bar at its natural height,

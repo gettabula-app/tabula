@@ -94,6 +94,19 @@ if (want('longpress')) {
   }
 }
 
+if (want('pollbar')) {
+  // a running poll on a small phone: the card sits above the session bar and covers none of its buttons
+  for (const [w, h] of [[360, 740], [390, 664], [360, 640]]) await phone(w, h, async (page) => {
+    await page.evaluate(() => window.__board.flow.quickPoll({ question: 'Which of these is the best option for the team?', options: ['Option number 1', 'Option number 2', 'Option number 3', 'Option number 4'], multiple: false, anonymous: false }));
+    await sleep(1500);
+    const r = await page.evaluate(() => { const rect = (sel) => { const e = document.querySelector(sel); if (!e || getComputedStyle(e).display === 'none') return null; const b = e.getBoundingClientRect(); return { t: Math.round(b.top), b: Math.round(b.bottom) }; }; const bar = document.querySelector('.flowbar.show'); const btns = [...bar.querySelectorAll('button')].filter((x) => getComputedStyle(x).display !== 'none').map((x) => Math.round(x.getBoundingClientRect().top)); return { card: rect('.poll-card:not([hidden])'), bar: rect('.flowbar.show'), buttonTops: btns }; });
+    const clear = r.card && r.bar && r.card.b <= r.bar.t + 1;
+    record(`poll card does not cover the session bar (${w}x${h})`, !!clear, JSON.stringify(r));
+    const top = await page.evaluate(() => { const bar = document.querySelector('.flowbar.show'); const hit = [...bar.querySelectorAll('button')].filter((x) => getComputedStyle(x).display !== 'none').map((x) => { const b = x.getBoundingClientRect(); return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest('.poll-card') ? x.textContent.trim() || x.getAttribute('aria-label') : null; }).filter(Boolean); return hit; });
+    record(`every session bar button is reachable under the poll card (${w}x${h})`, top.length === 0, top.join(', '));
+  });
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);

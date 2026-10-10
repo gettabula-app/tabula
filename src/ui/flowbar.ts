@@ -97,6 +97,8 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const instructionText = voteInstructionText(step.instructions, voting && coarsePointer);
     bar.classList.toggle('vote-compact', compactVote);
+    // a poll step on a phone: the card above the bar needs the room, so the bar keeps the answered count, Reveal and Finish or Next
+    bar.classList.toggle('poll-compact', step.mode === 'poll' && typeof matchMedia === 'function' && matchMedia('(max-width: 500px)').matches);
     bar.classList.toggle('vote-instructions-open', compactVote && voteInstructionOpen);
 
     const timer = h('div', { class: `timer${rem !== null && rem <= 60_000 && rem > 0 ? ' warn' : ''}${rem === 0 ? ' done' : ''}`, role: 'timer', 'aria-label': rem !== null ? `${fmt(rem)} remaining` : 'No timer' },
