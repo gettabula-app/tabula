@@ -65,6 +65,14 @@ function readThemes() {
   return themes;
 }
 
+function readHeads() {
+  const source = fs.readFileSync(path.join(root, 'src', 'shapes.ts'), 'utf8');
+  const start = source.indexOf('export const HEADS:');
+  const heads = [...source.slice(start).matchAll(/\{ head: '([\w-]+)', label: '([^']*)' \}/g)].map(([, head, label]) => ({ head, label }));
+  if (!heads.length) throw new Error('could not read connector heads from src/shapes.ts');
+  return heads;
+}
+
 // ---------------------------------------------------------------- states
 
 async function openEmojiPickerForNote(env) {
@@ -1042,6 +1050,56 @@ const STATES = {
       if (result.failures.length) throw new Error(`uml-arrows-themes ${theme.id}: ${result.failures.slice(0, 6).join('; ')}`);
     }
     await page.keyboard.press('Escape');
+  },
+  async 'connector-heads'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.setSelection(['seed-conn-1']));
+    const more = page.getByRole('button', { name: 'More properties' });
+    await more.waitFor();
+    await more.evaluate((el) => el.click());
+    await page.locator('.props.show').waitFor();
+
+    const button = page.locator('.props.show [role="combobox"][aria-label="End arrowhead"]');
+    await button.waitFor();
+    const closedSvg = button.locator('.combo-option-icon svg');
+    await closedSvg.waitFor();
+    const closedPreview = await closedSvg.evaluate((svg) => {
+      return { width: Number(svg.getAttribute('width')), height: Number(svg.getAttribute('height')), ariaHidden: svg.getAttribute('aria-hidden') };
+    });
+    if (closedPreview.width <= 0 || closedPreview.height <= 0 || closedPreview.ariaHidden !== 'true') {
+      throw new Error(`connector-heads: closed value preview is not visible: ${JSON.stringify(closedPreview)}`);
+    }
+
+    await button.click();
+    const list = page.locator('.combo-list[aria-label="End arrowhead"]');
+    await list.waitFor();
+    const rows = await list.locator('.combo-opt').evaluateAll((options) => options.map((option) => {
+      const preview = option.querySelector('.combo-option-icon svg');
+      const box = preview?.getBoundingClientRect();
+      const rowBox = option.getBoundingClientRect();
+      const style = preview ? getComputedStyle(preview) : null;
+      return {
+        label: option.lastElementChild?.textContent?.trim() ?? '',
+        visible: !!preview && style?.display !== 'none' && style?.visibility !== 'hidden' && Number.parseFloat(style?.opacity || '1') > 0,
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+        ariaHidden: preview?.getAttribute('aria-hidden') ?? null,
+        rowHeight: rowBox.height,
+      };
+    }));
+    const expected = readHeads().map(({ label }) => label);
+    const failures = [];
+    if (rows.map(({ label }) => label).join('\0') !== expected.join('\0')) failures.push(`options ${rows.map(({ label }) => label).join(', ')} do not match HEADS`);
+    for (const row of rows) {
+      if (!row.visible || row.width <= 0 || row.height <= 0 || row.ariaHidden !== 'true') failures.push(`${row.label}: invalid preview ${JSON.stringify(row)}`);
+      if (page.viewportSize().width <= 600 && row.rowHeight < 44) failures.push(`${row.label}: row is ${row.rowHeight}px, below 44px`);
+    }
+    if (rows.length !== expected.length) failures.push(`expected ${expected.length} options, got ${rows.length}`);
+    const result = { viewport: page.viewportSize(), closedPreview, options: rows.length, rows, failures };
+    console.log(`connector-heads ${JSON.stringify(result)}`);
+    if (failures.length) throw new Error(`connector-heads: ${failures.slice(0, 6).join('; ')}`);
+    return { noPark: true };
   },
   async 'esc-trays'(env) {
     await openSeedBoard(env);
@@ -2625,7 +2683,10 @@ async function serveOutside(route) {
   if (!fontCache.has(key)) {
     fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => ({
       status: res.status(),
-      headers: Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+      headers: {
+        ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+        ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
+      },
       body: await res.body(),
     }), () => null));
   }
