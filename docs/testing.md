@@ -25,6 +25,7 @@ A test should prove a **behaviour**, not a **speed**. If a test would still be c
 ### Windows
 
 - Build paths from `fileURLToPath(import.meta.url)` (and `path.join`), never from `new URL(...).pathname`: on Windows that gives `/D:/a/...`, which broke the AI bar availability test.
+- Signals do not exist on Windows: `kill('SIGKILL')` ends the process with exit code 1 and a null signal. Assert that a process ended (and its output), not which signal ended it; accept `SIGKILL` on POSIX and a number on Windows if the reason matters.
 - File modes do not exist on Windows (everything reports `0o666`): assert them only where `!isWindows` (`test/platform.ts`).
 - Child processes, file locks and renames are slower and stricter on Windows. Poll, do not sleep, and close handles before removing a directory.
 - Run `npm run test:repeat -- <files> --times 15 --platform win32` before you report. It runs the Windows branches of your test 15 times in a row; it does not simulate Windows itself, so CI (and the nightly run on Windows) remains the proof.
