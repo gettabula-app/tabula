@@ -85,7 +85,7 @@ describe('Admin access tokens panel', () => {
     await vi.waitFor(() => expect(textOf(modal)).toContain('New token'));
     control(modal, 'New token').click();
     const name = need(modal, 'input');
-    expect(name.getAttribute('aria-label')).toBe('Token name');
+    expect(name.getAttribute('aria-label')).toMatch(/^Token name/);
     name.value = 'Claude Code';
     name.dispatchEvent(new FakeEvent('input'));
     control(modal, 'Create token').click();

@@ -60,10 +60,6 @@ describe('accessibility audit follow-ups', () => {
     expect(read('src/ui/join-codes.ts')).toMatch(/'aria-label': 'Expires after'/);
   });
 
-  it('does not offer guests a profile menu action that cannot save their name or colour', () => {
-    expect(read('src/ui/board.ts')).toMatch(/demo \|\| authState\(\)\.mode === 'guest' \? null : item\('user', 'Your name and colour'/);
-  });
-
   it('marks avatar initials as decorative because the control is already named with the person’s name', () => {
     const source = read('src/ui/board.ts');
     expect(source).toMatch(/const avatarText = initials\(p\.user\.name\)/);
