@@ -23,7 +23,8 @@ A card shows its title (up to three lines) and, once they are set, label chips, 
 Double-click a card, select it and press `Enter`, or choose **Open** in the quick-action bar. The card dialog has:
 
 - **Title** and **Description**.
-- **Owner**: you, the people on the board now, anyone already named on it, or a name you type.
+- **Owner**: you, the people on the board now, anyone already named on it, or a name you type. A card has one owner. An AI tool that you have connected can also take a card (see below).
+- **Link**: one web address that goes with the card, for example the ticket it came from. Once saved, **Open link** opens it in a new tab.
 - **Due date**, with the date picker of your browser.
 - **Labels**, picked from the board's labels.
 - **Comment**, **Turn into sticky** and **Delete**.
@@ -31,6 +32,20 @@ Double-click a card, select it and press `Enter`, or choose **Open** in the quic
 Each field saves when you leave it, and each is one step in Undo. On a phone the dialog is a sheet at the bottom. Commenters see the card read-only and can still comment. Viewers cannot open it.
 
 ![The card dialog with title, description, owner, due date and labels](images/kanban-card-dialog.png)
+
+## Links
+
+Put the address of a page on a card, for example the issue it came from, a document or a design. Only web addresses starting with `http://` or `https://` are accepted, up to 2,000 characters long, with no spaces and no user name or password in them. Anything else, such as `javascript:` or a file address, is refused and nothing is saved. **Open link** opens the page in a new tab. In a list, each row with a link has its own **Open link**. Clear the field to remove the link.
+
+## Owners
+
+Choose **Owner** in the card dialog, or **Owner** in the quick-action bar. You can pick yourself or a person who is on the board now or was named on it before, or type a name for someone who has no account; the name is kept even if the person later leaves. A card has one owner, and **Mine** in the filter shows the cards you own.
+
+A card owned by an AI tool has an eight-sided badge instead of a round one, in the card, the dialog and the list. The card dialog cannot make a card agent-owned or rename that owner: it is tied to the access token that took the card. See [Access tokens and AI tools](ai-tools.md#kanban-cards-from-an-ai-tool).
+
+## Due dates and Overdue
+
+Set a **Due date** and the card shows it as "Today", "Tomorrow", a weekday and date, or "3 days ago". A card is **Overdue** when its date is before today and its lane is not a **done** lane, and it is then shown in a warning colour with the word as well as the colour. A card in a done lane is never overdue. "Today" is the date on your own device, so two people in different time zones can disagree for a few hours around midnight. Use **Due** in the filter to see overdue cards, cards due today or this week.
 
 ## Labels
 
