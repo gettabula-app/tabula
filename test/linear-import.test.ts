@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDirectory } from '../server/directory.mjs';
-import { updateTicket } from '../server/tracker/tickets.mjs';
+import { searchTickets, updateTicket } from '../server/tracker/tickets.mjs';
 import { applyImport, BATCH_SIZE, normalizeSnapshot, planImport } from '../server/tracker/linear-import.mjs';
 import { verifySnapshot } from '../scripts/linear-verify.mjs';
 import graphFixture from './fixtures/linear/graphql.json';
@@ -189,6 +189,14 @@ describe('Linear import planning and writes', () => {
     expect(directory.db.prepare('SELECT parent_ticket_id FROM tickets WHERE key = ?').get('TAB-212').parent_ticket_id).toBe(ticket.id);
     expect(directory.db.prepare('SELECT archived_at FROM tickets WHERE key = ?').get('TAB-460').archived_at).toBeNull();
     expect(result.report.archiveChoice).toContain('remain normal Done/Cancelled tickets');
+  });
+
+  it('makes imported aliases searchable straight after the import (the search row is refreshed with the alias)', () => {
+    const { directory, actor } = setup({ full: true });
+    const snapshot = buildSnapshot(3);
+    expect(applyImport({ db: directory.db, snapshot, actor }).ok).toBe(true);
+    const byUuid = searchTickets({ directory, actor, query: id(1_000) });
+    expect(byUuid.entries.map((ticket: any) => ticket.key)).toContain('TAB-211');
   });
 
   it('supports allocate numbering by createdAt and falls back automatically for a second team key', () => {
