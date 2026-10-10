@@ -1,3 +1,4 @@
+import { safeInsets } from './safe-area';
 import type { BoardApp } from '../app';
 import { announce } from './announce';
 import { h } from './dom';
@@ -25,6 +26,9 @@ function saveRecent(emoji: string, items: readonly EmojiItem[]): string[] {
   }
   return recent;
 }
+
+/** The room a side of the note must have for the panel to open there; below it the panel docks above the keyboard. */
+const DOCK_BELOW = 200;
 
 /** Opens the picker only on demand, keeping the emoji catalog in its own async chunk. */
 export async function openEmojiPicker(app: BoardApp, anchor: HTMLElement) {
@@ -178,8 +182,20 @@ export async function openEmojiPicker(app: BoardApp, anchor: HTMLElement) {
   span.setAttribute('aria-hidden', 'true');
   span.style.cssText = `position:fixed;pointer-events:none;visibility:hidden;left:${Math.min(note.left, bar.left)}px;top:${Math.min(note.top, bar.top)}px;width:${Math.max(note.right, bar.right) - Math.min(note.left, bar.left)}px;height:${Math.max(note.bottom, bar.bottom) - Math.min(note.top, bar.top)}px`;
   document.body.appendChild(span);
+  // neither side of the note leaves room for about three rows (a high note with the keyboard open): dock the panel just above the keyboard,
+  // over the note, with the grid scrolling, instead of squeezing it to a sliver
+  const vv = window.visualViewport;
+  const visibleBottom = Math.min(window.innerHeight, vv ? vv.offsetTop + vv.height : window.innerHeight) - safeInsets().bottom;
+  const roomAbove = Math.min(note.top, bar.top) - safeInsets().top - 18;
+  const roomBelow = visibleBottom - Math.max(note.bottom, bar.bottom) - 16;
+  const docked = Math.max(roomAbove, roomBelow) < DOCK_BELOW;
+  if (docked) {
+    content.classList.add('docked');
+    span.style.top = `${visibleBottom}px`;
+    span.style.height = '0px';
+  }
   const pop = popover(span, content, {
-    side, fitBelow: true, className: 'emoji-pop', label: 'Emoji',
+    side: docked ? 'top' : side, fitBelow: true, className: 'emoji-pop', label: 'Emoji',
     onClose: () => {
       // popover() handles Escape at window capture, before the editor's textarea keydown can commit.
       span.remove();

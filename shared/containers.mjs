@@ -19,6 +19,12 @@ export const isContainerType = (type) => CONTAINER_TYPES.includes(type);
 export const OWNER_KINDS = Object.freeze(['person', 'agent']);
 /** Lane stages, shared by the browser and the MCP tools. */
 export const STAGES = Object.freeze(['todo', 'doing', 'done']);
+/** The lanes the app puts in a new kanban. */
+export const DEFAULT_KANBAN_LANES = Object.freeze([
+  Object.freeze({ name: 'To do', stage: STAGES[0] }),
+  Object.freeze({ name: 'Doing', stage: STAGES[1] }),
+  Object.freeze({ name: 'Done', stage: STAGES[2] }),
+]);
 export const CARD_LINK_MAX = 2000;
 export const OWNER_NAME_MAX = 80;
 

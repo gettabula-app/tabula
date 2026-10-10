@@ -63,6 +63,11 @@ export function isContainerType(type: string): boolean;
 
 export const OWNER_KINDS: readonly ['person', 'agent'];
 export const STAGES: readonly ['todo', 'doing', 'done'];
+export const DEFAULT_KANBAN_LANES: readonly [
+  { readonly name: 'To do'; readonly stage: 'todo' },
+  { readonly name: 'Doing'; readonly stage: 'doing' },
+  { readonly name: 'Done'; readonly stage: 'done' },
+];
 export const CARD_LINK_MAX: 2000;
 export const OWNER_NAME_MAX: 80;
 export function cleanCardTitle(value: unknown): string;
