@@ -251,7 +251,7 @@ describe('tracker session API slice 3b', () => {
     await api(owner, 'PATCH', `/api/tracker/tickets/${childTwo.key}`, { parent: parent.key });
     await api(owner, 'POST', `/api/tracker/tickets/${childTwo.key}/transition`, { state: 'Cancelled' });
     await api(owner, 'POST', `/api/tracker/tickets/${parent.key}/comments`, { body: 'count this comment' });
-    await api(owner, 'POST', `/api/tracker/tickets/${parent.key}/relations`, { relation: 'blocks', otherKey: blocker.key });
+    await api(owner, 'POST', `/api/tracker/tickets/${parent.key}/relations`, { relation: 'blocked_by', otherKey: blocker.key });
 
     const detail = await api(owner, 'GET', `/api/tracker/tickets/${parent.key}`);
     expect(detail.body.ticket).toMatchObject({ commentCount: 1, subIssueCount: 2, subIssueDone: 1, blocked: true, prs: null });
