@@ -18,6 +18,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
 import { withLegacyEnv } from './env.mjs';
+import { createSnapshotBarrier, testCaptureDelayMs } from './snapshot-barrier.mjs';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -48,6 +49,7 @@ const DEFAULT_SETTLE_SECONDS = 120;
 const DEFAULT_SHUTDOWN_SECONDS = 4;
 const DEFAULT_VERIFY_HOURS = 24;
 const DEFAULT_VERIFY_MAX_MB = 64;
+const DEFAULT_SNAPSHOT_MAX_HOLD_SECONDS = 5;
 /** A workspace that never goes quiet is still backed up this long after its first change that is not in a backup (or one settle time, if that is longer). */
 const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
 /** The longest wait between two settle attempts while the bucket keeps failing. */
@@ -76,6 +78,7 @@ const BOARD_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const VERSION_ID_RE = /^[A-Za-z0-9_-]{16}$/;
 const ASSET_PATH_RE = /^assets\/([0-9a-f]{2})\/([0-9a-f]{64})$/;
 const STALE_TEMP_RE = /^(?:directory|chat)\.sqlite\.backup-[0-9a-f]{16}\.tmp(?:-journal|-wal|-shm)?$/;
+const STALE_SNAPSHOT_RE = /^\.backup-snapshot-[0-9a-f]{16}$/;
 const S3_CODE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const ERRNO_RE = /^[A-Z0-9_]{2,40}$/;
 
@@ -148,6 +151,7 @@ function keySpellings(raw, bytes) {
  * @property {number} intervalMinutes
  * @property {number} settleSeconds quiet time after the last change before a backup is taken; 0 turns settle backups off
  * @property {number} shutdownSeconds how long a graceful shutdown may spend on a final backup; 0 turns it off
+ * @property {number} snapshotMaxHoldSeconds the longest writers may be held while local snapshot copies are made
  * @property {number} verifyHours how often a slice of the newest backup is read back and decrypted; 0 turns the deep verify off
  * @property {number} verifyMaxMb the most sealed megabytes one deep verify reads
  * @property {number} keepHourlyHours
@@ -230,6 +234,7 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', 60, 5, 10_080);
   const settleSeconds = wholeNumber(env, 'SETTLE_SECONDS', DEFAULT_SETTLE_SECONDS, 0, 3_600);
   const shutdownSeconds = wholeNumber(env, 'SHUTDOWN_SECONDS', DEFAULT_SHUTDOWN_SECONDS, 0, 25);
+  const snapshotMaxHoldSeconds = wholeNumber(env, 'SNAPSHOT_MAX_HOLD_SECONDS', DEFAULT_SNAPSHOT_MAX_HOLD_SECONDS, 1, 60);
   const verifyHours = wholeNumber(env, 'VERIFY_HOURS', DEFAULT_VERIFY_HOURS, 0, 720);
   const verifyMaxMb = wholeNumber(env, 'VERIFY_MAX_MB', DEFAULT_VERIFY_MAX_MB, 1, 4_096);
   const keepHourlyHours = wholeNumber(env, 'KEEP_HOURLY_HOURS', 48, 0, 8_760);
@@ -244,6 +249,7 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     intervalMinutes,
     settleSeconds,
     shutdownSeconds,
+    snapshotMaxHoldSeconds,
     verifyHours,
     verifyMaxMb,
     keepHourlyHours,
@@ -832,6 +838,18 @@ function parseManifest(bytes, keys, name) {
   if (!isObject(data) || data.version !== FORMAT_VERSION) throw bad('version');
   if (data.keyId !== keys.keyId) throw bad('key id');
   if (typeof data.createdAt !== 'string' || !Array.isArray(data.files) || data.files.length > MAX_MANIFEST_FILES) throw bad('fields');
+  let snapshotBarrier = null;
+  if (data.snapshotBarrier !== undefined) {
+    const barrier = data.snapshotBarrier;
+    if (
+      !isObject(barrier) ||
+      barrier.completed !== true ||
+      !Number.isSafeInteger(barrier.snapshotSeq) || barrier.snapshotSeq < 1 ||
+      !Number.isSafeInteger(barrier.startedAt) || barrier.startedAt < 0 ||
+      !Number.isSafeInteger(barrier.endedAt) || barrier.endedAt < barrier.startedAt
+    ) throw bad('snapshot barrier');
+    snapshotBarrier = { completed: true, snapshotSeq: barrier.snapshotSeq, startedAt: barrier.startedAt, endedAt: barrier.endedAt };
+  }
   const paths = new Set();
   let total = 0;
   const files = data.files.map((entry) => {
@@ -850,6 +868,7 @@ function parseManifest(bytes, keys, name) {
     keyId: keys.keyId,
     createdAt: data.createdAt,
     appVersion: typeof data.appVersion === 'string' ? data.appVersion : null,
+    ...(snapshotBarrier ? { snapshotBarrier } : {}),
     files,
     totals: { files: files.length, bytes: total },
   };
@@ -882,10 +901,11 @@ const EMPTY_STATUS = Object.freeze({
   deepSince: null,
   deepCursor: 0,
   deepCycleOk: 0,
+  snapshotSeq: 0,
 });
 
 /** Kept in the stored status so a restart carries on where the last deep verify stopped, but not part of what status() shows. */
-const INTERNAL_STATUS = ['deepSince', 'deepCursor', 'deepCycleOk'];
+const INTERNAL_STATUS = ['deepSince', 'deepCursor', 'deepCycleOk', 'snapshotSeq'];
 
 const timeOrNull = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
 const countOr0 = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
@@ -920,6 +940,7 @@ function readStatus(directory, scrub) {
     status.deepSince = timeOrNull(stored.deepSince);
     status.deepCursor = countOr0(stored.deepCursor);
     status.deepCycleOk = countOr0(stored.deepCycleOk);
+    status.snapshotSeq = countOr0(stored.snapshotSeq);
   } catch {
     /* unreadable status starts again from nothing */
   }
@@ -992,8 +1013,8 @@ const tooLarge = (rel, size, limit) => new BackupError('too_large', `${rel} is $
 export function clearRunState({ dataDir, directory = null }) {
   let removed = 0;
   for (const name of fs.readdirSync(dataDir)) {
-    if (!STALE_TEMP_RE.test(name)) continue;
-    fs.rmSync(path.join(dataDir, name), { force: true });
+    if (!STALE_TEMP_RE.test(name) && !STALE_SNAPSHOT_RE.test(name)) continue;
+    fs.rmSync(path.join(dataDir, name), { recursive: STALE_SNAPSHOT_RE.test(name), force: true });
     removed++;
   }
   const stored = directory?.getSetting(STATUS_KEY);
@@ -1023,6 +1044,8 @@ export function clearRunState({ dataDir, directory = null }) {
  * @param {string} options.dataDir
  * @param {any} [options.directory] accounts mode: where the status is kept and the audit rows go; without it the status lives in memory
  * @param {((room: string) => Uint8Array | null) | null} [options.boardState] the current state of a room that is open (a room name is `<boardId>` or `<boardId>~comments`); null or a room that is not open: its file is read
+ * @param {any} [options.snapshotBarrier] shared with the relay and directory so writers pause during local snapshot copies
+ * @param {() => void} [options.prepareSnapshot] saves open rooms after writers pause and before their files are copied
  * @param {(...args: any[]) => void} [options.log]
  * @param {any} [options.fetch]
  * @param {() => number} [options.now]
@@ -1039,6 +1062,8 @@ export function createBackup({
   dataDir,
   directory = null,
   boardState = null,
+  snapshotBarrier: sharedSnapshotBarrier = null,
+  prepareSnapshot = () => {},
   log = (...args) => console.error(...args),
   fetch: fetchFn = (...args) => globalThis.fetch(...args),
   now = Date.now,
@@ -1051,6 +1076,12 @@ export function createBackup({
   workerFactory = (file, options) => new Worker(file, options),
 }) {
   if (!config) return null;
+
+  const hasSharedSnapshotBarrier = sharedSnapshotBarrier !== null;
+  const snapshotBarrier = sharedSnapshotBarrier ?? createSnapshotBarrier({
+    maxHoldMs: (config.snapshotMaxHoldSeconds ?? DEFAULT_SNAPSHOT_MAX_HOLD_SECONDS) * 1000,
+    now,
+  });
 
   const scrub = createScrubber(config.secrets ?? []);
   const say = (message) => {
@@ -1207,14 +1238,17 @@ export function createBackup({
 
   function cleanStaleTemps() {
     try {
-      for (const name of fs.readdirSync(dataDir)) if (STALE_TEMP_RE.test(name)) fs.rmSync(path.join(dataDir, name), { force: true });
+      for (const name of fs.readdirSync(dataDir)) {
+        if (STALE_TEMP_RE.test(name)) fs.rmSync(path.join(dataDir, name), { force: true });
+        else if (STALE_SNAPSHOT_RE.test(name)) fs.rmSync(path.join(dataDir, name), { recursive: true, force: true });
+      }
     } catch (err) {
       say(`could not clean up old temporary files (${describe(err)})`);
     }
   }
 
   /** Both SQLite steps of the copy run in a worker thread, so the event loop of the server is not held (docs/backups.md, When it runs). */
-  async function copyInOtherThread(source, tmp) {
+  async function copyInOtherThread(source, tmp, snapshotSignal) {
     let worker;
     try {
       worker = workerFactory(COPY_WORKER_URL, {
@@ -1224,25 +1258,26 @@ export function createBackup({
         execArgv: ['--disable-warning=ExperimentalWarning'],
       });
     } catch (err) {
+      if (hasSharedSnapshotBarrier) throw new BackupError('copy_worker', 'The database copy worker could not be started');
       say(`the database copy could not be started in a worker thread (${describe(err)}); copying in the main thread`);
       await copyDatabase(source, tmp, STATUS_KEY);
       return;
     }
-    await waitForCopy(worker, { signal: stop.signal, cleanup: () => removeTemp(tmp) });
+    await waitForCopy(worker, { signal: AbortSignal.any([stop.signal, snapshotSignal]), cleanup: () => removeTemp(tmp) });
   }
 
   /**
    * A consistent copy of a database (directory.sqlite or chat.sqlite), taken while the server uses it. The directory's
    * copy leaves out the engine's own rows; the chat database has none.
    */
-  async function copyDatabaseFile(source, rel) {
+  async function copyDatabaseFile(source, rel, snapshotSignal) {
     const tmp = path.join(dataDir, `${rel}.backup-${crypto.randomBytes(8).toString('hex')}.tmp`);
     tempFile = tmp;
     try {
-      await copyInOtherThread(source, tmp);
+      await copyInOtherThread(source, tmp, snapshotSignal);
       const size = fs.statSync(tmp).size;
       if (size > maxFileBytes) throw tooLarge(rel, size, maxFileBytes);
-      const data = await fs.promises.readFile(tmp);
+      const data = await fs.promises.readFile(tmp, { signal: snapshotSignal });
       // The file change counter (and the copy of it SQLite keeps for validity) counts the writes made to this temporary
       // copy, which differ from run to run. SQLite recomputes it, so a fixed value keeps an unchanged database unchanged.
       if (data.length >= 100 && data.toString('latin1', 0, 15) === 'SQLite format 3') {
@@ -1256,17 +1291,17 @@ export function createBackup({
     }
   }
 
-  async function readCapped(file, rel) {
+  async function readCapped(file, rel, signal) {
     const size = (await fs.promises.stat(file)).size;
     if (size > maxFileBytes) throw tooLarge(rel, size, maxFileBytes);
-    const data = await fs.promises.readFile(file);
+    const data = await fs.promises.readFile(file, signal ? { signal } : undefined);
     if (data.length > maxFileBytes) throw tooLarge(rel, data.length, maxFileBytes);
     return data;
   }
 
-  const readIfThere = async (file, rel) => {
+  const readIfThere = async (file, rel, signal) => {
     try {
-      return await readCapped(file, rel);
+      return await readCapped(file, rel, signal);
     } catch (err) {
       if (err?.code === 'ENOENT') return null;
       throw err;
@@ -1274,12 +1309,12 @@ export function createBackup({
   };
 
   /** One file at a time, so only one is in memory. `skipped` counts what was left out because it vanished or is damaged. */
-  async function* snapshotFiles(counters) {
+  async function* snapshotFiles(counters, signal) {
     const database = path.join(dataDir, 'directory.sqlite');
-    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDatabaseFile(database, 'directory.sqlite') };
+    if (isFileSync(database)) yield { path: 'directory.sqlite', data: await copyDatabaseFile(database, 'directory.sqlite', signal) };
     // Team chat (docs/chat.md) keeps its own database, copied the same way; it exists once chat was first used.
     const chat = path.join(dataDir, 'chat.sqlite');
-    if (isFileSync(chat)) yield { path: 'chat.sqlite', data: await copyDatabaseFile(chat, 'chat.sqlite') };
+    if (isFileSync(chat)) yield { path: 'chat.sqlite', data: await copyDatabaseFile(chat, 'chat.sqlite', signal) };
 
     const names = (await fs.promises.readdir(dataDir, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && ROOM_FILE_RE.test(entry.name))
@@ -1297,7 +1332,7 @@ export function createBackup({
         }
         if (data && data.length > maxFileBytes) throw tooLarge(file, data.length, maxFileBytes);
       }
-      data ??= await readIfThere(path.join(dataDir, file), file);
+      data ??= await readIfThere(path.join(dataDir, file), file, signal);
       if (data) yield { path: file, data };
       else counters.skipped++;
     }
@@ -1322,7 +1357,7 @@ export function createBackup({
       for (const name of names) {
         const rel = `assets/${shard}/${name}`;
         if (assetHashOf(rel) === null) continue;
-        const data = await readIfThere(path.join(assetsRoot, shard, name), rel);
+        const data = await readIfThere(path.join(assetsRoot, shard, name), rel, signal);
         if (!data) {
           counters.skipped++;
           continue;
@@ -1345,7 +1380,7 @@ export function createBackup({
     }
     for (const board of boards) {
       // The index comes first; only the versions it lists are read, and the index stored lists only the ones that were.
-      const rawIndex = await readIfThere(path.join(root, board, 'index.json'), `history/${board}/index.json`);
+      const rawIndex = await readIfThere(path.join(root, board, 'index.json'), `history/${board}/index.json`, signal);
       if (!rawIndex) continue;
       let index;
       try {
@@ -1360,7 +1395,7 @@ export function createBackup({
       const present = new Set();
       for (const id of ids) {
         const rel = `history/${board}/${id}.yjs.gz`;
-        const data = await readIfThere(path.join(root, board, `${id}.yjs.gz`), rel);
+        const data = await readIfThere(path.join(root, board, `${id}.yjs.gz`), rel, signal);
         if (!data) continue;
         present.add(id);
         yield { path: rel, data };
@@ -1368,6 +1403,62 @@ export function createBackup({
       const complete = index.versions.every((v) => present.has(v?.id));
       const stored = complete ? rawIndex : Buffer.from(JSON.stringify({ ...index, versions: index.versions.filter((v) => present.has(v?.id)) }));
       yield { path: `history/${board}/index.json`, data: stored };
+    }
+  }
+
+  /**
+   * Makes every backup input a local file before releasing writers. Uploads only ever read this private snapshot tree,
+   * so a slow bucket cannot lengthen the write hold or mix source files from different times.
+   */
+  async function stageSnapshot(counters) {
+    const root = path.join(dataDir, `.backup-snapshot-${crypto.randomBytes(8).toString('hex')}`);
+    fs.mkdirSync(root, { mode: 0o700 });
+    const files = [];
+    try {
+      say('snapshot barrier started');
+      const snapshot = await snapshotBarrier.withSnapshot({
+        prepare: prepareSnapshot,
+        capture: async ({ signal }) => {
+          const combinedSignal = AbortSignal.any([signal, stop.signal]);
+          // Relay integration tests need a deterministic window in which to send a websocket update. This is inert
+          // unless the test-only variable is explicitly set, and the barrier's normal timeout still bounds it.
+          const testDelayMs = testCaptureDelayMs();
+          if (testDelayMs > 0) {
+            if (combinedSignal.aborted) throw combinedSignal.reason ?? aborted();
+            await new Promise((resolve, reject) => {
+              const timer = setTimeout(() => {
+                combinedSignal.removeEventListener('abort', onAbort);
+                resolve();
+              }, testDelayMs);
+              const onAbort = () => {
+                clearTimeout(timer);
+                reject(combinedSignal.reason ?? aborted());
+              };
+              combinedSignal.addEventListener('abort', onAbort, { once: true });
+            });
+          }
+          for await (const file of snapshotFiles(counters, combinedSignal)) {
+            if (combinedSignal.aborted) throw combinedSignal.reason ?? aborted();
+            const rel = validateRelPath(file.path);
+            const local = path.join(root, ...rel.split('/'));
+            await fs.promises.mkdir(path.dirname(local), { recursive: true, mode: 0o700 });
+            await fs.promises.writeFile(local, file.data, { flag: 'wx', mode: 0o600, signal: combinedSignal });
+            files.push({ path: rel, size: file.data.length });
+          }
+          return { changeSeqAtCapture: changeSeq };
+        },
+      });
+      say(`snapshot barrier released after ${snapshot.endedAt - snapshot.startedAt} ms`);
+      return { root, files, startedAt: snapshot.startedAt, endedAt: snapshot.endedAt, changeSeqAtCapture: snapshot.value.changeSeqAtCapture };
+    } catch (err) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true });
+      } catch (cleanupError) {
+        say(`could not remove the local snapshot copy (${describe(cleanupError)})`);
+      }
+      if (stop.signal.aborted) throw aborted();
+      if (err?.code === 'snapshot_timeout') say(`snapshot barrier exceeded ${snapshotBarrier.maxHoldMs} ms; writers were released and the snapshot will retry`);
+      throw err;
     }
   }
 
@@ -1407,84 +1498,99 @@ export function createBackup({
     const handled = new Set();
     const uploaded = new Map();
     let repaired = 0;
-    for await (const file of snapshotFiles(counters)) {
-      if (stop.signal.aborted) throw aborted();
-      const objectId = objectIdOf(file.data, keys);
-      entries.push({ path: validateRelPath(file.path), size: file.data.length, objectId });
-      if (handled.has(objectId)) continue;
-      handled.add(objectId);
-      if (suspect.has(objectId)) {
-        // A cleanup or a deep verify found this object missing or damaged: whatever else is known about it, it is put again.
-        repaired++;
-      } else if (reusable.has(objectId) || unpublished.has(objectId)) {
-        if (verified.has(objectId) && reusable.has(objectId)) continue;
-        const found = await s3.head(objectKey(objectId));
-        if (found && (found.size === null || found.size === file.data.length + OVERHEAD)) continue;
-        if (reusable.has(objectId)) repaired++;
+    const snapshot = await stageSnapshot(counters);
+    try {
+      for (const file of snapshot.files) {
+        if (stop.signal.aborted) throw aborted();
+        const data = await readCapped(path.join(snapshot.root, ...file.path.split('/')), file.path, stop.signal);
+        const objectId = objectIdOf(data, keys);
+        entries.push({ path: file.path, size: data.length, objectId });
+        if (handled.has(objectId)) continue;
+        handled.add(objectId);
+        if (suspect.has(objectId)) {
+          // A cleanup or a deep verify found this object damaged; whatever else is known about it, put it again.
+          repaired++;
+        } else if (reusable.has(objectId) || unpublished.has(objectId)) {
+          if (verified.has(objectId) && reusable.has(objectId)) continue;
+          const found = await s3.head(objectKey(objectId));
+          if (found && (found.size === null || found.size === data.length + OVERHEAD)) continue;
+          if (reusable.has(objectId)) repaired++;
+        }
+        uploaded.set(objectId, await putObject(objectId, data));
+        unpublished.add(objectId);
       }
-      uploaded.set(objectId, await putObject(objectId, file.data));
-      unpublished.add(objectId);
-    }
-    entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
-    const unchanged =
-      previous !== null &&
-      previous.keyId === keys.keyId &&
-      previous.files.length === entries.length &&
-      previous.files.every((f, i) => f.path === entries[i].path && f.objectId === entries[i].objectId);
+      const unchanged =
+        previous !== null &&
+        previous.keyId === keys.keyId &&
+        previous.files.length === entries.length &&
+        previous.files.every((f, i) => f.path === entries[i].path && f.objectId === entries[i].objectId);
 
     // Every object is checked before a manifest names it, so a bad upload never leaves a manifest behind.
-    for (const [objectId, sealedLength] of uploaded) {
-      const found = await s3.head(objectKey(objectId));
-      if (!found || (found.size !== null && found.size !== sealedLength)) {
-        throw new BackupError('readback', 'An uploaded backup object could not be found again in the bucket');
+      for (const [objectId, sealedLength] of uploaded) {
+        const found = await s3.head(objectKey(objectId));
+        if (!found || (found.size !== null && found.size !== sealedLength)) {
+          throw new BackupError('readback', 'An uploaded backup object could not be found again in the bucket');
+        }
+        suspect.delete(objectId);
       }
-      suspect.delete(objectId);
-    }
-    syncDeepDamaged();
+      syncDeepDamaged();
 
-    let manifest = previous;
-    let manifestName = previous?.name ?? null;
-    if (!unchanged) {
-      const taken = new Set(listed.map((m) => m.name));
-      let at = startedAt;
-      while (taken.has(formatManifestName(at))) at += 1000;
-      manifestName = formatManifestName(at);
-      const body = {
-        version: FORMAT_VERSION,
-        keyId: keys.keyId,
-        createdAt: new Date(startedAt).toISOString(),
-        appVersion: VERSION,
-        files: entries,
-        totals: { files: entries.length, bytes: entries.reduce((sum, e) => sum + e.size, 0) },
+      let manifest = previous;
+      let manifestName = previous?.name ?? null;
+      let snapshotSeq = previous?.snapshotBarrier?.snapshotSeq ?? state.snapshotSeq;
+      if (!unchanged) {
+        const taken = new Set(listed.map((m) => m.name));
+        let at = startedAt;
+        while (taken.has(formatManifestName(at))) at += 1000;
+        manifestName = formatManifestName(at);
+        snapshotSeq = Math.max(state.snapshotSeq, previous?.snapshotBarrier?.snapshotSeq ?? 0) + 1;
+        const body = {
+          version: FORMAT_VERSION,
+          keyId: keys.keyId,
+          createdAt: new Date(startedAt).toISOString(),
+          appVersion: VERSION,
+          snapshotBarrier: { completed: true, snapshotSeq, startedAt: snapshot.startedAt, endedAt: snapshot.endedAt },
+          files: entries,
+          totals: { files: entries.length, bytes: entries.reduce((sum, e) => sum + e.size, 0) },
+        };
+        const bytes = Buffer.from(JSON.stringify(body), 'utf8');
+        await s3.put(manifestKey(manifestName), seal(bytes, `manifest:${manifestName}`, keys));
+        try {
+          const back = unseal(await s3.get(manifestKey(manifestName), { maxBytes: MAX_MANIFEST_BYTES }), `manifest:${manifestName}`, keyring);
+          if (!back.plaintext.equals(bytes)) throw new BackupError('readback', 'The manifest read back from the bucket is not the one that was written');
+          manifest = parseManifest(back.plaintext, back.keys, manifestName);
+        } catch (err) {
+          await s3.del(manifestKey(manifestName)).catch(() => {});
+          if (err instanceof BackupError && (err.code === 'readback' || err.code === 'aborted')) throw err;
+          throw new BackupError('readback', `The manifest could not be read back from the bucket (${err?.code ?? 'error'})`);
+        }
+      }
+      verified = new Set(manifest.files.map((f) => f.objectId));
+      unpublished.clear();
+
+      const unique = new Map(manifest.files.map((f) => [f.objectId, f.size]));
+      return {
+        objects: unique,
+        changed: !unchanged,
+        manifestName,
+        files: manifest.files.length,
+        uploaded: uploaded.size,
+        repaired,
+        skipped: counters.skipped,
+        snapshotSeq,
+        changeSeqAtCapture: snapshot.changeSeqAtCapture,
+        bytesStored: [...unique.values()].reduce((sum, size) => sum + size + OVERHEAD, 0),
+        bytesUploaded: [...uploaded.values()].reduce((sum, n) => sum + n, 0),
       };
-      const bytes = Buffer.from(JSON.stringify(body), 'utf8');
-      await s3.put(manifestKey(manifestName), seal(bytes, `manifest:${manifestName}`, keys));
+    } finally {
       try {
-        const back = unseal(await s3.get(manifestKey(manifestName), { maxBytes: MAX_MANIFEST_BYTES }), `manifest:${manifestName}`, keyring);
-        if (!back.plaintext.equals(bytes)) throw new BackupError('readback', 'The manifest read back from the bucket is not the one that was written');
-        manifest = parseManifest(back.plaintext, back.keys, manifestName);
+        fs.rmSync(snapshot.root, { recursive: true, force: true });
       } catch (err) {
-        await s3.del(manifestKey(manifestName)).catch(() => {});
-        if (err instanceof BackupError && (err.code === 'readback' || err.code === 'aborted')) throw err;
-        throw new BackupError('readback', `The manifest could not be read back from the bucket (${err?.code ?? 'error'})`);
+        say(`could not remove the local snapshot copy (${describe(err)})`);
       }
     }
-    verified = new Set(manifest.files.map((f) => f.objectId));
-    unpublished.clear();
-
-    const unique = new Map(manifest.files.map((f) => [f.objectId, f.size]));
-    return {
-      objects: unique,
-      changed: !unchanged,
-      manifestName,
-      files: manifest.files.length,
-      uploaded: uploaded.size,
-      repaired,
-      skipped: counters.skipped,
-      bytesStored: [...unique.values()].reduce((sum, size) => sum + size + OVERHEAD, 0),
-      bytesUploaded: [...uploaded.values()].reduce((sum, n) => sum + n, 0),
-    };
   }
 
   /**
@@ -1611,6 +1717,7 @@ export function createBackup({
       lastError: null,
       consecutiveFailures: 0,
       lastManifest: summary.manifestName,
+      snapshotSeq: Math.max(state.snapshotSeq, summary.snapshotSeq ?? 0),
       bytesStored: summary.bytesStored,
       objects: pruned.objects ?? state.objects,
       manifests: pruned.manifests ?? state.manifests,
@@ -1782,7 +1889,7 @@ export function createBackup({
       verifyNext = summary.objects;
       // What was noted while this run read the files may or may not be in it, so only a quiet run clears the mark.
       retryNotBefore = 0;
-      if (changeSeq === seqAtStart) {
+      if (changeSeq === (summary.changeSeqAtCapture ?? seqAtStart)) {
         dirtySince = null;
         lastChangeAt = null;
       } else {
@@ -1792,6 +1899,10 @@ export function createBackup({
     } catch (err) {
       if (err?.code === 'aborted') return { ok: false, aborted: true };
       failed = true;
+      if (err?.code === 'snapshot_timeout') {
+        dirtySince ??= now();
+        lastChangeAt = now();
+      }
       lastTrigger = trigger;
       return { ok: false, error: recordFailure(startedAt, err) };
     } finally {

@@ -31,7 +31,7 @@ import {
 import { listLabels } from './labels';
 import { KANBAN, wipCheck } from '../shared/containers';
 import { remapObjects } from './custom-templates';
-import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
+import { guidesCover, referenceRects, snapMove, snapResize, snapResizeLocked, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
@@ -40,6 +40,8 @@ import { TOOL_KEYS } from './shortcuts';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
+import { fontCss, measure } from './text';
+import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 const isCardLinkTarget = (target: EventTarget | null) => {
@@ -1907,17 +1909,28 @@ export class BoardApp {
     }
     let sx: number | null = null, sy: number | null = null;
     const guides: Guide[] = [];
-    if (!e.altKey && !o0.rotation && !keepAspect) {
+    if (!e.altKey && !o0.rotation) {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
         d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), [], vp);
       }
-      const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
-      sx = sn.dx;
-      sy = sn.dy;
-      if (sx !== null) { if (h.includes('w')) l += sx; else r += sx; }
-      if (sy !== null) { if (h.includes('n')) t += sy; else b += sy; }
-      guides.push(...sn.guides, ...sn.gaps);
+      const proposed = { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t };
+      if (keepAspect) {
+        const ratio = o0.w / Math.max(o0.h, 1);
+        const sn = snapResizeLocked(d.guides, proposed, h, this.zoom, ratio);
+        l = sn.rect.x - o0.x;
+        t = sn.rect.y - o0.y;
+        r = l + sn.rect.w;
+        b = t + sn.rect.h;
+        guides.push(...sn.guides, ...sn.gaps, ...sn.sizes);
+      } else {
+        const sn = snapResize(d.guides, proposed, h, this.zoom);
+        sx = sn.dx;
+        sy = sn.dy;
+        if (sx !== null) { if (h.includes('w')) l += sx; else r += sx; }
+        if (sy !== null) { if (h.includes('n')) t += sy; else b += sy; }
+        guides.push(...sn.guides, ...sn.gaps, ...sn.sizes);
+      }
     }
     this.r.setOverlay({ guides });
     if (this.snapOn(e) && !o0.rotation && !keepAspect) {
@@ -2651,19 +2664,35 @@ export class BoardApp {
       }
     } catch { /* not JSON */ }
     if (this.clipboard.length && text === JSON.stringify({ driftboard: 1, objects: this.clipboard })) return;
-    // Plain text: one sticky per line (up to 50), laid out in a grid.
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 50);
-    if (!lines.length) return;
-    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
-    if (lines.length === 1 && lines[0].length > 80) {
-      this.placeAt('text', at, 360, 28, { text: lines[0] });
-      return;
+    // Preserve the clipboard's line breaks, removing only empty lines at either end.
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const normalized = lines.join('\n');
+    if (!normalized) return;
+
+    // The board operation validator uses UTF-16 length; stop at a code point boundary so a pasted emoji stays intact.
+    let length = 0;
+    const kept: string[] = [];
+    for (const char of normalized) {
+      if (length + char.length > OBJECT_TEXT_MAX) break;
+      kept.push(char);
+      length += char.length;
     }
-    const cols = Math.ceil(Math.sqrt(lines.length));
-    const objs = lines.map((l, i) => this.makeObj('sticky', { x: at.x + (i % cols) * 216, y: at.y + Math.floor(i / cols) * 216, w: 192, h: 192 }, { text: l }));
-    this.store.undo.stopCapturing();
-    this.store.transact(() => objs.forEach((o) => this.store.create(o)));
-    this.resetScopeSelection(objs.map((o) => o.id));
+    const content = kept.join('');
+    if (normalized.length > OBJECT_TEXT_MAX) this.notify(`Pasted text was cut to ${OBJECT_TEXT_MAX.toLocaleString('en-US')} characters.`);
+    if (!content.trim()) return;
+
+    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
+    const font = this.store.getMeta().bodyFont;
+    const css = fontCss(font, 20, 400);
+    const naturalWidth = Math.max(...content.split('\n').map((line) => measure(line.trimEnd(), css)));
+    const w = Math.min(360, Math.max(8, Math.ceil(naturalWidth)));
+    const probe = { id: '', type: 'text', x: 0, y: 0, w, h: 0, rotation: 0, z: '', text: content, font } as BaseObj;
+    const h = textHeight(probe);
+    // makeObj applies the same frame parenting as the Text tool; centring the box makes its centre the paste point.
+    const o = this.makeObj('text', { x: at.x - w / 2, y: at.y - h / 2, w, h }, { text: content });
+    this.createObject(o);
   }
 
   pasteInternal() {

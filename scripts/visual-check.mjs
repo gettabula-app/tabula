@@ -35,8 +35,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --states <list>    Comma separated, default all for the mode: home, board, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
-                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, flip-menu, flip-visual, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -969,6 +969,59 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'resize-guides-size'(env) {
+    await openSeedBoard(env);
+    const { page } = env;
+    const drag = await page.evaluate(() => {
+      const app = window.__board;
+      app.r.setCamera({ zoom: 0.5 });
+      const vp = app.r.viewport();
+      const size = app.r.size();
+      const startPx = Math.max(96, (size.w - 190) / 2);
+      const x = vp.x + startPx / app.zoom;
+      const y = vp.y + 180 / app.zoom;
+      const moving = app.makeObj('sticky', { x, y, w: 100, h: 90 }, { text: 'Resize me', fontSize: 16, fill: '#FFE16B' });
+      const reference = app.makeObj('sticky', { x: x + 250, y, w: 130, h: 90 }, { text: 'Match width', fontSize: 16, fill: '#BCE88C' });
+      moving.id = 'visual-resize-size-target';
+      reference.id = 'visual-resize-size-reference';
+      delete moving.parent;
+      delete reference.parent;
+      [moving.z, reference.z] = app.store.topZs(2);
+      app.store.transact(() => {
+        app.store.create(moving);
+        app.store.create(reference);
+      });
+      app.setSelection([moving.id]);
+      const svg = app.r.svg.getBoundingClientRect();
+      const handle = app.r.toScreen({ x: moving.x + moving.w, y: moving.y + moving.h / 2 });
+      return {
+        start: { x: svg.left + handle.x, y: svg.top + handle.y },
+        end: { x: svg.left + handle.x + 14, y: svg.top + handle.y },
+      };
+    });
+    await page.mouse.move(drag.start.x, drag.start.y);
+    await page.mouse.down();
+    await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    await page.waitForFunction(() => {
+      const width = window.__board.store.getPlaced('visual-resize-size-target')?.w;
+      return width !== undefined && width !== 100;
+    });
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const moving = app.store.getPlaced('visual-resize-size-target');
+      const reference = app.store.getPlaced('visual-resize-size-reference');
+      return {
+        width: moving?.w,
+        referenceWidth: reference?.w,
+        sizeMark: app.r.overlay.guides.some((guide) => guide.kind === 'size' && guide.axis === 'x'),
+      };
+    });
+    if (result.width === undefined || result.referenceWidth === undefined || Math.abs(result.width - result.referenceWidth) > 1e-9) {
+      throw new Error(`resize-guides-size: dragged width ${result.width} did not match reference width ${result.referenceWidth}`);
+    }
+    if (!result.sizeMark) throw new Error('resize-guides-size: overlay has no width size mark during the drag');
+    return { noPark: true };
   },
   async 'uml-arrows-themes'({ page, base }) {
     await openSeedBoard({ page, base });
@@ -2372,6 +2425,26 @@ const STATES = {
     if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
     await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
   },
+  // the board menu opens with the User guide: first, an accent of at least 3:1 on its icon, the same button and name
+  async 'board-menu-guide'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.locator('.menu').waitFor();
+    const r = await env.page.evaluate(() => {
+      const rgb = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const menu = document.querySelector('.menu');
+      const first = menu.querySelector('.menu-item');
+      const icon = first.querySelector('.ico');
+      const bg = getComputedStyle(menu.closest('.popover') ?? menu).backgroundColor;
+      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.firstElementChild === first, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
+    });
+    console.log(`board-menu-guide ${JSON.stringify(r)}`);
+    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the first entry is not the User guide button (${JSON.stringify(r)})`);
+    if (r.ratio < 3) throw new Error(`board-menu-guide: the accent is ${r.ratio.toFixed(2)}:1, under 3:1`);
+    if (Number(r.weight) < 600) throw new Error(`board-menu-guide: the label is not heavier (${r.weight})`);
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
@@ -2644,6 +2717,136 @@ const STATES = {
     });
     await settle(env.page);
   },
+  async 'paste-text'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    const paste = async (worldPoint, text) => {
+      const screen = await page.evaluate((p) => {
+        const app = window.__board;
+        const point = app.r.toScreen(p);
+        const bounds = app.r.root.getBoundingClientRect();
+        return { x: bounds.left + point.x, y: bounds.top + point.y };
+      }, worldPoint);
+      await page.mouse.move(screen.x, screen.y);
+      // Mobile emulation in Firefox does not send a mouse pointermove from page.mouse; seed the canvas's pointer listener
+      // at the same client point so lastPointer has the same value in all three engines.
+      await page.evaluate((point) => {
+        window.__board.r.svg.dispatchEvent(new PointerEvent('pointermove', {
+          bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: point.x, clientY: point.y,
+        }));
+      }, screen);
+      const event = await page.evaluate((value) => {
+        const data = new DataTransfer();
+        data.setData('text/plain', value);
+        const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data });
+        if (paste.clipboardData !== data) Object.defineProperty(paste, 'clipboardData', { configurable: true, value: data });
+        window.dispatchEvent(paste);
+        return { prevented: paste.defaultPrevented, textCount: [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length };
+      }, text);
+      if (!event.prevented) throw new Error('paste-text: the window paste event was not handled');
+      return event;
+    };
+    await page.evaluate(() => window.__board.r.setCamera({ x: 0, y: 0, zoom: 0.7 }));
+    const firstText = 'First pasted line\nSecond pasted line\n\nFourth line';
+    const beforeFirstPaste = await page.evaluate(() => [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length);
+    const first = await paste({ x: 320, y: 600 }, firstText);
+    if (first.textCount !== beforeFirstPaste + 1) throw new Error('paste-text: the first clipboard paste did not add exactly one text object');
+    const firstObject = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, firstText);
+    if (!firstObject || firstObject.parent) throw new Error(`paste-text: multi-line clipboard text was not kept as one loose object: ${JSON.stringify(firstObject ?? null)}`);
+    const secondText = 'Text pasted inside a frame';
+    const second = await paste({ x: 220, y: 380 }, secondText);
+    const child = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, secondText);
+    if (!child || child.parent !== 'seed-frame-good') throw new Error(`paste-text: expected the second paste to be a child of seed-frame-good, got ${child?.parent ?? 'no object'}`);
+    if (second.textCount !== first.textCount + 1) throw new Error('paste-text: expected each paste to add exactly one text object');
+    await page.evaluate(() => window.__board.r.setCamera({ x: -50, y: 0, zoom: 0.7 }));
+    console.log(`paste-text ${JSON.stringify({ first: firstObject.text, firstWidth: firstObject.w, frameParent: child.parent })}`);
+    await settle(page);
+  },
+  async 'text-scale-touch'(env) {
+    const { page, browserName } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      store.undo.stopCapturing();
+      store.transact(() => store.create({
+        id: 'visual-touch-text', type: 'text', x: 1100, y: 120, w: 300, h: 80, rotation: 0,
+        z: store.topZ(), text: 'Touch the corner to scale this text', fontSize: 26,
+        createdBy: app.user.id, updatedAt: Date.now(),
+      }));
+      store.undo.stopCapturing();
+      app.r.fit(app.r.contentBounds(['visual-touch-text']), 30, 1.4);
+      app.setSelection(['visual-touch-text']);
+    });
+    await settle(page);
+    const start = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('visual-touch-text');
+      const bounds = app.r.root.getBoundingClientRect();
+      const screen = (p) => {
+        const q = app.r.toScreen(p);
+        return { x: bounds.left + q.x, y: bounds.top + q.y };
+      };
+      const corner = screen({ x: o.x + o.w, y: o.y + o.h });
+      const opposite = screen({ x: o.x, y: o.y });
+      const target = { x: opposite.x + (corner.x - opposite.x) * 1.6, y: opposite.y + (corner.y - opposite.y) * 1.6 };
+      return {
+        corner: { x: corner.x + 21.9, y: corner.y + 21.9 }, target,
+        fontSize: o.fontSize, undoDepth: app.store.undo.undoStack.length,
+        coarse: matchMedia('(pointer: coarse)').matches,
+      };
+    });
+    if (env.width <= 500 && !start.coarse) throw new Error('text-scale-touch: the phone viewport did not get a coarse pointer');
+    const dragTouch = async (from, to) => {
+      if (browserName === 'chromium') {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1, x: from.x, y: from.y }] });
+        for (let i = 1; i <= 8; i++) {
+          await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchMove', touchPoints: [{ id: 1, x: from.x + ((to.x - from.x) * i) / 8, y: from.y + ((to.y - from.y) * i) / 8 }],
+          });
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await cdp.detach();
+        return;
+      }
+      // Playwright exposes tap but not a touch drag in WebKit and Firefox. Keep the same coarse-pointer hit path by
+      // checking the far edge with a real touch tap, then dispatching touch pointer moves on the canvas.
+      if (env.width <= 500) await page.touchscreen.tap(from.x, from.y);
+      await page.evaluate(({ from: a, to: b }) => {
+        const svg = window.__board.r.svg;
+        Object.defineProperty(svg, 'setPointerCapture', { configurable: true, value() {} });
+        const send = (type, point, buttons) => svg.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 31, pointerType: 'touch', isPrimary: true,
+          button: 0, buttons, clientX: point.x, clientY: point.y,
+        }));
+        send('pointerdown', a, 1);
+        for (let i = 1; i <= 8; i++) send('pointermove', { x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 }, 1);
+        send('pointerup', b, 0);
+      }, { from, to });
+    };
+    await dragTouch(start.corner, start.target);
+    const scaled = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('visual-touch-text');
+      return { fontSize: o.fontSize, undoDepth: app.store.undo.undoStack.length, coarse: matchMedia('(pointer: coarse)').matches };
+    });
+    if (scaled.fontSize <= start.fontSize) throw new Error(`text-scale-touch: font size did not grow from ${start.fontSize}`);
+    if (scaled.undoDepth !== start.undoDepth + 1) throw new Error(`text-scale-touch: drag used ${scaled.undoDepth - start.undoDepth} undo steps`);
+    await page.evaluate(() => window.__board.store.undo.undo());
+    await page.waitForFunction((size) => window.__board.store.get('visual-touch-text').fontSize === size, start.fontSize);
+    await page.evaluate(() => window.__board.store.undo.redo());
+    await page.waitForFunction((size) => window.__board.store.get('visual-touch-text').fontSize > size, start.fontSize);
+    await page.evaluate(() => window.__board.r.fit(window.__board.r.contentBounds(['visual-touch-text']), 30, 1.4));
+    console.log(`text-scale-touch ${JSON.stringify({ browser: browserName, from: start.fontSize, to: scaled.fontSize, hitTarget: start.coarse ? '44×44px' : 'coarse pointer not enabled at this width' })}`);
+    await settle(page);
+  },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
     await openEmptyBoard(env, '?debug');
@@ -2698,7 +2901,7 @@ const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanba
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -2832,7 +3035,7 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
-async function newPage(browser, { width, theme, mode, base, session, touch = false }) {
+async function newPage(browser, { width, theme, mode, base, session, touch = false, offlineFontCatalogue = false }) {
   const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
@@ -2852,15 +3055,16 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
       ...OTHER_BOARDS.map((b) => ({ id: b.id, name: b.title, createdAt: NOW - b.ago - HOUR, updatedAt: NOW - b.ago })),
     ]
     : null;
-  await context.addInitScript(({ themeId, user, index }) => {
+  await context.addInitScript(({ themeId, user, index, offlineFontCatalogue: cachedFonts }) => {
     try {
       localStorage.setItem('driftboard:theme', themeId);
       localStorage.setItem('driftboard:user', JSON.stringify(user));
       if (index) localStorage.setItem('driftboard:boards', JSON.stringify(index));
+      if (cachedFonts) localStorage.setItem('driftboard:fontshare-catalogue', JSON.stringify({ at: Date.now(), fonts: [] }));
     } catch {
       /* storage is not available in this frame */
     }
-  }, { themeId: theme, user: USER, index: boards });
+  }, { themeId: theme, user: USER, index: boards, offlineFontCatalogue });
   if (session) await context.addCookies([{ ...session, url: base, httpOnly: true, sameSite: 'Lax' }]);
   const page = await context.newPage();
   const errors = [];
@@ -2869,10 +3073,13 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
 }
 
 async function capture({ browser, state, theme, width, file, shared }) {
-  const { context, page, errors } = await newPage(browser, { width, theme, ...shared });
+  const { context, page, errors } = await newPage(browser, {
+    width, theme, ...shared, touch: shared.touch || (state === 'text-scale-touch' && width <= 500),
+    offlineFontCatalogue: state === 'paste-text' || state === 'text-scale-touch',
+  });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
-    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, outDir: shared.outDir, theme, width });
+    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, outDir: shared.outDir, browserName: browser.browserType().name(), theme, width });
     // a state that holds the mouse down or keeps an input focused would be undone by parking
     if (shot?.noPark) { /* left as it is */ }
     else if (shot?.keepFocus) await page.mouse.move(1, 1);

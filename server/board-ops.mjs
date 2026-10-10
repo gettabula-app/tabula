@@ -11,6 +11,7 @@ import {
   layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -23,7 +24,7 @@ export const LIMITS = Object.freeze({
   boardObjects: 5000,
   threadsPerBoard: 2000,
   repliesPerThread: 200,
-  text: 4000,
+  text: OBJECT_TEXT_MAX,
   name: 100,
   label: 200,
   summaryText: 500,

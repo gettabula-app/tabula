@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  EPS, MIN_GAP_PX, SNAP_PX, gapsInBand, guidesCover, referenceRects, snapMove, snapResize, startGuides,
+  EPS, MAX_SIZE_MARKS, MIN_GAP_PX, SNAP_PX, gapsInBand, guidesCover, referenceRects, snapMove, snapResize, snapResizeLocked, startGuides,
   type GapMark, type GuideSession, type Snap,
 } from '../src/guides';
 import { boxBounds } from '../src/geometry';
@@ -204,12 +204,12 @@ describe('grid fallback', () => {
   it('returns null on an axis with nothing in range and reports nothing for it', () => {
     const s = session([rc(100, 100, 50, 50)], [rc(0, 0, 10, 10)]);
     const r = snapMove(s, 1000, 1000, 1);
-    expect(r).toEqual({ dx: null, dy: null, guides: [], gaps: [] });
+    expect(r).toEqual({ dx: null, dy: null, guides: [], gaps: [], sizes: [] });
   });
 
   it('returns nothing when there is no moving box', () => {
     const s = session([rc(0, 0, 10, 10)]);
-    expect(snapMove(s, 5, 5, 1)).toEqual({ dx: null, dy: null, guides: [], gaps: [] });
+    expect(snapMove(s, 5, 5, 1)).toEqual({ dx: null, dy: null, guides: [], gaps: [], sizes: [] });
   });
 });
 
@@ -296,6 +296,79 @@ describe('resize', () => {
     expect(snapResize(s, rc(100, 100, 5, 50), 'e', 1).dx).toBeNull();
     expect(snapResize(s, rc(100, 100, 10, 50), 'w', 1).dx).toBeNull();
     expect(snapResize(s, rc(100, 100, 20, 50), 'w', 1).dx).toBeCloseTo(3);
+  });
+});
+
+describe('resize size matching', () => {
+  it('matches width and height using the sorted size indexes', () => {
+    const width = snapResize(session([rc(500, 500, 120, 70)]), rc(0, 0, 116, 40), 'e', 1);
+    expect(width.dx).toBeCloseTo(4);
+    expect(width.sizes.map((m) => [m.axis, m.from, m.to, m.label])).toEqual([
+      ['x', 0, 120, '120'], ['x', 500, 620, '120'],
+    ]);
+
+    const height = snapResize(session([rc(500, 500, 70, 120)]), rc(0, 0, 40, 116), 's', 1);
+    expect(height.dy).toBeCloseTo(4);
+    expect(height.sizes.map((m) => [m.axis, m.from, m.to, m.label])).toEqual([
+      ['y', 0, 120, '120'], ['y', 500, 620, '120'],
+    ]);
+  });
+
+  it('lets a size match win a correction tie with alignment', () => {
+    const s = session([rc(97, 500, 20, 10), rc(1000, 600, 103, 10)]);
+    const snap = snapResize(s, rc(0, 0, 100, 40), 'e', 1);
+    // Alignment would move the edge left by 3; the equal width moves it right by 3.
+    expect(snap.dx).toBeCloseTo(3);
+    expect(snap.sizes.some((m) => m.axis === 'x' && m.from === 0 && m.to === 103)).toBe(true);
+  });
+
+  it('does not let a size match resize below MIN_SIZE', () => {
+    const snap = snapResize(session([rc(1000, 1000, 7, 10)]), rc(0, 0, 9, 20), 'e', 1);
+    expect(snap.dx).toBeNull();
+    expect(snap.sizes).toEqual([]);
+  });
+
+  it('reports the resized dimension and every equal reference up to the nearest-three cap', () => {
+    const refs = [400, 100, 300, 200, 500].map((y) => rc(600, y, 120, 20));
+    const snap = snapResize(session(refs), rc(0, 0, 119, 40), 'e', 1);
+    expect(snap.dx).toBeCloseTo(1);
+    expect(MAX_SIZE_MARKS).toBe(3);
+    expect(snap.sizes).toHaveLength(1 + MAX_SIZE_MARKS);
+    expect(snap.sizes[0]).toMatchObject({ kind: 'size', axis: 'x', from: 0, to: 120, label: '120' });
+    // Reference marks are ordered by distance from the resized object.
+    expect(snap.sizes.slice(1).map((m) => m.at)).toEqual([128, 228, 328]);
+  });
+});
+
+describe('aspect-locked resize', () => {
+  it('keeps the ratio and opposite corner fixed when the nearer y correction wins', () => {
+    const s = session([rc(104, 1000, 10, 10), rc(1000, 152, 10, 10)]);
+    const proposed = rc(0, 100, 100, 50);
+    const snap = snapResizeLocked(s, proposed, 'se', 1, 2);
+    expect(snap.snappedAxis).toBe('y');
+    expect(snap.rect).toEqual(rc(0, 100, 104, 52));
+    expect(snap.rect.w / snap.rect.h).toBe(2);
+  });
+
+  it('snaps a locked corner to an equal size', () => {
+    const s = session([rc(1000, 1000, 120, 30)]);
+    const snap = snapResizeLocked(s, rc(0, 0, 116, 58), 'se', 1, 2);
+    expect(snap.snappedAxis).toBe('x');
+    expect(snap.rect).toEqual(rc(0, 0, 120, 60));
+    expect(snap.sizes).toEqual([
+      { kind: 'size', axis: 'x', from: 0, to: 120, at: 68, label: '120' },
+      { kind: 'size', axis: 'x', from: 1000, to: 1120, at: 1038, label: '120' },
+    ]);
+  });
+
+  it('leaves the proposal unchanged and reports no marks when nothing is in range', () => {
+    const proposed = rc(0, 0, 100, 50);
+    const snap = snapResizeLocked(session([rc(1000, 1000, 300, 300)]), proposed, 'se', 1, 2);
+    expect(snap.rect).toEqual(proposed);
+    expect(snap.snappedAxis).toBeNull();
+    expect(snap.guides).toEqual([]);
+    expect(snap.gaps).toEqual([]);
+    expect(snap.sizes).toEqual([]);
   });
 });
 
@@ -432,6 +505,24 @@ describe('invariants over random layouts', () => {
 });
 
 describe('performance', () => {
+  it('uses bounded binary-search probes for the new 1000-reference size index', () => {
+    const refs = Array.from({ length: 1000 }, (_, i) => rc(5000 + i * 10, 5000 + i * 10, 20 + i, 12 + i));
+    const s = session(refs);
+    let sizeProbes = 0;
+    s.wi.vals = new Proxy(s.wi.vals, {
+      get(target, property) {
+        if (typeof property === 'string' && /^(0|[1-9]\d*)$/u.test(property)) sizeProbes++;
+        return Reflect.get(target, property, target);
+      },
+    }) as Float64Array;
+    for (let i = 0; i < 1000; i++) {
+      const width = 400 + (i % 5) * 0.1;
+      snapResize(s, rc(0, 0, width, 40), 'e', 1);
+    }
+    // Existing spacing queries still make their band pass; this bounds the added size lookup and mark search itself.
+    expect(sizeProbes).toBeLessThan(50_000);
+  });
+
   it('answers thousands of queries on 1000 rectangles well inside a frame budget', () => {
     const rnd = prng(7);
     const refs: Rect[] = [];
@@ -451,7 +542,7 @@ describe('performance', () => {
       },
     });
     let indexChecks = 0;
-    for (const index of [s.xi, s.yi]) {
+    for (const index of [s.xi, s.yi, s.wi, s.hi]) {
       const vals = index.vals;
       index.vals = new Proxy(vals, {
         get(target, property) {
