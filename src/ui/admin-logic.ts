@@ -101,6 +101,8 @@ export const KNOWN_AUDIT_ACTIONS = [
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'volume.adopt',
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
+  'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -277,6 +279,19 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const scope = ({ read: ' (read only)', comment: ' (read and comment)', write: ' (read and edit)' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
       return `${who} created an AI tool access token${name ? ` ${quote(clip(name, 60))}` : ''}${scope}`;
     }
+    // Tracker (docs/tracker-api.md): ids only in the row, never ticket text
+    case 'tracker.ticket.create':
+      return `${who} created a ticket`;
+    case 'tracker.ticket.update':
+      return `${who} changed a ticket`;
+    case 'tracker.ticket.transition':
+      return `${who} moved a ticket to another state`;
+    case 'tracker.ticket.comment':
+      return `${who} commented on a ticket`;
+    case 'tracker.ticket.subscribe':
+      return `${who} subscribed to a ticket`;
+    case 'tracker.ticket.unsubscribe':
+      return `${who} unsubscribed from a ticket`;
     case 'mcp.token.revoke': {
       const name = text(d.name);
       const label = name ? ` ${quote(clip(name, 60))}` : '';
