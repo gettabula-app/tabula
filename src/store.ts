@@ -16,7 +16,8 @@ export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: Reado
 /** Object fields that hold a colour: what is written to them is checked against shared/colors.mjs (TAB-203). */
 export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'textColor']);
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
-const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked']);
+const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
+const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -394,7 +395,7 @@ export class Store {
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(stored)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean'))
+      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean') && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
@@ -408,12 +409,13 @@ export class Store {
     let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
+      const type = (patch as Record<string, unknown>).type ?? m.get('type');
+      if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
       if (raw === undefined) {
         if (m.has(k)) { m.delete(k); wroteField = true; if (k === 'parent') parentChanged = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
-      const type = (patch as Record<string, unknown>).type ?? m.get('type');
       const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
