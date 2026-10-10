@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   queue: {
     run: vi.fn<(boardId?: string) => Promise<void>>(async () => {}),
     retryBlocked: vi.fn<(boardId?: string) => Promise<void>>(async () => {}),
-    state: vi.fn<(asset: string) => Promise<'queued' | 'lost' | 'refused' | undefined>>(async () => undefined),
+    state: vi.fn<(asset: string) => Promise<'queued' | 'lost' | 'refused' | 'toobig' | undefined>>(async () => undefined),
     enqueue: vi.fn<(rec: unknown) => Promise<void>>(async () => {}),
     pending: vi.fn<(boardId?: string) => Promise<number>>(async () => 0),
     drop: vi.fn<(id: string) => Promise<void>>(async () => {}),
@@ -31,12 +31,13 @@ vi.mock('../src/asset-store', async (importOriginal) => {
 
 vi.mock('../src/ui/common', () => ({ toast: vi.fn<(...args: unknown[]) => void>() }));
 
-function makeApp() {
+function makeApp(hostedWorkspace = false) {
   const lifetime = new AbortController();
   const app = {
     conn: { id: 'b1', onStatus: vi.fn<(listener: (status: string) => void) => () => void>(() => () => {}) },
     r: { invalidateObjects: vi.fn<(ids: string[]) => void>(), imageState: undefined },
     readOnly: false,
+    hostedWorkspace,
     lifetime,
     store: { cache: new Map() },
   } as unknown as BoardApp;
@@ -96,6 +97,30 @@ describe('BoardImages pending uploads', () => {
     await Promise.resolve();
     expect(toast).toHaveBeenCalledTimes(2);
     expect(toast).toHaveBeenLastCalledWith('An image could not be uploaded because this browser no longer has it. Add it again.', 8000);
+    lifetime.abort();
+  });
+
+  it('uses the hosted size notice and distinguishes real 413s from repeated retry failures', async () => {
+    const { app, lifetime } = makeApp(true);
+    new BoardImages(app);
+    const deps = mocks.deps as QueueDeps;
+    expect(deps.hostedWorkspace).toBe(true);
+    deps.onTooBig?.({ id: 'pending:large', boardId: 'b1', objectId: 'o1', hash: 'h', tries: 3, nextAt: 0, at: 0, sizeBlocked: true, refused: 413, notified: true });
+    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB and could not be uploaded. Hosted workspaces accept uploads up to 1 MB for now. Use a smaller image.', 8000);
+    deps.onRefused?.({ id: 'pending:redirect', boardId: 'b1', objectId: 'o2', hash: 'h', tries: 5, nextAt: 0, at: 0 }, 307, '');
+    expect(toast).toHaveBeenLastCalledWith('An image could not be uploaded (the server answered 307). It will be tried again when you open this board.', 6000);
+    deps.onRefused?.({ id: 'pending:large', boardId: 'b1', objectId: 'o3', hash: 'h', tries: 0, nextAt: 0, at: 0 }, 413, 'payload_too_large');
+    expect(toast).toHaveBeenLastCalledWith('This image is over 1 MB and could not be uploaded. Hosted workspaces accept uploads up to 1 MB for now. Use a smaller image.', 6000);
+    lifetime.abort();
+  });
+
+  it('keeps the server-size message on a self-hosted 413', async () => {
+    const { app, lifetime } = makeApp(false);
+    new BoardImages(app);
+    const deps = mocks.deps as QueueDeps;
+    expect(deps.hostedWorkspace).toBe(false);
+    deps.onRefused?.({ id: 'pending:large', boardId: 'b1', objectId: 'o1', hash: 'h', tries: 0, nextAt: 0, at: 0 }, 413, 'payload_too_large');
+    expect(toast).toHaveBeenCalledWith('An image you added is too large for this server.', 6000);
     lifetime.abort();
   });
 

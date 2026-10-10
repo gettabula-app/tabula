@@ -3,10 +3,10 @@
 // Two parts, both in IndexedDB (database `tabula-assets`, separate from the Yjs persistence):
 //   blobs    key -> { blob, mime, width, height, boardId, at, pending }. The key is a content hash, or `pending:<id>` while
 //            the bytes only exist on this device. A cache with a size cap; entries that still need uploading are never evicted.
-//   uploads  { id, boardId, objectId, hash, tries, nextAt }: what still has to reach the server.
+//   uploads  { id, boardId, objectId, hash, tries, backoffTries?, bytes?, nextAt }: what still has to reach the server.
 //
 // The storage is behind `AssetBackend` so the queue's logic is tested with a memory one, as icon-offline does.
-import { isPending } from './images';
+import { HOSTED_UPLOAD_LIMIT_BYTES, isPending } from './images';
 
 export const BLOB_CACHE_BYTES = 200 * 1024 * 1024;
 
@@ -30,14 +30,21 @@ export interface UploadRecord {
   objectId: string;
   /** What the browser computed from its own bytes; a hint only, the server's hash is the one that counts. */
   hash: string;
+  /** Number of retryable server failures; offline status 0 does not count toward a refusal. */
   tries: number;
+  /** All retryable failures, including offline ones, for backoff. */
+  backoffTries?: number;
   nextAt: number;
   /** When it was queued, so the oldest goes first. */
   at: number;
+  /** Size of the queued blob when it was prepared. */
+  bytes?: number;
   /** The pending bytes are gone from this browser. */
   lost?: true;
-  /** The last final status returned by the server. */
+  /** The status that blocked this upload; a hosted size block uses 413. */
   refused?: number;
+  /** This hosted upload exceeded the replay limit after repeated failures. */
+  sizeBlocked?: true;
   /** The person has already been told about the lost bytes or refusal. */
   notified?: true;
 }
@@ -193,13 +200,17 @@ export interface QueueDeps {
    * pending key (deleted, or replaced); the queue then drops the record.
    */
   apply: (rec: UploadRecord, result: UploadResult) => boolean;
-  /** A final refusal: tell the person once until the board is opened again. */
+  /** A server refusal or exhausted retries: tell the person once until the board is opened again. */
   onRefused?: (rec: UploadRecord, status: number, code: string) => void;
+  /** A hosted upload exceeded the replay limit: tell the person once until the board is opened again. */
+  onTooBig?: (rec: UploadRecord) => void;
   /** The pending bytes have gone from this browser: tell the person once. */
   onLost?: (rec: UploadRecord) => void;
   now?: () => number;
   /** Boards whose objects can be written right now (the one that is open). */
   canApply?: (boardId: string) => boolean;
+  /** Only hosted workspaces have the 1 MB replay limit. */
+  hostedWorkspace?: boolean;
   parallel?: number;
 }
 
@@ -239,7 +250,28 @@ export function createUploadQueue(deps: QueueDeps) {
           await cache.backend.putUpload(updated);
           if (!rec.notified) deps.onRefused?.(updated, status, code);
         } else {
-          await cache.backend.putUpload({ ...rec, tries: rec.tries + 1, nextAt: now() + backoffMs(rec.tries) });
+          const legacy = rec.backoffTries === undefined;
+          // A big body that fails with no answer at all while the browser is online is what a proxy that cannot take it looks like
+          // too (a reset), so on a hosted workspace it counts like any other failure; offline never does.
+          const size = rec.bytes ?? blob.blob.size;
+          const bigHosted = deps.hostedWorkspace === true && size > HOSTED_UPLOAD_LIMIT_BYTES;
+          const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+          const counts = status !== 0 || (bigHosted && online);
+          const tries = (legacy ? 0 : rec.tries) + (counts ? 1 : 0);
+          const backoffTries = (rec.backoffTries ?? rec.tries) + 1;
+          const retryAt = now() + backoffMs(backoffTries - 1);
+          const tooBig = counts && bigHosted && tries >= 3;
+          if (tooBig) {
+            const updated: UploadRecord = { ...rec, tries, backoffTries, nextAt: retryAt, refused: 413, sizeBlocked: true, notified: true };
+            await cache.backend.putUpload(updated);
+            if (!rec.notified) deps.onTooBig?.(updated);
+          } else if (counts && tries >= 5) {
+            const updated: UploadRecord = { ...rec, tries, backoffTries, nextAt: retryAt, refused: status, notified: true };
+            await cache.backend.putUpload(updated);
+            if (!rec.notified) deps.onRefused?.(updated, status, code);
+          } else {
+            await cache.backend.putUpload({ ...rec, tries, backoffTries, nextAt: retryAt });
+          }
         }
       }
     } finally {
@@ -258,8 +290,8 @@ export function createUploadQueue(deps: QueueDeps) {
 
   return {
     /** Remembers that a pending image has to be uploaded. */
-    async enqueue(rec: Omit<UploadRecord, 'tries' | 'nextAt' | 'at'>): Promise<void> {
-      await cache.backend.putUpload({ ...rec, tries: 0, nextAt: 0, at: now() });
+    async enqueue(rec: Omit<UploadRecord, 'tries' | 'backoffTries' | 'nextAt' | 'at'>): Promise<void> {
+      await cache.backend.putUpload({ ...rec, tries: 0, backoffTries: 0, nextAt: 0, at: now() });
     },
     /** One pass over what is due. Calls do not overlap: a second call waits for the first and then runs again. */
     run(boardId?: string): Promise<void> {
@@ -271,10 +303,11 @@ export function createUploadQueue(deps: QueueDeps) {
     },
     pending: async (boardId?: string) => (await cache.backend.listUploads()).filter((r) => boardId === undefined || r.boardId === boardId).length,
     /** The state of a pending image on this browser. */
-    async state(id: string): Promise<'queued' | 'lost' | 'refused' | undefined> {
+    async state(id: string): Promise<'queued' | 'lost' | 'refused' | 'toobig' | undefined> {
       const rec = (await cache.backend.listUploads()).find((r) => r.id === id);
       if (!rec) return undefined;
       if (rec.lost) return 'lost';
+      if (rec.sizeBlocked) return 'toobig';
       if (rec.refused !== undefined) return 'refused';
       return 'queued';
     },
@@ -285,7 +318,11 @@ export function createUploadQueue(deps: QueueDeps) {
         if (rec.lost || rec.refused === undefined || (boardId !== undefined && rec.boardId !== boardId) || !(deps.canApply?.(rec.boardId) ?? true)) continue;
         const retryable = { ...rec };
         delete retryable.refused;
+        delete retryable.sizeBlocked;
         delete retryable.notified;
+        retryable.tries = 0;
+        retryable.backoffTries = 0;
+        retryable.nextAt = now();
         await cache.backend.putUpload(retryable);
       }
     },

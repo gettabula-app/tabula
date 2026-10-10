@@ -198,7 +198,7 @@ export class BoardApp {
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
 
-  constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement) {
+  constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement, readonly hostedWorkspace = false) {
     this.store = conn.store;
     this.r = new Renderer(this.store, parent);
     this.r.readOnly = this.readOnly;

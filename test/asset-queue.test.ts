@@ -14,14 +14,15 @@ function setup(over: Partial<Parameters<typeof createUploadQueue>[0]> = {}) {
   const upload = vi.fn<(boardId: string, blob: Blob, mime: string) => Promise<UploadResult>>(async () => RESULT);
   const apply = vi.fn<(rec: UploadRecord, res: UploadResult) => boolean>(() => true);
   const onRefused = vi.fn<(rec: UploadRecord, status: number, code: string) => void>();
+  const onTooBig = vi.fn<(rec: UploadRecord) => void>();
   const onLost = vi.fn<(rec: UploadRecord) => void>();
-  const queue = createUploadQueue({ cache, upload, apply, onRefused, onLost, now: () => t, ...over });
-  const add = async (id: string, objectId = `o-${id}`, boardId = 'b1') => {
-    await cache.put({ key: `pending:${id}`, blob: blob(10), mime: 'image/png', width: 4, height: 3, boardId, pending: true });
-    await queue.enqueue({ id: `pending:${id}`, boardId, objectId, hash: 'h' });
+  const queue = createUploadQueue({ cache, upload, apply, onRefused, onTooBig, onLost, now: () => t, ...over });
+  const add = async (id: string, objectId = `o-${id}`, boardId = 'b1', bytes = 10) => {
+    await cache.put({ key: `pending:${id}`, blob: blob(bytes), mime: 'image/png', width: 4, height: 3, boardId, pending: true });
+    await queue.enqueue({ id: `pending:${id}`, boardId, objectId, hash: 'h', bytes });
     t += 1;
   };
-  return { backend, cache, queue, upload, apply, onRefused, onLost, add, tick: (ms: number) => (t += ms) };
+  return { backend, cache, queue, upload, apply, onRefused, onTooBig, onLost, add, tick: (ms: number) => (t += ms) };
 }
 
 describe('the upload queue', () => {
@@ -75,13 +76,14 @@ describe('the upload queue', () => {
     await s.add('1');
     await s.queue.run();
     const [rec] = await s.backend.listUploads();
-    expect(rec.tries).toBe(1);
+    expect(rec.tries).toBe(0);
+    expect(rec.backoffTries).toBe(1);
     expect(rec.nextAt).toBe(1001 + backoffMs(0));
     await s.queue.run(); // not due yet: nothing is tried
-    expect((await s.backend.listUploads())[0].tries).toBe(1);
+    expect((await s.backend.listUploads())[0].backoffTries).toBe(1);
     s.tick(backoffMs(0) + 5);
     await s.queue.run();
-    expect((await s.backend.listUploads())[0].tries).toBe(2);
+    expect((await s.backend.listUploads())[0]).toMatchObject({ tries: 0, backoffTries: 2 });
     expect(backoffMs(0)).toBe(1000);
     expect(backoffMs(3)).toBe(8000);
     expect(backoffMs(50)).toBe(60_000);
@@ -125,6 +127,176 @@ describe('the upload queue', () => {
     await s.queue.run();
     expect(await s.queue.pending()).toBe(1);
     expect(s.onRefused).not.toHaveBeenCalled();
+  });
+
+  it('blocks a hosted image over 1 MB after three server failures until the board is reopened', async () => {
+    let attempts = 0;
+    const s = setup({ hostedWorkspace: true, upload: async () => {
+      attempts++;
+      throw Object.assign(new Error('redirect'), { status: 307 });
+    } });
+    await s.add('large', 'o-large', 'b1', 1_200_000);
+
+    for (let i = 0; i < 3; i++) {
+      await s.queue.run('b1');
+      s.tick(100_000);
+    }
+
+    expect(attempts).toBe(3);
+    expect(await s.queue.state('pending:large')).toBe('toobig');
+    expect(await s.backend.listUploads()).toEqual([expect.objectContaining({
+      id: 'pending:large', bytes: 1_200_000, tries: 3, refused: 413, sizeBlocked: true, notified: true,
+    })]);
+    expect(await s.backend.getBlob('pending:large')).toBeDefined();
+    expect(s.onTooBig).toHaveBeenCalledTimes(1);
+    expect(s.onTooBig).toHaveBeenCalledWith(expect.objectContaining({ sizeBlocked: true }));
+    expect(s.onRefused).not.toHaveBeenCalled();
+
+    await s.queue.run('b1');
+    expect(attempts).toBe(3);
+    await s.queue.retryBlocked('b1');
+    expect(await s.queue.state('pending:large')).toBe('queued');
+    await s.queue.run('b1');
+    expect(attempts).toBe(4);
+    expect(s.onTooBig).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a big hosted upload that fails with no answer while online, so it is not retried silently forever', async () => {
+    let attempts = 0;
+    const s = setup({ hostedWorkspace: true, upload: async () => {
+      attempts++;
+      throw Object.assign(new Error('reset'), { status: 0 });
+    } });
+    await s.add('large', 'o-large', 'b1', 1_200_000);
+    for (let i = 0; i < 3; i++) {
+      await s.queue.run('b1');
+      s.tick(100_000);
+    }
+    expect(attempts).toBe(3);
+    expect(await s.queue.state('pending:large')).toBe('toobig');
+    expect(s.onTooBig).toHaveBeenCalledTimes(1);
+  });
+
+  it('never counts a no-answer failure of a small image, or of a big one while the browser is offline', async () => {
+    const small = setup({ hostedWorkspace: true, upload: async () => { throw Object.assign(new Error('reset'), { status: 0 }); } });
+    await small.add('small', 'o-small', 'b1', 400_000);
+    for (let i = 0; i < 6; i++) {
+      await small.queue.run('b1');
+      small.tick(100_000);
+    }
+    expect(await small.queue.state('pending:small')).toBe('queued');
+    expect(small.onTooBig).not.toHaveBeenCalled();
+    expect(small.onRefused).not.toHaveBeenCalled();
+
+    vi.stubGlobal('navigator', { onLine: false });
+    try {
+      const big = setup({ hostedWorkspace: true, upload: async () => { throw Object.assign(new Error('offline'), { status: 0 }); } });
+      await big.add('large', 'o-large', 'b1', 1_200_000);
+      for (let i = 0; i < 4; i++) {
+        await big.queue.run('b1');
+        big.tick(100_000);
+      }
+      expect(await big.queue.state('pending:large')).toBe('queued');
+      expect(big.onTooBig).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('uses the generic retry limit for a large self-hosted upload', async () => {
+    let attempts = 0;
+    const s = setup({ upload: async () => {
+      attempts++;
+      throw Object.assign(new Error('gateway'), { status: 502 });
+    } });
+    await s.add('large', 'o-large', 'b1', 1_200_000);
+    for (let i = 0; i < 3; i++) {
+      await s.queue.run('b1');
+      s.tick(100_000);
+    }
+    expect(await s.queue.state('pending:large')).toBe('queued');
+    expect(s.onTooBig).not.toHaveBeenCalled();
+    for (let i = 0; i < 2; i++) {
+      await s.queue.run('b1');
+      s.tick(100_000);
+    }
+    expect(attempts).toBe(5);
+    expect(await s.queue.state('pending:large')).toBe('refused');
+    expect(s.onRefused).toHaveBeenCalledWith(expect.objectContaining({ refused: 502 }), 502, '');
+  });
+
+  it('keeps a smaller upload retrying until its fifth server failure, then reports the last status once', async () => {
+    let attempts = 0;
+    const s = setup({ hostedWorkspace: true, upload: async () => {
+      attempts++;
+      throw Object.assign(new Error('redirect'), { status: 307 });
+    } });
+    await s.add('small', 'o-small', 'b1', 400_000);
+
+    for (let i = 0; i < 4; i++) {
+      await s.queue.run('b1');
+      s.tick(100_000);
+    }
+    expect(await s.queue.state('pending:small')).toBe('queued');
+    expect(s.onRefused).not.toHaveBeenCalled();
+
+    await s.queue.run('b1');
+    expect(attempts).toBe(5);
+    expect(await s.queue.state('pending:small')).toBe('refused');
+    expect(await s.backend.listUploads()).toEqual([expect.objectContaining({
+      id: 'pending:small', tries: 5, refused: 307, notified: true,
+    })]);
+    expect(s.onRefused).toHaveBeenCalledTimes(1);
+    expect(s.onRefused).toHaveBeenCalledWith(expect.objectContaining({ id: 'pending:small' }), 307, '');
+    await s.queue.run('b1');
+    expect(attempts).toBe(5);
+    expect(s.onRefused).toHaveBeenCalledTimes(1);
+  });
+
+  it('never counts offline status 0 toward either refusal threshold', async () => {
+    let largeAttempts = 0;
+    const large = setup({ hostedWorkspace: true, upload: async () => {
+      largeAttempts++;
+      throw Object.assign(new Error('offline'), { status: largeAttempts <= 5 ? 0 : 307 });
+    } });
+    await large.add('large', 'o-large', 'b1', 1_200_000);
+    // offline: a no-answer failure is not the server's (online, a big hosted upload that gets no answer does count)
+    vi.stubGlobal('navigator', { onLine: false });
+    for (let i = 0; i < 5; i++) {
+      await large.queue.run('b1');
+      large.tick(100_000);
+    }
+    vi.unstubAllGlobals();
+    expect(await large.backend.listUploads()).toEqual([expect.objectContaining({ tries: 0, backoffTries: 5 })]);
+    expect(large.onTooBig).not.toHaveBeenCalled();
+    for (let i = 0; i < 2; i++) {
+      await large.queue.run('b1');
+      large.tick(100_000);
+    }
+    expect(await large.queue.state('pending:large')).toBe('queued');
+    await large.queue.run('b1');
+    expect(await large.queue.state('pending:large')).toBe('toobig');
+
+    let smallAttempts = 0;
+    const small = setup({ hostedWorkspace: true, upload: async () => {
+      smallAttempts++;
+      throw Object.assign(new Error('offline'), { status: smallAttempts <= 5 ? 0 : 502 });
+    } });
+    await small.add('small', 'o-small', 'b1', 400_000);
+    for (let i = 0; i < 5; i++) {
+      await small.queue.run('b1');
+      small.tick(100_000);
+    }
+    for (let i = 0; i < 4; i++) {
+      await small.queue.run('b1');
+      small.tick(100_000);
+    }
+    expect(await small.queue.state('pending:small')).toBe('queued');
+    expect(small.onRefused).not.toHaveBeenCalled();
+    await small.queue.run('b1');
+    expect(await small.queue.state('pending:small')).toBe('refused');
+    expect(small.onRefused).toHaveBeenCalledTimes(1);
+    expect(small.onRefused).toHaveBeenCalledWith(expect.objectContaining({ tries: 5 }), 502, '');
   });
 
   it('drops the record and the bytes when the object is gone', async () => {

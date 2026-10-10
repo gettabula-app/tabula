@@ -62,6 +62,15 @@ describe('image markup', () => {
     }
   });
 
+  it('fits the hosted size label inside a 417 by 100 frame', () => {
+    const svg = objectMarkup(image({ w: 417, h: 100 }), ctx({ kind: 'failed', why: 'toobig' }));
+    const lines = [...svg.matchAll(/<text\b[^>]*font-size="([^"]+)"[^>]*>(.*?)<\/text>/g)].map((match) => ({
+      text: match[2], size: Number(match[1]),
+    }));
+    expect(lines.map((line) => line.text).join(' ')).toBe(`${FAILED_LABEL.toobig} 400 × 200`);
+    for (const line of lines) expect(measure(line.text, fontCss('satoshi', line.size, 400))).toBeLessThanOrEqual(401);
+  });
+
   it('draws the placeholder without a loader, as an export does', () => {
     expect(objectMarkup(image(), ctx())).toContain('Loading');
   });

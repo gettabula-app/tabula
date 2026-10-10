@@ -140,6 +140,8 @@ If this browser has lost the pending bytes, the uploader keeps the record as `lo
 
 A local-only board (sync off, as in the desktop shell's default) keeps images in `blobs` and renders from blob URLs; they travel in `.drift` exports, and if the board is later connected the queue uploads them.
 
+Hosted workspaces sit behind Fly's request-replaying edge, which cannot replay a body over 1 MB. The client recognizes a hosted workspace from the existing `workspace` field in `/api/me`; there, if the normal encoding is over **900 KB**, it tries the smaller encodings described below. A final blob over 1 MB is still added and shown from this device, with one warning for the add action. If an upload over 1 MB keeps failing with server errors, after three failures it stays queued and shows a size-specific notice; other retryable failures are reported after five. Opening the board makes blocked uploads retryable again.
+
 The service worker (`public/sw.js`) gets an `assets` runtime cache for `GET /api/boards/*/assets/*`: cache first (the URL is content-addressed, so a cached copy is never stale), populated on first view. It is purged on sign-out together with `blobs`, because the bytes are private to the signed-in person. That carve-out is checked before the worker's existing early return for `/api/`, which stays for every other API path.
 
 ## Downscaling
@@ -156,7 +158,9 @@ In the browser, before hashing and uploading, for raster files:
 4. If the result is larger than the original (a small, already-optimised PNG), keep the original bytes (after the server-side strip).
 5. Reject images over 36 megapixels or 16384 px a side before decoding when the dimensions can be read from the header (a pure function reads PNG, JPEG, GIF and WebP headers; the same function is used on the server).
 
-SVG is not rasterised. It is checked (see Security) and stored as is, with `nw`/`nh` from its `viewBox` (or `width`/`height`), falling back to 300 x 150 like a browser would.
+For a hosted workspace only, if the normal result is still over **900 KB** (900,000 bytes), the browser tries additional quality and size steps to get under that target: quality steps for JPEG/WebP and opaque PNG, and smaller dimensions for alpha PNG. GIFs are never re-encoded.
+
+SVG is rasterised to PNG in v1. Its `nw`/`nh` come from its `viewBox` (or `width`/`height`), falling back to 300 x 150 like a browser would; hosted uploads use the alpha-PNG size ladder.
 
 The `image` object stores the size the person sees (`w`, `h`) separately from the natural size, so the 2560 px copy can be shown at 400 board units; a **100%** action in the quick-action bar resets `w`/`h` to `nw`/`nh`.
 

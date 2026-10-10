@@ -7,6 +7,7 @@ import { newId } from './store';
 import { api } from './api';
 import { createBlobCache, createUploadQueue, idbBackend, memoryBackend, type UploadQueue, type UploadRecord, type UploadResult } from './asset-store';
 import { ImageLoader } from './image-loader';
+import { IMAGE_UPLOAD_MESSAGES } from './image-messages';
 import { toast } from './ui/common';
 import { DEMO } from './demo';
 
@@ -24,14 +25,6 @@ export async function cacheImportedAssets(assets: Record<string, ImportedAsset> 
 export function clearAssetCache(): Promise<void> {
   return assetCache.clear();
 }
-
-const REFUSED: Record<number, string> = {
-  400: 'The server could not read an image you added.',
-  402: 'This board has used its image storage. Remove images you no longer need, or ask your administrator.',
-  403: "You can't add images to this board.",
-  404: 'An image could not be added: the board was not found.',
-  413: 'An image you added is too large for this server.',
-};
 
 export class BoardImages {
   readonly loader: ImageLoader;
@@ -61,7 +54,14 @@ export class BoardImages {
       apply: (rec, result) => this.apply(rec, result),
       onRefused: (_rec, status) => {
         this.loader.retryFailed();
-        toast(REFUSED[status] ?? 'An image could not be uploaded.', 6000);
+        const message = status === 413
+          ? IMAGE_UPLOAD_MESSAGES.refused413(app.hostedWorkspace)
+          : IMAGE_UPLOAD_MESSAGES.refused[status] ?? IMAGE_UPLOAD_MESSAGES.retryExhausted(status);
+        toast(message, 6000);
+      },
+      onTooBig: () => {
+        this.loader.retryFailed();
+        toast(IMAGE_UPLOAD_MESSAGES.tooBig, 8000);
       },
       onLost: () => {
         this.loader.retryFailed();
@@ -72,15 +72,11 @@ export class BoardImages {
           const count = lostCount;
           lostCount = 0;
           lostFlushQueued = false;
-          toast(
-            count === 1
-              ? 'An image could not be uploaded because this browser no longer has it. Add it again.'
-              : `${count} images could not be uploaded because this browser no longer has them. Add them again.`,
-            8000,
-          );
+          toast(IMAGE_UPLOAD_MESSAGES.lost(count), 8000);
         });
       },
       canApply: (id) => id === boardId && !app.readOnly,
+      hostedWorkspace: app.hostedWorkspace,
     });
     const ready = this.queue.retryBlocked(boardId).catch(() => undefined);
     const run = () => void ready.then(() => this.queue.run(boardId));
