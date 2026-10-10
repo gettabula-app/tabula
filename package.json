@@ -25,6 +25,7 @@
     "qa:prelaunch": "node scripts/prelaunch-smoke.mjs",
     "drill:local": "node scripts/drill-local.mjs",
     "load:class": "node scripts/load-class.mjs",
+    "fly:load": "node scripts/fly-load-run.mjs",
     "check:ai-review": "node scripts/check-ai-review.mjs",
     "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:build": "cd desktop && tauri build"
