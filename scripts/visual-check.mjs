@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1400,6 +1400,36 @@ const STATES = {
     if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
   },
   // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
+  async 'top-bars-320'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(() => {
+      const left = document.querySelector('.top-left');
+      const right = document.querySelector('.top-right');
+      const avatar = right?.querySelector('.people .avatar');
+      const share = right?.querySelector('.btn.primary');
+      const failures = [];
+      if (!left || !right || !avatar || !share) return { failures: ['board bars, first avatar or Share button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const l = box(left), r = box(right);
+      if (l.left < 0 || l.right > innerWidth || l.top < 0 || l.bottom > innerHeight) failures.push(`left bar is outside the viewport: ${JSON.stringify(l.toJSON())}`);
+      if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) failures.push(`right bar is outside the viewport: ${JSON.stringify(r.toJSON())}`);
+      if (l.left < r.right && l.right > r.left && l.top < r.bottom && l.bottom > r.top) failures.push('top-left and top-right bars intersect');
+      const rail = document.querySelector('.rail');
+      if (rail) {
+        const k = box(rail);
+        if (r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top) failures.push(`the tool rail (${Math.round(k.left)}-${Math.round(k.right)}) covers the right bar (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      for (const [name, target] of [['first avatar', avatar], ['Share', share]]) {
+        const rect = box(target);
+        const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+        if (rect.width < 44 || rect.height < 44) failures.push(`${name} target is ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
+        if (hit !== target && !target.contains(hit)) failures.push(`${name} centre hits ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, left: l.toJSON(), right: r.toJSON() };
+    });
+    console.log(`top-bars-320 ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
     const result = await env.page.evaluate(async () => {
