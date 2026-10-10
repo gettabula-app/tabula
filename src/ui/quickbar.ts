@@ -186,6 +186,23 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     return b;
   }
 
+  function closeOnTouchRadioPick(content: HTMLElement) {
+    let touchPointer = false;
+    content.addEventListener('pointerdown', (event) => { touchPointer = event.pointerType === 'touch'; });
+    content.addEventListener('pointercancel', () => { touchPointer = false; });
+    content.addEventListener('click', (event) => {
+      if (!(event.target as HTMLElement | null)?.closest('[role="radio"]')) {
+        touchPointer = false;
+        return;
+      }
+      const pointerType = (event as PointerEvent).pointerType;
+      const touchPick = pointerType === 'touch' || ((pointerType !== 'mouse' && pointerType !== 'pen') && touchPointer);
+      touchPointer = false;
+      if (touchPick) closePopover();
+    });
+    return content;
+  }
+
   function menu(name: IconName, label: string, content: () => HTMLElement) {
     const b: HTMLButtonElement = h('button', { class: 'icon-btn', 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
     return b;
@@ -286,14 +303,17 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
     const style: HTMLElement[] = [];
     if (styleSame && styleFirst.type === 'sticky') {
-      style.push(swatch('Colour', stickyFill, () => field('Colour', stickyColorField(app, stickyFill(), (v) => {
-        app.stickyColor = v;
-        app.updateSelectedLeaves({ fill: v }, isSticky);
-      }, {
-        onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
-        size: 'lg',
-        label: 'Sticky note colour',
-      }))));
+      style.push(swatch('Colour', stickyFill, () => {
+        const picker = stickyColorField(app, stickyFill(), (v) => {
+          app.stickyColor = v;
+          app.updateSelectedLeaves({ fill: v }, isSticky);
+        }, {
+          onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
+          size: 'lg',
+          label: 'Sticky note colour',
+        });
+        return field('Colour', closeOnTouchRadioPick(picker));
+      }));
     }
     if (same && first.type === 'shape') {
       style.push(menu('shapes', 'Shape', () => {

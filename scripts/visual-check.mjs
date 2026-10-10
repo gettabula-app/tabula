@@ -36,8 +36,8 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, guest-expired, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -233,6 +233,7 @@ async function seedComments(page, fresh) {
 const EMPTY_ID = 'visual-empty';
 /** The second person of the last empty-focus shot. */
 let focusSender = null;
+let cursorSenderContexts = [];
 
 /** A board nobody writes to: the empty-board hint shows. */
 async function openEmptyBoard({ page, base }, query = '?debug') {
@@ -1630,6 +1631,312 @@ const STATES = {
     await page.getByRole('button', { name: 'Join board' }).click();
     await page.getByText('That code looks too short', { exact: true }).waitFor();
   },
+  async 'guest-expired'(env) {
+    const { page, base, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    const waitForState = async (label, predicate) => {
+      try {
+        await page.waitForFunction(predicate, null, { timeout: 15_000 });
+      } catch {
+        const diagnostic = await page.evaluate(() => {
+          const app = window.__board;
+          return { hash: location.hash, user: app?.user?.name, role: app?.role, connection: app?.conn.status, denied: app?.conn.denied, comments: app?.comments.list().length, status: document.querySelector('.sync-status')?.textContent };
+        });
+        throw new Error('guest-expired: timed out waiting for ' + label + ': ' + JSON.stringify(diagnostic));
+      }
+    };
+    const ownerCookies = await page.context().cookies(base);
+    const ownerCookie = ownerCookies.map(({ name, value }) => name + '=' + value).join('; ');
+    if (!ownerCookie) throw new Error('guest-expired: owner session cookie is missing');
+
+    const created = await postJson(base, 'boards/' + BOARD_ID + '/join-codes', { role: 'editor', expiresInHours: 3, maxUses: 10 }, ownerCookie);
+    const joinCode = await created.json();
+    if (!joinCode.code || !joinCode.id) throw new Error('guest-expired: join-code API did not return a code and id');
+    await page.context().clearCookies();
+    await page.goto(base + '/join?c=' + encodeURIComponent(joinCode.code) + '&debug');
+    await page.evaluate(() => {
+      const replaceState = history.replaceState.bind(history);
+      history.replaceState = (state, title, url) => {
+        const nextUrl = typeof url === 'string' && url.startsWith('/#/b/') ? '/?debug' + url.slice(1) : url;
+        return replaceState(state, title, nextUrl);
+      };
+    });
+    await page.getByLabel('Display name').fill('Visual Guest');
+    await page.getByRole('button', { name: 'Join board' }).click();
+    await waitForState('joined guest route', () => location.hash === '#/b/visual-seed');
+    await waitForState('live editor guest', () => window.__board?.role === 'editor' && document.querySelector('.sync-status')?.textContent?.includes('Live'));
+    const liveGuestSession = await page.evaluate(() => sessionStorage.getItem('driftboard:guest-session'));
+    if (!liveGuestSession) throw new Error('guest-expired: live guest session was not stored');
+    const routePage = await page.context().newPage();
+    try {
+      await routePage.addInitScript((saved) => sessionStorage.setItem('driftboard:guest-session', saved), liveGuestSession);
+      await routePage.goto(base + '/?debug#/b/visual-seed');
+      await routePage.locator('.sync-status').filter({ hasText: 'Live' }).waitFor({ timeout: 15_000 });
+      await routePage.evaluate(() => { location.hash = '#/signin'; });
+      await routePage.waitForFunction(() => location.hash === '#/b/visual-seed' && document.querySelector('.board-root') && document.querySelector('.sync-status')?.textContent?.includes('Live'), null, { timeout: 15_000 });
+      const guardedRoute = await routePage.evaluate(() => ({ hash: location.hash, guestSession: sessionStorage.getItem('driftboard:guest-session') }));
+      if (guardedRoute.hash !== '#/b/visual-seed' || !guardedRoute.guestSession) {
+        throw new Error('guest-expired: live guest escaped its board route: ' + JSON.stringify(guardedRoute));
+      }
+    } finally {
+      await routePage.close();
+    }
+    await page.locator('.comment-toggle').click();
+    await page.locator('.side-tray.show .comment-row').first().waitFor({ timeout: 15_000 });
+    await page.locator('.side-tray.show .comment-row').first().click();
+    await page.locator('.comment-card .comment-msg').first().waitFor();
+
+    const revoked = await fetch(base + '/api/boards/' + BOARD_ID + '/join-codes/' + encodeURIComponent(joinCode.id), {
+      method: 'DELETE',
+      headers: { cookie: ownerCookie, 'x-tabula': '1' },
+    });
+    if (revoked.status !== 204) throw new Error('guest-expired: join-code revoke answered ' + revoked.status + ': ' + await revoked.text());
+
+    const bannerText = 'This join link has expired. You can still look around, but not edit.';
+    const readOnlyText = 'You can read comments on this board but not add them.';
+    const waitForBanner = () => page.waitForFunction((expected) => {
+      const banner = document.querySelector('.workspace-banner');
+      return Boolean(banner && !banner.hidden && banner.textContent?.includes(expected));
+    }, bannerText, { timeout: 15_000 });
+    const verifyExpiredGuest = async (phase) => {
+      await waitForBanner();
+      await page.getByText(readOnlyText, { exact: true }).waitFor({ timeout: 15_000 });
+      const allowedDenials = phase === 'after reload' ? ['access_removed', 'unauthenticated'] : ['access_removed'];
+      try {
+        await page.waitForFunction((denials) => {
+          const app = window.__board;
+          return Boolean(app && denials.includes(app.conn.denied) && app.store.readOnly && app.comments.readOnly());
+        }, allowedDenials, { timeout: 15_000 });
+      } catch {
+        const diagnostic = await page.evaluate(() => {
+          const app = window.__board;
+          const status = document.querySelector('.sync-status');
+          return { user: app?.user?.name, role: app?.role, connection: app?.conn.status, denied: app?.conn.denied, status: status?.textContent, statusLabel: status?.getAttribute('aria-label'), statusTip: status?.dataset.tip, boardReadOnly: app?.store.readOnly, commentsReadOnly: app?.comments.readOnly(), comments: app?.comments.list().length };
+        });
+        throw new Error('guest-expired ' + phase + ': terminal-state wait timed out: ' + JSON.stringify(diagnostic));
+      }
+      const state = await page.evaluate(() => {
+        const status = document.querySelector('.sync-status');
+        const label = status?.querySelector('.sync-status-label');
+        const glyph = status?.querySelector('.ico');
+        const badge = document.querySelector('.readonly-badge');
+        const banner = document.querySelector('.workspace-banner');
+        const link = banner?.querySelector('.workspace-banner-signin');
+        const card = document.querySelector('.comment-card');
+        const parseColor = (value) => {
+          const srgb = value.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%?)?\)$/);
+          if (srgb) return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255, srgb[4] === undefined ? 1 : Number(srgb[4])];
+          const parts = value.match(/[\d.]+/g)?.map(Number) ?? [];
+          return parts.length >= 3 ? [parts[0], parts[1], parts[2], parts[3] ?? 1] : null;
+        };
+        const luminance = (color) => {
+          const linear = (part) => { const c = part / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+          return 0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2]);
+        };
+        const contrast = (a, b) => {
+          const first = luminance(a), second = luminance(b);
+          return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+        };
+        const statusStyle = status ? getComputedStyle(status) : null;
+        const statusColor = statusStyle && parseColor(statusStyle.color);
+        const statusBg = statusStyle && parseColor(statusStyle.backgroundColor);
+        const boardBg = parseColor(getComputedStyle(document.querySelector('.board-root')).backgroundColor);
+        const composedStatusBg = statusBg && boardBg ? statusBg.slice(0, 3).map((channel, index) => channel * statusBg[3] + boardBg[index] * (1 - statusBg[3])) : null;
+        const linkStyle = link ? getComputedStyle(link) : null;
+        const linkBox = link?.getBoundingClientRect();
+        const bannerStyle = banner ? getComputedStyle(banner) : null;
+        const linkColor = linkStyle && parseColor(linkStyle.color);
+        const bannerColor = bannerStyle && parseColor(bannerStyle.backgroundColor);
+        return {
+          status: status?.textContent?.trim() ?? '',
+          statusTip: status?.dataset.tip ?? '',
+          statusLabel: status?.getAttribute('aria-label') ?? '',
+          visibleLabel: label?.textContent?.trim() ?? '',
+          labelDisplay: label ? getComputedStyle(label).display : 'missing',
+          glyphVisible: Boolean(glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0),
+          viewOnlyVisible: Boolean(badge?.textContent?.trim() === 'View only' && badge.getBoundingClientRect().height > 0),
+          statusContrast: statusColor && composedStatusBg ? contrast(statusColor, composedStatusBg) : null,
+          commentText: card?.querySelector('.comment-msg .comment-text')?.textContent?.trim() ?? '',
+          actions: [...(card?.querySelectorAll('button') ?? [])].map((button) => button.textContent?.trim() ?? ''),
+          denied: window.__board.conn.denied,
+          boardReadOnly: window.__board.store.readOnly,
+          commentsReadOnly: window.__board.comments.readOnly(),
+          linkHeight: linkBox?.height ?? 0,
+          linkWidth: linkBox?.width ?? 0,
+          linkWeight: Number.parseInt(linkStyle?.fontWeight ?? '0', 10),
+          linkUnderline: linkStyle?.textDecorationLine.includes('underline') ?? false,
+          linkUnderlineThickness: Number.parseFloat(linkStyle?.textDecorationThickness ?? '0'),
+          bannerContrast: linkColor && bannerColor ? contrast(linkColor, bannerColor) : null,
+        };
+      });
+      if (!state.status.includes('Join link expired') || state.statusLabel !== 'Join link expired' || state.statusTip !== 'This join link has expired or was revoked. Comments are read only.') {
+        throw new Error('guest-expired ' + phase + ': expiry status is wrong: ' + JSON.stringify(state));
+      }
+      if (state.visibleLabel !== 'Join link expired' || state.glyphVisible !== true || state.viewOnlyVisible !== true) {
+        throw new Error('guest-expired ' + phase + ': responsive status contents are wrong: ' + JSON.stringify(state));
+      }
+      if ((width < 480 && state.labelDisplay !== 'none') || (width >= 480 && state.labelDisplay === 'none')) {
+        throw new Error('guest-expired ' + phase + ': status label visibility is wrong at ' + width + 'px: ' + JSON.stringify(state));
+      }
+      const themeScheme = readThemes().find(({ id }) => id === theme)?.scheme;
+      if (themeScheme === 'dark' && (state.statusContrast === null || state.statusContrast < 4.5)) {
+        throw new Error('guest-expired ' + phase + ': denied status contrast is below 4.5:1: ' + JSON.stringify(state));
+      }
+      if (!state.linkHeight || state.linkWeight < 700 || !state.linkUnderline || state.linkUnderlineThickness < 2 || state.bannerContrast === null || state.bannerContrast < 4.5) {
+        throw new Error('guest-expired ' + phase + ': sign-in link styles or contrast are wrong: ' + JSON.stringify(state));
+      }
+      if (width < 480 && (state.linkHeight < 44 || state.linkWidth < 44)) {
+        throw new Error('guest-expired ' + phase + ': phone sign-in tap target is too small: ' + JSON.stringify(state));
+      }
+      if (!state.commentText) throw new Error('guest-expired ' + phase + ': the comment thread is not visible');
+      if (state.actions.some((action) => ['Reply', 'Edit', 'Delete'].includes(action))) {
+        throw new Error('guest-expired ' + phase + ': read-only thread exposes a write action: ' + JSON.stringify(state.actions));
+      }
+      if (!state.boardReadOnly || !state.commentsReadOnly || !allowedDenials.includes(state.denied)) {
+        throw new Error('guest-expired ' + phase + ': revoked guest access did not become read-only: ' + JSON.stringify(state));
+      }
+      return state;
+    };
+
+    await verifyExpiredGuest('before reload');
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(150);
+    await page.screenshot({
+      path: path.join(outDir, 'guest-expired-' + theme + '-' + width + '-before-reload.png'),
+      animations: 'disabled',
+      caret: 'hide',
+    });
+
+    await page.reload();
+    await waitForState('reloaded board', () => Boolean(window.__board));
+    await waitForBanner();
+    await page.locator('.comment-toggle').click();
+    await page.locator('.side-tray.show .comment-row').first().waitFor({ timeout: 15_000 });
+    await page.locator('.side-tray.show .comment-row').first().click();
+    await page.locator('.comment-card .comment-msg').first().waitFor();
+    await verifyExpiredGuest('after reload');
+    const guestSession = await page.evaluate(() => sessionStorage.getItem('driftboard:guest-session'));
+    if (!guestSession) throw new Error('guest-expired: ended guest session was not retained after reload');
+    const signInPage = await page.context().newPage();
+    try {
+      await signInPage.addInitScript((saved) => sessionStorage.setItem('driftboard:guest-session', saved), guestSession);
+      await signInPage.goto(base + '/?debug#/b/visual-seed');
+      await signInPage.locator('.workspace-banner-signin').waitFor({ timeout: 15_000 });
+      await signInPage.locator('.workspace-banner-signin').click();
+      await signInPage.getByRole('heading', { name: 'Sign in to Tabula' }).waitFor({ timeout: 15_000 });
+      const destination = await signInPage.evaluate(() => ({
+        hash: location.hash,
+        guestSession: sessionStorage.getItem('driftboard:guest-session'),
+        signInVisible: Boolean(document.querySelector('.signin')),
+      }));
+      if (destination.hash !== '#/signin' || destination.guestSession !== null || !destination.signInVisible) {
+        throw new Error('guest-expired: ended guest Sign in did not reach signed-out screen: ' + JSON.stringify(destination));
+      }
+    } finally {
+      await signInPage.close();
+    }
+    return { noPark: true };
+  },
+  async 'guest-cursors'(env) {
+    await Promise.all(cursorSenderContexts.splice(0).map((context) => context.close().catch(() => undefined)));
+    const { page, base, theme, width } = env;
+    await openSeedBoard(env);
+    const browser = page.context().browser();
+    const ownerCookies = await page.context().cookies(base);
+    const ownerSessionCookie = ownerCookies.find(({ name, value }) => /session/i.test(name) && value);
+    if (!ownerSessionCookie) throw new Error('guest-cursors: owner session cookie is missing');
+    const ownerSession = { name: ownerSessionCookie.name, value: ownerSessionCookie.value };
+    const ownerCookie = ownerCookies.map(({ name, value }) => `${name}=${value}`).join('; ');
+    const codeResponse = await postJson(base, `boards/${BOARD_ID}/join-codes`, { role: 'editor', maxUses: 1 }, ownerCookie);
+    const { code } = await codeResponse.json();
+    const joined = await postJson(base, 'join', { code, name: USER.name });
+    const cookiePair = joined.headers.getSetCookie().map((value) => value.split(';', 1)[0]).find((value) => value.includes('='));
+    const separator = cookiePair?.indexOf('=') ?? -1;
+    if (separator < 1) throw new Error('guest-cursors: guest session cookie is missing');
+    const guestSession = { name: cookiePair.slice(0, separator), value: cookiePair.slice(separator + 1) };
+    const screenPoints = [
+      { x: width <= 500 ? 90 : 180, y: 130 },
+      { x: width <= 500 ? 90 : 180, y: 220 },
+      { x: width <= 500 ? 70 : 380, y: 310 },
+    ];
+    const worldPoints = await page.evaluate((points) => points.map(({ x, y }) => window.__board.r.toWorld(x, y)), screenPoints);
+    const openCursorSender = async ({ session, name, point }) => {
+      const sender = await newPage(browser, { width, theme, mode: 'accounts', base, session });
+      cursorSenderContexts.push(sender.context);
+      await sender.page.goto(`${base}/?debug#/b/${BOARD_ID}`);
+      await sender.page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+      await sender.page.waitForFunction(() => {
+        const provider = window.__board.conn.provider;
+        return !provider || provider.synced;
+      }, null, { timeout: 15_000 });
+      await sender.page.evaluate(({ displayName, cursor }) => {
+        const app = window.__board;
+        app.zoomToFit();
+        app.conn.awareness.setLocalStateField('user', { ...app.user, ...(displayName ? { name: displayName } : {}) });
+        app.conn.awareness.setLocalStateField('cursor', cursor);
+      }, { displayName: name, cursor: point });
+    };
+    await openCursorSender({ session: ownerSession, point: worldPoints[0] });
+    await openCursorSender({ session: guestSession, point: worldPoints[1] });
+    await openCursorSender({ session: ownerSession, name: 'Long Remote Cursor Participant Name', point: worldPoints[2] });
+    await page.waitForFunction(() => {
+      const cursors = [...document.querySelectorAll('.remote-cursor')];
+      return cursors.length === 3 && cursors.filter((cursor) => cursor.querySelector('.remote-cursor-guest')).length === 1;
+    }, null, { timeout: 15_000 });
+    const result = await page.evaluate(() => {
+      const cursors = [...document.querySelectorAll('.remote-cursor')].map((cursor) => {
+        const label = cursor.querySelector('.remote-cursor-label');
+        const name = cursor.querySelector('.remote-cursor-name');
+        const arrow = cursor.querySelector('svg');
+        const badge = cursor.querySelector('.remote-cursor-guest');
+        const labelBox = label.getBoundingClientRect();
+        const arrowBox = arrow.getBoundingClientRect();
+        const badgeStyle = badge ? getComputedStyle(badge) : null;
+        return {
+          name: name.textContent,
+          guest: Boolean(badge),
+          label: {
+            height: labelBox.height,
+            leftFromArrow: labelBox.left - arrowBox.left,
+            topFromArrow: labelBox.top - arrowBox.top,
+            inline: { margin: label.style.margin, borderRadius: label.style.borderRadius, fontSize: label.style.fontSize },
+          },
+          badge: badgeStyle ? { color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor } : null,
+        };
+      });
+      return cursors;
+    });
+    const owner = result.find((cursor) => cursor.name === USER.name && !cursor.guest);
+    const guest = result.find((cursor) => cursor.name === USER.name && cursor.guest);
+    const longName = result.find((cursor) => cursor.name === 'Long Remote Cursor Participant Name' && !cursor.guest);
+    const failures = [];
+    if (!owner || !guest || !longName) failures.push('expected same-name owner and guest cursors plus the long-name cursor');
+    if (result.filter((cursor) => cursor.guest).length !== 1) failures.push('expected only the guest cursor to have .remote-cursor-guest');
+    if (owner && guest) {
+      for (const [metric, ownerValue, guestValue] of [
+        ['label height', owner.label.height, guest.label.height],
+        ['label left offset', owner.label.leftFromArrow, guest.label.leftFromArrow],
+        ['label top offset', owner.label.topFromArrow, guest.label.topFromArrow],
+      ]) if (Math.abs(ownerValue - guestValue) > 0.5) failures.push(`${metric} differs between owner (${ownerValue}) and guest (${guestValue})`);
+    }
+    const inlineStyles = result.flatMap((cursor) => Object.entries(cursor.label.inline).filter(([, value]) => value).map(([property]) => `${cursor.name}: ${property}`));
+    if (inlineStyles.length) failures.push(`remote cursor labels have inline styles: ${inlineStyles.join(', ')}`);
+    const badge = guest?.badge;
+    const color = (value) => value.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? null;
+    const luminance = ([r, g, b]) => {
+      const linear = (value) => { const channel = value / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const foreground = badge && color(badge.color);
+    const background = badge && color(badge.backgroundColor);
+    const contrast = foreground && background
+      ? (Math.max(luminance(foreground), luminance(background)) + 0.05) / (Math.min(luminance(foreground), luminance(background)) + 0.05)
+      : 0;
+    if (contrast < 4.5) failures.push(`guest badge contrast ${contrast.toFixed(2)}:1 is below 4.5:1`);
+    const summary = { theme, width, cursors: result, contrast: Number(contrast.toFixed(2)) };
+    console.log(`guest-cursors ${JSON.stringify(summary)}`);
+    if (failures.length) throw new Error(`guest-cursors: ${failures.join('; ')}`);
+  },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
     await openSeedBoard(env);
@@ -1641,6 +1948,81 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  /** The two "Not uploaded" placeholder labels on a 417x100 and a 704x473 image, the sizes that were seen failing on acme (TAB-127). */
+  async 'image-placeholders'(env) {
+    const { page, base, outDir, theme, width } = env;
+    // a board of its own for each theme: the relay keeps what the first theme added
+    await page.goto(`${base}/?debug#/b/image-placeholders-${theme}-${width}`);
+    await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+    await page.waitForFunction(() => {
+      const provider = window.__board.conn.provider;
+      return !provider || provider.synced;
+    }, null, { timeout: 15_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const pending = (n) => `pending:visual-${n}`;
+      const objects = [
+        { id: 'ph-toobig-wide', type: 'image', x: 0, y: 0, w: 417, h: 100, asset: pending(1), mime: 'image/png', nw: 417, nh: 100, z: 'p1' },
+        { id: 'ph-toobig-tall', type: 'image', x: 460, y: 0, w: 704, h: 473, asset: pending(2), mime: 'image/png', nw: 704, nh: 473, z: 'p2' },
+        { id: 'ph-lost-wide', type: 'image', x: 0, y: 520, w: 417, h: 100, asset: pending(3), mime: 'image/png', nw: 417, nh: 100, z: 'p3' },
+        { id: 'ph-lost-tall', type: 'image', x: 460, y: 520, w: 704, h: 473, asset: pending(4), mime: 'image/png', nw: 704, nh: 473, z: 'p4' },
+      ];
+      store.transact(() => objects.forEach((o) => {
+        if (!store.get(o.id)) store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+      }));
+      app.r.imageState = (o) => ({ kind: 'failed', why: String(o.id).includes('lost') ? 'lost' : 'toobig' });
+      app.r.invalidateObjects(objects.map((o) => o.id));
+    });
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    const fitTo = async (ids) => {
+      await page.evaluate((list) => {
+        const app = window.__board;
+        const bounds = app.r.contentBounds(list);
+        if (bounds) app.r.fit(bounds, 60, 1);
+      }, ids);
+      await page.waitForTimeout(250);
+    };
+    for (const [name, ids] of [['wide', ['ph-toobig-wide', 'ph-lost-wide']], ['tall', ['ph-toobig-tall', 'ph-lost-tall']]]) {
+      await fitTo(ids);
+      await page.screenshot({ path: path.join(outDir, `image-placeholders-${name}-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    }
+    await fitTo(['ph-toobig-wide', 'ph-toobig-tall', 'ph-lost-wide', 'ph-lost-tall']);
+    // The label is what a person has to act on: 4.5:1 on its own fill, as drawn in this theme, not as computed from the theme table.
+    const ratios = await page.evaluate(() => {
+      const pixel = (css) => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 1;
+        const g = c.getContext('2d');
+        g.fillStyle = '#ff00ff';
+        g.fillStyle = css;
+        g.fillRect(0, 0, 1, 1);
+        return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      };
+      const lum = ([r, g, b]) => {
+        const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      return [...document.querySelectorAll('text')].filter((t) => t.textContent.startsWith('Not uploaded')).map((text) => {
+        const group = text.parentElement;
+        const rect = group.querySelector('rect');
+        const a = lum(pixel(getComputedStyle(text).fill));
+        const b = lum(pixel(getComputedStyle(rect).fill));
+        const box = text.getBoundingClientRect();
+        const px = parseFloat(getComputedStyle(text).fontSize) * (box.height ? box.height / text.getBBox().height : 1);
+        return { ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), px, tall: rect.getBoundingClientRect().height > 150, glyph: Boolean(group.querySelector('g.img-off')) };
+      });
+    });
+    if (ratios.length !== 4) throw new Error(`image-placeholders: expected 4 placeholder labels, found ${ratios.length}`);
+    // a short box at a low zoom may have no room for the glyph beside two lines of 12 px words; the tall ones always do
+    if (ratios.some((r) => r.tall && !r.glyph)) throw new Error(`image-placeholders: a tall placeholder has no glyph in ${theme}`);
+    for (const r of ratios) {
+      if (r.ratio < 4.5) throw new Error(`image-placeholders: label contrast ${r.ratio.toFixed(2)}:1 in ${theme} is below 4.5:1`);
+      if (r.px < 11.9) throw new Error(`image-placeholders: label is ${r.px.toFixed(1)} px on screen in ${theme}, below 12 px`);
+    }
+    console.log(`image-placeholders ${theme}: contrast ${ratios.map((r) => r.ratio.toFixed(1)).join(', ')}:1, label ${ratios.map((r) => r.px.toFixed(0)).join(', ')} px`);
   },
   async 'flip-menu'(env) {
     const { page, outDir, theme, width } = env;
@@ -3538,7 +3920,7 @@ const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -3958,7 +4340,7 @@ async function main() {
       distDir,
       frameable: options.frameable,
       chat: options.mode === 'accounts' && standardStates.some((state) => CHAT_STATES.has(state)),
-      joinCodes: options.mode === 'accounts' && standardStates.some((state) => ['join-short-code', 'share-code-phone'].includes(state)),
+      joinCodes: options.mode === 'accounts' && standardStates.some((state) => ['join-short-code', 'share-code-phone', 'guest-cursors', 'guest-expired'].includes(state)),
       tracker: false,
       outDir: options.outDir,
       touch: options.touch,
