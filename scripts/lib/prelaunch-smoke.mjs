@@ -5,9 +5,10 @@ function describeError(error) {
   return error?.cause?.message ? `${message}; cause=${error.cause.message}` : message;
 }
 
-export function findForbiddenPageText(text) {
+export function findForbiddenPageText(text, { docs = false } = {}) {
+  // the user guide explains what is not allowed (for example a localhost address), so it may say the word
   const rules = [
-    ['localhost', /localhost/i],
+    ...(docs ? [] : [['localhost', /localhost/i]]),
     ['127.0.0.1', /127\.0\.0\.1/i],
     ['example.com', /example\.com/i],
     ['TODO', /\bTODO\b/i],
@@ -73,11 +74,13 @@ export function resolveInternalResources({ links = [], images = [] }, baseUrl) {
 }
 
 function mentionsAmount(text, amount, period) {
-  const amountPattern = new RegExp(`(?:€|\\bEUR\\s*)\\s*${amount}(?:[.,]00)?(?![\\d.,])`, 'i');
-  const match = amountPattern.exec(text);
-  if (!match) return false;
-  const surrounding = text.slice(Math.max(0, match.index - 15), match.index + match[0].length + 90);
-  return new RegExp(`\\b(?:${period})\\b`, 'i').test(surrounding);
+  const amountPattern = new RegExp(`(?:€|\\bEUR\\s*)\\s*${amount}(?:[.,]00)?(?![\\d.,])`, 'gi');
+  const periodPattern = new RegExp(`(?:\\b(?:${period})\\b|/\\s*(?:mo|month|yr|year))`, 'i');
+  for (const match of text.matchAll(amountPattern)) {
+    const surrounding = text.slice(Math.max(0, match.index - 15), match.index + match[0].length + 90);
+    if (periodPattern.test(surrounding)) return true;
+  }
+  return false;
 }
 
 export function inspectFlatPricing(text) {

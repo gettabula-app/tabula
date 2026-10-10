@@ -217,7 +217,7 @@ async function inspectPage(browser, url, { legal = false, education = false, pri
   const canonicalFact = `page-host=${responseHost}; declared-canonical-host=${canonical?.hostname ?? (facts.canonical ? 'invalid' : 'not declared')}; expected=${expectedHost}`;
   check(canonicalHostOk ? 'PASS' : 'FAIL', 'page and any declared canonical use the expected host', url, canonicalFact);
   const pageCopy = `${facts.title} ${facts.description} ${facts.text}`;
-  const hazards = findForbiddenPageText(pageCopy);
+  const hazards = findForbiddenPageText(pageCopy, { docs: new URL(url).pathname.startsWith('/docs') });
   check(hazards.length ? 'FAIL' : 'PASS', 'page text has no local or placeholder values', url, hazards.length ? `found=${hazards.join(', ')}` : 'none found');
   if (legal) {
     const placeholders = findLegalPlaceholders(pageCopy);
@@ -398,7 +398,7 @@ async function runApiStage() {
   await tlsCheck(API, 'Hosted API');
   const apiRoot = appendPath(API, '/');
   await checkSecurityHeaders(apiRoot, 'Hosted API');
-  const healthUrl = appendPath(API, '/api/health');
+  const healthUrl = appendPath(API, '/health');
   const health = await requestFollowingRedirects(healthUrl);
   let healthJson = null;
   if (health.response && health.response.status === 200 && !health.error) {

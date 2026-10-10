@@ -14,6 +14,8 @@ describe('pre-launch smoke pure checks', () => {
   it('finds forbidden public-page text and legal draft markers', () => {
     expect(findForbiddenPageText('localhost 127.0.0.1 example.com TODO')).toEqual(['localhost', '127.0.0.1', 'example.com', 'TODO']);
     expect(findForbiddenPageText('A clean launch page')).toEqual([]);
+    expect(findForbiddenPageText('not localhost or a private address', { docs: true })).toEqual([]);
+    expect(findForbiddenPageText('not localhost', { docs: false })).toEqual(['localhost']);
     expect(findLegalPlaceholders('TODO, lorem ipsum, [CONTACT], XXX')).toEqual(['TODO', 'lorem', '[', 'XXX']);
   });
 
@@ -39,6 +41,8 @@ describe('pre-launch smoke pure checks', () => {
     expect(inspectFlatPricing('€29 per workspace per month or €290 per year. Founding €19/month for 12 months before 31 December 2026.'))
       .toMatchObject({ monthly: true, yearly: true, founding: true, flat: true });
     expect(inspectFlatPricing('€29 monthly or €290 yearly; founding €19 for 12 months before 31 Dec 2026.').founding).toBe(true);
+    // a number can appear first in another context (AGPL text, VAT example): any mention with a period counts
+    expect(inspectFlatPricing('See €29 included. €29 a workspace a month; €290 a year. €19 for 12 months before 31 December 2026.')).toMatchObject({ monthly: true, yearly: true, founding: true });
     expect(inspectFlatPricing('€290 yearly and €19 for 12 months before 31 December 2026. €29 per person per month.').flat).toBe(false);
     expect(inspectEducationOffer('Half price. Start the 7-day trial, write to us, and we apply the discount before your first payment.'))
       .toEqual({ halfPrice: true, trialApplication: true });
