@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHarness, type Account, type Body } from './mcp-harness';
@@ -7,13 +6,7 @@ import { createHarness, type Account, type Body } from './mcp-harness';
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 const CLOUD_TOKEN = 'c'.repeat(48);
-const NO_DOTENV = { TABULA_SKIP_DOTENV: '1' };
-let harnessNumber = 0;
-const apiHarness = (options: Parameters<typeof createHarness>[0]) => createHarness({
-  ...options,
-  dir: fs.mkdtempSync(path.join(process.cwd(), `.tracker-api-test-${process.pid}-${harnessNumber++}-`)),
-});
-const h = apiHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' }, env: NO_DOTENV });
+const h = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' } });
 let owner: Account;
 let member: Account;
 let guest: Account;
@@ -64,7 +57,9 @@ afterAll(async () => {
 describe('tracker session API', () => {
   it('uses the session and CSRF checks and exposes tracker capability only to members', async () => {
     expect((await api(undefined, 'GET', '/api/tracker/meta')).status).toBe(401);
-    const missingCsrf = await api(owner, 'GET', '/api/tracker/meta', undefined, { 'x-tabula': '', 'x-mira': '' });
+    // reads follow the API convention (no CSRF header needed); a mutation without the header is refused
+    expect((await api(owner, 'GET', '/api/tracker/meta', undefined, { 'x-tabula': '', 'x-mira': '' })).status).toBe(200);
+    const missingCsrf = await api(owner, 'POST', '/api/tracker/tickets', { title: 'No header', idempotencyKey: 'no-header-key' }, { 'x-tabula': '', 'x-mira': '' });
     expect(missingCsrf.status).toBe(403);
     expect(missingCsrf.body).toMatchObject({ error: 'csrf' });
 
@@ -130,7 +125,7 @@ describe('tracker session API', () => {
     expect(comment.body.ticket.id).toBe(ticket.id);
 
     const changed = await api(owner, 'PATCH', `/api/tracker/tickets/${ticket.key}`, {
-      title: 'Updated API ticket', assigneeId: owner.user.id, ifUpdatedSeq: ticket.updatedSeq,
+      title: 'Updated API ticket', assigneeId: owner.user.id, ifUpdatedSeq: comment.body.ticket.updatedSeq,
     });
     expect(changed.status).toBe(200);
     expect(changed.body.ticket).toMatchObject({ title: 'Updated API ticket', assignee: { userId: owner.user.id } });
@@ -312,8 +307,8 @@ describe('tracker session API', () => {
 
 describe('tracker REST feature gates and hosted read-only mode', () => {
   it('returns the ordinary not-found response for every route with the flag off and in open mode', async () => {
-    const off = apiHarness({ accounts: true, settings: { MCP: 'on' }, env: NO_DOTENV });
-    const open = apiHarness({ settings: { TRACKER: 'on' }, env: NO_DOTENV });
+    const off = createHarness({ accounts: true, settings: { MCP: 'on' } });
+    const open = createHarness({ settings: { TRACKER: 'on' } });
     const calls: [string, string, unknown?][] = [
       ['GET', '/api/tracker/meta'],
       ['GET', '/api/tracker/tickets'],
@@ -370,10 +365,9 @@ describe('tracker REST feature gates and hosted read-only mode', () => {
   });
 
   it('allows reads but blocks every mutation before writing when the cloud workspace is read-only', async () => {
-    const cloud = apiHarness({
+    const cloud = createHarness({
       accounts: true,
       settings: { MCP: 'on', TRACKER: 'on', CLOUD_TOKEN, CLOUD_URL: 'http://127.0.0.1:9', CLOUD_WORKSPACE_ID: 'tracker-api-readonly' },
-      env: NO_DOTENV,
     });
     try {
       await cloud.start();
