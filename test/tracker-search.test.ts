@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDirectory } from '../server/directory.mjs';
 import { OpsError } from '../server/board-ops.mjs';
 import { refreshTicketSearch, buildFtsQuery, SEARCH_LIMITS } from '../server/tracker/search.mjs';
-import { commentTicket, createLabel, createTicket, searchTickets, transitionTicket, updateTicket } from '../server/tracker/tickets.mjs';
+import { commentTicket, createLabel, createTicket, listTickets, searchTickets, transitionTicket, updateTicket } from '../server/tracker/tickets.mjs';
 
 const opened: any[] = [];
 const NOW = Date.UTC(2026, 9, 10, 12);
@@ -33,21 +33,21 @@ describe('tracker search filters and ranking', () => {
     const gamma = createTicket({ directory, actor, title: 'Gamma stable', now: NOW });
     transitionTicket({ directory, actor, key: gamma.key, state: 'done', now: NOW });
 
-    expect(searchTickets({ directory, actor, filters: ['assignee:me'], now: NOW }).entries.map((t: any) => t.key)).toEqual([beta.key]);
-    expect(searchTickets({ directory, actor, filters: ['assignee:Ada'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
-    expect(searchTickets({ directory, actor, filters: ['assignee:ada@example.com'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
-    expect(searchTickets({ directory, actor, filters: ['state:done'], now: NOW }).entries.map((t: any) => t.key)).toEqual([gamma.key]);
-    expect(searchTickets({ directory, actor, filters: ['label:BUG'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
-    expect(searchTickets({ directory, actor, filters: ['due:overdue'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
-    expect(searchTickets({ directory, actor, filters: ['due:today'], now: NOW }).entries.map((t: any) => t.key)).toEqual([beta.key]);
-    expect(searchTickets({ directory, actor, filters: ['due:before-2026-10-11'], now: NOW }).total).toBe(2);
-    expect(searchTickets({ directory, actor, filters: ['has:link'], now: NOW }).total).toBe(0);
-    expect(searchTickets({ directory, actor, filters: ['created:after-2026-10-10'], now: NOW }).total).toBe(3);
+    expect(listTickets({ directory, actor, filters: ['assignee:me'], now: NOW }).entries.map((t: any) => t.key)).toEqual([beta.key]);
+    expect(listTickets({ directory, actor, filters: ['assignee:Ada'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
+    expect(listTickets({ directory, actor, filters: ['assignee:ada@example.com'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
+    expect(listTickets({ directory, actor, filters: ['state:done'], now: NOW }).entries.map((t: any) => t.key)).toEqual([gamma.key]);
+    expect(listTickets({ directory, actor, filters: ['label:BUG'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
+    expect(listTickets({ directory, actor, filters: ['due:overdue'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
+    expect(listTickets({ directory, actor, filters: ['due:today'], now: NOW }).entries.map((t: any) => t.key)).toEqual([beta.key]);
+    expect(listTickets({ directory, actor, filters: ['due:before-2026-10-11'], now: NOW }).total).toBe(2);
+    expect(listTickets({ directory, actor, filters: ['has:link'], now: NOW }).total).toBe(0);
+    expect(listTickets({ directory, actor, filters: ['created:after-2026-10-10'], now: NOW }).total).toBe(3);
 
     updateTicket({ directory, actor, key: alpha.key, patch: { archived: true }, now: NOW });
-    expect(searchTickets({ directory, actor, now: NOW }).entries.map((t: any) => t.key)).not.toContain(alpha.key);
-    expect(searchTickets({ directory, actor, filters: ['is:archived'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
-    expect(searchTickets({ directory, actor, filters: ['due:overdue'], now: NOW }).entries.map((t: any) => t.key)).toEqual([]);
+    expect(listTickets({ directory, actor, now: NOW }).entries.map((t: any) => t.key)).not.toContain(alpha.key);
+    expect(listTickets({ directory, actor, filters: ['is:archived'], now: NOW }).entries.map((t: any) => t.key)).toEqual([alpha.key]);
+    expect(listTickets({ directory, actor, filters: ['due:overdue'], now: NOW }).entries.map((t: any) => t.key)).toEqual([]);
     expect(owner.id).not.toBe(ada.id);
   });
 
@@ -64,7 +64,7 @@ describe('tracker search filters and ranking', () => {
   ])('returns invalid_filter with the failing token %s', (token) => {
     const { directory, actor } = fixture();
     let error: any;
-    try { searchTickets({ directory, actor, filters: [token] }); } catch (caught) { error = caught; }
+    try { listTickets({ directory, actor, filters: [token] }); } catch (caught) { error = caught; }
     expect(error).toBeInstanceOf(OpsError);
     expect(error.code).toBe('invalid_filter');
     expect(error.path).toBe(token);
@@ -74,23 +74,82 @@ describe('tracker search filters and ranking', () => {
     const { directory, actor } = fixture();
     const query = 'OR NEAR * title:secret';
     const fts = buildFtsQuery(query);
-    expect(fts).toBe('"OR" AND "NEAR" AND "title" AND "secret"');
-    expect(fts).not.toMatch(/[*:]/);
+    expect(fts).toBe('"OR" AND "NEAR" AND "title" AND "secret"*');
+    expect(fts).not.toContain(':');
     const ticket = createTicket({ directory, actor, title: 'OR NEAR title secret' });
     expect(searchTickets({ directory, actor, query }).entries.map((item: any) => item.key)).toEqual([ticket.key]);
   });
 
-  it('uses keyset pagination to keep tied rows stable across pages', () => {
+  it('uses keyset pagination to keep tied search rows stable across pages', () => {
     const { directory, actor } = fixture();
-    const tickets = [1, 2, 3].map((n) => createTicket({ directory, actor, title: `Stable ticket ${n}`, now: NOW }));
+    const tickets = [1, 2, 3, 4, 5].map((n) => createTicket({ directory, actor, title: `Stable ticket ${n}`, now: NOW }));
+    directory.db.prepare('UPDATE tickets SET updated_at = ?').run(NOW);
     const first = searchTickets({ directory, actor, query: 'stable', limit: 2, now: NOW });
     expect(first.entries).toHaveLength(2);
-    expect(first.total).toBe(3);
+    expect(first.total).toBe(5);
     expect(first.next).toBeTruthy();
     const second = searchTickets({ directory, actor, query: 'stable', limit: 2, cursor: first.next, now: NOW });
-    expect(second.entries).toHaveLength(1);
-    expect([...first.entries, ...second.entries].map((item: any) => item.key).sort()).toEqual(tickets.map((t: any) => t.key).sort());
-    expect(second.next).toBeNull();
+    expect(second.entries).toHaveLength(2);
+    expect(second.next).toBeTruthy();
+    const third = searchTickets({ directory, actor, query: 'stable', limit: 2, cursor: second.next, now: NOW });
+    expect(third.entries).toHaveLength(1);
+    expect(third.next).toBeNull();
+    const expected = [...tickets].sort((a: any, b: any) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map((ticket: any) => ticket.key);
+    expect([...first.entries, ...second.entries, ...third.entries].map((item: any) => item.key)).toEqual(expected);
+  });
+
+  it('walks every list page once with no terms, a state filter and an archived filter', () => {
+    const { directory, actor } = fixture();
+    const active = Array.from({ length: 6 }, (_, index) => createTicket({ directory, actor, title: `Active ${index}`, now: NOW }));
+    const archived = Array.from({ length: 6 }, (_, index) => createTicket({ directory, actor, title: `Archived ${index}`, now: NOW }));
+    for (const ticket of archived) updateTicket({ directory, actor, key: ticket.key, patch: { archived: true }, now: NOW });
+    directory.db.prepare('UPDATE tickets SET updated_at = ?').run(NOW);
+
+    const walk = (filters: string[] = []) => {
+      const pages: any[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = listTickets({ directory, actor, filters, limit: 2, cursor, now: NOW });
+        pages.push(...page.entries);
+        cursor = page.next;
+      } while (cursor);
+      return pages;
+    };
+    const expected = (tickets: any[]) => [...tickets].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map((ticket) => ticket.key);
+
+    const unfiltered = walk();
+    expect(unfiltered.map((ticket) => ticket.key)).toEqual(expected(active));
+    expect(walk().map((ticket) => ticket.key)).toEqual(expected(active));
+    expect(walk(['state:todo']).map((ticket) => ticket.key)).toEqual(expected(active));
+    expect(walk(['is:archived']).map((ticket) => ticket.key)).toEqual(expected(archived));
+  });
+
+  it('matches a two-character final word as a prefix while keeping earlier words whole and operators literal', () => {
+    const { directory, actor } = fixture();
+    const overdue = createTicket({ directory, actor, title: 'Overdue task' });
+    createTicket({ directory, actor, title: 'Catfish Overdue' });
+    const operatorOnly = createTicket({ directory, actor, title: 'Cats Zzzzone' });
+    const operatorText = createTicket({ directory, actor, title: 'Cats AND Zzzzone' });
+    const oneLetter = createTicket({ directory, actor, title: 'Orange task' });
+
+    expect(searchTickets({ directory, actor, query: 'Overd' }).entries.map((item: any) => item.key)).toContain(overdue.key);
+    expect(searchTickets({ directory, actor, query: 'O' }).entries).toEqual([]);
+    expect(searchTickets({ directory, actor, query: 'Cat Overd' }).entries).toEqual([]);
+    expect(searchTickets({ directory, actor, query: 'Cats AND zzzz' }).entries.map((item: any) => item.key)).toContain(operatorText.key);
+    expect(searchTickets({ directory, actor, query: 'Cats AND zzzz' }).entries.map((item: any) => item.key)).not.toContain(operatorOnly.key);
+    expect(searchTickets({ directory, actor, query: 'Orange task' }).entries.map((item: any) => item.key)).toContain(oneLetter.key);
+  });
+
+  it.each(['', '... ---'])('refuses a search without searchable terms, including when a cursor is supplied (%s)', (query) => {
+    const { directory, actor } = fixture();
+    createTicket({ directory, actor, title: 'A ticket to list' });
+    createTicket({ directory, actor, title: 'Another ticket to list' });
+    const first = listTickets({ directory, actor, limit: 1 });
+    expect(first.next).toBeTruthy();
+    let error: any;
+    try { searchTickets({ directory, actor, query, limit: 1, cursor: first.next }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(OpsError);
+    expect(error).toMatchObject({ code: 'invalid_input', path: 'query', message: 'Enter something to search for' });
   });
 
   it('ranks exact keys and aliases, title prefixes, title tokens, then body and comment matches', () => {
@@ -122,11 +181,11 @@ describe('tracker search filters and ranking', () => {
     expect(queryError).toBeInstanceOf(OpsError);
     expect(queryError.code).toBe('limit_exceeded');
     let filterError: any;
-    try { searchTickets({ directory, actor, filters: Array.from({ length: 21 }, () => 'is:archived') }); } catch (error) { filterError = error; }
+    try { listTickets({ directory, actor, filters: Array.from({ length: 21 }, () => 'is:archived') }); } catch (error) { filterError = error; }
     expect(filterError).toBeInstanceOf(OpsError);
     expect(filterError.code).toBe('limit_exceeded');
     let pageError: any;
-    try { searchTickets({ directory, actor, limit: 51 }); } catch (error) { pageError = error; }
+    try { listTickets({ directory, actor, limit: 51 }); } catch (error) { pageError = error; }
     expect(pageError).toBeInstanceOf(OpsError);
     expect(pageError.code).toBe('invalid_input');
   });

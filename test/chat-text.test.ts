@@ -17,6 +17,7 @@ describe('normaliseText', () => {
     ['removes tag characters', 'hi\u{e0041}\u{e0042}', 'hi'],
     ['composes to NFC', 'Café', 'Café'],
     ['trims trailing whitespace on every line', 'one   \ntwo\t\nthree  ', 'one\ntwo\nthree'],
+    ['trims trailing Unicode spaces too', 'one\u00a0\u3000\ntwo\u2003', 'one\ntwo'],
     ['collapses more than two blank lines', 'a\n\n\n\n\n\nb', 'a\n\n\nb'],
     ['keeps two blank lines', 'a\n\n\nb', 'a\n\n\nb'],
     ['counts whitespace-only lines as blank', 'a\n  \n \t\n   \n \nb', 'a\n\n\nb'],
@@ -24,6 +25,14 @@ describe('normaliseText', () => {
     ['keeps leading spaces of the first line', '  indented', '  indented'],
   ])('%s', (_name, input, output) => {
     expect(normaliseText(input)).toBe(output);
+  });
+
+  it('trims a long run of spaces in linear time', () => {
+    const started = performance.now();
+    expect(checkText(' '.repeat(50_000) + 'x')).toEqual({ error: 'too_long' });
+    expect(normaliseText('a' + ' '.repeat(50_000) + 'b   ')).toBe('a' + ' '.repeat(50_000) + 'b');
+    // /\s+$/ took seconds here: it starts again at every space of a run that does not reach the end
+    expect(performance.now() - started).toBeLessThan(300);
   });
 
   it('treats anything but a string as empty', () => {

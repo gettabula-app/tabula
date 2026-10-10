@@ -3,7 +3,8 @@ import { openDirectory } from '../server/directory.mjs';
 import { OpsError } from '../server/board-ops.mjs';
 import { allocateTicket } from '../server/tracker/ids.mjs';
 import {
-  commentTicket, createLabel, createTicket, getTicket, listLabels, listStates, searchTickets, transitionTicket, updateTicket,
+  commentTicket, createLabel, createTicket, findTicketByIdempotency, getTicket, listLabels, listStates, listTickets, searchTickets,
+  transitionTicket, updateTicket,
 } from '../server/tracker/tickets.mjs';
 
 const opened: any[] = [];
@@ -59,7 +60,25 @@ describe('tracker ticket commands', () => {
     ].sort());
     expect(getTicket({ directory, actor, key: ticket.key })).toEqual(ticket);
     expect(searchTickets({ directory, actor, query: 'plain' }).entries[0]).toMatchObject({ key: ticket.key, title: ticket.title, project: null, due: null });
-    expect(searchTickets({ directory, actor }).entries.map((item: any) => item.key)).toEqual([ticket.key]);
+    expect(listTickets({ directory, actor }).entries.map((item: any) => item.key)).toEqual([ticket.key]);
+  });
+
+  it('looks up an MCP idempotency key for its token without writing', () => {
+    const { directory, owner } = fixture();
+    const actor = {
+      type: 'mcp_token', tokenId: 'lookup-token', ownerUserId: owner.id,
+      user: { id: owner.id, role: 'owner' }, tracker: 'write',
+    };
+    const key = 'mcp-create-key';
+    const ticket = createTicket({ directory, actor, source: 'mcp', idempotencyKey: key, title: 'Idempotent ticket' });
+    const count = directory.db.prepare('SELECT COUNT(*) AS n FROM tickets').get()!.n;
+
+    expect(findTicketByIdempotency({ directory, actor, source: 'mcp', idempotencyKey: key })).toBe(true);
+    expect(findTicketByIdempotency({
+      directory, actor: { ...actor, tokenId: 'another-token' }, source: 'mcp', idempotencyKey: key,
+    })).toBe(false);
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM tickets').get()!.n).toBe(count);
+    expect(ticket.title).toBe('Idempotent ticket');
   });
 
   it('updates fields, transitions, comments, archives, restores, versions and event records', () => {
@@ -76,8 +95,8 @@ describe('tracker ticket commands', () => {
       assignee: { userId: owner.id, name: owner.name }, labels: [{ id: label.id, name: label.name }], due: '2026-10-31', parent: parent.key,
     });
     expect(directory.db.prepare('SELECT field, event_seq FROM ticket_field_versions WHERE ticket_id = ? ORDER BY field').all(child.id))
-      .toEqual(['assignee', 'description', 'due', 'labels', 'parent', 'priority', 'state', 'title'].map((field) => ({
-        field, event_seq: field === 'state' ? child.updatedSeq : updated.updatedSeq,
+      .toEqual(['assignee', 'description', 'due', 'labels', 'milestone', 'parent', 'priority', 'project', 'state', 'title'].map((field) => ({
+        field, event_seq: field === 'state' || field === 'milestone' || field === 'project' ? child.updatedSeq : updated.updatedSeq,
       })));
 
     const transitioned = transitionTicket({ directory, actor, key: child.key, state: 'In review', ifUpdatedSeq: updated.updatedSeq, now: 400 });

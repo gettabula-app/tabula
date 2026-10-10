@@ -7,12 +7,18 @@ const PAGE_MAX = 50;
 
 export function buildFtsQuery(query) {
   const terms = query.match(/[\p{L}\p{M}\p{N}_]+/gu) ?? [];
-  return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ');
+  return terms.map((term, index) => {
+    const quoted = `"${term.replaceAll('"', '""')}"`;
+    return index === terms.length - 1 && Array.from(term).length >= 2 ? `${quoted}*` : quoted;
+  }).join(' AND ');
 }
 
 function titleFtsQuery(query) {
   const terms = query.match(/[\p{L}\p{M}\p{N}_]+/gu) ?? [];
-  return terms.length ? `title : (${terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ')})` : '';
+  return terms.length ? `title : (${terms.map((term, index) => {
+    const quoted = `"${term.replaceAll('"', '""')}"`;
+    return index === terms.length - 1 && Array.from(term).length >= 2 ? `${quoted}*` : quoted;
+  }).join(' AND ')})` : '';
 }
 
 function boundedText(value, maxBytes) {
@@ -239,7 +245,7 @@ function makeRankedCte({ query, filters, actor, db, now, useFts }) {
 }
 
 /** @param {any} options */
-export function searchTickets({ directory, db: dbArg, actor, query = '', filters = [], limit = 20, cursor = null, now = Date.now() } = {}) {
+function runTicketSearch({ directory, db: dbArg, actor, query = '', filters = [], limit = 20, cursor = null, now = Date.now() } = {}, allowEmptyQuery = false) {
   const db = getDb({ directory, db: dbArg });
   if (typeof query !== 'string') throw invalid('query', 'Must be text');
   if (Array.from(query).length > 512) throw limitExceeded('Search query is limited to 512 characters', 'query');
@@ -249,24 +255,29 @@ export function searchTickets({ directory, db: dbArg, actor, query = '', filters
   const normalizedQuery = query.trim();
   const normalizedFilters = filters.map((filter) => filter.trim());
   const terms = buildFtsQuery(normalizedQuery);
+  if (!terms && !allowEmptyQuery) throw invalid('query', 'Enter something to search for');
   const cte = makeRankedCte({ query: normalizedQuery, filters: normalizedFilters, actor, db, now, useFts: Boolean(terms) });
   const parsedCursor = parseCursor(cursor, normalizedQuery, normalizedFilters);
   const total = Number(db.prepare(`${cte.sql} SELECT COUNT(*) AS n FROM ranked`).get(...cte.params).n);
 
-  const pageClause = parsedCursor
-    ? 'AND (rank_bucket > ? OR (rank_bucket = ? AND (updated_at < ? OR (updated_at = ? AND id > ?))))'
-    : '';
-  const pageParams = parsedCursor
-    ? [parsedCursor.rank, parsedCursor.rank, parsedCursor.updatedAt, parsedCursor.updatedAt, parsedCursor.id]
-    : [];
+  const pageConditions = [];
+  const pageParams = [];
+  if (cte.useFts) {
+    pageConditions.push('ticket_search MATCH ?');
+    pageParams.push(cte.termsQuery);
+  }
+  if (parsedCursor) {
+    pageConditions.push('(rank_bucket > ? OR (rank_bucket = ? AND (updated_at < ? OR (updated_at = ? AND id > ?))))');
+    pageParams.push(parsedCursor.rank, parsedCursor.rank, parsedCursor.updatedAt, parsedCursor.updatedAt, parsedCursor.id);
+  }
+  const pageClause = pageConditions.length ? `WHERE ${pageConditions.join(' AND ')}` : '';
   const rows = db.prepare(
     `${cte.sql}
      SELECT ranked.*, ${cte.useFts ? "snippet(ticket_search, -1, '<mark>', '</mark>', '…', 16)" : 'NULL'} AS snippet
      FROM ranked ${cte.useFts ? 'JOIN ticket_search ON ticket_search.rowid = ranked.search_rowid' : ''}
-     ${cte.useFts ? 'WHERE ticket_search MATCH ?' : ''}
      ${pageClause}
      ORDER BY rank_bucket ASC, updated_at DESC, id ASC LIMIT ?`,
-  ).all(...cte.params, ...(cte.useFts ? [cte.termsQuery] : []), ...pageParams, limit + 1);
+  ).all(...cte.params, ...pageParams, limit + 1);
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
   return {
@@ -289,8 +300,13 @@ export function searchTickets({ directory, db: dbArg, actor, query = '', filters
 }
 
 /** @param {any} options */
+export function searchTickets(options = {}) {
+  return runTicketSearch(options);
+}
+
+/** @param {any} options */
 export function listTickets(options = {}) {
-  return searchTickets({ ...options, query: '' });
+  return runTicketSearch({ ...options, query: '' }, true);
 }
 
 export const SEARCH_LIMITS = Object.freeze({ queryCodePoints: 512, filters: 20, page: PAGE_MAX, comments: COMMENT_COUNT_LIMIT, textBytes: INDEX_BYTES_LIMIT });

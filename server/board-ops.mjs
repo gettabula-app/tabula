@@ -79,8 +79,8 @@ const CANCEL_TAG = 0xe007f;
 const isEmojiModifier = (cp) => cp >= 0x1f3fb && cp <= 0x1f3ff;
 const isExtendedPictographic = (ch) => /\p{Extended_Pictographic}/u.test(ch);
 const isHidden = (cp) =>
-  (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
-  (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp === 0xfeff;
+  cp === 0x061c || (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
+  (cp >= 0x2060 && cp <= 0x206f) || cp === 0xfeff;
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
 
 /** Indices of tag characters that belong to complete subdivision-flag sequences. */

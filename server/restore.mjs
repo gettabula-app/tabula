@@ -455,7 +455,8 @@ export function recoverOnStart({ dataDir, log = noop, step = noop }) {
 
 /**
  * @typedef {object} RestoreHooks what the relay supplies
- * @property {() => void | Promise<void>} [enterMaintenance] answer 503 from now on, close every socket with the restoring code, save every open room and then stop saving them, stop the timers that use the database
+ * @property {() => boolean} [saveRooms] synchronously save every room; false aborts before maintenance or any restart
+ * @property {() => void | Promise<void>} [enterMaintenance] synchronously freeze edits and room saves, answer 503, close every socket with the restoring code, stop the timers that use the database
  * @property {() => void | Promise<void>} [closeDirectory] close the database (default: directory.close())
  */
 
@@ -1136,6 +1137,8 @@ export function createRestore({
       say(`checked ${plan.files} files; ${prepared.sessions} sessions end with the restore`);
       const record = prepared.record;
 
+      // No await between the last save and freezing edits: a failed save leaves the live rooms available for retry.
+      if (hooks.saveRooms?.() === false) throw new RestoreError('restore_failed', 'The current room changes could not be saved, so nothing was restored');
       pointOfNoReturn = true;
       await enterMaintenance();
       const oldFiles = liveEntries();
