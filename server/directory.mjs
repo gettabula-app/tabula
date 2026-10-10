@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
-import { describeSchema, migrate } from './schema.mjs';
+import { describeSchema, migrate, readSchemaState } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
@@ -178,6 +178,168 @@ export const MIGRATIONS = [
   );
   CREATE INDEX guest_sessions_expiry ON guest_sessions(expires_at);
   `,
+  // Tracker core (docs/tracker-architecture.md, slice 1). Additive so schema 11 remains a valid reader.
+  `
+  ALTER TABLE access_tokens ADD COLUMN tracker TEXT;
+
+  CREATE TABLE trackers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE ticket_workflows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE ticket_states (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL REFERENCES ticket_workflows(id) ON DELETE RESTRICT,
+    state_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('backlog', 'unstarted', 'started', 'completed', 'canceled')),
+    position INTEGER NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    UNIQUE (workflow_id, state_key)
+  );
+  CREATE TABLE tickets (
+    id TEXT PRIMARY KEY,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    key TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    state_id TEXT NOT NULL REFERENCES ticket_states(id) ON DELETE RESTRICT,
+    tracker_id TEXT NOT NULL REFERENCES trackers(id) ON DELETE RESTRICT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    estimate REAL,
+    parent_ticket_id TEXT REFERENCES tickets(id) ON DELETE SET NULL,
+    assignee_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    project_id TEXT,
+    milestone_id TEXT,
+    due_date TEXT,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_seq INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'app',
+    UNIQUE (prefix, number)
+  );
+  CREATE TABLE ticket_counters (
+    scope TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    next_number INTEGER NOT NULL CHECK (next_number > 0),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (scope, prefix)
+  );
+  CREATE TABLE ticket_field_versions (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    event_seq INTEGER NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    PRIMARY KEY (ticket_id, field)
+  );
+  CREATE TABLE labels (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT,
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    archived_at INTEGER
+  );
+  CREATE UNIQUE INDEX labels_active_name ON labels(name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE TABLE ticket_labels (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE RESTRICT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, label_id)
+  );
+  CREATE TABLE ticket_comments (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    parent_id TEXT REFERENCES ticket_comments(id) ON DELETE SET NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    author_snapshot TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER,
+    deleted_at INTEGER,
+    client_id TEXT,
+    UNIQUE (actor_type, actor_id, client_id)
+  );
+  CREATE UNIQUE INDEX ticket_comments_client_idempotency ON ticket_comments(actor_type, COALESCE(actor_id, ''), client_id)
+    WHERE client_id IS NOT NULL;
+  CREATE TABLE ticket_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    event_type TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    source TEXT NOT NULL,
+    idempotency_key TEXT,
+    created_at INTEGER NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE (source, actor_type, actor_id, idempotency_key)
+  );
+  CREATE TABLE ticket_aliases (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    display_key TEXT,
+    url TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE (provider, external_id)
+  );
+  CREATE UNIQUE INDEX ticket_events_idempotency ON ticket_events(source, actor_type, COALESCE(actor_id, ''), idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE TABLE ticket_subscriptions (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, user_id)
+  );
+  CREATE VIRTUAL TABLE ticket_search USING fts5(
+    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
+    tokenize = 'unicode61 remove_diacritics 2'
+  );
+
+  CREATE INDEX tickets_state_updated ON tickets(state_id, updated_at DESC);
+  CREATE INDEX tickets_assignee_state_updated ON tickets(assignee_user_id, state_id, updated_at DESC);
+  CREATE INDEX tickets_project_milestone_state ON tickets(project_id, milestone_id, state_id);
+  CREATE INDEX tickets_active_due ON tickets(due_date) WHERE archived_at IS NULL;
+  CREATE INDEX ticket_events_ticket_id ON ticket_events(ticket_id, id DESC);
+  CREATE INDEX ticket_events_id ON ticket_events(id DESC);
+  CREATE INDEX ticket_comments_ticket_time ON ticket_comments(ticket_id, created_at, id);
+  CREATE INDEX ticket_comments_parent_time ON ticket_comments(parent_id, created_at);
+  CREATE INDEX ticket_aliases_external ON ticket_aliases(provider, external_id);
+  CREATE INDEX ticket_subscriptions_user ON ticket_subscriptions(user_id, ticket_id);
+
+  INSERT INTO trackers (id, name, prefix, created_at) VALUES ('trk_default', 'Tabula', 'TAB', 0);
+  INSERT INTO ticket_workflows (id, name, is_default, version, created_at, updated_at)
+    VALUES ('wf_default', 'Default', 1, 1, 0, 0);
+  INSERT INTO ticket_states (id, workflow_id, state_key, name, category, position, is_default, created_at) VALUES
+    ('st_todo', 'wf_default', 'todo', 'To do', 'unstarted', 0, 1, 0),
+    ('st_in_progress', 'wf_default', 'in_progress', 'In progress', 'started', 1, 0, 0),
+    ('st_in_review', 'wf_default', 'in_review', 'In review', 'started', 2, 0, 0),
+    ('st_done', 'wf_default', 'done', 'Done', 'completed', 3, 0, 0),
+    ('st_cancelled', 'wf_default', 'cancelled', 'Cancelled', 'canceled', 4, 0, 0);
+  INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES ('trk_default', 'TAB', 1, 0);
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -226,12 +388,30 @@ const toInvite = (r) => ({
 const inviteActive = (invite, now) =>
   !invite.revoked && invite.expiresAt > now && (invite.maxUses == null || invite.uses < invite.maxUses);
 
-/** @param {string} file @param {{ snapshotBarrier?: any }} [options] */
-export function openDirectory(file, { snapshotBarrier = null } = {}) {
+/** Probe the exact FTS5 tokenizer migration 12 needs. Returns false when this SQLite build lacks it. */
+export function ftsAvailable(db) {
+  const probe = '__tabula_tracker_fts_probe';
+  try {
+    db.exec(`CREATE VIRTUAL TABLE temp.${probe} USING fts5(value, tokenize = 'unicode61 remove_diacritics 2')`);
+    db.exec(`DROP TABLE temp.${probe}`);
+    return true;
+  } catch {
+    try { db.exec(`DROP TABLE IF EXISTS temp.${probe}`); } catch { /* best-effort cleanup */ }
+    return false;
+  }
+}
+
+/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean }} [options] */
+export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
+    // Leave a valid schema 11 file if this SQLite build cannot provide the required FTS5 tokenizer.
+    if (readSchemaState(db).version < 12) {
+      migrate(db, MIGRATIONS.slice(0, 11), 'directory');
+      if (!ftsProbe(db)) throw new Error('directory migration 12 requires SQLite FTS5 with unicode61 remove_diacritics 2');
+    }
     migrate(db, MIGRATIONS, 'directory');
   } catch (err) {
     db.close();
@@ -1022,6 +1202,7 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     },
     /** This build's schema and the one on disk, for GET /api/internal/version (docs/migrations.md). */
     schemaReport: () => describeSchema(db, MIGRATIONS),
+    db,
     transaction,
     createUser,
     getUser,

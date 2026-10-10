@@ -55,6 +55,7 @@ const toToken = (r) => ({
   name: r.name,
   scope: r.scope,
   boardIds: parseBoardIds(r.board_ids),
+  tracker: r.tracker ?? null,
   hint: r.hint,
   createdAt: r.created_at,
   expiresAt: r.expires_at,
@@ -65,9 +66,10 @@ const ACTIVE = 'revoked_at IS NULL AND expires_at > ?';
 
 /** `db` is the small query kit openDirectory builds: get, all, run (returns the change count) and transaction. */
 export function createTokenStore({ get, all, run, transaction }) {
-  /** @param {{ userId: string, name: string, scope: string, boardIds?: string[] | null, ttlMs: number, now?: number }} fields */
-  function createAccessToken({ userId, name, scope, boardIds = null, ttlMs, now = Date.now() }) {
+  /** @param {{ userId: string, name: string, scope: string, boardIds?: string[] | null, tracker?: string | null, ttlMs: number, now?: number }} fields */
+  function createAccessToken({ userId, name, scope, boardIds = null, tracker = null, ttlMs, now = Date.now() }) {
     if (!SCOPES.includes(scope)) throw new Error('invalid scope');
+    if (tracker !== null && tracker !== 'read' && tracker !== 'write') throw new Error('invalid tracker scope');
     if (typeof name !== 'string' || !name.trim()) throw new Error('invalid name');
     if (!(ttlMs > 0)) throw new Error('invalid ttl');
     if (boardIds !== null && !(Array.isArray(boardIds) && boardIds.length <= MAX_TOKEN_BOARDS && boardIds.every((id) => TOKEN_BOARD_ID_RE.test(id)))) {
@@ -82,8 +84,8 @@ export function createTokenStore({ get, all, run, transaction }) {
         now - SWEEP_AFTER_MS,
       );
       run(
-        `INSERT INTO access_tokens (id, user_id, name, token_hash, hint, scope, board_ids, created_at, expires_at, last_used_at, revoked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+        `INSERT INTO access_tokens (id, user_id, name, token_hash, hint, scope, board_ids, created_at, expires_at, last_used_at, revoked_at, tracker)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
         id,
         userId,
         name.trim(),
@@ -93,6 +95,7 @@ export function createTokenStore({ get, all, run, transaction }) {
         boardIds === null ? null : JSON.stringify(boardIds),
         now,
         now + ttlMs,
+        tracker,
       );
     });
     return { id, token, expiresAt: now + ttlMs };
@@ -110,6 +113,8 @@ export function createTokenStore({ get, all, run, transaction }) {
     if (!row || row.expires_at <= now || row.user_disabled) return null;
     return {
       ...toToken(row),
+      // Tracker access is an independent nullable scope added by directory migration 12.
+      tracker: row.tracker ?? null,
       user: {
         id: row.user_id,
         email: row.user_email,

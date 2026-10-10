@@ -190,7 +190,31 @@ describe('access tokens in the directory', () => {
     d.close();
 
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE templates; DROP TABLE ai_keys; DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
+    raw.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP TABLE ticket_search;
+      DROP TABLE ticket_comments;
+      DROP TABLE ticket_events;
+      DROP TABLE ticket_labels;
+      DROP TABLE ticket_aliases;
+      DROP TABLE ticket_subscriptions;
+      DROP TABLE ticket_field_versions;
+      DROP TABLE tickets;
+      DROP TABLE ticket_states;
+      DROP TABLE ticket_workflows;
+      DROP TABLE ticket_counters;
+      DROP TABLE labels;
+      DROP TABLE trackers;
+      DROP TABLE guest_sessions;
+      DROP TABLE join_codes;
+      DROP TABLE user_prefs;
+      DROP TABLE assets;
+      DROP TABLE templates;
+      DROP TABLE ai_keys;
+      DROP TABLE access_tokens;
+      ALTER TABLE sessions DROP COLUMN user_agent;
+      PRAGMA user_version = 3;
+    `);
     raw.close();
 
     const again = openDirectory(file);

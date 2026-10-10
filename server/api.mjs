@@ -3,7 +3,7 @@
 // check-then-act sequence runs without interleaving with another request.
 
 import fs from 'node:fs';
-import { BOARD_ID_RE } from './directory.mjs';
+import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
@@ -32,7 +32,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
-const TOKEN_FIELDS = ['name', 'scope', 'boardIds', 'days'];
+const TOKEN_FIELDS = ['name', 'scope', 'boardIds', 'days', 'tracker'];
 const PRINCIPAL_TYPES = ['user', 'team'];
 const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -161,6 +161,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       startedAt,
       build: { schema: pair((r) => r.build.schema), maxReader: pair((r) => r.build.maxReader) },
       disk: { schema: pair((r) => r.disk.schema), minReader: pair((r) => r.disk.minReader), legacy: pair((r) => r.disk.legacy) },
+      capabilities: { tracker: { fts5: ftsAvailable(directory.db), enabled: config.tracker === true } },
       ...(cloud ? { updates: { auto: cloud.autoUpgrade?.() ?? true } } : {}),
     };
   }
@@ -316,6 +317,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     name: t.name,
     scope: t.scope,
     boardIds: t.boardIds,
+    tracker: t.tracker ?? null,
     hint: t.hint,
     createdAt: t.createdAt,
     expiresAt: t.expiresAt,
@@ -1057,6 +1059,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             }
             const name = cleanText(body.name, 'name', 1, 80);
             const scope = oneOf(body.scope, SCOPES, 'scope');
+            let tracker = null;
+            if (Object.hasOwn(body, 'tracker')) {
+              if (!config.tracker) throw badRequest('The tracker is not turned on');
+              if (body.tracker !== null) tracker = oneOf(body.tracker, ['read', 'write'], 'tracker');
+            }
             const days = body.days === undefined ? 30 : body.days;
             if (!Number.isInteger(days) || days < 1 || days > 365) throw badRequest('days must be a whole number from 1 to 365');
             let boardIds = null;
@@ -1077,8 +1084,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               throw conflict('token_limit', `You can have at most ${MAX_ACTIVE_TOKENS} active tokens. Revoke one first.`);
             }
             const created = directory.transaction(() => {
-              const made = directory.createAccessToken({ userId: user.id, name, scope, boardIds, ttlMs: days * DAY_MS });
-              audit(user, 'mcp.token.create', { tokenId: made.id, name, scope, boardIds, days });
+              const made = directory.createAccessToken({ userId: user.id, name, scope, boardIds, tracker, ttlMs: days * DAY_MS });
+              audit(user, 'mcp.token.create', { tokenId: made.id, name, scope, boardIds, ...(tracker ? { tracker } : {}), days });
               return made;
             });
             const stored = directory.getAccessToken(created.id);

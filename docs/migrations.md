@@ -20,6 +20,8 @@ Expand-only changes include new tables, nullable columns, columns with a `DEFAUL
 
 Table rebuilds are always breaking. SQLite uses the create-new, copy, drop, rename pattern to change a constraint such as `CHECK`; mark that migration with `minReader`, even when the copied rows still fit the new table.
 
+Directory migration 12 adds the nullable `access_tokens.tracker` capability and the tracker tables, indexes and seed rows. It is expand-only, so it records `min_reader = 11`; the release reports directory `schema: 12` and `maxReader: 11`. A build that knows schema 11 can open the migrated database unchanged. A v4 reader cannot open a schema-12 directory: it knows only four generations, below the recorded minimum reader of 11.
+
 The migration lint runs in `test/migrations-lint.test.ts`. It flags SQL patterns that need review. A plain-string entry with a flagged pattern fails; make it an object and choose `minReader: n` for a breaking change or `minReader: n - 1` after review confirms it is expand-only. The lint is a review aid, so read the migration and consider behavior the patterns may not recognize.
 
 ## Reader generations and legacy databases

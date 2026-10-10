@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { REMOVE_TRACKER_MIGRATION } from './tracker-rewind';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -250,7 +251,7 @@ describe('the assets table of the directory', () => {
     d.close();
     const raw = new DatabaseSync(file);
     // an older directory has neither of these tables and no model column on its AI keys
-    raw.exec(`DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${at}`);
+    raw.exec(`${REMOVE_TRACKER_MIGRATION} DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${at}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getSetting('kept')).toBe('yes');

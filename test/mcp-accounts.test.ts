@@ -321,7 +321,8 @@ describe('access tokens over the API', () => {
     const mine = listed.body.find((t: Body) => t.id === made.body.id);
     expect(mine).toBeTruthy();
     expect(JSON.stringify(listed.body)).not.toContain(made.body.token);
-    expect(Object.keys(mine).sort()).toEqual(['boardIds', 'createdAt', 'expiresAt', 'hint', 'id', 'lastUsedAt', 'name', 'scope']);
+    expect(Object.keys(mine).sort()).toEqual(['boardIds', 'createdAt', 'expiresAt', 'hint', 'id', 'lastUsedAt', 'name', 'scope', 'tracker']);
+    expect(mine.tracker).toBeNull();
     expect((await h.api(bob.cookie, 'GET', '/api/me')).body.mcp).toBe(true);
 
     // used at least once: last_used_at shows it

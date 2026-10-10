@@ -656,6 +656,8 @@ Require `idempotencyKey` on create, comment, transition, and link writes, unique
 
 ### Source and mapping
 
+**Archived issues (known, 2026-10-10):** Linear's AI archived every Done issue. Every Linear API query the importer makes (and the Linear-to-board script 01b9936) must pass `includeArchived: true`, or the Done history is silently missing; the dry-run report must count archived issues separately so a shortfall is visible.
+
 **RECOMMENDED:** Provide a CLI importer in the app repo using the Linear API for complete migration. Accept CSV export as a fallback when an API token cannot be provided. Keep the import credential local to the operator; never save it in a board or tracker row.
 
 Map:
