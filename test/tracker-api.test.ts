@@ -64,7 +64,6 @@ describe('tracker session API', () => {
     expect(missingCsrf.body).toMatchObject({ error: 'csrf' });
 
     const ownerMe = await api(owner, 'GET', '/api/me');
-    const guestMe = await api(guest, 'GET', '/api/me');
     expect(ownerMe.body.tracker).toBe(true);
     // `tracker: true` in /api/me also marks the feature as on for the tracker board object (main); access is decided by the routes
     expect((await api(guest, 'GET', '/api/tracker/meta')).status).toBe(404);
