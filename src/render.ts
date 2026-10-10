@@ -158,7 +158,7 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   // a text: the sides change the wrap width, the corners scale the type (src/text-resize.ts); its height follows its lines
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;
@@ -698,7 +698,7 @@ export class Renderer {
     if (entered?.type === 'group' && enteredBounds) {
       const v = this.viewport();
       const memberBounds = this.store.descendantsOf(entered.id)
-        .filter((member) => member.type !== 'group' && member.type !== 'frame' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
+        .filter((member) => member.type !== 'group' && member.type !== 'frame' && member.type !== 'tracker' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
         .map((member) => this.bounds(member))
         .filter((bounds): bounds is Rect => !!bounds);
       const cutouts = memberBounds.map((b) => `M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z`).join(' ');

@@ -7,6 +7,7 @@ import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
+import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
 import { leaveOutWithheld } from '../private-select';
@@ -232,6 +233,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('flow', syncVote);
   const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
+  // Hidden command-palette hook; the future tracker UI can surface it after /api/me enables the feature.
+  const trackerCommand = h('button', {
+    class: 'rail-btn', hidden: true, 'data-command': 'tracker:create-frame', 'aria-label': 'Create tracker frame',
+    onclick: () => {
+      const auth = authState();
+      if ((auth.mode !== 'signed-in' && auth.mode !== 'offline') || auth.me?.tracker !== true || app.readOnly) return;
+      const viewport = app.r.viewport();
+      const frame = createTrackerFrame(app.store, {
+        x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
+        y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
+      });
+      if (frame) app.setSelection([frame.id]);
+    },
+  }, icon('frame', 22));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
     h('div', { class: 'rail-tools' },
       toolBtn('Select', 'select', { kind: 'select' }, 'V'),
@@ -243,6 +258,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+      trackerCommand,
       imageBtn,
       commentBtn,
       h('hr'),
