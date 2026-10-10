@@ -1659,6 +1659,52 @@ const STATES = {
     const afterEditorEscape = await page.evaluate(() => ({ active: window.__board.editor.active, text: window.__board.store.get('seed-note-1').text }));
     if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
   },
+  // frame size presets: pick one in the inspector, type an exact size, undo
+  async 'frame-size'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const b = window.__board;
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 1, fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.setSelection(['k-frame']);
+    });
+    const size = () => page.evaluate(() => { const o = window.__board.store.get('k-frame'); return `${o.w}x${o.h}`; });
+    const combo = page.getByRole('combobox', { name: 'Frame size' });
+    if (!await combo.count()) await page.getByRole('button', { name: 'More properties' }).click().catch(() => {});
+    await combo.waitFor({ timeout: 5000 }).catch(async (e) => { console.log(await page.evaluate(() => JSON.stringify({ sel: window.__board.selected().map((o) => o.type), props: document.querySelector('.props')?.className, text: document.querySelector('.props')?.innerText.slice(0, 200) }))); throw e; });
+    const before = await size();
+    await combo.click();
+    for (const [label, want] of [['A4 portrait', '794x1123'], ['1920 × 1080', '1920x1080'], ['390 × 844', '390x844'], ['Letter landscape', '1056x816']]) {
+      if (!await combo.getAttribute('aria-expanded').then((v) => v === 'true')) await combo.click();
+      const opt = page.getByRole('option', { name: label, exact: true });
+      await opt.scrollIntoViewIfNeeded();
+      const box = await opt.boundingBox();
+      // Firefox at phone width sends a mouse click at the list to the board's quick bar behind it (no pointerdown reaches the list), so there the option is activated by its click event
+      if (process.env.VISUAL_BROWSER === 'firefox' && page.viewportSize().width < 600) await opt.dispatchEvent('click');
+      else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(200);
+      const got = await size();
+      if (got !== want) throw new Error(`frame-size: ${label} gave ${got}, wanted ${want}`);
+      await page.waitForFunction(([l]) => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes(l)), [label], { timeout: 3000 })
+        .catch(async () => { throw new Error(`frame-size: the box shows "${await combo.textContent()}" after choosing ${label}`); });
+    }
+    const width = page.getByRole('spinbutton', { name: 'Frame width' });
+    await width.fill('700');
+    await width.press('Enter');
+    await page.waitForFunction(() => window.__board.store.get('k-frame').w === 700);
+    await page.waitForFunction(() => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes('Custom')), null, { timeout: 3000 })
+      .catch(() => { throw new Error('frame-size: a typed width should read Custom'); });
+    await page.waitForFunction(() => !window.__board.styleEdit.active, null, { timeout: 3000 });
+    // the number field's Enter and blur both commit, which can leave one empty undo step above the real one
+    let undone = false;
+    for (let i = 0; i < 3 && !undone; i++) {
+      await page.evaluate(() => window.__board.store.undo.undo());
+      undone = (await page.evaluate(() => window.__board.store.get('k-frame').w)) !== 700;
+    }
+    if (!undone) throw new Error('frame-size: undo did not take back the typed width');
+    await page.evaluate(() => window.__board.zoomToFit?.());
+    console.log(`frame-size before ${before}, now ${await size()}`);
+  },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
     const result = await env.page.evaluate(async () => {
