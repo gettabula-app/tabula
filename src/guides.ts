@@ -16,6 +16,8 @@ export const EPS = 0.1;
 export const MIN_SIZE = 8;
 /** Gap markers other than the one or two next to the moving rectangle. */
 export const MAX_OTHER_MARKERS = 4;
+/** Reference dimensions shown alongside the resized object's dimension. */
+export const MAX_SIZE_MARKS = 3;
 /** The candidate region is the viewport grown by this fraction of its size on every side. */
 export const VIEW_MARGIN = 0.5;
 
@@ -25,12 +27,15 @@ type Edge = 'lo' | 'hi' | null;
 export interface GuideLine { kind: 'line'; x1: number; y1: number; x2: number; y2: number }
 /** A bracket over a gap. `axis` is the direction measured: 'x' is a horizontal gap, drawn at height `at`. */
 export interface GapMark { kind: 'gap'; axis: Axis; from: number; to: number; at: number; label: string }
-export type Guide = GuideLine | GapMark;
+/** A dimension bracket for a resized object's width ('x') or height ('y'). */
+export interface SizeMark { kind: 'size'; axis: Axis; from: number; to: number; at: number; label: string }
+export type Guide = GuideLine | GapMark | SizeMark;
 
 /** Corrections to add to the proposed position, or null on an axis where nothing is within the threshold. */
-export interface Snap { dx: number | null; dy: number | null; guides: GuideLine[]; gaps: GapMark[] }
+export interface Snap { dx: number | null; dy: number | null; guides: GuideLine[]; gaps: GapMark[]; sizes: SizeMark[] }
 
 export interface AxisIndex { vals: Float64Array; owner: Int32Array; kind: Uint8Array }
+export interface SizeIndex { vals: Float64Array; owner: Int32Array }
 
 export interface GuideSession {
   rects: Rect[];
@@ -38,14 +43,20 @@ export interface GuideSession {
   base: Rect | null;
   xi: AxisIndex;
   yi: AxisIndex;
+  wi: SizeIndex;
+  hi: SizeIndex;
 }
+
+/** Result of a corner resize whose second edge follows the fixed aspect ratio. */
+export interface LockedSnap { rect: Rect; snappedAxis: Axis | null; guides: GuideLine[]; gaps: GapMark[]; sizes: SizeMark[] }
 
 const start = (r: Rect, a: Axis) => (a === 'x' ? r.x : r.y);
 const size = (r: Rect, a: Axis) => (a === 'x' ? r.w : r.h);
 const stop = (r: Rect, a: Axis) => start(r, a) + size(r, a);
 const cross = (a: Axis): Axis => (a === 'x' ? 'y' : 'x');
 
-const none = (): Snap => ({ dx: null, dy: null, guides: [], gaps: [] });
+const none = (): Snap => ({ dx: null, dy: null, guides: [], gaps: [], sizes: [] });
+const noLockedSnap = (rect: Rect): LockedSnap => ({ rect, snappedAxis: null, guides: [], gaps: [], sizes: [] });
 
 /** Bounds of every box object that may be a reference: not skipped, not a connector, not hidden. */
 export function referenceRects(
@@ -81,6 +92,16 @@ function buildAxis(rects: Rect[], a: Axis): AxisIndex {
   return { vals, owner, kind };
 }
 
+function buildSize(rects: Rect[], a: Axis): SizeIndex {
+  const order = Array.from({ length: rects.length }, (_, i) => i).sort((p, q) => size(rects[p], a) - size(rects[q], a) || p - q);
+  const vals = new Float64Array(order.length), owner = new Int32Array(order.length);
+  for (let i = 0; i < order.length; i++) {
+    vals[i] = size(rects[order[i]], a);
+    owner[i] = order[i];
+  }
+  return { vals, owner };
+}
+
 /**
  * Build the index for one drag. `refs` are candidate rectangles, `movers` the boxes being moved (their union is the
  * moving rectangle of a move; a resize passes none) and `view` the current viewport in world units.
@@ -89,7 +110,10 @@ export function startGuides(refs: Rect[], movers: Rect[], view: Rect): GuideSess
   const mx = view.w * VIEW_MARGIN, my = view.h * VIEW_MARGIN;
   const region: Rect = { x: view.x - mx, y: view.y - my, w: view.w + 2 * mx, h: view.h + 2 * my };
   const rects = refs.filter((r) => rectsIntersect(r, region));
-  return { rects, region, base: unionRects(movers), xi: buildAxis(rects, 'x'), yi: buildAxis(rects, 'y') };
+  return {
+    rects, region, base: unionRects(movers), xi: buildAxis(rects, 'x'), yi: buildAxis(rects, 'y'),
+    wi: buildSize(rects, 'x'), hi: buildSize(rects, 'y'),
+  };
 }
 
 /** True while the viewport is inside the region the session was built for. */
@@ -106,6 +130,49 @@ function lowerBound(vals: Float64Array, x: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+/** Nearest indexed dimension within the threshold. The two values around the insertion point are sufficient. */
+function sizeCorr(ix: SizeIndex, current: number, edge: Exclude<Edge, null>, thr: number, valid: (correction: number) => boolean): number | null {
+  const at = lowerBound(ix.vals, current);
+  let best: { correction: number; distance: number; target: number } | null = null;
+  for (const i of [at - 1, at]) {
+    if (i < 0 || i >= ix.vals.length) continue;
+    const target = ix.vals[i];
+    const correction = edge === 'lo' ? current - target : target - current;
+    const distance = Math.abs(correction);
+    if (distance > thr || !valid(correction)) continue;
+    if (!best || distance < best.distance - EPS || (distance <= best.distance + EPS && target < best.target)) {
+      best = { correction, distance, target };
+    }
+  }
+  return best?.correction ?? null;
+}
+
+function resizeCorr(
+  s: GuideSession, r: Rect, a: Axis, edge: Exclude<Edge, null>, thr: number, minGap: number, head: number,
+  valid: (correction: number) => boolean,
+): number | null {
+  const v = edge === 'lo' ? start(r, a) : stop(r, a);
+  const align = alignCorr(a === 'x' ? s.xi : s.yi, [[v, edge === 'lo' ? 0 : 2]], thr);
+  const space = spacingCorr(s, r, a, thr, minGap, edge);
+  const normal = choose(align !== null && valid(align) ? align : null, space !== null && valid(space) ? space : null, head);
+  const sizeIndex = a === 'x' ? s.wi : s.hi;
+  const matched = sizeCorr(sizeIndex, size(r, a), edge, thr, valid);
+  if (matched === null) return normal;
+  // Size matches join alignment and spacing: the nearest correction wins, with size winning an EPS tie.
+  return normal === null || Math.abs(matched) <= Math.abs(normal) + EPS ? matched : normal;
+}
+
+/** Apply one moving-edge correction, keeping the opposite corner fixed and deriving the other size from `ratio`. */
+function lockedByEdge(r: Rect, ex: Exclude<Edge, null>, ey: Exclude<Edge, null>, a: Axis, edgeCorrection: number, ratio: number): Rect {
+  const w = a === 'x' ? size(r, 'x') + (ex === 'lo' ? -edgeCorrection : edgeCorrection) : 0;
+  const h = a === 'y' ? size(r, 'y') + (ey === 'lo' ? -edgeCorrection : edgeCorrection) : 0;
+  const nw = a === 'x' ? w : h * ratio;
+  const nh = a === 'y' ? h : w / ratio;
+  const fixedX = ex === 'lo' ? stop(r, 'x') : start(r, 'x');
+  const fixedY = ey === 'lo' ? stop(r, 'y') : start(r, 'y');
+  return { x: ex === 'lo' ? fixedX - nw : fixedX, y: ey === 'lo' ? fixedY - nh : fixedY, w: nw, h: nh };
 }
 
 // ------------------------------------------------------------------ alignment
@@ -300,6 +367,29 @@ function gapMarks(s: GuideSession, r: Rect, a: Axis, minGap: number, edge: Edge)
   return out;
 }
 
+/** The object's own dimension and the nearest references with that same final dimension. */
+function sizeMarks(s: GuideSession, r: Rect, a: Axis, zoom: number): SizeMark[] {
+  const ix = a === 'x' ? s.wi : s.hi;
+  const dimension = size(r, a);
+  const first = lowerBound(ix.vals, dimension - EPS);
+  const nearest: { rect: Rect; distance: number; owner: number }[] = [];
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  for (let i = first; i < ix.vals.length && ix.vals[i] <= dimension + EPS; i++) {
+    const owner = ix.owner[i];
+    const ref = s.rects[owner];
+    const distance = Math.hypot(ref.x + ref.w / 2 - cx, ref.y + ref.h / 2 - cy);
+    nearest.push({ rect: ref, distance, owner });
+    nearest.sort((p, q) => p.distance - q.distance || p.owner - q.owner);
+    if (nearest.length > MAX_SIZE_MARKS) nearest.pop();
+  }
+  if (!nearest.length) return [];
+  const label = String(Math.round(dimension));
+  const bracket = (box: Rect): SizeMark => a === 'x'
+    ? { kind: 'size', axis: a, from: box.x, to: box.x + box.w, at: box.y + box.h + 8 / zoom, label }
+    : { kind: 'size', axis: a, from: box.y, to: box.y + box.h, at: box.x + box.w + 8 / zoom, label };
+  return [bracket(r), ...nearest.slice(0, MAX_SIZE_MARKS).map(({ rect }) => bracket(rect))];
+}
+
 /** The free gaps (stretches no reference covers) of the row or column band [lo, hi] on the other axis. For reuse by placement code. */
 export function gapsInBand(s: GuideSession, axis: Axis, lo: number, hi: number, minGap = 0): { from: number; to: number; size: number }[] {
   return freeGaps(bandMembers(s.rects, axis, lo, hi, null), minGap).map(({ from, to, size: sz }) => ({ from, to, size: sz }));
@@ -316,11 +406,14 @@ function moved(r: Rect, a: Axis, edge: Edge, c: number): Rect {
   return edge === 'lo' ? { ...r, y: r.y + c, h: r.h - c } : { ...r, h: r.h + c };
 }
 
-function finish(s: GuideSession, r: Rect, cx: number | null, cy: number | null, ex: Edge, ey: Edge, minGap: number): Snap {
+function finish(
+  s: GuideSession, r: Rect, cx: number | null, cy: number | null, ex: Edge, ey: Edge, minGap: number, zoom: number,
+  sizeX = false, sizeY = false,
+): Snap {
   let fin = r;
   if (cx !== null) fin = moved(fin, 'x', ex, cx);
   if (cy !== null) fin = moved(fin, 'y', ey, cy);
-  const out: Snap = { dx: cx, dy: cy, guides: [], gaps: [] };
+  const out: Snap = { dx: cx, dy: cy, guides: [], gaps: [], sizes: [] };
   const values = (a: Axis, e: Edge) => {
     const v0 = start(fin, a), v1 = stop(fin, a);
     return e === null ? [v0, (v0 + v1) / 2, v1] : [e === 'lo' ? v0 : v1];
@@ -333,6 +426,8 @@ function finish(s: GuideSession, r: Rect, cx: number | null, cy: number | null, 
     out.guides.push(...lineMarks(s, fin, 'y', values('y', ey)));
     out.gaps.push(...gapMarks(s, fin, 'y', minGap, ey));
   }
+  if (sizeX) out.sizes.push(...sizeMarks(s, fin, 'x', zoom));
+  if (sizeY) out.sizes.push(...sizeMarks(s, fin, 'y', zoom));
   return out;
 }
 
@@ -347,7 +442,7 @@ export function snapMove(s: GuideSession, dx: number, dy: number, zoom: number):
   const cx = choose(alignCorr(s.xi, values3(r, 'x'), thr), spacingCorr(s, r, 'x', thr, minGap, null), head);
   const cy = choose(alignCorr(s.yi, values3(r, 'y'), thr), spacingCorr(s, r, 'y', thr, minGap, null), head);
   if (cx === null && cy === null) return none();
-  return finish(s, r, cx, cy, null, null, minGap);
+  return finish(s, r, cx, cy, null, null, minGap, zoom);
 }
 
 /**
@@ -361,12 +456,35 @@ export function snapResize(s: GuideSession, rect: Rect, handle: string, zoom: nu
   const thr = SNAP_PX / zoom, minGap = MIN_GAP_PX / zoom, head = SPACING_HEAD_PX / zoom;
   const axis = (a: Axis, e: Edge): number | null => {
     if (!e) return null;
-    const v = e === 'lo' ? start(rect, a) : stop(rect, a);
-    const c = choose(alignCorr(a === 'x' ? s.xi : s.yi, [[v, e === 'lo' ? 0 : 2]], thr), spacingCorr(s, rect, a, thr, minGap, e), head);
-    if (c === null) return null;
-    return size(rect, a) + (e === 'lo' ? -c : c) < MIN_SIZE ? null : c;
+    const valid = (c: number) => size(rect, a) + (e === 'lo' ? -c : c) >= MIN_SIZE;
+    return resizeCorr(s, rect, a, e, thr, minGap, head, valid);
   };
   const cx = axis('x', ex), cy = axis('y', ey);
   if (cx === null && cy === null) return none();
-  return finish(s, rect, cx, cy, ex, ey, minGap);
+  return finish(s, rect, cx, cy, ex, ey, minGap, zoom, ex !== null, ey !== null);
+}
+
+/**
+ * Snap an aspect-locked corner resize. The x and y candidates each include alignment, spacing and equal-size matches;
+ * the nearer edge correction wins, and the other dimension is derived from `ratio` around the fixed opposite corner.
+ */
+export function snapResizeLocked(s: GuideSession, rect: Rect, handle: string, zoom: number, ratio: number): LockedSnap {
+  const ex: Edge = handle.includes('w') ? 'lo' : handle.includes('e') ? 'hi' : null;
+  const ey: Edge = handle.includes('n') ? 'lo' : handle.includes('s') ? 'hi' : null;
+  if (!ex || !ey || rect.w < MIN_SIZE || rect.h < MIN_SIZE || !Number.isFinite(ratio) || ratio <= 0) return noLockedSnap(rect);
+  const thr = SNAP_PX / zoom, minGap = MIN_GAP_PX / zoom, head = SPACING_HEAD_PX / zoom;
+  const valid = (a: Axis, c: number) => {
+    const next = lockedByEdge(rect, ex, ey, a, c, ratio);
+    return next.w >= MIN_SIZE && next.h >= MIN_SIZE;
+  };
+  const cx = resizeCorr(s, rect, 'x', ex, thr, minGap, head, (c) => valid('x', c));
+  const cy = resizeCorr(s, rect, 'y', ey, thr, minGap, head, (c) => valid('y', c));
+  if (cx === null && cy === null) return noLockedSnap(rect);
+  const snappedAxis: Axis = cx === null ? 'y' : cy === null ? 'x' : Math.abs(cx) <= Math.abs(cy) ? 'x' : 'y';
+  const correction = snappedAxis === 'x' ? cx! : cy!;
+  const final = lockedByEdge(rect, ex, ey, snappedAxis, correction, ratio);
+  const dx = ex === 'lo' ? final.x - rect.x : final.x + final.w - (rect.x + rect.w);
+  const dy = ey === 'lo' ? final.y - rect.y : final.y + final.h - (rect.y + rect.h);
+  const marks = finish(s, rect, dx, dy, ex, ey, minGap, zoom, true, true);
+  return { rect: final, snappedAxis, guides: marks.guides, gaps: marks.gaps, sizes: marks.sizes };
 }

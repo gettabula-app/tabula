@@ -26,7 +26,7 @@ VISUAL_HEIGHT=1180 npm run visual -- --id TAB-123 --states touch-targets --theme
 | --- | --- | --- |
 | `--id <id>` | none, required | Folder name, for example `TAB-123` (letters, digits, `.`, `-`, `_`) |
 | `--mode open\|accounts` | `open` | `accounts` runs the relay with `TABULA_AUTH=on` and signs the owner in |
-| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `vote-running-touch`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members`, `chat-object`, `chat-session` and `chat-poll` |
+| `--states a,b` | all for the mode | `home`, `board`, `board-selected`, `board-selected-folded`, `resize-guides-size`, `vote-running-touch`, `comments`, `comment-thread`, `layers`, `layers-hidden`, `templates`, `settings`, in open mode the `kanban` states below, and in accounts mode `admin`, the six `backups-` states below, `chat`, `chat-composer`, `chat-unread`, `chat-page`, `chat-page-team`, `chat-home`, `chat-admin`, `chat-react`, `chat-mention`, `chat-notifications`, `chat-members`, `chat-object`, `chat-session` and `chat-poll` |
 | `--widths 360,1440` | `360,390,500,860,1024,1440` | Window widths; the height is 844 up to 500 wide and 800 above |
 | `--themes default,ayu` | every theme in `src/themes.ts` | `default`, `ayu`, `kanagawa`, `matrix`, `evergreen` |
 | `--dark`, `--light` | both | Only themes whose colour scheme is dark or light (the app has no `prefers-color-scheme` split; each theme carries its own scheme) |
@@ -46,6 +46,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | --- | --- |
 | `home` | The boards list with three boards (Sprint retro, Roadmap 2026, Meeting notes) and the template strip |
 | `board` | The seeded board fitted to the window, a comment thread pinned to a note |
+| `resize-guides-size` | (open mode) A sticky resized toward a second sticky's width. The state holds the pointer down and throws unless the widths match and a size mark is in the guides overlay during the drag; run at both desktop and phone widths to check the interaction at each size |
 | `board-selected` | The same board with the Backlog rectangle selected: quick-action bar and the properties panel open |
 | `board-selected-folded` | As `board-selected`, with the properties panel folded to its title row at phone widths (860 px and below); wider windows look like `board-selected` |
 | `vote-running-touch-steps` | The phone vote bar when the vote is one step of a session (Next step instead of Finish): one row, nothing outside the bar. Phone widths only. |
@@ -120,7 +121,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `chat-poll` | (TAB-243) A running poll with the Chat tray open: the poll card and facilitator bar wait in place until the tray closes |
 | `chat-notifications` | The **Chat notifications** dialog opened from the Chat page |
 
-A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.
+A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. `resize-guides-size` holds the mouse down so the overlay can be checked before pointer up. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.
 
 ## What the script does
 
