@@ -226,6 +226,12 @@ export const EMOJI_GROUPS: EmojiGroup[] = [
 👥|Busts in silhouette|people team group
 🗣️|Speaking head|talk communicate
 🫂|People hugging|support care
+👨‍👩‍👧|Family|family parents child mother father
+👨‍👩‍👧‍👦|Family with two children|family parents children
+👩‍👩‍👦|Family of two mothers|family parents child mothers
+👨‍👨‍👧|Family of two fathers|family parents child fathers
+👩‍👦|Mother and son|family parent child
+👨‍👧|Father and daughter|family parent child
 `),
   },
   {

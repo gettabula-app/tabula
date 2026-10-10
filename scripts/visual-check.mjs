@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1546,6 +1546,51 @@ const STATES = {
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
   },
+  // the soft keyboard shrinks the visual viewport (not the window): the bar and the picker must stay in what is left
+  async 'emoji-keyboard'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      window.__kb = 0;
+      const real = window.visualViewport;
+      const vv = new Proxy(real, { get(t, k) { if (k === 'height') return window.innerHeight - window.__kb; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+      Object.defineProperty(window, 'visualViewport', { get: () => vv, configurable: true });
+      window.__board.editor.start('seed-note-1');
+    });
+    await page.locator('.edit-bar.show').waitFor();
+    await page.evaluate(() => { window.__kb = 300; window.visualViewport.dispatchEvent(new Event('resize')); });
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'Add emoji' }).click();
+    await page.locator('.emoji-pop').waitFor();
+    await page.waitForTimeout(300);
+    const result = await page.evaluate(() => {
+      const visible = innerHeight - window.__kb;
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const bar = box('.edit-bar.show'), pop = box('.emoji-pop'), search = document.querySelector('.emoji-pop [aria-label="Search emoji"]').getBoundingClientRect();
+      const failures = [];
+      if (bar.bottom > visible) failures.push(`the Add emoji bar ends at ${Math.round(bar.bottom)}, under the keyboard (${visible} visible)`);
+      if (pop.bottom > visible) failures.push(`the picker ends at ${Math.round(pop.bottom)}, under the keyboard (${visible} visible)`);
+      if (search.bottom > visible) failures.push('the search field is under the keyboard');
+      return { failures, visible, bar: { top: bar.top, bottom: bar.bottom }, pop: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`emoji-keyboard ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`emoji-keyboard: ${JSON.stringify(result.failures)}`);
+  },
+  // a finger on Add emoji: WebKit drops the click of a tap whose pointerdown was cancelled, so the picker never opened
+  async 'emoji-tap'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.locator('.edit-bar.show').waitFor();
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
+    const box = await page.locator('.edit-emoji').boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    const opened = await page.locator('.emoji-pop').waitFor({ timeout: 3000 }).then(() => true, () => false);
+    const active = await page.evaluate(() => window.__board.editor.active);
+    console.log(`emoji-tap ${JSON.stringify({ opened, active })}`);
+    if (!opened) throw new Error('emoji-tap: a touch tap on Add emoji did not open the picker');
+    if (!active) throw new Error('emoji-tap: the tap ended the edit');
+  },
   async 'emoji-insert'(env) {
     const page = env.page;
     await openEmojiPickerForNote(env);
@@ -2304,7 +2349,7 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-tap']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));

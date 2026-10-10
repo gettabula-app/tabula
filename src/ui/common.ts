@@ -4,6 +4,9 @@ import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
 import { placePopover } from './popover-layout';
 
+/** The height of what is visible: the soft keyboard shrinks the visual viewport but not the window. */
+const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
+
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
@@ -37,7 +40,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     const a = anchor.isConnected || !bar ? anchor.getBoundingClientRect() : bar.getBoundingClientRect();
     if (!anchor.isConnected && !bar) return;
     const avoidAbove = bar?.getBoundingClientRect();
-    const pos = placePopover(a, r, { width: window.innerWidth, height: window.innerHeight }, safe, side, avoidAbove, opts.fitBelow);
+    const pos = placePopover(a, r, { width: window.innerWidth, height: visibleHeight() }, safe, side, avoidAbove, opts.fitBelow);
     if (pos.maxHeight === null) el.style.removeProperty('max-height');
     else el.style.maxHeight = `${pos.maxHeight}px`;
     el.style.left = `${pos.left}px`;
