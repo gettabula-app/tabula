@@ -1523,6 +1523,7 @@ const STATES = {
       const buttonBox = button.getBoundingClientRect();
       const picker = document.querySelector('.emoji-pop');
       const pickerBox = picker.getBoundingClientRect();
+      const noteBox = document.querySelector('.text-editor').getBoundingClientRect();
       const search = picker.querySelector('[aria-label="Search emoji"]');
       const buttons = [...document.querySelectorAll('.edit-emoji, .emoji-cell')].map((el) => {
         const box = el.getBoundingClientRect();
@@ -1531,12 +1532,15 @@ const STATES = {
       const hit = document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
       const outside = (box) => box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
       return {
+        pickerHeight: pickerBox.height, overNote: !(pickerBox.right <= noteBox.left || pickerBox.left >= noteBox.right || pickerBox.bottom <= noteBox.top || pickerBox.top >= noteBox.bottom),
         barOutside: outside(bar), pickerOutside: outside(pickerBox), pickerWidth: pickerBox.width, windowWidth: innerWidth,
         small: buttons.filter((box) => box.width < 44 || box.height < 44), hitButton: hit === button, searchFocused: document.activeElement === search,
       };
     });
     if (result.barOutside) throw new Error('emoji-picker: edit bar is outside the window');
     if (result.pickerOutside) throw new Error('emoji-picker: picker is outside the window');
+    if (result.overNote) throw new Error('emoji-picker: the picker covers the note being edited');
+    if (result.pickerHeight < 220) throw new Error(`emoji-picker: the picker is only ${Math.round(result.pickerHeight)} px tall, under four rows`);
     if (result.pickerWidth > result.windowWidth) throw new Error(`emoji-picker: picker width ${result.pickerWidth} exceeds ${result.windowWidth}`);
     if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');

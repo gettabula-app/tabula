@@ -168,10 +168,22 @@ export async function openEmojiPicker(app: BoardApp, anchor: HTMLElement) {
   });
   render();
 
-  const pop = popover(anchor, content, {
-    side: 'top', className: 'emoji-pop', label: 'Emoji',
+  // anchored to the note being edited, not to the button, so the panel opens away from the note instead of over it
+  const side = anchor.closest<HTMLElement>('.edit-bar')?.dataset.side === 'below' ? 'bottom' : 'top';
+  anchor.setAttribute('aria-expanded', 'true');
+  // the panel clears the note and the bar together: an invisible box over both stands in as its anchor
+  const note = app.editor.textarea.getBoundingClientRect();
+  const bar = anchor.closest<HTMLElement>('.edit-bar')?.getBoundingClientRect() ?? note;
+  const span = document.createElement('div');
+  span.setAttribute('aria-hidden', 'true');
+  span.style.cssText = `position:fixed;pointer-events:none;visibility:hidden;left:${Math.min(note.left, bar.left)}px;top:${Math.min(note.top, bar.top)}px;width:${Math.max(note.right, bar.right) - Math.min(note.left, bar.left)}px;height:${Math.max(note.bottom, bar.bottom) - Math.min(note.top, bar.top)}px`;
+  document.body.appendChild(span);
+  const pop = popover(span, content, {
+    side, fitBelow: true, className: 'emoji-pop', label: 'Emoji',
     onClose: () => {
       // popover() handles Escape at window capture, before the editor's textarea keydown can commit.
+      span.remove();
+      anchor.setAttribute('aria-expanded', 'false');
       app.editor.holdBlur(false);
       app.editor.focus();
     },
