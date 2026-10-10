@@ -456,6 +456,15 @@ export function normalizeListQuery(query: TrackerListQuery = {}): string {
 
 export function cloneTrackerData<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item) => cloneTrackerData(item)) as T;
+  // An Error's message is not enumerable, so the generic copy below would lose it (server errors showed as "undefined" in the UI).
+  if (value instanceof TrackerError) {
+    return new TrackerError(value.code, value.message, {
+      path: value.path,
+      current: value.current ? cloneTrackerData(value.current) : undefined,
+      by: value.by ? cloneTrackerData(value.by) : undefined,
+      status: value.status,
+    }) as T;
+  }
   if (value && typeof value === 'object') {
     const copy: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) copy[key] = cloneTrackerData(item);
