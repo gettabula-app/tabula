@@ -162,6 +162,19 @@ if (want('toast')) {
   }
 }
 
+if (want('votebar')) {
+  // the compact phone vote bar is one row down to 320 px wide, for a quick vote and for a vote that is a session step
+  for (const w of [390, 360, 320]) for (const kind of ['quick', 'steps']) await phone(w, 640, async (page) => {
+    await page.evaluate((k) => {
+      const f = window.__board.flow;
+      if (k === 'steps') { f.setSteps([{ id: 'a', title: 'Vote', instructions: 'x', mode: 'vote' }, { id: 'b', title: 'Discuss', instructions: '', mode: 'discuss' }]); f.goto(0); } else f.quickVote(Infinity);
+    }, kind);
+    await sleep(900);
+    const r = await page.evaluate(() => { const bar = document.querySelector('.flowbar.vote-compact'); if (!bar) return null; const b = bar.getBoundingClientRect(); const kids = [...bar.children].filter((e) => getComputedStyle(e).display !== 'none' && !e.hidden).map((e) => e.getBoundingClientRect()); return { rows: new Set(kids.map((k) => Math.round(k.top / 4))).size, out: kids.filter((k) => k.right > b.right + 0.5).length, minSide: Math.round(Math.min(...kids.map((k) => Math.min(k.width, k.height)))) }; });
+    record(`vote bar is one row, nothing outside it, 44 px targets (${kind}, ${w} px)`, !!r && r.rows === 1 && r.out === 0 && r.minSide >= 44, JSON.stringify(r));
+  });
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);
