@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1486,6 +1486,20 @@ const STATES = {
   async 'press-admin'(env) {
     await STATES.admin(env);
     await pressRoles(env.page);
+  },
+  // sticky notes with emoji: the sequences that break when text is cut between code points (ZWJ families, skin tones, flags, keycaps), and a row too long for the note
+  async 'emoji-text'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const set = (id, text) => app.store.transact(() => app.store.update(id, { text }));
+      set('seed-note-1', 'Ship it \u{1F680} \u{1F44D}\u{1F3FD}');
+      set('seed-note-2', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} family \u{1F1F8}\u{1F1EA} 1\uFE0F\u20E3');
+      set('seed-note-3', '\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}1\uFE0F\u20E3\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}');
+      app.zoomToFit();
+      app.zoomBy(2.4);
+    });
+    await settle(env.page);
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
