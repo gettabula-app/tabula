@@ -1,7 +1,7 @@
 import { actorInfo, forbidden, notFound } from './shared.mjs';
 
 /** Return read/write for an authorized actor; conceal missing and inaccessible tickets alike. */
-export function ticketAccess(actor, ticket) {
+export function ticketAccess(actor, ticket, options = {}) {
   if (!ticket) throw notFound();
   let info;
   try {
@@ -28,13 +28,29 @@ export function ticketAccess(actor, ticket) {
 
   if (['owner', 'admin', 'member'].includes(info.role)) return 'write';
   if (info.role === 'viewer') return 'read';
+  if (info.role === 'guest' || info.role === null) {
+    const boardRole = typeof options.boardAccess === 'function'
+      ? options.boardAccess(ticket.id, info.id)
+      : null;
+    if (boardRole === 'read' || boardRole === 'write') return 'read';
+  }
   throw notFound();
 }
 
-export function requireTicketRead(actor, ticket) {
-  ticketAccess(actor, ticket);
+export function requireTicketRead(actor, ticket, options = {}) {
+  ticketAccess(actor, ticket, options);
 }
 
-export function requireTicketWrite(actor, ticket) {
-  if (ticketAccess(actor, ticket) !== 'write') throw forbidden('This ticket is read-only for this actor.');
+export function requireTicketWrite(actor, ticket, options = {}) {
+  if (ticketAccess(actor, ticket, options) !== 'write') throw forbidden('This ticket is read-only for this actor.');
+}
+
+export function recipientActor(userRow) {
+  return {
+    type: 'user',
+    id: userRow.id,
+    role: userRow.role,
+    workspaceRole: userRow.role,
+    disabled: Boolean(userRow.disabled),
+  };
 }
