@@ -32,10 +32,10 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
-                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
@@ -60,9 +60,17 @@ const list = (value) => value.split(',').map((v) => v.trim()).filter(Boolean);
 
 function readThemes() {
   const source = fs.readFileSync(path.join(root, 'src', 'themes.ts'), 'utf8');
-  const themes = [...source.matchAll(/id: '([\w-]+)',\s*name: '[^']*',\s*scheme: '(light|dark)'/g)].map(([, id, scheme]) => ({ id, scheme }));
+  const themes = [...source.matchAll(/id: '([\w-]+)',\s*name: '([^']*)',\s*scheme: '(light|dark)'/g)].map(([, id, name, scheme]) => ({ id, name, scheme }));
   if (!themes.length) throw new Error('could not read the themes from src/themes.ts');
   return themes;
+}
+
+function readHeads() {
+  const source = fs.readFileSync(path.join(root, 'src', 'shapes.ts'), 'utf8');
+  const start = source.indexOf('export const HEADS:');
+  const heads = [...source.slice(start).matchAll(/\{ head: '([\w-]+)', label: '([^']*)' \}/g)].map(([, head, label]) => ({ head, label }));
+  if (!heads.length) throw new Error('could not read connector heads from src/shapes.ts');
+  return heads;
 }
 
 // ---------------------------------------------------------------- states
@@ -961,6 +969,190 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'resize-guides-size'(env) {
+    await openSeedBoard(env);
+    const { page } = env;
+    const drag = await page.evaluate(() => {
+      const app = window.__board;
+      app.r.setCamera({ zoom: 0.5 });
+      const vp = app.r.viewport();
+      const size = app.r.size();
+      const startPx = Math.max(96, (size.w - 190) / 2);
+      const x = vp.x + startPx / app.zoom;
+      const y = vp.y + 180 / app.zoom;
+      const moving = app.makeObj('sticky', { x, y, w: 100, h: 90 }, { text: 'Resize me', fontSize: 16, fill: '#FFE16B' });
+      const reference = app.makeObj('sticky', { x: x + 250, y, w: 130, h: 90 }, { text: 'Match width', fontSize: 16, fill: '#BCE88C' });
+      moving.id = 'visual-resize-size-target';
+      reference.id = 'visual-resize-size-reference';
+      delete moving.parent;
+      delete reference.parent;
+      [moving.z, reference.z] = app.store.topZs(2);
+      app.store.transact(() => {
+        app.store.create(moving);
+        app.store.create(reference);
+      });
+      app.setSelection([moving.id]);
+      const svg = app.r.svg.getBoundingClientRect();
+      const handle = app.r.toScreen({ x: moving.x + moving.w, y: moving.y + moving.h / 2 });
+      return {
+        start: { x: svg.left + handle.x, y: svg.top + handle.y },
+        end: { x: svg.left + handle.x + 14, y: svg.top + handle.y },
+      };
+    });
+    await page.mouse.move(drag.start.x, drag.start.y);
+    await page.mouse.down();
+    await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    await page.waitForFunction(() => {
+      const width = window.__board.store.getPlaced('visual-resize-size-target')?.w;
+      return width !== undefined && width !== 100;
+    });
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const moving = app.store.getPlaced('visual-resize-size-target');
+      const reference = app.store.getPlaced('visual-resize-size-reference');
+      return {
+        width: moving?.w,
+        referenceWidth: reference?.w,
+        sizeMark: app.r.overlay.guides.some((guide) => guide.kind === 'size' && guide.axis === 'x'),
+      };
+    });
+    if (result.width === undefined || result.referenceWidth === undefined || Math.abs(result.width - result.referenceWidth) > 1e-9) {
+      throw new Error(`resize-guides-size: dragged width ${result.width} did not match reference width ${result.referenceWidth}`);
+    }
+    if (!result.sizeMark) throw new Error('resize-guides-size: overlay has no width size mark during the drag');
+    return { noPark: true };
+  },
+  async 'uml-arrows-themes'({ page, base }) {
+    await openSeedBoard({ page, base });
+    await page.getByRole('button', { name: 'UML', exact: true }).click();
+    await page.locator('.drawer.show[data-tab="uml"]').waitFor();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    const themes = readThemes();
+    for (const theme of themes) {
+      const row = page.getByRole('radio', { name: theme.name, exact: true });
+      await row.click();
+      await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
+      const result = await page.evaluate(() => {
+        const parse = (value) => {
+          const m = /^rgba?\(([^)]+)\)$/.exec(value);
+          if (!m) return null;
+          const parts = m[1].split(',').map((v) => Number.parseFloat(v.trim()));
+          return [parts[0], parts[1], parts[2], parts.length > 3 ? parts[3] : 1];
+        };
+        const blend = (front, back) => {
+          const a = front[3] + back[3] * (1 - front[3]);
+          if (!a) return [0, 0, 0, 0];
+          return [0, 1, 2].map((i) => (front[i] * front[3] + back[i] * back[3] * (1 - front[3])) / a).concat(a);
+        };
+        const luminance = (rgba) => {
+          const channels = rgba.slice(0, 3).map((v) => {
+            const c = v / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+        const contrast = (a, b) => {
+          const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+          return (light + 0.05) / (dark + 0.05);
+        };
+        const backgroundFor = (el) => {
+          const chain = [];
+          for (let node = el.parentElement; node; node = node.parentElement) chain.push(node);
+          let bg = [255, 255, 255, 1];
+          for (const node of chain.reverse()) {
+            const style = getComputedStyle(node);
+            const color = parse(style.backgroundColor);
+            if (color) {
+              color[3] *= Number.parseFloat(style.opacity || '1');
+              bg = blend(color, bg);
+            }
+          }
+          return bg;
+        };
+        const failures = [];
+        let checked = 0;
+        for (const row of document.querySelectorAll('.rel-row')) {
+          const label = row.querySelector('span')?.textContent?.trim() || '(unknown relation)';
+          const svg = row.querySelector('svg');
+          if (!svg) { failures.push(`${label}: missing svg`); continue; }
+          for (const shape of svg.querySelectorAll('path, line, polyline, polygon, circle, rect, ellipse')) {
+            const style = getComputedStyle(shape);
+            const bg = backgroundFor(shape);
+            const opacity = Number.parseFloat(style.opacity || '1');
+            for (const prop of ['stroke', 'fill']) {
+              const value = style[prop];
+              if (!value || value === 'none' || value === 'transparent') continue;
+              const color = parse(value);
+              if (!color) continue;
+              color[3] *= opacity;
+              const visible = blend(color, bg);
+              const ratio = contrast(visible, bg);
+              // Hollow arrowheads intentionally paint the tray colour into their interior; that's negative space,
+              // not glyph ink. Every visible stroke and every contrasting fill must still meet 3:1.
+              if (prop === 'fill' && ratio < 1.01) continue;
+              checked++;
+              if (ratio < 3) failures.push(`${label} ${prop} ${value} against rgb(${bg.slice(0, 3).map(Math.round).join(', ')}) (${ratio.toFixed(2)}:1)`);
+            }
+          }
+        }
+        return { failures, checked, relations: document.querySelectorAll('.rel-row').length };
+      });
+      console.log(`uml-arrows-themes ${theme.id} ${JSON.stringify(result)}`);
+      if (result.relations !== 13) throw new Error(`uml-arrows-themes: expected 13 relation glyphs in ${theme.id}, got ${result.relations}`);
+      if (result.failures.length) throw new Error(`uml-arrows-themes ${theme.id}: ${result.failures.slice(0, 6).join('; ')}`);
+    }
+    await page.keyboard.press('Escape');
+  },
+  async 'connector-heads'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.setSelection(['seed-conn-1']));
+    const more = page.getByRole('button', { name: 'More properties' });
+    await more.waitFor();
+    await more.evaluate((el) => el.click());
+    await page.locator('.props.show').waitFor();
+
+    const button = page.locator('.props.show [role="combobox"][aria-label="End arrowhead"]');
+    await button.waitFor();
+    const closedSvg = button.locator('.combo-option-icon svg');
+    await closedSvg.waitFor();
+    const closedPreview = await closedSvg.evaluate((svg) => {
+      return { width: Number(svg.getAttribute('width')), height: Number(svg.getAttribute('height')), ariaHidden: svg.getAttribute('aria-hidden') };
+    });
+    if (closedPreview.width <= 0 || closedPreview.height <= 0 || closedPreview.ariaHidden !== 'true') {
+      throw new Error(`connector-heads: closed value preview is not visible: ${JSON.stringify(closedPreview)}`);
+    }
+
+    await button.click();
+    const list = page.locator('.combo-list[aria-label="End arrowhead"]');
+    await list.waitFor();
+    const rows = await list.locator('.combo-opt').evaluateAll((options) => options.map((option) => {
+      const preview = option.querySelector('.combo-option-icon svg');
+      const box = preview?.getBoundingClientRect();
+      const rowBox = option.getBoundingClientRect();
+      const style = preview ? getComputedStyle(preview) : null;
+      return {
+        label: option.lastElementChild?.textContent?.trim() ?? '',
+        visible: !!preview && style?.display !== 'none' && style?.visibility !== 'hidden' && Number.parseFloat(style?.opacity || '1') > 0,
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+        ariaHidden: preview?.getAttribute('aria-hidden') ?? null,
+        rowHeight: rowBox.height,
+      };
+    }));
+    const expected = readHeads().map(({ label }) => label);
+    const failures = [];
+    if (rows.map(({ label }) => label).join('\0') !== expected.join('\0')) failures.push(`options ${rows.map(({ label }) => label).join(', ')} do not match HEADS`);
+    for (const row of rows) {
+      if (!row.visible || row.width <= 0 || row.height <= 0 || row.ariaHidden !== 'true') failures.push(`${row.label}: invalid preview ${JSON.stringify(row)}`);
+      if (page.viewportSize().width <= 600 && row.rowHeight < 44) failures.push(`${row.label}: row is ${row.rowHeight}px, below 44px`);
+    }
+    if (rows.length !== expected.length) failures.push(`expected ${expected.length} options, got ${rows.length}`);
+    const result = { viewport: page.viewportSize(), closedPreview, options: rows.length, rows, failures };
+    console.log(`connector-heads ${JSON.stringify(result)}`);
+    if (failures.length) throw new Error(`connector-heads: ${failures.slice(0, 6).join('; ')}`);
+    return { noPark: true };
   },
   async 'esc-trays'(env) {
     await openSeedBoard(env);
@@ -2095,6 +2287,26 @@ const STATES = {
     if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
     await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
   },
+  // the board menu opens with the User guide: first, an accent of at least 3:1 on its icon, the same button and name
+  async 'board-menu-guide'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.locator('.menu').waitFor();
+    const r = await env.page.evaluate(() => {
+      const rgb = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const menu = document.querySelector('.menu');
+      const first = menu.querySelector('.menu-item');
+      const icon = first.querySelector('.ico');
+      const bg = getComputedStyle(menu.closest('.popover') ?? menu).backgroundColor;
+      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.firstElementChild === first, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
+    });
+    console.log(`board-menu-guide ${JSON.stringify(r)}`);
+    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the first entry is not the User guide button (${JSON.stringify(r)})`);
+    if (r.ratio < 3) throw new Error(`board-menu-guide: the accent is ${r.ratio.toFixed(2)}:1, under 3:1`);
+    if (Number(r.weight) < 600) throw new Error(`board-menu-guide: the label is not heavier (${r.weight})`);
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
@@ -2674,7 +2886,10 @@ async function serveOutside(route) {
   if (!fontCache.has(key)) {
     fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => ({
       status: res.status(),
-      headers: Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+      headers: {
+        ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+        ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
+      },
       body: await res.body(),
     }), () => null));
   }

@@ -32,6 +32,7 @@ import { createBackup, loadBackupConfig } from './backup.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
+import { renameSyncRetry } from './fs-retry.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
@@ -501,8 +502,16 @@ class Room {
     this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
-    fs.writeFileSync(tmp, bytes);
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.writeFileSync(tmp, bytes);
+      renameSyncRetry(tmp, this.file);
+    } catch (err) {
+      // A save that cannot finish must not take the relay down (this runs in a timer): keep the room dirty and try again.
+      log(`room ${this.name}: could not save, will retry`, err?.code ?? err?.message);
+      this.firstUnsavedAt ??= Date.now();
+      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), 2000);
+      return;
+    }
     // `changed`: something was edited since the last save. A save that only rewrites the same state (a room that is
     // unloaded, the save at shutdown) is not a change for the backups.
     const changed = this.dirty;

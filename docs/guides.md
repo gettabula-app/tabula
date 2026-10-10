@@ -2,26 +2,28 @@
 
 While you move or resize objects, the board shows when edges and centres line up with other objects, and when the space between objects is equal, and snaps to both. It builds on the alignment guides and grid snapping that `src/app.ts` already has; it does not replace them.
 
-Status: spec for review. Nothing is built yet.
+Status: implemented.
 
 ## Summary
 
 - **Alignment** (move and resize): edges and centres of the dragged object snap to edges and centres of nearby objects. The guide is a line drawn between the aligned objects, not across the viewport.
 - **Equal spacing** (move and resize): the gap to the nearest neighbour snaps to an existing gap between other neighbours in the same row or column, or the object snaps to the exact middle between two neighbours. Every equal gap gets a small bracket with its distance.
-- **One new pure module**, `src/guides.ts`, builds a sorted index once when a drag starts and answers a query per pointer move. `doMove` and `doResize` call it. No stored data changes.
+- **Equal size** (resize): a moving edge can snap the new width or height to a reference object's matching dimension. Brackets mark the resized object and up to three nearest matching references.
+- **Aspect-locked corners**: alignment, spacing and equal-size guides work on the dragged edge; the other edge follows the fixed ratio from the opposite corner.
+- **One pure module**, `src/guides.ts`, builds sorted indexes once when a drag starts and answers a query per pointer move. `doMove` and `doResize` call it. No stored data changes.
 - **Alt** still turns everything off (grid, alignment and spacing), as today.
 - A new theme colour token `--guide`, defined for all five themes and checked for contrast.
 
 ## What exists today
 
 - `snapOn(e)` is true when `meta.snap` is on, the grid type is not `none`, and Alt is not held. It drives grid snapping in `doMove`, `doResize`, `snapPoint` and the create drag.
-- `doMove` loops over every object on each pointer move (`store.ordered()` plus `r.bounds`), keeps the visible non-moving ones, and snaps left, centre and right (top, middle, bottom) of the selection's `d.bounds` to the nearest candidate within `6 / zoom`. Per axis, an alignment wins, otherwise the grid applies. It draws a full-viewport line from the overlay field `guides`, in a hard-coded `#E0559B`.
-- `doResize` only grid-snaps the moving edges, and only when the object is not rotated and the aspect ratio is not locked.
+- `doMove` uses a viewport-filtered guide session and snaps left, centre and right (top, middle, bottom) of the selection's `d.bounds`. Per axis, a guide snap wins; otherwise the grid applies.
+- `doResize` uses `snapResize` for free resizes and `snapResizeLocked` for aspect-locked corners. Equal dimensions use sorted width and height indexes, so size lookup is a few binary searches rather than a reference scan.
 - The guide code ignores `meta.snap`: guides work with snapping to the grid switched off, and with the grid set to `none`.
 
 ## Decisions and why
 
-- **Extend `doMove`/`doResize`, do not add a second system.** The new module replaces the inline candidate loop in `doMove` and adds the same call to `doResize`. The overlay field `guides` stays the single channel to the renderer.
+- **Extend `doMove`/`doResize`, do not add a second system.** The module handles movement, free resizing and aspect-locked corners. The overlay field `guides` stays the single channel to the renderer.
 - **Pure module, built once per drag.** Today every pointer move walks all objects. The index is built on the first move of a drag and each query is a handful of binary searches. The module takes plain rectangles and imports no DOM, store or renderer code, so it is unit-tested like `geometry.ts`.
 - **Body bounds, not renderer bounds.** References and the moving rectangle use `boxBounds`: the axis-aligned bounds of the box, rotation included. A frame's 28 px title band (which `Renderer.bounds` adds) is ignored, so a note aligns with the frame's border and not with the top of its label. The decision is in Decisions at the end.
 - **Edges that move are the only edges that snap in a resize.** The opposite edge stays put. The centre of a resized object moves at half speed, so snapping it would feel like a pull in the wrong direction.
@@ -42,7 +44,7 @@ On the first pointer move past the 3 px drag threshold, `app.ts` builds a sessio
 2. `startGuides(refs, movers, view)` keeps the references that intersect `view`, which is the current viewport grown by 50% of its width and height on every side, and builds the index. `movers` are the `boxBounds` of the moving boxes. Their union is the moving rectangle for a move (the selection's union bounds, so a multi-selection snaps as one object). A resize passes no movers.
 3. If the camera later leaves the built region (a wheel pan or a zoom out during the drag), the next pointer move asks `guidesCover(session, viewport)` and rebuilds when it is false. A pan inside the margin costs nothing.
 
-The index holds, per axis, sorted arrays of every reference's low edge, centre and high edge: `value`, the rectangle it belongs to, and a kind (0 low, 1 centre, 2 high). Rectangles are also kept as they are, in one flat array, for the spacing pass.
+The index holds, per axis, sorted arrays of every reference's low edge, centre and high edge: `value`, the rectangle it belongs to, and a kind (0 low, 1 centre, 2 high). It also holds sorted width and height arrays for size matching. Rectangles are kept in one flat array for the spacing pass.
 
 ### Alignment
 
@@ -80,12 +82,21 @@ A candidate is dropped when `|correction| > thr`, or when the corrected `R` woul
 
 A marker is `{ axis, from, to, at, label }`. `at` is the cross-axis coordinate of the bracket: the middle of the overlap of the two flanking objects, or the middle of `R` when they do not overlap. `label` is the size rounded to a whole number. Markers are capped at six per axis: the one or two next to `R`, then the four nearest to `R`. In a resize only the side of the moving edge is marked.
 
+### Equal size
+
+For a resize, the moving x edge can make the new width match a reference width, and the moving y edge can make the new height match a reference height. The candidate is found by binary search in the width or height index. It shares the existing snap threshold (`6 / zoom`) and must leave the dimension at least `MIN_SIZE`.
+
+Size matching joins the alignment and spacing candidates. The smallest absolute correction wins; a size match wins a tie within `EPS`. For a locked corner, x and y candidates are compared by correction size, then the other dimension follows the fixed ratio around the opposite corner. Both dimensions stay at least `MIN_SIZE`.
+
+After a resize correction, the query checks the final dimension against the size index. If it matches a reference within `EPS`, it draws one bracket just outside the resized object's edge and one for each of up to three matching references, nearest first. The pill prefixes the rounded world-unit dimension with `=` to distinguish it from a gap label. An isolated bracket is not shown when there is no matching reference.
+
 ### Choosing a correction
 
-Per axis the query has up to one alignment correction `a` and one spacing correction `s`. Both are additive offsets.
+Per axis the query has up to one alignment correction `a`, one spacing correction `s` and, during a resize, one size correction `z`. All are additive offsets.
 
 - If only one exists, it wins.
 - Otherwise the smaller `|correction|` wins, except that spacing gets `2 / zoom` of head start: spacing wins when `|s| <= |a| + 2 / zoom`. Alignment candidates are everywhere on a busy board, spacing candidates are rare and deliberate, and without the head start a nearby edge would hide them most of the time.
+- A size correction is compared with the alignment/spacing winner by absolute distance. It wins when it is closer, or when the difference is within `EPS`.
 - If `a` and `s` land on the same position (within `EPS`), nothing is lost: the display pass reports the alignment line and the gap markers together.
 
 Only the winner moves the object. Lines and markers are reported only for an axis that snapped, from the corrected rectangle, so they never describe a position the object is not at.
@@ -107,35 +118,38 @@ An aligned position can be off-grid; that is intended. With `meta.snap` off or t
 
 ### Resize
 
-`doResize` runs the guide query when `!e.altKey && !o0.rotation && !keepAspect`. This is the grid snap's condition without `snapOn`, because guides do not depend on `meta.snap`. A rotated object, an icon or UML actor, and a Shift-resize of a corner do not get guides (see Not in this slice). The proposed rectangle is `boxBounds(o0)` with the moving edges replaced by the pointer's position (`l`, `t`, `r`, `b` offset by `o0.x`, `o0.y`). `snapResize(session, rect, handle, zoom)` returns `dx` for the moving x edge (`w` or `e`) and `dy` for the moving y edge (`n` or `s`). A corner handle has one of each; a text object only has `w` and `e`.
+`doResize` runs the guide query when Alt is not held and the object is not rotated. Guides do not depend on `meta.snap`. A free resize calls `snapResize(session, rect, handle, zoom)` and applies its x and y corrections independently. An aspect-locked corner calls `snapResizeLocked(session, rect, handle, zoom, ratio)`: it compares x and y candidates, applies the nearer one, fixes the opposite corner and derives the other dimension from the ratio. Images, icons, UML actors and Shift-resized corners use this path. Text corner scaling remains in `doTextScale`: it changes font size and wrapped height, so it does not have one fixed ratio to pass to the locked-resize function.
 
-The query is skipped while the proposed width or height is below the 8 px minimum, and a snap that would take the size below it is discarded. The existing minimum-size clamp then runs as it does now, after the snap.
+The query is skipped while the proposed width or height is below the 8 px minimum, and a snap that would take either dimension below it is discarded. The existing minimum-size clamp then runs as it does now, after the snap. Grid snapping remains disabled for aspect-locked and rotated resizes, as it was before this change; on free resizes a guide snap still takes priority over the grid on that axis.
 
 ## Behaviour
 
 - **Distance labels** show world units, so they do not change with zoom.
+- **Equal sizes** show a dimension bracket for the resized object and up to three nearest matching references, with an `=` prefix on the rounded size.
 - **The line is drawn between objects**, from the end of the moving object to the end of the farthest aligned object. Several aligned objects share one line.
-- **Rotated objects** use their axis-aligned bounds, both as references and as the moving object. Resizing a rotated object has no guides, as it has no grid snap today.
+- **Aspect-locked corners** show guides while the dragged edge snaps; the opposite corner stays fixed and the other edge follows the ratio. Rotated objects use axis-aligned bounds as references but have no resize guides, as they have no resize grid snap today.
 - **Multi-select** moves as one rectangle, the union of the selection's bounds. Locked objects are not in the selection, but stay as references. Carried frame children are part of the moving set and are never references during that drag.
-- **Hidden notes.** Objects that private writing hides (`flow.isHidden`) are never references, so their positions cannot leak through a guide. The current guides do not make this check and can reveal where a hidden note sits; this fixes it.
+- **Hidden notes.** Objects that private writing hides (`flow.isHidden`) are never references, so their positions cannot leak through a guide.
 - **Pointer drags only.** Arrow-key nudging, the create drag, the pen and connector endpoints are unchanged.
 - **Alt** disables guides, markers and the grid together. The shortcut list in the board menu already reads "Alt while dragging: Ignore grid and guides" and stays accurate.
 - **Touch** has no Alt, so guides are always on there, as they are today.
-- **Performance.** Alignment is a binary search per value, `O(log n + k)`. The spacing pass filters the row and column from the viewport-filtered set with one linear sweep, sorts the `m` row members, and sweeps again, so it is `O(n_view + m log m)`, not `O(log n)`. With `n_view` around 1000 that is a few thousand comparisons per pointer move, well inside a frame. If the smoke test shows it is not, the filter becomes an interval tree over the sorted array without changing the module's API.
+- **Performance.** Alignment and size lookup use binary searches, `O(log n + k)` including the matching references they report. The spacing pass filters the row and column from the viewport-filtered set with one linear sweep, sorts the `m` row members, and sweeps again, so it is `O(n_view + m log m)`. With `n_view` around 1000 that is a few thousand comparisons per pointer move.
 
 ## Rendering
 
 - The overlay field `guides` widens from line segments to a union, so the renderer and `onUp`'s reset (`guides: []`) need no new field:
 
   ```ts
-  export type Guide = GuideLine | GapMark;
+  export type Guide = GuideLine | GapMark | SizeMark;
   export interface GuideLine { kind: 'line'; x1: number; y1: number; x2: number; y2: number }
   export interface GapMark { kind: 'gap'; axis: 'x' | 'y'; from: number; to: number; at: number; label: string }
+  export interface SizeMark { kind: 'size'; axis: 'x' | 'y'; from: number; to: number; at: number; label: string }
   ```
 
   The types live in `src/guides.ts`; `src/render.ts` imports them as types.
 - **Line**: 1 screen px, `var(--guide, #D6247F)`.
 - **Gap marker**: a line from `from` to `to` at `at`, 1 screen px, with an 8 px tick at each end across the gap, in `var(--guide, #D6247F)`. The label sits centred on the line in a pill filled with `var(--canvas, #EEF1F4)`, outlined 1 px in the guide colour, text in `var(--canvas-ink, #18212B)`, 11 px, weight 600, in the font stack the vote badges use. The pill hides the line behind it, as a dimension line does. Sizes are `px(n) = n / zoom`, so everything stays the same on screen at every zoom.
+- **Size marker**: the same bracket and pill, placed just outside the object's edge. Its pill begins with `=`, followed by the rounded width or height.
 - The fallback hex values are in TypeScript strings, as `CANVAS_INK` in `palette.ts` does. No hex literal is added to any CSS file outside `:root`, so `test/css-colors.test.ts` is unaffected.
 - Guides are part of the overlay, so PNG, SVG, `.drift` and the Markdown summary never contain them.
 
@@ -162,7 +176,7 @@ It is a pink that no other token uses, so it does not read as selection (`--wire
 
 ## Tests
 
-New `test/guides.test.ts`, pure functions only, built on rectangles. `test/core.test.ts` and `test/themes.test.ts` otherwise stay as they are.
+`test/guides.test.ts` covers the pure functions with rectangles. `test/core.test.ts` and `test/themes.test.ts` otherwise stay as they are.
 
 1. Alignment pairs: each of the nine value pairs (low, centre, high against low, centre, high) snaps, in x and in y.
 2. Threshold and zoom: a candidate at 5.9 px snaps, at 6.1 px does not, at zoom 0.5, 1 and 4; `thr` is `6 / zoom`.
@@ -176,17 +190,19 @@ New `test/guides.test.ts`, pure functions only, built on rectangles. `test/core.
 10. Grid fallback: `dx` and `dy` are `null` with no candidate in range, and no lines or markers are reported for that axis.
 11. Marker cap: more than six equal gaps in a row yields six, the nearest to the moving rectangle.
 12. `MIN_GAP`: touching objects (gap 0) and gaps under 4 screen px produce no spacing candidate and no marker.
-13. Resize: for each of the eight handles only the moving edges snap; the opposite edge and the centre never do; spacing applies to the moving edge, including the fixed-side-gap target; no midway; a snap below the minimum size is discarded.
-14. Multi-select: `startGuides` with three movers snaps their union as one rectangle; a mover is never its own reference.
-15. Rotated reference: a rotated box enters as its `boxBounds`, and aligns by those edges.
-16. `referenceRects`: connectors excluded, hidden excluded, the moving set excluded, locked included, frames and paths included.
-17. Region: references outside the expanded viewport are dropped; `guidesCover` is true inside the margin and false outside.
-18. Invariant check over random layouts: after applying a spacing correction, each reported gap in a group differs from the others by less than `EPS`, and each reported line coincides with a moving value.
-19. Performance smoke: 1000 rectangles on a loose grid, build once, then 2000 move queries and 2000 resize queries; the whole run must finish under a generous budget (1.5 s, since CI runs three operating systems and three Node versions and Windows runners are slow). Normal runs should take a small fraction of that; the test guards against an accidental `O(n^2)`, not for tuning.
+13. Resize: for each of the eight handles only the moving edges snap; the opposite edge and the centre never do; spacing applies to the moving edge, including the fixed-side-gap target; width and height match references; size ties win; a snap below the minimum size is discarded.
+14. Size marks: every equal final dimension is indexed, the resized object is marked, and at most the three nearest matching references are marked.
+15. Locked corners: the ratio stays fixed, the opposite corner stays fixed, the nearer x or y correction wins, size matching works, and an out-of-range drag is unchanged.
+16. Multi-select: `startGuides` with three movers snaps their union as one rectangle; a mover is never its own reference.
+17. Rotated reference: a rotated box enters as its `boxBounds`, and aligns by those edges.
+18. `referenceRects`: connectors excluded, hidden excluded, the moving set excluded, locked included, frames and paths included.
+19. Region: references outside the expanded viewport are dropped; `guidesCover` is true inside the margin and false outside.
+20. Invariant check over random layouts: after applying a spacing correction, each reported gap in a group differs from the others by less than `EPS`, and each reported line coincides with a moving value.
+21. Performance smoke: 1000 rectangles on a loose grid, build once, then 2000 move queries and 2000 resize queries; reference visits and binary-search probes stay bounded. A separate 1000-reference count checks the size index uses binary-search probes rather than scanning references.
 
 In `test/themes.test.ts`: `--guide` against `--canvas` and against `--paper` must be at least 3:1 in every theme. This is a separate assertion, not an entry in `TEXT_PAIRS`, which checks 4.5:1.
 
-Behaviour in the browser is checked by hand, as the repo has no UI test harness: drag one object past three stacked rectangles and see the equal gaps; drag between two to see midway; resize an edge into a gap; select several and move; Alt bypasses; each theme in light and dark; zoom out to 25% and in to 400%; a frame with children; a board with many objects stays smooth.
+The `resize-guides-size` visual state checks equal-size snapping and its overlay mark at desktop and phone widths. Other browser behaviours can be checked by hand: drag one object past three stacked rectangles and see the equal gaps; drag between two to see midway; resize an edge into a gap; select several and move; Alt bypasses; each theme in light and dark; zoom out to 25% and in to 400%; a frame with children; a board with many objects stays smooth.
 
 Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm test`.
 
@@ -194,31 +210,31 @@ Before reporting an implementation: `npm run lint`, `npm run typecheck` and `npm
 
 - A setting to turn guides off separately from Alt, or a board-level "smart guides" switch.
 - Guides for the create drag, the pen, connector endpoints, rotation and arrow-key nudging.
-- Guides while resizing a rotated object, or while the aspect ratio is locked (Shift, icons, UML actors). With the ratio locked, one edge is derived from the other, which needs its own rule. This is the likely first follow-up.
+- Guides while resizing a rotated object, or while text corner scaling changes font size and wrapped height.
 - Spacing scoped to siblings inside one frame. A container that fully contains the moving rectangle is skipped; objects inside and outside a frame can still be neighbours.
 - Equal spacing across a grid of rows and columns together (Figma's distribution of rows and columns), and spacing between more than the nearest neighbours.
 - Snapping to a frame's title band, to objects far outside the viewport, or to the rotated outline of a rotated object.
-- Extra crosses or tick marks at each aligned point, and a size and position readout while resizing.
+- Extra crosses or tick marks at each aligned point, and a live position readout while resizing.
 - A touch-friendly way to bypass snapping.
 - A change to Alt as the bypass, or any use of Cmd/Ctrl.
 
 ## Files
 
-### New
+### Core files
 
-- `src/guides.ts`: pure module. `referenceRects`, `startGuides`, `guidesCover`, `snapMove`, `snapResize`, `gapsInBand`, the `Guide` types and the constants (`SNAP_PX`, `EPS`, `MIN_GAP_PX`). It imports `isBox` and types from `./types` and `boxBounds`, `rectsIntersect`, `unionRects` from `./geometry`, nothing else.
+- `src/guides.ts`: pure module. `referenceRects`, `startGuides`, `guidesCover`, `snapMove`, `snapResize`, `snapResizeLocked`, `gapsInBand`, the `Guide` types and constants (`SNAP_PX`, `EPS`, `MIN_GAP_PX`, `MAX_SIZE_MARKS`). It imports types from `./types` and geometry helpers, nothing else.
 - `test/guides.test.ts`: the tests above.
 - `docs/guides.md`: this document.
 
-### Existing (touched)
+### Other files touched
 
 - `src/app.ts`, kept small:
   - one new import line, `import { ... } from './guides';`, as its own line below the others. The `./geometry` import list changes only by dropping `rectsIntersect`, which the old inline loop was the last user of (an unused import fails the typecheck).
   - `Drag`: an optional `guides?: GuideSession` on the `move` and `resize` variants (the two lines that declare them).
   - `doMove`: the inline candidate loop is replaced by a session built on first use and one `snapMove` call; the grid fallback stays as it is.
-  - `doResize`: one session and one `snapResize` call before the grid snap, under the gate given in Resize.
+  - `doResize`: one session, `snapResize` for free resizing or `snapResizeLocked` for aspect-locked corners, and the existing free-resize grid fallback.
   - Nothing else. In particular `onUp` (its `guides: []` reset already clears both kinds), `updateHover`, `anchorAt`, `quickConnect` and the import line from `./geometry` are untouched, because the connector-handle work (TAB-74) edits them.
-- `src/render.ts`: `Overlay.guides` becomes `Guide[]`; draw lines and gap markers from the `--guide` token. `emptyOverlay` is unchanged.
+- `src/render.ts`: `Overlay.guides` uses `Guide[]`; draw lines, gap brackets and size brackets from the `--guide` token. `emptyOverlay` is unchanged.
 - `src/themes.ts`: `'--guide'` in `THEME_VARS` and in the five themes.
 - `src/styles.css`: `--guide` in `:root`.
 - `test/themes.test.ts`: the `--guide` contrast assertion.
@@ -233,7 +249,7 @@ Answers to the questions raised in review.
 
 1. Frames: the 28 px title band is ignored; guides use body edges.
 2. Spacing keeps its 2 screen px head start over alignment.
-3. No guides for Shift-resize (aspect ratio locked) or for resizing a rotated object in this slice. It is listed above as a likely follow-up.
+3. Aspect-locked corners (Shift, images, icons and UML actors) use the nearest x/y correction and derive the other edge from the ratio. Rotated resizes still have no guides. Text corner scaling stays separate because font metrics and wrapping change its height.
 4. Resize spacing is as described: the moving edge matches existing gaps and the fixed-side gap, with no midway.
 5. A container that fully contains the moving rectangle is skipped for spacing. Spacing is not scoped to siblings of one frame.
 6. No separate switch for guides; Alt is the bypass.

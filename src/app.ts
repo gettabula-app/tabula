@@ -31,7 +31,7 @@ import {
 import { listLabels } from './labels';
 import { KANBAN, wipCheck } from '../shared/containers';
 import { remapObjects } from './custom-templates';
-import { guidesCover, referenceRects, snapMove, snapResize, startGuides, type Guide, type GuideSession } from './guides';
+import { guidesCover, referenceRects, snapMove, snapResize, snapResizeLocked, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
@@ -1908,17 +1908,28 @@ export class BoardApp {
     }
     let sx: number | null = null, sy: number | null = null;
     const guides: Guide[] = [];
-    if (!e.altKey && !o0.rotation && !keepAspect) {
+    if (!e.altKey && !o0.rotation) {
       const vp = this.r.viewport();
       if (!d.guides || !guidesCover(d.guides, vp)) {
         d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set([d.id]), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), [], vp);
       }
-      const sn = snapResize(d.guides, { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t }, h, this.zoom);
-      sx = sn.dx;
-      sy = sn.dy;
-      if (sx !== null) { if (h.includes('w')) l += sx; else r += sx; }
-      if (sy !== null) { if (h.includes('n')) t += sy; else b += sy; }
-      guides.push(...sn.guides, ...sn.gaps);
+      const proposed = { x: o0.x + l, y: o0.y + t, w: r - l, h: b - t };
+      if (keepAspect) {
+        const ratio = o0.w / Math.max(o0.h, 1);
+        const sn = snapResizeLocked(d.guides, proposed, h, this.zoom, ratio);
+        l = sn.rect.x - o0.x;
+        t = sn.rect.y - o0.y;
+        r = l + sn.rect.w;
+        b = t + sn.rect.h;
+        guides.push(...sn.guides, ...sn.gaps, ...sn.sizes);
+      } else {
+        const sn = snapResize(d.guides, proposed, h, this.zoom);
+        sx = sn.dx;
+        sy = sn.dy;
+        if (sx !== null) { if (h.includes('w')) l += sx; else r += sx; }
+        if (sy !== null) { if (h.includes('n')) t += sy; else b += sy; }
+        guides.push(...sn.guides, ...sn.gaps, ...sn.sizes);
+      }
     }
     this.r.setOverlay({ guides });
     if (this.snapOn(e) && !o0.rotation && !keepAspect) {
