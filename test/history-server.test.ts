@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,8 +7,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { CSRF_HEADER } from '../server/auth.mjs';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/history.md. The relay runs as a child process exactly as `npm start` would: once in open mode,
 // once in accounts mode and once as a hosted workspace that can be made read-only.
@@ -33,18 +32,6 @@ async function until(fn: () => boolean | Promise<boolean>, ms = 8000) {
 
 const servers: Server[] = [];
 
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
-
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
     if (p.exitCode !== null || p.signalCode !== null) return r();
@@ -53,18 +40,19 @@ const stopRelay = (p: ChildProcess) =>
   });
 
 async function launch(env: Record<string, string> = {}): Promise<Server> {
-  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-relay-'));
   const accounts = env.TABULA_AUTH === 'on';
-  const server = {
-    port,
-    base: `http://127.0.0.1:${port}`,
-    dir,
-    proc: await startRelay(port, dir, {
+  const { port, proc } = await startRelayProcess({
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>),
+      PORT: String(port),
+      DATA_DIR: dir,
+      HOST: '127.0.0.1',
       ...(accounts ? { TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`, TABULA_TRUST_PROXY: '1' } : {}),
       ...env,
     }),
-  };
+  });
+  const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
   servers.push(server);
   return server;
 }

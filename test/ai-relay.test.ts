@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createKeyRing } from '../server/ai/keys.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/ai.md. The relay as `npm start` runs it: how the environment turns AI on in open mode, and what it refuses to start with.
 // The environment of the children is built here and never read from a .env file: the working directory is an empty one.
@@ -39,21 +39,14 @@ async function spawnRelay(env: Record<string, string>, existingDir?: string) {
 }
 
 const launch = async (env: Record<string, string> = {}, existingDir?: string) => {
-  const relay = await spawnRelay(env, existingDir);
-  return new Promise<Relay>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${relay.output()}`)), RELAY_START_MS);
-    relay.proc.stdout!.on('data', (d) => {
-      if (String(d).includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve(relay);
-      }
-    });
-    relay.proc.on('error', reject);
-    relay.proc.once('exit', () => {
-      clearTimeout(timer);
-      reject(new Error(`relay exited before it was listening: ${relay.output()}`));
-    });
+  const dir = existingDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'ai-relay-'));
+  const started = await startRelayProcess({
+    entry: RELAY,
+    cwd: dir,
+    envFor: (port) => ({ ...cleanEnv(), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', ...env }),
   });
+  launched.push({ proc: started.proc, dir });
+  return { port: started.port, proc: started.proc, dir, output: started.output };
 };
 
 const exitOf = (proc: ChildProcess) =>

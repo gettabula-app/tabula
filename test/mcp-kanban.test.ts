@@ -38,6 +38,21 @@ async function watcher() {
   return client;
 }
 
+function seedObjects(live: Awaited<ReturnType<typeof watcher>>, objects: Record<string, any>[]) {
+  live.doc.transact(() => {
+    const map = live.doc.getMap('objects');
+    for (const object of objects) map.set(object.id, new Y.Map(Object.entries(object)));
+  }, 'local');
+}
+
+async function removeObjects(live: Awaited<ReturnType<typeof watcher>>, ids: string[]) {
+  live.doc.transact(() => {
+    const map = live.doc.getMap('objects');
+    for (const id of ids) map.delete(id);
+  }, 'local');
+  await until(() => ids.every((id) => !h.savedDoc(board).getMap('objects').has(id)));
+}
+
 beforeAll(async () => {
   await h.start();
   const workspaceOwner = await h.signInOwner();
@@ -185,10 +200,15 @@ describe('kanban MCP card tools', () => {
     madeTokens.push(readToken.id);
     const names = (await h.call(readToken.token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name);
     expect(names).not.toContain('create_kanban_label');
+    expect(names).not.toContain('create_kanban');
+    expect(names).not.toContain('add_kanban_cards');
+    expect(names).not.toContain('move_kanban_cards');
     expect((await h.tool(readToken.token, 'create_kanban_label', { boardId: board, kanbanId, name: 'No access' })).error).toBe('forbidden');
+    expect((await h.tool(readToken.token, 'create_kanban', { boardId: board })).error).toBe('forbidden');
 
     const viewerToken = await h.newToken(viewer.cookie, { name: 'viewer lane tools', scope: 'write' });
     madeTokens.push(viewerToken.id);
+    expect((await h.tool(viewerToken.token, 'create_kanban', { boardId: board })).error).toBe('forbidden');
     expect((await h.tool(viewerToken.token, 'add_kanban_lane', { boardId: board, kanbanId, name: 'No access' })).error).toBe('forbidden');
   });
 
@@ -917,6 +937,250 @@ describe('kanban MCP card tools', () => {
         for (const id of [...cardIds, sourceLaneId]) objects.delete(id);
       }, 'test:cleanup');
       await until(() => [...cardIds, sourceLaneId].every((id) => !h.savedDoc(board).getMap('objects').has(id)));
+      live.provider.destroy();
+    }
+  });
+});
+
+describe('kanban creation, exact order and bulk tools', () => {
+  it('creates default lanes at the first non-overlapping position to the right of board content', async () => {
+    const token = await addToken('create kanban');
+    const before = (await h.tool(token.token, 'get_board', { boardId: board })).data.bounds;
+    const live = await watcher();
+    let created: Body | undefined;
+    try {
+      created = await h.tool(token.token, 'create_kanban', { boardId: board });
+      expect(created.error).toBeUndefined();
+      expect(created.data.kanban).toMatchObject({ name: 'Kanban', y: Math.round(before.y) });
+      expect(created.data.kanban.x).toBe(Math.round(before.x + before.w + 80));
+      expect(created.data.kanban.x).toBeGreaterThan(before.x + before.w);
+      expect(created.data.lanes.map((lane: Body) => [lane.name, lane.stage, lane.count])).toEqual([
+        ['To do', 'todo', 0], ['Doing', 'doing', 0], ['Done', 'done', 0],
+      ]);
+      const container = live.doc.getMap('objects').get(created.data.kanban.id) as Y.Map<unknown>;
+      await until(() => container instanceof Y.Map && container.get('type') === 'container');
+      expect(container.toJSON()).toMatchObject({ layout: 'kanban', name: 'Kanban', x: created.data.kanban.x, y: created.data.kanban.y });
+      expect(container.get('w')).toBe(created.data.kanban.w);
+      expect(container.get('h')).toBe(created.data.kanban.h);
+      for (const lane of created.data.lanes) {
+        const object = live.doc.getMap('objects').get(lane.id) as Y.Map<unknown>;
+        expect(object.toJSON()).toMatchObject({ type: 'lane', parent: created.data.kanban.id, name: lane.name, stage: lane.stage, w: KANBAN.laneW });
+      }
+    } finally {
+      if (created?.data?.kanban?.id) await removeObjects(live, [created.data.kanban.id, ...created.data.lanes.map((lane: Body) => lane.id)]);
+      live.provider.destroy();
+    }
+  });
+
+  it('creates custom lanes inside a visible parent, leaves parent geometry alone, and refuses bad or locked parents atomically', async () => {
+    const token = await addToken('custom kanban');
+    const live = await watcher();
+    const frameId = 'mcp-create-parent-frame';
+    const groupId = 'mcp-create-parent-group';
+    const groupMemberId = 'mcp-create-group-member';
+    const lockedFrameId = 'mcp-create-locked-frame';
+    const lockedGroupId = 'mcp-create-locked-group';
+    const nestedFrameId = 'mcp-create-nested-frame';
+    const nestedMemberId = 'mcp-create-nested-member';
+    const hiddenFrameId = 'mcp-create-hidden-frame';
+    const seedIds = [frameId, groupId, groupMemberId, lockedFrameId, lockedGroupId, nestedFrameId, nestedMemberId, hiddenFrameId];
+    let created: Body | undefined;
+    try {
+      seedObjects(live, [
+        { id: frameId, type: 'frame', name: 'Planning', x: 100, y: 120, w: 500, h: 360, rotation: 0, z: 'zz0' },
+        { id: groupId, type: 'group', parent: frameId, name: 'Group', z: 'zz1' },
+        { id: groupMemberId, type: 'shape', kind: 'rect', parent: groupId, x: 140, y: 150, w: 100, h: 80, rotation: 0, z: 'zz2' },
+        { id: lockedFrameId, type: 'frame', name: 'Locked', x: 800, y: 100, w: 300, h: 200, rotation: 0, z: 'zz3', locked: true },
+        { id: lockedGroupId, type: 'group', name: 'Locked group', z: 'zz4', locked: true },
+        { id: nestedFrameId, type: 'frame', name: 'Nested', parent: lockedGroupId, x: 850, y: 140, w: 200, h: 120, rotation: 0, z: 'zz5' },
+        { id: nestedMemberId, type: 'shape', kind: 'rect', parent: lockedGroupId, x: 860, y: 150, w: 60, h: 40, rotation: 0, z: 'zz6' },
+        { id: hiddenFrameId, type: 'frame', name: 'Hidden', x: 1200, y: 100, w: 300, h: 200, rotation: 0, z: 'zz7', hidden: true },
+      ]);
+      await until(() => seedIds.every((id) => h.savedDoc(board).getMap('objects').has(id)));
+      const frameBefore = (live.doc.getMap('objects').get(frameId) as Y.Map<unknown>).toJSON();
+      created = await h.tool(token.token, 'create_kanban', {
+        boardId: board, name: '  Product\n plan  ', x: 210, y: 260, parent: groupId,
+        lanes: [{ name: '  In   review ', stage: 'doing', wip: 3, wipBlock: true }, { name: ' Shipped ', stage: 'done' }],
+      });
+      expect(created.error).toBeUndefined();
+      expect(created.data.kanban).toMatchObject({ name: 'Product plan', x: 210, y: 260 });
+      expect(created.data.lanes).toMatchObject([
+        { name: 'In review', stage: 'doing', wip: 3, wipBlock: true, count: 0 },
+        { name: 'Shipped', stage: 'done', count: 0 },
+      ]);
+      const container = live.doc.getMap('objects').get(created.data.kanban.id) as Y.Map<unknown>;
+      await until(() => container instanceof Y.Map && container.get('parent') === groupId);
+      expect((live.doc.getMap('objects').get(frameId) as Y.Map<unknown>).toJSON()).toEqual(frameBefore);
+
+      for (const [parent, error] of [[lockedFrameId, 'conflict'], [nestedFrameId, 'conflict'], [hiddenFrameId, 'not_found'], ['mcp-no-parent', 'not_found']] as const) {
+        expect((await h.tool(token.token, 'create_kanban', { boardId: board, parent })).error).toBe(error);
+      }
+
+      const before = Y.encodeStateVector(live.doc);
+      const invalid = await h.tool(token.token, 'create_kanban', {
+        boardId: board, lanes: [{ name: 'Good' }, { name: 'Bad', wipBlock: true }],
+      });
+      expect(invalid.error).toBe('invalid_input');
+      expect(invalid.data.path).toBe('lanes[1].wipBlock');
+      expect(Y.encodeStateVector(live.doc)).toEqual(before);
+      expect((await h.tool(token.token, 'create_kanban', { boardId: board, lanes: [] })).error).toBe('invalid_input');
+    } finally {
+      await removeObjects(live, [...(created?.data?.kanban?.id ? [created.data.kanban.id, ...created.data.lanes.map((lane: Body) => lane.id)] : []), ...seedIds]);
+      live.provider.destroy();
+    }
+  });
+
+  it('adds and reorders cards before, after and across lanes, and leaves same-position requests unwritten', async () => {
+    const token = await addToken('ordered cards');
+    const other = await addToken('other card agent');
+    const live = await watcher();
+    let kanban: Body | undefined;
+    const cards: string[] = [];
+    try {
+      kanban = await h.tool(token.token, 'create_kanban', {
+        boardId: board, lanes: [{ name: 'Todo', stage: 'todo' }, { name: 'Doing', stage: 'doing' }],
+      });
+      expect(kanban.error).toBeUndefined();
+      const [todo, doing] = kanban.data.lanes as Body[];
+      const add = async (title: string, afterCardId?: string | null, ownerKind?: string) => {
+        const result = await h.tool(token.token, 'add_kanban_card', {
+          boardId: board, kanbanId: kanban!.data.kanban.id, laneId: todo.id, title,
+          ...(afterCardId === undefined ? {} : { afterCardId }), ...(ownerKind ? { ownerKind } : {}),
+        });
+        expect(result.error).toBeUndefined();
+        cards.push(result.data.card.id);
+        return result.data.card.id as string;
+      };
+      const first = await add('First', null);
+      const middle = await add('Middle', first);
+      const last = await add('Last');
+      const addWrongLaneAnchorVector = Y.encodeStateVector(live.doc);
+      const addWrongLaneAnchor = await h.tool(token.token, 'add_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, laneId: doing.id, title: 'Invalid anchor', afterCardId: last,
+      });
+      expect(addWrongLaneAnchor.error).toBe('not_found');
+      expect(addWrongLaneAnchor.data.path).toBe('afterCardId');
+      expect(Y.encodeStateVector(live.doc)).toEqual(addWrongLaneAnchorVector);
+      let listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId: kanban.data.kanban.id });
+      expect(listed.data.cards.filter((card: Body) => card.lane.id === todo.id).map((card: Body) => card.id)).toEqual([first, middle, last]);
+
+      const vector = Y.encodeStateVector(live.doc);
+      const samePlace = await h.tool(token.token, 'move_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, cardId: first, laneId: todo.id, afterCardId: null,
+      });
+      expect(samePlace.data.moved).toBe(false);
+      expect(Y.encodeStateVector(live.doc)).toEqual(vector);
+
+      const movedFirst = await h.tool(token.token, 'move_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, cardId: last, laneId: todo.id, afterCardId: null,
+      });
+      expect(movedFirst.data.moved).toBe(true);
+      listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId: kanban.data.kanban.id });
+      expect(listed.data.cards.filter((card: Body) => card.lane.id === todo.id).map((card: Body) => card.id)).toEqual([last, first, middle]);
+
+      const across = await h.tool(token.token, 'move_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, cardId: middle, laneId: doing.id, afterCardId: null,
+      });
+      expect(across.data).toMatchObject({ moved: true, card: { lane: { id: doing.id }, stage: 'doing' } });
+      const invalidAnchor = await h.tool(token.token, 'move_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, cardId: first, laneId: doing.id, afterCardId: last,
+      });
+      expect(invalidAnchor.error).toBe('not_found');
+      expect(invalidAnchor.data.path).toBe('afterCardId');
+
+      const agent = await add('Owned by first agent', undefined, 'agent');
+      const beforeDenied = Y.encodeStateVector(live.doc);
+      const refused = await h.tool(other.token, 'move_kanban_card', {
+        boardId: board, kanbanId: kanban.data.kanban.id, cardId: agent, laneId: doing.id,
+      });
+      expect(refused.error).toBe('conflict');
+      expect(Y.encodeStateVector(live.doc)).toEqual(beforeDenied);
+    } finally {
+      if (kanban?.data?.kanban?.id) await removeObjects(live, [...cards, kanban.data.kanban.id, ...kanban.data.lanes.map((lane: Body) => lane.id)]);
+      live.provider.destroy();
+    }
+  });
+
+  it('adds and moves batches atomically, reports item paths, and checks WIP limits cumulatively', async () => {
+    const token = await addToken('bulk kanban cards');
+    const live = await watcher();
+    let kanban: Body | undefined;
+    const cards: string[] = [];
+    try {
+      kanban = await h.tool(token.token, 'create_kanban', {
+        boardId: board,
+        lanes: [
+          { name: 'Todo', stage: 'todo' },
+          { name: 'Doing', stage: 'doing', wip: 2, wipBlock: true },
+          { name: 'Review', stage: 'doing', wip: 2, wipBlock: true },
+        ],
+      });
+      expect(kanban.error).toBeUndefined();
+      const [todo, doing, review] = kanban.data.lanes as Body[];
+      const badBatchVector = Y.encodeStateVector(live.doc);
+      const badBatch = await h.tool(token.token, 'add_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        cards: [{ laneId: todo.id, title: 'Valid first card' }, { laneId: todo.id, title: '😀'.repeat(201) }],
+      });
+      expect(badBatch.error).toBe('invalid_input');
+      expect(badBatch.data.path).toBe('cards[1].title');
+      expect(Y.encodeStateVector(live.doc)).toEqual(badBatchVector);
+
+      const blockedAddVector = Y.encodeStateVector(live.doc);
+      const blockedAdd = await h.tool(token.token, 'add_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        cards: [1, 2, 3].map((n) => ({ laneId: doing.id, title: `Doing ${n}` })),
+      });
+      expect(blockedAdd.error).toBe('wip_limit');
+      expect(blockedAdd.data.path).toBe('cards[2].laneId');
+      expect(Y.encodeStateVector(live.doc)).toEqual(blockedAddVector);
+
+      const sourceBatch = await h.tool(token.token, 'add_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        cards: [1, 2, 3].map((n) => ({ laneId: todo.id, title: `Todo ${n}` })),
+      });
+      expect(sourceBatch.error).toBeUndefined();
+      expect(sourceBatch.data.cards.map((card: Body) => card.title)).toEqual(['Todo 1', 'Todo 2', 'Todo 3']);
+      cards.push(...sourceBatch.data.cards.map((card: Body) => card.id));
+
+      const blockedMoveVector = Y.encodeStateVector(live.doc);
+      const blockedMoves = await h.tool(token.token, 'move_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        moves: cards.map((cardId) => ({ cardId, laneId: review.id })),
+      });
+      expect(blockedMoves.error).toBe('wip_limit');
+      expect(blockedMoves.data.path).toBe('moves[2].laneId');
+      expect(Y.encodeStateVector(live.doc)).toEqual(blockedMoveVector);
+
+      const moved = await h.tool(token.token, 'move_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        moves: cards.slice(0, 2).map((cardId) => ({ cardId, laneId: review.id })),
+      });
+      expect(moved.error).toBeUndefined();
+      expect(moved.data.moves.map((move: Body) => move.card.id)).toEqual(cards.slice(0, 2));
+      const orderBefore = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId: kanban.data.kanban.id });
+      const reviewBefore = orderBefore.data.cards.filter((card: Body) => card.lane.id === review.id).map((card: Body) => card.id);
+      expect(reviewBefore).toEqual(cards.slice(0, 2));
+
+      const reorder = await h.tool(token.token, 'move_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        moves: [{ cardId: cards[1], laneId: review.id, afterCardId: null }],
+      });
+      expect(reorder.error).toBeUndefined();
+      expect(reorder.data.moves[0].moved).toBe(true);
+      const orderAfter = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId: kanban.data.kanban.id });
+      expect(orderAfter.data.cards.filter((card: Body) => card.lane.id === review.id).map((card: Body) => card.id)).toEqual([cards[1], cards[0]]);
+
+      const badMoveVector = Y.encodeStateVector(live.doc);
+      const badMove = await h.tool(token.token, 'move_kanban_cards', {
+        boardId: board, kanbanId: kanban.data.kanban.id,
+        moves: [{ cardId: cards[2], laneId: todo.id }, { cardId: 'mcp-no-such-card', laneId: review.id }],
+      });
+      expect(badMove.error).toBe('not_found');
+      expect(badMove.data.path).toBe('moves[1].cardId');
+      expect(Y.encodeStateVector(live.doc)).toEqual(badMoveVector);
+    } finally {
+      if (kanban?.data?.kanban?.id) await removeObjects(live, [...cards, kanban.data.kanban.id, ...kanban.data.lanes.map((lane: Body) => lane.id)]);
       live.provider.destroy();
     }
   });

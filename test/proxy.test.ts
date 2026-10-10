@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -10,8 +10,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { loadConfig } from '../server/config.mjs';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // The relay in accounts mode behind a reverse proxy that terminates https (docs/accounts.md, TABULA_TRUST_PROXY). The
 // relay is a child process on plain http; a small Node proxy sits in front of it, adds X-Forwarded-For (appending the
@@ -26,41 +25,18 @@ const SECURE_COOKIE = '__Host-tabula_session';
 type Body = any;
 type Res = { status: number; body: Body; setCookie: string[]; headers: http.IncomingHttpHeaders };
 
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DATA_DIR: dir,
-        HOST: '127.0.0.1',
-        TABULA_AUTH: 'on',
-        TABULA_OWNER_EMAIL: OWNER,
-        TABULA_MAIL: 'file',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const timer = setTimeout(() => {
-      p.kill();
-      reject(new Error('relay did not start'));
-    }, RELAY_START_MS);
-    p.stdout!.on('data', (d) => {
-      if (String(d).includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve(p);
-      }
-    });
-    p.stderr!.on('data', () => {});
-    p.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    p.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`relay exited with ${code}`));
-    });
-  });
+const startRelay = (dir: string, env: Record<string, string>) => startRelayProcess({
+  envFor: (port) => ({
+    ...(process.env as Record<string, string>),
+    PORT: String(port),
+    DATA_DIR: dir,
+    HOST: '127.0.0.1',
+    TABULA_AUTH: 'on',
+    TABULA_OWNER_EMAIL: OWNER,
+    TABULA_MAIL: 'file',
+    ...env,
+  }),
+});
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -305,9 +281,8 @@ const stacks: Stack[] = [];
 
 /** A relay with its own proxy in front; every relay has its own in-memory rate limits. */
 async function launch(env: Record<string, string>, proxy: Partial<ProxyOptions> = {}): Promise<Stack> {
-  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-proxy-'));
-  const relay = await startRelay(port, dir, env);
+  const { port, proc: relay } = await startRelay(dir, env);
   const front = await startProxy({ target: port, forwardedProto: 'https', preserveHost: true, ...proxy });
   const stack = { port, dir, relay, proxy: front };
   stacks.push(stack);

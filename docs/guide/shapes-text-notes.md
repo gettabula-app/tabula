@@ -58,6 +58,7 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 - `Esc` or `Ctrl+Enter` (`Cmd+Enter` on Mac) finishes.
 - `Tab` finishes.
 - In shapes, notes and text boxes, `Enter` starts a new line. In frame names and connector labels, `Enter` finishes.
+- Select **Add emoji** in the small bar beside the text box to open the emoji picker: type to search, use the arrow keys or tap to choose one, and it goes in at the cursor. Recent emoji come first. Emoji made of several parts, such as flags and families, stay in one piece when a line wraps, and they come out whole in PNG and Markdown exports and for everyone else on the board.
 
 ### Alignment
 
@@ -74,7 +75,7 @@ Board-wide heading and body fonts for new objects are set in **Board settings** 
 ## Drawing, frames and icons
 
 - **Pen** (`P`): drag to draw freehand. A tray shows colours and three widths while the pen is active.
-- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it.
+- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it. To set a frame's size, select it and open the properties (**More properties**): the **Size** menu offers Screen (1920 × 1080, 1440 × 900, 1280 × 800), Tablet (1024 × 768 and 768 × 1024), Phone (390 × 844), Paper (A3, A4 and Letter, portrait and landscape) and Square (1000 × 1000), and the **Width** and **Height** fields set any other size, which the menu then shows as Custom.
 - **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Each click places the icon 24 pixels right and down from the previous click's icon, so they do not land on top of each other, and the steps start again at the centre of the view after you move the view a step away or move or delete the last icon placed. Change its colour with the properties panel.
 - **Offline icons**: with **All icon sets** selected, the row **Popular icon sets (N)** has **Download for offline**. With one set selected, the row shows that set's name instead. Downloaded sets search and preview without a connection; **Update** and **Remove** work as they do for stickers (see [Stickers](stickers.md#offline)). Icons already on the board stay there.
 - **Online sets**: this button in the Icons drawer loads more sets from Iconify. Those sets cannot be downloaded, need a connection, and each search sends your query to Iconify.

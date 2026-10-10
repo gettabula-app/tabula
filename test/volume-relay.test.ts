@@ -7,6 +7,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { freePort } from './free-port';
 import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/backups.md, "Volumes and restores", and GET /api/internal/volume (docs/cloud.md). The relay runs as a child
 // process exactly as `npm start` would, next to a fake control plane, and is restarted on the same data directory
@@ -102,9 +103,33 @@ async function launch(dir: string, env: Record<string, string>, { auth = true } 
 }
 
 async function start(dir: string, env: Record<string, string>, opts?: { auth?: boolean }): Promise<Run> {
-  const r = await launch(dir, env, opts);
-  if ('exited' in r) throw new Error(`relay exited with ${r.exited.code}\n${r.exited.err}`);
-  return r.started;
+  const { auth = true } = opts ?? {};
+  const started = await startRelayProcess({
+    envFor: (port) => {
+      const base = { ...(process.env as Record<string, string>) };
+      for (const k of ['TABULA_FLY_VOLUME_ID', 'TABULA_ADOPT_VOLUME', 'TABULA_CLOUD_TOKEN', 'TABULA_CLOUD_URL', 'TABULA_CLOUD_WORKSPACE_ID', 'QUIET']) delete base[k];
+      return {
+        ...base,
+        PORT: String(port),
+        DATA_DIR: dir,
+        HOST: '127.0.0.1',
+        ...(auth ? { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}` } : { TABULA_AUTH: 'off' }),
+        TABULA_TRUST_PROXY: '1',
+        // no backups are configured here, so nothing can restore; the stub keeps test/no-real-disk.test.ts honest anyway
+        TABULA_TEST_RESTORE_DISK_USED: '0.1',
+        ...env,
+      };
+    },
+  });
+  const proc = started.proc;
+  running.add(proc);
+  return {
+    proc,
+    port: started.port,
+    base: `http://127.0.0.1:${started.port}`,
+    out: started.output,
+    err: started.output,
+  };
 }
 
 async function refused(dir: string, env: Record<string, string>, opts?: { auth?: boolean }): Promise<Ended> {

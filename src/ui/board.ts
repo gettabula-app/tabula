@@ -15,6 +15,7 @@ import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
+import { mountEditBar } from './edit-bar';
 import { mountGroupUI } from './group-ui';
 import { mountTouchMenu } from './touch-menu';
 import { mountLibrary, openMermaidImport } from './library';
@@ -373,6 +374,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props, { demo });
+  mountEditBar(app, chrome);
   mountGroupUI(app, chrome);
   mountTouchMenu(app);
   mountFocus(app, chrome);

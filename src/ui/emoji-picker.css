@@ -1,0 +1,27 @@
+.popover.emoji-pop {
+  width: min(344px, calc(100vw - 24px - var(--safe-left) - var(--safe-right)));
+  max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
+  padding: 0;
+}
+
+.emoji-picker { padding: 6px; }
+.emoji-search { height: 44px; font: 16px var(--ui); }
+.emoji-section + .emoji-section { margin-top: 8px; }
+.emoji-section .list-label { margin: 8px 0 4px; }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; }
+.emoji-cell {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tray-text);
+  font: 24px/1 var(--ui);
+}
+.emoji-cell:hover { background: var(--tray-hover); }
+.emoji-cell:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.emoji-empty { margin: 12px 4px 8px; color: var(--tray-muted); font-size: 13px; }
+.emoji-picker.docked { max-height: min(300px, 60vh); overflow-y: auto; overscroll-behavior: contain; }

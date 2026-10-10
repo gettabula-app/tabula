@@ -1,11 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // The relay forbids framing with the CSP directive frame-ancestors 'none'. TABULA_DEV_ALLOW_FRAMING=1 is the opt-in for
 // scripts/visual-check.mjs --frameable (docs/visual-check.md): the directive goes, the rest of the policy stays.
@@ -21,34 +19,23 @@ interface Relay {
 }
 
 async function startRelay(name: string, framing?: string): Promise<Relay> {
-  const port = await freePort();
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    PORT: String(port),
-    HOST: '127.0.0.1',
-    DIST_DIR: path.join(root, 'dist'),
-    DATA_DIR: path.join(root, `data-${name}`),
-    TABULA_DEV_ALLOW_FRAMING: framing,
-  };
-  if (framing === undefined) delete env.TABULA_DEV_ALLOW_FRAMING;
-  const child: ChildProcess = spawn(process.execPath, [relayFile], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stderr = '';
-  child.stderr!.on('data', (d) => (stderr += String(d)));
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-    child.stdout!.on('data', (d) => {
-      if (String(d).includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve();
-      }
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => reject(new Error(`relay exited with ${code}`)));
+  const started = await startRelayProcess({
+    entry: relayFile,
+    cwd: root,
+    envFor: (port) => ({
+      ...(process.env as Record<string, string>),
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      DIST_DIR: path.join(root, 'dist'),
+      DATA_DIR: path.join(root, `data-${name}`),
+      ...(framing === undefined ? {} : { TABULA_DEV_ALLOW_FRAMING: framing }),
+    }),
   });
   const relay: Relay = {
-    port,
-    stderr: () => stderr,
+    port: started.port,
+    stderr: started.output,
     stop: async () => {
+      const child = started.proc;
       if (child.exitCode !== null || child.signalCode !== null) return;
       const exited = new Promise((r) => child.once('exit', r));
       child.kill();
