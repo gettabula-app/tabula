@@ -108,7 +108,7 @@ With **Read and edit**, a tool can also set up the lanes and labels of a kanban 
 | `update_kanban_label` | Renames a label or changes its colour |
 | `delete_kanban_label` | Deletes a label, removes it from every card that has it, and says how many cards changed |
 | `add_kanban_lane` | Adds a lane with a name (1 to 60 characters), optionally a stage (to do, doing or done), a work in progress limit (1 to 99), whether the limit blocks, and where it goes in the order. A kanban holds up to 20 lanes, hidden ones included |
-| `update_kanban_lane` | Renames, restages, reorders, hides or shows a lane, and sets or clears its stage and limit |
+| `update_kanban_lane` | Renames, restages, reorders or hides a lane, and sets or clears its stage and limit. A tool cannot show a hidden lane again, because a hidden lane is invisible to it; do that in the app |
 | `delete_kanban_lane` | Deletes a lane. A lane with cards needs a lane to move them to: they go in order to the end of that lane, even cards owned by another AI tool |
 
 Rules that apply:
