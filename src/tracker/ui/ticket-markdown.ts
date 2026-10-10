@@ -114,7 +114,7 @@ function appendPlain(parent: HTMLElement, text: string, options: MarkdownDomOpti
       parent.appendChild(document.createTextNode(segment.raw));
       continue;
     }
-    const link = h('a', { class: 'tk-ticket-chip', href: `/t/${model.key}`, title: `${model.key} · ${model.title}`, 'aria-label': `${model.key}, ${model.state?.name ?? 'ticket'}: ${model.title}` });
+    const link = h('a', { class: 'tk-ticket-chip', href: `/t/${model.key}`, 'aria-label': `${model.key}, ${model.state?.name ?? 'ticket'}: ${model.title}` });
     link.append(keyChip(model.key));
     if (model.state) link.append(stateGlyph(model.state.category), h('span', { class: 'tk-chip-title' }, model.title));
     link.addEventListener('click', (event: MouseEvent) => {

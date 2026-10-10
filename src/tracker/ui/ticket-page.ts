@@ -1,4 +1,5 @@
 import './tracker.css';
+import './ticket-page.css';
 import {
   TrackerError, isValidDueDate,
   type TrackerComment, type TrackerEvent, type TrackerMeta, type TrackerRelationKind,
@@ -241,7 +242,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   }
   function describeDisabled<T extends HTMLElement>(control: T, disabled = true, reason = disabledReason()): T {
     if (disabled) {
-      control.title = reason;
+      control.setAttribute('aria-description', reason);
       control.setAttribute('aria-describedby', readonlyId);
     }
     return control;
@@ -249,7 +250,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   function fieldButton(label: string, name: string, onClick: (event: MouseEvent) => void, focusId?: string): HTMLButtonElement {
     const enabled = canWrite();
     const el = button(label, `tk-field-button${enabled ? '' : ' tk-disabled-value'}`, !enabled, onClick, focusId);
-    el.title = enabled ? '' : disabledReason();
+    if (!enabled) el.setAttribute('aria-description', disabledReason());
     if (!enabled) el.setAttribute('aria-describedby', readonlyId);
     el.dataset.field = name;
     return el;
@@ -992,7 +993,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     }));
     const composer = h('div', { class: 'tk-comment-composer' });
     composer.appendChild(h('label', { for: 'tk-comment-input', class: 'tk-property-label' }, 'Add a comment'));
-    const commentInput = h('textarea', { id: 'tk-comment-input', class: 'tk-comment-input', rows: 4, placeholder: writeable ? 'Write a comment in Markdown…' : reason, 'aria-label': 'Comment in Markdown', disabled: !writeable, title: writeable ? '' : reason, 'aria-describedby': !writeable ? readonlyId : undefined, 'data-focus-id': 'comment-input' });
+    const commentInput = h('textarea', { id: 'tk-comment-input', class: 'tk-comment-input', rows: 4, placeholder: writeable ? 'Write a comment in Markdown…' : reason, 'aria-label': 'Comment in Markdown', disabled: !writeable, 'aria-describedby': !writeable ? readonlyId : undefined, 'data-focus-id': 'comment-input' });
     commentInput.value = commentDraft;
     commentInput.addEventListener('input', () => {
       saveCommentDraft(commentInput.value);
