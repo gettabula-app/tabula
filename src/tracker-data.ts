@@ -307,6 +307,13 @@ export function normalizeListQuery(query: TrackerListQuery = {}): string {
 
 export function cloneTrackerData<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item) => cloneTrackerData(item)) as T;
+  if (value instanceof TrackerError) {
+    return new TrackerError(value.code, value.message, {
+      path: value.path,
+      current: value.current ? cloneTrackerData(value.current) : undefined,
+      status: value.status,
+    }) as T;
+  }
   if (value && typeof value === 'object') {
     const copy: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) copy[key] = cloneTrackerData(item);

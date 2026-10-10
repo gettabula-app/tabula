@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-filter-suggest, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -1049,14 +1049,43 @@ const STATES = {
     await page.locator('.trk-group-heading').first().waitFor();
     await page.locator('.trk-row-select').first().click();
     await page.locator('.trk-selection-bar:not([hidden])').waitFor();
-    await page.getByRole('button', { name: 'Filter', exact: true }).click();
-    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
+    await page.getByLabel('Filter or search').fill('sta');
+    await page.locator('.trk-filter-suggestions:not([hidden])').waitFor();
+    await assertTrackerLayout(page);
+  },
+  async 'tracker-my-issues'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.getByRole('tab', { name: 'My issues', exact: true }).click();
+    await page.locator('.trk-my-subtab[aria-selected="true"]').waitFor();
+    await page.locator('.trk-list-row').first().waitFor();
+    if (!(await page.locator('.trk-filter-chip').first().textContent()).includes('assignee: Me')) throw new Error('tracker-my-issues: the locked assignee filter is missing');
+    await assertTrackerLayout(page);
+  },
+  async 'tracker-board'({ page, base, width }) {
+    await openTrackerMockShell(page, base);
+    await page.getByRole('tab', { name: 'Board', exact: true }).click();
+    await page.locator('.trk-board-lane').first().waitFor();
+    if (width < 600) {
+      await page.locator('.trk-board-state-strip:not([hidden])').waitFor();
+      await page.locator('.trk-board-state-tab').nth(1).click();
+      if (!(await page.locator('.trk-board-lane').getAttribute('data-state'))) throw new Error('tracker-board: phone lane switcher did not select a lane');
+    } else if (await page.locator('.trk-board-lane').count() < 4) {
+      throw new Error('tracker-board: expected one lane for each non-canceled state');
+    }
     await assertTrackerLayout(page);
   },
   async 'tracker-filter-open'({ page, base }) {
     await openTrackerMockShell(page, base);
-    await page.getByRole('button', { name: 'Filter', exact: true }).click();
-    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
+    await page.getByLabel('Filter or search').fill('sta');
+    await page.locator('.trk-filter-suggestions:not([hidden])').waitFor();
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-filter-suggest'({ page, base }) {
+    await openTrackerMockShell(page, base);
+    await page.getByLabel('Filter or search').fill('assi');
+    await page.locator('.trk-filter-suggestions:not([hidden])').waitFor();
+    if (!(await page.locator('.trk-filter-suggestions').textContent()).includes('assignee:')) throw new Error('tracker-filter-suggest: assignee completion is missing');
     await assertTrackerLayout(page);
     return { noPark: true };
   },
@@ -1080,13 +1109,13 @@ const STATES = {
   async 'tracker-phone'({ page, base, width }) {
     if (width > 500) throw new Error('tracker-phone is only valid at phone widths');
     await openTrackerMockShell(page, base);
-    await page.getByRole('button', { name: 'Filter', exact: true }).click();
-    await page.locator('.trk-filter-editor:not([hidden])').waitFor();
-    const sheet = await page.locator('.trk-filter-editor').evaluate((element) => {
+    await page.getByLabel('Filter or search').fill('sta');
+    await page.locator('.trk-filter-suggestions:not([hidden])').waitFor();
+    const sheet = await page.locator('.trk-filter-suggestions').evaluate((element) => {
       const box = element.getBoundingClientRect();
       return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
     });
-    if (sheet.left !== 0 || sheet.width < width - 1 || sheet.bottom < page.viewportSize().height - 90) throw new Error(`tracker-phone: filter is not a bottom sheet ${JSON.stringify(sheet)}`);
+    if (sheet.left > 8 || sheet.width < width - 16 || sheet.bottom < page.viewportSize().height - 90) throw new Error(`tracker-phone: suggestions are not a bottom sheet ${JSON.stringify(sheet)}`);
     await assertTrackerLayout(page);
     return { noPark: true };
   },
@@ -1156,7 +1185,10 @@ const STATES = {
     const frame = await openTrackerMockFrame(env);
     await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
     await env.page.keyboard.press('Enter');
-    await env.page.getByRole('tab', { name: 'All issues' }).click();
+    const issuesTab = env.width <= 600
+      ? env.page.locator('.trk-route-root [role="tab"][aria-label="All issues"]')
+      : env.page.locator('.trk-frame-wrap.is-work [role="tab"][aria-label="All issues"]');
+    await issuesTab.click();
     await env.page.locator('.trk-list-row').first().waitFor();
     const before = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (env.width > 600) {
@@ -1224,7 +1256,7 @@ const STATES = {
         const ratio = contrast(foreground, background(element));
         if (ratio < 3) failures.push(`non-text contrast ${ratio.toFixed(2)}:1 on .${element.className}`);
       }
-      const listbox = document.querySelector('[role="listbox"]');
+      const listbox = document.querySelector('.trk-pop [role="listbox"]');
       const options = [...document.querySelectorAll('[role="option"]')];
       if (!listbox?.getAttribute('aria-label')) failures.push('picker listbox has no accessible name');
       if (!options.length || options.some((option) => !option.textContent.trim())) failures.push('picker options have no accessible names');
@@ -3461,14 +3493,20 @@ async function serveOutside(route) {
   if (!url.hostname.endsWith('fontshare.com')) return route.abort();
   const key = url.href;
   if (!fontCache.has(key)) {
-    fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => ({
-      status: res.status(),
-      headers: {
-        ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
-        ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
-      },
-      body: await res.body(),
-    }), () => null));
+    fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => {
+      try {
+        return {
+          status: res.status(),
+          headers: {
+            ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+            ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
+          },
+          body: await res.body(),
+        };
+      } catch {
+        return null;
+      }
+    }, () => null));
   }
   const cached = await fontCache.get(key);
   return cached ? route.fulfill(cached) : route.abort();
