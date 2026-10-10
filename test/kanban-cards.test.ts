@@ -10,7 +10,7 @@ import {
 } from '../src/labels';
 import { cardContentHeight } from '../src/markup';
 import { safeObj } from '../src/safe-obj';
-import { KANBAN, LIMITS } from '../shared/containers';
+import { KANBAN, LIMITS, cleanLabelName, codePointLength, templateLabels, validLabel } from '../shared/containers';
 import type { BaseObj, Id, Label, Obj } from '../src/types';
 
 // docs/kanban.md, slice 3: the store side of cards. Every edit is one transaction and one undo step, nothing is written
@@ -63,6 +63,32 @@ describe('labels', () => {
     for (let i = 1; i < LIMITS.labels; i++) createLabel(store, `L${i}`);
     expect(listLabels(store)).toHaveLength(LIMITS.labels);
     expect(createLabel(store, 'one more')).toBeNull();
+  });
+
+  it('counts label names by Unicode code point in the app and shared validators', () => {
+    const { store } = board();
+    const forty = '😀'.repeat(LIMITS.labelName);
+    const fortyOne = '😀'.repeat(LIMITS.labelName + 1);
+
+    const id = createLabel(store, forty)!;
+    expect(id).toBeTruthy();
+    expect(store.labels.get(id)!.name).toBe(forty);
+    expect(codePointLength(cleanLabelName(forty))).toBe(LIMITS.labelName);
+    expect(cleanLabelName(fortyOne)).toBe(forty);
+    expect(validLabel({ id: 'emoji', name: forty, color: 'grey', order: 0 })?.name).toBe(forty);
+    expect(validLabel({ id: 'too-long', name: fortyOne, color: 'grey', order: 1 })).toBeNull();
+    expect(templateLabels([{ id: 'emoji', name: forty, color: 'grey' }])[0].name).toBe(forty);
+    expect(() => templateLabels([{ id: 'too-long', name: fortyOne, color: 'grey' }])).toThrow(/Label 1 name/);
+  });
+
+  it('keeps label names unique ignoring case on create and rename', () => {
+    const { store } = board();
+    const bug = createLabel(store, 'Bug')!;
+    const feature = createLabel(store, 'Feature')!;
+    expect(createLabel(store, '  bUG  ')).toBeNull();
+    expect(renameLabel(store, feature, ' BUG ')).toBe(false);
+    expect(renameLabel(store, bug, ' bug ')).toBe(true);
+    expect(listLabels(store).map((label) => label.name)).toEqual(['bug', 'Feature']);
   });
 
   it('never stores a raw colour: writes go through kanbanColor and reads through validLabel', () => {
