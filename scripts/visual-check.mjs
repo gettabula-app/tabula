@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -2048,6 +2048,38 @@ const STATES = {
     await env.page.getByRole('button', { name: 'Share', exact: true }).click();
     await env.page.locator('[role="dialog"]').first().waitFor();
   },
+  async 'share-code-phone'({ page, base, width }) {
+    if (width > 500) throw new Error('share-code-phone is only valid at phone widths');
+    await openSeedBoard({ page, base });
+    await page.getByRole('button', { name: 'Share', exact: true }).click();
+    await page.locator('.modal').waitFor();
+    await page.getByRole('button', { name: 'Create code', exact: true }).click();
+    const panel = page.locator('.join-code-created');
+    await panel.waitFor();
+    await page.waitForFunction(() => {
+      const element = document.querySelector('.join-code-created');
+      const body = element?.closest('.modal-body');
+      if (!element || !body) return false;
+      const panelRect = element.getBoundingClientRect();
+      const bodyRect = body.getBoundingClientRect();
+      return panelRect.top >= bodyRect.top && panelRect.bottom <= bodyRect.bottom;
+    }, undefined, { timeout: 3000 });
+    const visible = await panel.evaluate((element) => {
+      const body = element.closest('.modal-body');
+      const panelRect = element.getBoundingClientRect();
+      const bodyRect = body.getBoundingClientRect();
+      const copy = element.querySelector('button');
+      return {
+        panel: { top: panelRect.top, bottom: panelRect.bottom },
+        body: { top: bodyRect.top, bottom: bodyRect.bottom },
+        fits: panelRect.top >= bodyRect.top && panelRect.bottom <= bodyRect.bottom,
+        copyFocused: copy?.textContent?.trim() === 'Copy code' && document.activeElement === copy,
+      };
+    });
+    if (!visible.fits) throw new Error(`share-code-phone: new code panel is clipped by the modal body: ${JSON.stringify(visible)}`);
+    if (!visible.copyFocused) throw new Error('share-code-phone: focus did not move to Copy code');
+    return { noPark: true };
+  },
   async 'empty-menu'(env) {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -3408,12 +3440,12 @@ const STATES = {
 const FULL_PAGE = new Set(['tracker-foundation', 'tracker-inbox-long-list', 'tracker-notification-prefs', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'share-code-phone': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -3762,7 +3794,7 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    const joinCodes = options.mode === 'accounts' && options.states.some((state) => ['join-short-code', 'share-code-phone'].includes(state));
     await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
