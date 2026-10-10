@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import * as Y from 'yjs';
 import type { BoardApp } from '../src/app';
 import { Store } from '../src/store';
@@ -135,6 +136,22 @@ describe('the card dialog, for an editor', () => {
     expect(textOf(box()!.querySelector('.k-link-error')!)).toContain('full http:// or https:// URL');
     expect(bo(store, card).link).toBe('https://example.com/plan?q=one&b=two');
     d.close();
+  });
+
+  it('styles link errors with theme danger and keeps Open link below the field', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { link: 'https://example.com/plan' }));
+    open(app, card);
+    const wrap = box()!.querySelector('.k-link-wrap')!;
+    const openLink = wrap.querySelector('.k-open-link')!;
+    expect(wrap.children[0].className).toContain('k-link-field');
+    expect(openLink.parentNode).toBe(wrap);
+    expect(wrap.children.indexOf(openLink)).toBe(1);
+
+    const css = readFileSync(new URL('../src/ui/card-dialog.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.k-link-error\s*\{[^}]*color:\s*var\(--danger\)/s);
+    expect(css).toMatch(/\.k-card-form \.input\[aria-invalid='true'\]\s*\{[^}]*border-color:\s*var\(--danger\)/s);
+    expect(css).toMatch(/\.k-open-link\s*\{[^}]*white-space:\s*nowrap/s);
   });
 
   it('gives read-only roles a safe plain-text link and hides a stored credential link entirely', () => {

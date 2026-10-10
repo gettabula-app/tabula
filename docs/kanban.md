@@ -84,6 +84,8 @@ The helpers, all pure and in `shared/containers.mjs`:
 
 ### Layout
 
+An MCP-created card starts at the shared 72px default because the server cannot measure browser text. When an editor loads it or receives a content change, the client measures its height with the browser and shares that derived height in a non-undoable write. A read-only board keeps the default until an editor opens it.
+
 `layoutContainer(container, lanes, cards, ctx)` returns a map from id to rectangle, plus the container's own size. It is a pure function of stored fields. It never measures text: a card's height is its stored `h` (set by the editor when the text changes, as stickies do), so two clients with different font loading still agree.
 
 Kanban constants (CSS pixels at zoom 1): lane width `laneW` (280), gap between lanes 16, padding 12, lane header 48, gap between cards 8, minimum lane body 160. Lanes run left to right by rank. Cards stack top to bottom by rank, each as wide as the lane body. The container is as wide as its lanes and as tall as its tallest lane plus an empty drop zone of one card. A card taller than the stored default grows its lane; nothing scrolls inside a lane in v1 (the canvas is the scroll).

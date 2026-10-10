@@ -245,26 +245,30 @@ describe('undo and redo', () => {
   });
 
   it('shows why the old stack-item handler throws after Yjs ends the event phase', () => {
-    const store = new Store(new Y.Doc());
-    store.transact(() => store.create(note('sticky', 'a1', 10)));
-    store.undo.clear();
-    store.transact(() => store.update('sticky', { text: 'edited' }));
+    // A bare document with no Store observer: the Store now reads `changes` inside its own observer (card height repair), which
+    // Yjs caches, so only an observer-free document shows what the old handler hit.
+    const doc = new Y.Doc();
+    const objects = doc.getMap<Y.Map<unknown>>('objects');
+    const manager = new Y.UndoManager([objects], { captureTimeout: 0 });
+    doc.transact(() => objects.set('sticky', new Y.Map([['text', 'a1']])));
+    manager.clear();
+    doc.transact(() => objects.get('sticky')!.set('text', 'edited'));
 
     // This is the old app handler's changedParentTypes walk, kept as a characterization of the Yjs failure.
-    store.undo.on('stack-item-popped', (event: {
+    manager.on('stack-item-popped', (event: {
       type: 'undo' | 'redo';
       changedParentTypes?: Map<unknown, Array<{ path?: (string | number)[]; changes?: { keys?: Map<string, unknown> } }>>;
     }) => {
-      const changed = new Set<Id>();
+      const changed = new Set<string>();
       for (const [type, events] of event.changedParentTypes ?? []) {
         for (const item of events) {
-          if (type === store.objects) {
+          if (type === objects) {
             for (const id of item.changes?.keys?.keys() ?? []) changed.add(id);
           } else if (item.path?.length) changed.add(String(item.path[0]));
         }
       }
     });
 
-    expect(() => store.undo.undo()).toThrow('You must not compute changes after the event-handler fired.');
+    expect(() => manager.undo()).toThrow('You must not compute changes after the event-handler fired.');
   });
 });

@@ -177,7 +177,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
       field('Due', h('div', { class: 'k-due' }, due, editable ? clearDue : null)),
     ),
     field('Link', h('div', { class: 'k-link-wrap' },
-      h('div', { class: 'k-link-field' }, link, openLink, readOnlyLink, editable ? clearLink : null), linkError)),
+      h('div', { class: 'k-link-field' }, link, editable ? clearLink : null), openLink, readOnlyLink, linkError)),
     h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
     actions,
   );

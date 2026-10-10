@@ -12,6 +12,16 @@
 .k-due .input { flex: 1 1 auto; min-width: 0; }
 .k-link-field { display: flex; gap: 8px; align-items: center; }
 .k-link-field .input { flex: 1 1 auto; min-width: 0; }
+.k-link-wrap { display: grid; gap: 6px; min-width: 0; }
+.k-link-error { display: block; color: var(--danger); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.k-link-error[hidden], .k-open-link[hidden], .k-link-readonly[hidden] { display: none; }
+.k-card-form .input[aria-invalid='true'] { border-color: var(--danger); }
+.k-open-link {
+  justify-self: start; display: inline-flex; align-items: center; min-height: 28px; max-width: 100%;
+  color: var(--tray-text); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
+  white-space: nowrap;
+}
+.k-link-readonly { display: block; min-width: 0; color: var(--tray-text); font-size: 13px; overflow-wrap: anywhere; }
 .k-owner-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 .k-owner-kind-btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px;
