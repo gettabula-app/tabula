@@ -43,7 +43,9 @@ describe('tracker shell slice', () => {
     const inbox = shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[0];
     inbox.click();
     expect(shell.state.tab).toBe('inbox');
-    expect(shell.el.textContent).toContain('Not available yet.');
+    expect(shell.el.querySelector('.trk-inbox')).not.toBeNull();
+    await flush();
+    expect(shell.el.textContent).toContain('Nothing needs you.');
     expect(shell.el.querySelector('.trk-unread-count')?.textContent).toBe('0');
     shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[2].click();
     expect(shell.state.tab).toBe('all');

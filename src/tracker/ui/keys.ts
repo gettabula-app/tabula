@@ -137,8 +137,10 @@ function isTextOwner(state: KeyState, event: KeyEventLike): boolean {
   const target = event.target as (HTMLElement & { isContentEditable?: boolean }) | null;
   if (!target || typeof target !== 'object') return false;
   const tag = target.tagName?.toLowerCase();
+  const listbox = target.closest?.('[role="listbox"]');
+  const inboxList = target.closest?.('.trk-inbox-list');
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable === true ||
-    Boolean(target.closest?.('[contenteditable="true"], [role="combobox"], [role="listbox"], .popover'));
+    Boolean(target.closest?.('[contenteditable="true"], [role="combobox"], .popover')) || Boolean(listbox && !inboxList);
 }
 
 function hasModifier(event: KeyEventLike, modifier: 'meta' | 'ctrl'): boolean {
