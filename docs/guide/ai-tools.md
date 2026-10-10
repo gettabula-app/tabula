@@ -71,8 +71,8 @@ A tool with **Read and edit** can create sticky notes, shapes, text, frames and 
 
 Kanban boards need care:
 
-- A tool cannot change a kanban card through the ordinary edit tool: it has to use the card tools below. It cannot change lanes or the kanban itself at all; do that in the app.
-- A tool cannot delete a lane or a kanban. It can delete a card that you can see, that is in a lane and is not locked. A card owned by another AI tool cannot be deleted by this one. A card that is hidden, or holds private session notes you cannot see yet, answers as if it does not exist.
+- A tool cannot change a kanban card through the ordinary edit tool: it has to use the card tools below. It cannot change lanes or labels through the ordinary edit tool either: it uses the lane and label tools below. It cannot create or change a kanban itself; do that in the app.
+- A tool cannot delete a kanban, and deletes a lane only with the lane tool below. It can delete a card that you can see, that is in a lane and is not locked. A card owned by another AI tool cannot be deleted by this one. A card that is hidden, or holds private session notes you cannot see yet, answers as if it does not exist.
 - Deleting a group deletes everything in it, including groups, frames and kanbans inside it, but a single locked item in the group stops the whole delete ("A member of this group is locked. Unlock it to delete the group."). Private notes from a running session that are not yet revealed are left on the board.
 - A delete that covers several objects is all or nothing, and connectors attached to deleted objects go with them.
 
@@ -82,12 +82,12 @@ A tool with a token can work with the cards of a [kanban board](kanban.md) as we
 
 | Tool | What it does | Needs |
 |---|---|---|
-| `list_kanban_cards` | Lists the cards of a kanban in order: title, description, lane, stage, owner, due date, link and label names | Read only or more |
+| `list_kanban_cards` | Lists the cards of a kanban in order: title, description, lane, stage, owner, due date, link and label names, plus the visible lanes with their stage, work in progress limit and card count | Read only or more |
 | `add_kanban_card` | Adds a card to a lane, or to the first lane with a stage (to do, doing or done) | Read and edit |
 | `update_kanban_card` | Changes a card's title, description, due date, labels, link or owner | Read and edit |
 | `move_kanban_card` | Moves a card to another lane, or to the first lane with a stage | Read and edit |
 
-The tools never create lanes, kanbans or labels: set those up in the app first. A tool can only use labels that already exist on the board, up to 10 on a card. It must name the lane or the stage, not both.
+A tool cannot create a kanban: do that in the app. It can use only labels that exist on the board, up to 10 on a card (it can make labels with the label tools below). It must name the lane or the stage, not both.
 
 What a tool is allowed to put on a card:
 
@@ -97,6 +97,27 @@ What a tool is allowed to put on a card:
 - An **owner**: a name for a person, or itself as an AI tool. A tool cannot assign a person's account. A card the tool owns shows the eight-sided badge, and only that token can change who owns it.
 
 A lane that blocks work in progress refuses a new or moved card when it is full, and a locked card cannot be changed. Cards appear on the board for everyone at once. They are made outside Undo, like other edits by tools, so remove a mistake with **Delete** on the card, or ask the tool to delete it (a tool can delete a card a person made, but not a card that another AI tool owns). Cards made this way settle to their true height when an editor has the board open; on a board that only viewers have open they keep a default height, so a label or date may look clipped until an editor opens it.
+
+### Lanes and labels
+
+With **Read and edit**, a tool can also set up the lanes and labels of a kanban that already exists in the app. A tool still cannot create the kanban itself.
+
+| Tool | What it does |
+|---|---|
+| `create_kanban_label` | Adds a label with a name (1 to 40 characters, no duplicates ignoring capitals) and a colour, a palette name or a `#` hex code; the first unused palette colour if none is given. A board has at most 30 labels |
+| `update_kanban_label` | Renames a label or changes its colour |
+| `delete_kanban_label` | Deletes a label, removes it from every card that has it, and says how many cards changed |
+| `add_kanban_lane` | Adds a lane with a name (1 to 60 characters), optionally a stage (to do, doing or done), a work in progress limit (1 to 99), whether the limit blocks, and where it goes in the order. A kanban holds up to 20 lanes, hidden ones included |
+| `update_kanban_lane` | Renames, restages, reorders or hides a lane, and sets or clears its stage and limit. A tool cannot show a hidden lane again, because a hidden lane is invisible to it; do that in the app |
+| `delete_kanban_lane` | Deletes a lane. A lane with cards needs a lane to move them to: they go in order to the end of that lane, even cards owned by another AI tool |
+
+Rules that apply:
+
+- A blocking limit needs a limit. Lowering a limit below the number of cards the lane already holds is allowed, and the tool is told it is over the limit.
+- A locked lane cannot be changed, and lanes in a locked kanban cannot be reordered.
+- The last visible lane cannot be hidden or deleted.
+- A lane cannot be deleted if it holds a locked card, or if the lane that would receive its cards blocks and would go over its limit.
+- Hidden lanes and private cards still answer as if they were not there.
 
 ## Signing in with OAuth
 
