@@ -65,6 +65,17 @@ Other tools use a settings file with the same details:
 
 The server address is the one you use for Tabula, followed by `/mcp`. Once connected, ask the tool to list your boards or read one.
 
+## What an editing tool may change and delete
+
+A tool with **Read and edit** can create sticky notes, shapes, text, frames and connectors. It can only change the properties each kind of object has: a field that does not belong to that object, or an attempt to change its kind, is refused and nothing is saved. A group can be renamed but not restyled, and images, icons and drawings can be moved, resized, rotated and put in or taken out of a frame or group.
+
+Kanban boards need care:
+
+- A tool cannot change a kanban card through the ordinary edit tool: it has to use the card tools below. It cannot change lanes or the kanban itself at all; do that in the app.
+- A tool cannot delete a lane or a kanban. It can delete a card that you can see, that is in a lane and is not locked. A card owned by another AI tool cannot be deleted by this one. A card that is hidden, or holds private session notes you cannot see yet, answers as if it does not exist.
+- Deleting a group deletes everything in it, including groups, frames and kanbans inside it, but a single locked item in the group stops the whole delete ("A member of this group is locked. Unlock it to delete the group."). Private notes from a running session that are not yet revealed are left on the board.
+- A delete that covers several objects is all or nothing, and connectors attached to deleted objects go with them.
+
 ## Kanban cards from an AI tool
 
 A tool with a token can work with the cards of a [kanban board](kanban.md) as well as with ordinary objects. The tools are:
