@@ -67,6 +67,10 @@ Choose **Labels** in the card dialog, or in the quick-action bar or properties p
 - Drop a card away from the kanban and it becomes a loose card on the board.
 - Viewers and commenters can look but cannot drag cards.
 
+## Connectors
+
+You can connect a card to a card, or a card to any other object, with a connector; it follows the card when the card moves to another lane. A lane, and the kanban itself, take no connectors: they show no connection dots and a connector dragged onto them stays loose.
+
 ## Lanes
 
 Each lane shows how many cards it holds. Click a card, a lane or the container to select it.
