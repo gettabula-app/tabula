@@ -240,7 +240,7 @@ Chat is a conversation, so unlike board edits it cannot merge itself; the rule i
 
 ## Interface
 
-Swiss style, every colour from theme variables, radius 0, no shadows, hairlines. `src/ui/admin.css` and the new share dialog are the references.
+Swiss style, every colour from theme variables, 12 px tray and dialog radii, 8 px control radii, no added shadows and hairline borders. `src/ui/admin.css` and the new share dialog are the references.
 
 - **On a board**: a **Chat** button in the top bar next to **Comments**, with the unread badge. The comments panel and the chat panel share one right-hand tray with two tabs, **Comments** and **Chat**, because two trays side by side do not fit a laptop and the tray already has the phone behaviour (it starts below the top bars through `--panel-top`). A board's chat is remembered per person and board as open or closed. The composer is at the bottom; the list scrolls and keeps its place when messages arrive above the fold, with a **Jump to latest** line when it is not at the bottom.
 - **Chat page** `#/chat` (linked from the top bar as **Chat**): a channel list on the left (Workspace, one row per team, recent boards) with unread badges and a conversation on the right. On a phone, the list is the first screen and the conversation a second screen with a back button.

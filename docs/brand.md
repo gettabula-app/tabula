@@ -14,6 +14,10 @@ Tabula looks like an art magazine about working together. Real things (photograp
 
 The idea is the headline: **paste your thinking together.** The collage is what a team does on a board. The editorial frame says it is considered, open and made by people: local-first, open source, a tool for teams, not a gadget.
 
+## App UI
+
+The app keeps its Swiss grid, hairline borders and calm surfaces, with gently rounded UI chrome. Its shared radii are 4 px for chips and small marks, 8 px for controls and menu rows, 12 px for toolbars, trays, menus and popovers, and 14 px for dialogs and sheets. The radius tokens are theme independent. Board content keeps its own geometry: stickies, shapes, frames, text, images, connectors, kanban cards and lanes, cursors and selection handles do not inherit the chrome radii. The text editor overlay matches the board object it edits.
+
 ## Logo and wordmark
 
 The logo is the word **Tabula** followed by a red square full stop. There is no separate symbol yet: four favicon monogram options are on the first-look page (see First look).
@@ -204,7 +208,7 @@ Both are on Google Fonts under the SIL Open Font License: `family=Bodoni+Moda:it
 - **Section rhythm**: bands alternate cream, cobalt and ink, never two of the same colour in a row. Feature slices alternate art left and art right: copy takes 5 columns, art 6, with an empty column between. Between slices, use a strip of cards or a full-width torn strip to break the pattern. One focal point per section.
 - **Contents index**: right after the hero, a light-paper sheet with torn edges holds the numbered list of sections ("In this issue."), 4 columns on desktop, 2 on tablets, 1 on phones. Each entry links to its section.
 - **Header**: sticky, 72 px, light paper with a 2 px ink rule underneath; the wordmark on the left, uppercase links on the right, and one ink button.
-- **Buttons**: one primary (ink fill, turns red on hover) and one secondary (light paper with an ink border). 56 px tall, 2 px border, square corners. On cobalt the primary turns light paper.
+- **Marketing buttons**: one primary (ink fill, turns red on hover) and one secondary (light paper with an ink border). 56 px tall, 2 px border, square corners. On cobalt the primary turns light paper. The app UI uses the radii described under App UI.
 
 ## Motifs
 
