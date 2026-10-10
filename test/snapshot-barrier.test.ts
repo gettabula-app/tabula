@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { openDirectory } from '../server/directory.mjs';
-import { createSnapshotBarrier } from '../server/snapshot-barrier.mjs';
+import { createSnapshotBarrier, testCaptureDelayMs } from '../server/snapshot-barrier.mjs';
 
 describe('the snapshot write barrier', () => {
   it('holds writers until capture finishes, then applies each queued write in order', async () => {
@@ -93,6 +93,25 @@ describe('the snapshot write barrier', () => {
       expect(barrier.active).toBe(false);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('the test-only capture delay', () => {
+  it('is zero when unset', () => {
+    expect(testCaptureDelayMs({})).toBe(0);
+    expect(testCaptureDelayMs({ NODE_ENV: 'production', TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: '  ' })).toBe(0);
+  });
+
+  it('refuses to work unless NODE_ENV is test', () => {
+    expect(() => testCaptureDelayMs({ TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: '500' })).toThrow('only available when NODE_ENV=test');
+    expect(() => testCaptureDelayMs({ NODE_ENV: 'production', TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: '500' })).toThrow('only available when NODE_ENV=test');
+  });
+
+  it('accepts a whole number of milliseconds under test and rejects anything else', () => {
+    expect(testCaptureDelayMs({ NODE_ENV: 'test', TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: '500' })).toBe(500);
+    for (const bad of ['0', '-1', '1.5', 'abc', '60001']) {
+      expect(() => testCaptureDelayMs({ NODE_ENV: 'test', TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: bad })).toThrow('must be an integer');
     }
   });
 });

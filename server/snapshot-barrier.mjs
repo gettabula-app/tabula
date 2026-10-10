@@ -5,6 +5,19 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const DEFAULT_MAX_HOLD_MS = 5_000;
+const TEST_CAPTURE_DELAY_MAX_MS = 60_000;
+
+/** Test-only pause inside the capture window, so a relay test can send a websocket update during the hold. Throws unless NODE_ENV=test. */
+export function testCaptureDelayMs(env = process.env) {
+  const raw = env.TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS?.trim();
+  if (!raw) return 0;
+  if (env.NODE_ENV !== 'test') throw new Error('TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS is only available when NODE_ENV=test');
+  const ms = Number(raw);
+  if (!Number.isSafeInteger(ms) || ms < 1 || ms > TEST_CAPTURE_DELAY_MAX_MS) {
+    throw new Error(`TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS must be an integer between 1 and ${TEST_CAPTURE_DELAY_MAX_MS}`);
+  }
+  return ms;
+}
 
 export class SnapshotBarrierError extends Error {
   constructor(code = 'snapshot_timeout') {

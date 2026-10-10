@@ -18,7 +18,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
 import { withLegacyEnv } from './env.mjs';
-import { createSnapshotBarrier } from './snapshot-barrier.mjs';
+import { createSnapshotBarrier, testCaptureDelayMs } from './snapshot-barrier.mjs';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -1422,8 +1422,8 @@ export function createBackup({
           const combinedSignal = AbortSignal.any([signal, stop.signal]);
           // Relay integration tests need a deterministic window in which to send a websocket update. This is inert
           // unless the test-only variable is explicitly set, and the barrier's normal timeout still bounds it.
-          const testDelayMs = Number(process.env.TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS);
-          if (Number.isSafeInteger(testDelayMs) && testDelayMs > 0) {
+          const testDelayMs = testCaptureDelayMs();
+          if (testDelayMs > 0) {
             if (combinedSignal.aborted) throw combinedSignal.reason ?? aborted();
             await new Promise((resolve, reject) => {
               const timer = setTimeout(() => {
