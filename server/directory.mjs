@@ -340,6 +340,88 @@ export const MIGRATIONS = [
     ('st_cancelled', 'wf_default', 'cancelled', 'Cancelled', 'canceled', 4, 0, 0);
   INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES ('trk_default', 'TAB', 1, 0);
   `,
+  // Tracker projects, relations and saved views. Additive so the slice 1 reader can keep using its tables.
+  `
+  -- minReader: 11
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE milestones (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    start_at INTEGER,
+    due_at INTEGER,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE ticket_relations (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    related_ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    kind TEXT NOT NULL CHECK (kind IN ('blocks', 'blocked_by', 'relates_to', 'duplicates', 'duplicated_by', 'cloned_from')),
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    CHECK (ticket_id <> related_ticket_id)
+  );
+  CREATE TABLE saved_views (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    query_json TEXT NOT NULL,
+    is_shared INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE UNIQUE INDEX projects_active_name ON projects(name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE INDEX projects_state_updated ON projects(state, updated_at DESC);
+  CREATE INDEX milestones_project_due ON milestones(project_id, due_at, updated_at DESC);
+  CREATE INDEX milestones_active_project ON milestones(project_id, name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE UNIQUE INDEX ticket_relations_normalized ON ticket_relations(min(ticket_id, related_ticket_id), max(ticket_id, related_ticket_id));
+  CREATE INDEX ticket_relations_related ON ticket_relations(related_ticket_id, ticket_id);
+  CREATE INDEX saved_views_owner_updated ON saved_views(owner_user_id, updated_at DESC);
+  CREATE INDEX saved_views_shared_updated ON saved_views(updated_at DESC) WHERE is_shared = 1;
+  `,
+  // Tracker slice 6: the notifications table is the in-app inbox and the email outbox in one (docs/tracker-architecture.md
+  // section 6, Notification fan-out). Purely additive (new table and indexes, foreign keys only CASCADE), so the build before
+  // it still reads the file and the annotation below keeps `minReader` at 11, which keeps a rollback to v5.0.1 possible. One row per person per
+  // event: `dedupe_key` is `ev:<event id>` for event notices and `due:<ticket id>:<due date>` for due-soon notices.
+  // `suppressed_at` marks a notice whose recipient lost access.
+  `
+  -- minReader: 11
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    event_id INTEGER REFERENCES ticket_events(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity')),
+    dedupe_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER,
+    emailed_at INTEGER,
+    email_attempts INTEGER NOT NULL DEFAULT 0,
+    next_email_at INTEGER,
+    last_email_error_code TEXT,
+    suppressed_at INTEGER
+  );
+  CREATE UNIQUE INDEX notifications_user_dedupe ON notifications(user_id, dedupe_key);
+  CREATE INDEX notifications_user_inbox ON notifications(user_id, read_at, created_at DESC);
+  CREATE INDEX notifications_ticket ON notifications(ticket_id);
+  CREATE INDEX notifications_email_due ON notifications(next_email_at)
+    WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

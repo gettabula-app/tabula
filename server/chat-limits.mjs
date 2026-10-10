@@ -42,6 +42,11 @@ export function createWindow({ max, windowMs }, now = Date.now) {
   const hits = new Map();
   let lastSweep = 0;
   const recent = (key, t) => (hits.get(key) ?? []).filter((ts) => ts > t - windowMs);
+  // a key in use goes to the back of the map, so the bound below forgets the key idle longest, never one that is busy
+  const keep = (key, list) => {
+    hits.delete(key);
+    hits.set(key, list);
+  };
 
   function sweep(t) {
     if (t - lastSweep < SWEEP_MS) return;
@@ -53,12 +58,14 @@ export function createWindow({ max, windowMs }, now = Date.now) {
     wait(key) {
       const t = now();
       const list = recent(key, t);
-      return list.length >= max ? Math.max(1, Math.ceil((list[0] + windowMs - t) / 1000)) : 0;
+      if (list.length > 0) keep(key, list);
+      if (list.length < max) return 0;
+      return Math.max(1, Math.ceil((list[0] + windowMs - t) / 1000));
     },
     record(key) {
       const t = now();
       sweep(t);
-      hits.set(key, [...recent(key, t), t]);
+      keep(key, [...recent(key, t), t]);
       if (hits.size > MAX_KEYS) hits.delete(hits.keys().next().value);
     },
   };

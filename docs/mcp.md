@@ -359,22 +359,55 @@ Ticket tools are off by default. Set `TABULA_TRACKER=on` and `TABULA_MCP=on` to 
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `create_ticket` | `{title, description?, state?, priority?, assignee?, labels?, due?, parent?, idempotencyKey?}` | `{ticket}` |
+| `create_ticket` | `{title, description?, state?, priority?, assignee?, labels?, due?, parent?, project?, milestone?, idempotencyKey?}` | `{ticket}` |
 | `get_ticket` | `{key}` | `{ticket, comments, events}` (last 50 of each) |
 | `list_tickets` | `{filter?: string[], limit?: 1..50, cursor?}` | `{tickets, nextCursor}` |
 | `search_tickets` | `{query, filter?: string[], limit?: 1..50, cursor?}` | `{tickets, nextCursor}` |
-| `update_ticket` | `{key, title?, description?, priority?, assignee?, labels?, due?, parent?, archived?, ifUpdatedSeq?}` | `{ticket}` |
+| `update_ticket` | `{key, title?, description?, priority?, assignee?, labels?, due?, parent?, project?, milestone?, archived?, ifUpdatedSeq?}` | `{ticket}` |
 | `transition_ticket` | `{key, state}` | `{ticket}` |
 | `comment_ticket` | `{key, body, clientId?}` | `{comment}` |
 | `list_ticket_states` | `{}` | `{states}` |
 | `list_ticket_labels` | `{}` | `{labels}` |
 | `create_ticket_label` | `{name, color?}` | `{label}` |
+| `relate_tickets` | `{key, relation, otherKey, remove?}` | `{ticket}` |
+| `list_saved_views` | `{}` | `{views}` |
+| `get_saved_view` | `{viewId, limit?, cursor?}` | `{view, tickets, nextCursor}` |
+| `create_saved_view` | `{name, filter[], shared?}` | `{view}` |
+| `update_saved_view` | `{viewId, name?, filter?, shared?}` | `{view}` |
+| `delete_saved_view` | `{viewId}` | `{id, deleted}` |
+| `list_projects` | `{}` | `{projects}` |
+| `create_project` | `{name, description?, state?, owner?}` | `{project}` |
+| `update_project` | `{projectId, name?, description?, state?, owner?, archived?}` | `{project}` |
+| `list_milestones` | `{projectId}` | `{milestones}` |
+| `create_milestone` | `{projectId, name, description?, due, state?}` | `{milestone}` |
+| `update_milestone` | `{milestoneId, name?, description?, due?, state?, archived?}` | `{milestone}` |
 
 Create-ticket `assignee` is `"me"` or an active member name/email; user ids are refused. `labels` contains names and replaces the label set on update. `due` is a calendar date (`YYYY-MM-DD`), not a timestamp. `parent` is a ticket key; update accepts `null` to clear assignee, due date or parent. `ifUpdatedSeq` rejects stale updates with `conflict`. `idempotencyKey` is 8 to 64 characters; a retry returns the same ticket. Comment `clientId` is 1 to 128 characters and a retry returns the original comment. Ticket deletion is not available.
 
+Ticket `project` is an active project name matched without case; `milestone` is an active milestone name in that project. A milestone can infer its project when it is unambiguous. `null` clears either field; changing a project while its current milestone belongs elsewhere requires setting or clearing the milestone in the same update. Project owners use `"me"`, an active member name, or an email, never a user id. Projects have states `planned`, `started`, `paused`, `completed` and `canceled`; milestones have `planned`, `started` and `completed`. Project and milestone ids are opaque strings. Projects allow 200 active rows, and each project allows 50 active milestones.
+
+`relate_tickets` accepts `blocks`, `blocked_by`, `relates_to`, `duplicates` or `duplicated_by`. Inverse directions share one stored relation; `relates_to` is symmetric. Repeating an add or removing an absent relation has no effect. A blocks cycle, self-relation, or relation beyond 100 rows on either ticket is rejected. Both tickets receive a `related` or `unrelated` event. Archived tickets may be related, but the caller must be able to read and write both tickets; a missing or inaccessible target returns `not_found`.
+
+Saved views store up to 20 validated `filter` tokens and use the list-ticket page cursor and limit. The current sort is `updated_desc`. A member can own up to 100 views. Shared views are visible to tracker members; running one uses the runner's ticket access. Only the owner can rename, change filters, share, unshare or delete a view. Projects, milestones and views use opaque ids; tickets continue to use keys in these tools.
+
 Every successful result containing ticket text uses the shared nonce-fenced result helper and includes `cleaned` and `truncated` flags. Text is stripped of invisible characters and clipped at the command limits. This covers titles, descriptions, comments, state names, labels, member names and activity fields. Tool failures return `isError: true` with `{error, message, path?}`. Ticket errors include `invalid_input` (with the argument path), `invalid_filter`, `not_found`, `forbidden`, `conflict`, `read_only` and `limit_exceeded`.
 
-Pages contain at most 50 tickets; search queries are limited to 512 Unicode code points and filters to 20 tokens. `create_ticket` is capped at 10 calls per minute per token, in addition to the existing 30 mutating calls per minute. A hosted workspace in read-only mode continues to allow ticket reads, while every mutating ticket tool returns `read_only` before the command layer can write. `due:today` currently uses UTC because workspace time zones are not modeled. No filter, key or snippet reveals inaccessible tickets.
+Pages contain at most 50 tickets; search queries are limited to 512 Unicode code points and filters to 20 tokens. Saved-view query JSON is limited to 8 KB. `list_tickets` and `search_tickets` return a `nextCursor` when another page exists; pass it back with the same filters and query until it is `null`. Their `truncated` flag means there is another page. Search treats operators and punctuation as plain text, requires earlier words as whole tokens, and allows the final word to match a prefix when it has at least two characters. An empty or punctuation-only `search_tickets` query returns `invalid_input` at `query` with “Enter something to search for”; use `list_tickets` to browse without a search term. `create_ticket` allows 10 new creates per minute per token, in addition to the existing 30 mutating calls per minute; retrying a prior `idempotencyKey` for the same token does not count against the create cap. A hosted workspace in read-only mode continues to allow ticket reads, while every mutating ticket tool returns `read_only` before the command layer can write. `due:today` currently uses UTC because workspace time zones are not modeled. No filter, key or snippet reveals inaccessible tickets.
+
+### Notifications
+
+Ticket activity creates in-app notices for new assignees, ticket subscribers on comments, state changes and relations, and users mentioned as `@{userId}` in a comment. The acting user is excluded, disabled users and people without ticket read access are skipped, and each event creates at most 200 notices. Ticket creators, assignees, commenters and mentioned users are subscribed automatically. Per-user choices are stored as `tracker.notify.<kind>` preferences for `assigned`, `mentioned`, `commented`, `status_changed`, `due_soon`, `relation_changed` and `integration_activity`; each choice is `both`, `app` or `off`. `both` schedules email work two minutes after the notice so reading it quickly can cancel delivery.
+
+In accounts mode with `TABULA_TRACKER=on`, signed-in people can use the session and CSRF protected inbox API:
+
+- `GET /api/tracker/inbox?limit=30&before=<cursor>&unread=1` returns `{items, nextCursor, unread}`. Pages contain 1 to 50 newest-first rows; `before` is the opaque keyset cursor returned by the prior page. Inaccessible rows are suppressed and omitted, and archived tickets remain in the inbox as history.
+- `GET /api/tracker/inbox/unread` returns `{unread}`.
+- `POST /api/tracker/inbox/read` accepts `{ids: string[]}` (up to 100 ids) or `{all: true}` and returns `{updated, unread}`. It changes only the caller's rows and cancels their pending email.
+- `GET` and `PUT /api/tracker/notification-prefs` read or patch `{prefs: {<kind>: 'both'|'app'|'off'}}`; both return `{kinds, prefs}`. Omitted preferences use the documented defaults.
+
+Only `both` sends email; `app` keeps the inbox row and `off` creates no notice. Event notices wait two minutes before they become due, so marking one read cancels its email. Due-soon notices become due on the scan that creates them. Delivery is capped at 20 per person in a rolling 24-hour window. The configured retry delays are 60 seconds, 5 minutes, 30 minutes, 2 hours, and 6 hours. The five-failure give-up rule uses the first four delays; the final 6-hour slot is unreachable with that limit. The mail relay receives template `ticket-notice` with `link`, `kind`, `key`, `title`, `actor`, and `preview` parameters; comment previews are flattened and limited to 140 characters.
+
+The tracker notifier scans at startup and every minute while the process is running. It creates one due-soon notice for each assigned, active, unarchived ticket due from seven UTC days ago through tomorrow, with a dedupe key for the ticket and due date. A stopped hosted workspace cannot run that timer: its durable notices and mail remain pending until the next wake, when startup runs a tick. Self-hosted workspaces use the same startup and periodic tick.
 
 ## Untrusted content
 
@@ -456,7 +489,7 @@ New module `src/ui/tokens.ts` (+ `tokens.css`, theme variables only, no new colo
 - New token form: name, **Access** (Read only (default) / Read and comment / Read and edit), **Boards** (All my boards / Only these, chosen from `GET /api/boards`), **Expires** (7 / 30 (default) / 90 / 365 days). Workspace owners and admins cannot pick "All my boards" for the two writing levels. A line under Read and edit says what it means: "This token can change every board listed, as you."
 - After creating: the token is shown once with **Copy**, the client snippets from "Transport and placement" filled with the returned `url` and token, and "Treat this like a password. It cannot be shown again." The dialog never stores the token; closing it drops it.
 - Admin dashboard: new **Access tokens** tab (`#/admin/tokens`): all active tokens with person, access, boards, last used, and a Revoke button using the same disabled-with-reason rule as **Sign out** for owners (`revokeVerdict`).
-- Styling follows the admin dashboard: radius 0, no shadows, hairlines and one 2px rule, 11px uppercase labels, an 8px grid, theme variables and `color-mix()` only, a monospace block with a Copy button for the token and the snippets, a 16px gutter and no horizontal scroll at phone width. The signal colour marks only the primary action and the chosen option.
+- Styling follows the admin dashboard: 14px dialogs, 8px controls and chips, no added shadows, hairlines and one 2px rule, 11px uppercase labels, an 8px grid, theme variables and `color-mix()` only, a monospace block with a Copy button for the token and the snippets, a 16px gutter and no horizontal scroll at phone width. The signal colour marks only the primary action and the chosen option.
 - Boards list for the picker comes from the existing `GET /api/boards`. Nothing is added to the board UI itself; nothing changes for people who never open the dialog.
 
 ## Server modules (internal contract)

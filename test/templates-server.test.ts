@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import fs from 'node:fs';
 import { CLEAN_SVG, HOSTILE_SVG } from './svg-payloads';
 import os from 'node:os';
@@ -138,6 +139,26 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content([])).objectCount).toBe(0);
     const many = Array.from({ length: SERVER_MAX_OBJECTS }, (_, i) => sticky(`o${i}`));
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
+  });
+
+  it('checks the group depth of a deep frame chain in time that grows with the groups, not with groups times objects', () => {
+    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }));
+    // the fastest of a few runs, and a ratio to the same chain with one group, so a busy machine slows both alike
+    const fastest = (n: number) => {
+      const c = content([...frames, ...groups(n)]);
+      let best = Infinity;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(validateTemplateContent(c).objectCount).toBe(1500 + n);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    const one = fastest(1);
+    const many = fastest(500);
+    // about 1.5 times as long; scanning every object at each step up the chain made it twenty times as long and more
+    expect(many / one).toBeLessThan(6);
   });
 
   it('accepts the colours the board writes', () => {
@@ -354,7 +375,7 @@ describe('templates in the directory', () => {
     dirs.push(dir);
     const file = path.join(dir, 'directory.sqlite');
     const old = new DatabaseSync(file);
-    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migration);
+    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migrationSql(migration));
     old.exec('PRAGMA user_version = 5');
     old.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ana', 'member', 0, 1)").run();
     old.close();

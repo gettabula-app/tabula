@@ -1,4 +1,5 @@
 import { appendTicketEvent } from './events.mjs';
+import { fanOut } from './notify.mjs';
 import { actorInfo, getDb, inTransaction, newId, requireWritable } from './shared.mjs';
 import { refreshTicketSearch } from './search.mjs';
 
@@ -47,8 +48,8 @@ export function allocateTicket({
     db.prepare(
       `INSERT INTO tickets
         (id, prefix, number, key, title, description, state_id, tracker_id, priority, parent_ticket_id,
-         assignee_user_id, due_date, created_at, updated_at, created_by_type, created_by_id, updated_seq, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+         assignee_user_id, project_id, milestone_id, due_date, created_at, updated_at, created_by_type, created_by_id, updated_seq, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     ).run(
       ticketId,
       tracker.prefix,
@@ -61,6 +62,8 @@ export function allocateTicket({
       fields.priority,
       fields.parentTicketId,
       fields.assigneeUserId,
+      fields.projectId ?? null,
+      fields.milestoneId ?? null,
       fields.dueDate,
       now,
       now,
@@ -82,8 +85,9 @@ export function allocateTicket({
       createdAt: now,
       after: fields.eventAfter,
     });
+    fanOut({ db, ticketId, eventId: eventSeq, eventType: 'created', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(eventSeq, ticketId);
-    for (const field of fields.versionedFields ?? ['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent']) {
+    for (const field of fields.versionedFields ?? ['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone']) {
       db.prepare(
         `INSERT INTO ticket_field_versions (ticket_id, field, event_seq, actor_type, actor_id)
          VALUES (?, ?, ?, ?, ?)`,
