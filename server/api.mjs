@@ -18,6 +18,8 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
+import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { OpsError } from './tracker/shared.mjs';
 import { ticketAccess } from './tracker/access.mjs';
@@ -37,7 +39,7 @@ const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const TOKEN_FIELDS = ['name', 'scope', 'boardIds', 'days', 'tracker'];
 const PRINCIPAL_TYPES = ['user', 'team'];
-const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
+const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CONTROL_RE = /\p{Cc}/u;
 const AUDIT_DEFAULT_LIMIT = 50;
@@ -204,7 +206,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
-  const trackerRoutes = config.authEnabled && config.tracker
+  const trackerApiRoutes = config.authEnabled && config.tracker
     ? createTrackerRoutes({ directory, compile, audit, cloud, now })
     : [];
   const trackerMutationWindows = new Map();
@@ -438,6 +440,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
+    })
+    : [];
+
+  const trackerRoutes = config.tracker
+    ? createTrackerInboxRoutes({
+        directory,
+        boardAccess: boardAccessForDirectory(directory),
+        compile,
+        errors: { HttpError, badRequest },
       })
     : [];
 
@@ -446,7 +457,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
-    ...trackerRoutes,
+    ...trackerApiRoutes,
 
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
@@ -466,7 +477,6 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           },
         } : {}),
         ...(config.mcp ? { mcp: true } : {}),
-        ...(config.tracker === true ? { tracker: true } : {}),
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
@@ -1213,6 +1223,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // ---------------------------------------------------------- team chat (docs/chat.md)
 
     ...chatRoutes,
+
+    // ---------------------------------------------------------- tracker inbox and notification preferences (docs/mcp.md)
+
+    ...trackerRoutes,
 
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 

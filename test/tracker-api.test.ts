@@ -65,7 +65,8 @@ describe('tracker session API', () => {
 
     const ownerMe = await api(owner, 'GET', '/api/me');
     expect(ownerMe.body.tracker).toBe(true);
-    // `tracker: true` in /api/me also marks the feature as on for the tracker board object (main); access is decided by the routes
+    const guestMe = await api(guest, 'GET', '/api/me');
+    expect(Object.hasOwn(guestMe.body, 'tracker')).toBe(false);
     expect((await api(guest, 'GET', '/api/tracker/meta')).status).toBe(404);
     expect((await api(guest, 'GET', '/api/tracker/meta')).status).toBe(404);
   });
@@ -142,7 +143,7 @@ describe('tracker session API', () => {
 
     const detail = await api(owner, 'GET', `/api/tracker/tickets/${ticket.key.toLowerCase()}`);
     expect(detail.status).toBe(200);
-    expect(detail.body).toMatchObject({ ticket: { id: ticket.id, title: 'Updated API ticket' }, subscribed: false });
+    expect(detail.body).toMatchObject({ ticket: { id: ticket.id, title: 'Updated API ticket' }, subscribed: true });
     expect(detail.body.comments).toEqual([expect.objectContaining({ id: comment.body.comment.id, body: 'A comment from the API' })]);
     expect(detail.body.events.map((event: Body) => event.eventType)).toEqual(expect.arrayContaining(['created', 'updated', 'transitioned', 'commented']));
   });
