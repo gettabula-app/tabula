@@ -509,6 +509,28 @@ describe('ticket page', () => {
     expect(host.querySelector('.tk-linked-cards-section')).toBeNull();
   });
 
+  it('creates one sub-issue in the default state even when Create is pressed twice', async () => {
+    const issue = ticket({ state: { id: 'done', key: 'done', name: 'Done', category: 'completed' } });
+    const api = createMockTrackerApi({ meta: META, tickets: [issue], now: () => NOW });
+    const createTicket = vi.spyOn(api, 'createTicket');
+    const { host, store: tracker } = await setup({ issue, api });
+    buttonByText(host, '+ Add sub-issues')?.click();
+    const input = inputByLabel(host, 'Sub-issue title')!;
+    input.value = 'Child task';
+    input.dispatchEvent(uiEvent('input'));
+    const create = buttonByText(host, 'Create sub-issue')!;
+    create.click();
+    create.click();
+    await until(() => createTicket.mock.calls.length > 0);
+    await flush();
+    const inputs = createTicket.mock.calls.map((call) => call[0]);
+    expect(inputs.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(inputs.map((input) => input.idempotencyKey)).size).toBe(1);
+    expect(inputs[0]).toMatchObject({ title: 'Child task', parent: 'TAB-1' });
+    expect(inputs[0]).not.toHaveProperty('state');
+    expect(Object.values(tracker.snapshot().tickets).filter((entry) => entry.ticket?.title === 'Child task')).toHaveLength(1);
+  });
+
   it('labels compact property values accessibly and expands the secondary properties on demand', async () => {
     const meta: TrackerMeta = {
       ...META,

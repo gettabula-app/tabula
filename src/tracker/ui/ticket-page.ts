@@ -229,6 +229,8 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   let menuOpen = false;
   let morePropertiesOpen = false;
   let creatingSubIssue = false;
+  let subIssueSending = false;
+  let subIssueRetry: { title: string; parent: string; key: string } | null = null;
   let subIssueDraft = '';
   let subIssueError = '';
   let attachLinkOpen = false;
@@ -447,8 +449,15 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       if (!title) { subIssueError = 'Title is required.'; render(); }
       return;
     }
+    if (subIssueSending) return;
     subIssueError = '';
-    void opts.store.createTicket({ title, parent: current.key, state: current.state.key, priority: 'none' }).then((created) => {
+    subIssueSending = true;
+    // one key per draft: a second Enter or click, or a retry after a dropped answer, returns the same sub-issue instead of making another
+    if (!subIssueRetry || subIssueRetry.title !== title || subIssueRetry.parent !== current.key) subIssueRetry = { title, parent: current.key, key: newClientId() };
+    // no `state`: a new sub-issue starts in the workflow's default state, whatever state its parent is in
+    void opts.store.createTicket({ title, parent: current.key, priority: 'none', idempotencyKey: subIssueRetry.key.slice(0, 64) }).then((created) => {
+      subIssueSending = false;
+      subIssueRetry = null;
       creatingSubIssue = false;
       subIssueDraft = '';
       subIssueError = '';
@@ -456,6 +465,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       void opts.store.loadTicket(current.key, true).catch(() => undefined);
       render();
     }).catch((error: unknown) => {
+      subIssueSending = false;
       subIssueError = error instanceof Error ? error.message : 'Could not create the sub-issue.';
       render();
     });
@@ -968,12 +978,14 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     if (creatingSubIssue && writeable) {
       const editor = h('div', { class: 'tk-subissue-editor' });
       const input = h('input', { class: 'tk-inline-input', type: 'text', maxlength: 200, value: subIssueDraft, placeholder: 'Sub-issue title', 'aria-label': 'Sub-issue title', 'data-focus-id': 'subissue-title' });
-      input.addEventListener('input', () => { subIssueDraft = input.value; });
+      // the page does not re-render while typing, so the button follows the draft itself (it was rendered disabled for an empty draft)
+      const createButton = button('Create sub-issue', 'tk-button tk-button--primary', !subIssueDraft.trim() || subIssueSending, () => createSubIssue());
+      input.addEventListener('input', () => { subIssueDraft = input.value; createButton.disabled = !subIssueDraft.trim() || subIssueSending; });
       input.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter') { event.preventDefault(); createSubIssue(); }
         else if (event.key === 'Escape') { event.preventDefault(); creatingSubIssue = false; subIssueDraft = ''; subIssueError = ''; render(); }
       });
-      editor.append(input, button('Create sub-issue', 'tk-button tk-button--primary', !subIssueDraft.trim(), () => createSubIssue()), button('Cancel', 'tk-button tk-button--quiet', false, () => { creatingSubIssue = false; subIssueDraft = ''; subIssueError = ''; render(); }));
+      editor.append(input, createButton, button('Cancel', 'tk-button tk-button--quiet', false, () => { creatingSubIssue = false; subIssueDraft = ''; subIssueError = ''; render(); }));
       if (subIssueError) editor.appendChild(h('p', { class: 'tk-error-inline', role: 'alert' }, subIssueError));
       subIssues.appendChild(editor);
     }

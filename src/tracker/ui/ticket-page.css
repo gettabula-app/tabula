@@ -247,3 +247,9 @@
   .trk.tk-page .tk-icon-button, .trk.tk-page .tk-header-key, .trk.tk-page .tk-subscribe-button, .trk.tk-page .tk-field-button, .trk.tk-page .tk-properties-more-toggle, .trk.tk-page .tk-ghost-add, .trk.tk-page .tk-button, .trk.tk-page .tk-subissue-row, .trk.tk-page .tk-ticket-link, .trk.tk-page .tk-remove-relation, .trk.tk-page .tk-description-placeholder, .trk.tk-page .tk-menu-item { min-height: 44px; }
   .trk.tk-page .tk-icon-button { min-width: 44px; }
 }
+
+/* The shell's content area clips its overflow, so the page host is the scroller (a long ticket could not be scrolled otherwise).
+   `contain` only where the host is the real scroller (the single-column phone layout): at desktop widths the peek panel around it
+   scrolls and `contain` on a box that never overflows would stop the wheel from chaining to that panel. */
+.trk .trk-ticket-page-host { overflow-y: auto; scroll-padding-bottom: 16px; }
+@media (max-width: 600px) { .trk .trk-ticket-page-host { overscroll-behavior: contain; } }
