@@ -29,3 +29,17 @@ describe('the catalogue has families', () => {
     expect(found.every((i) => i.e.includes('‍'))).toBe(true);
   });
 });
+
+describe('the picker on a high note with the keyboard open', () => {
+  it('docks above the keyboard when neither side of the note has room for about three rows, with a scrolling grid', () => {
+    const picker = read('../src/ui/emoji-picker.ts');
+    expect(picker).toMatch(/const DOCK_BELOW = 200;/);
+    expect(picker).toMatch(/Math\.max\(roomAbove, roomBelow\) < DOCK_BELOW/);
+    expect(picker).toMatch(/side: docked \? 'top' : side/);
+    expect(read('../src/ui/emoji-picker.css')).toMatch(/\.emoji-picker\.docked \{[^}]*overflow-y: auto/);
+  });
+
+  it('keeps the Add emoji bar off the top bars', () => {
+    expect(read('../src/ui/edit-bar.ts')).toMatch(/querySelectorAll<HTMLElement>\('\.top-left, \.top-right'\)/);
+  });
+});
