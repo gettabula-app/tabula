@@ -1,9 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative as relativePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+/** A path from the repository root with forward slashes, which is how the expectations below spell it (Windows gives backslashes). */
+const relative = (from: string, to: string) => relativePath(from, to).replaceAll('\\', '/');
 
 function cssFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
