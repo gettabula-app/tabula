@@ -206,7 +206,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
 
-  const trackerRoutes = config.authEnabled && config.tracker
+  const trackerApiRoutes = config.authEnabled && config.tracker
     ? createTrackerRoutes({ directory, compile, audit, cloud, now })
     : [];
   const trackerMutationWindows = new Map();
@@ -457,7 +457,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
-    ...trackerRoutes,
+    ...trackerApiRoutes,
 
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,

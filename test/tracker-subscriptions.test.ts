@@ -27,6 +27,9 @@ describe('tracker subscriptions', () => {
     const member = directory.createUser({ email: 'member@example.com', name: 'Member', role: 'member' })!;
     const actor = { type: 'user', userId: owner.id, user: owner };
     const ticket = createTicket({ directory, actor, title: 'Subscription target' });
+    // creating a ticket subscribes its creator (notifications); these tests start from nobody subscribed
+    expect(isSubscribed({ directory, actor, key: ticket.key })).toBe(true);
+    directory.db.prepare('DELETE FROM ticket_subscriptions').run();
     const eventsBefore = directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_events').get()!.n;
 
     expect(isSubscribed({ directory, actor, key: ticket.key })).toBe(false);
@@ -52,6 +55,7 @@ describe('tracker subscriptions', () => {
     const guest = directory.createUser({ email: 'guest@example.com', name: 'Guest', role: 'guest' })!;
     const actor = { type: 'user', userId: owner.id, user: owner };
     const ticket = createTicket({ directory, actor, title: 'Subscription permissions' });
+    directory.db.prepare('DELETE FROM ticket_subscriptions').run();
     const guestActor = { type: 'user', userId: guest.id, user: guest };
 
     const denied = caught(() => subscribeTicket({ directory, actor: guestActor, key: ticket.key }));
