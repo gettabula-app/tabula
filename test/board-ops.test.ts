@@ -123,6 +123,56 @@ describe('create', () => {
     expect((store.get(res.created[1].id) as any).font).toBe('lora');
   });
 
+  it.each([
+    ['lane', 'lane'],
+    ['container', 'kanban'],
+  ] as const)('refuses a new connector end on a %s', (_type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    for (const end of ['from', 'to'] as const) {
+      const before = bytes(d);
+      const item: Record<string, unknown> = { type: 'connector', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } };
+      item[end] = { id: targetId };
+      const err = failure(() => planCreate(d, [item], who));
+      expect(err).toMatchObject({
+        code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `objects[0].${end}`,
+      });
+      expect(bytes(d)).toBe(before);
+    }
+  });
+
+  it('keeps card ends and same-call refs working, and refuses an atomic batch with a kanban end', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    const cardConnector = create(d, [{ type: 'connector', from: { id: 'card' }, to: { x: 4, y: 5 } }]);
+    expect(new Store(d).get(cardConnector.created[0].id)).toMatchObject({ from: { kind: 'bound', id: 'card', anchor: 'auto' } });
+
+    const refConnector = create(d, [
+      { type: 'shape', ref: 'shape', x: 0, y: 0 },
+      { type: 'connector', from: { ref: 'shape' }, to: { x: 1, y: 1 } },
+    ]);
+    expect((new Store(d).get(refConnector.created[1].id) as any).from.id).toBe(refConnector.refs.shape);
+
+    const before = bytes(d);
+    const items = [
+      { type: 'connector', from: { id: 'card' }, to: { x: 0, y: 0 } },
+      { type: 'connector', from: { x: 0, y: 0 }, to: { id: 'lane' } },
+    ];
+    const err = failure(() => planCreate(d, items, who));
+    expect(err).toMatchObject({ code: 'invalid_input', path: 'objects[1].to', message: 'Connect to a card, not to a lane or the kanban' });
+    expect(bytes(d)).toBe(before);
+  });
+
   it('accepts a parent that is an existing frame', () => {
     const d = new Y.Doc();
     seed(d, box('fr', { type: 'frame', name: 'Frame', kind: undefined }));
@@ -257,6 +307,52 @@ describe('update', () => {
     expect(s.rotation).toBeCloseTo(Math.PI / 2);
     expect(new Store(d).get('cn')).toMatchObject({ label: 'x', route: 'curved', dash: 'dotted', updatedAt: 5000 });
     expect(new Store(d).get('sh')).not.toHaveProperty('updatedAt');
+  });
+
+  it.each([
+    ['from', 'lane', 'lane'],
+    ['to', 'lane', 'lane'],
+    ['from', 'container', 'kanban'],
+    ['to', 'container', 'kanban'],
+  ] as const)('refuses to change the connector %s end to a %s', (end, _type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', { from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 1, y: 1 } }),
+    );
+    const before = bytes(d);
+    const patch = { id: 'wire', [end]: { id: targetId } };
+    const err = failure(() => planUpdate(d, [patch]));
+    expect(err).toMatchObject({
+      code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `updates[0].${end}`,
+    });
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps an existing kanban-bound connector and allows its unchanged ends and label to be updated', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', {
+        from: { kind: 'bound', id: 'lane', anchor: 'left' },
+        to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+      }),
+    );
+
+    update(d, [{ id: 'wire', label: 'Legacy lane connector' }]);
+    expect(new Store(d).get('wire')).toMatchObject({ label: 'Legacy lane connector' });
+
+    update(d, [{ id: 'wire', from: { id: 'lane', side: 'left' }, to: { id: 'kanban' } }]);
+    expect(new Store(d).get('wire')).toMatchObject({
+      from: { kind: 'bound', id: 'lane', anchor: 'left' },
+      to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+    });
   });
 
   it('clears optional fields with null and re-parents', () => {
