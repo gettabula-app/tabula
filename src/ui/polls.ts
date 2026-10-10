@@ -4,7 +4,7 @@ import { POLL_LIMITS, answeredLabel, countPeople, type PollInput, type PollTally
 import { h, icon } from './dom';
 import { dialog, field, popover, toast } from './common';
 import { reopenPollResults } from './idle-bar';
-import { POLL_LIST_MIN, pollCardBox } from './poll-layout';
+import { POLL_LIST_MIN, POLL_LIST_MIN_SHORT, pollCardBox } from './poll-layout';
 import './polls.css';
 
 /** The fade on a list's bottom edge shows while more of it is below. */
@@ -107,7 +107,7 @@ export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLEleme
     const viewport = card.parentElement?.clientHeight ?? window.innerHeight;
     const overhead = card.offsetHeight - scroll.clientHeight;
     const list = scroll.scrollHeight;
-    const box = pollCardBox({ viewport, top, dock, natural: overhead + list, minimum: overhead + Math.min(POLL_LIST_MIN, list) });
+    const box = pollCardBox({ viewport, top, dock, natural: overhead + list, minimum: overhead + Math.min(viewport < 700 ? POLL_LIST_MIN_SHORT : POLL_LIST_MIN, list) });
     card.style.bottom = `${box.bottom}px`;
     card.style.maxHeight = `${box.height}px`;
     showMore(scroll);

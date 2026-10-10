@@ -600,6 +600,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar.vote-compact > .vote-info { order: 5; width: 44px; height: 44px; padding: 0; font-size: 11px; font-weight: 600; }
   .flowbar.vote-compact > .vote-instructions { order: 6; flex: 1 0 100%; padding: 4px 6px; color: var(--tray-muted); font-size: 12px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
   .flowbar.vote-compact > .vote-instructions[hidden] { display: none; }
+  /* A poll step: the poll card docks above the bar and needs the room, so the bar is the answered count and one row of buttons. */
+  .flowbar.poll-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
+  .flowbar.poll-compact > .flow-previous, .flowbar.poll-compact > .timer, .flowbar.poll-compact > .flow-timer-buttons,
+  .flowbar.poll-compact > .flow-ask, .flowbar.poll-compact > .flow-step { display: none; }
+  .flowbar.poll-compact > .poll-chip { flex: 1 0 100%; padding: 4px 8px; }
   .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
   .demo-banner-wide-copy { display: none; }
   .demo-banner-short-copy { display: block; }
