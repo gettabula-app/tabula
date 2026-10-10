@@ -35,7 +35,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
-                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
@@ -961,6 +961,59 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'resize-guides-size'(env) {
+    await openSeedBoard(env);
+    const { page } = env;
+    const drag = await page.evaluate(() => {
+      const app = window.__board;
+      app.r.setCamera({ zoom: 0.5 });
+      const vp = app.r.viewport();
+      const size = app.r.size();
+      const startPx = Math.max(96, (size.w - 190) / 2);
+      const x = vp.x + startPx / app.zoom;
+      const y = vp.y + 180 / app.zoom;
+      const moving = app.makeObj('sticky', { x, y, w: 100, h: 90 }, { text: 'Resize me', fontSize: 16, fill: '#FFE16B' });
+      const reference = app.makeObj('sticky', { x: x + 250, y, w: 130, h: 90 }, { text: 'Match width', fontSize: 16, fill: '#BCE88C' });
+      moving.id = 'visual-resize-size-target';
+      reference.id = 'visual-resize-size-reference';
+      delete moving.parent;
+      delete reference.parent;
+      [moving.z, reference.z] = app.store.topZs(2);
+      app.store.transact(() => {
+        app.store.create(moving);
+        app.store.create(reference);
+      });
+      app.setSelection([moving.id]);
+      const svg = app.r.svg.getBoundingClientRect();
+      const handle = app.r.toScreen({ x: moving.x + moving.w, y: moving.y + moving.h / 2 });
+      return {
+        start: { x: svg.left + handle.x, y: svg.top + handle.y },
+        end: { x: svg.left + handle.x + 14, y: svg.top + handle.y },
+      };
+    });
+    await page.mouse.move(drag.start.x, drag.start.y);
+    await page.mouse.down();
+    await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    await page.waitForFunction(() => {
+      const width = window.__board.store.getPlaced('visual-resize-size-target')?.w;
+      return width !== undefined && width !== 100;
+    });
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const moving = app.store.getPlaced('visual-resize-size-target');
+      const reference = app.store.getPlaced('visual-resize-size-reference');
+      return {
+        width: moving?.w,
+        referenceWidth: reference?.w,
+        sizeMark: app.r.overlay.guides.some((guide) => guide.kind === 'size' && guide.axis === 'x'),
+      };
+    });
+    if (result.width === undefined || result.referenceWidth === undefined || Math.abs(result.width - result.referenceWidth) > 1e-9) {
+      throw new Error(`resize-guides-size: dragged width ${result.width} did not match reference width ${result.referenceWidth}`);
+    }
+    if (!result.sizeMark) throw new Error('resize-guides-size: overlay has no width size mark during the drag');
+    return { noPark: true };
   },
   async 'esc-trays'(env) {
     await openSeedBoard(env);
