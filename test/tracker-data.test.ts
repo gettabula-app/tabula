@@ -13,6 +13,9 @@ import {
   statesByCategory,
   ticketKeyFromText,
   type TrackerTicket,
+  type TrackerInboxItem,
+  type TrackerNotificationKind,
+  type TrackerNotificationPrefs,
 } from '../src/tracker-data';
 
 function ticket(overrides: Partial<TrackerTicket> = {}): TrackerTicket {
@@ -69,6 +72,52 @@ describe('tracker HTTP client', () => {
     await expect(invalidJson.meta()).rejects.toMatchObject({ code: 'internal' });
     const network = createHttpTrackerApi(async () => { throw new Error('offline'); });
     await expect(network.meta()).rejects.toMatchObject({ code: 'network', message: 'offline' });
+  });
+
+  it('uses the server inbox and notification preference wire shapes', async () => {
+    const kinds: TrackerNotificationKind[] = [
+      'assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity',
+    ];
+    const item: TrackerInboxItem = {
+      id: 'notice-1', kind: 'assigned', createdAt: 123, readAt: null,
+      ticket: {
+        key: 'TAB-12', title: 'Review the inbox', state: { name: 'In progress', category: 'started' },
+        assignee: { name: 'Mara' }, priority: 'high',
+      },
+      actor: null, preview: null, detail: null,
+    };
+    const preferences: TrackerNotificationPrefs = {
+      kinds,
+      prefs: {
+        assigned: 'both', mentioned: 'both', commented: 'app', status_changed: 'app', due_soon: 'both',
+        relation_changed: 'app', integration_activity: 'app',
+      },
+    };
+    const replies: unknown[] = [
+      { items: [item], nextCursor: 'opaque-cursor', unread: 2 },
+      { unread: 2 },
+      { updated: 1, unread: 1 },
+      preferences,
+      { ...preferences, prefs: { ...preferences.prefs, assigned: 'off' } },
+    ];
+    const calls: Array<{ path: string; init: RequestInit }> = [];
+    const api = createHttpTrackerApi(async (input, init = {}) => {
+      calls.push({ path: String(input), init });
+      return new Response(JSON.stringify(replies[calls.length - 1]), { status: 200 });
+    });
+    const controller = new AbortController();
+    const page = await api.inbox({ limit: 30, before: 'cursor-1', unread: true }, { signal: controller.signal });
+    expect(page).toEqual({ items: [item], nextCursor: 'opaque-cursor', unread: 2 });
+    const query = new URL(calls[0].path, 'https://tabula.test').searchParams;
+    expect([...query.entries()]).toEqual([['limit', '30'], ['before', 'cursor-1'], ['unread', '1']]);
+    expect(calls[0].init.signal).toBe(controller.signal);
+
+    expect(await api.inboxUnread()).toEqual({ unread: 2 });
+    expect(await api.markInboxRead({ ids: ['notice-1'] })).toEqual({ updated: 1, unread: 1 });
+    expect(await api.notificationPrefs()).toEqual(preferences);
+    const updated = await api.updateNotificationPrefs({ prefs: { assigned: 'off' } });
+    expect(updated.prefs.assigned).toBe('off');
+    expect(JSON.parse(String(calls[4].init.body))).toEqual({ prefs: { assigned: 'off' } });
   });
 });
 

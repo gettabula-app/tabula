@@ -4,6 +4,9 @@ import { buildListModel, type TrackerRow } from './list-model';
 import { openPicker, type PickerOption } from './picker';
 import { avatar, countBadge, dueChip, keyChip, labelChip, relativeTime } from './primitives';
 import { createFilterBar } from './filter-bar';
+import type { TrackerInboxItem, TrackerNotificationKind, TrackerNotificationPrefs } from '../../tracker-types';
+import { createMockTrackerApi } from '../../tracker-mock';
+import { mountInbox } from './inbox';
 
 const FIXED_NOW = Date.UTC(2026, 9, 10, 12);
 const rows: TrackerRow[] = [
@@ -14,6 +17,8 @@ const rows: TrackerRow[] = [
 
 /** Static, data-free gallery used only by the visual-check build mode. */
 export function mountTrackerGallery(container: HTMLElement = document.body): HTMLElement {
+  const inboxState = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('inbox');
+  if (inboxState) return mountInboxGallery(container, inboxState);
   const root = h('main', { class: 'trk trk-gallery', 'aria-label': 'Tracker UI foundation gallery' });
   const header = h('header', { class: 'trk-gallery-head' },
     h('div', null, h('p', { class: 'trk-kicker' }, 'Tracker foundation'), h('h1', null, 'Issue list, at a glance')),
@@ -90,5 +95,69 @@ export function mountTrackerGallery(container: HTMLElement = document.body): HTM
   root.append(header, grid);
   container.replaceChildren(root);
   void openPicker(pickerButton, { label: 'State', options: pickerOptions, value: 'in_progress' });
+  return root;
+}
+
+const INBOX_KINDS: TrackerNotificationKind[] = [
+  'assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity',
+];
+const INBOX_PREFS: TrackerNotificationPrefs = {
+  kinds: INBOX_KINDS,
+  prefs: {
+    assigned: 'both', mentioned: 'both', commented: 'app', status_changed: 'app', due_soon: 'both',
+    relation_changed: 'app', integration_activity: 'app',
+  },
+};
+
+function galleryInboxItem(index: number, kind: TrackerNotificationKind, createdAt: number, read: boolean): TrackerInboxItem {
+  const detail: TrackerInboxItem['detail'] = kind === 'status_changed' ? { state: 'In review' }
+    : kind === 'relation_changed' ? { key: 'TAB-142', relation: 'blocked_by' }
+      : kind === 'integration_activity' ? { text: 'Pull request 482 was merged into main.' }
+        : kind === 'due_soon' ? { dueDate: '2026-10-12' } : null;
+  const actors = ['Maya Chen', 'Jon Bell', 'Sam Rivera'];
+  const key = `TAB-${121 + index}`;
+  return {
+    id: `gallery-notice-${index + 1}`,
+    kind,
+    createdAt,
+    readAt: read ? createdAt + 30_000 : null,
+    ticket: {
+      key,
+      title: index === 0 ? 'Keep the inbox cursor on its notice after a refresh' : `Review tracker follow-up ${index + 1}`,
+      state: { name: index % 2 ? 'In progress' : 'In review', category: index % 2 ? 'started' : 'started' },
+      assignee: { name: 'Maya Chen' },
+      priority: index === 1 ? 'urgent' : index === 4 ? 'high' : 'none',
+    },
+    actor: index % 3 ? { name: actors[index % actors.length] } : null,
+    preview: kind === 'commented' || kind === 'mentioned' ? 'The new behavior looks good; I left one small follow-up.' : null,
+    detail,
+  };
+}
+
+function mountInboxGallery(container: HTMLElement, state: string): HTMLElement {
+  const now = FIXED_NOW;
+  const kinds = state === 'long-list' ? Array.from({ length: 48 }, (_, index) => INBOX_KINDS[index % INBOX_KINDS.length]) : INBOX_KINDS;
+  const seed = kinds.map((kind, index) => galleryInboxItem(
+    index,
+    kind,
+    now - (index < 4 ? index * 37 : 26 * 60 + index * 17) * 60_000,
+    index % 2 === 1,
+  ));
+  const root = h('main', { class: 'trk trk-gallery trk-inbox-gallery', 'aria-label': 'Tracker inbox gallery', 'data-inbox-gallery-state': state },
+    h('header', { class: 'trk-gallery-head' },
+      h('div', null, h('p', { class: 'trk-kicker' }, 'Tracker UI'), h('h1', null, state === 'prefs' ? 'Notification settings' : 'Inbox')),
+    ),
+    h('div', { class: 'trk-inbox-gallery-host' }),
+  );
+  const host = root.querySelector<HTMLElement>('.trk-inbox-gallery-host')!;
+  const api = createMockTrackerApi({ inbox: state === 'empty' ? [] : seed, now: () => now, notificationPrefs: INBOX_PREFS });
+  if (state === 'loading') api.inbox = async () => new Promise(() => undefined);
+  if (state === 'error') api.inbox = async () => { throw new Error('Gallery inbox load failure'); };
+  container.replaceChildren(root);
+  mountInbox(host, { api, now: () => now, onOpenTicket: () => undefined, onUnreadChange: () => undefined });
+  if (['populated', 'long-list', 'narrow', 'prefs'].includes(state)) {
+    root.querySelector<HTMLButtonElement>('.trk-inbox-show-read')?.click();
+  }
+  if (state === 'prefs') root.querySelector<HTMLButtonElement>('[aria-controls^="trk-inbox-prefs-"]')?.click();
   return root;
 }

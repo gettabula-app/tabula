@@ -12,6 +12,8 @@ import {
   type TrackerListQuery,
   type TrackerMeta,
   type TrackerNotificationPrefs,
+  type TrackerNotificationKind,
+  type TrackerNotifyChoice,
   type TrackerPatch,
   type TrackerPriority,
   type TrackerRelationKind,
@@ -32,6 +34,7 @@ export interface TrackerListOptions extends TrackerRequestOptions {}
 export interface TrackerPageOptions extends TrackerRequestOptions { before?: string | number; limit?: number }
 export interface TrackerInboxQuery { limit?: number; before?: string; unread?: boolean }
 export type TrackerInboxReadInput = { ids: string[] } | { all: true };
+export type TrackerNotificationPrefsUpdate = { prefs: Partial<Record<TrackerNotificationKind, TrackerNotifyChoice>> };
 export interface TrackerBulkInput { keys: string[]; patch: TrackerBulkPatch }
 
 /** Typed transport for every public tracker endpoint used by the app. */
@@ -59,7 +62,7 @@ export interface TrackerApi {
   inboxUnread(options?: TrackerRequestOptions): Promise<{ unread: number }>;
   markInboxRead(input: TrackerInboxReadInput, options?: TrackerRequestOptions): Promise<{ updated: number; unread: number }>;
   notificationPrefs(options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
-  updateNotificationPrefs(patch: TrackerNotificationPrefs, options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
+  updateNotificationPrefs(patch: TrackerNotificationPrefsUpdate, options?: TrackerRequestOptions): Promise<TrackerNotificationPrefs>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
