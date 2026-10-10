@@ -89,12 +89,22 @@ export function becomeB(h: Harness) {
 
 export type Rig = ReturnType<typeof rig>;
 
+/**
+ * The backup config with the largest snapshot hold. The barrier abandons a copy that outlasts its hold (5 s by default), and a
+ * loaded CI runner can take that long for the first backup of a scenario; then there is no manifest to restore from.
+ */
+const patient = (h: Harness) => {
+  const config = h.config() as { snapshotMaxHoldSeconds: number };
+  config.snapshotMaxHoldSeconds = 60;
+  return config as never;
+};
+
 /** The backup engine and the restore engine on the harness's directory, with an exit the test can see. */
 export function rig(h: Harness, overrides: Record<string, unknown> = {}) {
   const exits: number[] = [];
   let leave!: (code: number) => void;
   const exited = new Promise<number>((resolve) => (leave = resolve));
-  const backup = h.engine();
+  const backup = h.engine({ config: patient(h) });
   const restore = createRestore({
     backup,
     directory: h.directory,
@@ -134,7 +144,11 @@ export const setting = (d: Dir, key: string): string | null => {
 export const audits = (d: Dir, limit = 100) => d.listAudit(limit).map((row) => ({ ...row, action: String(row.action), actorId: row.actorId as string | null, detail: row.detail as Record<string, any> }));
 
 /** Runs a backup and says what it made. */
-export const backupNow = async (engine: { runNow: () => Promise<unknown> }) => (await engine.runNow()) as { ok: boolean; manifest: string; changed?: boolean; error?: string };
+export const backupNow = async (engine: { runNow: () => Promise<unknown> }) => {
+  const result = (await engine.runNow()) as { ok: boolean; manifest: string; changed?: boolean; error?: string };
+  if (!result.ok) throw new Error(`the backup did not run: ${JSON.stringify(result)}`);
+  return result;
+};
 
 export const ownerOf = (h: Harness) => h.directory!.getUserByEmail('owner@example.com')!;
 
@@ -188,7 +202,7 @@ export async function sqliteBytes(build: (db: import('node:sqlite').DatabaseSync
 
 /** A copy of the workspace database file of `h` (taken through a backup run), as bytes. */
 export async function databaseOf(h: Harness): Promise<Buffer> {
-  const e = h.engine();
+  const e = h.engine({ config: patient(h) });
   const result = await backupNow(e);
   const manifest = await e.readManifest(result.manifest);
   const entry = manifest.files.find((f: { path: string }) => f.path === 'directory.sqlite')!;

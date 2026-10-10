@@ -1417,6 +1417,7 @@ export function createBackup({
     try {
       say('snapshot barrier started');
       const snapshot = await snapshotBarrier.withSnapshot({
+        signal: stop.signal,
         prepare: prepareSnapshot,
         capture: async ({ signal }) => {
           const combinedSignal = AbortSignal.any([signal, stop.signal]);

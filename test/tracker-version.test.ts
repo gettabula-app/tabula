@@ -72,23 +72,23 @@ describe('tracker version capability and release reader', () => {
     expect(() => loadConfig({ TABULA_TRACKER: 'maybe' })).toThrow(/TABULA_TRACKER must be on or off/);
   });
 
-  it('declares schema 12 with maxReader 11 and lets that previous reader open it', () => {
-    expect(MIGRATIONS).toHaveLength(12);
+  it('declares schema 13 with maxReader 11 and lets the schema-11 reader open it', () => {
+    expect(MIGRATIONS).toHaveLength(13);
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const db = new DatabaseSync(':memory:');
     try {
-      expect(migrate(db, MIGRATIONS, 'directory')).toEqual({ version: 12, minReader: 11, legacy: false });
+      expect(migrate(db, MIGRATIONS, 'directory')).toEqual({ version: 13, minReader: 11, legacy: false });
       const state = readSchemaState(db);
-      expect(state).toEqual({ version: 12, minReader: 11, legacy: false });
+      expect(state).toEqual({ version: 13, minReader: 11, legacy: false });
       expect(canRead(state, 11)).toBe(true);
-      expect(migrate(db, MIGRATIONS.slice(0, 11), 'previous directory build')).toEqual(state);
-      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(12);
+      expect(migrate(db, MIGRATIONS.slice(0, 12), 'previous directory build')).toEqual(state);
+      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(13);
     } finally {
       db.close();
     }
 
     const result = spawnSync(process.execPath, ['scripts/release-info.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ schema: { directory: 12 }, maxReader: { directory: 11 } });
+    expect(JSON.parse(result.stdout)).toMatchObject({ schema: { directory: 13 }, maxReader: { directory: 11 } });
   });
 });

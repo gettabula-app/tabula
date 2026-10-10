@@ -362,6 +362,7 @@ export function validateTemplateContent(raw) {
       cursor = parents.get(cursor);
     }
   }
+  const byId = new Map(objects.map((o) => [o.id, o]));
   for (const group of objects.filter((o) => o.type === 'group')) {
     let cursor = group;
     const seen = new Set([group.id]);
@@ -369,7 +370,7 @@ export function validateTemplateContent(raw) {
     while (cursor.parent) {
       if (seen.has(cursor.parent)) break; // the cycle error above already names this input
       seen.add(cursor.parent);
-      cursor = objects.find((o) => o.id === cursor.parent);
+      cursor = byId.get(cursor.parent);
       if (!cursor) break;
       if (cursor.type === 'group') depth++;
     }

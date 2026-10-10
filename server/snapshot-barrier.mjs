@@ -21,7 +21,7 @@ export function testCaptureDelayMs(env = process.env) {
 
 export class SnapshotBarrierError extends Error {
   constructor(code = 'snapshot_timeout') {
-    super(code === 'snapshot_timeout' ? 'The coherent snapshot exceeded its hold limit' : 'The snapshot barrier is already active');
+    super(code === 'snapshot_timeout' ? 'The coherent snapshot exceeded its hold limit' : code === 'snapshot_aborted' ? 'The coherent snapshot was stopped' : 'The snapshot barrier is already active');
     this.name = 'SnapshotBarrierError';
     this.code = code;
   }
@@ -157,9 +157,10 @@ export function createSnapshotBarrier({
   /**
    * Pauses writers, waits for existing async writes to finish, runs a synchronous flush, then captures all local files.
    * The hold timer includes draining existing writers and the complete local copy, and is always cleared in `finally`.
-   * @param {{ prepare?: () => unknown, capture: (context: { signal: AbortSignal, startedAt: number }) => unknown }} options
+   * `signal` ends the hold early (a shutdown): writers are released at once even if a copy is stuck and ignores its abort signal.
+   * @param {{ prepare?: () => unknown, capture: (context: { signal: AbortSignal, startedAt: number }) => unknown, signal?: AbortSignal | null }} options
    */
-  async function withSnapshot({ prepare = () => {}, capture }) {
+  async function withSnapshot({ prepare = () => {}, capture, signal: outer = null }) {
     while (phase !== 'open') await waitForRelease();
     phase = 'draining';
     const startedAt = now();
@@ -172,6 +173,16 @@ export function createSnapshotBarrier({
       controller.abort(error);
       timeoutReject(error);
     }, maxHoldMs);
+
+    const onOuterAbort = () => {
+      const error = outer.reason instanceof Error ? outer.reason : new SnapshotBarrierError('snapshot_aborted');
+      controller.abort(error);
+      timeoutReject(error);
+    };
+    if (outer) {
+      if (outer.aborted) onOuterAbort();
+      else outer.addEventListener('abort', onOuterAbort, { once: true });
+    }
 
     const operation = (async () => {
       if (activeWriters > 0) await new Promise((resolve) => drainedWaiters.push(resolve));
@@ -193,6 +204,7 @@ export function createSnapshotBarrier({
       throw error;
     } finally {
       if (timer !== null) clearTimer(timer);
+      outer?.removeEventListener('abort', onOuterAbort);
       if (!controller.signal.aborted && operation) controller.abort();
       await release();
     }
