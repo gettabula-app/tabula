@@ -2,6 +2,7 @@ import { planStep } from './z-order';
 import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Group, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
+import { isConnectable } from './connectable';
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
 import type { Anchor, Comments, Thread } from './comments';
@@ -98,8 +99,7 @@ type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'p
 /** The phone layout's breakpoint (styles.css, `max-width: 860px`): where a kanban opens as a list on a double tap. */
 const phoneWidth = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
 
-const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
-  isBox(o) && o.type !== 'path' && o.type !== 'frame';
+const CONNECTABLE = isConnectable;
 
 const COMMENTS_VISIBLE_KEY = 'driftboard:comments-visible';
 function loadCommentsVisible(): boolean {

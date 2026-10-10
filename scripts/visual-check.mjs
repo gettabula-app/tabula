@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -1823,6 +1823,60 @@ const STATES = {
     await settle(env.page);
   },
   // slice 4: the lane and kanban menus, the Filter popover, a filter on, a refused drop into a full block lane, a new lane
+  // a selected lane (and the kanban around it) shows no connector anchor dots: lanes and the kanban take no connectors; a hovered card still does
+  async 'kanban-lane-no-anchors'(env) {
+    await openKanbanBoard(env);
+    // a point on the screen where the pointer is over that object itself (not a card or the kanban around it)
+    const at = (id) => env.page.evaluate((id) => {
+      const app = window.__board;
+      const o = app.store.getPlaced(id);
+      const r = app.r.svg.getBoundingClientRect();
+      for (let fy = 0.02; fy < 1; fy += 0.04) for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+        const w = { x: o.x + o.w * fx, y: o.y + o.h * fy };
+        if (app.hit(w)?.id !== id) continue;
+        const q = app.r.toScreen(w);
+        return { x: r.left + q.x, y: r.top + q.y };
+      }
+      return null;
+    }, id);
+    const anchors = () => env.page.evaluate(() => document.querySelectorAll('svg .anchor').length);
+    await env.page.evaluate(() => window.__board.setSelection(['k-doing']));
+    const lane = await at('k-doing');
+    if (!lane) throw new Error('kanban-lane-no-anchors: no point of the Doing lane is reachable by the pointer');
+    await env.page.mouse.move(lane.x - 8, lane.y - 8);
+    await env.page.mouse.move(lane.x, lane.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onLane = await anchors();
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+    const card = await at('k-c2');
+    if (!card) throw new Error('kanban-lane-no-anchors: no point of the card is reachable by the pointer');
+    await env.page.mouse.move(card.x - 8, card.y - 8);
+    await env.page.mouse.move(card.x, card.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onCard = await anchors();
+    console.log(`kanban-lane-no-anchors ${JSON.stringify({ onLane, onCard })}`);
+    if (onLane !== 0) throw new Error(`kanban-lane-no-anchors: a selected lane shows ${onLane} anchor dots`);
+    if (onCard !== 4) throw new Error(`kanban-lane-no-anchors: a hovered card should keep its 4 anchors (found ${onCard}); the check would prove nothing`);
+    // dragging a connector from a note onto the lane must not bind to the lane or the kanban: the end stays free
+    await env.page.evaluate(() => { window.__board.setSelection([]); window.__board.setTool({ kind: 'connector' }); });
+    const from = await at('k-note-1');
+    if (!from) throw new Error('kanban-lane-no-anchors: no point of the note is reachable by the pointer');
+    await env.page.mouse.move(from.x, from.y);
+    await env.page.mouse.down();
+    await env.page.mouse.move((from.x + lane.x) / 2, (from.y + lane.y) / 2, { steps: 6 });
+    await env.page.mouse.move(lane.x, lane.y, { steps: 6 });
+    await env.page.mouse.up();
+    await env.page.waitForTimeout(250);
+    const end = await env.page.evaluate(() => {
+      const app = window.__board;
+      const c = [...app.store.cache.values()].find((o) => o.type === 'connector' && ((o.from.kind === 'bound' && o.from.id === 'k-note-1') || (o.to.kind === 'bound' && o.to.id === 'k-note-1')));
+      return c ? { from: c.from.kind === 'bound' ? c.from.id : 'free', to: c.to.kind === 'bound' ? c.to.id : 'free' } : null;
+    });
+    console.log(`kanban-lane-no-anchors drag ${JSON.stringify(end)}`);
+    if (!end) throw new Error('kanban-lane-no-anchors: dragging from the note made no connector, so the drag check proves nothing');
+    if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
+    await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
