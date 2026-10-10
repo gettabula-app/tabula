@@ -469,7 +469,10 @@ describe('authorisation', () => {
 
       const listed = (await h.call(token, 'tools/list')).body.result.tools.map((t: Body) => t.name).sort();
       const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments', 'list_kanban_cards', 'list_templates']
-        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? ['create_objects', 'update_objects', 'delete_objects', 'use_template', 'add_kanban_card', 'update_kanban_card', 'move_kanban_card'] : [])
+        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? [
+          'create_objects', 'update_objects', 'delete_objects', 'use_template', 'add_kanban_card', 'update_kanban_card', 'move_kanban_card',
+          'create_kanban_label', 'update_kanban_label', 'delete_kanban_label', 'add_kanban_lane', 'update_kanban_lane', 'delete_kanban_lane',
+        ] : [])
         .sort();
       expect(listed).toEqual(expected);
     }

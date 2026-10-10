@@ -5,7 +5,11 @@
 import crypto from 'node:crypto';
 import * as Y from 'yjs';
 import { generateNKeysBetween } from 'fractional-indexing';
-import { OWNER_NAME_MAX, TEMPLATE_STRIPPED, cleanOwnerName, layoutAll } from '../shared/containers.mjs';
+import {
+  KANBAN, LABEL_COLORS, LABEL_DEFAULT_COLOR, LIMITS as KANBAN_LIMITS, OWNER_NAME_MAX, STAGES, TEMPLATE_STRIPPED,
+  cleanLabelName, cleanLaneName, cleanOwnerName, codePointLength, isLaneStage, isWipLimit, labelNameTaken, layoutAll,
+  planInsert, sortedChildren, validLabel, validLabelColor, wipCheck,
+} from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 
 export const LIMITS = Object.freeze({
@@ -498,10 +502,11 @@ function num(v, path, min, max) {
   return r2(v);
 }
 
-function text(v, path, min, max) {
+function text(v, path, min, max, length = (value) => value.length) {
   if (typeof v !== 'string') throw invalid(path, 'Must be a string');
   const t = v.replace(/\r\n?/g, '\n');
-  if (t.length < min || t.length > max) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
+  const measured = length(t);
+  if (measured < min || measured > max) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
   if (hasBadInput(t)) throw invalid(path, 'Contains control or tag characters');
   return t;
 }
@@ -553,6 +558,360 @@ function listOf(v, path, min, max) {
 
 /** The strict validators, for the tools' own arguments (boardId, limits, filters). Each throws an OpsError with a JSON path. */
 export const check = { record, required, num, integer, text, choice, idString, listOf, coordinate };
+
+const labelMapOf = (doc) => doc.getMap('labels');
+
+/** The valid labels the app itself lists, in the same stable order and within its board limit. */
+function labelRecords(doc) {
+  const labels = [];
+  labelMapOf(doc).forEach((value, key) => {
+    const label = validLabel(value);
+    if (label?.id === key) labels.push(label);
+  });
+  return labels
+    .sort((a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, KANBAN_LIMITS.labels);
+}
+
+function labelRows(labels) {
+  const list = fitList(labels.map((label) => ({ id: label.id, name: cleanForModel(label.name, KANBAN_LIMITS.labelName).text })));
+  return { labels: list.items, truncated: list.truncated };
+}
+
+function colorValue(value, path) {
+  const input = text(value, path, 1, 64);
+  const color = validLabelColor(input);
+  if (!color) throw invalid(path, 'Must be a safe colour or a label palette name');
+  return color;
+}
+
+/** Visible kanban structure for lane and label tools; private and hidden cards stay out of counts and results. */
+function kanbanState(doc, kanbanId) {
+  const map = objectsOf(doc);
+  const all = [];
+  map.forEach((value, id) => {
+    if (value instanceof Y.Map) all.push({ ...value.toJSON(), id });
+  });
+  const { isVisible } = objectVisibility(all, isRevealed(doc));
+  const byId = new Map(all.map((object) => [object.id, object]));
+  const container = byId.get(kanbanId);
+  if (container?.type !== 'container' || container.layout !== 'kanban' || !isVisible(container)) {
+    throw notFound('Kanban not found', 'kanbanId');
+  }
+  const allLanes = sortedChildren(all.filter((object) => object.type === 'lane' && object.parent === kanbanId));
+  const lanes = allLanes.filter(isVisible);
+  const allCardsByLane = new Map();
+  const cardsByLane = new Map();
+  for (const lane of lanes) {
+    const cards = sortedChildren(all.filter((object) => object.type === 'card' && object.parent === lane.id));
+    allCardsByLane.set(lane.id, cards);
+    cardsByLane.set(lane.id, cards.filter(isVisible));
+  }
+  return { map, all, byId, container, allLanes, lanes, allCardsByLane, cardsByLane };
+}
+
+function laneOutput(lane, count) {
+  const out = { id: lane.id, name: cleanForModel(lane.name, KANBAN_LIMITS.laneName).text, count };
+  if (isLaneStage(lane.stage)) out.stage = lane.stage;
+  if (isWipLimit(lane.wip)) {
+    out.wip = lane.wip;
+    if (lane.wipMode === 'block') out.wipBlock = true;
+  }
+  return out;
+}
+
+function laneRows(lanes, counts) {
+  const list = fitList(lanes.map((lane) => laneOutput(lane, counts.get(lane.id)?.length ?? 0)));
+  return { lanes: list.items, truncated: list.truncated };
+}
+
+function freshKanbanId(doc, extraMap = null) {
+  const objects = objectsOf(doc);
+  const labels = labelMapOf(doc);
+  for (;;) {
+    const id = newObjectId();
+    if (!objects.has(id) && !labels.has(id) && !extraMap?.has(id)) return id;
+  }
+}
+
+function laneAfterIndex(lanes, afterLaneId, path) {
+  if (afterLaneId === undefined) return lanes.length;
+  if (afterLaneId === null) return 0;
+  const id = idString(afterLaneId, path);
+  const index = lanes.findIndex((lane) => lane.id === id && lane.hidden !== true);
+  if (index < 0) throw notFound('Lane not found in this kanban', path);
+  return index + 1;
+}
+
+function laneIdInState(state, laneId) {
+  const id = idString(laneId, 'laneId');
+  const lane = state.lanes.find((item) => item.id === id);
+  if (!lane) throw notFound('Lane not found in this kanban', 'laneId');
+  return lane;
+}
+
+function wipLimitError(path, beforeCount, limit) {
+  return new OpsError('wip_limit', `This lane is at its WIP limit (${beforeCount}/${limit}).`, path);
+}
+
+/** Plans a board label create; names, colours and duplicates use the shared app rules. */
+export function planCreateKanbanLabel(doc, kanbanId, input) {
+  const id = idString(kanbanId, 'kanbanId');
+  kanbanState(doc, id);
+  record(input, '', ['name', 'color']);
+  const rawName = text(required(input, 'name', ''), 'name', 1, KANBAN_LIMITS.labelName, codePointLength);
+  const name = cleanLabelName(rawName);
+  if (!name) throw invalid('name', 'A label needs a name');
+  const labels = labelRecords(doc);
+  if (labelNameTaken(labels, name)) throw invalid('name', 'A label with this name already exists');
+  if (labels.length >= KANBAN_LIMITS.labels) throw new OpsError('limit_exceeded', `A board holds at most ${KANBAN_LIMITS.labels} labels`, 'name');
+  const color = input.color === undefined
+    ? LABEL_COLORS.find((key) => !labels.some((label) => label.color === key)) ?? LABEL_DEFAULT_COLOR
+    : colorValue(input.color, 'color');
+  const labelId = freshKanbanId(doc);
+  const label = { id: labelId, name, color, order: labels.length ? labels.at(-1).order + 1 : 0 };
+  const nextLabels = [...labels, label];
+  const rows = labelRows(nextLabels);
+  return {
+    ops: [{ op: 'setValue', map: 'labels', id: labelId, value: label }],
+    result: { label: { id: labelId, name, color }, ...rows },
+    audit: { count: 1, ids: [labelId] },
+  };
+}
+
+/** Plans an atomic label rename or recolour. */
+export function planUpdateKanbanLabel(doc, kanbanId, labelId, input) {
+  const kanban = idString(kanbanId, 'kanbanId');
+  kanbanState(doc, kanban);
+  const id = idString(labelId, 'labelId');
+  record(input, '', ['name', 'color']);
+  if (!Object.keys(input).length) throw invalid('', 'Give a name or color to change');
+  const labels = labelRecords(doc);
+  const current = labels.find((label) => label.id === id);
+  if (!current) throw notFound('Label not found', 'labelId');
+  const next = { ...current };
+  if (input.name !== undefined) {
+    const name = cleanLabelName(text(input.name, 'name', 1, KANBAN_LIMITS.labelName, codePointLength));
+    if (!name) throw invalid('name', 'A label needs a name');
+    if (labelNameTaken(labels, name, id)) throw invalid('name', 'A label with this name already exists');
+    next.name = name;
+  }
+  if (input.color !== undefined) next.color = colorValue(input.color, 'color');
+  const changed = next.name !== current.name || next.color !== current.color;
+  const nextLabels = labels.map((label) => label.id === id ? next : label);
+  return {
+    ops: changed ? [{ op: 'setValue', map: 'labels', id, value: next }] : [],
+    result: { label: { id, name: next.name, color: next.color }, ...labelRows(nextLabels), updated: changed },
+    audit: { count: changed ? 1 : 0, ids: changed ? [id] : [] },
+  };
+}
+
+/** Plans deleting a label and scrubbing its id from every card in the same board transaction. */
+export function planDeleteKanbanLabel(doc, kanbanId, labelId, { now = Date.now() } = {}) {
+  const kanban = idString(kanbanId, 'kanbanId');
+  kanbanState(doc, kanban);
+  const id = idString(labelId, 'labelId');
+  const labels = labelRecords(doc);
+  const current = labels.find((label) => label.id === id);
+  if (!current) throw notFound('Label not found', 'labelId');
+  const cardIds = [];
+  const ops = [{ op: 'delete', map: 'labels', id }];
+  objectsOf(doc).forEach((value, cardId) => {
+    if (!(value instanceof Y.Map) || value.get('type') !== 'card') return;
+    const cardLabels = value.get('labels');
+    if (!Array.isArray(cardLabels) || !cardLabels.includes(id)) return;
+    const remaining = cardLabels.filter((labelId) => labelId !== id);
+    if (remaining.length) ops.push({ op: 'set', id: cardId, key: 'labels', value: remaining });
+    else ops.push({ op: 'unset', id: cardId, key: 'labels' });
+    ops.push({ op: 'set', id: cardId, key: 'updatedAt', value: now });
+    cardIds.push(cardId);
+  });
+  return {
+    ops,
+    result: { ...labelRows(labels.filter((label) => label.id !== id)), cardsTouched: cardIds.length },
+    audit: { count: 1 + cardIds.length, ids: [id, ...cardIds] },
+  };
+}
+
+/** Plans adding a lane at the end, at the start, or after a visible lane.
+ * @param {{ createdBy: string, now?: number }} options
+ */
+export function planAddKanbanLane(doc, kanbanId, input, { createdBy, now = Date.now() } = {}) {
+  const id = idString(kanbanId, 'kanbanId');
+  const state = kanbanState(doc, id);
+  record(input, '', ['name', 'stage', 'wip', 'wipBlock', 'afterLaneId']);
+  if (state.container.locked === true) throw conflict('This kanban is locked. Unlock it to change its lanes.', 'kanbanId');
+  if (state.allLanes.length >= KANBAN_LIMITS.lanes) throw new OpsError('limit_exceeded', `A kanban holds at most ${KANBAN_LIMITS.lanes} lanes`, 'kanbanId');
+  const name = cleanLaneName(text(required(input, 'name', ''), 'name', 1, KANBAN_LIMITS.laneName));
+  if (!name) throw invalid('name', 'A lane needs a name');
+  const index = laneAfterIndex(state.allLanes, input.afterLaneId, 'afterLaneId');
+  let stage;
+  if (input.stage !== undefined) stage = input.stage === null ? undefined : check.choice(input.stage, STAGES, 'stage');
+  let wip;
+  if (input.wip !== undefined && input.wip !== null) wip = check.integer(input.wip, 'wip', KANBAN_LIMITS.wipMin, KANBAN_LIMITS.wipMax);
+  if (input.wipBlock !== undefined && typeof input.wipBlock !== 'boolean') throw invalid('wipBlock', 'Must be a boolean');
+  if (input.wipBlock !== undefined && wip === undefined) throw invalid('wipBlock', 'wipBlock needs a WIP limit in the same call');
+  const { ranks, repairs } = planInsert(state.allLanes, id, index, 1);
+  if (repairs.some((repair) => state.byId.get(repair.id)?.locked === true)) {
+    throw conflict('A locked lane prevents the lane order from being repaired', 'afterLaneId');
+  }
+  const laneId = freshKanbanId(doc);
+  const lane = {
+    id: laneId, type: 'lane', parent: id, rank: ranks[0], name,
+    x: Number(state.container.x) || 0, y: Number(state.container.y) || 0,
+    w: Number(state.container.laneW) || KANBAN.laneW, h: 0, rotation: 0,
+    z: typeof state.container.z === 'string' ? state.container.z : '', createdBy, updatedAt: now,
+    ...(typeof state.container.font === 'string' ? { font: state.container.font } : {}),
+    ...(stage ? { stage } : {}),
+    ...(wip === undefined ? {} : { wip, ...(input.wipBlock === true ? { wipMode: 'block' } : {}) }),
+  };
+  const ops = repairs.map((repair) => ({ op: 'set', id: repair.id, key: 'rank', value: repair.rank }));
+  ops.push({ op: 'create', id: laneId, fields: lane });
+  const lanes = sortedChildren([...state.lanes, lane].filter((item) => item.hidden !== true));
+  const counts = new Map(state.cardsByLane);
+  counts.set(laneId, []);
+  return {
+    ops,
+    result: { lane: laneOutput(lane, 0), ...laneRows(lanes, counts) },
+    audit: { count: 1 + repairs.length, ids: [laneId, ...repairs.map((repair) => repair.id)] },
+  };
+}
+
+/** Plans a lane edit and optional move-after operation as one atomic change. */
+export function planUpdateKanbanLane(doc, kanbanId, laneId, input, { now = Date.now() } = {}) {
+  const kanban = idString(kanbanId, 'kanbanId');
+  const state = kanbanState(doc, kanban);
+  const id = idString(laneId, 'laneId');
+  record(input, '', ['name', 'stage', 'wip', 'wipBlock', 'hidden', 'afterLaneId']);
+  if (!Object.keys(input).length) throw invalid('', 'Give at least one lane field to change');
+  const current = laneIdInState(state, id);
+  if (current.locked === true) throw conflict('This lane is locked. Unlock it to change it.', 'laneId');
+  if (input.hidden === true && state.lanes.length <= 1) throw conflict('A kanban needs at least one visible lane', 'laneId');
+  const fields = {};
+  const unset = new Set();
+  if (input.name !== undefined) {
+    const name = cleanLaneName(text(input.name, 'name', 1, KANBAN_LIMITS.laneName));
+    if (!name) throw invalid('name', 'A lane needs a name');
+    fields.name = name;
+  }
+  if (input.stage !== undefined) {
+    if (input.stage === null) unset.add('stage');
+    else fields.stage = check.choice(input.stage, STAGES, 'stage');
+  }
+  if (input.wip !== undefined) {
+    if (input.wip === null) {
+      unset.add('wip');
+      unset.add('wipMode');
+    } else fields.wip = check.integer(input.wip, 'wip', KANBAN_LIMITS.wipMin, KANBAN_LIMITS.wipMax);
+  }
+  if (input.wipBlock !== undefined) {
+    if (typeof input.wipBlock !== 'boolean') throw invalid('wipBlock', 'Must be a boolean');
+    const effectiveWip = input.wip === null ? undefined : fields.wip ?? (isWipLimit(current.wip) ? current.wip : undefined);
+    if (effectiveWip === undefined) throw invalid('wipBlock', 'wipBlock needs a WIP limit');
+    if (input.wipBlock) fields.wipMode = 'block';
+    else unset.add('wipMode');
+  }
+  if (input.hidden !== undefined) {
+    if (typeof input.hidden !== 'boolean') throw invalid('hidden', 'Must be a boolean');
+    if (input.hidden) fields.hidden = true;
+    else unset.add('hidden');
+  }
+
+  const moving = input.afterLaneId !== undefined;
+  let nextRank;
+  let repairs = [];
+  if (moving) {
+    const others = state.allLanes.filter((lane) => lane.id !== id);
+    const currentIndex = state.allLanes.findIndex((lane) => lane.id === id);
+    const targetIndex = input.afterLaneId === id ? currentIndex : laneAfterIndex(others, input.afterLaneId, 'afterLaneId');
+    if (targetIndex !== currentIndex) {
+      if (state.container.locked === true) throw conflict('This kanban is locked. Unlock it to change its lanes.', 'laneId');
+      const plan = planInsert(others, kanban, targetIndex, 1);
+      if (plan.repairs.some((repair) => state.byId.get(repair.id)?.locked === true)) {
+        throw conflict('A locked lane prevents the lane order from being repaired', 'afterLaneId');
+      }
+      nextRank = plan.ranks[0];
+      repairs = plan.repairs;
+    }
+  }
+
+  const changed = Object.entries(fields).filter(([key, value]) => JSON.stringify(current[key]) !== JSON.stringify(value));
+  const removed = [...unset].filter((key) => current[key] !== undefined);
+  if (nextRank !== undefined && current.rank !== nextRank) fields.rank = nextRank;
+  const didChange = changed.length > 0 || removed.length > 0 || (fields.rank !== undefined && current.rank !== fields.rank) || repairs.length > 0;
+  const ops = repairs.map((repair) => ({ op: 'set', id: repair.id, key: 'rank', value: repair.rank }));
+  for (const [key, value] of Object.entries(fields)) {
+    if (JSON.stringify(current[key]) !== JSON.stringify(value)) ops.push({ op: 'set', id, key, value });
+  }
+  for (const key of unset) if (current[key] !== undefined) ops.push({ op: 'unset', id, key });
+  if (didChange) ops.push({ op: 'set', id, key: 'updatedAt', value: now });
+  const nextLane = { ...current, ...fields };
+  for (const key of unset) delete nextLane[key];
+  const nextLanes = sortedChildren(state.lanes.map((lane) => lane.id === id ? nextLane : lane).filter((lane) => lane.hidden !== true));
+  const warnings = [];
+  const currentCount = state.allCardsByLane.get(id)?.length ?? 0;
+  if (fields.wip !== undefined && currentCount > fields.wip && (!isWipLimit(current.wip) || fields.wip < current.wip)) {
+    warnings.push('The WIP limit is below this lane’s current card count.');
+  }
+  return {
+    ops,
+    result: { lane: laneOutput(nextLane, state.cardsByLane.get(id)?.length ?? 0), ...laneRows(nextLanes, state.cardsByLane), warnings },
+    audit: { count: didChange ? 1 + repairs.length : 0, ids: didChange ? [id, ...repairs.map((repair) => repair.id)] : [] },
+  };
+}
+
+/** Plans deleting a lane, optionally appending every card to another visible lane in rank order. */
+export function planDeleteKanbanLane(doc, kanbanId, laneId, moveCardsTo, { now = Date.now() } = {}) {
+  const kanban = idString(kanbanId, 'kanbanId');
+  const state = kanbanState(doc, kanban);
+  const id = idString(laneId, 'laneId');
+  const lane = laneIdInState(state, id);
+  if (state.container.locked === true) throw conflict('This kanban is locked. Unlock it to change its lanes.', 'kanbanId');
+  if (lane.locked === true) throw conflict('This lane is locked. Unlock it to delete it.', 'laneId');
+  let target;
+  if (moveCardsTo !== undefined) {
+    const targetId = idString(moveCardsTo, 'moveCardsTo');
+    target = state.lanes.find((item) => item.id === targetId);
+    if (!target || target.id === id) throw notFound('Target lane not found in this kanban', 'moveCardsTo');
+  }
+  if (state.lanes.length <= 1) throw conflict('A kanban must keep at least one visible lane', 'laneId');
+  const cards = state.allCardsByLane.get(id) ?? [];
+  if (cards.some((card) => card.locked === true)) throw conflict('A locked card prevents this lane from being deleted', 'laneId');
+  if (cards.length && !target) throw conflict('This lane has cards; set moveCardsTo to move them before deleting it', 'moveCardsTo');
+
+  const ops = [];
+  let repairs = [];
+  let targetLane;
+  if (target && cards.length) {
+    const targetCards = state.allCardsByLane.get(target.id) ?? [];
+    const verdict = wipCheck(target, targetCards.map((card) => ({ id: card.id })), cards.map((card) => card.id));
+    if (!verdict.ok && verdict.limit !== null) throw wipLimitError('moveCardsTo', targetCards.length, verdict.limit);
+    const insertion = planInsert(targetCards, target.id, targetCards.length, cards.length);
+    repairs = insertion.repairs;
+    if (repairs.some((repair) => state.byId.get(repair.id)?.locked === true)) {
+      throw conflict('A locked card prevents the target lane order from being repaired', 'moveCardsTo');
+    }
+    for (const repair of repairs) ops.push({ op: 'set', id: repair.id, key: 'rank', value: repair.rank });
+    cards.forEach((card, index) => {
+      ops.push({ op: 'set', id: card.id, key: 'parent', value: target.id });
+      ops.push({ op: 'set', id: card.id, key: 'rank', value: insertion.ranks[index] });
+      ops.push({ op: 'set', id: card.id, key: 'updatedAt', value: now });
+    });
+    targetLane = target;
+  }
+  ops.push({ op: 'delete', id });
+  const nextLanes = state.lanes.filter((item) => item.id !== id);
+  const counts = new Map(state.cardsByLane);
+  if (targetLane) counts.set(targetLane.id, [...(state.cardsByLane.get(targetLane.id) ?? []), ...(state.cardsByLane.get(id) ?? [])]);
+  return {
+    ops,
+    result: {
+      ...(targetLane ? { movedCards: state.cardsByLane.get(id)?.length ?? 0, movedCardsTo: targetLane.id } : { movedCards: 0 }),
+      ...laneRows(nextLanes, counts),
+    },
+    audit: { count: 1 + cards.length + repairs.length, ids: [id, ...cards.map((card) => card.id), ...repairs.map((repair) => repair.id)] },
+  };
+}
 
 // ---------------------------------------------------------------- planning changes
 
@@ -827,7 +1186,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
       if (!KNOWN_UPDATE_FIELDS.has(key)) throw invalid(at(path, key.slice(0, 40)), 'Unknown field');
     }
     if (current.type === 'card') throw invalid(at(path, 'id'), 'Use update_kanban_card to change a kanban card');
-    if (current.type === 'lane') throw invalid(at(path, 'id'), 'Kanban lanes cannot be changed with update_objects; use the board UI');
+    if (current.type === 'lane') throw invalid(at(path, 'id'), 'Kanban lanes cannot be changed with update_objects; use update_kanban_lane');
     if (current.type === 'container') throw invalid(at(path, 'id'), 'Kanbans cannot be changed with update_objects; use the board UI');
     if (fields.length === 0) throw invalid(path, 'Nothing to change');
     const allowed = Object.hasOwn(UPDATABLE, current.type) ? UPDATABLE[current.type] : [];
@@ -945,7 +1304,7 @@ export function planDelete(doc, ids, { tokenId } = {}) {
     const o = get(id);
     if (!o) throw notFound('No such object', path);
     pathOfId.set(id, path);
-    if (o.type === 'lane') throw conflict('Lanes are removed with delete_kanban_lane (future); use the board UI for now', path);
+    if (o.type === 'lane') throw conflict('Lanes cannot be deleted with delete_objects; use delete_kanban_lane', path);
     if (o.type === 'container') throw conflict('Kanbans are removed through the board UI', path);
     if (o.type === 'card') checkCard(o, path, { checkLocked: false, checkOwner: false });
     doomed.add(id);
@@ -1100,12 +1459,14 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
 
 /** Applies a plan. Call it inside the room's transaction; it never validates, planning already did. */
 export function applyPlan(doc, plan) {
-  const map = objectsOf(doc);
   for (const op of plan.ops) {
+    const map = doc.getMap(op.map ?? 'objects');
     if (op.op === 'create') {
       map.set(op.id, new Y.Map(Object.entries(op.fields).filter(([, v]) => v !== undefined)));
     } else if (op.op === 'delete') {
       map.delete(op.id);
+    } else if (op.op === 'setValue') {
+      map.set(op.id, op.value);
     } else {
       const m = map.get(op.id);
       if (!(m instanceof Y.Map)) continue;

@@ -90,8 +90,106 @@ describe('kanban MCP card tools', () => {
     });
     expect(result.data.cards[0]).not.toHaveProperty('ownerId');
     expect(result.data.labels).toEqual([{ id: labelId, name: 'Bug' }]);
+    expect(result.data.lanes).toEqual([
+      { id: todoId, name: 'To do', stage: 'todo', count: 2 },
+      { id: doingId, name: 'Doing', stage: 'doing', count: 0 },
+      { id: secondDoingId, name: 'Doing later', stage: 'doing', count: 0 },
+    ]);
     expect(result.text).not.toContain('Private card');
     expect(result.text).not.toContain('Hidden card');
+  });
+
+  it('creates, updates and deletes labels, scrubbing the deleted id from cards', async () => {
+    const token = await addToken('kanban labels');
+    const emojiName = '😀'.repeat(40);
+    const emojiLabel = await h.tool(token.token, 'create_kanban_label', { boardId: board, kanbanId, name: emojiName });
+    expect(emojiLabel.error).toBeUndefined();
+    expect(emojiLabel.data.label.name).toBe(emojiName);
+    expect((await h.tool(token.token, 'create_kanban_label', { boardId: board, kanbanId, name: '😀'.repeat(41) })).error).toBe('invalid_input');
+    await h.tool(token.token, 'delete_kanban_label', { boardId: board, kanbanId, labelId: emojiLabel.data.label.id });
+
+    const created = await h.tool(token.token, 'create_kanban_label', { boardId: board, kanbanId, name: '  MCP Bug  ', color: 'pink' });
+    expect(created.error).toBeUndefined();
+    expect(created.data.label).toMatchObject({ name: 'MCP Bug', color: 'pink' });
+    const label = created.data.label.id as string;
+    expect(created.data.labels).toContainEqual({ id: label, name: 'MCP Bug' });
+
+    expect((await h.tool(token.token, 'create_kanban_label', { boardId: board, kanbanId, name: 'mcp bug' })).error).toBe('invalid_input');
+    expect((await h.tool(token.token, 'create_kanban_label', { boardId: board, kanbanId, name: 'Bad color', color: 'url(javascript:alert(1))' })).error).toBe('invalid_input');
+    const updated = await h.tool(token.token, 'update_kanban_label', { boardId: board, kanbanId, labelId: label, name: 'MCP Defect', color: '#abc' });
+    expect(updated.error).toBeUndefined();
+    expect(updated.data.label).toMatchObject({ id: label, name: 'MCP Defect', color: '#AABBCC' });
+    expect((await h.tool(token.token, 'update_kanban_label', { boardId: board, kanbanId, labelId: label, name: 'bug' })).error).toBe('invalid_input');
+
+    const card = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: doingId, title: 'Label scrub target', labels: [label] });
+    expect(card.error).toBeUndefined();
+    const cardId = card.data.card.id as string;
+    const deleted = await h.tool(token.token, 'delete_kanban_label', { boardId: board, kanbanId, labelId: label });
+    expect(deleted.error).toBeUndefined();
+    expect(deleted.data.cardsTouched).toBe(1);
+    const listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId });
+    expect(listed.data.cards.find((item: Body) => item.id === cardId).labels).toEqual([]);
+    expect(deleted.data.labels).not.toContainEqual({ id: label, name: 'MCP Defect' });
+    await h.tool(token.token, 'delete_objects', { boardId: board, ids: [cardId] });
+  });
+
+  it('adds and reorders lanes, then moves other-token agent cards when deleting a lane', async () => {
+    const laneWriter = await addToken('lane writer');
+    const cardAgent = await addToken('lane card agent');
+    const targetResult = await h.tool(laneWriter.token, 'add_kanban_lane', {
+      boardId: board, kanbanId, name: 'MCP target', stage: 'doing', afterLaneId: doingId,
+    });
+    expect(targetResult.error).toBeUndefined();
+    const targetLane = targetResult.data.lane.id as string;
+    const sourceResult = await h.tool(laneWriter.token, 'add_kanban_lane', {
+      boardId: board, kanbanId, name: 'MCP source', afterLaneId: targetLane, wip: 3, wipBlock: true,
+    });
+    expect(sourceResult.error).toBeUndefined();
+    const sourceLane = sourceResult.data.lane.id as string;
+
+    const reordered = await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, afterLaneId: doingId });
+    expect(reordered.error).toBeUndefined();
+    expect(reordered.data.lanes.findIndex((lane: Body) => lane.id === sourceLane)).toBe(reordered.data.lanes.findIndex((lane: Body) => lane.id === doingId) + 1);
+    const targetCard = await h.tool(laneWriter.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: targetLane, title: 'Keeps the lane full' });
+    const targetCardId = targetCard.data.card.id as string;
+    await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: targetLane, wip: 1, wipBlock: true });
+    const agentCard = await h.tool(cardAgent.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: sourceLane, title: 'Owned elsewhere', ownerKind: 'agent' });
+    const agentCardId = agentCard.data.card.id as string;
+    const sourceCard = await h.tool(laneWriter.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: sourceLane, title: 'Moves with the agent card' });
+    const sourceCardId = sourceCard.data.card.id as string;
+
+    const blocked = await h.tool(laneWriter.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, moveCardsTo: targetLane });
+    expect(blocked.error).toBe('wip_limit');
+    expect(blocked.data.message).toBe('This lane is at its WIP limit (1/1).');
+    const overLimit = await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, wip: 1 });
+    expect(overLimit.error).toBeUndefined();
+    expect(overLimit.data.warnings).toContain('The WIP limit is below this lane’s current card count.');
+
+    await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: targetLane, wip: 3 });
+    const deleted = await h.tool(laneWriter.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, moveCardsTo: targetLane });
+    expect(deleted.error).toBeUndefined();
+    expect(deleted.data).toMatchObject({ movedCards: 2, movedCardsTo: targetLane });
+    const listed = await h.tool(laneWriter.token, 'list_kanban_cards', { boardId: board, kanbanId });
+    expect(listed.data.cards.find((item: Body) => item.id === agentCardId)).toMatchObject({ lane: { id: targetLane }, ownerId: cardAgent.id, ownerKind: 'agent' });
+    expect(listed.data.cards.find((item: Body) => item.id === sourceCardId)).toMatchObject({ lane: { id: targetLane } });
+    expect(listed.data.lanes.find((lane: Body) => lane.id === sourceLane)).toBeUndefined();
+
+    await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: targetLane, wip: null });
+    await h.tool(laneWriter.token, 'delete_objects', { boardId: board, ids: [targetCardId, sourceCardId] });
+    await h.tool(cardAgent.token, 'delete_objects', { boardId: board, ids: [agentCardId] });
+    await h.tool(laneWriter.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId: targetLane });
+  });
+
+  it('forbids label and lane writes to read tokens and viewer-held write tokens', async () => {
+    const readToken = await h.newToken(owner.cookie, { name: 'read kanban tools', scope: 'read' });
+    madeTokens.push(readToken.id);
+    const names = (await h.call(readToken.token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name);
+    expect(names).not.toContain('create_kanban_label');
+    expect((await h.tool(readToken.token, 'create_kanban_label', { boardId: board, kanbanId, name: 'No access' })).error).toBe('forbidden');
+
+    const viewerToken = await h.newToken(viewer.cookie, { name: 'viewer lane tools', scope: 'write' });
+    madeTokens.push(viewerToken.id);
+    expect((await h.tool(viewerToken.token, 'add_kanban_lane', { boardId: board, kanbanId, name: 'No access' })).error).toBe('forbidden');
   });
 
   it('adds a card to the first lane with the requested stage and binds an agent owner to its token id', async () => {
@@ -348,6 +446,7 @@ describe('kanban MCP card tools', () => {
 
       const blocked = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Blocked by hidden cards' });
       expect(blocked.error).toBe('wip_limit');
+      expect(blocked.data.message).toBe(`This lane is at its WIP limit (${cards.length}/${visibleCount + 1}).`);
 
       lane.delete('wip');
       lane.delete('wipMode');
@@ -375,6 +474,47 @@ describe('kanban MCP card tools', () => {
         const savedLane = saved.get(todoId) as Y.Map<unknown> | undefined;
         return (!addedId || !saved.has(addedId)) && savedHidden?.get('rank') === original.hiddenRank && savedPrivate?.get('rank') === original.privateRank &&
           savedLane?.get('wip') === original.wip && savedLane?.get('wipMode') === original.wipMode;
+      });
+      live.provider.destroy();
+    }
+  });
+
+  it('reports the pre-move card count for a blocked card move', async () => {
+    const token = await addToken('pre-move WIP count');
+    const live = await watcher();
+    const target = live.doc.getMap('objects').get(doingId) as Y.Map<unknown>;
+    const original = { wip: target.get('wip'), wipMode: target.get('wipMode') };
+    let fillerId: string | undefined;
+    let sourceId: string | undefined;
+    try {
+      const filler = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: doingId, title: 'Target already has one card' });
+      expect(filler.error).toBeUndefined();
+      fillerId = filler.data.card.id as string;
+      const source = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Blocked move source' });
+      expect(source.error).toBeUndefined();
+      sourceId = source.data.card.id as string;
+      // the lane already holds the fixture's cards: the message must show the count before the move, whatever it is
+      const listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId });
+      const before = (listed.data.lanes as { id: string; count: number }[]).find((lane) => lane.id === doingId)!.count;
+      expect(before).toBeGreaterThanOrEqual(1);
+      target.set('wip', 1);
+      target.set('wipMode', 'block');
+      await until(() => (h.savedDoc(board).getMap('objects').get(doingId) as Y.Map<unknown>)?.get('wipMode') === 'block');
+
+      const moved = await h.tool(token.token, 'move_kanban_card', { boardId: board, kanbanId, cardId: sourceId, laneId: doingId });
+      expect(moved.error).toBe('wip_limit');
+      expect(moved.data.message).toBe(`This lane is at its WIP limit (${before}/1).`);
+      const added = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: doingId, title: 'Blocked add' });
+      expect(added.error).toBe('wip_limit');
+      expect(added.data.message).toBe(`This lane is at its WIP limit (${before}/1).`);
+    } finally {
+      const cleanup = [fillerId, sourceId].filter((id): id is string => !!id);
+      if (cleanup.length) await h.tool(token.token, 'delete_objects', { boardId: board, ids: cleanup });
+      if (original.wip === undefined) target.delete('wip'); else target.set('wip', original.wip);
+      if (original.wipMode === undefined) target.delete('wipMode'); else target.set('wipMode', original.wipMode);
+      await until(() => {
+        const saved = h.savedDoc(board).getMap('objects').get(doingId) as Y.Map<unknown>;
+        return saved?.get('wip') === original.wip && saved?.get('wipMode') === original.wipMode;
       });
       live.provider.destroy();
     }
@@ -492,7 +632,7 @@ describe('kanban MCP card tools', () => {
     expect(cardUpdate.data.message).toContain('update_kanban_card');
     const laneUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: todoId, x: 12 }] });
     expect(laneUpdate.error).toBe('invalid_input');
-    expect(laneUpdate.data.message).toContain('board UI');
+    expect(laneUpdate.data.message).toContain('update_kanban_lane');
     const kanbanUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: kanbanId, w: 900 }] });
     expect(kanbanUpdate.error).toBe('invalid_input');
     expect(kanbanUpdate.data.message).toContain('board UI');
@@ -588,6 +728,102 @@ describe('kanban MCP card tools', () => {
         return !objects.has(groupId) && objects.has(secretId) && (objects.get(secretId) as Y.Map<unknown>).get('parent') === undefined;
       });
     } finally {
+      live.provider.destroy();
+    }
+  });
+
+  it('returns not_found for a lane after it is hidden from the token', async () => {
+    const token = await addToken('hide kanban lane');
+    const added = await h.tool(token.token, 'add_kanban_lane', { boardId: board, kanbanId, name: 'Hidden MCP lane' });
+    expect(added.error).toBeUndefined();
+    const laneId = added.data.lane.id as string;
+    const hidden = await h.tool(token.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId, hidden: true });
+    expect(hidden.error).toBeUndefined();
+    expect(hidden.data.lanes.find((lane: Body) => lane.id === laneId)).toBeUndefined();
+    expect((await h.tool(token.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId, name: 'Not visible' })).error).toBe('not_found');
+    expect((await h.tool(token.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId })).error).toBe('not_found');
+  });
+
+  it('keeps a visible lane when hiding lanes even when the kanban already has a hidden lane', async () => {
+    const token = await addToken('last visible lane');
+    const live = await watcher();
+    const containerId = 'mcp-last-visible-kanban';
+    const existingHiddenId = 'mcp-last-visible-hidden';
+    const hideableId = 'mcp-last-visible-hideable';
+    const lastVisibleId = 'mcp-last-visible-remains';
+    const fixtureIds = [containerId, existingHiddenId, hideableId, lastVisibleId];
+    const container = { id: containerId, type: 'container', layout: 'kanban', name: 'Visibility check', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'zz0' };
+    const existingHidden = { id: existingHiddenId, type: 'lane', parent: containerId, rank: rankBetween(null, null, containerId), name: 'Already hidden', hidden: true, x: 0, y: 0, w: 280, h: 300, rotation: 0, z: 'zz1' };
+    const hideable = { id: hideableId, type: 'lane', parent: containerId, rank: rankBetween(existingHidden.rank, null, containerId), name: 'Can hide', x: 0, y: 0, w: 280, h: 300, rotation: 0, z: 'zz2' };
+    const lastVisible = { id: lastVisibleId, type: 'lane', parent: containerId, rank: rankBetween(hideable.rank, null, containerId), name: 'Must remain', x: 0, y: 0, w: 280, h: 300, rotation: 0, z: 'zz3' };
+    try {
+      live.doc.transact(() => {
+        const objects = live.doc.getMap('objects');
+        for (const object of [container, existingHidden, hideable, lastVisible]) objects.set(object.id, new Y.Map(Object.entries(object)));
+      }, 'local');
+      await until(() => fixtureIds.every((id) => h.savedDoc(board).getMap('objects').has(id)));
+
+      const hidden = await h.tool(token.token, 'update_kanban_lane', { boardId: board, kanbanId: containerId, laneId: hideableId, hidden: true });
+      expect(hidden.error).toBeUndefined();
+      expect(hidden.data.lanes.map((lane: Body) => lane.id)).toEqual([lastVisibleId]);
+      expect((await h.tool(token.token, 'update_kanban_lane', { boardId: board, kanbanId: containerId, laneId: hideableId, hidden: false })).error).toBe('not_found');
+
+      const refused = await h.tool(token.token, 'update_kanban_lane', { boardId: board, kanbanId: containerId, laneId: lastVisibleId, hidden: true });
+      expect(refused.error).toBe('conflict');
+      expect(refused.data).toMatchObject({ message: 'A kanban needs at least one visible lane', path: 'laneId' });
+      const saved = h.savedDoc(board).getMap('objects');
+      expect((saved.get(lastVisibleId) as Y.Map<unknown>).get('hidden')).toBeUndefined();
+      expect(saved.has(existingHiddenId)).toBe(true);
+    } finally {
+      live.doc.transact(() => fixtureIds.forEach((id) => live.doc.getMap('objects').delete(id)), 'test:cleanup');
+      await until(() => fixtureIds.every((id) => !h.savedDoc(board).getMap('objects').has(id)));
+      live.provider.destroy();
+    }
+  });
+
+  it('counts only visible cards when deleting a lane and still moves hidden and private cards', async () => {
+    const token = await addToken('visible moved card count');
+    const source = await h.tool(token.token, 'add_kanban_lane', { boardId: board, kanbanId, name: 'Count visibility source' });
+    expect(source.error).toBeUndefined();
+    const sourceLaneId = source.data.lane.id as string;
+    const live = await watcher();
+    const visibleCardId = 'mcp-moved-visible-card';
+    const hiddenCardId = 'mcp-moved-hidden-card';
+    const privateCardId = 'mcp-moved-private-card';
+    const cardIds = [visibleCardId, hiddenCardId, privateCardId];
+    try {
+      await until(() => live.doc.getMap('objects').has(sourceLaneId));
+      live.doc.transact(() => {
+        const objects = live.doc.getMap('objects');
+        let previous: string | null = null;
+        for (const [id, extra] of [
+          [visibleCardId, {}],
+          [hiddenCardId, { hidden: true }],
+          [privateCardId, { privateStep: 'step-1' }],
+        ] as [string, Record<string, unknown>][]) {
+          const rank = rankBetween(previous, null, sourceLaneId);
+          previous = rank;
+          objects.set(id, new Y.Map(Object.entries({
+            id, type: 'card', parent: sourceLaneId, rank, text: id, x: 0, y: 0, w: 264, h: 72, rotation: 0, z: 'zz0', ...extra,
+          })));
+        }
+      }, 'local');
+      await until(() => cardIds.every((id) => h.savedDoc(board).getMap('objects').has(id)));
+
+      const deleted = await h.tool(token.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId: sourceLaneId, moveCardsTo: doingId });
+      expect(deleted.error).toBeUndefined();
+      expect(deleted.data).toMatchObject({ movedCards: 1, movedCardsTo: doingId });
+      await until(() => cardIds.every((id) => (h.savedDoc(board).getMap('objects').get(id) as Y.Map<unknown>)?.get('parent') === doingId));
+      const listed = await h.tool(token.token, 'list_kanban_cards', { boardId: board, kanbanId });
+      expect(listed.data.cards.find((card: Body) => card.id === visibleCardId)?.lane.id).toBe(doingId);
+      expect(listed.data.cards.map((card: Body) => card.id)).not.toContain(hiddenCardId);
+      expect(listed.data.cards.map((card: Body) => card.id)).not.toContain(privateCardId);
+    } finally {
+      live.doc.transact(() => {
+        const objects = live.doc.getMap('objects');
+        for (const id of [...cardIds, sourceLaneId]) objects.delete(id);
+      }, 'test:cleanup');
+      await until(() => [...cardIds, sourceLaneId].every((id) => !h.savedDoc(board).getMap('objects').has(id)));
       live.provider.destroy();
     }
   });
