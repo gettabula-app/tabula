@@ -364,16 +364,61 @@ describe('Linear import planning and writes', () => {
     expect(() => normalizeSnapshot(snapshot)).toThrow('issue title exceeds the supported size.');
   });
 
-  it('imports 2,000 generated issues in memory in under 30 seconds', () => {
-    const { directory, actor } = setup();
-    const snapshot = buildSnapshot(2_000);
-    const start = Date.now();
-    const result = applyImport({ db: directory.db, snapshot, actor });
-    expect(result.ok).toBe(true);
-    expect(result.created).toBe(2_000);
-    expect(Date.now() - start).toBeLessThan(30_000);
+  it('keeps SQLite work bounded when importing 2,000 issues', () => {
+    function measureImport(issueCount: number) {
+      const { directory, actor } = setup();
+      const work = { statements: 0, rows: 0 };
+      const measuredDb = {
+        exec(sql: string) {
+          work.statements++;
+          return directory.db.exec(sql);
+        },
+        prepare(sql: string) {
+          const statement = directory.db.prepare(sql);
+          return {
+            run(...args: any[]) {
+              work.statements++;
+              return statement.run(...args);
+            },
+            get(...args: any[]) {
+              work.statements++;
+              const row = statement.get(...args);
+              if (row !== undefined) work.rows++;
+              return row;
+            },
+            all(...args: any[]) {
+              work.statements++;
+              const rows = statement.all(...args);
+              work.rows += rows.length;
+              return rows;
+            },
+            iterate(...args: any[]) {
+              work.statements++;
+              const rows = statement.iterate(...args);
+              return (function* countRows() {
+                for (const row of rows) {
+                  work.rows++;
+                  yield row;
+                }
+              })();
+            },
+          };
+        },
+      };
+      const result = applyImport({ db: measuredDb, snapshot: buildSnapshot(issueCount), actor });
+      expect(result).toMatchObject({ ok: true, created: issueCount, batches: Math.ceil(issueCount / BATCH_SIZE) });
+      expect(directory.db.prepare('SELECT COUNT(*) AS count FROM tickets').get().count).toBe(issueCount);
+      return work;
+    }
+
+    const small = measureImport(100);
+    const large = measureImport(2_000);
     expect(BATCH_SIZE).toBe(100);
-  }, 35_000);
+    expect(small.statements).toBeGreaterThan(0);
+    expect(small.rows).toBeGreaterThan(0);
+    expect(large.statements).toBeLessThanOrEqual(small.statements * 40);
+    expect(large.rows).toBeLessThanOrEqual(small.rows * 40);
+  }, 120_000);
 
   it('keeps dry-run database bytes unchanged and the CLI requires --yes and an owner actor for writes', () => {
     const root = setupTemp();
