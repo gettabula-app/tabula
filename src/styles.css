@@ -598,6 +598,11 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   }
   .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 4px; font-size: 10.5px; }
   .flowbar.vote-compact > .remove-dots-toggle .ico { display: none; }
+  /* the narrowest phones (320 px): Remove dots is its minus icon, still named and shown pressed */
+  @media (max-width: 340px) {
+    .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
+    .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
+  }
   .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
