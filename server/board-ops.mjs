@@ -174,6 +174,15 @@ export function hiddenOf({ boxes, connectors }) {
   return hidden;
 }
 
+/** Visibility shared by generic object writes and the kanban card tools. */
+export function objectVisibility(objects, revealed) {
+  const boxes = objects.filter((o) => o.type !== 'connector');
+  const connectors = objects.filter((o) => o.type === 'connector');
+  const hidden = hiddenOf({ boxes, connectors });
+  const isVisible = (o) => !hidden.has(o.id) && !(o.type === 'card' && !revealed && Boolean(o.privateStep));
+  return { hidden, isVisible };
+}
+
 export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];
@@ -551,11 +560,17 @@ export const check = { record, required, num, integer, text, choice, idString, l
 function snapshot(doc) {
   const revealed = isRevealed(doc);
   const map = objectsOf(doc);
+  const withheld = new Set();
+  map.forEach((m, id) => {
+    if (m instanceof Y.Map && isWithheld({ ...m.toJSON(), id }, revealed)) withheld.add(id);
+  });
   const get = (id) => {
     const m = map.get(id);
     if (!(m instanceof Y.Map)) return undefined;
     const o = { ...m.toJSON(), id };
-    return isWithheld(o, revealed) ? undefined : o;
+    if (withheld.has(id)) return undefined;
+    if (o.type === 'connector' && [o.from, o.to].some((end) => end?.kind === 'bound' && withheld.has(end.id))) return undefined;
+    return o;
   };
   return { map, get };
 }
@@ -752,8 +767,31 @@ const UPDATABLE = {
   text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
   connector: ['from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
+  group: ['name'],
+  icon: BOX_FIELDS,
+  image: BOX_FIELDS,
+  path: BOX_FIELDS,
+  'uml-class': BOX_FIELDS,
+  'uml-actor': BOX_FIELDS,
+  'uml-usecase': BOX_FIELDS,
+  'uml-lifeline': BOX_FIELDS,
+  'uml-note': BOX_FIELDS,
+  'uml-package': BOX_FIELDS,
+  'uml-state': BOX_FIELDS,
+  'uml-initial': BOX_FIELDS,
+  'uml-final': BOX_FIELDS,
+  'uml-component': BOX_FIELDS,
+  container: [],
+  lane: [],
+  card: [],
 };
+const KNOWN_UPDATE_FIELDS = new Set([
+  ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor',
+  'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'rank', 'title', 'description', 'due', 'labels', 'link',
+  'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout',
+]);
 const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'dash', 'label']);
+const GROUP_NAME_MAX = 80;
 
 const sameValue = (a, b) => (typeof a === 'object' || typeof b === 'object' ? JSON.stringify(a) === JSON.stringify(b) : a === b);
 
@@ -761,6 +799,11 @@ const sameValue = (a, b) => (typeof a === 'object' || typeof b === 'object' ? JS
 export function planUpdate(doc, updates, { now = Date.now() } = {}) {
   const list = listOf(updates, 'updates', 1, LIMITS.updateItems);
   const { map, get } = snapshot(doc);
+  const all = [];
+  map.forEach((m, id) => {
+    if (m instanceof Y.Map) all.push({ ...m.toJSON(), id });
+  });
+  const { isVisible } = objectVisibility(all, isRevealed(doc));
   const seen = new Set();
   const pendingParent = new Map();
   const ops = [];
@@ -776,11 +819,18 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     seen.add(id);
     const current = get(id);
     if (!current) throw notFound('No such object', at(path, 'id'));
+    if (!isVisible(current)) throw notFound('No such object', at(path, 'id'));
     if (current.locked === true) throw conflict('The object is locked', at(path, 'id'));
 
-    const allowed = Object.hasOwn(UPDATABLE, current.type) ? UPDATABLE[current.type] : BOX_FIELDS;
     const fields = Object.keys(patch).filter((k) => k !== 'id');
+    for (const key of fields) {
+      if (!KNOWN_UPDATE_FIELDS.has(key)) throw invalid(at(path, key.slice(0, 40)), 'Unknown field');
+    }
+    if (current.type === 'card') throw invalid(at(path, 'id'), 'Use update_kanban_card to change a kanban card');
+    if (current.type === 'lane') throw invalid(at(path, 'id'), 'Kanban lanes cannot be changed with update_objects; use the board UI');
+    if (current.type === 'container') throw invalid(at(path, 'id'), 'Kanbans cannot be changed with update_objects; use the board UI');
     if (fields.length === 0) throw invalid(path, 'Nothing to change');
+    const allowed = Object.hasOwn(UPDATABLE, current.type) ? UPDATABLE[current.type] : [];
     const sets = new Map();
     const unsets = new Set();
     for (const key of fields) {
@@ -798,7 +848,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'w': case 'h': sets.set(key, size(v, fieldPath)); break;
         case 'rotation': sets.set(key, (num(v, fieldPath, -3600, 3600) * Math.PI) / 180); break;
         case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' ? 1 : 0, LIMITS.text)); break;
-        case 'name': sets.set(key, text(v, fieldPath, 1, LIMITS.name)); break;
+        case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;
         case 'color': sets.set('fill', colour(v, fieldPath, { names: true })); break;
         case 'fill': case 'stroke': sets.set(key, colour(v, fieldPath, { none: current.type !== 'connector' })); break;
@@ -812,7 +862,8 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'from': case 'to': sets.set(key, parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map() })); break;
         case 'parent': {
           const parentId = idString(v, fieldPath);
-          if (get(parentId)?.type !== 'frame') throw invalid(fieldPath, 'Must be the id of an existing frame');
+          const parentType = get(parentId)?.type;
+          if (parentType !== 'frame' && parentType !== 'group') throw invalid(fieldPath, 'Must be the id of an existing frame or group on this board');
           if (parentId === id) throw invalid(fieldPath, 'An object cannot be its own parent');
           sets.set(key, parentId);
           break;
@@ -824,7 +875,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
       pendingParent.set(id, sets.get('parent'));
       let cursor = sets.get('parent');
       for (let hops = 0; hops < 50 && cursor !== undefined; hops++) {
-        if (cursor === id) throw invalid(at(path, 'parent'), 'A frame cannot become a child of its own descendant');
+        if (cursor === id) throw invalid(at(path, 'parent'), 'An object cannot become a child of its own descendant');
         cursor = parentOf(cursor);
       }
     } else if (unsets.has('parent')) {
@@ -856,39 +907,125 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
   return { ops, result: { updated, objectCount: map.size }, audit: { count: updated.length, ids: updated } };
 }
 
-/** Deleting also removes the connectors attached to what is deleted; children of deleted frames stay, unparented. */
-export function planDelete(doc, ids) {
+/** Deleting also removes attached connectors; group members go, while unrevealed private notes are kept outside the subtree. */
+export function planDelete(doc, ids, { tokenId } = {}) {
   const list = listOf(ids, 'ids', 1, LIMITS.deleteIds);
   const { map, get } = snapshot(doc);
   const doomed = new Set();
+  const all = [];
+  map.forEach((m, id) => {
+    if (m instanceof Y.Map) all.push({ ...m.toJSON(), id });
+  });
+  const byId = new Map(all.map((o) => [o.id, o]));
+  const revealed = isRevealed(doc);
+  const { isVisible } = objectVisibility(all, revealed);
+  const isPrivateSticky = (o) => !revealed && o?.type === 'sticky' && Boolean(o.privateStep);
+  const preserved = new Set();
+  const pathOfId = new Map();
+  const cascadeMembers = new Set();
+
+  const checkCard = (card, path, { visible = true, checkLocked = true, checkOwner = true } = {}) => {
+    if (visible) {
+      const lane = byId.get(card.parent);
+      const container = lane?.type === 'lane' ? byId.get(lane.parent) : undefined;
+      if (!isVisible(card) || container?.type !== 'container' || container.layout !== 'kanban') {
+        throw notFound('No such object', path);
+      }
+    }
+    if (checkLocked && card.locked === true) throw conflict('The object is locked', path);
+    if (checkOwner && card.ownerKind === 'agent' && typeof card.ownerId === 'string' && card.ownerId !== tokenId) {
+      throw conflict('The card is assigned to another agent', path);
+    }
+  };
+
   list.forEach((value, i) => {
     const path = `ids[${i}]`;
     const id = idString(value, path);
     if (doomed.has(id)) throw invalid(path, 'Each id may appear once');
     const o = get(id);
     if (!o) throw notFound('No such object', path);
-    if (o.locked === true) throw conflict('The object is locked', path);
+    pathOfId.set(id, path);
+    if (o.type === 'lane') throw conflict('Lanes are removed with delete_kanban_lane (future); use the board UI for now', path);
+    if (o.type === 'container') throw conflict('Kanbans are removed through the board UI', path);
+    if (o.type === 'card') checkCard(o, path, { checkLocked: false, checkOwner: false });
     doomed.add(id);
   });
 
-  const also = [];
-  const unparent = [];
-  map.forEach((m, id) => {
-    if (doomed.has(id) || !(m instanceof Y.Map)) return;
-    const o = m.toJSON();
-    if (o.type === 'connector') {
-      if ([o.from, o.to].some((e) => e?.kind === 'bound' && doomed.has(e.id))) {
-        if (o.locked === true) throw conflict('A connector attached to a deleted object is locked', 'ids');
-        also.push(id);
+  // The canvas carries a group's descendants, including nested frames and kanbans, with the group. Private notes that
+  // gathering cannot see are kept and later re-parented to the nearest ancestor outside the deleted subtree.
+  const groupRoots = [...doomed].filter((id) => get(id)?.type === 'group');
+  const pending = [...groupRoots];
+  const expanded = new Set();
+  while (pending.length) {
+    const parentId = pending.pop();
+    if (expanded.has(parentId)) continue;
+    expanded.add(parentId);
+    for (const child of all) {
+      if (child.parent !== parentId) continue;
+      if (isPrivateSticky(child)) {
+        preserved.add(child.id);
+        continue;
       }
-    } else if (typeof o.parent === 'string' && doomed.has(o.parent)) {
-      unparent.push(id);
+      cascadeMembers.add(child.id);
+      if (!doomed.has(child.id)) {
+        doomed.add(child.id);
+        pathOfId.set(child.id, pathOfId.get(parentId) ?? 'ids');
+      }
+      if (['group', 'frame', 'container', 'lane'].includes(child.type)) pending.push(child.id);
+    }
+  }
+
+  for (const id of cascadeMembers) {
+    if (byId.get(id)?.locked === true) {
+      throw conflict('A member of this group is locked. Unlock it to delete the group.', pathOfId.get(id) ?? 'ids');
+    }
+  }
+
+  list.forEach((value, i) => {
+    if (byId.get(value)?.locked === true && !cascadeMembers.has(value)) {
+      throw conflict('The object is locked', `ids[${i}]`);
     }
   });
 
+  // Cascaded card removal follows the same lock and agent-owner rules as an explicit card id.
+  for (const id of doomed) {
+    const o = byId.get(id);
+    if (o?.type === 'card') {
+      const explicitlyRequested = list.some((value) => value === id);
+      checkCard(o, pathOfId.get(id) ?? 'ids', { visible: explicitlyRequested, checkLocked: false });
+    }
+  }
+
+  const also = [];
+  const parentChanges = [];
+  for (const o of all) {
+    if (doomed.has(o.id)) continue;
+    if (o.type === 'connector') {
+      const endpoints = [o.from, o.to];
+      const touchesDeleted = endpoints.some((e) => e?.kind === 'bound' && doomed.has(e.id));
+      const namesPreserved = endpoints.some((e) => e?.kind === 'bound' && (preserved.has(e.id) || isPrivateSticky(byId.get(e.id))));
+      if (touchesDeleted && !namesPreserved) {
+        if (o.locked === true) throw conflict('A connector attached to a deleted object is locked', 'ids');
+        also.push(o.id);
+      }
+    } else if (typeof o.parent === 'string' && doomed.has(o.parent)) {
+      if (preserved.has(o.id) || isPrivateSticky(o)) {
+        let parent = o.parent;
+        const seen = new Set([o.id]);
+        while (parent && doomed.has(parent) && !seen.has(parent)) {
+          seen.add(parent);
+          parent = byId.get(parent)?.parent;
+        }
+        parentChanges.push({ id: o.id, parent });
+      } else {
+        parentChanges.push({ id: o.id, parent: undefined });
+      }
+    }
+  }
+
   const removed = [...doomed, ...also].map((id) => summarise(get(id), LIMITS.summaryText));
   const ops = [
-    ...unparent.map((id) => ({ op: 'unset', id, key: 'parent' })),
+    ...parentChanges.map(({ id, parent }) => parent === undefined ? ({ op: 'unset', id, key: 'parent' }) : ({ op: 'set', id, key: 'parent', value: parent })),
     ...[...doomed, ...also].map((id) => ({ op: 'delete', id })),
   ];
   return {

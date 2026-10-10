@@ -26,8 +26,8 @@ function update(d: Y.Doc, updates: unknown[], now = 2000) {
   return plan.result;
 }
 
-function remove(d: Y.Doc, ids: unknown[]) {
-  const plan = planDelete(d, ids);
+function remove(d: Y.Doc, ids: unknown[], options?: { tokenId?: string }) {
+  const plan = planDelete(d, ids, options);
   d.transact(() => applyPlan(d, plan), 'mcp:test');
   return plan.result as { deleted: string[]; alsoDeleted: string[]; removed: any[] };
 }
@@ -46,6 +46,9 @@ function failure(fn: () => unknown): OpsError {
 const box = (id: string, extra: Record<string, unknown> = {}) => ({
   id, type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: 'a0', ...extra,
 });
+const boardObject = (id: string, type: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id, type, x: 0, y: 0, w: 100, h: 80, rotation: 0, z: 'a0', ...extra,
+});
 
 function seed(d: Y.Doc, ...objs: Record<string, unknown>[]) {
   const store = new Store(d);
@@ -56,6 +59,13 @@ function seed(d: Y.Doc, ...objs: Record<string, unknown>[]) {
 }
 
 describe('create', () => {
+  it.each(['container', 'lane', 'card', 'group', 'image'])('does not create %s through create_objects', (type) => {
+    const d = new Y.Doc();
+    const err = failure(() => planCreate(d, [{ type, x: 0, y: 0 }], who));
+    expect(err.code).toBe('invalid_input');
+    expect(err.path).toBe('objects[0].type');
+  });
+
   it('writes every object type in a form the real Store loads', () => {
     const d = new Y.Doc();
     const store = new Store(d);
@@ -308,6 +318,89 @@ describe('update', () => {
     expect(err.path).toBe(path);
     expect(bytes(d)).toBe(before);
   });
+
+  it('refuses kanban cards, lanes and containers with a pointer to their own tools', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do' }),
+      boardObject('card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Card' }),
+    );
+    for (const patch of [
+      { id: 'card' },
+      { id: 'card', text: 'Changed' },
+      { id: 'card', title: 'Changed', ownerName: 'Agent', due: '2026-10-10', labels: ['label'], link: 'https://example.com' },
+      { id: 'card', x: 20, y: 30, w: 300, h: 90, rotation: 15, parent: 'frame', rank: 'b0@lane' },
+    ]) {
+      const cardErr = failure(() => planUpdate(d, [patch]));
+      expect(cardErr.path).toBe('updates[0].id');
+      expect(cardErr.message).toContain('update_kanban_card');
+    }
+    expect(failure(() => planUpdate(d, [{ id: 'lane', x: 10 }])).message).toContain('board UI');
+    expect(failure(() => planUpdate(d, [{ id: 'kanban', w: 400 }])).message).toContain('board UI');
+  });
+
+  it('reports hidden objects as missing before generic type-specific refusals', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('visible-kanban', 'container', { layout: 'kanban' }),
+      boardObject('visible-lane', 'lane', { parent: 'visible-kanban' }),
+      boardObject('hidden-card', 'card', { parent: 'visible-lane', hidden: true, locked: true }),
+      boardObject('private-card', 'card', { parent: 'visible-lane', privateStep: 'step-1' }),
+      boardObject('hidden-lane', 'lane', { parent: 'visible-kanban', hidden: true }),
+      boardObject('card-in-hidden-lane', 'card', { parent: 'hidden-lane' }),
+      boardObject('hidden-kanban', 'container', { layout: 'kanban', hidden: true }),
+    );
+    const before = bytes(d);
+    const missing = failure(() => planUpdate(d, [{ id: 'missing', x: 12 }]));
+    expect(missing).toMatchObject({ code: 'not_found', message: 'No such object', path: 'updates[0].id' });
+    for (const id of ['hidden-card', 'private-card', 'hidden-lane', 'card-in-hidden-lane', 'hidden-kanban']) {
+      const err = failure(() => planUpdate(d, [{ id, x: 12 }]));
+      expect(err).toMatchObject({ code: missing.code, message: missing.message, path: missing.path });
+    }
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('lets a group change only its name and lets icons and UML boxes use checked geometry and frame or group parents', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('frame', 'frame', { name: 'Frame' }),
+      boardObject('group', 'group', { name: 'Group' }),
+      boardObject('group-member', 'shape', { parent: 'group' }),
+      boardObject('icon', 'icon'),
+      boardObject('uml', 'uml-class'),
+      boardObject('shape', 'shape'),
+    );
+    expect(planUpdate(d, [{ id: 'group', name: 'Renamed' }]).ops).toContainEqual({ op: 'set', id: 'group', key: 'name', value: 'Renamed' });
+    expect(failure(() => planUpdate(d, [{ id: 'group', name: 'G'.repeat(81) }])).path).toBe('updates[0].name');
+    expect(failure(() => planUpdate(d, [{ id: 'group', x: 12 }])).path).toBe('updates[0].x');
+    const accepted = planUpdate(d, [{ id: 'icon', x: 12, parent: 'group' }, { id: 'uml', parent: 'frame' }]);
+    expect(accepted.ops).toContainEqual({ op: 'set', id: 'icon', key: 'parent', value: 'group' });
+    expect(accepted.ops).toContainEqual({ op: 'set', id: 'uml', key: 'parent', value: 'frame' });
+    expect(failure(() => planUpdate(d, [{ id: 'icon', parent: 'shape' }])).path).toBe('updates[0].parent');
+  });
+
+  it.each(['sticky', 'shape', 'text', 'frame', 'connector', 'group', 'icon', 'image', 'path', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component', 'container', 'lane', 'card'])
+    ('reports an unknown field path for %s objects', (type) => {
+      const d = new Y.Doc();
+      const fields = boardObject('object', type);
+      if (type === 'container') fields.layout = 'kanban';
+      d.getMap('objects').set('object', new Y.Map(Object.entries(fields)));
+      const err = failure(() => planUpdate(d, [{ id: 'object', surprise: true }]));
+      expect(err.code).toBe('invalid_input');
+      expect(err.path).toBe('updates[0].surprise');
+    });
+
+  it.each(['createdBy', 'updatedAt', 'proposedBy', 'locked'])('refuses the reserved %s field with its field path', (field) => {
+    const d = new Y.Doc();
+    seed(d, boardObject('icon', 'icon'));
+    const err = failure(() => planUpdate(d, [{ id: 'icon', [field]: 'changed' }]));
+    expect(err.code).toBe('invalid_input');
+    expect(err.path).toBe(`updates[0].${field}`);
+  });
 });
 
 describe('delete', () => {
@@ -343,6 +436,82 @@ describe('delete', () => {
     expect(failure(() => planDelete(d, Array.from({ length: 51 }, (_, i) => `x${i}`))).path).toBe('ids');
     expect(bytes(d)).toBe(before);
   });
+
+  it('refuses direct lane and kanban deletes and applies visible, lock and agent-owner rules to cards', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do' }),
+      boardObject('person-card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Person card', ownerKind: 'person', ownerName: 'Ada' }),
+      boardObject('hidden-card', 'card', { parent: 'lane', rank: 'a1@lane', text: 'Hidden', hidden: true }),
+      boardObject('private-card', 'card', { parent: 'lane', rank: 'a2@lane', text: 'Private', privateStep: 'step' }),
+      boardObject('locked-card', 'card', { parent: 'lane', rank: 'a3@lane', text: 'Locked', locked: true }),
+      boardObject('agent-card', 'card', { parent: 'lane', rank: 'a4@lane', text: 'Owned', ownerKind: 'agent', ownerId: 'token-a' }),
+    );
+    expect(failure(() => planDelete(d, ['lane'])).code).toBe('conflict');
+    expect(failure(() => planDelete(d, ['kanban'])).code).toBe('conflict');
+    expect(failure(() => planDelete(d, ['hidden-card'], { tokenId: 'token-a' })).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['private-card'], { tokenId: 'token-a' })).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['locked-card'], { tokenId: 'token-a' })).code).toBe('conflict');
+    const otherAgent = failure(() => planDelete(d, ['agent-card'], { tokenId: 'token-b' }));
+    expect(otherAgent.code).toBe('conflict');
+    expect(otherAgent.message).toBe('The card is assigned to another agent');
+    expect(planDelete(d, ['agent-card'], { tokenId: 'token-a' }).result.deleted).toEqual(['agent-card']);
+    expect(planDelete(d, ['person-card'], { tokenId: 'token-b' }).result.deleted).toEqual(['person-card']);
+  });
+
+  it('deletes a group subtree and moves unrevealed private notes to the nearest surviving parent', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('outer', 'frame', { name: 'Outer' }),
+      boardObject('group', 'group', { parent: 'outer', name: 'Group' }),
+      boardObject('nested', 'group', { parent: 'group', name: 'Nested' }),
+      boardObject('frame', 'frame', { parent: 'nested', name: 'Inside' }),
+      boardObject('member', 'shape', { parent: 'frame', text: 'Member' }),
+      boardObject('secret', 'sticky', { parent: 'nested', text: 'PRIVATE WORDS', privateStep: 'step-1' }),
+    );
+    const plan = planDelete(d, ['group']);
+    expect(plan.result.deleted.sort()).toEqual(['frame', 'group', 'member', 'nested']);
+    expect(JSON.stringify(plan.result)).not.toContain('PRIVATE WORDS');
+    d.transact(() => applyPlan(d, plan), 'mcp:test');
+    expect(new Store(d).get('secret')).toMatchObject({ id: 'secret', parent: 'outer' });
+    expect(new Store(d).get('member')).toBeUndefined();
+  });
+
+  it.each([
+    ['sticky', [boardObject('member', 'sticky', { parent: 'group', locked: true })]],
+    ['frame', [boardObject('member', 'frame', { parent: 'group', locked: true })]],
+    ['nested group member', [
+      boardObject('nested', 'group', { parent: 'group' }),
+      boardObject('member', 'text', { parent: 'nested', locked: true }),
+    ]],
+  ])('refuses a group cascade with a locked %s', (_label, members) => {
+    const d = new Y.Doc();
+    seed(d, boardObject('group', 'group'), ...members);
+    const before = bytes(d);
+    const err = failure(() => planDelete(d, ['group']));
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('refuses a group delete that would remove a kanban with a locked lane', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('group', 'group', { name: 'Group' }),
+      boardObject('kanban', 'container', { parent: 'group', layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do', locked: true }),
+      boardObject('card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Card' }),
+    );
+    const err = failure(() => planDelete(d, ['group']));
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
+  });
 });
 
 describe('private notes', () => {
@@ -366,9 +535,12 @@ describe('private notes', () => {
     expect(view.hiddenCount).toBe(1);
     expect(JSON.stringify(view)).not.toContain('secret');
     expect(getObjectsDetail(d, ['hid', 'open'])).toMatchObject({ missing: ['hid'] });
+    expect(getObjectsDetail(d, ['wire'])).toMatchObject({ missing: ['wire'] });
     expect(hiddenIds(d)).toEqual(new Set(['hid']));
     expect(failure(() => planUpdate(d, [{ id: 'hid', text: 'overwritten' }])).code).toBe('not_found');
+    expect(failure(() => planUpdate(d, [{ id: 'wire', label: 'hidden endpoint' }])).code).toBe('not_found');
     expect(failure(() => planDelete(d, ['hid'])).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['wire'])).code).toBe('not_found');
     expect(failure(() => planCreate(d, [{ type: 'connector', from: { id: 'hid' }, to: { x: 0, y: 0 } }], who)).code).toBe('not_found');
     expect(failure(() => resolveAnchor(d, { objectId: 'hid' })).code).toBe('not_found');
   });

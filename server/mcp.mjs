@@ -15,8 +15,9 @@ import {
 } from '../shared/containers.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
-  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, hiddenOf, newObjectId,
+  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
   listThreads, planCreate, planDelete, planUpdate, planUseTemplate, resolveAnchor, summariseBoard,
+  objectVisibility,
 } from './board-ops.mjs';
 
 export const MCP_SERVER_NAME = 'board';
@@ -127,7 +128,7 @@ const updateItemSchema = {
   additionalProperties: false,
   required: ['id'],
   description:
-    'id plus the fields to change. Any box: x, y, w, h, rotation (degrees), parent (frame id or null). sticky: text, color. shape: text, kind, fill, stroke, strokeWidth. text: text, fontSize, textColor. frame: name, fill. connector: from, to, label, route, startHead, endHead, dash, stroke. null clears an optional field.',
+    'id plus the fields to change. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
   properties: {
     id: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
@@ -313,11 +314,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     map.forEach((value, id) => {
       if (value instanceof Y.Map) all.push({ ...value.toJSON(), id, map: value });
     });
-    const boxes = all.filter((o) => o.type !== 'connector');
-    const connectors = all.filter((o) => o.type === 'connector');
-    const hidden = hiddenOf({ boxes, connectors });
     const revealed = doc.getMap('flow').get('reveal') === true;
-    const isVisible = (o) => !hidden.has(o.id) && !(o.type === 'card' && !revealed && Boolean(o.privateStep));
+    const { isVisible } = objectVisibility(all, revealed);
     const byId = new Map(all.map((o) => [o.id, o]));
     const container = byId.get(kanbanId);
     if (container?.type !== 'container' || container.layout !== 'kanban' || !isVisible(container)) {
@@ -846,7 +844,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'update_objects',
       title: 'Change objects',
       description:
-        'Changes fields of up to 100 existing objects in one all-or-nothing call. Locked or unknown objects fail the whole call. Moving a frame does not move its children.',
+        'Changes fields of up to 100 existing objects in one all-or-nothing call. Cards must use update_kanban_card. Lanes and kanbans are managed through the board UI. Groups can change name only; icons, images, paths and UML objects can change box geometry and parent. Locked or unknown objects fail the whole call. Moving a frame does not move its children.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -866,7 +864,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'delete_objects',
       title: 'Delete objects',
       description:
-        'Deletes up to 50 objects by id, all or nothing. Connectors attached to them are deleted too; children of a deleted frame stay. This cannot be undone by the human (the result lists what was removed so it can be recreated).',
+        'Deletes up to 50 objects by id, all or nothing. Lanes and kanbans cannot be deleted here: use delete_kanban_lane when available, or the board UI for a kanban. Cards must be visible and unlocked; a card assigned to another agent cannot be deleted by this token. Deleting a group also deletes its members, while unrevealed private notes are kept and moved outside the deleted group. Connectors attached to deleted objects are deleted too; children of a deleted frame stay. This cannot be undone by the human (the result lists what was removed so it can be recreated).',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -875,7 +873,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const boardId = boardArgs(args, ['ids']);
         const ids = check.required(args, 'ids', '');
         const plan = makeCtx(actor, boardId).writeBoard((doc) => {
-          const planned = planDelete(doc, ids);
+          const planned = planDelete(doc, ids, { tokenId: actor.tokenId });
           applyPlan(doc, planned);
           return planned;
         });

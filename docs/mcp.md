@@ -172,7 +172,7 @@ End       { id: string, side?: 'top'|'right'|'bottom'|'left' }   an object (side
         | { ref: string, side? }                                  an object created earlier or later in the same create_objects call
         | { x: number, y: number }                                a free point; stored as { kind: 'free', x, y }
 Parent    string (the id of an existing frame) | { ref: string } (a frame created in the same call)
-Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?, fill?, parent?, locked? }                     boxes
+Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?, fill?, parent?, hidden?: true, locked?: true }   boxes
           { id, type: 'connector', from: End, to: End, route, startHead, endHead, label?, dash?, relation? }                     connectors (End as stored)
 ```
 
@@ -223,26 +223,27 @@ Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label`
 
 Result: `{ created: [{ref?, id, type}], refs: {ref: id}, objectCount }`. New objects are placed above everything else: `z` comes from `generateNKeysBetween` over the current maximum (`fractional-indexing` is already a dependency), in input order. Fonts come from the board's `meta` (`bodyFont`, `headingFont` for frames) like the app does. The call fails with `limit_exceeded` if the board would exceed 5,000 objects.
 
-Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. Text may not contain control characters (other than newline and tab) or Unicode tag characters. Icons, images, freehand paths and UML objects cannot be created (icon bodies are SVG; see "Not in this slice").
+Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. Text may not contain control characters (other than newline and tab) or Unicode tag characters. Only sticky, shape, text, frame and connector objects can be created. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused; icon bodies are SVG (see "Not in this slice").
 
 ### `update_objects`
 
 `{ boardId, updates: [{ id, ...fields }][1..100] }`. Fields that may change, by type:
 
 ```
-all boxes   x y w h rotation(deg) parent(frame id | null)
-sticky      text color
-shape       text kind fill stroke strokeWidth
-text        text fontSize textColor
-frame       name fill
-connector   from to label route startHead endHead dash stroke
+sticky       x y w h rotation(deg) parent(frame or group id | null), text, color
+shape        x y w h rotation(deg) parent(frame or group id | null), text, kind, fill, stroke, strokeWidth
+text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, textColor
+frame        x y w h rotation(deg) parent(frame or group id | null), name, fill
+connector    from, to, label, route, startHead, endHead, dash, stroke
+group        name only
+icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id | null)
 ```
 
-`null` clears an optional field; `type` and `id` cannot change; a field that does not belong to the object's type is `invalid_input` (`field_not_allowed_for_type`). Each field is set on its own `Y.Map` key (exactly what `Store.update` does), so an edit to `text` by the AI and a simultaneous move by a person both survive. `updatedAt` is set. Moving a frame does not move its children; update them too. A `parent` that would make a frame its own ancestor is rejected. **If any id is unknown or any target is `locked`, the whole call fails (`not_found` / `conflict`) and nothing changes.**
+`null` clears an optional field; `type`, `id` and reserved fields such as `createdBy`, `updatedAt`, `proposedBy` and `locked` cannot change. A field that does not belong to the object's type is `invalid_input` with its field path. An unknown field is refused for every type. Cards are refused with a pointer to `update_kanban_card`; lanes and kanbans are refused because their geometry is derived and lane names do not yet have an MCP tool. Use the board UI to change them. Each accepted field is set on its own `Y.Map` key, so an edit to `text` by the AI and a simultaneous move by a person both survive. `updatedAt` is set. Moving a frame does not move its children; update them too. A `parent` must be an existing frame or group on this board, and a parent that would create a cycle is refused. **If any id is unknown or any target is `locked`, the whole call fails (`not_found` / `conflict`) and nothing changes.**
 
 ### `delete_objects`
 
-`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Children of a deleted frame stay on the board with `parent` cleared (as `deleteSelection` does). **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. Deleting is permanent for the human, because MCP edits are outside the undo stack and rooms use `gc: true`; the result therefore echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
+`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Lanes cannot be deleted here; use `delete_kanban_lane` when available. Kanbans are deleted through the board UI. A card must be visible, in a kanban lane and unlocked; an unrevealed private or hidden card answers `not_found`, and a card assigned to another agent answers `conflict` for a different token. A person's card can be deleted by an editor token. Deleting a group also deletes its members, including nested groups, frames and kanban members; any locked member blocks the whole cascade with `conflict` until it is unlocked. Unrevealed private notes are left on the board and moved to the nearest parent outside the deleted group. Children of a directly deleted frame stay on the board with `parent` cleared. **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. Deleting is permanent for the human, because MCP edits are outside the undo stack and rooms use `gc: true`; the result therefore echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
 
 ### `list_kanban_cards`
 
@@ -446,6 +447,7 @@ The official client SDK is a devDependency used only by the smoke test in `test/
 
 - OAuth 2.1 and dynamic client registration (what Claude Desktop's built-in connector UI and web connectors need), so access tokens only; a stdio bridge package; SSE, resumability and server-initiated messages; MCP resources and prompts.
 - **Mermaid in and out** ("add from Mermaid", "read as Mermaid"). `parseMermaid` and `layout` in `src/mermaid.ts` work without a DOM (text measuring falls back to an estimate), but they are TypeScript under `src/`: the production image ships `server/` and `dist/` only, and `engines` is Node 22.13, which cannot import `.ts` unflagged. It needs the parser and layout extracted into a shared plain-JavaScript module first, a refactor that touches files the rename is editing. Until then a model draws flowcharts with `create_objects` and connectors.
+- Kanban lane creation, renaming, reordering and deletion; label management; and exact card ordering. MCP card tools use existing lanes and append moved or added cards. Use the board UI for lanes and labels.
 - Creating, renaming, moving, sharing or deleting boards; board settings (`meta`: title, grid, fonts); facilitation (steps, timer, votes, reveal); creating, changing, sharing or deleting templates (listing and using them is `list_templates` and `use_template`); icons, images, freehand paths and UML objects; automatic layout; auto-parenting into frames; moving a frame's children with it.
 - Editing, resolving and deleting comments; mentions.
 - The **AI tool access** entry on the home screen (another session is rewriting its top bar; the board menu has it).
@@ -462,7 +464,7 @@ New:
 - `server/tokens.mjs`: token generation and prefix, migration 4 SQL, `createTokenStore` (all token SQL).
 - `src/ui/tokens.ts`, `src/ui/tokens.css`: the AI tool access dialog and the admin tab body.
 - `src/ui/tokens-logic.ts`: pure client helpers (labels, rules, snippets).
-- `test/board-ops.test.ts`, `test/tokens.test.ts`, `test/mcp-accounts.test.ts`, `test/mcp-open.test.ts`, `test/mcp-kanban.test.ts`, `test/tokens-logic.test.ts`, and `test/mcp-harness.ts` (the shared helper for the black-box files; not a test).
+- `test/board-ops.test.ts`, `test/tokens.test.ts`, `test/mcp-accounts.test.ts`, `test/mcp-open.test.ts`, `test/mcp-kanban.test.ts`, `test/mcp-templates.test.ts`, `test/tokens-logic.test.ts`, and `test/mcp-harness.ts` (the shared helper for the black-box files; not a test).
 
 Existing, touched at registration level unless noted:
 
