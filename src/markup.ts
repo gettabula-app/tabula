@@ -15,6 +15,7 @@ import { hasLayout, isSafeHttpUrl, kanbanColor, validLabel, type ContainerLayout
 import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
+import { renderTrackerFrame } from './tracker-frame';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
 
 export interface MarkupCtx {
@@ -75,6 +76,7 @@ export function defaultsFor(o: Obj) {
   if (o.type === 'sticky') return DEFAULTS.sticky;
   if (o.type === 'text') return DEFAULTS.text;
   if (o.type === 'frame') return DEFAULTS.frame;
+  if (o.type === 'tracker') return DEFAULTS.frame;
   if (o.type === 'path') return DEFAULTS.path;
   if (o.type === 'icon') return DEFAULTS.icon;
   if (o.type.startsWith('uml-')) return DEFAULTS.uml;
@@ -864,6 +866,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
     case 'frame': return frameMarkup(o);
+    case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
     case 'icon': return iconMarkup(o);
     case 'image': return imageMarkup(o, ctx);
     case 'path': return pathMarkup(o);
