@@ -52,6 +52,7 @@ if (!DEMO) onRestoring(() => showRestoring());
 const RETURN_KEY = 'driftboard:return';
 
 const root = document.getElementById('app')!;
+const trackerFoundationVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).get('debug') === 'tracker-foundation';
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
@@ -444,9 +445,13 @@ async function boot() {
   once.handle();
 }
 
-if (!DEMO) loadCatalogue();
-boot();
+if (trackerFoundationVisual) {
+  void import('./tracker/ui/gallery').then(({ mountTrackerGallery }) => mountTrackerGallery(root));
+} else {
+  if (!DEMO) loadCatalogue();
+  boot();
+}
 
-if (!DEMO && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
+if (!DEMO && !trackerFoundationVisual && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);
 }

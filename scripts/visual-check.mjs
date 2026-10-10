@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -962,6 +962,73 @@ async function pressZoom(page, factor) {
 }
 
 const STATES = {
+  async 'tracker-foundation'({ page, base, width }) {
+    await page.goto(`${base}/?debug=tracker-foundation`);
+    await page.getByRole('main', { name: 'Tracker UI foundation gallery' }).waitFor();
+    await page.getByRole('listbox', { name: 'State' }).waitFor();
+    await page.locator('.trk-pop .trk-picker-option').first().waitFor();
+    const audit = await page.evaluate((viewportWidth) => {
+      const failures = [];
+      const contrast = (foreground, background) => {
+        const rgb = (value) => {
+          const match = value.match(/rgba?\(([^)]+)\)/i);
+          if (!match) return null;
+          const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+          return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite) ? parts.slice(0, 3) : null;
+        };
+        const fg = rgb(foreground), bg = rgb(background);
+        if (!fg || !bg) return 0;
+        const luminance = ([r, g, b]) => {
+          const linear = (n) => { const x = n / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+          return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+        };
+        const a = luminance(fg), b = luminance(bg);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      const background = (element) => {
+        for (let at = element; at; at = at.parentElement) {
+          const color = getComputedStyle(at).backgroundColor;
+          if (!color.includes('rgba(0, 0, 0, 0)') && color !== 'transparent') return color;
+        }
+        return getComputedStyle(document.documentElement).backgroundColor;
+      };
+      const textNodes = [...document.querySelectorAll('.trk .trk-key-chip, .trk .trk-label-chip, .trk .trk-count-badge, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip, .trk .trk-list-title, .trk .trk-list-group-head')];
+      for (const element of textNodes) {
+        const ratio = contrast(getComputedStyle(element).color, background(element));
+        if (ratio < 4.5) failures.push(`text contrast ${ratio.toFixed(2)}:1 on .${element.className}`);
+      }
+      const nonText = [...document.querySelectorAll('.trk .trk-glyph, .trk .trk-label-chip, .trk .trk-count-badge, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip')];
+      for (const element of nonText) {
+        const style = getComputedStyle(element);
+        const foreground = element.matches('svg') ? style.color : style.borderTopColor;
+        const ratio = contrast(foreground, background(element));
+        if (ratio < 3) failures.push(`non-text contrast ${ratio.toFixed(2)}:1 on .${element.className}`);
+      }
+      const listbox = document.querySelector('[role="listbox"]');
+      const options = [...document.querySelectorAll('[role="option"]')];
+      if (!listbox?.getAttribute('aria-label')) failures.push('picker listbox has no accessible name');
+      if (!options.length || options.some((option) => !option.textContent.trim())) failures.push('picker options have no accessible names');
+      const activeId = listbox?.getAttribute('aria-activedescendant');
+      if (!activeId || !document.getElementById(activeId)) failures.push('picker has no live active descendant');
+      if (!document.querySelector('[aria-pressed="true"]')) failures.push('pressed state is missing');
+      if (!document.querySelector('[role="checkbox"][aria-checked="mixed"]')) failures.push('mixed checkbox state is missing');
+      if ([...document.querySelectorAll('.trk svg')].some((icon) => icon.getAttribute('aria-hidden') !== 'true')) failures.push('decorative glyph is exposed to assistive technology');
+      if (viewportWidth <= 390) {
+        const targets = [...document.querySelectorAll('.trk button, .trk [role="option"], .trk [role="row"]')].filter((element) => element.getClientRects().length);
+        const tooSmall = targets.find((element) => element.getBoundingClientRect().height < 44);
+        if (tooSmall) failures.push(`touch target is ${Math.round(tooSmall.getBoundingClientRect().height)}px: ${tooSmall.textContent.trim()}`);
+      }
+      const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth;
+      if (overflow > 0) failures.push(`horizontal overflow ${overflow}px`);
+      return { failures, overflow };
+    }, width);
+    if (audit.failures.length) throw new Error(`tracker-foundation accessibility/contrast audit: ${audit.failures.join('; ')}`);
+    if (width <= 390) {
+      // Check the live phone sheet above, then dismiss it so the full-page shot also shows the filter bar and grouped list.
+      await page.keyboard.press('Escape');
+      await page.locator('.trk-pop').waitFor({ state: 'detached' });
+    }
+  },
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
     await page.locator('.home-title').waitFor();
@@ -2908,7 +2975,7 @@ const STATES = {
   },
 };
 // These pages are longer than the window and the point of the shot is the whole of it (the list under the status).
-const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
+const FULL_PAGE = new Set(['tracker-foundation', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap']);
@@ -3209,7 +3276,7 @@ function ensureBuilt(noBuild) {
   }
   if (noBuild && built) return distDir;
   console.log('building the app (npm run build:app)');
-  const run = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:app'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  const run = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:app', '--', '--mode', 'visual'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
   if (run.status !== 0) throw new Error('npm run build:app failed');
   return distDir;
 }
