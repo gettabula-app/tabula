@@ -28,7 +28,7 @@ Names here are **proposals**. Where the architecture spec already has a name, it
 | Tracker | One issue database for a workspace, shown by one or more tracker frames. `trackerId`. In v1 one tracker per workspace; the frame shows it. |
 | Tracker frame | The board object that renders a tracker. Type `tracker` (frame-like box; see 3.1). Fields: `trackerId`, `view` (current tab id), `focusKey` (open ticket key, optional). |
 | Ticket | An issue. Key `PREFIX-N` (`TAB-123`): `PREFIX` is the tracker prefix (2 to 5 capitals), `N` a never-reused integer. The key is permanent; renaming the prefix keeps old keys resolving. |
-| State | A named step of the workflow, each with a **category**: `backlog`, `unstarted`, `started`, `done`, `cancelled`. Default states: Backlog, Todo, In progress, In review, Done, Cancelled. |
+| State | A named step of the workflow, each with a **category**: `backlog`, `unstarted`, `started`, `completed`, `canceled` (frozen with the architecture spec; the UI says "Done" and "Cancelled" in default state names, the category names are for code and API only). Default states: Backlog, Todo, In progress, In review, Done, Cancelled. |
 | Project | A group of tickets with a name, lead, target date, and optional milestones. |
 | Milestone | A dated step inside a project. |
 | Relation | `blocks` / `blocked by`, `relates to`, `duplicate of` / `duplicated by`, `parent` / `sub-issue`. |
@@ -37,7 +37,7 @@ Names here are **proposals**. Where the architecture spec already has a name, it
 
 ### 2.2 Ticket fields ⟂
 
-`key`, `title` (one line, up to 200 code points), `description` (rich text: paragraphs, lists, code, links, @mentions, images; stored as Markdown), `state` (state id), `priority` (`none | urgent | high | medium | low`), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
+`key`, `title` (one line, up to 200 code points), `description` (rich text: paragraphs, lists, code, links, @mentions, images; stored as Markdown), `state` (state id), `priority` (API names `none | urgent | high | medium | low`, stored as an integer 0 to 4 in that order), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number: stored, **no UI in v1**), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
 
 Card fields that exist today and map: `text` → `title`, `desc` → `description`, `ownerId` → `assignee`, `due` → `due`, `labels` → `labels` (tracker labels replace the board label set for linked cards), lane → `state`.
 
@@ -52,7 +52,7 @@ The kanban spec reserves `extProvider`, `extKey`, `extUrl` for Linear/Jira. The 
 | `extUrl` | the deep link (4.2); derived, never trusted from the client |
 | `trackerId` | which tracker (needed when a workspace has more than one later) |
 
-A container with `ext: { provider: 'tabula', tracker, map }` is a **linked kanban**. `map` is `{ laneId: stateId }`, one value on the container, as the kanban spec says.
+A container with `ext: { provider: 'tabula', tracker, map }` is a **linked kanban**. The real lane-to-state map lives in the tracker's database and is edited only through the Link dialog (9.2). `ext.map` (`{ laneId: stateId }`) is a **server-written copy** the client reads to draw lanes and cannot edit.
 
 ### 2.4 Link records and events ⟂
 
@@ -206,9 +206,9 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 │ SUB-ISSUES  2 of 4                  +          │ MILESTONE  Beta
 │ RELATIONS   blocks TAB-130                  +  │ LABELS     ui  tablet
 │ LINKED WORK                                    │ DUE        Fri 16 Oct
-│  ◐ PR #482  Fix lane drop     merged  Mara     │ ESTIMATE   3
-│  ● a1b2c3d  Add presets       Mara             │ CREATED    Mara, 2 d
-│ ACTIVITY                                       │ ON CANVAS  Sprint retro →
+│  ◐ PR #482  Fix lane drop     merged  Mara     │ CREATED    Mara, 2 d
+│  ● a1b2c3d  Add presets       Mara             │ ON CANVAS  Sprint retro →
+│ ACTIVITY                                       │
 │  …                                             │
 └───────────────────────────────────────────────┴────────────────────┘
 ```
@@ -329,16 +329,16 @@ Reached from the tracker's ⋯ menu (**Integrations**) and the workspace setting
 
 1. **Connection**: state ("Connected as `acme` (organisation)", "Not connected"), who connected it and when, **Connect GitHub** / **Disconnect**. Connect goes through the GitHub App install flow in a new tab; the page then shows "Waiting for GitHub…" and resolves by itself when the install webhook arrives (or **I've installed it, check again**). Scopes are listed in plain words before the button: "Read pull requests and commits, read repository names. Tabula never changes your code."
 2. **Repositories**: a table, one row per repository the GitHub App can see: a toggle **Link this repo**, the repo name, default branch, and **Last event** time. Search box, **Select all visible**. A repo with the toggle off sends nothing to Tabula (the app is told, not just filtered).
-3. **Rules** (per repo, with a **All repos** default set): sentences with pickers, never a form of fields:
+3. **Rules** (per repo, with an **All repos** default set): sentences with pickers, never a form of fields. **Every state change starts as "no change"**: a new connection only links and comments until an owner picks a state for a rule (frozen with the architecture spec's "comment only until opted in"). The examples below show the pickers an owner would set:
 
    | Rule | Sentence |
    |---|---|
-   | PR opened | When a pull request that mentions a ticket is **opened**, move the ticket to **[In progress ▾]** (default: no change) |
+   | PR opened | When a pull request that mentions a ticket is **opened**, move the ticket to **[In progress ▾]** |
    | Ready for review | When it is **ready for review**, move to **[In review ▾]** |
    | PR merged | When it is **merged**, move to **[Done ▾]** |
    | PR closed (not merged) | When it is **closed without merging**, move to **[no change ▾]** |
    | Magic words | **`fixes TAB-123`** and **`closes TAB-123`** in the PR description count as the ticket being completed when the PR merges; plain mentions only link (toggle, on) |
-   | Only if | the ticket is not already done or cancelled (toggle, on): a rule never reopens a finished ticket |
+   | Only if | the ticket is not already completed or canceled (toggle, on): a rule never reopens a finished ticket |
    | Branch pattern | optional: only PRs targeting **[main ▾]** apply a state change (default: the repo's default branch) |
    | Comment back | optional, off: Tabula comments on the PR with the ticket title and link |
 
@@ -361,7 +361,7 @@ Reached from the tracker's ⋯ menu (**Integrations**) and the workspace setting
 | Rate limited | "GitHub is slow to answer. Updates are delayed." (a grey banner, auto-clears). |
 | Permission lost on a repo | The repo row shows **No access** and its toggle is disabled. |
 | A ticket is archived/deleted that has links | Links are kept with the ticket; for a deleted ticket the PR row stays in the activity log as **Ignored: ticket deleted**. |
-| Merged PR but the ticket was moved by someone since | The rule only applies if the ticket is not done/cancelled; otherwise history shows "PR #482 merged · no state change (already Done)". |
+| Merged PR but the ticket was moved by someone since | The rule only applies if the ticket is not completed/canceled; otherwise history shows "PR #482 merged · no state change (already Done)". |
 | Two PRs for one ticket | Both show; the chip shows the open one. A merge applies its rule once, a later merge applies to a ticket already done and so does nothing. |
 | Offline | The Integrations screen is read-only with "You are offline." |
 
@@ -373,7 +373,7 @@ At 360 to 600 px wide the tracker is **always full screen** (the canvas frame is
 
 - **Navigation**: a bottom tab bar with five icons and labels (Inbox, Mine, All, Board, Projects), each 56 px tall minimum with the safe-area inset; the top strip shows the tab name, a search button and **+** (New issue). Hidden when the keyboard is open.
 - **Lists**: rows become two lines: line 1 priority glyph, key, title; line 2 state glyph + name, assignee badge, due, PR chip; 64 px tall, full-width tap target. Group headers stick. Pull-down refreshes only when offline sync is pending (never as the only way).
-- **Swipe actions** on a row (only as a shortcut; every one is also in the row's ⋯ and the ticket page): swipe right = **Assign to me**, swipe left = **Done** (state category done), with an Undo toast.
+- **Swipe actions** on a row (only as a shortcut; every one is also in the row's ⋯ and the ticket page): swipe right = **Assign to me**, swipe left = **Done** (state category completed), with an Undo toast.
 - **Filter**: a **Filter** button opens a bottom sheet with the same fields, applied as chips; **Save as view** at its end.
 - **Board**: lanes are horizontal pages (one lane per screen with the neighbours peeking 24 px), a lane switcher strip (state glyphs + counts) on top; **Move to…** on the card's ⋯ sheet is the move action (drag between lanes needs two screens and is not the primary path), long-press-drag works within the lane to reorder.
 - **Ticket**: one column; properties are a horizontally scrolling **chip row** under the title (each chip a picker sheet), then description, sub-issues, relations, linked work, activity. A sticky **comment composer** bar at the bottom ("Add a comment…") expands upward; it sits above the keyboard (uses the visual viewport as the emoji picker does).
@@ -391,7 +391,7 @@ Tablets (iPad): the frame on the canvas is touchable in Work mode (a two-finger 
 A kanban container can be **linked** to a tracker. After linking:
 
 - **Every card is a ticket.** A card with no `extKey` gets a new ticket created from it (title, description, owner → assignee, due, labels) and an `extKey`. A ticket made from a card starts in the state its lane maps to.
-- **Every lane maps to a tracker state** (many lanes may map to one state; one state may have no lane).
+- **Every lane maps to a tracker state** (one lane per state in v1; a state may have no lane).
 - **The ticket is the source of truth** for title, description, state, assignee, due, labels, priority. The card is a **view** of it. Moving a card between lanes changes the ticket's state; changing the ticket's state moves the card to the lane mapped to it.
 - **Position** within a lane (`rank`) and the card's canvas look stay on the board; they are not tickets' data.
 - A new ticket created in the tracker **appears on the linked kanban** in the lane for its state if the container opts in: **Show tickets: All / Filtered (a saved view) / Only cards made here** (default **Only cards made here**, so linking a retro board does not fill it with 400 backlog tickets).
@@ -404,7 +404,7 @@ Entry: container ⋯ menu → **Link to tracker…** (also on the tracker's Boar
 A three-step dialog (a sheet on phone), each step a single decision:
 
 1. **Choose the tracker and where new tickets go**: tracker (one in v1; shown for the future), **Project** (optional; every new ticket from this board joins it) and **Team labels** to add (optional).
-2. **Map the lanes**: a two-column list, left each lane (name + card count), right a state picker (default: matched by name, else by the lane's **stage** `todo/doing/done` → Todo/In progress/Done; unmatched lanes default to Backlog with a visible "Check this" mark). A state used twice shows "2 lanes". A warning line, not an error, for a state with no lane ("Cancelled has no lane: cards moved there in the tracker will leave the board"). Option: **Create lanes for states without one** (off by default).
+2. **Map the lanes**: a two-column list, left each lane (name + card count), right a state picker (default: matched by name, else by the lane's **stage** `todo/doing/done` → Todo/In progress/Done; unmatched lanes default to Backlog with a visible "Check this" mark). A state can be picked for one lane only: a state already taken is shown greyed with "Used by Doing" in the picker, so the map is always unique. A warning line, not an error, for a state with no lane ("Cancelled has no lane: cards moved there in the tracker will leave the board"). Option: **Create lanes for states without one** (off by default).
 3. **Review**: "**18 cards will become tickets** (TAB-124 to TAB-141). Their state follows the lane." with a table preview of the first 6 and **Link and create tickets**. The numbers are reserved at confirmation so concurrent linking cannot collide. A **Dry run** preview needs no click; Cancel changes nothing.
 
 Unlinking (⋯ → **Unlink from tracker**): asks "Keep the tickets (cards become plain cards that show the key) or delete cards' keys (tickets stay in the tracker, cards forget them)?" Default keep keys as plain text on the card.
@@ -425,7 +425,7 @@ A linked card is the normal canvas card (kanban spec) with these changes, in ord
 - **Key** in Instrument Sans 700, tabular, grey, small; it is the card's anchor to the tracker and the thing to click: **click the key** opens the ticket (peek in the tracker frame if one exists on this board, else a ticket sheet, else the deep link); the card body keeps the card behaviours (select, drag, double-click to edit title).
 - **Priority** glyph appears for urgent and high only (not for medium/low/none) to keep cards calm.
 - **Left border**: a 3 px ink bar, the **linked marker**; unlinked cards have no bar. It is a shape cue, so it does not rely on colour.
-- A card whose ticket is **done** shows the struck-through title and a check (the kanban `done` stage already does the check); **cancelled** is greyed with a cross.
+- A card whose ticket is **done** shows the struck-through title and a check (the kanban `done` stage already does the check); **canceled** is greyed with a cross.
 - A card with a **blocked** ticket shows a small bar glyph and the word "Blocked" at the end of the meta row (and in the accessible name).
 - **Out of sync**: if the ticket cannot be reached (offline, access lost), the card shows a grey **cloud-off** glyph in the header and "Showing the last saved version"; edits are allowed locally and queue; for lost access the card shows "No access to TAB-124" and its fields as last known, locked.
 - **Pending** (being created): a thin animated line under the key (one pulse, then static for reduced motion) until the key is assigned; the card is usable meanwhile.
@@ -440,7 +440,7 @@ A linked card is the normal canvas card (kanban spec) with these changes, in ord
 
 ### 9.4 Mapping rules in detail
 
-- Many lanes → one state is allowed (e.g. "Next" and "Later" both Todo); a drop to either sets Todo; a ticket moved to Todo elsewhere lands in the **first** lane mapped to Todo (the lane order, leftmost), at the **end** (the container's `ext.map` lists the preferred lane per state to override).
+- **One lane per state, one state per lane** within a linked kanban (v1, frozen with the architecture spec: otherwise a ticket moved in the tracker could not choose its lane). A ticket moved to a state lands in that state's lane at the **end**. Two lanes that want the same state ("Next" and "Later" both Todo) means one of them stays unmapped.
 - A state with no lane: the ticket leaves the board's visible lanes (the card is hidden from the container, kept in a hidden **Unlaned** drawer on the container header showing a count "3 elsewhere", so nothing is lost and the user can map a lane).
 - Renaming a lane never renames a state; the mapping is by id.
 - Deleting a lane that is mapped asks where its cards go (a state picker: "Move the 6 cards to…") and updates the map.
@@ -500,8 +500,8 @@ The tracker lives inside a tool whose own chrome is the dark **ink toolbar**; th
 | unstarted (Todo) | empty circle | planned |
 | started (In progress) | circle with the right half filled | moving |
 | started (In review) | circle with three quarters filled | nearly |
-| done | filled circle with a check | finished |
-| cancelled | circle with a cross | dropped |
+| completed | filled circle with a check | finished |
+| canceled | circle with a cross | dropped |
 
 Priority is four ascending bars (filled = level; urgent is a filled square with an exclamation mark); none is a dash. All have text equivalents.
 
@@ -541,7 +541,7 @@ Each slice ships with a visual-check state at 360, 390 and 1280 in light and dar
 4. **Who owns the truth when offline?** Section 10 lets people create tickets offline with a provisional key. Is a provisional key acceptable, or should creating a ticket require a connection (simpler, and numbers stay gapless)?
 5. **Ticket description format.** Markdown with live shortcuts (proposed) or a plainer text-only field in v1? Rich text is the largest single build item.
 6. **GitHub identity.** Show the GitHub login as the actor, or map to workspace members by email when possible (needs a one-time "link GitHub account" step per person)?
-7. **Merge rule default.** On merge move to Done, or to a "Ready to release" state first? (We can ship with "merge → Done" and no change on open, as in the brief.)
+7. **Merge rule default.** The architecture spec ships GitHub as **comment only** until an owner opts in to automatic moves; the Integrations screen's rules (7.4) are then what the owner switches on. On merge: move to Done, or to a "Ready to release" state first?
 8. **Public ticket links.** Deep links need sign-in (proposed). Do you want a read-only share link for a single ticket, like a board share?
 9. **Import.** Is a Linear import (admin, one time) needed for the switch, in slice 6 or earlier?
 10. **Scope check on the Swiss look.** Inside the tracker the surface is paper and the board UI is dark ink. OK, or should the tracker follow the board's chosen theme exactly (dark board → dark tracker)? (Proposed: follows the theme, with the paper treatment in light.)
