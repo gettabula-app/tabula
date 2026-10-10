@@ -34,7 +34,14 @@ import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAu
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
-import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
+import {
+  dispatchTrackerRoute,
+  needsSignIn,
+  resolveRoute,
+  resolvedTrackerDestination,
+  returnDestination,
+  safeReturnDestination,
+} from './route';
 import { isDesktop } from './desktop-env';
 import type { Desktop } from './desktop';
 import { seedDemo } from './demo/seed';
@@ -67,7 +74,7 @@ let demoOpened = false;
 const demoUser: User = { id: 'tabula-demo', name: 'Demo user', color: '#2F6FED' };
 
 function saveReturn(hash: string) {
-  const target = returnHash(hash);
+  const target = returnDestination(hash, location.pathname, location.search);
   if (!target) return;
   try {
     sessionStorage.setItem(RETURN_KEY, target);
@@ -84,13 +91,18 @@ function takeReturn(): string {
   } catch {
     /* storage is unavailable */
   }
-  return (saved && returnHash(saved)) || '#/';
+  return (saved && safeReturnDestination(saved)) || '#/';
 }
 
 /** Leaves the sign-in screens: drops the emailed token from the address bar and goes where the user was headed. */
 function finishSignIn() {
+  const target = takeReturn();
+  if (target.startsWith('/')) {
+    location.replace(target);
+    return;
+  }
   history.replaceState(null, '', location.pathname + location.search);
-  location.hash = takeReturn();
+  location.hash = target;
 }
 
 async function refreshBoardCache() {
@@ -103,6 +115,16 @@ async function refreshBoardCache() {
 
 const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBoard; teamId?: string }) =>
   Boolean(opts.teamId || opts.template || opts.imported) || !cachedServerBoards().some((b) => b.id === id);
+
+function trackerEnabled(auth: AuthState): boolean {
+  return (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+}
+
+function replaceResolvedTrackerPath(target: import('./tracker-route').TrackerPathRoute, resolvedKey: string | undefined) {
+  if (!resolvedKey) return;
+  const path = resolvedTrackerDestination(target, resolvedKey);
+  if (path && path !== location.pathname + location.search) history.replaceState(null, '', path);
+}
 
 const nav: HomeNav = {
   open: async (id, opts = {}) => {
@@ -255,6 +277,31 @@ async function route() {
     return;
   }
 
+  // Tracker paths share the same public app shell as boards. Feature access is decided from /api/me, and ticket
+  // existence/access is left to the tracker data call so the shell never distinguishes those cases.
+  if (r.name === 'tracker' && !trackerEnabled(auth)) {
+    root.className = 'home-root';
+    renderHome(root, nav, auth);
+    return;
+  }
+
+  if (r.name === 'tracker') {
+    root.className = 'home-root';
+    root.replaceChildren();
+    try {
+      const handled = await dispatchTrackerRoute(r.target);
+      if (seq !== routeSeq) {
+        handled?.dispose?.();
+        return;
+      }
+      leavePage = handled?.dispose ?? null;
+      replaceResolvedTrackerPath(r.target, handled?.resolvedKey);
+    } catch {
+      // The registered tracker screen owns its loading and access errors; the route stays a safe empty shell.
+    }
+    return;
+  }
+
   if (r.name === 'admin') {
     const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
     if (!me || (me.user.role !== 'owner' && me.user.role !== 'admin')) {
@@ -400,6 +447,21 @@ async function route() {
     requestAnimationFrame(() => app.zoomToFit());
     toast('Board opened from file');
   }
+
+  if (r.trackerPosition && (trackerEnabled(auth) || auth.mode === 'guest')) {
+    const target = { kind: 'board-position' as const, boardId: id, ...r.trackerPosition };
+    try {
+      const handled = await dispatchTrackerRoute(target);
+      if (seq !== routeSeq) {
+        handled?.dispose?.();
+        return;
+      }
+      leavePage = handled?.dispose ?? null;
+      replaceResolvedTrackerPath(target, handled?.resolvedKey);
+    } catch {
+      // The board stays usable if a tracker route handler cannot open its ticket.
+    }
+  }
 }
 
 async function boot() {
@@ -428,7 +490,10 @@ async function boot() {
   };
   syncMentions();
   onAuth((s) => {
-    if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
+    if (needsSignIn(resolveRoute(location.hash, s.mode, location.pathname, location.search), s.mode)) {
+      saveReturn(location.hash);
+      location.replace('#/signin');
+    }
     syncMentions();
   });
   if (!DEMO && isDesktop()) {

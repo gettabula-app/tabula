@@ -340,6 +340,60 @@ export const MIGRATIONS = [
     ('st_cancelled', 'wf_default', 'cancelled', 'Cancelled', 'canceled', 4, 0, 0);
   INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES ('trk_default', 'TAB', 1, 0);
   `,
+  // Tracker projects, relations and saved views. Additive so the slice 1 reader can keep using its tables.
+  `
+  -- minReader: 11
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE milestones (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    start_at INTEGER,
+    due_at INTEGER,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE ticket_relations (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    related_ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    kind TEXT NOT NULL CHECK (kind IN ('blocks', 'blocked_by', 'relates_to', 'duplicates', 'duplicated_by', 'cloned_from')),
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    CHECK (ticket_id <> related_ticket_id)
+  );
+  CREATE TABLE saved_views (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    query_json TEXT NOT NULL,
+    is_shared INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE UNIQUE INDEX projects_active_name ON projects(name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE INDEX projects_state_updated ON projects(state, updated_at DESC);
+  CREATE INDEX milestones_project_due ON milestones(project_id, due_at, updated_at DESC);
+  CREATE INDEX milestones_active_project ON milestones(project_id, name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE UNIQUE INDEX ticket_relations_normalized ON ticket_relations(min(ticket_id, related_ticket_id), max(ticket_id, related_ticket_id));
+  CREATE INDEX ticket_relations_related ON ticket_relations(related_ticket_id, ticket_id);
+  CREATE INDEX saved_views_owner_updated ON saved_views(owner_user_id, updated_at DESC);
+  CREATE INDEX saved_views_shared_updated ON saved_views(updated_at DESC) WHERE is_shared = 1;
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

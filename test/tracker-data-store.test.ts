@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   TrackerError,
   createMockTrackerApi,
+  createTrackerKeyResolver,
   createTrackerStore,
   type TrackerTicket,
 } from '../src/tracker-data';
+import { canonicalTrackerPath } from '../src/tracker-route';
 
 function ticket(overrides: Partial<TrackerTicket> = {}): TrackerTicket {
   return {
@@ -183,5 +185,57 @@ describe('tracker store writes', () => {
     await expect(serverLocked.updateTicket('TAB-1', { title: 'Denied' })).rejects.toMatchObject({ code: 'read_only' });
     expect(serverLocked.snapshot().readOnly).toBe(true);
     serverLocked.destroy();
+  });
+
+  it('resolves chip keys with at most four concurrent ticket calls', async () => {
+    const api = createMockTrackerApi();
+    let active = 0;
+    let maximum = 0;
+    api.getTicket = async (key) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await Promise.resolve();
+      active -= 1;
+      return { ticket: ticket({ id: key, key }), comments: [], events: [], subscribed: false };
+    };
+    const store = createTrackerStore(api);
+    const resolver = createTrackerKeyResolver(store);
+    await resolver.resolveKeys(['TAB-1', 'TAB-2', 'TAB-3', 'TAB-4', 'TAB-5', 'TAB-6']);
+    expect(maximum).toBe(4);
+    expect(store.ticket('TAB-6').ticket?.key).toBe('TAB-6');
+    resolver.destroy();
+    store.destroy();
+  });
+
+  it('negatively caches missing chip keys for 30 seconds', async () => {
+    const api = createMockTrackerApi();
+    let calls = 0;
+    let now = 100;
+    api.getTicket = async () => {
+      calls += 1;
+      throw new TrackerError('not_found', 'Not found', { status: 404 });
+    };
+    const store = createTrackerStore(api);
+    const resolver = createTrackerKeyResolver(store, { now: () => now });
+    await resolver.resolveKeys(['TAB-999']);
+    await resolver.resolveKeys(['TAB-999']);
+    expect(calls).toBe(1);
+    now += 30_001;
+    await resolver.resolveKeys(['TAB-999']);
+    expect(calls).toBe(2);
+    expect(store.ticket('TAB-999').ticket).toBeUndefined();
+    resolver.destroy();
+    store.destroy();
+  });
+
+  it('uses the ticket store resolvedKey to build a canonical alias URL', async () => {
+    const canonical = ticket({ aliases: ['OLD-9'] });
+    const api = createMockTrackerApi({ tickets: [canonical] });
+    const store = createTrackerStore(api);
+    const detail = await store.loadTicket('old-9');
+    expect(detail.resolvedKey).toBe('TAB-1');
+    expect(store.ticket('OLD-9').ticket?.key).toBe('TAB-1');
+    expect(canonicalTrackerPath({ kind: 'ticket', key: 'OLD-9' }, detail.resolvedKey!)).toBe('/t/TAB-1');
+    store.destroy();
   });
 });
