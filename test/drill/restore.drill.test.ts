@@ -232,8 +232,10 @@ describe('local restore drill (runbook section 8)', () => {
     const c = s.c!;
     const board = c.connect(B1, s.owner!);
     await until(() => board.provider.wsconnected && board.provider.synced);
+    const witness = c.connect(B1, s.owner!);
+    await until(() => witness.provider.wsconnected && witness.provider.synced);
     board.doc.getMap('objects').set('o2', 'typed just before the stop');
-    await sleep(200);
+    await until(() => witness.doc.getMap('objects').get('o2') === 'typed just before the stop');
     const before = manifestsOf(fake);
     expect(await kit.stop(s.relay!)).toBe(0);
     kit.closeClients();

@@ -682,7 +682,8 @@ describe('editing', () => {
       thread.set('replies', new Y.Map());
       room.doc.getMap('threads').set(pinnedId, thread);
     }, 'local');
-    await sleep(300);
+    // wait until the relay has the pin (its saved comment room has the thread) instead of a fixed pause
+    await until(() => (h.savedDoc(`${mine}~comments`).getMap('threads') as Y.Map<unknown>).has(pinnedId), 20_000);
 
     const view = await h.tool(token, 'get_board', { boardId: mine });
     expect(view.data.hiddenCount).toBe(1);
