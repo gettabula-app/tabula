@@ -215,7 +215,7 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
     };
 
     const name = h('input', {
-      class: 'input', type: 'text', maxlength: 80, placeholder: 'For example Claude Code on my laptop', 'aria-label': 'Token name',
+      class: 'input', type: 'text', maxlength: 80, placeholder: 'For example Claude Code on my laptop', 'aria-label': 'Token name, for example Claude Code on my laptop',
       oninput: () => {
         draft.name = name.value;
         refresh();
