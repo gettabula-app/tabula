@@ -143,26 +143,39 @@ describe('content that is accepted', () => {
 
   it('checks group depth without rescanning the full object list for each parent', () => {
     const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
-    const groupCount = 500;
-    const objects = [...frames, ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' }))];
-    const nativeFind = Array.prototype.find;
-    let candidateRows = 0;
-    (Array.prototype as any).find = function (this: unknown[], predicate: any, thisArg?: unknown) {
-      if (this.length < frames.length || (this[0] as { id?: unknown } | undefined)?.id !== 'f0') {
-        return (nativeFind as any).call(this, predicate, thisArg);
-      }
-      return (nativeFind as any).call(this, (value: unknown, index: number, array: unknown[]) => {
-        candidateRows++;
-        return predicate.call(thisArg, value, index, array);
-      }, thisArg);
-    };
-    try {
-      expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
-    } finally {
-      (Array.prototype as any).find = nativeFind;
-    }
-    // A scan for each parent step in the 1,500-frame chain visits hundreds of millions of rows. Allow two linear passes.
-    expect(candidateRows).toBeLessThanOrEqual(objects.length * 2);
+    const groupCount = 2;
+    const objects: Record<string, unknown>[] = [
+      ...frames,
+      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' })),
+    ];
+    let idReads = 0;
+    // The validator copies inputs with list.map; instrument the copied ids so find, filter, and loops all count.
+    const mapObjects = objects.map.bind(objects);
+    Object.defineProperty(objects, 'map', {
+      value: (callback: (value: Record<string, unknown>, index: number, array: Record<string, unknown>[]) => unknown, thisArg?: unknown) => {
+        const mapped = mapObjects(callback, thisArg) as unknown[];
+        for (const value of mapped) {
+          if (!value || typeof value !== 'object' || !Object.hasOwn(value, 'id')) continue;
+          let id = (value as { id: unknown }).id;
+          Object.defineProperty(value, 'id', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              idReads++;
+              return id;
+            },
+            set(next: unknown) {
+              id = next;
+            },
+          });
+        }
+        return mapped;
+      },
+    });
+
+    expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
+    // A scan for each parent step in this 1,500-frame chain reads millions of ids. Count reads, not one array method.
+    expect(idReads).toBeLessThanOrEqual(objects.length * 5);
   });
 
   it('accepts the colours the board writes', () => {

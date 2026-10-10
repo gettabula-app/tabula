@@ -128,6 +128,8 @@ describe('relay shutdown', { timeout: 60_000 }, () => {
     relay.child.send({ type: 'status' });
     relay.child.send('shutdown');
     relay.child.send({ shutdown: true });
+    // The relay does not acknowledge ignored IPC messages, so keep a short observation window on this channel.
+    await sleep(400);
     await editWithoutSaving(relay, 'ignored-room', 'still running');
     expect(relay.child.exitCode).toBeNull();
     expect(relay.child.signalCode).toBeNull();

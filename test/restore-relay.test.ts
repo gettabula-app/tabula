@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { SimulatedCrash } from '../server/restore.mjs';
 import { CREDS, HOUR, KEY, MIN, harness, type Harness } from './backup-harness';
 import { backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, seedA } from './restore-harness';
-import { createRelayKit, until } from './drill/drill-kit';
+import { createRelayKit, sleep, until } from './drill/drill-kit';
 
 // docs/backups.md, Restoring. The relay as a child process, exactly as `npm start` runs it, next to the fake S3: a whole
 // restore over HTTP, the maintenance window, the exit code, the start that follows, and recovery from a swap that was cut off.
@@ -206,6 +206,7 @@ describe('the relay restoring a workspace', () => {
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: 'no' });
     expect(res.status).toBe(400);
     expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
+    await sleep(200);
     expect(relay.proc.exitCode).toBeNull();
   }, 30_000);
 });

@@ -42,6 +42,26 @@ const until = async (fn: () => boolean, ms = 5000) => {
 const within = <T>(p: Promise<T>, ms = 4000) =>
   Promise.race([p, sleep(ms).then(() => Promise.reject(new Error('timed out')))]) as Promise<T>;
 
+const ping = (ws: WebSocket) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off('pong', onPong);
+      reject(new Error('timed out waiting for WebSocket pong'));
+    }, 4000);
+    const onPong = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    ws.once('pong', onPong);
+    try {
+      ws.ping();
+    } catch (error) {
+      clearTimeout(timer);
+      ws.off('pong', onPong);
+      reject(error);
+    }
+  });
+
 const updateFrame = () => {
   const doc = new Y.Doc();
   doc.getMap('objects').set('sneaky', 1);
@@ -655,6 +675,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
     expect((await api(creator.cookie, 'DELETE', `/api/boards/${board}/shares/user/${member.user.id}`)).status).toBe(204);
     expect(await within(Promise.all([s.board.closed, s.comments.closed]))).toEqual([4410, 4410]);
+    await Promise.all([ping(s.secondBoard.ws), ping(s.secondComments.ws)]);
     expect(s.secondBoard.ws.readyState).toBe(WebSocket.OPEN);
     expect(s.secondComments.ws.readyState).toBe(WebSocket.OPEN);
 
