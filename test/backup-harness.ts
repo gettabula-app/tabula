@@ -118,7 +118,8 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
     await Promise.all(engines.map((e) => e.stop()));
     directory?.close();
     await fake.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // A worker that was just stopped can still hold its temporary copy for a moment on Windows (EBUSY).
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 
   return { clock, dir, fake, logs, directory, file, write, config, engine, expectedPaths, runAt, close, index };
