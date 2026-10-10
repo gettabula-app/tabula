@@ -95,6 +95,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `ai-key-me-keyboard`, `ai-admin-keyboard` | The key form without a pointer: Tab to the Provider select, type `O` to choose OpenAI-compatible, Tab through Base URL, Model and API key to Save key, and Shift+Tab back. The state fails (and the run exits 1) when the order is wrong, Save stays disabled, or the focused field shows no focus indicator |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
 | `kanban-lane-no-anchors` | A selected, hovered lane shows no connector anchor dots (nor does the kanban around it), a hovered card still shows its four, and a connector dragged from a note onto the lane ends free, not bound to the lane or the kanban. It throws otherwise. |
+| `board-menu-guide` | The board menu opened: the User guide is the first entry, a button with the same name, its icon accent is at least 3:1 against the menu and its label is heavier. Throws otherwise. Run it with each theme. |
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |
 | `kanban-moveto-full` | **Move to…** with a full block lane disabled ("Full") |
