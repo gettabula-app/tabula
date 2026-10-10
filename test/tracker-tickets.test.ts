@@ -76,8 +76,8 @@ describe('tracker ticket commands', () => {
       assignee: { userId: owner.id, name: owner.name }, labels: [{ id: label.id, name: label.name }], due: '2026-10-31', parent: parent.key,
     });
     expect(directory.db.prepare('SELECT field, event_seq FROM ticket_field_versions WHERE ticket_id = ? ORDER BY field').all(child.id))
-      .toEqual(['assignee', 'description', 'due', 'labels', 'parent', 'priority', 'state', 'title'].map((field) => ({
-        field, event_seq: field === 'state' ? child.updatedSeq : updated.updatedSeq,
+      .toEqual(['assignee', 'description', 'due', 'labels', 'milestone', 'parent', 'priority', 'project', 'state', 'title'].map((field) => ({
+        field, event_seq: field === 'state' || field === 'milestone' || field === 'project' ? child.updatedSeq : updated.updatedSeq,
       })));
 
     const transitioned = transitionTicket({ directory, actor, key: child.key, state: 'In review', ifUpdatedSeq: updated.updatedSeq, now: 400 });
