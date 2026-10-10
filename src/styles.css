@@ -97,7 +97,9 @@ hr { border: 0; }
 
 .cursor-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .remote-cursor { position: absolute; left: 0; top: 0; display: flex; align-items: flex-start; transition: transform 90ms linear; will-change: transform; }
-.remote-cursor span { margin: 14px 0 0 -2px; padding: 2px 7px; border-radius: 0; color: #fff; font: 600 12px/1.4 var(--ui); white-space: nowrap; }
+.remote-cursor-label { display: flex; align-items: center; gap: 4px; margin: 14px 0 0 -2px; }
+.remote-cursor-name { padding: 2px 7px; border-radius: 0; color: #fff; font: 600 12px/1.4 var(--ui); white-space: nowrap; }
+.remote-cursor-guest { border-radius: var(--radius-xs); color: var(--on-signal); font-size: 11.5px; }
 @media (prefers-reduced-motion: reduce) { .remote-cursor { transition: none; } }
 .lp-ring { position: fixed; z-index: 20; width: 28px; height: 28px; margin: -14px 0 0 -14px; pointer-events: none; }
 .lp-arc { stroke-dasharray: 69.12; stroke-dashoffset: 69.12; animation: lp-fill 600ms linear forwards; }
@@ -677,7 +679,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 /* Windows high contrast: colours the page sets are replaced by the system's, which would blank the colour swatches and drop
    every selection drawn with a box-shadow or a fill. Swatches keep their colour; selected things get an outline. */
 @media (forced-colors: active) {
-  .swatch, .sticky-swatch .note, .theme-preview, .avatar, .remote-cursor span, .comment-avatar { forced-color-adjust: none; }
+  .swatch, .sticky-swatch .note, .theme-preview, .avatar, .remote-cursor-name, .remote-cursor-guest, .comment-avatar { forced-color-adjust: none; }
   .swatch.on, .tile.on, .font-row.on, .segmented button.on, .chip.on, .icon-btn.on, .rail-btn.on, .dot-presets button.on,
   .menu-item[aria-checked='true'], .combo-opt[aria-selected='true'], .history-row.on { outline: 2px solid Highlight; outline-offset: -2px; }
 }

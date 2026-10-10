@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -233,6 +233,7 @@ async function seedComments(page, fresh) {
 const EMPTY_ID = 'visual-empty';
 /** The second person of the last empty-focus shot. */
 let focusSender = null;
+let cursorSenderContexts = [];
 
 /** A board nobody writes to: the empty-board hint shows. */
 async function openEmptyBoard({ page, base }, query = '?debug') {
@@ -1629,6 +1630,106 @@ const STATES = {
     await page.getByLabel('Display name').fill('Visual guest');
     await page.getByRole('button', { name: 'Join board' }).click();
     await page.getByText('That code looks too short', { exact: true }).waitFor();
+  },
+  async 'guest-cursors'(env) {
+    await Promise.all(cursorSenderContexts.splice(0).map((context) => context.close().catch(() => undefined)));
+    const { page, base, theme, width } = env;
+    await openSeedBoard(env);
+    const browser = page.context().browser();
+    const ownerCookies = await page.context().cookies(base);
+    const ownerSessionCookie = ownerCookies.find(({ name, value }) => /session/i.test(name) && value);
+    if (!ownerSessionCookie) throw new Error('guest-cursors: owner session cookie is missing');
+    const ownerSession = { name: ownerSessionCookie.name, value: ownerSessionCookie.value };
+    const ownerCookie = ownerCookies.map(({ name, value }) => `${name}=${value}`).join('; ');
+    const codeResponse = await postJson(base, `boards/${BOARD_ID}/join-codes`, { role: 'editor', maxUses: 1 }, ownerCookie);
+    const { code } = await codeResponse.json();
+    const joined = await postJson(base, 'join', { code, name: USER.name });
+    const cookiePair = joined.headers.getSetCookie().map((value) => value.split(';', 1)[0]).find((value) => value.includes('='));
+    const separator = cookiePair?.indexOf('=') ?? -1;
+    if (separator < 1) throw new Error('guest-cursors: guest session cookie is missing');
+    const guestSession = { name: cookiePair.slice(0, separator), value: cookiePair.slice(separator + 1) };
+    const screenPoints = [
+      { x: width <= 500 ? 90 : 180, y: 130 },
+      { x: width <= 500 ? 90 : 180, y: 220 },
+      { x: width <= 500 ? 70 : 380, y: 310 },
+    ];
+    const worldPoints = await page.evaluate((points) => points.map(({ x, y }) => window.__board.r.toWorld(x, y)), screenPoints);
+    const openCursorSender = async ({ session, name, point }) => {
+      const sender = await newPage(browser, { width, theme, mode: 'accounts', base, session });
+      cursorSenderContexts.push(sender.context);
+      await sender.page.goto(`${base}/?debug#/b/${BOARD_ID}`);
+      await sender.page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+      await sender.page.waitForFunction(() => {
+        const provider = window.__board.conn.provider;
+        return !provider || provider.synced;
+      }, null, { timeout: 15_000 });
+      await sender.page.evaluate(({ displayName, cursor }) => {
+        const app = window.__board;
+        app.zoomToFit();
+        app.conn.awareness.setLocalStateField('user', { ...app.user, ...(displayName ? { name: displayName } : {}) });
+        app.conn.awareness.setLocalStateField('cursor', cursor);
+      }, { displayName: name, cursor: point });
+    };
+    await openCursorSender({ session: ownerSession, point: worldPoints[0] });
+    await openCursorSender({ session: guestSession, point: worldPoints[1] });
+    await openCursorSender({ session: ownerSession, name: 'Long Remote Cursor Participant Name', point: worldPoints[2] });
+    await page.waitForFunction(() => {
+      const cursors = [...document.querySelectorAll('.remote-cursor')];
+      return cursors.length === 3 && cursors.filter((cursor) => cursor.querySelector('.remote-cursor-guest')).length === 1;
+    }, null, { timeout: 15_000 });
+    const result = await page.evaluate(() => {
+      const cursors = [...document.querySelectorAll('.remote-cursor')].map((cursor) => {
+        const label = cursor.querySelector('.remote-cursor-label');
+        const name = cursor.querySelector('.remote-cursor-name');
+        const arrow = cursor.querySelector('svg');
+        const badge = cursor.querySelector('.remote-cursor-guest');
+        const labelBox = label.getBoundingClientRect();
+        const arrowBox = arrow.getBoundingClientRect();
+        const badgeStyle = badge ? getComputedStyle(badge) : null;
+        return {
+          name: name.textContent,
+          guest: Boolean(badge),
+          label: {
+            height: labelBox.height,
+            leftFromArrow: labelBox.left - arrowBox.left,
+            topFromArrow: labelBox.top - arrowBox.top,
+            inline: { margin: label.style.margin, borderRadius: label.style.borderRadius, fontSize: label.style.fontSize },
+          },
+          badge: badgeStyle ? { color: badgeStyle.color, backgroundColor: badgeStyle.backgroundColor } : null,
+        };
+      });
+      return cursors;
+    });
+    const owner = result.find((cursor) => cursor.name === USER.name && !cursor.guest);
+    const guest = result.find((cursor) => cursor.name === USER.name && cursor.guest);
+    const longName = result.find((cursor) => cursor.name === 'Long Remote Cursor Participant Name' && !cursor.guest);
+    const failures = [];
+    if (!owner || !guest || !longName) failures.push('expected same-name owner and guest cursors plus the long-name cursor');
+    if (result.filter((cursor) => cursor.guest).length !== 1) failures.push('expected only the guest cursor to have .remote-cursor-guest');
+    if (owner && guest) {
+      for (const [metric, ownerValue, guestValue] of [
+        ['label height', owner.label.height, guest.label.height],
+        ['label left offset', owner.label.leftFromArrow, guest.label.leftFromArrow],
+        ['label top offset', owner.label.topFromArrow, guest.label.topFromArrow],
+      ]) if (Math.abs(ownerValue - guestValue) > 0.5) failures.push(`${metric} differs between owner (${ownerValue}) and guest (${guestValue})`);
+    }
+    const inlineStyles = result.flatMap((cursor) => Object.entries(cursor.label.inline).filter(([, value]) => value).map(([property]) => `${cursor.name}: ${property}`));
+    if (inlineStyles.length) failures.push(`remote cursor labels have inline styles: ${inlineStyles.join(', ')}`);
+    const badge = guest?.badge;
+    const color = (value) => value.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? null;
+    const luminance = ([r, g, b]) => {
+      const linear = (value) => { const channel = value / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const foreground = badge && color(badge.color);
+    const background = badge && color(badge.backgroundColor);
+    const contrast = foreground && background
+      ? (Math.max(luminance(foreground), luminance(background)) + 0.05) / (Math.min(luminance(foreground), luminance(background)) + 0.05)
+      : 0;
+    if (contrast < 4.5) failures.push(`guest badge contrast ${contrast.toFixed(2)}:1 is below 4.5:1`);
+    const summary = { theme, width, cursors: result, contrast: Number(contrast.toFixed(2)) };
+    console.log(`guest-cursors ${JSON.stringify(summary)}`);
+    if (failures.length) throw new Error(`guest-cursors: ${failures.join('; ')}`);
   },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
@@ -3538,7 +3639,7 @@ const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -3958,7 +4059,7 @@ async function main() {
       distDir,
       frameable: options.frameable,
       chat: options.mode === 'accounts' && standardStates.some((state) => CHAT_STATES.has(state)),
-      joinCodes: options.mode === 'accounts' && standardStates.some((state) => ['join-short-code', 'share-code-phone'].includes(state)),
+      joinCodes: options.mode === 'accounts' && standardStates.some((state) => ['join-short-code', 'share-code-phone', 'guest-cursors'].includes(state)),
       tracker: false,
       outDir: options.outDir,
       touch: options.touch,

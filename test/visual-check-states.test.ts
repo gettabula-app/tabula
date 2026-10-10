@@ -18,4 +18,8 @@ describe('visual-check states', () => {
     expect(openMode.status).toBe(2);
     expect(openMode.stderr).toContain('state "tracker-real-server" needs --mode accounts');
   });
+  it('lists guest-cursors as a visual state', () => {
+    const help = execFileSync(process.execPath, [script, '--help'], { cwd: root, encoding: 'utf8' });
+    expect(help).toContain('guest-cursors');
+  });
 });

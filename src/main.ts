@@ -243,7 +243,7 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
 
 /** The user as the board shows them: in accounts mode the account's name on this device's identity. */
 function boardUser(auth: AuthState) {
-  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name };
+  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name, guest: true };
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   return me ? { ...getUser(), name: me.user.name } : getUser();
 }
