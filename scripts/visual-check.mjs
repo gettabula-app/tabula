@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -1648,6 +1648,78 @@ const STATES = {
     await env.page.evaluate(() => document.activeElement?.blur());
     await settle(env.page);
   },
+  // v5: a card with an overdue date, an agent owner and a long link, in the phone card dialog and in the list sheet (360 and 390)
+  async 'kanban-card-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide-for-teams-moving-sprint-boards?ref=board-card&utm=press' }));
+      app.setSelection(['k-c2']);
+      app.openCardDialog('k-c2');
+    });
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const link = document.querySelector('.k-open-link');
+      const dlg = link?.closest('[role="dialog"]');
+      const mark = dlg?.querySelector('.k-owner-kind-btn[data-owner-kind="agent"]');
+      if (!dlg || !link) return { failures: ['card dialog or its Open link is missing'] };
+      const d = dlg.getBoundingClientRect();
+      if (d.left < -0.5 || d.right > innerWidth + 0.5) failures.push(`the dialog is wider than the window (${Math.round(d.left)}-${Math.round(d.right)})`);
+      if (dlg.scrollWidth > dlg.clientWidth + 1) failures.push(`the dialog scrolls sideways (${dlg.scrollWidth} > ${dlg.clientWidth})`);
+      if (link.hidden || link.getClientRects().length === 0) failures.push('Open link is not shown');
+      else {
+        link.scrollIntoView({ block: 'center' });
+        const r = link.getBoundingClientRect();
+        const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+        if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+        if (r.right > innerWidth || r.left < 0) failures.push(`Open link is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      if (mark) {
+        const m = mark.getBoundingClientRect();
+        if (m.right > innerWidth || m.left < 0) failures.push('the Agent owner button is outside the window');
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-card-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-card-meta: ${JSON.stringify(result.failures)}`);
+  },
+  async 'kanban-sheet-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide?ref=board-card' }));
+    });
+    await openSheet(env.page, 'k-todo');
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const row = [...document.querySelectorAll('.ks-sheet .ks-meta')].find((m) => m.querySelector('.ks-link'));
+      if (!row) return { failures: ['no row with an Open link in the sheet'] };
+      const link = row.querySelector('.ks-link');
+      const owner = row.querySelector('.ks-owner.agent');
+      const due = row.querySelector('.ks-due.overdue');
+      link.scrollIntoView({ block: 'center' });
+      const m = row.getBoundingClientRect();
+      if (row.scrollWidth > row.clientWidth + 1) failures.push(`the meta row overflows (${row.scrollWidth} > ${row.clientWidth})`);
+      if (m.right > innerWidth + 0.5) failures.push(`the meta row runs past the window (${Math.round(m.right)})`);
+      for (const [name, el] of [['Open link', link], ['agent owner', owner], ['overdue date', due]]) {
+        if (!el) { failures.push(`${name} is missing`); continue; }
+        const r = el.getBoundingClientRect();
+        if (r.right > innerWidth || r.left < 0) failures.push(`${name} is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      const r = link.getBoundingClientRect();
+      const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+      if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+      return { failures, row: { left: m.left, right: m.right, width: m.width }, link: { w: r.width, h: r.height }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-sheet-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-sheet-meta: ${JSON.stringify(result.failures)}`);
+    return { noPark: true };
+  },
   async 'kanban-labels'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLabels());
@@ -2016,7 +2088,7 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
