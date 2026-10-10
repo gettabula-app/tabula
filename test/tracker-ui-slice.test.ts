@@ -95,7 +95,8 @@ describe('tracker shell slice', () => {
     const alert = shell.el.querySelector('.trk-list-error') as unknown as FakeElement | null;
     expect(alert?.getAttribute('role')).toBe('alert');
     expect(alert?.hasAttribute('hidden')).toBe(false);
-    expect(alert?.textContent).toContain('Could not load issues.');
+    // the store now keeps an error's message when it copies it, so the alert shows what the request said
+    expect(alert?.textContent).toContain('Relay request failed');
     alert?.querySelector<FakeElement>('button')?.click();
     await flush(40);
     expect(listTickets).toHaveBeenCalledTimes(3);
