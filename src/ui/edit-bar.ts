@@ -13,7 +13,19 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
       await openEmojiPicker(app, button);
     },
   }, icon('icons', 20));
-  button.addEventListener('pointerdown', (event) => event.preventDefault());
+  // A mouse press must not move focus out of the text (preventDefault); on a touch screen WebKit drops the tap's click when pointerdown is
+  // cancelled, so a finger only holds the blur: the text keeps its edit while the tap goes through.
+  let release = 0;
+  button.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse') event.preventDefault();
+    app.editor.holdBlur(true);
+    window.clearTimeout(release);
+    release = window.setTimeout(() => { if (!document.querySelector('.emoji-pop')) app.editor.holdBlur(false); }, 1200);
+  });
+  button.addEventListener('pointercancel', () => {
+    window.clearTimeout(release);
+    if (!document.querySelector('.emoji-pop')) app.editor.holdBlur(false);
+  });
   button.addEventListener('mousedown', (event) => event.preventDefault());
   bar.appendChild(button);
   parent.appendChild(bar);
@@ -27,8 +39,10 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
     const height = bar.offsetHeight;
     const leftEdge = safe.left + 8;
     const rightEdge = window.innerWidth - safe.right - 8;
-    const topEdge = safe.top + 8;
-    const bottomEdge = window.innerHeight - safe.bottom - 8;
+    const topEdge = Math.max(safe.top, window.visualViewport?.offsetTop ?? 0) + 8;
+    // the soft keyboard shrinks the visual viewport, not the window: the bar stays in what the person can see
+    const vv = window.visualViewport;
+    const bottomEdge = Math.min(window.innerHeight, vv ? vv.offsetTop + vv.height : window.innerHeight) - safe.bottom - 8;
     const x = Math.max(leftEdge, Math.min((box.left + box.right - width) / 2, rightEdge - width));
     const above = box.top - 8 - height;
     const below = box.bottom + 8;
