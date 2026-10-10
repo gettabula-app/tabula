@@ -290,6 +290,8 @@ describe('owner picker', () => {
   it('names the current owner by id, else by name', () => {
     expect(ownerKey({ ownerId: 'u1', ownerName: 'A' })).toBe('id:u1');
     expect(ownerKey({ ownerName: ' A ' })).toBe('name:A');
+    expect(ownerKey({ ownerId: 'u1', ownerName: 'Build agent', ownerKind: 'agent' })).toBe('agent:id:u1');
+    expect(ownerKey({ ownerName: ' Build agent ', ownerKind: 'agent' })).toBe('agent:name:Build agent');
     expect(ownerKey({})).toBe('');
   });
 });

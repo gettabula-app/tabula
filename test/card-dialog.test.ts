@@ -80,6 +80,17 @@ function change(el: FakeElement, value: string) {
 }
 const bo = (store: Store, id: Id) => store.get(id) as BaseObj;
 const steps = (store: Store) => (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;
+const ownerFields = (card: BaseObj) => Object.fromEntries(
+  (['ownerId', 'ownerName', 'ownerKind'] as const)
+    .filter((key) => Object.hasOwn(card, key))
+    .map((key) => [key, card[key]]),
+);
+const ownerPatchKeys = (calls: readonly (readonly [Id, object])[]) =>
+  calls.flatMap(([, patch]) => (['ownerId', 'ownerName', 'ownerKind'] as const).filter((key) => Object.hasOwn(patch, key)));
+const selectedOwnerLabel = () => {
+  const select = byLabel('Owner');
+  return textOf(select.querySelectorAll('option').find((option) => option.value === select.value)!);
+};
 
 /** Every element under `root` (for checking that nothing a person wrote became markup). */
 function all(root: FakeElement): FakeElement[] {
@@ -104,20 +115,50 @@ describe('the card dialog, for an editor', () => {
 
   it('shows token-owned agents as read-only and lets a member choice become a person owner', () => {
     const { store, app, card } = setup();
-    store.transact(() => store.update(card, { ownerId: 'token-1', ownerName: 'Build agent', ownerKind: 'agent' }));
+    store.transact(() => store.update(card, { ownerId: 'agent-token-1', ownerName: 'Build agent', ownerKind: 'agent' }));
     const d = open(app, card)!;
+    expect(byLabel('Owner').value).toBe('agent:id:agent-token-1');
+    expect(selectedOwnerLabel()).toBe('Build agent (agent)');
     expect(button('Agent')!.disabled).toBe(true);
     expect(byLabel('Owner\'s name').disabled).toBe(true);
     expect(button('Agent')!.getAttribute('aria-pressed')).toBe('true');
     expect(button('Person')!.getAttribute('aria-pressed')).toBe('false');
     change(byLabel('Owner'), 'id:u2');
-    expect(bo(store, card)).toMatchObject({ ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'person' });
+    expect(ownerFields(bo(store, card))).toEqual({ ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'person' });
     d.close();
 
     open(app, card);
     expect(byLabel('Owner').value).toBe('id:u2');
     expect(button('Agent')!.getAttribute('aria-pressed')).toBe('false');
     expect(button('Person')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps an agent with a name but no id selected as an agent on a no-op close', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerName: 'Build agent', ownerKind: 'agent' }));
+    const before = ownerFields(bo(store, card));
+    const update = vi.spyOn(store, 'update');
+    const d = open(app, card)!;
+
+    expect(byLabel('Owner').value).toBe('agent:name:Build agent');
+    expect(selectedOwnerLabel()).toBe('Build agent (agent)');
+    d.close();
+
+    expect(ownerFields(bo(store, card))).toEqual(before);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('keeps a free-text person owner selected by name after reopening', () => {
+    const { store, app, card } = setup();
+    const d = open(app, card)!;
+    change(byLabel('Owner'), '__other');
+    change(byLabel('Owner\'s name'), 'Lea Brandt');
+    expect(ownerFields(bo(store, card))).toEqual({ ownerName: 'Lea Brandt', ownerKind: 'person' });
+    d.close();
+
+    open(app, card);
+    expect(byLabel('Owner').value).toBe('name:Lea Brandt');
+    expect(selectedOwnerLabel()).toBe('Lea Brandt');
   });
 
   it('shows a valid external link and reports a refused typed URL inline', () => {
@@ -253,6 +294,54 @@ describe('the card dialog, against changes made elsewhere', () => {
     t.dispatchEvent(new FakeEvent('input'));
     d.close();
     expect(bo(store, card).text).toBe('Typed, not left');
+  });
+
+  it('never writes owner fields on title or due edits, or on a no-op close', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerName: 'Build agent', ownerKind: 'agent' }));
+    const before = ownerFields(bo(store, card));
+    const update = vi.spyOn(store, 'update');
+    const d = open(app, card)!;
+    d.close();
+    expect(update).not.toHaveBeenCalled();
+    expect(ownerFields(bo(store, card))).toEqual(before);
+
+    open(app, card);
+    change(byLabel('Title'), 'Updated title');
+    change(byLabel('Due date'), '2026-01-16');
+    expect(bo(store, card)).toMatchObject({ text: 'Updated title', due: '2026-01-16' });
+    expect(ownerFields(bo(store, card))).toEqual(before);
+    expect(ownerPatchKeys(update.mock.calls)).toEqual([]);
+  });
+
+  it('does not persist a pending owner kind while unrelated fields are edited', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerKind: 'agent' }));
+    const before = ownerFields(bo(store, card));
+    const update = vi.spyOn(store, 'update');
+    const d = open(app, card)!;
+
+    button('Person')!.click();
+    expect(button('Person')!.getAttribute('aria-pressed')).toBe('true');
+    change(byLabel('Title'), 'Updated title');
+    change(byLabel('Due date'), '2026-01-16');
+    d.close();
+
+    expect(ownerFields(bo(store, card))).toEqual(before);
+    expect(ownerPatchKeys(update.mock.calls)).toEqual([]);
+  });
+
+  it('shows the owner read-only to a commenter on a read-only board', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerName: 'Build agent', ownerKind: 'agent' }));
+    app.becomes('commenter');
+    const before = ownerFields(bo(store, card));
+    open(app, card);
+
+    expect(byLabel('Owner').disabled).toBe(true);
+    expect(byLabel('Owner\'s name').disabled).toBe(true);
+    expect(selectedOwnerLabel()).toBe('Build agent (agent)');
+    expect(ownerFields(bo(store, card))).toEqual(before);
   });
 
   it('an owner the list no longer offers does nothing, and never clears the owner', () => {
