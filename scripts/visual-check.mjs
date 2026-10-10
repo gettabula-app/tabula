@@ -193,7 +193,7 @@ async function openSeedBoard({ page, base }, query = '?debug') {
 
 /**
  * Hands the page a message of the relay's AI runs (6 is MSG_AI_RUNS), through the handler the page registered for it, so the
- * live layer draws another person's runs without a model or a second browser. Needs `?debug&aibar`.
+ * live layer draws another person's runs without a model or a second browser. Needs `?debug`.
  */
 async function handAiRuns(page, runs) {
   await page.evaluate((list) => {
@@ -1754,14 +1754,14 @@ const STATES = {
   },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
-    await openEmptyBoard(env, '?debug&aibar');
+    await openEmptyBoard(env, '?debug');
     await sendAiRun(env.page);
     await env.page.locator('.empty-hint').waitFor({ state: 'hidden' });
     await settle(env.page);
   },
   async 'ai-review'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await sendAiRun(page);
     await page.getByRole('button', { name: /review/i }).first().click();
     await page.locator('.aireview').first().waitFor();
@@ -1770,7 +1770,7 @@ const STATES = {
   // TAB-141: another person's AI run in flight, outlined in their colour around what it reads (docs/ai-toolbar.md, "Multiplayer")
   async 'ai-live-remote-ring'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{ id: 'visual-run', feature: 'cluster', status: 'running', private: false, startedAt: 1, readyAt: null, cut: false, by: ANA, target: { ids: ['seed-note-1', 'seed-note-2'] }, proposal: null }]);
     await page.locator('.ailive-run:not([hidden])').first().waitFor();
     await settle(page);
@@ -1779,7 +1779,7 @@ const STATES = {
   // not a preview beside it, so the view is fitted to the board and the room right of it, where the preview lands.
   async 'ai-live-remote-preview'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{
       id: 'visual-run', feature: 'generate', status: 'ready', private: false, startedAt: 1, readyAt: 2, cut: false, by: ANA, target: null,
       proposal: { kind: 'create', objects: [{ text: 'Pilot with five teams', color: 'Yellow' }, { text: 'Write the migration guide', color: 'Pink' }, { text: 'Decide the pricing copy', color: 'Blue' }], frame: { title: 'Ideas' } },

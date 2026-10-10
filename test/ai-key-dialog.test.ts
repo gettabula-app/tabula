@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 const config: AiConfig = {
-  enabled: true, features: ['generate'], keySource: 'user', provider: 'anthropic', model: 'claude-sonnet-5-5', personalKeys: true, hasSecret: true,
+  enabled: true, features: ['generate'], keySource: 'user', provider: 'anthropic', model: 'claude-sonnet-5-5', personalKeys: true, hasSecret: true, credits: false,
   myKey: { provider: 'anthropic', hint: '4f2a', baseUrl: null, model: null, createdAt: 1, lastUsedAt: null },
 };
 const emptyConfig: AiConfig = { ...config, myKey: null };

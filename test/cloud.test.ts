@@ -177,6 +177,8 @@ describe('validateLimits', () => {
     ['no seat limit', { seatLimit: null }, { seatLimit: null }],
     ['read-only on', { readOnly: true }, { readOnly: true }],
     ['read-only off', { readOnly: false }, { readOnly: false }],
+    ['AI credits on', { aiCredits: true }, { aiCredits: true }],
+    ['AI credits off', { aiCredits: false }, { aiCredits: false }],
     ['a banner', { banner: ' Payment failed ' }, { banner: 'Payment failed' }],
     ['a banner of 300 characters', { banner: 'b'.repeat(300) }, { banner: 'b'.repeat(300) }],
     ['no banner', { banner: null }, { banner: null }],
@@ -206,6 +208,9 @@ describe('validateLimits', () => {
     ['an infinite seat limit', { seatLimit: Infinity }, 'seatLimit'],
     ['a string readOnly', { readOnly: 'true' }, 'readOnly'],
     ['a null readOnly', { readOnly: null }, 'readOnly'],
+    ['a string aiCredits', { aiCredits: 'true' }, 'aiCredits'],
+    ['a null aiCredits', { aiCredits: null }, 'aiCredits'],
+    ['a numeric aiCredits', { aiCredits: 1 }, 'aiCredits'],
     ['a numeric banner', { banner: 5 }, 'banner'],
     ['a banner of 301 characters', { banner: 'b'.repeat(301) }, 'banner'],
     ['a banner with a newline', { banner: 'two\nlines' }, 'single line'],
@@ -360,7 +365,7 @@ describe('createCloud', () => {
 
   it('starts without limits', () => {
     const c = setup();
-    expect(c.cloud!.limits()).toEqual({ seatLimit: null, readOnly: false, banner: null, billing: true, trialEndsAt: null, state: null });
+    expect(c.cloud!.limits()).toEqual({ seatLimit: null, readOnly: false, banner: null, billing: true, aiCredits: false, trialEndsAt: null, state: null });
     expect(c.cloud!.seatsAvailable()).toBe(true);
   });
 
@@ -371,18 +376,19 @@ describe('createCloud', () => {
     c.events.on('limits-changed', changed);
 
     const trialEndsAt = '2026-11-07T15:00:00.123456Z';
-    expect(c.cloud!.setLimits({ seatLimit: 3, banner: 'Hello', trialEndsAt, state: 'trialing' })).toEqual({ seatLimit: 3, readOnly: false, banner: 'Hello', billing: true, trialEndsAt, state: 'trialing' });
-    expect(c.cloud!.setLimits({ readOnly: true })).toEqual({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, trialEndsAt, state: 'trialing' });
+    expect(c.cloud!.setLimits({ seatLimit: 3, banner: 'Hello', aiCredits: true, trialEndsAt, state: 'trialing' })).toEqual({ seatLimit: 3, readOnly: false, banner: 'Hello', billing: true, aiCredits: true, trialEndsAt, state: 'trialing' });
+    expect(c.cloud!.workspaceView().aiCredits).toBe(true);
+    expect(c.cloud!.setLimits({ readOnly: true })).toEqual({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, aiCredits: true, trialEndsAt, state: 'trialing' });
     expect(changed).toHaveBeenCalledTimes(2);
-    expect(changed).toHaveBeenLastCalledWith({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, trialEndsAt, state: 'trialing' });
+    expect(changed).toHaveBeenLastCalledWith({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, aiCredits: true, trialEndsAt, state: 'trialing' });
 
     const [latest, first] = c.directory.listAudit(2);
     expect(latest).toMatchObject({ actorId: null, action: 'cloud.limits', detail: { seatLimit: 3, readOnly: true, banner: 'Hello' } });
     expect(first).toMatchObject({ actorId: null, action: 'cloud.limits', detail: { seatLimit: 3, readOnly: false } });
 
     const again = createCloud({ config: c.config.cloud, directory: c.directory, events: new EventEmitter() });
-    expect(again!.limits()).toEqual({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, trialEndsAt, state: 'trialing' });
-    expect(again!.setLimits({ seatLimit: null, banner: null })).toEqual({ seatLimit: null, readOnly: true, banner: null, billing: true, trialEndsAt, state: 'trialing' });
+    expect(again!.limits()).toEqual({ seatLimit: 3, readOnly: true, banner: 'Hello', billing: true, aiCredits: true, trialEndsAt, state: 'trialing' });
+    expect(again!.setLimits({ seatLimit: null, banner: null })).toEqual({ seatLimit: null, readOnly: true, banner: null, billing: true, aiCredits: true, trialEndsAt, state: 'trialing' });
   });
 
   it('takes billing as a boolean, defaults it to true, and keeps it across restarts and old stored limits (TAB-226)', () => {
@@ -394,7 +400,7 @@ describe('createCloud', () => {
     expect(again!.limits().billing).toBe(false);
     // limits stored before the field existed read as billing on
     c.directory.setSetting('cloud.limits', JSON.stringify({ seatLimit: 5, readOnly: false, banner: null }));
-    expect(createCloud({ config: c.config.cloud, directory: c.directory, events: new EventEmitter() })!.limits()).toEqual({ seatLimit: 5, readOnly: false, banner: null, billing: true, trialEndsAt: null, state: null });
+    expect(createCloud({ config: c.config.cloud, directory: c.directory, events: new EventEmitter() })!.limits()).toEqual({ seatLimit: 5, readOnly: false, banner: null, billing: true, aiCredits: false, trialEndsAt: null, state: null });
     expect(validateLimits({ billing: false })).toEqual({ patch: { billing: false } });
     for (const bad of ['no', 0, null, 'false']) expect(validateLimits({ billing: bad })).toEqual({ error: 'billing must be a boolean' });
   });
@@ -404,7 +410,7 @@ describe('createCloud', () => {
     for (const value of ['{not json', '[1]', '"x"', '{"seatLimit": 0}', '{"plan": 1}']) {
       c.directory.setSetting('cloud.limits', value);
       const again = createCloud({ config: c.config.cloud, directory: c.directory, events: new EventEmitter() });
-      expect(again!.limits()).toEqual({ seatLimit: null, readOnly: false, banner: null, billing: true, trialEndsAt: null, state: null });
+      expect(again!.limits()).toEqual({ seatLimit: null, readOnly: false, banner: null, billing: true, aiCredits: false, trialEndsAt: null, state: null });
     }
   });
 
@@ -924,12 +930,13 @@ describe('API in cloud mode', () => {
     });
 
     it('store limits, merge partial updates, return what is stored and write an audit row without an actor', async () => {
-      const s = await serve();
-      const first = await s.put({ seatLimit: 5, readOnly: false, banner: ' Trial ends soon ' });
-      expect(first).toMatchObject({ status: 200, body: { seatLimit: 5, readOnly: false, banner: 'Trial ends soon' } });
-      expect((await s.put({ readOnly: true })).body).toEqual({ seatLimit: 5, readOnly: true, banner: 'Trial ends soon', billing: true, trialEndsAt: null, state: null });
-      expect((await s.put({ seatLimit: null, banner: null })).body).toEqual({ seatLimit: null, readOnly: true, banner: null, billing: true, trialEndsAt: null, state: null });
-      const rows = s.directory.listAudit().filter((r) => r.action === 'cloud.limits');
+      const c = setup();
+      const { call } = directApi(c);
+      const first = await call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { seatLimit: 5, readOnly: false, banner: ' Trial ends soon ', aiCredits: true } });
+      expect(first).toMatchObject({ status: 200, body: { seatLimit: 5, readOnly: false, banner: 'Trial ends soon', aiCredits: true } });
+      expect((await call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { readOnly: true } })).body).toEqual({ seatLimit: 5, readOnly: true, banner: 'Trial ends soon', billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect((await call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { seatLimit: null, banner: null } })).body).toEqual({ seatLimit: null, readOnly: true, banner: null, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      const rows = c.directory.listAudit().filter((r) => r.action === 'cloud.limits');
       expect(rows).toHaveLength(3);
       expect(rows[0]).toMatchObject({ actorId: null, detail: { seatLimit: null, readOnly: true, banner: null } });
     });
@@ -950,6 +957,7 @@ describe('API in cloud mode', () => {
       ['a fractional seat limit', { seatLimit: 1.5 }],
       ['a string seat limit', { seatLimit: '3' }],
       ['a string readOnly', { readOnly: 'yes' }],
+      ['a string aiCredits', { aiCredits: 'yes' }],
       ['a long banner', { banner: 'b'.repeat(301) }],
       ['a multi-line banner', { banner: 'a\nb' }],
       ['a numeric banner', { banner: 1 }],
@@ -960,7 +968,7 @@ describe('API in cloud mode', () => {
       const res = await s.put(body);
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: 'bad_request' });
-      expect(s.cloud!.limits()).toEqual({ seatLimit: 4, readOnly: false, banner: 'Keep', billing: true, trialEndsAt: null, state: null });
+      expect(s.cloud!.limits()).toEqual({ seatLimit: 4, readOnly: false, banner: 'Keep', billing: true, aiCredits: false, trialEndsAt: null, state: null });
       expect(s.directory.listAudit()).toHaveLength(before);
     });
 
@@ -998,7 +1006,7 @@ describe('API in cloud mode', () => {
       const changed = vi.fn<(limits: unknown) => void>();
       s.events.on('limits-changed', changed);
       await s.put({ readOnly: true });
-      expect(changed).toHaveBeenCalledWith({ seatLimit: null, readOnly: true, banner: null, billing: true, trialEndsAt: null, state: null });
+      expect(changed).toHaveBeenCalledWith({ seatLimit: null, readOnly: true, banner: null, billing: true, aiCredits: false, trialEndsAt: null, state: null });
     });
   });
 
@@ -1185,15 +1193,17 @@ describe('API in cloud mode', () => {
 
   describe('GET /api/me', () => {
     it('describes the workspace, in cloud mode only', async () => {
-      const s = await serve();
-      const owner = s.person(OWNER, 'owner');
-      s.person('m@example.com', 'member');
-      s.person('g@example.com', 'guest');
-      expect((await s.call('/api/me', { cookie: owner.cookie })).body.workspace).toEqual({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 2, billing: true, trialEndsAt: null, state: null });
-      await s.put({ seatLimit: 4, readOnly: true, banner: 'Pay up' });
-      const me = await s.call('/api/me', { cookie: owner.cookie });
-      expect(me.body.workspace).toEqual({ readOnly: true, banner: 'Pay up', seatLimit: 4, seatsUsed: 2, billing: true, trialEndsAt: null, state: null });
+      const c = setup();
+      const { call, person } = directApi(c);
+      const owner = person(OWNER, 'owner');
+      person('m@example.com', 'member');
+      person('g@example.com', 'guest');
+      expect((await call('/api/me', { cookie: owner.cookie })).body.workspace).toEqual({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 2, billing: true, aiCredits: false, trialEndsAt: null, state: null });
+      await call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { seatLimit: 4, readOnly: true, banner: 'Pay up', aiCredits: true } });
+      const me = await call('/api/me', { cookie: owner.cookie });
+      expect(me.body.workspace).toEqual({ readOnly: true, banner: 'Pay up', seatLimit: 4, seatsUsed: 2, billing: true, aiCredits: true, trialEndsAt: null, state: null });
       expect(me.body.user.email).toBe(OWNER);
+      expect((await call('/api/ai/config', { cookie: owner.cookie })).body.credits).toBe(true);
     });
 
     it('shares lifecycle fields with owners and admins, but not members or guests', async () => {

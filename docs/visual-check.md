@@ -75,10 +75,10 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `kanban-sheet-filter` | The list with a filter on and the Filter popover open from its header |
 | `kanban-sheet-adding` | The list's Add card bar with a title typed |
 | `kanban-sheet-full` | The list on a full block lane: the Add card bar refused, with the lock |
-| `ai-review` | (open mode) The review panel of someone else's AI proposal, with `?aibar` and a run handed to the board the way the relay does |
+| `ai-review` | (open mode) The review panel of someone else's AI proposal, with a run handed to the board the way the relay does |
 | `text-handles` | (open mode) A selected text with its side handles (wrap width) and corner handles (type size) |
 | `ai-preview-empty` | (open mode) An AI preview on an empty board: the "An empty board" hint is hidden (TAB-214) |
-| `ai-live-remote-ring` | (open mode) Another person's AI run in flight, from the relay's message, with `?aibar`: the outline in their amber around two notes and the "asking AI" label |
+| `ai-live-remote-ring` | (open mode) Another person's AI run in flight, from the relay's message: the outline in their amber around two notes and the "asking AI" label |
 | `ai-live-remote-preview` | (open mode) Their ready preview beside the board: ghost frame "Ideas" and stickies, dashed outline with its dark halo, the "Ana's AI preview" label row with Discard, Review and Accept. The view is fitted to the board and the room beside it, because `zoomToFit` leaves a preview out |
 | `ai-key-test` | (accounts mode) The account menu's "Your AI key" dialog after Test key answers "The key works." (the replies are mocked) |
 | `ai-key-test-error` | The same after the provider rejected the key: the status line in the danger colour |

@@ -357,14 +357,15 @@ describe('a hosted workspace', () => {
     });
 
     it('validate strictly and answer with what is stored, leaving an audit row with no actor', async () => {
-      for (const body of [{}, { seatLimit: 0 }, { readOnly: 'yes' }, { banner: 'a\nb' }, { nope: 1 }]) {
+      for (const body of [{}, { seatLimit: 0 }, { readOnly: 'yes' }, { aiCredits: 'yes' }, { banner: 'a\nb' }, { nope: 1 }]) {
         expect((await c.internal('PUT', '/api/internal/limits', body)).status).toBe(400);
       }
-      const set = await c.internal('PUT', '/api/internal/limits', { seatLimit: 50, banner: 'Welcome' });
-      expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome' } });
+      const set = await c.internal('PUT', '/api/internal/limits', { seatLimit: 50, banner: 'Welcome', aiCredits: true });
+      expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome', aiCredits: true } });
 
       const me = await c.api(owner.cookie, 'GET', '/api/me');
-      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
+      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect((await c.api(owner.cookie, 'GET', '/api/ai/config')).body.credits).toBe(true);
 
       const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.');
       expect(audit.body.entries[0]).toMatchObject({
@@ -373,6 +374,9 @@ describe('a hosted workspace', () => {
         actorEmail: null,
         detail: { seatLimit: 50, readOnly: false, banner: 'Welcome' },
       });
+      const disabled = await c.internal('PUT', '/api/internal/limits', { aiCredits: false });
+      expect(disabled.body.aiCredits).toBe(false);
+      expect((await c.api(owner.cookie, 'GET', '/api/ai/config')).body.credits).toBe(false);
       await c.internal('PUT', '/api/internal/limits', { seatLimit: null, banner: null });
     });
   });
@@ -735,14 +739,14 @@ describe('a hosted workspace', () => {
       const first = await launch(CLOUD_ENV(), dir);
       const a = client(first);
       const who = await a.signIn(OWNER);
-      await a.internal('PUT', '/api/internal/limits', { seatLimit: 7, readOnly: true, banner: 'Kept' });
+      await a.internal('PUT', '/api/internal/limits', { seatLimit: 7, readOnly: true, banner: 'Kept', aiCredits: true });
       await stopRelay(first.proc);
 
       const second = await launch(CLOUD_ENV(), dir);
       const b = client(second);
       const again = await b.signIn(OWNER);
       expect(again.user.id).toBe(who.user.id);
-      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
+      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
       expect((await b.api(again.cookie, 'POST', '/api/teams', { name: 'x' })).status).toBe(402);
     });
   });

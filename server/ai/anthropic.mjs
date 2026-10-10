@@ -32,10 +32,34 @@ function retryAfterOf(err) {
 }
 
 /** Maps anything thrown by the SDK to a fresh AiError. Nothing of the original (message, headers, body) is kept. */
-async function toAiError(err) {
+const PROXY_ERROR_STATUS = Object.freeze({
+  credits_exhausted: 429,
+  credits_not_included: 403,
+  rate_limited: 429,
+  model_not_allowed: 400,
+  max_tokens_too_large: 400,
+  request_too_large: 413,
+  ai_unavailable: 503,
+});
+
+async function toAiError(err, { proxyErrors = false, apiKey = '' } = {}) {
   if (err instanceof AiError) return err;
   const Anthropic = await loadSdk();
   if (err instanceof Anthropic.APIUserAbortError || err?.name === 'AbortError') return new AiError('ai_aborted');
+  if (proxyErrors) {
+    const detail = err?.error?.error;
+    if (detail && typeof detail.type === 'string' && Object.hasOwn(PROXY_ERROR_STATUS, detail.type) && typeof detail.message === 'string') {
+      const code = /** @type {keyof typeof PROXY_ERROR_STATUS} */ (detail.type);
+      const message = apiKey ? detail.message.split(apiKey).join('[redacted]') : detail.message;
+      return new AiError(code, {
+        message,
+        status: PROXY_ERROR_STATUS[code],
+        retryAfter: code === 'rate_limited' ? retryAfterOf(err) : null,
+      });
+    }
+    // The configured proxy owns all provider errors. Unknown shapes must not leak their body or be mistaken for a key error.
+    return new AiError('ai_unavailable', { status: 503 });
+  }
   if (err instanceof Anthropic.APIConnectionError) return new AiError('ai_unavailable');
   const status = typeof err?.status === 'number' ? err.status : 0;
   if (status === 401 || status === 403) return new AiError('ai_key_invalid');
@@ -95,15 +119,15 @@ function usageOf(message, req) {
 }
 
 /**
- * @param {{ apiKey: string, baseUrl?: string | null, client?: any, verifyTimeoutMs?: number }} options
+ * @param {{ apiKey: string, baseUrl?: string | null, client?: any, verifyTimeoutMs?: number, proxyErrors?: boolean, maxRetries?: number }} options
  * `client` is for tests: an object shaped like the SDK client.
  */
-export function createAnthropicProvider({ apiKey, baseUrl = null, client = null, verifyTimeoutMs = VERIFY_TIMEOUT_MS }) {
+export function createAnthropicProvider({ apiKey, baseUrl = null, client = null, verifyTimeoutMs = VERIFY_TIMEOUT_MS, proxyErrors = false, maxRetries }) {
   let made = client;
   const getClient = async () => {
     if (!made) {
       const Anthropic = await loadSdk();
-      made = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
+      made = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}), ...(maxRetries === undefined ? {} : { maxRetries }) });
     }
     return made;
   };
@@ -121,7 +145,7 @@ export function createAnthropicProvider({ apiKey, baseUrl = null, client = null,
         await abortable(c.models.list({ limit: 1 }, { signal: stop, timeout: verifyTimeoutMs, maxRetries: 0 }), stop);
       } catch (err) {
         if (timeout.aborted && !signal?.aborted) throw new AiError('ai_unavailable');
-        throw await toAiError(err);
+        throw await toAiError(err, { proxyErrors, apiKey });
       }
     },
 
@@ -155,7 +179,7 @@ export function createAnthropicProvider({ apiKey, baseUrl = null, client = null,
         yield { type: 'result', value, usage: usageOf(message, req) };
       } catch (err) {
         finished = true;
-        throw await toAiError(err);
+        throw await toAiError(err, { proxyErrors, apiKey });
       } finally {
         if (!finished) stream?.abort?.();
       }

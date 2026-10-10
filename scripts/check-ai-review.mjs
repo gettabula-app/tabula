@@ -273,7 +273,7 @@ async function openBoard(boardId, width, name, color) {
   page.on('requestfailed', (req) => errors.failedRequests.push({ url: req.url(), error: req.failure()?.errorText ?? 'unknown' }));
   const origin = new URL(relay.base).origin;
   await context.route('**/*', (route) => routeOutside(route, origin));
-  await page.goto(`${relay.base}/?debug&aibar#/b/${boardId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${relay.base}/?debug#/b/${boardId}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction((id) => window.__board?.conn?.id === id, boardId, { timeout: 20_000 });
   await page.waitForFunction(() => {
     const provider = window.__board?.conn?.provider;

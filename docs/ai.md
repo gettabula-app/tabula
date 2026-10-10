@@ -2,7 +2,7 @@
 
 AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: each plan includes credits, and more can be bought.
 
-Status: **slices A and B of phase 1 are built (TAB-97): the provider layer, encrypted keys, the settings and key endpoints and their admin and account screens (A), and `POST /api/ai/run` with the three features, the limits and the audit rows (B).** Slice C, the bar, its entry points and live previews, is built behind `?aibar`; remove the flag after a smoke run with a real key. Phase 2 is still pending. "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
+Status: **slices A, B and C of phase 1 are built (TAB-97):** the provider layer, encrypted keys, settings and key endpoints with their admin and account screens; `POST /api/ai/run` with the three features, limits and audit rows; and the AI bar, its entry points and live previews. The bar appears when AI is enabled for the person and a workspace key, an allowed personal key or the hosted `credits` capability are available. A hosted control plane can enable that capability with the `aiCredits` limit; it remains false in open mode and on self-hosted instances. In accounts mode, runs with no saved key can use the hosted credits proxy. Credit metering and limits are enforced by that proxy. "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
 
 ## Summary
 
@@ -13,6 +13,14 @@ Status: **slices A and B of phase 1 are built (TAB-97): the provider layer, encr
 - **Reuses the MCP layer from TAB-12** for reading boards: the same private-note withholding, the same fencing of untrusted board text, the same object validators. Writes do not go through MCP (see "Why proposals").
 - **v1 features:** generate stickies, summarise with action items, cluster stickies.
 - **Phase 2:** credits per workspace, pooled across seats; prepaid top-up packs; the control plane meters and bills through Stripe, as it already does for seats.
+
+The board shows AI controls only when AI is enabled for the person and the config reports a usable workspace key, an allowed personal key, or `credits: true`. On hosted instances, the control plane sets that capability through `aiCredits`; open mode and self-hosted instances always report `false`. The run route uses hosted credits only when there is no saved key and both proxy environment values are configured.
+
+### Hosted AI credits proxy
+
+In accounts mode, key resolution is strict: an allowed personal key wins first, then the workspace key, then hosted credits when `limits.aiCredits === true` and both `TABULA_AI_PROXY_URL` and `TABULA_AI_PROXY_TOKEN` are set. A saved key avoids credit metering; an unreadable saved key returns `ai_key_unreadable` and does not fall back. With no key and no usable credits proxy, the run returns `409 ai_no_key`.
+
+The instance sends a keyless run to the configured Anthropic Messages proxy using the proxy token as `x-api-key`. The token is held only in server configuration and never returned by an API, written to an audit row, or included in logs. The URL must use HTTPS; HTTP is accepted only for loopback test servers. Private runs cannot use credits because the workspace pays for them. See [AI credits](ai-credits.md) for the proxy contract, environment values and error codes.
 
 ## Where calls run
 
@@ -111,7 +119,7 @@ The operator's environment is trusted: `TABULA_AI_PROVIDER=openai-compatible` wi
 
 **Storage.** `ai_keys` has a nullable `model` column next to `base_url` (a migration of its own; an Anthropic key leaves both empty and uses the workspace's `ai.model`). A key replaces the address and the model with it. Audit rows (`ai.key.set`, `ai.key.test`) carry the provider, and for this kind the host and the model id, never the key or the whole address.
 
-**Key screens.** Both "Your AI key" and the admin AI tab have a provider choice. For OpenAI-compatible they add **Base URL** and **Model** and check the same rules as the server before **Save key** enables. The admin Anthropic model setting is hidden while the workspace key is OpenAI-compatible: the model shown is the key's. On the wire, the model of a personal key is `model`; the admin body already has `model` (the Anthropic setting), so there the key's model is `keyModel`.
+**Key screens.** Both "Your AI key" and the admin AI tab have a provider choice. For OpenAI-compatible they add **Base URL** and **Model** and check the same rules as the server before **Save key** enables. When the admin AI response says `creditsActive: true` and no workspace key is saved, the workspace key form says "AI credits are used until you add a key." The note is hidden when a workspace key exists. The admin Anthropic model setting is hidden while the workspace key is OpenAI-compatible: the model shown is the key's. On the wire, the model of a personal key is `model`; the admin body already has `model` (the Anthropic setting), so there the key's model is `keyModel`.
 
 
 ## Keys (BYOK)
@@ -124,7 +132,7 @@ The operator's environment is trusted: `TABULA_AI_PROVIDER=openai-compatible` wi
 | Accounts mode | **Workspace key** | A workspace owner or admin, in the admin dashboard |
 | Accounts mode | **Personal key** | Each person, in their account menu, only when an admin allows personal keys |
 
-Resolution for a run in accounts mode: the person's own key if they set one and personal keys are allowed, else the workspace key, else (phase 2, hosted) the platform with credits, else AI is unavailable. The app shows which one a run will use ("Uses the workspace key", "Uses your key").
+Resolution for a run in accounts mode: the person's own key if they set one and personal keys are allowed, else the workspace key, else the hosted credits proxy when `aiCredits` is enabled and its environment values are set, else AI is unavailable. The app shows which source a run will use ("Uses the workspace key", "Uses your key", or "Uses AI credits" when `credits: true` and no key source applies).
 
 ### Storage
 
@@ -140,10 +148,11 @@ Resolution for a run in accounts mode: the person's own key if they set one and 
 ### Endpoints
 
 ```
-GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|'platform'|null, provider, model, credits?: {...} }   (`model` is the key's own for an OpenAI-compatible key)
+GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|null, provider, model, personalKeys, credits: boolean }   (`model` is the key's own for an OpenAI-compatible key; `credits` reflects the hosted workspace's `aiCredits` limit and is false in open mode and self-hosted instances; when `keySource` is null and `credits` is true, the bar says "Uses AI credits")
 PUT    /api/ai/keys/me   { provider, apiKey, baseUrl?, model? }   -> { provider, hint, baseUrl, model }      (when personal keys are allowed; baseUrl and model only for openai-compatible, and then both)
 POST   /api/ai/keys/me/test                              -> { ok: true, provider, checkedAt } (when personal keys are allowed)
 DELETE /api/ai/keys/me                                    -> 204
+GET    /api/admin/ai                -> settings, `creditsActive`, and the workspace key hint (`creditsActive` is true when hosted credits will be used without a workspace key)
 PUT    /api/admin/ai     { enabled?, features?, model?, personalKeys?, apiKey?, provider?, baseUrl?, keyModel? }   (owner or admin; `model` is the Anthropic model, `keyModel` the key's own) -> settings, key hint
 POST   /api/admin/ai/key/test                             -> { ok: true, provider, checkedAt } (owner or admin)
 DELETE /api/admin/ai/key                                  -> 204
@@ -165,7 +174,7 @@ Changing the secret without keeping the old one as `TABULA_AI_SECRET_PREVIOUS` m
 
 ## Running a feature
 
-1. **Checks**, in order: signed in (accounts mode); AI enabled for the workspace and the feature; the person can **write** the board room (`canWriteRoom(role, 'board')`, the function the relay and MCP share), since every v1 feature proposes board edits; workspace not read-only; a key resolves (or, phase 2, credits remain); rate limits.
+1. **Checks**, in order: signed in (accounts mode); AI enabled for this person and the feature; the person can **write** the board room (`canWriteRoom(role, 'board')`, the function the relay and MCP share), since every v1 feature proposes board edits; workspace not read-only; an allowed personal key, workspace key or eligible credits proxy resolves; rate limits.
 2. **Read the board** with the MCP read path (`ctx.readBoard`): objects, frames, connectors and votes. **Private notes are withheld while unrevealed**, as in `get_board`: the relay cannot tell whose they are, so it sends none. Comments are not sent in v1. Selection: the feature runs on the selected objects when there are any (the app sends their ids), on a frame when one is chosen, else on the whole board, capped (see "Limits").
 3. **Fence and clean** the content exactly as `docs/mcp.md` "Untrusted content" describes: the fixed preamble, nonce markers, JSON escaping, invisible characters stripped. The person's own prompt sits outside the fence, labelled as the request.
 4. **Call the provider** and stream progress to the app as server-sent events (`event: progress`, then one `event: result` or `event: error`). Closing the request aborts the call.
@@ -197,7 +206,7 @@ The preview draws the proposal faded over the board with **Add to board** and **
 | **Summarise** | The board, a frame or the selection; type `summary` or `retro` | `create`: a summary sticky, then one sticky per action item (owner and due date in the text when the notes name them) in a frame "Summary" | `medium` |
 | **Cluster** | The selected stickies (2..200) | `group`: 2..12 titled groups covering every selected sticky | `medium` |
 
-Entry points: a **Generate** button in the sticky tray and on the empty-board hint; **Summarise** in the board menu and the session bar after Finish (a retro summary next to the dot-vote results); **Cluster** in the quick-action bar for two or more stickies. All are hidden when AI is off and disabled for viewers and commenters.
+Entry points: a **Generate** button in the sticky tray and on the empty-board hint; **Summarise** in the board menu and the session bar after Finish (a retro summary next to the dot-vote results); **Cluster** in the quick-action bar for two or more stickies. They appear when AI is enabled for the person and a workspace key, an allowed personal key or the hosted `credits` capability is available, and are disabled for viewers and commenters. When credits are active and there is no saved key, the run uses the AI credits proxy. Setup is in Admin → AI.
 
 Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of `src/` into shared JavaScript first, as `docs/mcp.md` notes), smart template fill, a free-form board assistant with tools.
 
@@ -225,18 +234,18 @@ Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of 
 - **1 credit = €0.01 of provider cost at list price**, computed from each run's usage and a price table per model (input, output, cache read and cache write tokens). Providers price in US dollars; the table carries a fixed conversion rate, reviewed with the prices. Credits are the unit people see; the price table changes without changing plans.
 - **Pooled per workspace**, refreshed monthly: an allowance per paid seat, so a team shares one balance and a heavy user does not hit a personal wall.
 - **Top-up packs**, prepaid, that do not expire for 12 months and are spent after the monthly allowance. No metered overage: bills stay predictable, and a runaway loop cannot create one.
-- At zero, runs are refused with `402 ai_credits_exhausted` and the admin sees "Buy credits"; a personal or workspace key, if set, keeps working (BYOK runs never use credits).
+- At zero, the credits proxy refuses runs with `429 credits_exhausted` and a message naming the reset date; a personal or workspace key, if set, keeps working (BYOK runs never use credits).
 - Admins can set a monthly cap below the allowance and see usage by feature and by person in the AI tab.
 
 ### Who holds the platform key, and who meters
 
-The hosted relay never holds the platform's provider key. In cloud mode (`docs/cloud.md`) a credit-funded run goes through the control plane:
+The hosted relay never holds the platform's provider key. In cloud mode (`docs/cloud.md`) a credit-funded run goes through the hosted AI credits proxy:
 
 ```
-POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/ai/run   (bearer TABULA_CLOUD_TOKEN, streaming)
+POST {TABULA_AI_PROXY_URL}/v1/messages   (x-api-key TABULA_AI_PROXY_TOKEN, Anthropic Messages API)
 ```
 
-The control plane checks the balance, calls the provider with its key, meters the usage, debits the balance and streams the result back. The instance does everything before and after the call: reading the board, fencing, validation, the proposal. Metering in the control plane means an instance cannot under-report, and the platform key never sits on a customer's instance. `GET /api/me` gains `workspace.ai: { allowance, balance, resetsAt }` alongside the seat fields.
+The control plane proxy checks the balance, calls the provider with its key, meters usage, debits the balance and streams the result back. The instance does everything before and after the call: reading the board, fencing, validation and the proposal. The platform key never sits on a customer's instance. The instance URL and token are described in [AI credits](ai-credits.md).
 
 ### Stripe
 
@@ -279,7 +288,7 @@ This is the first slice of phase 1 (TAB-97). The text above is the design; these
 
 ## Slice B: what is built
 
-The second slice of phase 1 (TAB-97): `POST /api/ai/run` and the three features, on the server only. Nothing in the board UI calls it yet (slice C). The text above is the design; these are the points where the code adds to it or chose between options.
+The second slice of phase 1 (TAB-97): `POST /api/ai/run` and the three features on the server. The AI bar in slice C uses the config's `credits` capability, sourced from the hosted `aiCredits` limit, when deciding whether to appear without a key. A keyless hosted run uses the AI credits proxy described above; credit metering and billing stay in the hosted proxy. The text above is the design; these are the points where the code adds to it or chose between options.
 
 **Request.**
 
@@ -296,7 +305,7 @@ POST /api/ai/run    JSON, with the CSRF header like every write
 
 Unknown fields are refused. `selection` (1 to 400 object ids, no repeats) and `frameId` (the direct children of that frame) are exclusive; with neither, the run works on the whole board. A prompt with a control or tag character is refused; zero-width and bidirectional characters are removed.
 
-**Answers before the stream** are plain HTTP errors with a JSON body `{ error, message }`, in the order of the checks: `403 csrf`, `401 unauthenticated`, `400 bad_request` (the body), `403 ai_disabled` (AI is off, or restricted to members and the caller is a guest), `403 ai_feature_disabled`, `404 not_found` (no such board, a deleted one, or none the person can open), `403 forbidden` (cannot edit the board: viewers and commenters), `402 read_only` (a hosted workspace that is read-only; a viewer is told `forbidden` first), `409 ai_no_key`, `409 ai_key_unreadable`, `429 rate_limited` with `retry-after` (an hourly limit, a run already going for this person, or the key busy with another run). Then, with the board read, `400 bad_request` for a frame that is not on the board, a summary of nothing, or a cluster with fewer than two stickies the AI may read. A request that fails there does not use up the person's hour. `ai_no_key` is also what a person gets where phase 2 would offer credits. Where the stored key is the one of the person (personal keys allowed), it wins and there is no fallback to the workspace key if it cannot be read.
+**Answers before the stream** are plain HTTP errors with a JSON body `{ error, message }`, in the order of the checks: `403 csrf`, `401 unauthenticated`, `400 bad_request` (the body), `403 ai_disabled` (AI is off, or restricted to members and the caller is a guest), `403 ai_feature_disabled`, `404 not_found` (no such board, a deleted one, or none the person can open), `403 forbidden` (cannot edit the board: viewers and commenters), `402 read_only` (a hosted workspace that is read-only; a viewer is told `forbidden` first), `409 ai_no_key`, `409 ai_key_unreadable`, `429 rate_limited` with `retry-after` (an hourly limit, a run already going for this person, or the key busy with another run). Then, with the board read, `400 bad_request` for a frame that is not on the board, a summary of nothing, or a cluster with fewer than two stickies the AI may read. A request that fails there does not use up the person's hour. With a credits run, an immediate proxy error is also returned as a plain HTTP error with its stable proxy code, status and message. An allowed personal key wins, then the workspace key; an unreadable saved key does not fall back to credits.
 
 **The stream** is `text/event-stream`:
 
@@ -306,7 +315,7 @@ event: result            data: {"runId":"...","proposal":{...},"cut":false,"usag
 event: error             data: {"error":"ai_refused","message":"..."}
 ```
 
-Exactly one `result` or one `error` ends it. After the stream has started every failure is an `error` event: `ai_refused` (the provider declined; nothing changed), `ai_invalid_proposal`, `ai_timeout`, `ai_key_invalid`, `ai_rate_limited`, `ai_unavailable`, `forbidden` (the person lost the right to edit while the model worked), `internal`. The messages are fixed text. `ai_aborted` is what an audit row says when the person closed the request.
+Exactly one `result` or one `error` ends it. After the stream has started every failure is an `error` event: `ai_refused` (the provider declined; nothing changed), `ai_invalid_proposal`, `ai_timeout`, `ai_key_invalid`, `ai_rate_limited`, `ai_unavailable`, `forbidden` (the person lost the right to edit while the model worked), `internal`. Credits proxy errors use the proxy's `error.message` verbatim; see [AI credits](ai-credits.md) for codes and HTTP statuses. Other messages are fixed text. `ai_aborted` is what an audit row says when the person closed the request.
 
 **Proposals** (`proposal.kind` is set by the server). `create`: `objects` is 1 to 30 stickies (at most `count` for generate) of `{ text, color? }`, `text` 1 to 2,000 characters and `color` the **name** of a sticky colour (Yellow, Orange, Pink, Violet, Blue, Teal, Green, Grey; any case is accepted and written back in the palette's spelling); `frame` is `{ title }` of 1 to 100 characters, required for summarise. `group`: 2 to 12 groups of `{ title, ids }`, no group empty, every id a sticky that is in the selection and exists and is readable now, each exactly once, together all of the stickies that were sent. Everything the model returns is plain text: control, tag, zero-width and bidirectional characters are removed, titles lose line breaks, a tag or an `&amp;` stays exactly the characters it is (the app has to draw it as text, never as markup), unknown keys are refused, and anything over a limit is an error, not a cut. An answer that fails any check is an `ai_invalid_proposal` error and carries no part of the proposal. The server log gets a fixed word for why (`unknown_id`, `duplicate_id`, ...), never anything the model wrote. The validator also checks the role: a role that cannot create stickies and frames (or move stickies, for a group) gets no proposal.
 
@@ -314,7 +323,7 @@ Exactly one `result` or one `error` ends it. After the stream has started every 
 
 **Limits** live in the process, not in the directory: a restart forgets every count and every run in flight. A run is admitted when the person has no run going, the key is under its cap (three for a shared key, one for a personal key), and the person and the workspace are under their hourly limits (the admin's `ai.limits.*`, 20 and 200 by default); a refused request counts for nothing. A run that never reached the provider (bad frame, nothing to summarise) takes its count back. Everything else counts, a provider error included. The hour is a sliding window. The per-key cap guards the key's provider rate limit and cost, and keeps one person from filling it: while a workspace key has three runs going, the next person is told to try again in a moment. The provider call gets an `AbortSignal` that fires after 120 seconds (`ai_timeout`) or when the person closes the request (`ai_aborted`), and the run is released either way. Key saves (`PUT /api/ai/keys/me`, and `PUT /api/admin/ai` with an `apiKey`) are limited to 10 an hour per person and one check in flight, `429 rate_limited`; saving settings without a key is not limited.
 
-**Audit.** One row `ai.generate`, `ai.summarise` or `ai.cluster` for each run that reached the provider, written before the last event: `{ boardId, model, keySource: 'user' | 'workspace', outcome: 'ok' | <error code>, counts: { scope, inScope, sent, chars, cut, proposed }, tokens: { input, output, cacheRead, cacheWrite } }`. No board text, no prompt, no output, no key. The audit log shows them as sentences ("Ana summarised “Roadmap”") under the AI filter.
+**Audit.** One row `ai.generate`, `ai.summarise` or `ai.cluster` for each run that reached the provider, written before the last event: `{ boardId, model, keySource: 'user' | 'workspace' | 'credits', outcome: 'ok' | <error code>, counts: { scope, inScope, sent, chars, cut, proposed }, tokens: { input, output, cacheRead, cacheWrite } }`. No board text, no prompt, no output, no key or proxy token. The audit log shows them as sentences ("Ana summarised “Roadmap”") under the AI filter.
 
 **Open mode** has `POST /api/ai/run` too (and still no other AI endpoint besides `GET /api/ai/config`). It needs the CSRF header, answers `403 ai_disabled` unless `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` are both set, uses that key and `TABULA_AI_MODEL`, counts runs per client address (the last `X-Forwarded-For` entry with `TABULA_TRUST_PROXY=1`, else the socket address; a run per address at a time, 20 an hour) and keeps one count for the whole instance (200 an hour), with up to three runs at once on the operator's key. There is no directory, so the audit row is a log line `ai.<feature> {json}` with the same fields.
 
@@ -326,7 +335,7 @@ Everyone on a board sees its AI runs (TAB-141): while a run is going ("Ana is as
 
 **State.** `server/ai/live.mjs` keeps the runs in memory, per board: `{ id, feature, by: { id, name, color }, target, private, status, startedAt, readyAt, proposal, cut, error, resolvedBy }`. The run route starts one when the provider is about to be called (a request refused before that leaves no run), marks it `ready` with the validated proposal or `failed` with the error code, and the first `progress` event and the `result` carry its `runId`. A ready run nobody settles `expired`s after 10 minutes, one still `running` after 5 minutes is `failed`, a board holds at most 12 open runs (the oldest ready one expires to make room), and a settled run is remembered for 10 minutes so a late click is told so. When a board's room unloads its runs are dropped; a restart forgets them all. **What the run request adds** (`POST /api/ai/run`, both optional): `presence: { color?, name?, outline? }` and `private`. `color` is the runner's cursor colour (`#RRGGBB`). `name` is used in open mode only, as plain text cut to 40 characters; in accounts mode the name is always the account's. `target`, what others outline while the run is going, is never taken from the client: it is `{ ids }` for a selection or `{ frameId }` for a frame, from the input the route already checks, and each app draws the outline from its own board; `outline: false` leaves it out (the bar's "Visible area", a selection the person did not make), and a whole-board run has none. In open mode `by.id` is null and a client address is never shown.
 
-**Private runs** (`private: true`) are for a personal key only; on the workspace key (or the operator's, in open mode) the request is `400 bad_request`, because the people who share the bill see what it is spent on. Nobody but the runner is sent anything about a private run, in any message, and to anyone else its id is `404`. Its audit row is written as for every run.
+**Private runs** (`private: true`) are for a personal key only; on the workspace key, credits or the operator's key in open mode the request is `400 bad_request`, because the people who share the bill see what it is spent on. Nobody but the runner is sent anything about a private run, in any message, and to anyone else its id is `404`. Its audit row is written as for every run.
 
 **The relay** sends message type 6 (`MSG_AI_RUNS`, relay to client only, board rooms only) with JSON `{ kind: 'snapshot', runs }` to a socket that joins while runs are open, then `{ kind: 'patch', run }` for each change. Every socket gets its own copy, built for its person by `viewFor`, so a rule that hides something is applied on the server and never left to the app. `accepted`, `discarded`, `failed` and `expired` mean the run is gone; they carry only `id`, `feature`, `status`, `by`, the `error` code of a failed run and `resolvedBy`.
 
@@ -342,7 +351,7 @@ Everyone on a board sees its AI runs (TAB-141): while a run is going ("Ana is as
 
 ## Reviewing a proposal
 
-Behind `?aibar` (TAB-160). A ready preview, on the bar and in the live-run tray, has a **Review** button that opens a panel on the right of the board. It shows every item of the proposal with a box to keep it, and the person can change it before it is added:
+Review panel (TAB-160). A ready preview, on the bar and in the live-run tray, has a **Review** button that opens a panel on the right of the board. It shows every item of the proposal with a box to keep it, and the person can change it before it is added:
 
 - A `create` proposal (generate, summarise): each sticky has its text (up to 2,000 characters) and its colour (one of the sticky colours), and the frame, if there is one, has a title (up to 100) and a box to leave it out. A sticky whose text is emptied is left out; a frame needs at least one sticky.
 - A `group` proposal (cluster): each group has a title and a box, and each sticky it would move has a box. A group needs a title and at least one sticky left.

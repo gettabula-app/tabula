@@ -42,7 +42,7 @@ import { SHORTCUTS } from '../shortcuts';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
-import { aiBarFlag, aiBarFor, aiBarShown, aiSetupFor, glyph, mountAiBar, onAiBarChange } from './ai-bar';
+import { aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
 import { liveRunsFor, mountAiLive, onLiveChange } from './ai-live';
 import './ai-review-panel';
 import { avatarLine, badgeRun } from '../ai-live-logic';
@@ -338,7 +338,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)
-  if (!scratch && !demo && aiBarFlag()) {
+  if (!scratch && !demo) {
     mountAiLive(app);
     liveRunsFor(app)?.onChange(renderPeople);
   }
@@ -405,9 +405,9 @@ const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0
 export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   if (app.store.cache.size || app.readOnly) return;
   // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
-  const generate = aiBarFlag() ? h('button', {
+  const generate = h('button', {
     class: 'btn ailive-generate', type: 'button', hidden: !aiBarFor(app), onclick: () => aiBarFor(app)?.open({ arm: 'generate', context: 'none' }),
-  }, glyph('spark', 16), 'Generate') : null;
+  }, glyph('spark', 16), 'Generate');
   const hint = h('div', { class: 'empty-hint' },
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
@@ -419,7 +419,7 @@ export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   );
   hint.hidden = hasPreview(app);
   chrome.appendChild(hint);
-  if (generate) onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
+  onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
   // while an AI preview is on the board the hint has done its job (the person has started); it returns if the preview goes
   // and the board is still empty (TAB-214)
   const offLive = onLiveChange(app, () => { hint.hidden = hasPreview(app); });
@@ -588,10 +588,6 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       h('div', { class: 'list-label' }, 'AI'),
       h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
         glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
-    ] : aiSetupFor(app) ? [
-      h('div', { class: 'list-label' }, 'AI'),
-      h('button', { class: 'menu-item', onclick: () => { pop.close(); location.hash = '#/admin/ai'; } },
-        glyph('spark', 18), h('span', null, 'Set up AI'), h('span', { class: 'menu-hint' }, 'Admin')),
     ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
     themeGroup,

@@ -1,8 +1,8 @@
-# The AI bar (preview)
+# The AI bar
 
-The AI bar is where you ask the AI to work on your board: summarise it, cluster stickies into groups, or generate ideas. It is still in preview and switched off by default. To try it, add `?aibar` to the board's address, for example `https://your-tabula/board/abc?aibar`. Tabula remembers the switch in that browser. Without it, none of this appears.
+The AI bar is where you ask the AI to work on your board: summarise it, cluster stickies into groups, or generate ideas. It appears when AI is enabled for you and you have a workspace key, an allowed personal key, or AI credits through your plan. Credits are not available yet.
 
-It also needs AI to be on for your workspace and a key to pay for it. See [Your AI key](ai-keys.md). Viewers and commenters do not see the bar, because they cannot add what it proposes.
+If AI cannot run for you, the board shows no AI bar, button, shortcut or menu item. Workspace owners and admins set up AI in **Admin → AI**. Viewers and commenters do not see the bar, because they cannot add what it proposes. See [Your AI key](ai-keys.md).
 
 ## The bar
 
@@ -32,7 +32,7 @@ Everyone on the board sees that a run is under way, and then its result as a pre
 
 The bar shows a message in place of the prompt, and nothing on the board changes:
 
-- **No key:** the bar does not appear. If you are an admin, the board menu offers **Set up AI**.
+- **AI is unavailable:** the bar and its board entry points do not appear. Workspace owners and admins can set up AI in **Admin → AI**.
 - **The key was rejected:** "The AI key was rejected. Ask a workspace admin to check it."
 - **Too many requests:** "Too many requests. Try again in 30 s." **Retry** stays greyed out until the countdown ends.
 - **The provider is down or busy:** "Anthropic isn't responding. Try again in a moment."

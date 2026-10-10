@@ -81,6 +81,12 @@ export function writeAiSettings(directory, patch) {
 export const aiEnabledFor = (settings, user) => settings.enabled && !(settings.membersOnly && user.role === 'guest');
 export const personalKeysFor = (settings, user) => settings.personalKeys && !(settings.membersOnly && user.role === 'guest');
 
+/** Only a hosted workspace can advertise credit backed AI; open and self-hosted instances never do. */
+export function aiCreditsAvailable(config, workspace) {
+  if (!config?.authEnabled || !config.cloud || typeof workspace?.limits !== 'function') return false;
+  return workspace.limits()?.aiCredits === true;
+}
+
 /**
  * `{ key: { apiKey, provider, baseUrl, model } }` or `{ error }` for the key fields. Anthropic has a fixed address and the
  * workspace's model setting, so it takes neither; an OpenAI-compatible server needs both, and they come with the key.

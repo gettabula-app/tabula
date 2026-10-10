@@ -110,6 +110,40 @@ describe('createProvider', () => {
       expect(() => createProvider({ kind: 'anthropic', apiKey: KEY, baseUrl })).toThrow(/baseUrl/);
     }
     expect(() => createProvider({ kind: 'anthropic', apiKey: KEY, baseUrl: 'https://llm.example.com' })).not.toThrow();
+    expect(() => createProvider({ kind: 'anthropic', apiKey: KEY, baseUrl: 'http://127.0.0.1:8787', trusted: true })).not.toThrow();
+    expect(() => createProvider({ kind: 'anthropic', apiKey: KEY, baseUrl: 'http://example.com', trusted: true })).toThrow(/baseUrl/);
+  });
+});
+
+describe('credits proxy errors', () => {
+  it.each([
+    ['credits_exhausted', 429],
+    ['credits_not_included', 403],
+    ['rate_limited', 429],
+    ['model_not_allowed', 400],
+    ['max_tokens_too_large', 400],
+    ['request_too_large', 413],
+    ['ai_unavailable', 503],
+  ] as const)('preserves %s as a typed error with the proxy message and status', async (code, status) => {
+    const message = `Proxy message for ${code}`;
+    const error = Anthropic.APIError.generate(
+      status,
+      { type: 'error', error: { type: code, message } },
+      'unused fallback',
+      new Headers(code === 'rate_limited' ? { 'retry-after': '17' } : {}),
+    );
+    const fake = fakeClient({ error });
+    const failure = await failureOf(collect(createAnthropicProvider({ apiKey: KEY, client: fake.client, proxyErrors: true }), request()));
+    expect([failure.code, failure.status, failure.message]).toEqual([code, status, message]);
+    expect(failure.retryAfter).toBe(code === 'rate_limited' ? 17 : null);
+  });
+
+  it('redacts the proxy token if an error message echoes it', async () => {
+    const error = Anthropic.APIError.generate(503, { type: 'error', error: { type: 'ai_unavailable', message: `Proxy echoed ${KEY}` } }, 'unused fallback', new Headers());
+    const fake = fakeClient({ error });
+    const failure = await failureOf(collect(createAnthropicProvider({ apiKey: KEY, client: fake.client, proxyErrors: true }), request()));
+    expect(failure.message).toBe('Proxy echoed [redacted]');
+    expect(failure.message).not.toContain(KEY);
   });
 });
 

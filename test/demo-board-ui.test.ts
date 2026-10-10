@@ -44,6 +44,8 @@ afterEach(() => {
 describe('demo board UI', () => {
   it('mounts the real menu and quickbar without workspace-only actions', async () => {
     browser = installFakeBrowser();
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}'));
+    vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('devicePixelRatio', 1);
     vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => { fn(0); return 1; });
     vi.stubGlobal('ResizeObserver', class {
@@ -74,6 +76,7 @@ describe('demo board UI', () => {
         getMeta: () => ({ name: 'Demo board', gridType: 'dots', gridSize: 24 }),
         setMeta: vi.fn<(...args: unknown[]) => void>(),
         cache: new Map(),
+        get: () => undefined,
         shown: () => [],
       },
       conn: { id: 'demo', status: 'local', denied: null },
@@ -111,6 +114,7 @@ describe('demo board UI', () => {
     const menuText = textOf(menu);
     expect(menuText).not.toContain('User guide');
     expect(menuText).not.toContain('Save board as template');
+    expect(menuText).not.toContain('Set up AI');
     for (const feature of ['Share', 'Chat', 'History']) {
       const row = menu?.querySelector(`[data-workspace-feature="${feature}"]`);
       expect(row).not.toBeNull();
@@ -127,5 +131,9 @@ describe('demo board UI', () => {
     expect(quickbar).not.toBeNull();
     expect(textOf(quickbar)).not.toContain('Save as template');
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(root.querySelector('.aibar')).toBeNull();
+    expect(root.querySelector('.aibar-fab')).toBeNull();
+    expect(root.querySelector('.ailive')).toBeNull();
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/api/ai/config'))).toEqual([]);
   });
 });

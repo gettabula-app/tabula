@@ -16,7 +16,7 @@ import { createRunGate, createWindowCounter } from './limits.mjs';
 import { createLiveRuns } from './live.mjs';
 import { canResolve, canSeeRun } from './policy.mjs';
 import { createProvider as defaultCreateProvider } from './providers.mjs';
-import { DEFAULT_LIMITS, aiEnabledFor, personalKeysFor } from './settings.mjs';
+import { DEFAULT_LIMITS, aiCreditsAvailable, aiEnabledFor, personalKeysFor } from './settings.mjs';
 import { clientIpOf } from '../client-ip.mjs';
 
 export const RUN_TIMEOUT_MS = 120_000;
@@ -130,7 +130,7 @@ export function parseResolve(body) {
  * @param {new (status: number, code: string, message?: string) => Error} deps.HttpError the class the caller turns into a response
  * @param {(room: string, fn: (doc: any) => any) => any} deps.readRoom reads a room document (roomAccess.read in the relay)
  * @param {(role: string, kind: 'board' | 'comments') => boolean} deps.canWriteRoom the relay's own rule
- * @param {(options: { kind: string, apiKey: string, baseUrl?: string | null, model?: string | null, trusted?: boolean }) => any} [deps.createProvider] replaced by the tests
+ * @param {(options: { kind: string, apiKey: string, baseUrl?: string | null, model?: string | null, trusted?: boolean, proxyErrors?: boolean, maxRetries?: number }) => any} [deps.createProvider] replaced by the tests
  * @param {number} [deps.timeoutMs] a run is stopped after this long
  * @param {ReturnType<typeof createLiveRuns>} [deps.live] the board's live runs (live.mjs); the relay shares one with both modes
  */
@@ -174,16 +174,43 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
   }
 
   /** Runs the provider and returns its one result or refusal; stops at once when `signal` aborts, even if the provider ignores it. */
-  async function collect(iterable, signal, onProgress) {
-    const iterator = iterable[Symbol.asyncIterator]();
-    const aborted = new Promise((_, reject) => {
-      if (signal.aborted) reject(signal.reason);
-      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  function nextWithAbort(iterator, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(signal.reason);
+      const cleanup = () => signal.removeEventListener('abort', onAbort);
+      const onAbort = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      let pending;
+      try {
+        pending = iterator.next();
+      } catch (err) {
+        cleanup();
+        reject(err);
+        return;
+      }
+      Promise.resolve(pending).then(
+        (step) => {
+          cleanup();
+          resolve(step);
+        },
+        (err) => {
+          cleanup();
+          reject(err);
+        },
+      );
     });
-    aborted.catch(() => {});
+  }
+
+  async function collect(iterable, signal, onProgress, prestarted = null) {
+    const iterator = prestarted?.iterator ?? iterable[Symbol.asyncIterator]();
+    let first = prestarted;
     try {
       for (;;) {
-        const step = await Promise.race([iterator.next(), aborted]);
+        const step = first ? await first.firstStep : await nextWithAbort(iterator, signal);
+        first = null;
         if (step.done) return null;
         const event = step.value;
         if (event?.type === 'progress') onProgress();
@@ -211,18 +238,31 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     const emit = (event, data) => {
       if (!res.destroyed && !res.writableEnded) res.write(sse(event, data));
     };
-    res.writeHead(200, SSE_HEADERS);
-    res.flushHeaders();
+    const startStream = () => {
+      res.writeHead(200, SSE_HEADERS);
+      res.flushHeaders();
+      headersStarted = true;
+      // The first event names the run, so the runner's app can tell its own run among the board's live runs.
+      emit('progress', { n: progress, runId });
+    };
     let progress = 0;
-    // the first event names the run, so the runner's app can tell its own run among the board's live runs
-    emit('progress', { n: progress, runId });
-
     let outcome = 'ok';
     let failure = null;
+    let beforeStreamError = null;
+    let headersStarted = false;
     let proposal = null;
     let usage = null;
     try {
-      const provider = createProvider({ kind: creds.kind, apiKey: creds.apiKey, baseUrl: creds.baseUrl ?? null, model: creds.model ?? null, trusted: creds.trusted === true });
+      if (creds.proxyErrors !== true) startStream();
+      const provider = createProvider({
+        kind: creds.kind,
+        apiKey: creds.apiKey,
+        baseUrl: creds.baseUrl ?? null,
+        model: creds.model ?? null,
+        trusted: creds.trusted === true,
+        ...(creds.proxyErrors === true ? { proxyErrors: true } : {}),
+        ...(creds.maxRetries === undefined ? {} : { maxRetries: creds.maxRetries }),
+      });
       const events = provider.run({
         model,
         system: spec.system,
@@ -232,7 +272,15 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
         maxTokens: spec.maxTokens,
         signal: controller.signal,
       });
-      const final = await collect(events, controller.signal, () => emit('progress', { n: ++progress }));
+      let prestarted = null;
+      if (creds.proxyErrors === true) {
+        const iterator = events[Symbol.asyncIterator]();
+        const firstStep = await nextWithAbort(iterator, controller.signal);
+        prestarted = { iterator, firstStep };
+        if (firstStep.done) throw new AiError('internal');
+      }
+      if (!headersStarted) startStream();
+      const final = await collect(events, controller.signal, () => emit('progress', { n: ++progress }), prestarted);
       if (final === null) throw new AiError('internal');
       if (final.type === 'refused') throw new AiError('ai_refused');
       usage = usageSummary(final.usage, model);
@@ -248,6 +296,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       const known = why instanceof AiError ? why : new AiError('internal');
       outcome = known.code;
       failure = { error: known.code, message: known.message };
+      beforeStreamError = known;
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);
@@ -268,6 +317,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     }
     if (failure) {
       live.fail(runId, failure.error);
+      if (!headersStarted) throw beforeStreamError;
       emit('error', failure);
     } else {
       live.ready(runId, { proposal, cut: prep.read.cut });
@@ -351,7 +401,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
  * from api.mjs. The workspace's read-only switch is checked by the run route, in its place in the order, so it is marked
  * readOnlyOk; the resolve route leaves it to api.mjs.
  */
-export function createRunRoutes({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider, live, log = console.error, now, timeoutMs }) {
+export function createRunRoutes({ config, compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider, live, log = console.error, now, timeoutMs }) {
   const { HttpError, forbidden } = errors;
   const runner = createRunner({ HttpError, readRoom, canWriteRoom, createProvider, log, now, timeoutMs, ...(live ? { live } : {}) });
   const readOnlyNow = () => cloud?.limits().readOnly === true;
@@ -376,12 +426,14 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
       if (readOnlyNow()) throw readOnly();
 
       const mine = personalKeysFor(settings, user) ? directory.getAiKeyInfo('user', user.id) : null;
-      const scope = mine ? 'user' : directory.getAiKeyInfo('workspace') ? 'workspace' : null;
+      const workspaceKey = directory.getAiKeyInfo('workspace');
+      const proxyConfigured = Boolean(config.ai.proxyUrl && config.ai.proxyToken);
+      const scope = mine ? 'user' : workspaceKey ? 'workspace' : aiCreditsAvailable(config, cloud) && proxyConfigured ? 'credits' : null;
       if (!scope) throw noKey();
-      // a run the workspace pays for stays visible to the people who share the bill
+      // A run paid for by the workspace stays visible to the people who share the bill.
       if (hidden && scope !== 'user') throw new HttpError(400, 'bad_request', "Runs on the workspace key can't be private");
-      const which = scope === 'user' ? { ring, scope, userId: user.id } : { ring, scope };
-      if (!ring.configured || !directory.aiKeyReadable(which)) throw new AiError('ai_key_unreadable');
+      const which = scope === 'user' ? { ring, scope, userId: user.id } : { ring, scope: 'workspace' };
+      if (scope !== 'credits' && (!ring.configured || !directory.aiKeyReadable(which))) throw new AiError('ai_key_unreadable');
 
       // the caller is judged again when the provider has answered, which can take a while
       const stillAllowed = () => {
@@ -410,6 +462,9 @@ export function createRunRoutes({ compile, errors, audit, directory, cloud, ring
           model: settings.model,
           limits: settings.limits,
           openKey() {
+            if (scope === 'credits') {
+              return { kind: 'anthropic', apiKey: config.ai.proxyToken, baseUrl: config.ai.proxyUrl, model: null, trusted: true, proxyErrors: true, maxRetries: 0 };
+            }
             const found = directory.useAiKey(which);
             if (!found) throw noKey();
             return { kind: found.provider, apiKey: found.apiKey, baseUrl: found.baseUrl, model: found.model };
