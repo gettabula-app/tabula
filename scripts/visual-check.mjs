@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1440];
+const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1280, 1440];
 // VISUAL_HEIGHT=390 npm run visual ... forces one window height for every width (a short landscape phone: --widths 844)
 const heightFor = (width) => Number(process.env.VISUAL_HEIGHT) || (width <= 500 ? 844 : 800);
 const BOARD_ID = 'visual-seed';
@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -66,6 +66,19 @@ function readThemes() {
 }
 
 // ---------------------------------------------------------------- states
+
+async function openEmojiPickerForNote(env) {
+  await openSeedBoard(env);
+  await env.page.evaluate(() => window.__board.editor.start('seed-note-1'));
+  await env.page.locator('.edit-bar.show').waitFor();
+  await env.page.waitForFunction(() => {
+    const textarea = document.querySelector('.text-editor');
+    return textarea && document.activeElement === textarea && textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length;
+  });
+  await env.page.locator('.text-editor').press('End');
+  await env.page.getByRole('button', { name: 'Add emoji' }).click();
+  await env.page.locator('.emoji-pop').waitFor();
+}
 
 // Pending Fontshare stylesheets and the fonts that follow them are the only thing that changes the picture after load.
 const settle = (page) =>
@@ -1500,6 +1513,80 @@ const STATES = {
       app.zoomBy(2.4);
     });
     await settle(env.page);
+  },
+  async 'emoji-picker'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const result = await page.evaluate(() => {
+      const bar = document.querySelector('.edit-bar.show').getBoundingClientRect();
+      const button = document.querySelector('.edit-emoji');
+      const buttonBox = button.getBoundingClientRect();
+      const picker = document.querySelector('.emoji-pop');
+      const pickerBox = picker.getBoundingClientRect();
+      const search = picker.querySelector('[aria-label="Search emoji"]');
+      const buttons = [...document.querySelectorAll('.edit-emoji, .emoji-cell')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { width: box.width, height: box.height, label: el.getAttribute('aria-label') };
+      });
+      const hit = document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
+      const outside = (box) => box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
+      return {
+        barOutside: outside(bar), pickerOutside: outside(pickerBox), pickerWidth: pickerBox.width, windowWidth: innerWidth,
+        small: buttons.filter((box) => box.width < 44 || box.height < 44), hitButton: hit === button, searchFocused: document.activeElement === search,
+      };
+    });
+    if (result.barOutside) throw new Error('emoji-picker: edit bar is outside the window');
+    if (result.pickerOutside) throw new Error('emoji-picker: picker is outside the window');
+    if (result.pickerWidth > result.windowWidth) throw new Error(`emoji-picker: picker width ${result.pickerWidth} exceeds ${result.windowWidth}`);
+    if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
+    if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
+    if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  async 'emoji-insert'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    await page.keyboard.type('rock');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && window.__board.store.get('seed-note-1').text.endsWith('🚀'));
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const textarea = document.querySelector('.text-editor');
+      let recent = [];
+      try {
+        recent = JSON.parse(localStorage.getItem('tabula.emoji.recent') || '[]');
+      } catch {
+        recent = [];
+      }
+      return {
+        text: app.store.get('seed-note-1').text, active: app.editor.active, focused: document.activeElement === textarea,
+        caretAtEnd: textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length,
+        pickerOpen: !!document.querySelector('.emoji-pop'), recentFirst: recent[0],
+      };
+    });
+    if (!result.text.endsWith('🚀')) throw new Error('emoji-insert: sticky text does not end with the matching rocket emoji');
+    if (!result.active) throw new Error('emoji-insert: editing ended after insertion');
+    if (!result.focused) throw new Error('emoji-insert: focus did not return to the textarea');
+    if (!result.caretAtEnd) throw new Error('emoji-insert: textarea caret is not after the emoji');
+    if (result.pickerOpen) throw new Error('emoji-insert: picker stayed open');
+    if (result.recentFirst !== '🚀') throw new Error('emoji-insert: recent emoji did not move to the front');
+  },
+  async 'emoji-esc'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const before = await page.evaluate(() => window.__board.store.get('seed-note-1').text);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && document.activeElement === document.querySelector('.text-editor'));
+    const afterPickerEscape = await page.evaluate(() => ({
+      active: window.__board.editor.active, focused: document.activeElement === document.querySelector('.text-editor'),
+      text: window.__board.store.get('seed-note-1').text,
+    }));
+    if (!afterPickerEscape.active || !afterPickerEscape.focused || afterPickerEscape.text !== before) {
+      throw new Error(`emoji-esc: first Escape changed the edit state: ${JSON.stringify(afterPickerEscape)}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__board.editor.active);
+    const afterEditorEscape = await page.evaluate(() => ({ active: window.__board.editor.active, text: window.__board.store.get('seed-note-1').text }));
+    if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);

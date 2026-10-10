@@ -85,7 +85,7 @@ export class TextEditor {
     return this.id !== null;
   }
 
-  get textMode() {
+  get textMode(): boolean {
     return this.active && this.mode === 'text';
   }
 
