@@ -60,8 +60,43 @@ if (want('sticky')) {
   await ctx.close();
 }
 
+if (want('longpress')) {
+  // real CDP touch: a held finger on a selected item opens the menu; no item may sit under the finger and the lift presses nothing
+  for (const [w, h] of [[360, 740], [412, 839]]) {
+    const ctx = await browser.newContext({ ...devices['Pixel 7'], viewport: { width: w, height: h } });
+    const page = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(page);
+    await page.goto(`${base}/?debug#/b/qlp${w}`);
+    await page.waitForFunction(() => window.__board);
+    await sleep(800);
+    await page.evaluate(() => {
+      const b = window.__board;
+      for (let i = 0; i < 3; i++) b.store.transact(() => b.store.create({ id: `n${i}`, type: 'sticky', x: 100 + i * 20, y: 300 + i * 20, w: 120, h: 120, rotation: 0, z: `a${i}`, text: `x${i}`, color: 'yellow' }));
+      b.zoomTo(1);
+      b.r.flyToCenter({ x: 170, y: 380 }, 1);
+      b.setSelection(['n0', 'n1', 'n2']);
+    });
+    await sleep(900);
+    const pt = await page.evaluate(() => { const b = window.__board; const o = b.store.getPlaced('n2'); const q = b.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 }); const r = b.r.svg.getBoundingClientRect(); return { x: Math.round(r.left + q.x), y: Math.round(r.top + q.y) }; });
+    const zs = () => page.evaluate(() => JSON.stringify([...window.__board.store.cache.values()].map((o) => [o.id, o.z])));
+    const before = await zs();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pt] });
+    await sleep(900);
+    const menu = await page.evaluate(() => { const m = document.querySelector('.ctx-menu'); const pop = m?.closest('.popover'); if (!pop) return null; const r = pop.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; });
+    const covered = !menu || (pt.x >= menu.l && pt.x <= menu.r && pt.y >= menu.t && pt.y <= menu.b);
+    record(`long-press menu opens and does not cover the finger (${w} px)`, !!menu && !covered, JSON.stringify({ pt, menu }));
+    await page.screenshot({ path: path.join(dataDir, `longpress-${w}.png`) });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(500);
+    const open = await page.evaluate(() => !!document.querySelector('.ctx-menu'));
+    record(`lifting the finger leaves the menu open and changes nothing (${w} px)`, open && (await zs()) === before);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 relay.kill();
-fs.rmSync(dataDir, { recursive: true, force: true });
+await sleep(500);
+fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 console.log(failed ? `${failed} check(s) FAILED` : 'all checks passed');
 process.exit(failed ? 1 : 0);

@@ -1,11 +1,12 @@
 import { h, icon } from './dom';
 import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab } from './focus-scope';
+import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
 
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; label?: string; onClose?: () => void } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
   const el = h('div', { class: `popover tray ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
@@ -23,6 +24,17 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     const right = safe.right;
     const top = safe.top;
     const bottom = safe.bottom;
+    if (opts.avoidAnchor) {
+      // never under the anchor (a finger is still on it); shorter and scrolling when the room is small
+      el.style.maxHeight = '';
+      el.style.overflowY = '';
+      const at = placeBesideAnchor(a, { width: r.width, height: el.getBoundingClientRect().height }, { width: window.innerWidth, height: window.innerHeight }, safe);
+      el.style.maxHeight = `${at.maxHeight}px`;
+      el.style.overflowY = 'auto';
+      el.style.left = `${at.left}px`;
+      el.style.top = `${at.top}px`;
+      return;
+    }
     const side = opts.side ?? 'bottom';
     let x = a.left, y = a.bottom + 8;
     if (side === 'right') { x = a.right + 10; y = a.top; }
