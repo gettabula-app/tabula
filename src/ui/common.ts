@@ -17,11 +17,13 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   }
   document.body.appendChild(el);
   const place = () => {
-    const a = anchor.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     const safe = safeInsets();
     const side = opts.side ?? 'bottom';
-    const bar = side === 'top' ? anchor.closest<HTMLElement>('.flowbar.show') : null;
+    // the session bar is drawn again when its steps change, which detaches the button the panel opened from: the bar itself is then the anchor
+    const bar = side === 'top' ? (anchor.closest<HTMLElement>('.flowbar.show') ?? document.querySelector<HTMLElement>('.flowbar.show')) : null;
+    const a = anchor.isConnected || !bar ? anchor.getBoundingClientRect() : bar.getBoundingClientRect();
+    if (!anchor.isConnected && !bar) return;
     const avoidAbove = bar?.getBoundingClientRect();
     const pos = placePopover(a, r, { width: window.innerWidth, height: window.innerHeight }, safe, side, avoidAbove);
     if (pos.maxHeight === null) el.style.removeProperty('max-height');
@@ -31,6 +33,12 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   };
   place();
   requestAnimationFrame(place);
+  // a panel that grows after it opened (Add step in the Steps list, a longer list) is placed again, so a top panel keeps clear of the session bar instead
+  // of running down over it; the window can change size under it too
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => place()) : null;
+  observer?.observe(el);
+  const onResize = () => place();
+  window.addEventListener('resize', onResize);
   const onDown = (e: PointerEvent) => {
     if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
   };
@@ -45,6 +53,8 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     el.remove();
     opener?.setAttribute('aria-expanded', 'false');
     if (giveBack) restoreFocus(anchor);
+    observer?.disconnect();
+    window.removeEventListener('resize', onResize);
     window.removeEventListener('pointerdown', onDown, true);
     window.removeEventListener('keydown', onKey, true);
     if (openPop?.el === el) openPop = null;

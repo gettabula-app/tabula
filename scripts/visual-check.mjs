@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1332,19 +1332,31 @@ const STATES = {
   },
   async 'flow-steps-overlap'(env) {
     await STATES['flow-steps'](env);
-    const result = await env.page.evaluate(() => {
-      const bar = document.querySelector('.flowbar.show');
-      const pop = document.querySelector('.popover.wide');
-      const next = [...(bar?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.trim().startsWith('Next step'));
-      if (!bar || !pop || !next) return { failures: ['session bar, Steps popover or Next step button is missing'] };
-      const box = (el) => el.getBoundingClientRect();
-      const b = box(bar), p = box(pop), n = box(next);
-      const intersects = p.left < b.right && p.right > b.left && p.top < b.bottom && p.bottom > b.top;
-      const hit = document.elementFromPoint((n.left + n.right) / 2, (n.top + n.bottom) / 2);
-      const failures = [];
-      if (intersects) failures.push(`Steps popover intersects the session bar (${Math.round(p.top)}-${Math.round(p.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)})`);
-      if (hit !== next && !next.contains(hit)) failures.push(`Next step centre hits ${hit?.getAttribute('aria-label') ?? hit?.textContent?.trim() ?? hit?.tagName ?? 'nothing'}`);
-      return { failures, viewport: `${innerWidth}x${innerHeight}`, popover: { top: p.top, bottom: p.bottom }, bar: { top: b.top, bottom: b.bottom }, hit: hit?.textContent?.trim() };
+    await checkStepsOverlap(env, 'flow-steps-overlap');
+  },
+  // a long session: the Steps list is tall, so a popover that is only placed above the bar runs down over it (the reported case)
+  // QA's WebKit case: Add step with its form open and the new step set to Dot vote makes the Steps list taller still
+  async 'flow-steps-overlap-edit'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vc-q', title: 'Quick poll', mode: 'write', instructions: 'Answer.', durationSec: 120 }]);
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await env.page.getByRole('button', { name: 'Add step' }).click();
+    const select = env.page.getByLabel('Step 2 mode');
+    await select.selectOption('vote');
+    await env.page.waitForTimeout(300);
+    await checkStepsOverlap(env, 'flow-steps-overlap-edit');
+  },
+  async 'flow-steps-overlap-many'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps(Array.from({ length: 10 }, (_, i) => ({ id: `vc-m${i}`, title: `Step ${i + 1}: a longer title for the list`, mode: i % 3 === 1 ? 'vote' : 'write', instructions: 'Do the thing together.', durationSec: 180, votesPerPerson: i % 3 === 1 ? 3 : undefined })));
+      f.start();
     });
     console.log(`flow-steps-overlap ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`flow-steps-overlap: ${JSON.stringify(result.failures)}`);
@@ -2151,7 +2163,10 @@ async function launchChromium() {
     throw new UsageError('playwright is not installed. Run npm ci, then once: npx playwright install chromium', false);
   }
   try {
-    return await playwright.chromium.launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
+    // VISUAL_BROWSER=webkit or firefox runs the same states in another engine (cross-browser findings); the default is Chromium
+    const engine = process.env.VISUAL_BROWSER ?? 'chromium';
+    if (!['chromium', 'webkit', 'firefox'].includes(engine)) throw new UsageError(`VISUAL_BROWSER must be chromium, webkit or firefox, not ${engine}`, false);
+    return await playwright[engine].launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
   } catch (err) {
     if (/Executable doesn't exist/i.test(err.message)) throw new UsageError('Chromium for Playwright is not installed. Run once: npx playwright install chromium', false);
     throw err;
