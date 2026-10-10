@@ -25,7 +25,7 @@ let index: Promise<Entry[]> | null = null;
 let hits: Hit[] = [];
 let active = -1;
 
-const load = () => (index ??= fetch('/docs/search.json').then((r) => (r.ok ? (r.json() as Promise<Entry[]>) : [])).catch(() => []));
+const load = () => (index ??= fetch(input?.dataset.search || '/docs/search.json').then((r) => (r.ok ? (r.json() as Promise<Entry[]>) : [])).catch(() => []));
 
 function search(entries: Entry[], query: string): Hit[] {
   const q = query.trim().toLowerCase();
