@@ -67,7 +67,10 @@ describe('the relay restoring a workspace', () => {
       },
     } as RegExp });
     const restoring = c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: CONFIRM });
-    await until(() => staging);
+    // The safety backup (which now takes the snapshot barrier) comes first; 8 s was too short on a loaded CI runner. A real hang still fails, with the relay's output.
+    await until(() => staging, 45_000).catch((err) => {
+      throw new Error(`${err.message}: the restore never reached staging. Relay output: ${relay.out().slice(-1500)}`);
+    });
     editor.doc.getMap('objects').set('last-edit', 'after the safety backup');
     await until(() => watcher.doc.getMap('objects').get('last-edit') === 'after the safety backup');
     const res = await restoring;
