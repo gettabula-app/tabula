@@ -39,7 +39,7 @@ I egenskapspanelen har en kopplingslinje färgen **Line** (Linje), **Width** (Br
 
 ## Pilspetsar
 
-Öppna **More properties** (Fler egenskaper) och ställ in pilspetsar för **Start** (Start) och **End** (Slut). Alternativen är None (Ingen), Arrow (Pil), Open arrow (Öppen pil), Hollow triangle (Ihålig triangel), Filled diamond (Fylld romb), Hollow diamond (Ihålig romb), Circle (Cirkel), Bar (Streck) och Crow's foot (Kråkfot) (många eller en). Nya kopplingslinjer börjar utan pilspets i början och med en pil i slutet. **Reverse direction** (Byt riktning) byter plats på ändarna.
+Öppna **More properties** (Fler egenskaper) och ställ in pilspetsar för **Start** (Start) och **End** (Slut). Varje alternativ i listorna visas med en liten förhandsvisning av pilspetsen, riktad åt det håll som kopplingslinjen ska gå, så att du kan välja det alternativ som ser rätt ut. Alternativen är None (Ingen), Arrow (Pil), Open arrow (Öppen pil), Hollow triangle (Ihålig triangel), Filled diamond (Fylld romb), Hollow diamond (Ihålig romb), Circle (Cirkel), Bar (Streck) och Crow's foot (Kråkfot) (många eller en). Nya kopplingslinjer börjar utan pilspets i början och med en pil i slutet. **Reverse direction** (Byt riktning) byter plats på ändarna.
 
 ## Etiketter
 
@@ -64,4 +64,4 @@ Om du vill ändra en befintlig kopplingslinje markerar du den, öppnar **More pr
 ## Relaterat
 
 - [Former, text och klisterlappar](shapes-text-notes.md)
-- [Exportera och importera](export-import.md)
+- [Exportera och importera](export-import.md#kopiera-som-mermaid)

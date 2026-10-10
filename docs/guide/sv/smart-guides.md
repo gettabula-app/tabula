@@ -6,12 +6,13 @@ Smarta hjälplinjer visar hur objektet du flyttar eller ändrar storlek på ligg
 
 - **Justeringslinjer.** En tunn linje visas mellan objekt som linjerar, från det flyttade objektet till det objekt som ligger längst bort på samma linje. Den ritas bara mellan objekten, inte över hela vyn.
 - **Jämna mellanrum.** När avståndet till ett närliggande objekt motsvarar ett avstånd någon annanstans i samma rad eller kolumn, eller när objektet ligger precis mitt emellan två grannar, visas en klammer över varje lika stort mellanrum med avståndet angivet.
+- **Samma storlek.** Medan du ändrar storlek kan bredden eller höjden fästa vid samma mått som på ett annat objekt. Klamrarna markerar objektet som ändras och upp till tre närmaste objekt med samma mått, med ett `=` före det avrundade måttet.
 
 ## När de visas
 
 Hjälplinjer visas medan du flyttar och ändrar storlek på ett objekt. En flermarkering flyttas som ett enda block. Om du bara markerar kopplingslinjer visas inga hjälplinjer.
 
-När du ändrar storlek är det bara kanterna du drar i som fäster. Den motsatta kanten stannar där den är. Om du ändrar storlek på ett roterat objekt visas inga hjälplinjer. De visas inte heller när du ändrar storlek från ett hörn med låsta proportioner, håller ned `Shift` eller gör det på ikoner och UML-aktörer.
+När du ändrar storlek genom att dra i en fri kant är det bara kanten du drar i som fäster; den motsatta kanten står kvar. Om du drar i ett hörn med låsta proportioner vinner den närmaste vågräta eller lodräta justeringen. Den andra kanten följer proportionerna, och det motsatta hörnet ligger kvar. Det gäller hörn som du ändrar med `Shift` och bilder, ikoner och UML-aktörer. Om du ändrar storlek på ett roterat objekt visas inga hjälplinjer.
 
 ## Hur nära du behöver vara
 

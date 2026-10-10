@@ -79,7 +79,7 @@ Rubrik- och brödtextteckensnitt för nya objekt på hela tavlan ställs in unde
 - **Icons**: öppna menyn **Icons** och skriv i **Search icons** (Sök efter ikoner). Sökningen omfattar alla ikonuppsättningar eller den valda uppsättningen i listan (**All icon sets** (Alla ikonuppsättningar) som standard) och söker bland namn, alias och kategorier. Klicka på en ikon för att lägga till den eller dra den till tavlan. Varje klick placerar ikonen 24 pixlar åt höger och ned från den föregående ikonen så att de inte hamnar ovanpå varandra, och stegen börjar om från vyområdets mittpunkt när du flyttar vyn ett steg eller flyttar eller tar bort den senast placerade ikonen. Ändra ikonens färg i egenskapspanelen.
 - **Ikoner utan anslutning**: när **All icon sets** är valt innehåller raden **Popular icon sets (N)** (Populära ikonuppsättningar (N)) alternativet **Download for offline** (Ladda ned för offlineanvändning). När en uppsättning är vald visas i stället uppsättningens namn på raden. Nedladdade uppsättningar kan sökas och förhandsvisas utan anslutning; **Update** (Uppdatera) och **Remove** (Ta bort) fungerar som för klistermärken (se [Klistermärken](stickers.md)). Ikoner som redan finns på tavlan ligger kvar.
 - **Online sets** (Uppkopplade uppsättningar): den här knappen i ikonmenyn hämtar fler uppsättningar från Iconify. De uppsättningarna går inte att ladda ned, kräver en anslutning och varje sökning skickar din fråga till Iconify.
-- **UML** (UML): menyn **UML** innehåller klasser, aktörer, livslinjer och andra UML-element samt kopplingslinjer för relationer. Se [Kopplingslinjer](connectors.md).
+- **UML** (UML): menyn **UML** innehåller klasser, aktörer, livslinjer och andra UML-element samt kopplingslinjer för relationer. Se [Kopplingslinjer](connectors.md#uml-relationer).
 - **Import Mermaid** (Importera Mermaid): se [Exportera och importera](export-import.md).
 
 Se [Klistermärken](stickers.md) för emoji.
@@ -108,7 +108,7 @@ I ett smalt fönster (860 pixlar brett eller mindre) börjar fältet till höger
 
 ## Egenskapspanelen
 
-**More properties** öppnar en panel vid sidan med objekttypen som rubrik. Beroende på markeringen innehåller den: form- eller klasstyp, fill, line colour, **Width** (Bredd) (1 till 6 px), **Style** (Stil) (heldragen, streckad, prickad), font, size, weight, alignment, text colour, **Opacity** (Opacitet), align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`), duplicate, lock, **Copy as Mermaid** (Kopiera som Mermaid) och delete. Om flera markerade objekt skiljer sig åt visas ett fält som blandat tills du ändrar det. På en telefon har panelen en fällknapp som fäller ihop den till rubrikraden, så att du kan se tavlan ovanför.
+**More properties** öppnar en panel vid sidan med objekttypen som rubrik. Beroende på markeringen innehåller den: form- eller klasstyp, fill, line colour, **Width** (Bredd) (1 till 6 px), **Style** (Stil) (heldragen, streckad, prickad), font, size, weight, alignment, text colour, **Opacity** (Opacitet), align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`), duplicate, lock, **Copy as Mermaid** (Kopiera som Mermaid) och delete. När du ändrar ordningen med flera markerade objekt behåller de sin inbördes ordning. Om flera markerade objekt skiljer sig åt visas ett fält som blandat tills du ändrar det. På en telefon har panelen en fällknapp som fäller ihop den till rubrikraden, så att du kan se tavlan ovanför.
 
 ## Markera, flytta och gruppera
 
@@ -120,7 +120,7 @@ I ett smalt fönster (860 pixlar brett eller mindre) börjar fältet till höger
 - Justeringslinjer och avståndsmarkörer visas medan du flyttar eller ändrar storlek; se [Smarta hjälplinjer](smart-guides.md).
 - Håll ned `Shift` medan du ändrar storlek för att behålla proportionerna.
 - Högerklicka på ett objekt (eller en markering) för att öppna en meny med **Bring to front** (Flytta längst fram), **Bring forward** (Flytta framåt), **Send backward** (Flytta bakåt), **Send to back** (Flytta längst bak), **Duplicate**, **Lock**, **Unlock** och **Delete**. Bring forward och Send backward flyttar markeringen ett steg förbi det närmaste objektet som den överlappar, inte längst fram eller längst bak.
-- Kopiera och klistra in med `Ctrl+C` och `Ctrl+V`. Om du klistrar in vanlig text skapas en lapp per rad (högst 50).
+- Kopiera och klistra in med `Ctrl+C` och `Ctrl+V`. Om du klistrar in vanlig text skapas ett textobjekt där radbrytningarna bevaras. Lång text radbryts vid en bestämd bredd.
 
 Om du vill hålla ihop objekt placerar du dem i en **Frame** (när du flyttar ramen flyttas innehållet med den) eller skapar en **grupp**.
 

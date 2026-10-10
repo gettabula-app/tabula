@@ -4,7 +4,6 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 
 | English term | Svenska (valt) | Varför osäkert |
 |---|---|---|
-| `copy-as-mermaid` heading link | linked to `export-import.md` without an anchor | The Swedish heading belongs to another page; add its translated anchor once that page's heading is available. |
 | `shapes-text-notes.md#locking` | `shapes-text-notes.md` (ankaret utelämnat) | Den svenska rubriken på den andra sidan är inte tillgänglig än; lägg till dess svenska ankare när sidan har översatts. |
 | `shapes-text-notes.md#selecting-moving-and-grouping` | `shapes-text-notes.md` (ankaret utelämnat) | Den svenska rubriken på den andra sidan är inte tillgänglig än; lägg till dess svenska ankare när sidan har översatts. |
 | `sharing.md#roles` | `sharing.md` (ankaret utelämnat) | Den svenska rubriken på den andra sidan är inte tillgänglig än; lägg till dess svenska ankare när sidan har översatts. |
@@ -29,11 +28,11 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | canvas | tavelyta | Termen finns inte i ordlistan; jag använder tavelyta för ritområdet och arbetsyta för workspace. |
 | commenter | kommentatör | Ordlistan markerar termen som osäker; kontrollera att den passar som rollnamn. |
 | connector | kopplingslinje | Ordlistan markerar termen som osäker; kontrollera att den skiljer sig tydligt från en vanlig linje. |
-| connectors.md#uml-relationships | connectors.md (utan ankare) | Den svenska målrubriken finns inte i den här översättningsomgången, så ankaret togs bort. |
 | dialog | dialogruta | This UI term is not in the glossary; please check that this is the preferred Swedish term. |
 | dot vote | punktröstning | Ordlistan markerar termen som osäker; kontrollera att den beskriver röstsättet tydligt. |
 | drawer | meny / panel | Termen finns inte i ordlistan; jag valde meny för verktygsmenyer och panel för en öppen sidopanel. |
 | due date | förfallodatum | The glossary marks this as uncertain and lists slutdatum as an alternative. |
+| equal size | samma storlek | Ny/osäker term; rubriken beskriver att bredd eller höjd fäster vid ett annat objekts mått. |
 | equal spacing | jämna mellanrum | This term is not in the glossary; it refers to matching gaps between objects. |
 | equal-spacing brackets | avståndsmarkörer | Termen finns inte i ordlistan; kontrollera om markörer återger brackets i gränssnittet. |
 | export-import.md#importing-mermaid | export-import.md (utan ankare) | Den svenska målrubriken finns inte i den här översättningsomgången, så ankaret togs bort. |
@@ -86,17 +85,21 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | storage bucket | lagringsbehållare | Molnlagringstjänster använder ofta det engelska ordet ”bucket”; kontrollera om den svenska termen är tydlig. |
 | swatch row | färgrad | This term is not in the glossary; please check against “rad med färgrutor”. |
 | sync state | synkroniseringsstatus | This product term is not in the glossary; please check the wording. |
+| text object | textobjekt | Ny/osäker term; generell benämning på redigerbart textinnehåll på tavlan. |
 | token (plural) | token | I use the invariant plural, but please confirm that it reads naturally in the token-management text. |
 | tool rail | verktygsrad | This term is not in the glossary; please check that it distinguishes the rail from a toolbar. |
 | tool rail / toolbar | verktygsfält | Termen finns inte i ordlistan; samma svenska används för tool rail och toolbar. |
 | toolbar | verktygsfält | This interface term is not in the glossary; please check the wording for the page controls. |
 | tooltip | verktygstips | Termen finns inte i ordlistan; kontrollera om det är tydligare än verktygsbeskrivning. |
 | tray | färgpalett | Termen finns inte i ordlistan; används för färgrutan bredvid verktygsfältet. |
+| User guide | användarguide | Ny/osäker UI-etikett; kontrollera att glosan passar menyvalet. |
 | viewer | läsare | Ordlistan markerar termen som osäker och nämner tittare som alternativ. |
 | whole-workspace restore | helåterställning | Kompakt fackterm; kontrollera att betydelsen är tydlig och naturlig. |
 | workspace | arbetsyta | Ordlistan markerar termen som osäker; den skiljer här tavlans arbetsyta från själva tavelytan. |
 | workspace channel | arbetsytans kanal | Term saknas i ordlistan; kontrollera att det inte bör heta ”gemensam kanal”. |
 | ”Vilken förhandsvisning som helst” | ”Redigerare kan lägga till eller kasta bort vilken förhandsvisning som helst.” | Kontrollera att formuleringen tydligt betyder att en redigerare kan hantera andra personers förhandsvisningar. |
+| `copy-as-mermaid` heading link | linked to `export-import.md` without an anchor | The Swedish heading belongs to another page; add its translated anchor once that page's heading is available. |
+| connectors.md#uml-relationships | connectors.md (utan ankare) | Den svenska målrubriken finns inte i den här översättningsomgången, så ankaret togs bort. |
 
 ## Övriga anmärkningar från översättarna
 

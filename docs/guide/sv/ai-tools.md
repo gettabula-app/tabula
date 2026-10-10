@@ -75,6 +75,8 @@ Kanbantavlor kräver försiktighet:
 - Ett verktyg kan inte ta bort en kanbantavla och kan bara ta bort en kolumn med kolumnverktyget nedan. Det kan ta bort ett kort som du kan se, som ligger i en kolumn och inte är låst. Ett kort som ägs av ett annat AI-verktyg kan inte tas bort av det här verktyget. Om ett kort är dolt eller innehåller privata sessionsanteckningar som du ännu inte kan se svarar verktyget som om kortet inte finns.
 - Om du tar bort en grupp tas allt i den bort, även grupper, ramar och kanbantavlor i gruppen. Men ett enda låst objekt i gruppen stoppar hela borttagningen (”En medlem i den här gruppen är låst. Lås upp den för att ta bort gruppen.”). Privata anteckningar från en pågående session som ännu inte har visats lämnas kvar på tavlan.
 - En borttagning som omfattar flera objekt genomförs helt eller inte alls. Kopplingslinjer som sitter fast i borttagna objekt tas också bort.
+- Ett verktyg kan koppla samman kort och andra objekt, men inte en kolumn eller själva kanbantavlan. En ny eller ändrad kopplingslinje som slutar vid en kolumn eller kanbantavla avvisas. Befintliga kopplingslinjer påverkas inte.
+- Text som ett verktyg skriver håller ihop emoji som består av flera delar, till exempel familjer och flaggor för England, Skottland och Wales. Dolda tecken tas fortfarande bort.
 
 ## Kanbankort från ett AI-verktyg
 

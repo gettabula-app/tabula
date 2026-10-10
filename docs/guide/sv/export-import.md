@@ -67,7 +67,7 @@ Diagrammet blir redigerbara former och kopplingslinjer till höger om befintligt
 
 ### Klistra in text och objekt
 
-Om du klistrar in vanlig text på tavlan skapas en lapp per rad (högst 50). Om du klistrar in objekt som kopierats från en annan Tabula-tavla (`Ctrl+C`, `Ctrl+V`) placeras de vid pekaren.
+Om du klistrar in vanlig text på tavlan skapas ett textobjekt där radbrytningarna bevaras. Lång text radbryts vid en bestämd bredd. Om du klistrar in objekt som kopierats från en annan Tabula-tavla (`Ctrl+C`, `Ctrl+V`) placeras de vid pekaren.
 
 ## Relaterat
 
