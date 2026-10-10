@@ -119,6 +119,12 @@ Rules that apply:
 - A lane cannot be deleted if it holds a locked card, or if the lane that would receive its cards blocks and would go over its limit.
 - Hidden lanes and private cards still answer as if they were not there.
 
+### Creating kanbans and ordering cards
+
+A tool can make a kanban with `create_kanban`: a name of up to 80 characters and, if you like, a list of 1 to 20 lanes, each with a stage, a work in progress limit and whether it blocks. Without a list it makes **To do**, **Doing** and **Done**. It can give a position, or place the kanban to the right of what is already on the board, and it can put it inside a frame or group that is not locked. A board holds at most 50 kanbans.
+
+`add_kanban_card` and `move_kanban_card` can say where in the lane the card goes: first, or after a given card. `add_kanban_cards` and `move_kanban_cards` handle 1 to 25 cards in one call, all or nothing. Work in progress limits are counted card by card in order, and a failure names the card that caused it (for example the fourth card's title). Putting a card in a new place inside a lane that is already full never counts against its limit.
+
 ## Signing in with OAuth
 
 Today a tool connects with a token, as above. Connecting from a tool's own **Add connector** screen with OAuth is **coming soon**, not available yet. Until then, use the command or settings file from the token dialog.
