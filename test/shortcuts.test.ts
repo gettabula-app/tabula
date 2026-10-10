@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SHORTCUTS, TOOL_KEYS, shortcutKeys } from '../src/shortcuts';
+import { formatShortcutLabel, SHORTCUTS, TOOL_KEYS, shortcutKeys } from '../src/shortcuts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -35,6 +35,22 @@ function handledKeys(): Set<string> {
   if (body.includes("e.code === 'Space'")) ids.add('space');
   return ids;
 }
+
+describe('platform-specific shortcut labels', () => {
+  const undo = SHORTCUTS.find((row) => row.ids.includes('mod+z'))!;
+  const redo = SHORTCUTS.find((row) => row.ids.includes('mod+shift+z'))!;
+
+  it.each([
+    ['MacIntel', '⌘Z', '⇧⌘Z, ⌘Y'],
+    ['Win32', 'Ctrl+Z', 'Shift+Ctrl+Z, Ctrl+Y'],
+    ['Android', 'Ctrl+Z', 'Shift+Ctrl+Z, Ctrl+Y'],
+  ])('formats %s labels without changing shortcut ids', (platform, expectedUndo, expectedRedo) => {
+    expect(formatShortcutLabel(undo.keys, platform)).toBe(expectedUndo);
+    expect(formatShortcutLabel(redo.keys, platform)).toBe(expectedRedo);
+    expect(undo.ids).toEqual(['mod+z']);
+    expect(redo.ids).toEqual(['mod+shift+z', 'mod+y']);
+  });
+});
 
 describe('keyboard shortcuts dialog', () => {
   const documented = new Set(SHORTCUTS.flatMap((s) => s.ids));
