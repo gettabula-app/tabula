@@ -741,3 +741,5 @@ The designer's popover spec is a separate file, `docs/rich-text-ux.md` on branch
 | 6 | Phone | Agreed, no data impact. The popover reads state from `getRichTextState` and sends commands only. |
 
 The popover never writes Y.Text directly. It sends commands through the editor command layer and reads `RichTextState`.
+
+The popover UI spec is `docs/rich-text-ux.md` (branch `docs/rich-text-ux`, 7a74e45). The two files reference each other and merge together.
