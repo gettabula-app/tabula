@@ -204,6 +204,40 @@ describe('PNG card links', () => {
     expect(intermediateSvg).toContain('href="https://example.com/design"');
     expect(intermediateSvg).toContain('M10 13.5l4-4M8.5 15.5l-1 1a3 3 0 01-4.2-4.2l3-3a3 3 0 014.2 0');
   });
+
+  it('carries flipped object markup through PNG rasterization', async () => {
+    const { exporters } = await setup(async () => { throw new Error('offline'); });
+    const store = new Store(new Y.Doc());
+    store.create({ id: 'flipped', type: 'shape', kind: 'arrow-right', x: 0, y: 0, w: 80, h: 60, rotation: 0, z: 'a0', flipX: true, text: 'Readable' });
+    const app = {
+      store,
+      r: { contentBounds: () => ({ x: 0, y: 0, w: 80, h: 60 }), ctx: { get: (id: string) => store.getPlaced(id) } },
+    } as unknown as BoardApp;
+    let sourceSvg: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => { sourceSvg = blob as Blob; return 'blob:flipped-svg'; });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    class ImageStub {
+      decoding = '';
+      onload?: () => void;
+      onerror?: () => void;
+      set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+    }
+    vi.stubGlobal('Image', ImageStub);
+    const canvasContext = { drawImage: vi.fn<CanvasRenderingContext2D['drawImage']>(), measureText: (text: string) => ({ width: text.length * 7 }), font: '' };
+    const canvas = {
+      width: 0, height: 0,
+      getContext: () => canvasContext,
+      toBlob: (callback: BlobCallback | null, type?: string) => callback?.(new Blob(['png pixels'], { type })),
+    };
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => tag === 'canvas' ? canvas as unknown as HTMLCanvasElement : createElement(tag));
+
+    const png = await exporters.exportPng(app, ['flipped'], 1);
+    expect(png.type).toBe('image/png');
+    expect(await sourceSvg?.text()).toContain('transform="translate(40 30) scale(-1 1) translate(-40 -30)"');
+    expect(await sourceSvg?.text()).toContain('>Reada</tspan>');
+    expect(await sourceSvg?.text()).toContain('>ble</tspan>');
+  });
 });
 
 describe('group export gathering', () => {

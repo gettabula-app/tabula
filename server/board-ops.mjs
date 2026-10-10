@@ -409,6 +409,8 @@ export function summarise(o, textMax, detail = false) {
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
   if (o.locked === true) out.locked = true;
   if (o.hidden === true) out.hidden = true;
+  if (typeof o.flipX === 'boolean') out.flipX = o.flipX;
+  if (typeof o.flipY === 'boolean') out.flipY = o.flipY;
   // which AI run proposed it (TAB-160): only the feature and a short name reach a model or an agent, as untrusted text
   const proposed = proposedOf(o.proposedBy);
   if (proposed) out.proposedBy = proposed;
@@ -1154,10 +1156,10 @@ function textHeight(content, w, fontSize) {
 }
 
 const CREATE_KEYS = {
-  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent'],
-  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent'],
-  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent'],
-  frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent'],
+  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
+  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
+  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
+  frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
 };
 
@@ -1252,6 +1254,10 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
           fill: item.fill === undefined ? undefined : colour(item.fill, at(path, 'fill'), { none: true }),
         });
       }
+      for (const key of ['flipX', 'flipY']) {
+        if (item[key] !== undefined && typeof item[key] !== 'boolean') throw invalid(at(path, key), 'Must be a boolean');
+        if (typeof item[key] === 'boolean') fields[key] = item[key];
+      }
       if (item.parent !== undefined) {
         const p = item.parent;
         if (isRecord(p)) {
@@ -1291,7 +1297,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   };
 }
 
-const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent'];
+const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent', 'flipX', 'flipY'];
 const UPDATABLE = {
   sticky: [...BOX_FIELDS, 'text', 'color'],
   shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
@@ -1378,6 +1384,10 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'x': case 'y': sets.set(key, coordinate(v, fieldPath)); break;
         case 'w': case 'h': sets.set(key, size(v, fieldPath)); break;
         case 'rotation': sets.set(key, (num(v, fieldPath, -3600, 3600) * Math.PI) / 180); break;
+        case 'flipX': case 'flipY':
+          if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
+          sets.set(key, v);
+          break;
         case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' ? 1 : 0, LIMITS.text)); break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;

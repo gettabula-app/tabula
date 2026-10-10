@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -1216,6 +1216,144 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  async 'flip-menu'(env) {
+    const { page, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const objects = [
+        { id: 'flip-menu-arrow', type: 'shape', kind: 'arrow-right', x: 20, y: 20, w: 140, h: 90, rotation: Math.PI / 6, text: 'Arrow', z: 'z1', fill: '#DCEBFF' },
+        { id: 'flip-menu-image', type: 'image', x: 190, y: 20, w: 120, h: 90, rotation: 0, asset: '00'.repeat(32), mime: 'image/png', z: 'z2' },
+        { id: 'flip-menu-icon', type: 'icon', x: 340, y: 20, w: 90, h: 90, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"/>', z: 'z3' },
+      ];
+      store.transact(() => objects.forEach((o) => {
+        if (!store.get(o.id)) store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+      }));
+      app.setSelection(objects.map((o) => o.id));
+      const bounds = app.r.contentBounds(objects.map((o) => o.id));
+      if (bounds) app.r.fit(bounds, 120, 1.15);
+    });
+    await page.locator('.quickbar.show').waitFor();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.locator('.qb-action-menu [role="menuitem"]').first().waitFor();
+    const quickItems = await page.locator('.qb-action-menu [role="menuitem"]').allTextContents();
+    if (!quickItems.some((x) => x.includes('Flip horizontal')) || !quickItems.some((x) => x.includes('Flip vertical'))) {
+      throw new Error(`flip-menu: quickbar entries missing: ${JSON.stringify(quickItems)}`);
+    }
+    if (width <= 500) {
+      const heights = await page.locator('.qb-action-menu [role="menuitem"]').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+      if (heights.some((height) => height < 44)) throw new Error(`flip-menu: quickbar phone rows are below 44px: ${heights.join(', ')}`);
+    }
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    await page.mouse.move(1, 1);
+    await page.screenshot({ path: path.join(outDir, `flip-menu-quickbar-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    await page.keyboard.press('Escape');
+    const at = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('flip-menu-arrow');
+      return app.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+    });
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await page.locator('.ctx-menu [role="menuitem"]').first().waitFor();
+    const contextItems = await page.locator('.ctx-menu [role="menuitem"]').allTextContents();
+    if (!contextItems.some((x) => x.includes('Flip horizontal')) || !contextItems.some((x) => x.includes('Flip vertical'))) {
+      throw new Error(`flip-menu: context entries missing: ${JSON.stringify(contextItems)}`);
+    }
+    if (width <= 500) {
+      const heights = await page.locator('.ctx-menu [role="menuitem"]').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+      if (heights.some((height) => height < 44)) throw new Error(`flip-menu: context phone rows are below 44px: ${heights.join(', ')}`);
+    }
+    await page.screenshot({ path: path.join(outDir, `flip-menu-context-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+  },
+  async 'flip-visual'(env) {
+    const { page, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const objects = [
+        { id: 'flip-arrow', type: 'shape', kind: 'arrow-right', x: -200, y: 0, w: 150, h: 90, rotation: Math.PI / 10, fill: '#DCEBFF', text: 'Start', z: 'z1' },
+        { id: 'flip-callout', type: 'shape', kind: 'callout-round', x: -10, y: -120, w: 170, h: 110, rotation: 0, fill: '#FFF2C2', text: 'Still readable', z: 'z2' },
+        { id: 'flip-triangle', type: 'shape', kind: 'triangle', x: 150, y: 0, w: 120, h: 110, rotation: 0, fill: '#DDF5E8', text: 'Turn', z: 'z3' },
+        { id: 'flip-path', type: 'path', x: -150, y: 150, w: 130, h: 70, rotation: 0, points: [0, 55, 30, 10, 65, 48, 95, 18, 130, 60], stroke: '#D64545', strokeWidth: 5, z: 'z4' },
+        { id: 'flip-icon', type: 'icon', x: 30, y: 155, w: 80, h: 80, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path fill="currentColor" d="M3 3h8v18H3zM13 3h8v8h-8zM13 13h8v8h-8z"/>', z: 'z5' },
+        { id: 'flip-connector', type: 'connector', from: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, to: { kind: 'bound', id: 'flip-triangle', anchor: 'left' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'z6' },
+        { id: 'flip-arrow-check', type: 'connector', from: { kind: 'free', x: 0, y: 45 }, to: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, route: 'straight', startHead: 'none', endHead: 'none', z: 'z7' },
+        { id: 'flip-callout-check', type: 'connector', from: { kind: 'bound', id: 'flip-callout', anchor: 'top' }, to: { kind: 'free', x: 180, y: -70 }, route: 'curved', startHead: 'none', endHead: 'none', z: 'z8' },
+      ];
+      store.transact(() => {
+        for (const o of objects) {
+          const current = store.get(o.id);
+          if (current) store.update(o.id, { ...o, flipX: undefined, flipY: undefined, createdBy: undefined, updatedAt: at });
+          else store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+        }
+      });
+      app.setSelection(objects.filter((o) => o.type !== 'connector').map((o) => o.id));
+      const bounds = app.r.contentBounds(objects.filter((o) => o.type !== 'connector').map((o) => o.id));
+      if (bounds) app.r.fit(bounds, 32, 1.15);
+    });
+    await page.waitForTimeout(200);
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    await page.screenshot({ path: path.join(outDir, `flip-visual-before-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Flip horizontal' }).click();
+    await page.waitForFunction(() => window.__board.store.get('flip-arrow')?.flipX === true && window.__board.store.get('flip-icon')?.flipX === true);
+    await page.evaluate(() => window.__board.setSelection(['flip-callout']));
+    await page.locator('.quickbar.show').waitFor();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Flip vertical' }).click();
+    await page.waitForFunction(() => window.__board.store.get('flip-callout')?.flipY === true);
+    await page.waitForTimeout(120);
+    const state = await page.evaluate(() => {
+      const app = window.__board;
+      const elbow = app.store.get('flip-connector');
+      const arrow = app.store.get('flip-arrow-check');
+      const callout = app.store.get('flip-callout-check');
+      const screenPoint = (path, atEnd) => {
+        const length = path.getTotalLength();
+        const point = path.getPointAtLength(atEnd ? length : 0);
+        return new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM());
+      };
+      const outlineDistance = (shapeId, point) => {
+        const outline = document.querySelector(`.objects [data-id="${shapeId}"] path`);
+        const length = outline?.getTotalLength() ?? 0;
+        if (!outline || !length) return Infinity;
+        const count = Math.max(300, Math.ceil(length * 2));
+        let closest = Infinity;
+        for (let i = 0; i <= count; i++) {
+          const p = outline.getPointAtLength((length * i) / count);
+          const screen = new DOMPoint(p.x, p.y).matrixTransform(outline.getScreenCTM());
+          closest = Math.min(closest, Math.hypot(screen.x - point.x, screen.y - point.y));
+        }
+        return closest;
+      };
+      const routePath = (id) => document.querySelector(`.objects [data-id="${id}"] path`);
+      const elbowRoute = routePath('flip-connector');
+      const arrowRoute = routePath('flip-arrow-check');
+      const calloutRoute = routePath('flip-callout-check');
+      const outlineErrors = {
+        arrowElbow: outlineDistance('flip-arrow', screenPoint(elbowRoute, false)),
+        arrowStraight: outlineDistance('flip-arrow', screenPoint(arrowRoute, true)),
+        calloutCurved: outlineDistance('flip-callout', screenPoint(calloutRoute, false)),
+      };
+      return {
+        flags: ['flip-arrow', 'flip-callout', 'flip-triangle', 'flip-path', 'flip-icon'].map((id) => app.store.get(id)?.flipX),
+        verticalCallout: app.store.get('flip-callout')?.flipY,
+        ends: [elbow.from.anchor, elbow.to.anchor, arrow.to.anchor, callout.from.anchor],
+        outlineErrors,
+        text: app.store.get('flip-callout')?.text,
+      };
+    });
+    if (state.flags.some((flag) => flag !== true) || state.verticalCallout !== true || state.ends.join(',') !== 'left,right,right,top' ||
+        Object.values(state.outlineErrors).some((distance) => distance > 1.5) || state.text !== 'Still readable') {
+      throw new Error(`flip-visual: incorrect result: ${JSON.stringify(state)}`);
+    }
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: path.join(outDir, `flip-visual-after-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
   },
   async 'touch-targets'(env) {
     const { page } = env;
@@ -2955,7 +3093,7 @@ async function capture({ browser, state, theme, width, file, shared }) {
   });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
-    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, browserName: browser.browserType().name(), width });
+    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, outDir: shared.outDir, browserName: browser.browserType().name(), theme, width });
     // a state that holds the mouse down or keeps an input focused would be undone by parking
     if (shot?.noPark) { /* left as it is */ }
     else if (shot?.keepFocus) await page.mouse.move(1, 1);

@@ -99,7 +99,7 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. frame: name, x, y, w?, h?, fill?. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. frame: name, x, y, w?, h?, fill?. Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
   properties: {
     type: { enum: ['sticky', 'shape', 'text', 'frame', 'connector'] },
     ref: refSchema,
@@ -111,6 +111,7 @@ const createItemSchema = {
     w: num('Width.'),
     h: num('Height.'),
     fontSize: num('Font size.'),
+    flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     color: { type: 'string', description: `Sticky colour: ${STICKY_COLORS.map((c) => c.name).join(', ')} or #RRGGBB.` },
     fill: { type: 'string', description: `${colourText} or none.` },
     stroke: { type: 'string', description: `${colourText} or none (shapes).` },
@@ -130,11 +131,12 @@ const updateItemSchema = {
   additionalProperties: false,
   required: ['id'],
   description:
-    'id plus the fields to change. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
+    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
   properties: {
     id: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
     rotation: { type: 'number' },
+    flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     parent: { type: ['string', 'null'] },
     text: { type: 'string', maxLength: LIMITS.text },
     name: { type: 'string', maxLength: LIMITS.name },
