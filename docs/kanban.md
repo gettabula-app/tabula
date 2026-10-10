@@ -130,7 +130,7 @@ Kanban constants (CSS pixels at zoom 1): lane width `laneW` (280), gap between l
 
 ### Connectors
 
-Connectors bind to object ids and read anchors through the box, so a connector to a card follows it when the card moves lanes (it reads `Store.geometry`). Connectors are allowed between cards and from a card to anything else. They are not drawn inside the lane; they cross it. Their ends are not part of the card's order.
+Connectors bind to object ids and read anchors through the box, so a connector to a card follows it when the card moves lanes (it reads `Store.geometry`). Connectors are allowed between cards and from a card to anything else, but never to a lane or to the kanban itself, which show no connection dots. They are not drawn inside the lane; they cross it. Their ends are not part of the card's order.
 
 ### Performance
 
