@@ -50,7 +50,7 @@ export function mountTouchMenu(app: BoardApp) {
     }
     firedAt = Date.now();
     held = { x: at.x, y: at.y, selection: [...app.selection], pointer: at.id };
-    openContextMenu(app, at.x, at.y);
+    openContextMenu(app, at.x, at.y, true);
   };
   const down = (e: PointerEvent) => {
     if (e.pointerType !== 'touch') return;
@@ -70,7 +70,7 @@ export function mountTouchMenu(app: BoardApp) {
     // (app.ts, onUp, 'move'): the menu is for the selection the press was made on, so it is put back and opened again
     if (!sameSelection(app.selection, at.selection)) {
       app.setSelection(at.selection);
-      openContextMenu(app, at.x, at.y);
+      openContextMenu(app, at.x, at.y, true);
     }
   };
   // Android also sends contextmenu after a hold: the menu is open already, so the second one is dropped

@@ -9,6 +9,9 @@
 import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
+import { OWNER_KINDS, STAGES, isSafeHttpUrl } from '../shared/containers';
+
+export { CARD_LINK_MAX, isSafeHttpUrl } from '../shared/containers';
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -19,13 +22,14 @@ const DASHES = new Set(['solid', 'dashed', 'dotted']);
 const ALIGNS = new Set(['left', 'center', 'right']);
 const VALIGNS = new Set(['top', 'middle', 'bottom']);
 const ANCHORS = new Set(['auto', 'top', 'right', 'bottom', 'left']);
-const STAGES = new Set(['todo', 'doing', 'done']);
+const STAGE_SET = new Set<string>(STAGES);
 const WIP_MODES = new Set(['warn', 'block']);
+const OWNER_KIND_SET = new Set<string>(OWNER_KINDS);
 const VISIBILITY = new Set(['+', '-', '#', '~', '']);
 /** Every enumerated object field and its values; the template file check (src/custom-templates.ts) uses it too. */
 export const OBJ_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   kind: KINDS, route: ROUTES, startHead: HEAD_SET, endHead: HEAD_SET, dash: DASHES, align: ALIGNS, valign: VALIGNS,
-  stage: STAGES, wipMode: WIP_MODES, relation: new Set(Object.keys(RELATIONS)),
+  stage: STAGE_SET, wipMode: WIP_MODES, ownerKind: OWNER_KIND_SET, relation: new Set(Object.keys(RELATIONS)),
 };
 
 /** A font is a Fontshare slug or `system`; it is used in a font-family attribute and a CSS font shorthand. */
@@ -36,10 +40,10 @@ const REQUIRED_NUMBERS = ['x', 'y', 'w', 'h', 'rotation'];
 /** Optional numbers: a non-finite value is dropped, so the default applies. */
 const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt'];
 /** Free text, drawn only as escaped text content or an escaped attribute: anything but a string is dropped. */
-const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z'];
+const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'link', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z'];
 /** Enumerations and their sets: a value outside the set is dropped. */
 const ENUMS: [string, Set<string>][] = [
-  ['dash', DASHES], ['align', ALIGNS], ['valign', VALIGNS], ['stage', STAGES], ['wipMode', WIP_MODES],
+  ['dash', DASHES], ['align', ALIGNS], ['valign', VALIGNS], ['stage', STAGE_SET], ['wipMode', WIP_MODES], ['ownerKind', OWNER_KIND_SET],
   ['relation', new Set(Object.keys(RELATIONS))],
 ];
 
@@ -119,6 +123,7 @@ export function safeObj<T extends Obj>(o: T): T {
   for (const k of OPTIONAL_NUMBERS) if (k in out && !finite(out[k])) delete out[k];
   for (const k of TEXTS) if (k in out && typeof out[k] !== 'string') delete out[k];
   for (const [k, set] of ENUMS) if (k in out && !(typeof out[k] === 'string' && set.has(out[k] as string))) delete out[k];
+  if ('link' in out && !isSafeHttpUrl(out.link)) delete out.link;
   if ('kind' in out && !(typeof out.kind === 'string' && KINDS.has(out.kind))) out.kind = 'rect';
   if ('font' in out && !(typeof out.font === 'string' && FONT_RE.test(out.font))) delete out.font;
   if ('points' in out) out.points = Array.isArray(out.points) && out.points.every(finite) ? out.points : [];
@@ -126,7 +131,16 @@ export function safeObj<T extends Obj>(o: T): T {
   if ('attributes' in out) out.attributes = members(out.attributes);
   if ('operations' in out) out.operations = members(out.operations);
   if ('labels' in out && !(Array.isArray(out.labels) && out.labels.every((l) => typeof l === 'string'))) delete out.labels;
-  for (const k of ['locked', 'sticker', 'hidden']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  for (const k of ['locked', 'sticker', 'hidden', 'flipX', 'flipY']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  if (o.type === 'connector' || o.type === 'group') {
+    delete out.flipX;
+    delete out.flipY;
+  }
+  if (o.type === 'card') {
+    if (!out.ownerId && !out.ownerName) delete out.ownerKind;
+    // Free-text owners are people. A racing kind-only write must not make one look like a token-owned agent.
+    else if (out.ownerKind === 'agent' && !out.ownerId) delete out.ownerKind;
+  }
   if ('proposedBy' in out) {
     const clean = cleanProposedBy(out.proposedBy);
     if (clean) out.proposedBy = clean;

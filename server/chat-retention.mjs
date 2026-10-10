@@ -16,12 +16,13 @@ const PAUSE_MS = 20;
  * @param {{ getSetting(key: string): string | null, audit(userId: string | null, action: string, detail?: object): unknown }} deps.directory
  * @param {() => ReturnType<typeof import('./chat.mjs').openChat>} deps.store the chat database, opened on first use
  * @param {() => boolean} [deps.paused] true while the workspace is being restored (the database must not be touched)
+ * @param {(fn: () => unknown) => unknown} [deps.runWriter] holds a lease while a batch mutates the chat database
  * @param {(...args: unknown[]) => void} [deps.log]
  * @param {() => number} [deps.now]
  * @param {boolean} [deps.timers] false in tests: nothing is scheduled; call run() yourself
  * @param {number} [deps.batch]
  */
-export function createChatRetention({ directory, store, paused = () => false, log = () => {}, now = Date.now, timers = true, batch = BATCH }) {
+export function createChatRetention({ directory, store, paused = () => false, runWriter = (fn) => fn(), log = () => {}, now = Date.now, timers = true, batch = BATCH }) {
   let running = null;
   let first = null;
   let daily = null;
@@ -37,7 +38,8 @@ export function createChatRetention({ directory, store, paused = () => false, lo
       try {
         for (;;) {
           if (paused()) break;
-          const n = store().purgeBefore(cutoff, batch);
+          const result = runWriter(() => store().purgeBefore(cutoff, batch));
+          const n = result && typeof result.then === 'function' ? await result : result;
           total += n;
           if (n < batch) break;
           await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));

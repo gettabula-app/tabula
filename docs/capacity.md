@@ -10,61 +10,43 @@ For fast remote-mode tests against a local relay only, set `LOAD_CLASS_BURST_MS`
 
 The summary reports relay RSS and CPU, sync-marker latency, time to first sync, generator event-loop lag, sign-in and socket failures, chat 429/5xx responses, relay stderr and relay exit. CPU is shown as a percentage of one local core. A Fly `shared-cpu-1x` gets a fraction of a core with burst capacity, so local CPU percentages are a lower bound on pressure there. A generator lag p95 over 50 ms makes that step's latency untrustworthy; the clients already run in worker threads, so distribute the clients over a second process and rerun.
 
+Before a run, the harness checks the machine's 1-minute load average per core: below 0.5 is quiet, 0.5 through 1.0 is busy (warns and proceeds), and above 1.0 is overloaded (refuses). Set `LOAD_CLASS_ALLOW_BUSY=1` to override the refusal. Other work on a busy machine distorts latency; if the ending load is overloaded, the report marks the run untrustworthy and the latency numbers should not be used.
+
 This is a local relay measurement, not a Fly benchmark: the laptop CPU does not match a Fly shared CPU, the run has no TLS or proxy, and there are no real browsers or rendering costs. Rendering is client-side and is not measured here. The laptop output alone cannot justify a Fly machine size; run the 30, 60 and 100-user cases on a staging machine with the candidate Fly CPU and memory to make that recommendation. A short local smoke run only checks that the harness works.
 
 ## Remote run against a throwaway Fly workspace (TAB-227)
 
-This is a runbook for a later, approved run. It has not been run against Fly. The remote mode uses an existing accounts-mode workspace and the supplied sign-in sessions; the script creates one personal board per step, seeds 150 sticky objects through sync, then tries to delete its boards. Its latency includes network round trips. The script does not collect Fly CPU or memory; record those from Fly during every step.
+Use `npm run fly:load`. The command is a dry run unless `FLY_LOAD_GO` exactly matches the phrase printed for the planned slug. No network requests are made during a dry run.
 
-**Who:** DevOps runs the script from a machine with a good connection. The tech lead runs the Fly side.
+**Preconditions:** use a machine with a good connection and a healthy local load (the child load harness refuses a busy generator machine). Provide `ADMIN_URL` for tabula-cloud's internal admin listener, `ADMIN_TOKEN` as a bearer token, and `FLY_LOAD_OWNER_EMAIL` for the comp workspace owner. `ADMIN_URL` is an operator-supplied base URL; the script does not invoke `fly proxy`. The owner must be able to receive sign-in mail. `FLY_LOAD_DOMAIN` defaults to `gettabula.app`; set it to the workspace domain configured in tabula-cloud if different. The script defaults to region `eu`, or accepts `FLY_LOAD_REGION=us`.
 
-**Preconditions:** Johan's go; a cost cap (for example, a comp workspace for under two hours, 100 seats, and the machine sizes below); and the image with the current relay. The workspace owner must be able to receive the sign-in email. Confirm the operator source address is in `INTERNAL_ALLOW_OPERATORS` before using the operator proxy; see the [TAB-103 source-policy note](cloud.md#source-policy). The TAB-103 operator allowlist detail is in tabula-cloud and was not available in this checkout.
+The planned slug defaults to `tab227-load-YYYYMMDD`; set `FLY_LOAD_SLUG` before the dry run if you want a different name. Use the single go phrase shown by the plan, with no extra characters:
 
-1. **Create the comp workspace.** In tabula-cloud, use `POST /admin/workspaces/comp` with `{slug:'loadtest-<date>', name, ownerEmail:<an address Johan reads>, region:'eu', seats:100, expiresAt: now+3h, note:'TAB-227 load test, delete after'}`. Reach the operator API through `fly proxy 8801:8801 --app tabula-cloud`. The exact operator authentication and request wrapper are unverified here; follow tabula-cloud `docs/comp-workspaces.md`. Expected: a workspace id and `https://loadtest-<date>.gettabula.app`; record the id for cleanup.
+```sh
+FLY_LOAD_GO='run the fly load test <slug printed by the plan>' npm run fly:load
+```
 
-2. **Get the owner session.** Open `https://<slug>.gettabula.app/`, sign in with the emailed link in a browser, then read the session cookie from the browser's developer tools (Application, Cookies; the cookie named `__Host-tabula_session`) and put the `Cookie`-style `name=value` into a local file with `umask 077`. Or copy the token from the emailed link (`token=` value) into `TARGET_LOGIN_TOKENS`; it is single use and expires after 15 minutes. Never paste either secret into chat, a ticket, or a commit. Optionally invite 2 to 4 colleagues by email as members for more distinct accounts; each signs in and sends their own cookie or token the same way. With fewer accounts than simulated users, the script reuses accounts round-robin; this represents one person with many tabs, and per-person limits are not multiplied. Expected: the script accepts each session only after `GET /api/me` returns a user; keep each secret out of output and reports.
+Run `npm run fly:load` first without that phrase. The dry run prints the workspace name, the full admin call sequence, three load commands, manual checkpoints, report paths, the expected workload duration, and the 180-minute cap. It makes no request. For a real run, provide `ADMIN_URL`, `ADMIN_TOKEN`, `FLY_LOAD_OWNER_EMAIL`, and the exact go phrase through the operator's normal environment/secret source. After the workspace is active, the script pauses for the owner session if neither `TARGET_COOKIES` nor `TARGET_LOGIN_TOKENS` was set in advance. In an interactive terminal, paste the cookie or token at the hidden prompt; it is never echoed or written to reports. The user session must belong to the workspace just created.
 
-3. **Dry run.** This prints the target host, steps, duration, account count, and what the script will create without making a request:
+The script creates one 100-seat comp workspace with expiry at plan time plus three hours, waits for `active`, then runs `scripts/load-class.mjs` for 30, 60, and 100 users at each size: `shared-cpu-1x` / 512 MB, `performance-1x` / 1 GB, and `performance-2x` / 2 GB. Each user step runs for 60 seconds. For each size, verify the machine size in Fly before continuing; between sizes, change it manually in the Fly dashboard because the tabula-cloud admin docs do not document a resize route. During each user step, record machine CPU and memory from Fly metrics, plus relay process CPU and peak RSS from the machine process view. The script reads the load-class JSON report and asks for those manual values after each size. There is no documented admin machine metrics or exec/status route. If one-time login tokens are used, the first load child exchanges them and stores the resulting cookies in a mode-0600 temporary file for the next two size runs; the orchestrator removes that file in its cleanup.
 
-   ```sh
-   TARGET_URL=https://<slug>.gettabula.app TARGET_COOKIES="$(cat ~/loadtest.cookie)" USERS=30 TARGET_DRY_RUN=1 node scripts/load-class.mjs
-   ```
+Expected measured activity is 10.5 minutes across the nine user steps and join bursts, plus provisioning and manual pauses. The machine budget is at most 180 machine-minutes across the size ladder, with comp expiry at three hours. The workspace has one 1 GB volume. The dollar amount depends on Fly's current region and size rates; the docs do not provide a price table. If teardown cannot complete, comp expiry suspends the machine, but the comp workspace and volume can remain until the control plane's 30-day deletion schedule, so use the manual teardown below.
 
-   Expected result: a remote load plan for the chosen host and one 30-user step, then exit 0. It does not exchange tokens, check sessions, or create a board.
+After the run, read the JSON report and the Markdown table printed at their output paths. Recommend the smallest size where the 100-user load-class verdict is `OK`, sustained Fly machine CPU is below 70%, and relay RSS is below 70% of that machine's memory. The report includes sync p50/p95/max, join p95, errors, Fly memory, machine and relay CPU, peak RSS, the recommendation checks, and teardown verification.
 
-4. **Run the three sizes.** For each size, run 30, 60, and 100 users for 60 seconds per step, in this order: the default workspace machine (`shared-cpu-1x`, 512 MB), `performance-1x` (1 GB), then `performance-2x` (2 GB). For the first size, run:
+The `finally` cleanup posts `POST /admin/workspaces/<id>/delete` and polls `GET /admin/workspaces/<id>` until it returns 404 or `state: deleted`. If the process dies before cleanup completes, repeat the exact admin call with the same bearer header, then verify the detail route:
 
-   ```sh
-   TARGET_URL=https://<slug>.gettabula.app TARGET_CONFIRM=<slug>.gettabula.app TARGET_COOKIES="$(cat ~/loadtest.cookie)" USERS=30,60,100 SECONDS=60 OUT=~/loadtest-shared-cpu-1x.json node scripts/load-class.mjs
-   ```
+```http
+POST ${ADMIN_URL}/admin/workspaces/<workspace-id>/delete
+Authorization: Bearer ${ADMIN_TOKEN}
+```
 
-   Command template per size:
+```http
+GET ${ADMIN_URL}/admin/workspaces/<workspace-id>
+Authorization: Bearer ${ADMIN_TOKEN}
+```
 
-   ```sh
-   TARGET_URL=... TARGET_CONFIRM=<slug>.gettabula.app TARGET_COOKIES=... USERS=30,60,100 SECONDS=60 OUT=~/loadtest-<size>.json node scripts/load-class.mjs
-   ```
-
-   Repeat the same command with the matching `OUT` filename for `performance-1x` and `performance-2x`. Each run should print three step verdicts and write the JSON report named by `OUT`; remove the boards automatically, or print their ids if a delete fails. The `TARGET_CONFIRM` value must equal the workspace host printed by the plan. Before each size, check tabula-cloud `docs/comp-workspaces.md` and `docs/spec.md` for the exact admin route and request fields to change `machineSize` and `memoryMb`. Those documents are not in this checkout, so the resize route and fields are unverified. If an existing workspace cannot be resized, create a new comp workspace per size. The expected create call uses `POST /admin/workspaces/comp` with the base fields from step 1 plus `machineSize:'performance-1x', memoryMb:1024`, or `machineSize:'performance-2x', memoryMb:2048`; confirm these fields and values against the comp plan before using them. A workspace created this way should still use the same expiry and cost cap.
-
-5. **Record Fly CPU and memory during each run.** Use `fly status`, the Fly metrics dashboard for the app (CPU %, memory), and `fly ssh console --app tabula-ws-<slug> -C "cat /proc/1/status"` or `top -bn1` (the SSH command and process view are unverified). Write down peak relay RSS and CPU for each user step. A `shared-cpu-1x` can be throttled by CPU steal; recognize it as high latency while CPU in the dashboard remains low.
-
-6. **Pass or fail.** Use the script verdicts: `OK`, `DEGRADED: p95 over 500 ms`, or `FAILING: errors or exit`. Recommend the smallest size where 100 users are `OK`, CPU remains under 70% sustained, and peak RSS stays under 70% of memory.
-
-7. **Clean up.** The script tries to delete every board it created and prints `boards left behind: <ids>` if any delete fails. Delete the comp workspace with `POST /admin/workspaces/<id>/delete` (comp workspaces have no Stripe subscription), then run `fly apps list` and confirm the `tabula-ws-<slug>` app and its volume are gone. Expected: no test boards, workspace app, or volume remain.
-
-8. **Report.** Include a table of size by users with sync p50/p95/max, join p95, errors, peak RSS, and CPU, then state the recommendation. List unverified items: the browser cookie name; how to read Fly metrics; the machine-size change route and fields; and the WAN latency baseline. Before the load run, request `/api/health` a few times and add the measured baseline:
-
-   ```sh
-   curl -w '%{time_total}' -o /dev/null -sS https://<slug>.gettabula.app/api/health
-   ```
-
-   | Size | Users | Sync p50 / p95 / max | Join p95 | Errors | Peak RSS | CPU |
-   | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-   |  |  |  |  |  |  |  |
-
-   **Recommendation:**
-
-   **WAN `/api/health` baseline:**
+**Unverified:** the production workspace domain (set `FLY_LOAD_DOMAIN` to match it); the exact Fly dashboard method for changing machine size and reading sustained CPU; how to inspect relay process RSS because no admin exec/status route is documented; and the exact dollar charge for the region and machine sizes. The script has not been run against Fly.
 
 ### Local results (2026-10-09, one run, 60 s per step, relay heap capped at 380 MB, a developer laptop)
 

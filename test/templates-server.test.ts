@@ -74,6 +74,15 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('preserves boolean flip flags through both template validators and rejects other values', () => {
+    const input = content([sticky('flipped', { flipX: true, flipY: false })]);
+    expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(validateContent(input).objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect(() => validateTemplateContent(content([sticky('bad', { flipX: 'yes' })]))).toThrow(/flipX.*boolean/i);
+    expect(() => validateContent(content([sticky('bad', { flipY: 1 })]))).toThrow(/flipY.*boolean/i);
+    expect(() => validateContent(content([{ ...sticky('wire'), type: 'connector', flipX: true }]))).toThrow(/connector.*flip flags/i);
+  });
+
   it('keeps every built-in template as it is, and the client accepts what comes out', () => {
     for (const def of TEMPLATES) {
       const made = builtinToCustom(def, 'u1').content;
@@ -104,6 +113,18 @@ describe('content that is accepted', () => {
       route: 'elbow', startHead: 'none', endHead: 'arrow',
     });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('refuses MCP card owners, dates and links before rebuilding a server template', () => {
+    const card = {
+      id: 'c1', type: 'card', parent: 'l1', rank: 'a0@l1', x: 12, y: 48, w: 264, h: 72, rotation: 0, z: '3', text: 'Token-owned work',
+      ownerId: 'token-secret', ownerName: 'Build bot', ownerKind: 'agent', due: '2026-10-10', link: 'https://example.com/private-plan',
+    };
+    expect(() => validateTemplateContent(content([
+      { id: 'k1', type: 'container', layout: 'kanban', name: 'Roadmap', x: 0, y: 0, w: 900, h: 400, rotation: 0, z: '1' },
+      { id: 'l1', type: 'lane', parent: 'k1', rank: 'a0@k1', name: 'To do', stage: 'todo', x: 12, y: 48, w: 280, h: 300, rotation: 0, z: '2' },
+      card,
+    ]))).toThrow(/an owner/);
   });
 
   it('accepts steps that point at frames, a template with nothing in it and 2,000 objects', () => {

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -11,8 +11,8 @@ import * as encoding from 'lib0/encoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { MSG_WORKSPACE, onWorkspaceHint, resyncRooms } from '../src/sync';
-import { freePort } from './free-port';
 import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/cloud.md. The relay runs as a child process exactly as `npm start` would, next to a fake control plane.
 
@@ -55,15 +55,6 @@ const baseEnv = (port: number, dir: string): Record<string, string> => ({
   TABULA_TRUST_PROXY: '1',
 });
 
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], { env: { ...baseEnv(port, dir), ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
-
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
     if (p.exitCode !== null || p.signalCode !== null) return r();
@@ -104,8 +95,9 @@ const servers: Server[] = [];
 const CLOUD_ENV = () => ({ TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: controlUrl, TABULA_CLOUD_WORKSPACE_ID: WORKSPACE });
 
 async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-cloud-'))): Promise<Server> {
-  const port = await freePort();
-  const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
+  // a relay that dies on start is reported at once with its own output, and a taken port is retried (test/start-relay.ts)
+  const { proc, port } = await startRelayProcess({ envFor: (p) => ({ ...baseEnv(p, dir), ...env }) });
+  const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
   servers.push(server);
   return server;
 }
@@ -357,14 +349,15 @@ describe('a hosted workspace', () => {
     });
 
     it('validate strictly and answer with what is stored, leaving an audit row with no actor', async () => {
-      for (const body of [{}, { seatLimit: 0 }, { readOnly: 'yes' }, { banner: 'a\nb' }, { nope: 1 }]) {
+      for (const body of [{}, { seatLimit: 0 }, { readOnly: 'yes' }, { aiCredits: 'yes' }, { banner: 'a\nb' }, { nope: 1 }]) {
         expect((await c.internal('PUT', '/api/internal/limits', body)).status).toBe(400);
       }
-      const set = await c.internal('PUT', '/api/internal/limits', { seatLimit: 50, banner: 'Welcome' });
-      expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome' } });
+      const set = await c.internal('PUT', '/api/internal/limits', { seatLimit: 50, banner: 'Welcome', aiCredits: true });
+      expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome', aiCredits: true } });
 
       const me = await c.api(owner.cookie, 'GET', '/api/me');
-      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
+      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect((await c.api(owner.cookie, 'GET', '/api/ai/config')).body.credits).toBe(true);
 
       const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.');
       expect(audit.body.entries[0]).toMatchObject({
@@ -373,6 +366,9 @@ describe('a hosted workspace', () => {
         actorEmail: null,
         detail: { seatLimit: 50, readOnly: false, banner: 'Welcome' },
       });
+      const disabled = await c.internal('PUT', '/api/internal/limits', { aiCredits: false });
+      expect(disabled.body.aiCredits).toBe(false);
+      expect((await c.api(owner.cookie, 'GET', '/api/ai/config')).body.credits).toBe(false);
       await c.internal('PUT', '/api/internal/limits', { seatLimit: null, banner: null });
     });
   });
@@ -735,14 +731,14 @@ describe('a hosted workspace', () => {
       const first = await launch(CLOUD_ENV(), dir);
       const a = client(first);
       const who = await a.signIn(OWNER);
-      await a.internal('PUT', '/api/internal/limits', { seatLimit: 7, readOnly: true, banner: 'Kept' });
+      await a.internal('PUT', '/api/internal/limits', { seatLimit: 7, readOnly: true, banner: 'Kept', aiCredits: true });
       await stopRelay(first.proc);
 
       const second = await launch(CLOUD_ENV(), dir);
       const b = client(second);
       const again = await b.signIn(OWNER);
       expect(again.user.id).toBe(who.user.id);
-      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, trialEndsAt: null, state: null });
+      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
       expect((await b.api(again.cookie, 'POST', '/api/teams', { name: 'x' })).status).toBe(402);
     });
   });

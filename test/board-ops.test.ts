@@ -4,9 +4,11 @@ import * as Y from 'yjs';
 import { Comments } from '../src/comments';
 import { STICKY_COLORS as PALETTE } from '../src/palette';
 import { Store } from '../src/store';
+import { KANBAN, LIMITS as KANBAN_LIMITS, rankBetween, sortedChildren } from '../shared/containers.mjs';
 import {
   LIMITS, OpsError, SHAPE_KINDS, STICKY_COLORS, addReply, addThread, aiAuthor, applyPlan, cleanForModel, fence, getObjectsDetail,
-  hiddenIds, listThreads, planCreate, planDelete, planUpdate, resolveAnchor, summariseBoard,
+  hiddenIds, listThreads, planAddKanbanLane, planCreate, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel,
+  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, stripInvisible, summariseBoard,
 } from '../server/board-ops.mjs';
 
 const who = { createdBy: 'user-1', now: 1000 };
@@ -26,8 +28,8 @@ function update(d: Y.Doc, updates: unknown[], now = 2000) {
   return plan.result;
 }
 
-function remove(d: Y.Doc, ids: unknown[]) {
-  const plan = planDelete(d, ids);
+function remove(d: Y.Doc, ids: unknown[], options?: { tokenId?: string }) {
+  const plan = planDelete(d, ids, options);
   d.transact(() => applyPlan(d, plan), 'mcp:test');
   return plan.result as { deleted: string[]; alsoDeleted: string[]; removed: any[] };
 }
@@ -46,6 +48,9 @@ function failure(fn: () => unknown): OpsError {
 const box = (id: string, extra: Record<string, unknown> = {}) => ({
   id, type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: 'a0', ...extra,
 });
+const boardObject = (id: string, type: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id, type, x: 0, y: 0, w: 100, h: 80, rotation: 0, z: 'a0', ...extra,
+});
 
 function seed(d: Y.Doc, ...objs: Record<string, unknown>[]) {
   const store = new Store(d);
@@ -56,6 +61,13 @@ function seed(d: Y.Doc, ...objs: Record<string, unknown>[]) {
 }
 
 describe('create', () => {
+  it.each(['container', 'lane', 'card', 'group', 'image'])('does not create %s through create_objects', (type) => {
+    const d = new Y.Doc();
+    const err = failure(() => planCreate(d, [{ type, x: 0, y: 0 }], who));
+    expect(err.code).toBe('invalid_input');
+    expect(err.path).toBe('objects[0].type');
+  });
+
   it('writes every object type in a form the real Store loads', () => {
     const d = new Y.Doc();
     const store = new Store(d);
@@ -101,6 +113,20 @@ describe('create', () => {
     expect(zs.every((z) => z > (fresh.get('old') as any).z)).toBe(true);
   });
 
+  it('creates and updates box flip flags as booleans and returns them from object reads', () => {
+    const d = new Y.Doc();
+    const made = create(d, [{ type: 'shape', x: 10, y: 20, flipX: true, flipY: false }]);
+    const id = made.created[0].id;
+    expect(new Store(d).get(id)).toMatchObject({ flipX: true, flipY: false });
+    expect(getObjectsDetail(d, [id]).objects[0]).toMatchObject({ flipX: true, flipY: false });
+
+    update(d, [{ id, flipX: false, flipY: true }]);
+    expect(getObjectsDetail(d, [id]).objects[0]).toMatchObject({ flipX: false, flipY: true });
+    expect(failure(() => planCreate(new Y.Doc(), [{ type: 'shape', x: 0, y: 0, flipX: 'true' }], who)).path).toBe('objects[0].flipX');
+    expect(failure(() => planUpdate(d, [{ id, flipY: 1 }])).path).toBe('updates[0].flipY');
+    expect(failure(() => planUpdate(d, [{ id, flipX: null }])).path).toBe('updates[0].flipX');
+  });
+
   it('takes fonts from the board settings', () => {
     const d = new Y.Doc();
     d.getMap('meta').set('bodyFont', 'inter');
@@ -109,6 +135,56 @@ describe('create', () => {
     const store = new Store(d);
     expect((store.get(res.created[0].id) as any).font).toBe('inter');
     expect((store.get(res.created[1].id) as any).font).toBe('lora');
+  });
+
+  it.each([
+    ['lane', 'lane'],
+    ['container', 'kanban'],
+  ] as const)('refuses a new connector end on a %s', (_type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    for (const end of ['from', 'to'] as const) {
+      const before = bytes(d);
+      const item: Record<string, unknown> = { type: 'connector', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } };
+      item[end] = { id: targetId };
+      const err = failure(() => planCreate(d, [item], who));
+      expect(err).toMatchObject({
+        code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `objects[0].${end}`,
+      });
+      expect(bytes(d)).toBe(before);
+    }
+  });
+
+  it('keeps card ends and same-call refs working, and refuses an atomic batch with a kanban end', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    const cardConnector = create(d, [{ type: 'connector', from: { id: 'card' }, to: { x: 4, y: 5 } }]);
+    expect(new Store(d).get(cardConnector.created[0].id)).toMatchObject({ from: { kind: 'bound', id: 'card', anchor: 'auto' } });
+
+    const refConnector = create(d, [
+      { type: 'shape', ref: 'shape', x: 0, y: 0 },
+      { type: 'connector', from: { ref: 'shape' }, to: { x: 1, y: 1 } },
+    ]);
+    expect((new Store(d).get(refConnector.created[1].id) as any).from.id).toBe(refConnector.refs.shape);
+
+    const before = bytes(d);
+    const items = [
+      { type: 'connector', from: { id: 'card' }, to: { x: 0, y: 0 } },
+      { type: 'connector', from: { x: 0, y: 0 }, to: { id: 'lane' } },
+    ];
+    const err = failure(() => planCreate(d, items, who));
+    expect(err).toMatchObject({ code: 'invalid_input', path: 'objects[1].to', message: 'Connect to a card, not to a lane or the kanban' });
+    expect(bytes(d)).toBe(before);
   });
 
   it('accepts a parent that is an existing frame', () => {
@@ -247,6 +323,52 @@ describe('update', () => {
     expect(new Store(d).get('sh')).not.toHaveProperty('updatedAt');
   });
 
+  it.each([
+    ['from', 'lane', 'lane'],
+    ['to', 'lane', 'lane'],
+    ['from', 'container', 'kanban'],
+    ['to', 'container', 'kanban'],
+  ] as const)('refuses to change the connector %s end to a %s', (end, _type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', { from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 1, y: 1 } }),
+    );
+    const before = bytes(d);
+    const patch = { id: 'wire', [end]: { id: targetId } };
+    const err = failure(() => planUpdate(d, [patch]));
+    expect(err).toMatchObject({
+      code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `updates[0].${end}`,
+    });
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps an existing kanban-bound connector and allows its unchanged ends and label to be updated', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', {
+        from: { kind: 'bound', id: 'lane', anchor: 'left' },
+        to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+      }),
+    );
+
+    update(d, [{ id: 'wire', label: 'Legacy lane connector' }]);
+    expect(new Store(d).get('wire')).toMatchObject({ label: 'Legacy lane connector' });
+
+    update(d, [{ id: 'wire', from: { id: 'lane', side: 'left' }, to: { id: 'kanban' } }]);
+    expect(new Store(d).get('wire')).toMatchObject({
+      from: { kind: 'bound', id: 'lane', anchor: 'left' },
+      to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+    });
+  });
+
   it('clears optional fields with null and re-parents', () => {
     const { d } = board();
     update(d, [{ id: 'st', parent: null }, { id: 'sh', parent: 'fr', fill: '#112233' }, { id: 'cn', dash: null }]);
@@ -308,6 +430,89 @@ describe('update', () => {
     expect(err.path).toBe(path);
     expect(bytes(d)).toBe(before);
   });
+
+  it('refuses kanban cards, lanes and containers with a pointer to their own tools', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do' }),
+      boardObject('card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Card' }),
+    );
+    for (const patch of [
+      { id: 'card' },
+      { id: 'card', text: 'Changed' },
+      { id: 'card', title: 'Changed', ownerName: 'Agent', due: '2026-10-10', labels: ['label'], link: 'https://example.com' },
+      { id: 'card', x: 20, y: 30, w: 300, h: 90, rotation: 15, parent: 'frame', rank: 'b0@lane' },
+    ]) {
+      const cardErr = failure(() => planUpdate(d, [patch]));
+      expect(cardErr.path).toBe('updates[0].id');
+      expect(cardErr.message).toContain('update_kanban_card');
+    }
+    expect(failure(() => planUpdate(d, [{ id: 'lane', x: 10 }])).message).toContain('update_kanban_lane');
+    expect(failure(() => planUpdate(d, [{ id: 'kanban', w: 400 }])).message).toContain('board UI');
+  });
+
+  it('reports hidden objects as missing before generic type-specific refusals', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('visible-kanban', 'container', { layout: 'kanban' }),
+      boardObject('visible-lane', 'lane', { parent: 'visible-kanban' }),
+      boardObject('hidden-card', 'card', { parent: 'visible-lane', hidden: true, locked: true }),
+      boardObject('private-card', 'card', { parent: 'visible-lane', privateStep: 'step-1' }),
+      boardObject('hidden-lane', 'lane', { parent: 'visible-kanban', hidden: true }),
+      boardObject('card-in-hidden-lane', 'card', { parent: 'hidden-lane' }),
+      boardObject('hidden-kanban', 'container', { layout: 'kanban', hidden: true }),
+    );
+    const before = bytes(d);
+    const missing = failure(() => planUpdate(d, [{ id: 'missing', x: 12 }]));
+    expect(missing).toMatchObject({ code: 'not_found', message: 'No such object', path: 'updates[0].id' });
+    for (const id of ['hidden-card', 'private-card', 'hidden-lane', 'card-in-hidden-lane', 'hidden-kanban']) {
+      const err = failure(() => planUpdate(d, [{ id, x: 12 }]));
+      expect(err).toMatchObject({ code: missing.code, message: missing.message, path: missing.path });
+    }
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('lets a group change only its name and lets icons and UML boxes use checked geometry and frame or group parents', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('frame', 'frame', { name: 'Frame' }),
+      boardObject('group', 'group', { name: 'Group' }),
+      boardObject('group-member', 'shape', { parent: 'group' }),
+      boardObject('icon', 'icon'),
+      boardObject('uml', 'uml-class'),
+      boardObject('shape', 'shape'),
+    );
+    expect(planUpdate(d, [{ id: 'group', name: 'Renamed' }]).ops).toContainEqual({ op: 'set', id: 'group', key: 'name', value: 'Renamed' });
+    expect(failure(() => planUpdate(d, [{ id: 'group', name: 'G'.repeat(81) }])).path).toBe('updates[0].name');
+    expect(failure(() => planUpdate(d, [{ id: 'group', x: 12 }])).path).toBe('updates[0].x');
+    const accepted = planUpdate(d, [{ id: 'icon', x: 12, parent: 'group' }, { id: 'uml', parent: 'frame' }]);
+    expect(accepted.ops).toContainEqual({ op: 'set', id: 'icon', key: 'parent', value: 'group' });
+    expect(accepted.ops).toContainEqual({ op: 'set', id: 'uml', key: 'parent', value: 'frame' });
+    expect(failure(() => planUpdate(d, [{ id: 'icon', parent: 'shape' }])).path).toBe('updates[0].parent');
+  });
+
+  it.each(['sticky', 'shape', 'text', 'frame', 'connector', 'group', 'icon', 'image', 'path', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component', 'container', 'lane', 'card'])
+    ('reports an unknown field path for %s objects', (type) => {
+      const d = new Y.Doc();
+      const fields = boardObject('object', type);
+      if (type === 'container') fields.layout = 'kanban';
+      d.getMap('objects').set('object', new Y.Map(Object.entries(fields)));
+      const err = failure(() => planUpdate(d, [{ id: 'object', surprise: true }]));
+      expect(err.code).toBe('invalid_input');
+      expect(err.path).toBe('updates[0].surprise');
+    });
+
+  it.each(['createdBy', 'updatedAt', 'proposedBy', 'locked'])('refuses the reserved %s field with its field path', (field) => {
+    const d = new Y.Doc();
+    seed(d, boardObject('icon', 'icon'));
+    const err = failure(() => planUpdate(d, [{ id: 'icon', [field]: 'changed' }]));
+    expect(err.code).toBe('invalid_input');
+    expect(err.path).toBe(`updates[0].${field}`);
+  });
 });
 
 describe('delete', () => {
@@ -343,6 +548,82 @@ describe('delete', () => {
     expect(failure(() => planDelete(d, Array.from({ length: 51 }, (_, i) => `x${i}`))).path).toBe('ids');
     expect(bytes(d)).toBe(before);
   });
+
+  it('refuses direct lane and kanban deletes and applies visible, lock and agent-owner rules to cards', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do' }),
+      boardObject('person-card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Person card', ownerKind: 'person', ownerName: 'Ada' }),
+      boardObject('hidden-card', 'card', { parent: 'lane', rank: 'a1@lane', text: 'Hidden', hidden: true }),
+      boardObject('private-card', 'card', { parent: 'lane', rank: 'a2@lane', text: 'Private', privateStep: 'step' }),
+      boardObject('locked-card', 'card', { parent: 'lane', rank: 'a3@lane', text: 'Locked', locked: true }),
+      boardObject('agent-card', 'card', { parent: 'lane', rank: 'a4@lane', text: 'Owned', ownerKind: 'agent', ownerId: 'token-a' }),
+    );
+    expect(failure(() => planDelete(d, ['lane'])).code).toBe('conflict');
+    expect(failure(() => planDelete(d, ['kanban'])).code).toBe('conflict');
+    expect(failure(() => planDelete(d, ['hidden-card'], { tokenId: 'token-a' })).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['private-card'], { tokenId: 'token-a' })).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['locked-card'], { tokenId: 'token-a' })).code).toBe('conflict');
+    const otherAgent = failure(() => planDelete(d, ['agent-card'], { tokenId: 'token-b' }));
+    expect(otherAgent.code).toBe('conflict');
+    expect(otherAgent.message).toBe('The card is assigned to another agent');
+    expect(planDelete(d, ['agent-card'], { tokenId: 'token-a' }).result.deleted).toEqual(['agent-card']);
+    expect(planDelete(d, ['person-card'], { tokenId: 'token-b' }).result.deleted).toEqual(['person-card']);
+  });
+
+  it('deletes a group subtree and moves unrevealed private notes to the nearest surviving parent', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('outer', 'frame', { name: 'Outer' }),
+      boardObject('group', 'group', { parent: 'outer', name: 'Group' }),
+      boardObject('nested', 'group', { parent: 'group', name: 'Nested' }),
+      boardObject('frame', 'frame', { parent: 'nested', name: 'Inside' }),
+      boardObject('member', 'shape', { parent: 'frame', text: 'Member' }),
+      boardObject('secret', 'sticky', { parent: 'nested', text: 'PRIVATE WORDS', privateStep: 'step-1' }),
+    );
+    const plan = planDelete(d, ['group']);
+    expect(plan.result.deleted.sort()).toEqual(['frame', 'group', 'member', 'nested']);
+    expect(JSON.stringify(plan.result)).not.toContain('PRIVATE WORDS');
+    d.transact(() => applyPlan(d, plan), 'mcp:test');
+    expect(new Store(d).get('secret')).toMatchObject({ id: 'secret', parent: 'outer' });
+    expect(new Store(d).get('member')).toBeUndefined();
+  });
+
+  it.each([
+    ['sticky', [boardObject('member', 'sticky', { parent: 'group', locked: true })]],
+    ['frame', [boardObject('member', 'frame', { parent: 'group', locked: true })]],
+    ['nested group member', [
+      boardObject('nested', 'group', { parent: 'group' }),
+      boardObject('member', 'text', { parent: 'nested', locked: true }),
+    ]],
+  ])('refuses a group cascade with a locked %s', (_label, members) => {
+    const d = new Y.Doc();
+    seed(d, boardObject('group', 'group'), ...members);
+    const before = bytes(d);
+    const err = failure(() => planDelete(d, ['group']));
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('refuses a group delete that would remove a kanban with a locked lane', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('group', 'group', { name: 'Group' }),
+      boardObject('kanban', 'container', { parent: 'group', layout: 'kanban', name: 'Roadmap' }),
+      boardObject('lane', 'lane', { parent: 'kanban', rank: 'a0@kanban', name: 'To do', locked: true }),
+      boardObject('card', 'card', { parent: 'lane', rank: 'a0@lane', text: 'Card' }),
+    );
+    const err = failure(() => planDelete(d, ['group']));
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
+  });
 });
 
 describe('private notes', () => {
@@ -366,9 +647,12 @@ describe('private notes', () => {
     expect(view.hiddenCount).toBe(1);
     expect(JSON.stringify(view)).not.toContain('secret');
     expect(getObjectsDetail(d, ['hid', 'open'])).toMatchObject({ missing: ['hid'] });
+    expect(getObjectsDetail(d, ['wire'])).toMatchObject({ missing: ['wire'] });
     expect(hiddenIds(d)).toEqual(new Set(['hid']));
     expect(failure(() => planUpdate(d, [{ id: 'hid', text: 'overwritten' }])).code).toBe('not_found');
+    expect(failure(() => planUpdate(d, [{ id: 'wire', label: 'hidden endpoint' }])).code).toBe('not_found');
     expect(failure(() => planDelete(d, ['hid'])).code).toBe('not_found');
+    expect(failure(() => planDelete(d, ['wire'])).code).toBe('not_found');
     expect(failure(() => planCreate(d, [{ type: 'connector', from: { id: 'hid' }, to: { x: 0, y: 0 } }], who)).code).toBe('not_found');
     expect(failure(() => resolveAnchor(d, { objectId: 'hid' })).code).toBe('not_found');
   });
@@ -562,11 +846,59 @@ describe('the shared token', () => {
 });
 
 describe('text for the model', () => {
+  const blackFlag = '\u{1f3f4}';
+  const england = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}';
+  const scotland = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}';
+  const wales = '\u{1f3f4}\u{e0077}\u{e006c}\u{e0073}\u{e007f}';
+
   it('removes tag, zero-width, bidirectional and control characters, and cuts by code point', () => {
     const dirty = 'a\u{E0041}\u{200B}b\u{202E}c\u{2066}d\u{FEFF}e\u0007f\u{2028}g\th\ni';
     expect(cleanForModel(dirty, 100)).toEqual({ text: 'abcdefg\th\ni', truncated: false });
     expect(cleanForModel('😀'.repeat(5), 3)).toEqual({ text: '😀😀😀…', truncated: true });
     expect(cleanForModel(42, 5)).toEqual({ text: '', truncated: false });
+  });
+
+  it('keeps emoji joiners and complete subdivision flags', () => {
+    const samples = [
+      '👨‍👩‍👧‍👦', '🏳️‍🌈', '👩🏽‍💻', england, scotland, wales,
+    ];
+    expect(samples.map(stripInvisible)).toEqual(samples);
+  });
+
+  it('removes joiners unless they sit between emoji code points', () => {
+    expect(stripInvisible('a\u200Db')).toBe('ab');
+    expect(stripInvisible('\u200Da')).toBe('a');
+    expect(stripInvisible('a\u200D')).toBe('a');
+    expect(stripInvisible('a \u200D👩')).toBe('a 👩');
+    expect(stripInvisible('👩\u200D\u200D👩')).toBe('👩👩');
+    expect(stripInvisible('A\u200DB')).toBe('AB');
+  });
+
+  it('strips incomplete, misplaced and overlong tag runs and is idempotent', () => {
+    const tags = '\u{e0061}\u{e0062}';
+    const nineTags = '\u{e0061}'.repeat(9);
+    const mixed = `Family 👨‍👩‍👧‍👦 ${england} A${tags}\u{e007f}`;
+    expect(stripInvisible(tags)).toBe('');
+    expect(stripInvisible(`${blackFlag}${tags}`)).toBe(blackFlag);
+    expect(stripInvisible(`letter${tags}\u{e007f}`)).toBe('letter');
+    expect(stripInvisible(`${blackFlag}${nineTags}\u{e007f}`)).toBe(blackFlag);
+    const clean = stripInvisible(mixed);
+    expect(clean).toBe(`Family 👨‍👩‍👧‍👦 ${england} A`);
+    expect(stripInvisible(clean)).toBe(clean);
+  });
+
+  it('cleans MCP object and comment writes while retaining valid emoji sequences', () => {
+    const raw = `Family 👨‍👩‍👧‍👦 ${england} A\u200DB`;
+    const clean = `Family 👨‍👩‍👧‍👦 ${england} AB`;
+    const board = new Y.Doc();
+    const created = create(board, [{ type: 'sticky', ref: 'emoji', text: raw, x: 0, y: 0 }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+    update(board, [{ id: created.refs.emoji, text: raw }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+
+    const comments = new Y.Doc();
+    const { threadId } = addThread(comments, { author: AUTHOR, text: raw, anchor: { x: 0, y: 0 } }, 5000);
+    expect(new Comments(comments).get(threadId)?.text).toBe(clean);
   });
 
   it('fences with a fresh nonce, escapes the content, and cannot be closed from inside', () => {
@@ -636,5 +968,393 @@ describe('pictures', () => {
   it('cannot be created through the tools', () => {
     const d = new Y.Doc();
     expect(failure(() => planCreate(d, [{ type: 'image', x: 0, y: 0 }], who)).path).toMatch(/type/);
+  });
+});
+
+describe('kanban labels and lanes', () => {
+  function fixture(laneCount = 2) {
+    const d = new Y.Doc();
+    const container = boardObject('kb', 'container', { layout: 'kanban', name: 'Roadmap' });
+    const lanesForRank: Record<string, any>[] = [];
+    const lanes = Array.from({ length: laneCount }, (_, i) => {
+      const previous = i ? lanesForRank[i - 1].rank : null;
+      const lane = boardObject(`lane-${i + 1}`, 'lane', {
+        parent: 'kb', rank: rankBetween(previous, null, 'kb'), name: `Lane ${i + 1}`, stage: i === 0 ? 'todo' : 'doing',
+      }) as Record<string, any>;
+      lanesForRank.push(lane);
+      return lane;
+    });
+    seed(d, container, ...lanes);
+    return { d, lanes };
+  }
+
+  function run(d: Y.Doc, plan: any) {
+    d.transact(() => applyPlan(d, plan), 'mcp:test');
+    return plan.result;
+  }
+
+  const card = (id: string, laneId: string, rank: string, extra: Record<string, unknown> = {}) =>
+    boardObject(id, 'card', { parent: laneId, rank, text: id, ...extra });
+
+  it('creates, updates and deletes labels using shared limits and safe colors', () => {
+    const { d, lanes } = fixture();
+    const created = planCreateKanbanLabel(d, 'kb', { name: '  Bug  ', color: 'pink' });
+    expect(created.result.label).toMatchObject({ name: 'Bug', color: 'pink' });
+    const labelId = String(created.result.label.id);
+    run(d, created);
+    seed(
+      d,
+      card('card-a', lanes[0].id, rankBetween(null, null, lanes[0].id), { labels: [labelId, 'other'] }),
+      card('card-b', lanes[1].id, rankBetween(null, null, lanes[1].id), { labels: [labelId], hidden: true }),
+      card('card-c', lanes[1].id, rankBetween(rankBetween(null, null, lanes[1].id), null, lanes[1].id), { labels: [labelId], ownerKind: 'agent', ownerId: 'another-token' }),
+    );
+
+    const updated = planUpdateKanbanLabel(d, 'kb', labelId, { name: 'Defect', color: '#ab12ef' });
+    expect(updated.result).toMatchObject({ label: { id: labelId, name: 'Defect', color: '#AB12EF' }, updated: true });
+    run(d, updated);
+    expect(d.getMap('labels').get(labelId)).toMatchObject({ name: 'Defect', color: '#AB12EF' });
+
+    let updateEvents = 0;
+    const onUpdate = () => updateEvents++;
+    d.on('update', onUpdate);
+    const deleted = planDeleteKanbanLabel(d, 'kb', labelId, { now: 300 });
+    expect(deleted.result.cardsTouched).toBe(3);
+    d.transact(() => applyPlan(d, deleted), 'mcp:test');
+    d.off('update', onUpdate);
+    expect(updateEvents).toBe(1);
+    expect(d.getMap('labels').has(labelId)).toBe(false);
+    expect((d.getMap('objects').get('card-a') as Y.Map<unknown>).get('labels')).toEqual(['other']);
+    for (const id of ['card-b', 'card-c']) {
+      const value = d.getMap('objects').get(id) as Y.Map<unknown>;
+      expect(value.has('labels')).toBe(false);
+      expect(value.get('updatedAt')).toBe(300);
+    }
+  });
+
+  it('rejects duplicate names, bad colors, invalid names and the label limit without writing', () => {
+    const { d } = fixture();
+    const first = planCreateKanbanLabel(d, 'kb', { name: 'Bug' });
+    run(d, first);
+    const firstId = String(first.result.label.id);
+    const before = bytes(d);
+    expect(failure(() => planCreateKanbanLabel(d, 'kb', { name: ' bUG ' })).code).toBe('invalid_input');
+    expect(failure(() => planUpdateKanbanLabel(d, 'kb', 'missing', { name: 'Task' })).code).toBe('not_found');
+    expect(failure(() => planUpdateKanbanLabel(d, 'kb', firstId, { color: 'red' })).path).toBe('color');
+    expect(failure(() => planUpdateKanbanLabel(d, 'kb', firstId, { name: '  ' })).path).toBe('name');
+    expect(bytes(d)).toBe(before);
+
+    d.transact(() => {
+      const labels = d.getMap('labels');
+      for (let i = 1; i < KANBAN_LIMITS.labels; i++) labels.set(`l${i}`, { id: `l${i}`, name: `L${i}`, color: 'grey', order: i });
+    }, 'fixture');
+    const atLimit = bytes(d);
+    expect(failure(() => planCreateKanbanLabel(d, 'kb', { name: 'Extra' })).code).toBe('limit_exceeded');
+    expect(bytes(d)).toBe(atLimit);
+  });
+
+  it('accepts 40 code points and refuses 41 in MCP label names', () => {
+    const { d } = fixture();
+    const emojiName = '😀'.repeat(KANBAN_LIMITS.labelName);
+    const accepted = planCreateKanbanLabel(d, 'kb', { name: emojiName });
+    expect(accepted.result.label.name).toBe(emojiName);
+    run(d, accepted);
+
+    const asciiName = 'a'.repeat(KANBAN_LIMITS.labelName);
+    const asciiLabel = planCreateKanbanLabel(d, 'kb', { name: asciiName });
+    expect(asciiLabel.result.label.name).toBe(asciiName);
+    run(d, asciiLabel);
+    const updatedEmojiName = '😁'.repeat(KANBAN_LIMITS.labelName);
+    const updated = planUpdateKanbanLabel(d, 'kb', String(asciiLabel.result.label.id), { name: updatedEmojiName });
+    expect(updated.result.label.name).toBe(updatedEmojiName);
+
+    const before = bytes(d);
+    const refused = failure(() => planCreateKanbanLabel(d, 'kb', { name: '😀'.repeat(KANBAN_LIMITS.labelName + 1) }));
+    expect(refused.code).toBe('invalid_input');
+    expect(refused.path).toBe('name');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('counts hidden lanes toward the shared lane limit and deletes an empty lane without a target', () => {
+    const { d, lanes } = fixture();
+    const extras: Record<string, any>[] = [];
+    let previous = lanes[1].rank;
+    for (let i = 0; i < KANBAN_LIMITS.lanes - lanes.length; i++) {
+      const lane = boardObject(`extra-${i}`, 'lane', {
+        parent: 'kb', rank: rankBetween(previous, null, 'kb'), name: `Extra ${i}`, ...(i === 0 ? { hidden: true } : {}),
+      }) as Record<string, any>;
+      extras.push(lane);
+      previous = lane.rank;
+    }
+    seed(d, ...extras);
+    const beforeLimit = bytes(d);
+    expect(failure(() => planAddKanbanLane(d, 'kb', { name: 'Over limit' })).code).toBe('limit_exceeded');
+    expect(bytes(d)).toBe(beforeLimit);
+
+    const small = fixture();
+    const removed = planDeleteKanbanLane(small.d, 'kb', small.lanes[0].id);
+    expect(removed.result).toMatchObject({ movedCards: 0 });
+    run(small.d, removed);
+    expect(small.d.getMap('objects').has(small.lanes[0].id)).toBe(false);
+  });
+
+  it('adds, reorders and updates lanes, allows shared stages, and warns when WIP is lowered below the count', () => {
+    const { d, lanes } = fixture();
+    const hiddenLane = boardObject('hidden-middle', 'lane', {
+      parent: 'kb', rank: rankBetween(lanes[0].rank, lanes[1].rank, 'kb'), name: 'Hidden middle', hidden: true,
+    });
+    seed(d, hiddenLane);
+    const added = planAddKanbanLane(d, 'kb', { name: 'Review', stage: 'doing', wip: 2, wipBlock: true, afterLaneId: lanes[0].id }, { createdBy: 'user-1', now: 200 } as any);
+    expect(added.result.lane).toMatchObject({ name: 'Review', stage: 'doing', wip: 2, wipBlock: true, count: 0 });
+    run(d, added);
+    expect(added.result.lanes.map((item: any) => item.name)).toEqual(['Lane 1', 'Review', 'Lane 2']);
+    const addedId = added.result.lane.id;
+
+    seed(
+      d,
+      card('one', lanes[0].id, rankBetween(null, null, lanes[0].id)),
+      card('two', lanes[0].id, rankBetween(rankBetween(null, null, lanes[0].id), null, lanes[0].id)),
+    );
+    const lowered = planUpdateKanbanLane(d, 'kb', lanes[0].id, { name: '  Todo now ', stage: null, wip: 1, wipBlock: true }, { now: 300 });
+    expect(lowered.result).toMatchObject({ lane: { name: 'Todo now', wip: 1, wipBlock: true }, warnings: ['The WIP limit is below this lane’s current card count.'] });
+    run(d, lowered);
+    expect((d.getMap('objects').get(lanes[0].id) as Y.Map<unknown>).has('stage')).toBe(false);
+    expect((d.getMap('objects').get(lanes[0].id) as Y.Map<unknown>).get('wipMode')).toBe('block');
+
+    const moved = planUpdateKanbanLane(d, 'kb', lanes[1].id, { afterLaneId: null, wip: null }, { now: 400 });
+    run(d, moved);
+    expect(moved.result.lanes.map((item: any) => item.id)).toEqual([lanes[1].id, lanes[0].id, addedId]);
+    expect((d.getMap('objects').get(lanes[1].id) as Y.Map<unknown>).has('wip')).toBe(false);
+    expect((d.getMap('objects').get(lanes[1].id) as Y.Map<unknown>).has('wipMode')).toBe(false);
+
+    const before = bytes(d);
+    expect(failure(() => planAddKanbanLane(d, 'kb', { name: 'No limit mode', wipBlock: true })).path).toBe('wipBlock');
+    expect(failure(() => planAddKanbanLane(d, 'kb', { name: 'Bad WIP', wip: 0 })).path).toBe('wip');
+    expect(failure(() => planUpdateKanbanLane(d, 'kb', addedId, { stage: 'blocked' })).path).toBe('stage');
+    expect(failure(() => planUpdateKanbanLane(d, 'kb', addedId, { locked: false })).path).toBe('locked');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps one visible lane when hiding lanes and leaves a refused update atomic', () => {
+    const { d, lanes } = fixture();
+    const hiddenLane = boardObject('hidden-existing', 'lane', {
+      parent: 'kb', rank: rankBetween(lanes[1].rank, null, 'kb'), name: 'Hidden existing', hidden: true,
+    });
+    seed(d, hiddenLane);
+
+    const allowed = planUpdateKanbanLane(d, 'kb', lanes[0].id, { hidden: true }, { now: 300 });
+    run(d, allowed);
+    expect(allowed.result.lanes.map((item: any) => item.id)).toEqual([lanes[1].id]);
+
+    const before = bytes(d);
+    const refused = failure(() => planUpdateKanbanLane(d, 'kb', lanes[1].id, { hidden: true }, { now: 400 }));
+    expect(refused.code).toBe('conflict');
+    expect(refused.message).toBe('A kanban needs at least one visible lane');
+    expect(refused.path).toBe('laneId');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('deletes a lane atomically, enforces a blocking target WIP limit and moves agent cards in order', () => {
+    const { d, lanes } = fixture();
+    seed(
+      d,
+      card('target-card', lanes[1].id, rankBetween(null, null, lanes[1].id), { text: 'Target' }),
+      card('agent-a', lanes[0].id, rankBetween(null, null, lanes[0].id), { ownerKind: 'agent', ownerId: 'other-token' }),
+    );
+    const target = d.getMap('objects').get(lanes[1].id) as Y.Map<unknown>;
+    target.set('wip', 1);
+    target.set('wipMode', 'block');
+    const before = bytes(d);
+    const missingTarget = failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id));
+    expect(missingTarget.code).toBe('conflict');
+    expect(bytes(d)).toBe(before);
+    const blocked = failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id));
+    expect(blocked.code).toBe('wip_limit');
+    expect(blocked.message).toBe('This lane is at its WIP limit (1/1).');
+    expect(bytes(d)).toBe(before);
+
+    target.set('wip', 2);
+    const plan = planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id, { now: 500 });
+    expect(plan.result).toMatchObject({ movedCards: 1, movedCardsTo: lanes[1].id });
+    run(d, plan);
+    expect((d.getMap('objects').get(lanes[0].id))).toBeUndefined();
+    expect((d.getMap('objects').get('agent-a') as Y.Map<unknown>).toJSON()).toMatchObject({ parent: lanes[1].id, ownerId: 'other-token', ownerKind: 'agent', updatedAt: 500 });
+    const children = ['target-card', 'agent-a'].map((id) => (d.getMap('objects').get(id) as Y.Map<unknown>).toJSON());
+    expect(sortedChildren(children).map((item: any) => item.id)).toEqual(['target-card', 'agent-a']);
+  });
+
+  it('reports only visible cards while moving every card from a deleted lane', () => {
+    const { d, lanes } = fixture();
+    const visibleId = 'visible-card';
+    const hiddenId = 'hidden-card';
+    const privateId = 'private-card';
+    const firstRank = rankBetween(null, null, lanes[0].id);
+    const secondRank = rankBetween(firstRank, null, lanes[0].id);
+    const thirdRank = rankBetween(secondRank, null, lanes[0].id);
+    seed(
+      d,
+      card(visibleId, lanes[0].id, firstRank),
+      card(hiddenId, lanes[0].id, secondRank, { hidden: true }),
+      card(privateId, lanes[0].id, thirdRank, { privateStep: 'step-1' }),
+    );
+
+    const plan = planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id, { now: 500 });
+    expect(plan.result).toMatchObject({ movedCards: 1, movedCardsTo: lanes[1].id });
+    run(d, plan);
+    for (const id of [visibleId, hiddenId, privateId]) {
+      expect((d.getMap('objects').get(id) as Y.Map<unknown>).get('parent')).toBe(lanes[1].id);
+    }
+  });
+
+  it('refuses hidden and locked lanes, locked cards, invalid move targets and the last visible lane', () => {
+    const { d, lanes } = fixture();
+    seed(d, card('source', lanes[0].id, rankBetween(null, null, lanes[0].id)));
+    const bytesBefore = bytes(d);
+    expect(failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, 'missing')).code).toBe('not_found');
+    expect(bytes(d)).toBe(bytesBefore);
+
+    const hidden = d.getMap('objects').get(lanes[1].id) as Y.Map<unknown>;
+    hidden.set('hidden', true);
+    const hiddenBytes = bytes(d);
+    expect(failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id)).code).toBe('not_found');
+    expect(failure(() => planUpdateKanbanLane(d, 'kb', lanes[1].id, { name: 'Shown' })).code).toBe('not_found');
+    expect(failure(() => planAddKanbanLane(d, 'kb', { name: 'After hidden', afterLaneId: lanes[1].id })).code).toBe('not_found');
+    expect(bytes(d)).toBe(hiddenBytes);
+    hidden.delete('hidden');
+
+    const lockedCard = d.getMap('objects').get('source') as Y.Map<unknown>;
+    lockedCard.set('locked', true);
+    const lockedCardBytes = bytes(d);
+    expect(failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id)).code).toBe('conflict');
+    expect(bytes(d)).toBe(lockedCardBytes);
+    lockedCard.delete('locked');
+
+    const lockedLane = d.getMap('objects').get(lanes[0].id) as Y.Map<unknown>;
+    lockedLane.set('locked', true);
+    const lockedLaneBytes = bytes(d);
+    expect(failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id)).code).toBe('conflict');
+    expect(failure(() => planUpdateKanbanLane(d, 'kb', lanes[0].id, { name: 'Nope' })).code).toBe('conflict');
+    expect(bytes(d)).toBe(lockedLaneBytes);
+    lockedLane.set('rank', 'a0@wrong-parent');
+    const mixedRankBytes = bytes(d);
+    expect(failure(() => planAddKanbanLane(d, 'kb', { name: 'Would repair a locked lane', afterLaneId: lanes[1].id })).code).toBe('conflict');
+    expect(bytes(d)).toBe(mixedRankBytes);
+
+    const single = fixture(1);
+    const lastLaneId = single.lanes[0].id;
+    expect(failure(() => planDeleteKanbanLane(single.d, 'kb', lastLaneId)).code).toBe('conflict');
+  });
+});
+
+describe('kanban creation', () => {
+  it('uses the app defaults, shared lane ranks and derived dimensions', () => {
+    const d = new Y.Doc();
+    d.getMap('meta').set('headingFont', 'lora');
+    d.getMap('meta').set('bodyFont', 'inter');
+    const plan = planCreateKanban(d, {}, { createdBy: 'user-1', now: 1234 });
+    expect(plan.result.kanban).toMatchObject({ name: 'Kanban', x: 0, y: 0 });
+    expect(plan.result.lanes.map((lane: any) => [lane.name, lane.stage])).toEqual([
+      ['To do', 'todo'], ['Doing', 'doing'], ['Done', 'done'],
+    ]);
+    expect(plan.ops).toHaveLength(4);
+
+    d.transact(() => applyPlan(d, plan), 'mcp:test');
+    const store = new Store(d);
+    const container = store.get(plan.result.kanban.id) as any;
+    const layout = store.containerLayout(container.id)!;
+    expect(container).toMatchObject({ layout: 'kanban', name: 'Kanban', font: 'lora', createdBy: 'user-1', updatedAt: 1234 });
+    expect({ w: container.w, h: container.h }).toEqual({ w: layout.w, h: layout.h });
+    const lanes = plan.result.lanes.map((lane: any) => store.get(lane.id) as any);
+    expect(lanes.map((lane) => lane.font)).toEqual(['inter', 'inter', 'inter']);
+    const ranks = lanes.map((lane) => lane.rank);
+    expect(ranks).toEqual(lanes.map((lane) => lane.rank).sort());
+    expect(lanes.map((lane) => lane.name)).toEqual(['To do', 'Doing', 'Done']);
+    expect(lanes.every((lane) => lane.parent === container.id && lane.w === KANBAN.laneW)).toBe(true);
+    expect(plan.result.kanban.w).toBe(layout.w);
+    expect(plan.result.kanban.h).toBe(layout.h);
+  });
+
+  it('normalizes custom lane fields and assigns a visible frame parent without changing its geometry', () => {
+    const d = new Y.Doc();
+    seed(d, boardObject('frame', 'frame', { name: 'Frame', x: 80, y: 90, w: 600, h: 400, locked: false }));
+    const frameBefore = (d.getMap('objects').get('frame') as Y.Map<unknown>).toJSON();
+    const plan = planCreateKanban(d, {
+      name: '  Release\n plan ', x: 130, y: 170, parent: 'frame',
+      lanes: [
+        { name: '  In   progress ', stage: 'doing', wip: 3, wipBlock: true },
+        { name: ' Shipped ', stage: 'done' },
+      ],
+    }, { createdBy: 'user-1', now: 500 });
+    expect(plan.result.kanban).toMatchObject({ name: 'Release plan', x: 130, y: 170 });
+    expect(plan.result.lanes).toMatchObject([
+      { name: 'In progress', stage: 'doing', wip: 3, wipBlock: true, count: 0 },
+      { name: 'Shipped', stage: 'done', count: 0 },
+    ]);
+    const container = plan.ops[0].fields;
+    expect(container.parent).toBe('frame');
+    expect((d.getMap('objects').get('frame') as Y.Map<unknown>).toJSON()).toEqual(frameBefore);
+    expect(failure(() => planCreateKanban(d, { lanes: [{ name: 'Review', wipBlock: true }] }, who))).toMatchObject({
+      code: 'invalid_input', path: 'lanes[0].wipBlock',
+    });
+    expect(failure(() => planCreateKanban(d, { lanes: [{ name: 'Review', stage: 'blocked' }] }, who)).path).toBe('lanes[0].stage');
+    expect(failure(() => planCreateKanban(d, { lanes: [] }, who)).path).toBe('lanes');
+    expect(failure(() => planCreateKanban(d, { lanes: Array.from({ length: KANBAN_LIMITS.lanes + 1 }, (_, i) => ({ name: `Lane ${i}` })) }, who)))
+      .toMatchObject({ code: 'limit_exceeded', path: 'lanes' });
+  });
+
+  it('places a new kanban to the right of existing top-level content with an 80-pixel gap', () => {
+    const d = new Y.Doc();
+    const container = boardObject('existing-kanban', 'container', { layout: 'kanban', name: 'Existing', x: 40, y: 120 });
+    const lane = boardObject('existing-lane', 'lane', { parent: container.id, rank: 'a0@existing-kanban', name: 'Only lane' });
+    seed(d, container, lane);
+    const bounds = summariseBoard(d).bounds!;
+    const plan = planCreateKanban(d, {}, who);
+    expect(plan.result.kanban.x).toBe(Math.round(bounds.x + bounds.w + 80));
+    expect(plan.result.kanban.y).toBe(Math.round(bounds.y));
+    expect(plan.result.kanban.x).toBeGreaterThan(bounds.x + bounds.w);
+    expect(plan.result.kanban.y).toBe(bounds.y);
+  });
+
+  it('hides unknown or hidden parents and refuses a locked parent or ancestor', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('locked-frame', 'frame', { locked: true }),
+      boardObject('group', 'group', { parent: 'locked-frame' }),
+      boardObject('nested-frame', 'frame', { parent: 'group' }),
+      boardObject('hidden-frame', 'frame', { hidden: true }),
+      boardObject('shape', 'shape'),
+    );
+    const before = bytes(d);
+    expect(failure(() => planCreateKanban(d, { parent: 'unknown' }, who)).code).toBe('not_found');
+    expect(failure(() => planCreateKanban(d, { parent: 'hidden-frame' }, who)).code).toBe('not_found');
+    expect(failure(() => planCreateKanban(d, { parent: 'shape' }, who)).code).toBe('not_found');
+    expect(failure(() => planCreateKanban(d, { parent: 'nested-frame' }, who))).toMatchObject({ code: 'conflict', path: 'parent' });
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps rejected plans atomic and enforces kanban and board object limits', () => {
+    const d = new Y.Doc();
+    const before = bytes(d);
+    expect(failure(() => planCreateKanban(d, { lanes: [{ name: 'Valid' }, { name: 'Invalid', wip: 100 }] }, who))).toMatchObject({
+      code: 'invalid_input', path: 'lanes[1].wip',
+    });
+    expect(bytes(d)).toBe(before);
+
+    const fullKanbans = new Y.Doc();
+    fullKanbans.transact(() => {
+      const objects = fullKanbans.getMap('objects');
+      for (let i = 0; i < KANBAN_LIMITS.containers; i++) {
+        const object = boardObject(`container-${i}`, 'container', { layout: 'kanban' });
+        objects.set(object.id as string, new Y.Map(Object.entries(object)));
+      }
+    });
+    expect(failure(() => planCreateKanban(fullKanbans, {}, who)).code).toBe('limit_exceeded');
+
+    const fullBoard = new Y.Doc();
+    fullBoard.transact(() => {
+      const objects = fullBoard.getMap('objects');
+      for (let i = 0; i < LIMITS.boardObjects - 3; i++) objects.set(`object-${i}`, new Y.Map([['id', `object-${i}`], ['type', 'shape']]));
+    });
+    expect(failure(() => planCreateKanban(fullBoard, {}, who))).toMatchObject({ code: 'limit_exceeded', path: 'lanes' });
   });
 });

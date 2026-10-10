@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,31 +9,18 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // Every board has a sibling comments room (`<boardId>~comments`). The relay runs as a child process,
 // once in open mode and once in accounts mode, exactly as `npm start` would.
 
-const OPEN_PORT = await freePort();
-const ACCOUNTS_PORT = await freePort();
+let OPEN_PORT = 0;
+let ACCOUNTS_PORT = 0;
 const OWNER = 'owner@example.com';
 
 type Body = any;
 type Res = { status: number; body: Body; headers: Headers };
 type Account = { cookie: string; user: Body; email: string };
-
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -91,7 +78,11 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
   const providers = new Set<WebsocketProvider>();
 
   beforeAll(async () => {
-    relay = await startRelay(OPEN_PORT, dir, { TABULA_AUTH: 'off' });
+    const started = await startRelayProcess({
+      envFor: (port) => ({ ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'off' }),
+    });
+    OPEN_PORT = started.port;
+    relay = started.proc;
   });
   afterEach(() => {
     for (const p of providers) p.destroy();
@@ -216,7 +207,7 @@ describe('comments rooms in open mode', { timeout: 20_000 }, () => {
 // ---------------------------------------------------------------- accounts mode
 
 describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
-  const baseUrl = `http://127.0.0.1:${ACCOUNTS_PORT}`;
+  let baseUrl = '';
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-comments-accounts-'));
   const outbox = path.join(dataDir, 'outbox.jsonl');
   let relay: ChildProcess;
@@ -376,13 +367,22 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
   }
 
   beforeAll(async () => {
-    relay = await startRelay(ACCOUNTS_PORT, dataDir, {
-      TABULA_AUTH: 'on',
-      TABULA_OWNER_EMAIL: OWNER,
-      TABULA_MAIL: 'file',
-      TABULA_BASE_URL: baseUrl,
-      TABULA_TRUST_PROXY: '1',
+    const started = await startRelayProcess({
+      envFor: (port) => ({
+        ...(process.env as Record<string, string>),
+        PORT: String(port),
+        DATA_DIR: dataDir,
+        HOST: '127.0.0.1',
+        TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER,
+        TABULA_MAIL: 'file',
+        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+        TABULA_TRUST_PROXY: '1',
+      }),
     });
+    ACCOUNTS_PORT = started.port;
+    baseUrl = `http://127.0.0.1:${ACCOUNTS_PORT}`;
+    relay = started.proc;
     owner = await signIn(OWNER);
   });
 

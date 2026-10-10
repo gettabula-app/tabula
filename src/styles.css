@@ -158,7 +158,7 @@ select.input {
 .top-left { position: absolute; top: calc(12px + var(--safe-top)); left: calc(12px + var(--safe-left)); display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px - var(--safe-left) - var(--safe-right)); }
 .board-name {
   min-width: 80px; width: 22ch; max-width: 40ch; height: 36px; padding: 0 8px; border: 0; border-radius: 0;
-  background: transparent; font: 600 15px var(--ui); outline: none; text-overflow: ellipsis;
+  background: transparent; font: 600 15px var(--ui); text-overflow: ellipsis;
 }
 .board-name:hover { background: var(--tray-hover); }
 .board-name:focus { background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
@@ -188,6 +188,10 @@ select.input {
 .rail-btn { width: 40px; height: 40px; position: relative; }
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
 .rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+/* a rail that scrolls fades the edge with more behind it (the tools scroll when the window is short and the scrollbar is hidden) */
+.rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); }
 .rail-end { display: flex; flex: none; flex-direction: column; align-items: center; gap: inherit; }
 /* Tall desktop rails fit their contents; flatten the wrappers there to preserve the original flow. */
 @media (min-width: 861px) and (min-height: 981px) {
@@ -237,7 +241,7 @@ select.input {
   .drawer, .tool-tray { left: calc(70px + var(--safe-left)); }
 }
 .drawer-head, .props-head, .pop-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
-.drawer-head h2, .props-head h2, .pop-head h3, .modal-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
+.drawer-head h2, .props-head h2, .pop-head h2, .pop-head h3, .modal-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
 .drawer-head .icon-btn:last-child, .modal-head .icon-btn:last-child { margin-right: -9px; }
 .drawer-body { padding: 8px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-x: hidden; }
 .drawer-body > * { flex-shrink: 0; }
@@ -445,12 +449,16 @@ select.input {
 .popover .dot-presets button { border-radius: 0; }
 .steps-pop { padding: 0 14px 14px; }
 .steps-pop .pop-head { padding: 16px 0 4px; }
+.steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
 .menu-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--tray-line); }
 .menu-item.danger { color: var(--danger); }
+/* the User guide entry stands out quietly: the accent colour of the theme on its icon, a heavier label */
+.menu-item.guide-item .ico { color: var(--signal); }
+.menu-item.guide-item > span:not([class]) { font-weight: 600; }
 .ctx-menu { min-width: 220px; }
 .menu-item[aria-checked='true'] { box-shadow: inset 4px 0 0 var(--signal); }
 .menu-item > span:not([class]) { flex: 1; }
@@ -503,7 +511,6 @@ select.input {
 .modal .btn.armed:not(:disabled):hover, .popover .btn.armed:not(:disabled):hover, .modal .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 .modal .input, .popover .input { border-radius: 0; }
 .modal .input:focus, .popover .input:focus { border-color: var(--tray-text); }
-.modal .input:focus-visible, .popover .input:focus-visible { outline: none; }
 .modal .icon-btn, .popover .icon-btn, .modal kbd { border-radius: 0; }
 .modal :focus-visible, .popover :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
@@ -523,6 +530,9 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* a wide panel open above the session bar (the Steps list) would sit under the toast and hide its buttons: the toast takes the top of the window instead, below the top bars */
+body:has(.popover.wide) .toast { bottom: auto; top: calc(72px + var(--safe-top)); transform: translate(-50%, -12px); }
+body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .toast, .toast.show { transform: translate(-50%, 0); transition: opacity 80ms linear; } .timer-fill { transition: none; } }
 
 /* z-index -1: the hint lies under everything else in the chrome (drawers, dialogs, focus cards), which it is appended after */
@@ -544,6 +554,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 .empty-hint .btn { background: rgba(29, 26, 18, 0.1); }
 .empty-hint .btn.primary { background: #18212B; color: #FFE16B; }
 
+/* The centered 560px poll card overlaps the 336px right tray through 1316px; let the tray's composer take the space. */
+@media (max-width: 1320px) {
+  .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar, .poll-card) { visibility: hidden; }
+}
+
 /* ------------------------------------------------------------- home */
 
 /* The home and templates pages live in ui/home.css; this wordmark is also the sign-in screens'. */
@@ -554,6 +569,13 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
   .top-right { top: calc(64px + var(--safe-top)); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
+  /* the Steps list fills the window from under the top bars, so its message sits over the top bars (two lines at most) for its 2.6 s instead of over the list */
+  body:has(.popover.wide) .toast { top: calc(8px + var(--safe-top)); width: max-content; padding: 8px 12px; font-size: 13px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
+  /* the narrowest phones (320 px): the bar would run under the tool rail, so its gaps and the Share padding give way until it starts right of the rail */
+  @media (max-width: 340px) {
+    .top-right { gap: 2px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); }
+    .top-right .btn.primary { padding-left: 10px; padding-right: 10px; }
+  }
   .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
@@ -577,6 +599,7 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
 }
 
 @media (max-width: 500px) {
+  .qb-action-menu .menu-item, .ctx-menu .menu-item { min-height: 44px; }
   /* A vote stays in one row (44px touch targets, TAB-273): reveal, undo mode, count, finish and Info. The step title and the other step buttons give way; the instruction opens below the row. */
   .flowbar.vote-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
   .flowbar.vote-compact > .flow-previous, .flowbar.vote-compact > .timer, .flowbar.vote-compact > .flow-timer-buttons,
@@ -584,16 +607,27 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .flowbar.vote-compact > .vote-reveal {
     order: 1; width: 44px; height: 44px; padding: 0; gap: 0; overflow: hidden; font-size: 0;
   }
-  .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 6px; font-size: 11px; }
+  .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 4px; font-size: 10.5px; }
   .flowbar.vote-compact > .remove-dots-toggle .ico { display: none; }
-  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0 6px; gap: 0; }
+  /* the narrowest phones (320 px): Remove dots is its minus icon, still named and shown pressed */
+  @media (max-width: 340px) {
+    .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
+    .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
+  }
+  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
   .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
-  .flowbar.vote-compact > .vote-finish { order: 4; height: 44px; padding: 0 8px; font-size: 12px; }
+  .flowbar.vote-compact > .vote-finish { order: 4; height: 44px; padding: 0 6px; font-size: 12px; }
+  .flowbar.vote-compact > .flow-next { order: 4; width: 44px; height: 44px; padding: 0; gap: 0; overflow: hidden; font-size: 0; }
   .flowbar.vote-compact > .vote-info { order: 5; width: 44px; height: 44px; padding: 0; font-size: 11px; font-weight: 600; }
   .flowbar.vote-compact > .vote-instructions { order: 6; flex: 1 0 100%; padding: 4px 6px; color: var(--tray-muted); font-size: 12px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
   .flowbar.vote-compact > .vote-instructions[hidden] { display: none; }
+  /* A poll step: the poll card docks above the bar and needs the room, so the bar is the answered count and one row of buttons. */
+  .flowbar.poll-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
+  .flowbar.poll-compact > .flow-previous, .flowbar.poll-compact > .timer, .flowbar.poll-compact > .flow-timer-buttons,
+  .flowbar.poll-compact > .flow-ask, .flowbar.poll-compact > .flow-step { display: none; }
+  .flowbar.poll-compact > .poll-chip { flex: 1 0 100%; padding: 4px 8px; }
   .demo-banner { flex-wrap: wrap; column-gap: 8px; row-gap: 2px; padding: 4px 8px; }
   .demo-banner-wide-copy { display: none; }
   .demo-banner-short-copy { display: block; }

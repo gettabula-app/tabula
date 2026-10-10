@@ -11,7 +11,7 @@ import { fontFamily } from './fonts';
 import { CLASS_HEADER, CLASS_LINE, RELATIONS, memberToString } from './uml';
 import { CANVAS_INK, INK, PAPER, STICKY_COLORS, inkOn } from './palette';
 import { scopeSvgIds } from './stickers';
-import { hasLayout, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
+import { hasLayout, isSafeHttpUrl, kanbanColor, validLabel, type ContainerLayout, type Rect } from '../shared/containers';
 import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
@@ -161,6 +161,13 @@ function wrapG(o: BaseObj, inner: string, opacity: number) {
   return `<g transform="translate(${n(o.x)} ${n(o.y)})${rot}"${op}>${inner}</g>`;
 }
 
+/** Mirrors geometry in the local box frame. The parent's existing rotation is applied after this transform. */
+function mirroredContent(o: BaseObj, geometry: string): string {
+  if (o.flipX !== true && o.flipY !== true) return geometry;
+  const cx = n(o.w / 2), cy = n(o.h / 2);
+  return `<g transform="translate(${cx} ${cy}) scale(${o.flipX === true ? -1 : 1} ${o.flipY === true ? -1 : 1}) translate(${n(-o.w / 2)} ${n(-o.h / 2)})">${geometry}</g>`;
+}
+
 // Icon and sticker bodies arrive from Iconify, from collaborators' boards and from files: the shared policy
 // (shared/svg-safety.mjs, the same one the server holds templates to) leaves out anything that runs or loads from outside.
 const iconBodyCache = new Map<string, string>();
@@ -177,11 +184,11 @@ function shapeMarkup(o: BaseObj, ctx: MarkupCtx) {
   const s = styleOf(o);
   const kind = o.kind || 'rect';
   const fill = s.fill === 'none' ? 'none' : escapeXml(s.fill);
-  let inner = `<path d="${shapePath(kind, o.w, o.h)}" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>`;
+  let geometry = `<path d="${shapePath(kind, o.w, o.h)}" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>`;
   const decor = shapeDecor(kind, o.w, o.h);
-  if (decor) inner += `<path d="${decor}" fill="none" ${strokeAttrs(s.stroke, s.strokeWidth, 'solid')}/>`;
-  if (ctx.editingId !== o.id) inner += textBlock(o.text || '', labelBox(o), s, { shrink: true, valign: s.valign });
-  return wrapG(o, inner, s.opacity);
+  if (decor) geometry += `<path d="${decor}" fill="none" ${strokeAttrs(s.stroke, s.strokeWidth, 'solid')}/>`;
+  const label = ctx.editingId !== o.id ? textBlock(o.text || '', labelBox(o), s, { shrink: true, valign: s.valign }) : '';
+  return wrapG(o, mirroredContent(o, geometry) + label, s.opacity);
 }
 
 /** Size of a sticky note's folded corner. */
@@ -299,6 +306,7 @@ const ICON_FILTER = '<path d="M4 6h16M7 12h10M10 18h4"/>';
 const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
 const ICON_DOTS = '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>';
 const ICON_COMMENT = '<path d="M5.5 5h13A1.5 1.5 0 0120 6.5v8a1.5 1.5 0 01-1.5 1.5H10.5L6.5 19.5V16h-1A1.5 1.5 0 014 14.5v-8A1.5 1.5 0 015.5 5z"/>';
+const ICON_LINK = '<path d="M10 13.5l4-4M8.5 15.5l-1 1a3 3 0 01-4.2-4.2l3-3a3 3 0 014.2 0M15.5 8.5l1-1a3 3 0 014.2 4.2l-3 3a3 3 0 01-4.2 0"/>';
 
 /** `text` cut to fit `max` pixels, with an ellipsis when it had to be cut. */
 function clip(text: string, font: string, max: number): string {
@@ -318,7 +326,7 @@ const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
 /** The title lines a card draws at width `w`: its first line of text, wrapped, at most three, the last cut with an ellipsis. */
 export function cardTitleLines(o: BaseObj, w: number): string[] {
   const font = cardFont(o);
-  const max = w - cardPadLeft(o) - CARD.padX;
+  const max = w - cardPadLeft(o) - CARD.padX - (isSafeHttpUrl(o.link) ? 24 : 0);
   const title = (o.text ?? '').split('\n')[0].trim();
   const lines = wrap(title || ' ', font, max);
   if (lines.length <= CARD.titleLines) return lines;
@@ -528,6 +536,15 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   inner += edge === 'ghost'
     ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
     : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+  if (isSafeHttpUrl(o.link) && edge === 'hairline') {
+    const hit = 24;
+    const x = w - CARD.padX - hit, y = CARD.padY - 4;
+    const title = (o.text ?? '').trim() || 'Untitled card';
+    inner += `<a class="k-card-link" data-card-link="true" href="${escapeXml(o.link!)}" target="_blank" rel="noopener noreferrer" tabindex="0" aria-label="Open link: ${escapeXml(title)}">` +
+      `<rect class="k-card-link-focus" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="var(--paper)" fill-opacity="0.001" pointer-events="all"/>` +
+      `<rect class="k-card-link-focus-ring" x="${n(x)}" y="${n(y)}" width="${hit}" height="${hit}" fill="none" stroke="none"/>` +
+      `<title>Open link: ${escapeXml(title)}</title>${kIcon(ICON_LINK, x + 5, y + 5, 14, K.meta)}</a>`;
+  }
   const fam = escapeXml(fontFamily(o.font));
   const lines = cardTitleLines(o, w);
   let y = CARD.padY;
@@ -576,11 +593,21 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       let right = w - CARD.padX;
       if (o.ownerName || o.ownerId) {
         const ring = kanbanColor(ctx.ownerColor?.(o)) ?? undefined;
+        const agent = o.ownerKind === 'agent';
         const x = right - 24;
-        inner += `<g><title>${escapeXml(o.ownerName || 'Owner')}${ring ? '' : ' (no account)'}</title><rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
-        inner += ring
-          ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
-          : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        const agentPoints = `${n(x + 6)},${n(cy - 11)} ${n(x + 18)},${n(cy - 11)} ${n(x + 23)},${n(cy - 6)} ${n(x + 23)},${n(cy + 6)} ${n(x + 18)},${n(cy + 11)} ${n(x + 6)},${n(cy + 11)} ${n(x + 1)},${n(cy + 6)} ${n(x + 1)},${n(cy - 6)}`;
+        inner += `<g data-owner-kind="${agent ? 'agent' : 'person'}"><title>${escapeXml(o.ownerName || 'Owner')}${agent ? ' (agent)' : ring ? '' : ' (no account)'}</title>`;
+        if (agent) {
+          inner += `<polygon points="${agentPoints}" ${fillStyle(K.paper)}/>`;
+          inner += ring
+            ? `<polygon points="${agentPoints}" ${strokeStyle(ring)} stroke-width="2"/>`
+            : `<polygon points="${agentPoints}" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        } else {
+          inner += `<rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
+          inner += ring
+            ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
+            : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+        }
         inner += `<text x="${n(x + 12)}" y="${n(cy + 3.5)}" font-family="${fam}" font-size="10" font-weight="700" letter-spacing="0.2" text-anchor="middle" ${fillStyle(K.ink)}>${escapeXml(initials(o.ownerName))}</text></g>`;
         right = x - 6;
       }
@@ -628,7 +655,8 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const h = n(o.h);
   const title = o.alt ? `<title>${escapeXml(o.alt)}</title>` : '';
   if (state.kind === 'ok') {
-    return wrapG(o, `${title}<image href="${escapeXml(state.url)}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none"/>`, 1);
+    const image = `<image href="${escapeXml(state.url)}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none"/>`;
+    return wrapG(o, title + mirroredContent(o, image), 1);
   }
   const label = state.kind === 'loading' ? 'Loading' : FAILED_LABEL[state.why];
   const size = o.nw && o.nh ? `${Math.round(o.nw)} × ${Math.round(o.nh)}` : '';
@@ -637,7 +665,8 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const text = o.w >= 80 && o.h >= 40
     ? lines.map((t, i) => `<text x="${n(o.w / 2)}" y="${n(o.h / 2 + (i - (lines.length - 1) / 2) * fs * 1.4)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs)}" style="fill:var(--graphite, #5B6672)">${escapeXml(t)}</text>`).join('')
     : '';
-  return wrapG(o, `${title}<rect x="0" y="0" width="${w}" height="${h}" style="fill:color-mix(in srgb, var(--graphite, #5B6672) 12%, var(--paper, #FFFFFF));stroke:var(--rule, #D5DBE2)" stroke-width="1" stroke-dasharray="4 3"/>${text}`, 1);
+  const box = `<rect x="0" y="0" width="${w}" height="${h}" style="fill:color-mix(in srgb, var(--graphite, #5B6672) 12%, var(--paper, #FFFFFF));stroke:var(--rule, #D5DBE2)" stroke-width="1" stroke-dasharray="4 3"/>`;
+  return wrapG(o, title + mirroredContent(o, box) + text, 1);
 }
 
 function iconMarkup(o: BaseObj) {
@@ -648,7 +677,7 @@ function iconMarkup(o: BaseObj) {
   const body = scopeSvgIds(sanitizeSvgBody(o.body || ''), o.id);
   return wrapG(
     o,
-    `<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" viewBox="${vb.join(' ')}" color="${escapeXml(color)}" style="color:${escapeXml(color)}" overflow="visible">${body}</svg>`,
+    mirroredContent(o, `<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" viewBox="${vb.join(' ')}" color="${escapeXml(color)}" style="color:${escapeXml(color)}" overflow="visible">${body}</svg>`),
     s.opacity,
   );
 }
@@ -668,9 +697,10 @@ export function smoothPath(pts: Point[]): string {
 function pathMarkup(o: BaseObj) {
   const s = styleOf(o);
   const local = pathPoints(o).map((p) => ({ x: p.x - o.x, y: p.y - o.y }));
+  const geometry = `<path d="${smoothPath(local)}" fill="none" stroke="${escapeXml(s.stroke)}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`;
   return wrapG(
     o,
-    `<path d="${smoothPath(local)}" fill="none" stroke="${escapeXml(s.stroke)}" stroke-width="${s.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`,
+    mirroredContent(o, geometry),
     s.opacity,
   );
 }
@@ -736,86 +766,87 @@ function umlMarkup(o: BaseObj, ctx: MarkupCtx): string {
   const label = (text: string, x: number, y: number, o: { size?: number; weight?: number; italic?: boolean; opacity?: number } = {}) =>
     `<text x="${n(x)}" y="${n(y)}" font-family="${fam}" font-size="${o.size ?? s.fontSize}" fill="${ink}" text-anchor="middle"` +
     `${o.weight ? ` font-weight="${o.weight}"` : ''}${o.italic ? ' font-style="italic"' : ''}${o.opacity !== undefined ? ` fill-opacity="${o.opacity}"` : ''}>${escapeXml(text)}</text>`;
-  let inner = '';
+  let geometry = '';
+  let labels = '';
   switch (o.type) {
     case 'uml-class': {
       const hh = CLASS_HEADER(o);
-      inner += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="${fill}" ${st}/>`;
-      inner += `<path d="M0 ${hh}H${n(o.w)}" ${st}/>`;
+      geometry += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="${fill}" ${st}/>`;
+      geometry += `<path d="M0 ${hh}H${n(o.w)}" ${st}/>`;
       const attrs = o.attributes || [];
       const ops = o.operations || [];
       const sepY = hh + 10 + Math.max(1, attrs.length) * CLASS_LINE;
-      inner += `<path d="M0 ${n(sepY)}H${n(o.w)}" ${st}/>`;
+      geometry += `<path d="M0 ${n(sepY)}H${n(o.w)}" ${st}/>`;
       if (!editing) {
         const isAbstract = o.stereotype === 'abstract';
         if (o.stereotype && o.stereotype !== 'abstract') {
-          inner += label(`«${o.stereotype}»`, o.w / 2, 18, { size: 12, opacity: 0.75 });
+          labels += label(`«${o.stereotype}»`, o.w / 2, 18, { size: 12, opacity: 0.75 });
         }
         const nameY = o.stereotype && o.stereotype !== 'abstract' ? 36 : hh / 2 + 5;
-        inner += label(o.text || 'Class', o.w / 2, isAbstract ? hh / 2 + 5 : nameY, { weight: 700, italic: isAbstract });
+        labels += label(o.text || 'Class', o.w / 2, isAbstract ? hh / 2 + 5 : nameY, { weight: 700, italic: isAbstract });
         const member = (m: (typeof attrs)[number], y: number) =>
           `<text x="10" y="${n(y)}" font-family="${fam}" font-size="${s.fontSize - 1}" fill="${ink}"${m.isStatic ? ' text-decoration="underline"' : ''}${m.isAbstract ? ' font-style="italic"' : ''}>${escapeXml(memberToString(m))}</text>`;
-        attrs.forEach((m, i) => (inner += member(m, hh + 8 + CLASS_LINE * i + 12)));
-        ops.forEach((m, i) => (inner += member(m, sepY + 8 + CLASS_LINE * i + 12)));
+        attrs.forEach((m, i) => (labels += member(m, hh + 8 + CLASS_LINE * i + 12)));
+        ops.forEach((m, i) => (labels += member(m, sepY + 8 + CLASS_LINE * i + 12)));
       }
       break;
     }
     case 'uml-actor': {
       const cx = o.w / 2, headR = Math.min(o.w * 0.2, o.h * 0.1);
       const bodyTop = headR * 2 + 4, bodyBottom = o.h * 0.58, legBottom = o.h * 0.78;
-      inner += `<circle cx="${n(cx)}" cy="${n(headR + 2)}" r="${n(headR)}" fill="${fill}" ${st}/>`;
-      inner += `<path d="M${n(cx)} ${n(bodyTop)}V${n(bodyBottom)}M${n(o.w * 0.12)} ${n(o.h * 0.36)}H${n(o.w * 0.88)}M${n(cx)} ${n(bodyBottom)}L${n(o.w * 0.15)} ${n(legBottom)}M${n(cx)} ${n(bodyBottom)}L${n(o.w * 0.85)} ${n(legBottom)}" fill="none" ${st}/>`;
-      if (!editing) inner += label(o.text || 'Actor', cx, o.h - 4);
+      geometry += `<circle cx="${n(cx)}" cy="${n(headR + 2)}" r="${n(headR)}" fill="${fill}" ${st}/>`;
+      geometry += `<path d="M${n(cx)} ${n(bodyTop)}V${n(bodyBottom)}M${n(o.w * 0.12)} ${n(o.h * 0.36)}H${n(o.w * 0.88)}M${n(cx)} ${n(bodyBottom)}L${n(o.w * 0.15)} ${n(legBottom)}M${n(cx)} ${n(bodyBottom)}L${n(o.w * 0.85)} ${n(legBottom)}" fill="none" ${st}/>`;
+      if (!editing) labels += label(o.text || 'Actor', cx, o.h - 4);
       break;
     }
     case 'uml-usecase':
-      inner += `<ellipse cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" rx="${n(o.w / 2)}" ry="${n(o.h / 2)}" fill="${fill}" ${st}/>`;
-      if (!editing) inner += textBlock(o.text || '', { x: o.w * 0.15, y: o.h * 0.15, w: o.w * 0.7, h: o.h * 0.7 }, s, { shrink: true });
+      geometry += `<ellipse cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" rx="${n(o.w / 2)}" ry="${n(o.h / 2)}" fill="${fill}" ${st}/>`;
+      if (!editing) labels += textBlock(o.text || '', { x: o.w * 0.15, y: o.h * 0.15, w: o.w * 0.7, h: o.h * 0.7 }, s, { shrink: true });
       break;
     case 'uml-lifeline': {
       const hh = 44;
-      inner += `<rect x="0" y="0" width="${n(o.w)}" height="${hh}" fill="${fill}" ${st}/>`;
-      inner += `<path d="M${n(o.w / 2)} ${hh}V${n(o.h)}" ${strokeAttrs(s.stroke, s.strokeWidth, 'dashed')}/>`;
-      if (!editing) inner += textBlock(o.text || '', { x: 6, y: 4, w: o.w - 12, h: hh - 8 }, { ...s, fontWeight: 600 }, { shrink: true });
+      geometry += `<rect x="0" y="0" width="${n(o.w)}" height="${hh}" fill="${fill}" ${st}/>`;
+      geometry += `<path d="M${n(o.w / 2)} ${hh}V${n(o.h)}" ${strokeAttrs(s.stroke, s.strokeWidth, 'dashed')}/>`;
+      if (!editing) labels += textBlock(o.text || '', { x: 6, y: 4, w: o.w - 12, h: hh - 8 }, { ...s, fontWeight: 600 }, { shrink: true });
       break;
     }
     case 'uml-note': {
       const k = 14;
-      inner += `<path d="M0 0H${n(o.w - k)}L${n(o.w)} ${k}V${n(o.h)}H0Z" fill="${fill === '#FFFFFF' ? '#FFFBE6' : fill}" ${st}/>`;
-      inner += `<path d="M${n(o.w - k)} 0V${k}H${n(o.w)}" fill="none" ${st}/>`;
-      if (!editing) inner += textBlock(o.text || '', { x: 10, y: 10, w: o.w - 28, h: o.h - 20 }, { ...s, align: 'left' }, { valign: 'top' });
+      geometry += `<path d="M0 0H${n(o.w - k)}L${n(o.w)} ${k}V${n(o.h)}H0Z" fill="${fill === '#FFFFFF' ? '#FFFBE6' : fill}" ${st}/>`;
+      geometry += `<path d="M${n(o.w - k)} 0V${k}H${n(o.w)}" fill="none" ${st}/>`;
+      if (!editing) labels += textBlock(o.text || '', { x: 10, y: 10, w: o.w - 28, h: o.h - 20 }, { ...s, align: 'left' }, { valign: 'top' });
       break;
     }
     case 'uml-package': {
       const tabW = Math.min(o.w * 0.45, Math.max(80, measure(o.text || '', fontCss(s.font, s.fontSize, 600)) + 24));
-      inner += `<path d="M0 0H${n(tabW)}V24H0Z" fill="${fill}" ${st}/>`;
-      inner += `<rect x="0" y="24" width="${n(o.w)}" height="${n(Math.max(0, o.h - 24))}" fill="${fill === '#FFFFFF' ? 'none' : fill}" ${st}/>`;
-      if (!editing) inner += `<text x="10" y="17" font-family="${fam}" font-size="${s.fontSize - 1}" font-weight="600" fill="${ink}">${escapeXml(o.text || 'package')}</text>`;
+      geometry += `<path d="M0 0H${n(tabW)}V24H0Z" fill="${fill}" ${st}/>`;
+      geometry += `<rect x="0" y="24" width="${n(o.w)}" height="${n(Math.max(0, o.h - 24))}" fill="${fill === '#FFFFFF' ? 'none' : fill}" ${st}/>`;
+      if (!editing) labels += `<text x="10" y="17" font-family="${fam}" font-size="${s.fontSize - 1}" font-weight="600" fill="${ink}">${escapeXml(o.text || 'package')}</text>`;
       break;
     }
     case 'uml-state':
-      inner += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="${n(Math.min(18, o.h / 2))}" fill="${fill}" ${st}/>`;
-      if (!editing) inner += textBlock(o.text || '', { x: 10, y: 6, w: o.w - 20, h: o.h - 12 }, s, { shrink: true });
+      geometry += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="${n(Math.min(18, o.h / 2))}" fill="${fill}" ${st}/>`;
+      if (!editing) labels += textBlock(o.text || '', { x: 10, y: 6, w: o.w - 20, h: o.h - 12 }, s, { shrink: true });
       break;
     case 'uml-initial':
-      inner += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(Math.min(o.w, o.h) / 2)}" fill="${escapeXml(s.stroke === 'none' ? INK : s.stroke)}"/>`;
+      geometry += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(Math.min(o.w, o.h) / 2)}" fill="${escapeXml(s.stroke === 'none' ? INK : s.stroke)}"/>`;
       break;
     case 'uml-final': {
       const r0 = Math.min(o.w, o.h) / 2;
-      inner += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(r0 - 1)}" fill="${fill}" ${st}/>`;
-      inner += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(r0 * 0.6)}" fill="${escapeXml(s.stroke === 'none' ? INK : s.stroke)}"/>`;
+      geometry += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(r0 - 1)}" fill="${fill}" ${st}/>`;
+      geometry += `<circle cx="${n(o.w / 2)}" cy="${n(o.h / 2)}" r="${n(r0 * 0.6)}" fill="${escapeXml(s.stroke === 'none' ? INK : s.stroke)}"/>`;
       break;
     }
     case 'uml-component': {
-      inner += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="${fill}" ${st}/>`;
+      geometry += `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" fill="${fill}" ${st}/>`;
       const ix = o.w - 30;
-      inner += `<rect x="${n(ix)}" y="8" width="18" height="22" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/>`;
-      inner += `<rect x="${n(ix - 5)}" y="12" width="10" height="5" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/><rect x="${n(ix - 5)}" y="21" width="10" height="5" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/>`;
-      if (!editing) inner += textBlock(`«component»\n${o.text || ''}`, { x: 10, y: 8, w: o.w - 50, h: o.h - 16 }, s, { shrink: true });
+      geometry += `<rect x="${n(ix)}" y="8" width="18" height="22" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/>`;
+      geometry += `<rect x="${n(ix - 5)}" y="12" width="10" height="5" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/><rect x="${n(ix - 5)}" y="21" width="10" height="5" fill="${fill}" ${strokeAttrs(s.stroke, 1.25, 'solid')}/>`;
+      if (!editing) labels += textBlock(`«component»\n${o.text || ''}`, { x: 10, y: 8, w: o.w - 50, h: o.h - 16 }, s, { shrink: true });
       break;
     }
   }
-  return wrapG(o, inner, s.opacity);
+  return wrapG(o, mirroredContent(o, geometry) + labels, s.opacity);
 }
 
 /**

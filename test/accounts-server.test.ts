@@ -1,20 +1,21 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import crypto from 'node:crypto';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
 import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // The relay runs as a child process in accounts mode, exactly as `npm start` would.
 
-const PORT = await freePort();
-const baseUrl = `http://127.0.0.1:${PORT}`;
+let PORT = 0;
+let baseUrl = '';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-'));
 const outbox = path.join(dataDir, 'outbox.jsonl');
 const OWNER = 'owner@example.com';
@@ -28,28 +29,20 @@ let owner: Account;
 
 type Server = { port: number; base: string; dir: string; proc: ChildProcess };
 
-const startRelay = (port = PORT, dir = dataDir, env: Record<string, string> = {}) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DATA_DIR: dir,
-        HOST: '127.0.0.1',
-        TABULA_AUTH: 'on',
-        TABULA_OWNER_EMAIL: OWNER,
-        TABULA_MAIL: 'file',
-        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
-        TABULA_TRUST_PROXY: '1',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
+const startRelay = (dir = dataDir, env: Record<string, string> = {}) => startRelayProcess({
+  envFor: (port) => ({
+    ...(process.env as Record<string, string>),
+    PORT: String(port),
+    DATA_DIR: dir,
+    HOST: '127.0.0.1',
+    TABULA_AUTH: 'on',
+    TABULA_OWNER_EMAIL: OWNER,
+    TABULA_MAIL: 'file',
+    TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+    TABULA_TRUST_PROXY: '1',
+    ...env,
+  }),
+});
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -208,7 +201,10 @@ async function flush(from: ReturnType<typeof connect>, to: ReturnType<typeof con
 
 describe('accounts mode server', () => {
   beforeAll(async () => {
-    relay = await startRelay();
+    const started = await startRelay();
+    PORT = started.port;
+    baseUrl = `http://127.0.0.1:${PORT}`;
+    relay = started.proc;
     owner = await signIn(OWNER);
   });
 
@@ -1164,9 +1160,8 @@ describe('other server configurations', () => {
   const servers: Server[] = [];
 
   async function launch(env: Record<string, string>): Promise<Server> {
-    const port = await freePort();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-accounts-extra-'));
-    const proc = await startRelay(port, dir, env);
+    const { port, proc } = await startRelay(dir, env);
     const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
     servers.push(server);
     return server;
@@ -1201,22 +1196,33 @@ describe('other server configurations', () => {
   });
 
   it('extends a session cookie as it slides, and ignores X-Forwarded-For unless TABULA_TRUST_PROXY=1', async () => {
-    const short = await launch({ TABULA_SESSION_DAYS: '0.00004', TABULA_TRUST_PROXY: '0' }); // about 3.5 seconds
+    const sessionMs = 24 * 60 * 60 * 1000;
+    const sessionServer = await launch({ TABULA_SESSION_DAYS: '1', TABULA_TRUST_PROXY: '0' });
     const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
-      fetch(short.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+      fetch(sessionServer.base + p, { method: 'POST', headers: { 'x-tabula': '1', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
     expect((await post('/api/auth/request', { email: OWNER })).status).toBe(200);
-    const mail = JSON.parse(fs.readFileSync(path.join(short.dir, 'outbox.jsonl'), 'utf8').trim().split('\n').pop()!) as Mail;
+    const mail = JSON.parse(fs.readFileSync(path.join(sessionServer.dir, 'outbox.jsonl'), 'utf8').trim().split('\n').pop()!) as Mail;
     const verify = await post('/api/auth/verify', { token: tokenOf(mail) });
     expect(verify.status).toBe(200);
     const issued = verify.headers.getSetCookie()[0];
     const cookie = /tabula_session=[^;]+/.exec(issued)![0];
 
-    const early = await fetch(`${short.base}/api/me`, { headers: { cookie } });
+    const early = await fetch(`${sessionServer.base}/api/me`, { headers: { cookie } });
     expect(early.status).toBe(200);
     expect(early.headers.get('set-cookie')).toBeNull();
-    await sleep(2000); // past half of the lifetime, before the end
-    const later = await fetch(`${short.base}/api/me`, { headers: { cookie } });
+
+    // Put this session past its refresh threshold directly instead of waiting for the wall clock.
+    const tokenHash = crypto.createHash('sha256').update(cookie.slice(cookie.indexOf('=') + 1)).digest('hex');
+    const db = new DatabaseSync(path.join(sessionServer.dir, 'directory.sqlite'));
+    try {
+      const changed = db.prepare('UPDATE sessions SET last_seen = expires_at - ? WHERE token_hash = ?').run(sessionMs * 3, tokenHash);
+      expect(changed.changes).toBe(1);
+    } finally {
+      db.close();
+    }
+
+    const later = await fetch(`${sessionServer.base}/api/me`, { headers: { cookie } });
     expect(later.status).toBe(200);
     const refreshed = later.headers.get('set-cookie')!;
     expect(refreshed.startsWith(`${cookie};`)).toBe(true);

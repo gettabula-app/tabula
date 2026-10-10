@@ -2,10 +2,14 @@
 // Every read goes through `validLabel` and every colour written through `kanbanColor`, since any client can write the
 // map and its values reach a style attribute. Each change is one transaction and one undo step.
 
-import { LABEL_COLORS, LABEL_DEFAULT_COLOR, LIMITS, kanbanColor, validLabel } from '../shared/containers';
+import {
+  LABEL_COLORS, LABEL_DEFAULT_COLOR, cleanLabelName, labelNameTaken, LIMITS, kanbanColor, validLabel, validLabelColor,
+} from '../shared/containers';
 import type { Store } from './store';
 import { newId } from './store';
 import type { Id, Label } from './types';
+
+export { cleanLabelName };
 
 /**
  * The board's labels in their order (by `order`, then name, then id), each one checked: a value stored under another
@@ -25,11 +29,6 @@ export function sortLabels(labels: Label[]): Label[] {
   return [...labels].sort((a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.id < b.id ? -1 : 1));
 }
 
-/** A label name as it is stored: one line, trimmed, at most 40 characters. Empty when nothing is left. */
-export function cleanLabelName(name: string): string {
-  return name.replace(/\s+/g, ' ').trim().slice(0, LIMITS.labelName).trim();
-}
-
 /** The first palette colour no label uses yet, so a new label is told apart; the default when all are taken. */
 export function nextLabelColor(labels: Label[]): string {
   return LABEL_COLORS.find((c) => !labels.some((l) => l.color === c)) ?? LABEL_DEFAULT_COLOR;
@@ -37,8 +36,11 @@ export function nextLabelColor(labels: Label[]): string {
 
 /** Why a label cannot be created, or null. */
 export function createRefusal(store: Store, name: string): string | null {
-  if (!cleanLabelName(name)) return 'A label needs a name.';
-  if (listLabels(store).length >= LIMITS.labels) return `A board holds at most ${LIMITS.labels} labels.`;
+  const labels = listLabels(store);
+  const clean = cleanLabelName(name);
+  if (!clean) return 'A label needs a name.';
+  if (labelNameTaken(labels, clean)) return 'A label with this name already exists.';
+  if (labels.length >= LIMITS.labels) return `A board holds at most ${LIMITS.labels} labels.`;
   return null;
 }
 
@@ -56,7 +58,7 @@ export function createLabel(store: Store, name: string, color?: string): Id | nu
   const labels = listLabels(store);
   const id = newId();
   const order = labels.length ? labels[labels.length - 1].order + 1 : 0;
-  const label: Label = { id, name: cleanLabelName(name), color: kanbanColor(color ?? nextLabelColor(labels), LABEL_DEFAULT_COLOR)!, order };
+  const label: Label = { id, name: cleanLabelName(name), color: validLabelColor(color ?? nextLabelColor(labels)) ?? LABEL_DEFAULT_COLOR, order };
   write(store, () => store.labels.set(id, label));
   return store.labels.has(id) ? id : null;
 }
@@ -68,10 +70,10 @@ function patchLabel(store: Store, id: Id, patch: Partial<Pick<Label, 'name' | 'c
   const next: Label = { ...cur };
   if (patch.name !== undefined) {
     const name = cleanLabelName(patch.name);
-    if (!name) return false;
+    if (!name || labelNameTaken(listLabels(store), name, id)) return false;
     next.name = name;
   }
-  if (patch.color !== undefined) next.color = kanbanColor(patch.color, LABEL_DEFAULT_COLOR)!;
+  if (patch.color !== undefined) next.color = validLabelColor(patch.color) ?? LABEL_DEFAULT_COLOR;
   if (patch.order !== undefined && Number.isFinite(patch.order)) next.order = patch.order;
   if (next.name === cur.name && next.color === cur.color && next.order === cur.order) return false;
   return write(store, () => store.labels.set(id, next));

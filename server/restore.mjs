@@ -547,6 +547,7 @@ export function createRestore({
   let lastWholeAt = -Infinity;
   let boardStarts = /** @type {number[]} */ ([]);
   const boardListStarts = /** @type {Map<string, number[]>} */ (new Map());
+  const legacyBarrierWarnings = new Set();
   let sweepTimer = null;
   let sweeping = false;
   let stopped = false;
@@ -665,7 +666,12 @@ export function createRestore({
   async function readManifestChecked(name) {
     if (typeof name !== 'string' || parseManifestName(name) === null) throw new RestoreError('bad_request', 'manifest must be the name of a backup');
     try {
-      return await backup.readManifest(name);
+      const manifest = await backup.readManifest(name);
+      if (!manifest.snapshotBarrier && !legacyBarrierWarnings.has(name)) {
+        legacyBarrierWarnings.add(name);
+        say(`legacy manifest ${name} has no snapshot barrier record; accepting it`);
+      }
+      return manifest;
     } catch (err) {
       throw fromBackupError(err);
     }

@@ -2,6 +2,10 @@ import './access.css';
 import { h, icon } from './dom';
 import { showRestoring } from './restoring';
 import type { BoardConn, DeniedReason } from '../sync';
+import { authState } from '../auth';
+import { isRemovedGuestLink } from './share-logic';
+
+const REMOVED_GUEST_LINK = 'This join link has expired or was revoked';
 
 interface AccessHandlers {
   onSignIn: () => void;
@@ -32,7 +36,7 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
       showRestoring();
       return;
     }
-    banner = renderBanner(reason, handlers, dismiss);
+    banner = renderBanner(reason, handlers, dismiss, isRemovedGuestLink(authState().mode, reason));
     root.appendChild(banner);
   });
   return () => {
@@ -41,7 +45,7 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
   };
 }
 
-function renderBanner(reason: Exclude<DeniedReason, 'restoring'>, handlers: AccessHandlers, dismiss: () => void): HTMLElement {
+function renderBanner(reason: Exclude<DeniedReason, 'restoring'>, handlers: AccessHandlers, dismiss: () => void, removedGuestLink: boolean): HTMLElement {
   const actions: HTMLElement[] = [];
   switch (reason) {
     case 'unauthenticated':
@@ -56,7 +60,7 @@ function renderBanner(reason: Exclude<DeniedReason, 'restoring'>, handlers: Acce
       break;
   }
   return h('div', { class: 'access-banner', role: 'alert' },
-    h('span', { class: 'access-text' }, TEXT[reason]),
+    h('span', { class: 'access-text' }, removedGuestLink ? REMOVED_GUEST_LINK : TEXT[reason]),
     h('div', { class: 'access-actions' }, actions),
     h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', onclick: dismiss }, icon('close', 18)),
   );

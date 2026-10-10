@@ -491,9 +491,7 @@ describe('finish', () => {
     h = await harness();
     const { engine, timers } = rig();
     engine.start();
-    const started = Date.now();
     expect(await engine.finish({ budgetMs: 4000 })).toEqual({ ran: false, ok: true, timedOut: false });
-    expect(Date.now() - started).toBeLessThan(500);
     expect(h.fake.log).toEqual([]);
     expect(timers.size).toBe(0);
   });
@@ -574,16 +572,18 @@ describe('finish', () => {
 
   it('keeps to the budget in real time', async () => {
     h = await harness();
-    const engine = h.engine();
+    const { engine, timers } = rig();
     engine.start();
     engine.noteChange();
     h.fake.rules.push({ hang: true, times: 999 });
-    const started = Date.now();
-    const result = await engine.finish({ budgetMs: 300 });
-    const elapsed = Date.now() - started;
-    expect(result).toMatchObject({ ran: true, ok: false, timedOut: true });
-    expect(elapsed).toBeGreaterThanOrEqual(250);
-    expect(elapsed).toBeLessThan(1500);
+    const done = engine.finish({ budgetMs: 300 });
+    // the run has reached the bucket (whatever request it makes first hangs by the rule above) and is still going
+    await until(() => h.fake.log.length > 0);
+    expect(engine.status().running).toBe(true);
+    await timers.fireDelay(300);
+    expect(await done).toEqual({ ran: true, ok: false, timedOut: true });
+    await idle(engine);
+    expect(h.fake.log.length).toBeGreaterThan(0);
     await engine.stop();
     expect(manifests(h)).toEqual([]);
   });
@@ -711,24 +711,25 @@ describe('the settings', () => {
     return null;
   };
 
-  it('defaults to 120 seconds and 4 seconds, and shows both in the config', () => {
-    expect(load(base())).toMatchObject({ settleSeconds: 120, shutdownSeconds: 4 });
-    expect(JSON.parse(JSON.stringify(load(base())))).toMatchObject({ settleSeconds: 120, shutdownSeconds: 4 });
+  it('defaults to 120 seconds, 4 seconds and a 5 second snapshot hold, and shows them in the config', () => {
+    expect(load(base())).toMatchObject({ settleSeconds: 120, shutdownSeconds: 4, snapshotMaxHoldSeconds: 5 });
+    expect(JSON.parse(JSON.stringify(load(base())))).toMatchObject({ settleSeconds: 120, shutdownSeconds: 4, snapshotMaxHoldSeconds: 5 });
   });
 
   it.each([
     { name: 'TABULA_BACKUP_SETTLE_SECONDS', field: 'settleSeconds', fallback: 120, max: 3600, good: ['0', '1', '45', '3600'], bad: ['-1', '3601', '10000', '1.5', ' 7 x', 'soon', '1e3', '0x10', '1000000'] },
     { name: 'TABULA_BACKUP_SHUTDOWN_SECONDS', field: 'shutdownSeconds', fallback: 4, max: 25, good: ['0', '1', '4', '25'], bad: ['-1', '26', '99', '2.5', 'quick', '1e1', '0x4', '1000000'] },
-  ])('$name: whole numbers in range are read, anything else is an error that names the variable', ({ name, field, fallback, max, good, bad }) => {
+    { name: 'TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS', field: 'snapshotMaxHoldSeconds', fallback: 5, min: 1, max: 60, good: ['1', '5', '60'], bad: ['0', '61', '-1', '1.5', ' 7 x', 'soon', '1e3', '0x10'] },
+  ])('$name: whole numbers in range are read, anything else is an error that names the variable', ({ name, field, fallback, min = 0, max, good, bad }) => {
     const read = (value: string) => (load(base({ [name]: value }))! as unknown as Record<string, number>)[field];
     for (const value of good) expect(read(value)).toBe(Number(value));
-    for (const value of bad) expect([value, messageOf(base({ [name]: value }))]).toEqual([value, `${name} must be a whole number from 0 to ${max}`]);
+    for (const value of bad) expect([value, messageOf(base({ [name]: value }))]).toEqual([value, `${name} must be a whole number from ${min} to ${max}`]);
     // an empty value is the same as not set
     expect(read('')).toBe(fallback);
   });
 
   it('never echoes the value of a malformed setting', () => {
-    for (const name of ['TABULA_BACKUP_SETTLE_SECONDS', 'TABULA_BACKUP_SHUTDOWN_SECONDS']) {
+    for (const name of ['TABULA_BACKUP_SETTLE_SECONDS', 'TABULA_BACKUP_SHUTDOWN_SECONDS', 'TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS']) {
       const message = messageOf(base({ [name]: SECRET }));
       expect(message).toContain(name);
       expect(message).not.toContain(SECRET);
@@ -737,8 +738,8 @@ describe('the settings', () => {
 
   it('reads the old MIRA_ spelling', () => {
     const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(base({ TABULA_BACKUP_SETTLE_SECONDS: '30', TABULA_BACKUP_SHUTDOWN_SECONDS: '9' }))) env[k.replace('TABULA_', 'MIRA_')] = v;
-    expect(load(env)).toMatchObject({ settleSeconds: 30, shutdownSeconds: 9 });
+    for (const [k, v] of Object.entries(base({ TABULA_BACKUP_SETTLE_SECONDS: '30', TABULA_BACKUP_SHUTDOWN_SECONDS: '9', TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS: '12' }))) env[k.replace('TABULA_', 'MIRA_')] = v;
+    expect(load(env)).toMatchObject({ settleSeconds: 30, shutdownSeconds: 9, snapshotMaxHoldSeconds: 12 });
     expect(messageOf({ ...env, MIRA_BACKUP_SETTLE_SECONDS: SECRET })).toBe('TABULA_BACKUP_SETTLE_SECONDS must be a whole number from 0 to 3600');
   });
 

@@ -4,7 +4,7 @@ The tool rail on the left of a board holds everything you draw with. This page c
 
 ## The tool rail
 
-Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus onto it, to see its name and shortcut.
+Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus onto it, to see its name and shortcut. On a short window the rail scrolls, and it fades the edge that has more tools behind it.
 
 | Key | Tool |
 |---|---|
@@ -29,7 +29,7 @@ If you can only view a board, only **Select** and **Hand** are available.
 ## Sticky notes
 
 1. Press `N`, or click **Sticky note**.
-2. Pick a colour in the **Note colour** tray that appears beside the rail.
+2. Pick a colour in the **Note colour** tray that appears beside the rail. On a phone the tray closes once you pick a colour, so it does not cover the board; tap **Sticky note** again to change the colour.
 3. Click the board to place a note, or drag to set its size.
 4. Type. Press `Esc` or click away to finish.
 
@@ -58,6 +58,7 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 - `Esc` or `Ctrl+Enter` (`Cmd+Enter` on Mac) finishes.
 - `Tab` finishes.
 - In shapes, notes and text boxes, `Enter` starts a new line. In frame names and connector labels, `Enter` finishes.
+- Select **Add emoji** in the small bar beside the text box to open the emoji picker: type to search, use the arrow keys or tap to choose one, and it goes in at the cursor. Recent emoji come first. Emoji made of several parts, such as flags and families, stay in one piece when a line wraps, and they come out whole in PNG and Markdown exports and for everyone else on the board.
 
 ### Alignment
 
@@ -74,7 +75,7 @@ Board-wide heading and body fonts for new objects are set in **Board settings** 
 ## Drawing, frames and icons
 
 - **Pen** (`P`): drag to draw freehand. A tray shows colours and three widths while the pen is active.
-- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it.
+- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it. To set a frame's size, select it and open the properties (**More properties**): the **Size** menu offers Screen (1920 × 1080, 1440 × 900, 1280 × 800), Tablet (1024 × 768 and 768 × 1024), Phone (390 × 844), Paper (A3, A4 and Letter, portrait and landscape) and Square (1000 × 1000), and the **Width** and **Height** fields set any other size, which the menu then shows as Custom.
 - **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Each click places the icon 24 pixels right and down from the previous click's icon, so they do not land on top of each other, and the steps start again at the centre of the view after you move the view a step away or move or delete the last icon placed. Change its colour with the properties panel.
 - **Offline icons**: with **All icon sets** selected, the row **Popular icon sets (N)** has **Download for offline**. With one set selected, the row shows that set's name instead. Downloaded sets search and preview without a connection; **Update** and **Remove** work as they do for stickers (see [Stickers](stickers.md#offline)). Icons already on the board stay there.
 - **Online sets**: this button in the Icons drawer loads more sets from Iconify. Those sets cannot be downloaded, need a connection, and each search sends your query to Iconify.
@@ -118,8 +119,9 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 - Hold `Alt` while dragging to ignore the grid and [smart guides](smart-guides.md).
 - Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.
-- Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
-- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
+- Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Flip horizontal**, **Flip vertical**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
+- Flip a selection with `Shift+H` (horizontal) or `Shift+V` (vertical), from that right-click menu, or from the more-actions menu of the quick-action bar. Shapes, icons, stickers, images, paths and UML shapes are mirrored around the middle of the selection; text is never mirrored and stays readable, and connectors stay attached to the visible sides. Flip is disabled for a selection that cannot be mirrored, with the reason shown. On a two-sided card the action to see the other face is **Turn over**, not Flip.
+- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one text object with your line breaks kept; long text wraps at a set width.
 
 To keep objects together, put them in a **Frame** (moving the frame moves what is inside it) or make them a **group**.
 
@@ -132,12 +134,12 @@ A group bundles items so you can select them as one. It has no picture of its ow
 - Click any item of a group to select the whole group. Dragging a box over part of a group selects it too.
 - **Double-click** an item to enter the group. The rest of the board dims, the group gets a dashed outline and its name, and you can select, edit and move the items inside. Press `Esc`, click **Done**, or click empty canvas to leave. Groups can hold groups; `Esc` leaves one level at a time, and **Ungroup** takes apart only the outer one.
 - Choosing a colour or other style for a group changes every item in it that has one.
-- On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar, or hold a selected item or group for a menu that has them, also while Comments or Chat is open. Double-tap to enter; the **Done** chip leaves the group. The group's name and **Done** chips wait while Comments, Chat or a drawer is open and return when it closes. Undo and Redo stay at the foot of the tool rail.
+- On a phone, use the **Group** and **Ungroup** buttons in the quick-action bar, or hold a selected item or group for a menu that has them, also while Comments or Chat is open. The menu opens clear of your finger and scrolls when it is tall, and lifting your finger does not press anything in it. Double-tap to enter; the **Done** chip leaves the group. The group's name and **Done** chips wait while Comments, Chat or a drawer is open and return when it closes. Undo and Redo stay at the foot of the tool rail.
 - During a dot vote a click gives a dot to the item you click, not to its group, and double-clicking an item still casts its votes without entering the group.
 
 Deleting or cutting a group removes the group and everything in it in one step. Notes that private writing is hiding from you are kept and moved out of the group instead. A group whose last item is deleted disappears too.
 
-Some things do not work on a whole group yet: moving, resizing and rotating it, and copying and pasting it. For now, enter the group to move or edit its items.
+Copy, cut, duplicate and paste keep a group together, including groups inside groups. Some things do not work on a whole group yet: moving, resizing and rotating it. For now, enter the group to move or edit its items.
 
 You can lock a selected group with **Lock**. A locked group lets clicks, taps and box selections pass through, like any locked item, and a long press unlocks the outermost locked group.
 

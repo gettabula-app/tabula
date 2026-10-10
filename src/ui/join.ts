@@ -31,31 +31,71 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
   document.title = 'Join a board - Tabula';
   const code = h('input', {
     class: 'input join-code-input', name: 'code', type: 'text', value: cleanCode(initialCode),
-    minlength: '6', required: true, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false,
-    'aria-label': 'Join code',
+    id: 'join-code', minlength: '6', required: true, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false,
+    'aria-label': 'Join code', 'aria-describedby': 'join-code-error',
   });
+  const codeError = h('p', { id: 'join-code-error', class: 'signin-error', role: 'alert', hidden: true });
   // people write codes in groups ("ABCD EFGH") and paste them with spaces: drop the spaces before the length limit applies
   code.addEventListener('input', () => {
     const clean = cleanCode(code.value);
     if (clean !== code.value) code.value = clean;
   });
   const name = h('input', {
-    class: 'input', name: 'name', type: 'text', maxlength: '40', minlength: '1', required: true,
-    autocomplete: 'name', 'aria-label': 'Display name', 'aria-describedby': 'join-name-help',
+    class: 'input', id: 'join-name', name: 'name', type: 'text', maxlength: '40', minlength: '1', required: true,
+    autocomplete: 'name', 'aria-label': 'Display name', 'aria-describedby': 'join-name-help join-name-error',
   });
+  const nameError = h('p', { id: 'join-name-error', class: 'signin-error', role: 'alert', hidden: true });
   const submit = h('button', { type: 'submit', class: 'btn primary' }, 'Join board');
-  const form = h('form', { class: 'signin-form join-form' },
-    h('label', { class: 'signin-field' }, 'Join code', code),
-    h('label', { class: 'signin-field' }, 'Display name', name,
-      h('span', { id: 'join-name-help', class: 'join-name-help' }, '1 to 40 characters after cleanup.')),
+  const form = h('form', { class: 'signin-form join-form', noValidate: true },
+    h('div', { class: 'signin-field' }, h('label', { for: 'join-code' }, 'Join code'), code, codeError),
+    h('div', { class: 'signin-field' }, h('label', { for: 'join-name' }, 'Display name'), name,
+      h('span', { id: 'join-name-help', class: 'join-name-help' }, '1 to 40 characters after cleanup.'), nameError),
     submit);
   let error: HTMLElement | null = null;
+  const clearInlineErrors = () => {
+    codeError.hidden = true;
+    nameError.hidden = true;
+    code.removeAttribute('aria-invalid');
+    name.removeAttribute('aria-invalid');
+  };
+  const showInlineError = (field: 'code' | 'name', message: string) => {
+    const input = field === 'code' ? code : name;
+    const target = field === 'code' ? codeError : nameError;
+    target.textContent = message;
+    target.hidden = false;
+    input.setAttribute('aria-invalid', 'true');
+    input.focus();
+  };
+  code.addEventListener('input', () => {
+    if (!codeError.hidden) {
+      codeError.hidden = true;
+      code.removeAttribute('aria-invalid');
+    }
+  });
+  name.addEventListener('input', () => {
+    if (!nameError.hidden) {
+      nameError.hidden = true;
+      name.removeAttribute('aria-invalid');
+    }
+  });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     error?.remove();
     error = null;
-    code.removeAttribute('aria-invalid');
-    name.removeAttribute('aria-invalid');
+    clearInlineErrors();
+    const value = cleanCode(code.value);
+    if (!value) {
+      showInlineError('code', 'Enter the code you were given');
+      return;
+    }
+    if (value.length < 6) {
+      showInlineError('code', 'That code looks too short');
+      return;
+    }
+    if (!name.value.trim()) {
+      showInlineError('name', 'Enter a display name');
+      return;
+    }
     submit.disabled = true;
     submit.textContent = 'Joining…';
     try {
@@ -64,10 +104,12 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
       done(joined);
     } catch (err) {
       const message = errorMessage(err);
-      error = h('p', { class: 'signin-error', role: 'alert' }, message);
-      submit.before(error);
-      code.setAttribute('aria-invalid', 'true');
-      name.setAttribute('aria-invalid', 'true');
+      if (err instanceof ApiError && (err.status === 404 || err.code === 'invalid_join_code')) showInlineError('code', message);
+      else if (err instanceof ApiError && err.code === 'bad_request') showInlineError('name', message);
+      else {
+        error = h('p', { class: 'signin-error', role: 'alert' }, message);
+        submit.before(error);
+      }
       submit.disabled = false;
       submit.textContent = 'Join board';
     }

@@ -4,7 +4,6 @@
 .admin { min-height: 100vh; color: var(--ink); }
 .admin .small { font-size: 13px; }
 .admin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.admin .input:focus-visible { outline: none; }
 
 /* Label style: 11px uppercase meta for nav, column heads, tile labels, filters, badges and the count. */
 .admin .admin-me,

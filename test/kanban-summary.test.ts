@@ -33,6 +33,14 @@ describe('the Markdown summary of a kanban', () => {
     expect(md).toContain('_No cards_');
   });
 
+  it('shows agent ownership and links with Markdown URL delimiters encoded', () => {
+    const s = setup();
+    const card = addCard(s.store, s.todo, 'Deploy', { createdBy: 'me' })!;
+    const url = 'https://example.com/a(b)]<c>?q=1';
+    s.store.transact(() => s.store.update(card, { ownerName: 'Build bot', ownerKind: 'agent', link: url }));
+    expect(s.md()).toContain('- Deploy (Build bot (agent)) [link](<https://example.com/a%28b%29]%3Cc%3E?q=1>)');
+  });
+
   it('shows a lane limit and keeps a card on one line', () => {
     const s = setup();
     s.store.transact(() => s.store.update(s.doing, { wip: 2, wipMode: 'block' }));

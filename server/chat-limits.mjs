@@ -20,6 +20,23 @@ export const CHAT_LIMITS = Object.freeze({
   react: { max: 60, windowMs: MINUTE_MS },
 });
 
+const TEST_CHAT_BURST_WINDOW_MAX_MS = 60 * 60_000;
+
+/**
+ * The API integration test may lengthen the burst window so runner pauses cannot expire it mid-test.
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function chatLimitsFromTestEnv(env = process.env) {
+  const raw = env.TABULA_TEST_CHAT_BURST_WINDOW_MS?.trim();
+  if (!raw) return CHAT_LIMITS;
+  if (env.NODE_ENV !== 'test') throw new Error('TABULA_TEST_CHAT_BURST_WINDOW_MS is only available when NODE_ENV=test');
+  const windowMs = Number(raw);
+  if (!Number.isSafeInteger(windowMs) || windowMs < CHAT_LIMITS.postBurst.windowMs || windowMs > TEST_CHAT_BURST_WINDOW_MAX_MS) {
+    throw new Error(`TABULA_TEST_CHAT_BURST_WINDOW_MS must be an integer between ${CHAT_LIMITS.postBurst.windowMs} and ${TEST_CHAT_BURST_WINDOW_MAX_MS}`);
+  }
+  return { ...CHAT_LIMITS, postBurst: { ...CHAT_LIMITS.postBurst, windowMs } };
+}
+
 /** One sliding window per key. `wait(key)` is 0 when a hit fits, else the seconds until it would. */
 export function createWindow({ max, windowMs }, now = Date.now) {
   const hits = new Map();

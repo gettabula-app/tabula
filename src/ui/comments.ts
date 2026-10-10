@@ -144,6 +144,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     const resolved = threads.filter((t) => t.resolved);
     count.textContent = String(open.length);
     count.classList.toggle('show', open.length > 0);
+    button.setAttribute('aria-label', open.length ? `Comments, ${open.length} open ${open.length === 1 ? 'comment' : 'comments'}` : 'Comments');
     if (!panelOpen) return;
     const shown = (filter === 'open' ? open : resolved).sort((a, b) => b.createdAt - a.createdAt);
     // Rebuild only when something shown changed: a row removed under the pointer would swallow its click.
@@ -166,6 +167,11 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
 
   function openCard(target: Target) {
     current?.close(true);
+    const active = document.activeElement as HTMLElement | null;
+    const activeIsControl = active && active !== document.body && (
+      ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName) || active.tagName === 'A' && active.hasAttribute('href') || active.hasAttribute('tabindex')
+    );
+    const opener = activeIsControl ? active : chrome.querySelector<HTMLElement>('.rail-btn[aria-label="Comment"]');
     const origin = target.screen;
     const anchor = target.anchor;
     let threadId: string | null = anchor ? null : (target.threadId ?? null);
@@ -210,6 +216,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     function close(notify: boolean) {
       if (closed) return;
       closed = true;
+      const restoreOpener = el.contains(document.activeElement);
       clearTimeout(arm);
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey);
@@ -218,6 +225,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       if (current?.close === close) current = null;
       app.setDraftPin(null);
       if (notify) app.closeThread();
+      if (restoreOpener && opener?.isConnected) opener.focus();
     }
 
     function post() {
@@ -343,7 +351,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
         },
         ...t.replies.map((r) => ({ ...r, root: false })),
       ];
-      if (!list.some((m) => m.id === editing)) editing = null;
+      if (ro || !list.some((m) => m.id === editing)) editing = null;
       if (!list.some((m) => m.id === confirming)) confirming = null;
       const hadFocus = document.activeElement === editArea;
       head.replaceChildren(...(t.resolved ? [h('span', { class: 'comment-badge' }, 'Resolved')] : []), closeBtn);
@@ -376,7 +384,10 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     });
     unsubs.push(
       app.comments.onChange(onChange),
-      app.comments.onReadOnly(onChange),
+      app.comments.onReadOnly((readOnly) => {
+        if (readOnly && anchor) close(false);
+        else onChange();
+      }),
       app.on('comments', onComments),
       app.r.onCamera(() => {
         if (performance.now() >= flightUntil) close(true);

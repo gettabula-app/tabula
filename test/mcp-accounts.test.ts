@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
@@ -7,7 +8,7 @@ import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { MCP_SERVER_NAME } from '../server/mcp.mjs';
-import { createHarness, sleep, until, type Account, type Body } from './mcp-harness';
+import { createHarness, until, type Account, type Body } from './mcp-harness';
 
 // docs/mcp.md. The relay runs as a child process exactly as `npm start` would, in accounts mode with MCP on.
 
@@ -31,6 +32,44 @@ let thread: string; // a comment thread on the board
 const sticky = (extra: Record<string, unknown> = {}) => ({ type: 'sticky', text: 'a', x: 0, y: 0, ...extra });
 const tokenOf = async (a: Account, scope: 'read' | 'comment' | 'write', boardIds?: string[]) =>
   (await h.newToken(a.cookie, { scope, ...(boardIds ? { boardIds } : {}) })).token;
+
+/**
+ * An allowed write by the owner over the same socket, after a refused request: updates of one connection are processed in order,
+ * so once an observer sees this one, everything a refused request might have changed has arrived too. In a comments room only
+ * threads are allowed, so the marker is a thread there and a meta key in a board room.
+ */
+function writeBarrier(doc: Y.Doc, room: 'board' | 'comments') {
+  const key = `__test_timing_barrier_${Math.random().toString(36).slice(2)}`;
+  doc.transact(() => {
+    if (room === 'board') {
+      doc.getMap('meta').set(key, 'x');
+    } else {
+      const thread = new Y.Map<unknown>([['id', key], ['createdAt', 1], ['text', 'timing barrier'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+      thread.set('replies', new Y.Map());
+      doc.getMap('threads').set(key, thread);
+    }
+  });
+  const seenBy = (observer: Y.Doc) => (room === 'board' ? observer.getMap('meta').get(key) === 'x' : (observer.getMap('threads') as Y.Map<unknown>).has(key));
+  return { key, seenBy };
+}
+
+const encodeState = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+/** The content of a room's documents without the barrier marker: the board's objects and meta, or the comments' threads. */
+function contentWithout(doc: Y.Doc, room: 'board' | 'comments', barrierKey: string) {
+  const without = (map: Y.Map<unknown>) => {
+    const json = map.toJSON() as Record<string, unknown>;
+    delete json[barrierKey];
+    return json;
+  };
+  return room === 'board'
+    ? { objects: doc.getMap('objects').toJSON(), meta: without(doc.getMap('meta')) }
+    : { threads: without(doc.getMap('threads')) };
+}
+function contentOfState(state: string, room: 'board' | 'comments') {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Buffer.from(state, 'base64'));
+  return contentWithout(doc, room, '');
+}
 /** Everything a person's token can do needs boards named for workspace owners. */
 const tokenFor = (a: Account, scope: 'read' | 'comment' | 'write') => tokenOf(a, scope, a === wsOwner && scope !== 'read' ? [board] : undefined);
 
@@ -136,6 +175,24 @@ describe('the endpoint', () => {
     expect(big.body.error).toBe('payload_too_large');
 
     expect(origin.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('reads an oversized body before it answers 413, so the client never sees a reset', async () => {
+    const { token } = await h.newToken(alice.cookie, { scope: 'read' });
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: { pad: 'x'.repeat(300 * 1024) } });
+    const head = `POST /mcp HTTP/1.1\r\nhost: 127.0.0.1\r\nauthorization: Bearer ${token}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n`;
+    const socket = net.connect(h.port, '127.0.0.1');
+    let answered = '';
+    socket.on('data', (d) => { answered += String(d); });
+    await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+    // headers and the first part of the body, then wait: a server that answers now is answering while the client still writes
+    socket.write(head + body.slice(0, 1000));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(answered).toBe('');
+    socket.write(body.slice(1000));
+    await until(() => /\r\n\r\n/.test(answered) && /payload_too_large/.test(answered));
+    expect(answered).toMatch(/^HTTP\/1\.1 413 /);
+    socket.destroy();
   });
 
   it('gives one answer to every kind of bad credential', async () => {
@@ -443,7 +500,10 @@ describe('authorisation', () => {
     const liveComments = h.connect(`${board}~comments`, alice.cookie);
     await live.synced();
     await liveComments.synced();
-    const state = () => [Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64'), Buffer.from(Y.encodeStateAsUpdate(liveComments.doc)).toString('base64')];
+    const boardObserver = h.connect(board, alice.cookie);
+    const commentsObserver = h.connect(`${board}~comments`, alice.cookie);
+    await Promise.all([boardObserver.synced(), commentsObserver.synced()]);
+    const state = () => [encodeState(live.doc), encodeState(liveComments.doc)];
 
     for (const scope of ['read', 'comment', 'write'] as const) {
       const token = await tokenFor(account, scope);
@@ -459,8 +519,12 @@ describe('authorisation', () => {
         const res = await h.tool(token, c.name, c.args);
         expect(res.error, `${c.name} as ${kind} with ${scope}`).toBe(verdict(c.need));
       }
-      await sleep(80);
-      expect(state(), `${kind} ${scope} left the rooms alone`).toEqual(before);
+      const boardBarrier = writeBarrier(live.doc, 'board');
+      const commentsBarrier = writeBarrier(liveComments.doc, 'comments');
+      await until(() => boardBarrier.seenBy(boardObserver.doc) && commentsBarrier.seenBy(commentsObserver.doc), 20_000);
+      const unchanged = [contentOfState(before[0], 'board'), contentOfState(before[1], 'comments')];
+      expect([contentWithout(live.doc, 'board', boardBarrier.key), contentWithout(liveComments.doc, 'comments', commentsBarrier.key)], `${kind} ${scope} left the rooms alone`).toEqual(unchanged);
+      expect([contentWithout(boardObserver.doc, 'board', boardBarrier.key), contentWithout(commentsObserver.doc, 'comments', commentsBarrier.key)], `${kind} ${scope} left the observed rooms alone`).toEqual(unchanged);
 
       for (const c of calls.filter((x) => verdict(x.need) === 'ok')) {
         const res = await h.tool(token, c.name, c.args);
@@ -468,8 +532,12 @@ describe('authorisation', () => {
       }
 
       const listed = (await h.call(token, 'tools/list')).body.result.tools.map((t: Body) => t.name).sort();
-      const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments', 'list_templates']
-        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? ['create_objects', 'update_objects', 'delete_objects', 'use_template'] : [])
+      const expected = ['whoami', 'list_boards', 'get_board', 'get_objects', 'list_comments', 'list_kanban_cards', 'list_templates']
+        .concat(RANK[scope] >= 2 ? ['add_comment', 'reply_to_comment'] : [], RANK[scope] >= 3 ? [
+          'create_objects', 'update_objects', 'delete_objects', 'use_template', 'add_kanban_card', 'update_kanban_card', 'move_kanban_card',
+          'create_kanban', 'add_kanban_cards', 'move_kanban_cards',
+          'create_kanban_label', 'update_kanban_label', 'delete_kanban_label', 'add_kanban_lane', 'update_kanban_lane', 'delete_kanban_lane',
+        ] : [])
         .sort();
       expect(listed).toEqual(expected);
     }
@@ -682,7 +750,8 @@ describe('editing', () => {
       thread.set('replies', new Y.Map());
       room.doc.getMap('threads').set(pinnedId, thread);
     }, 'local');
-    await sleep(300);
+    // wait until the relay has the pin (its saved comment room has the thread) instead of a fixed pause
+    await until(() => (h.savedDoc(`${mine}~comments`).getMap('threads') as Y.Map<unknown>).has(pinnedId), 20_000);
 
     const view = await h.tool(token, 'get_board', { boardId: mine });
     expect(view.data.hiddenCount).toBe(1);
@@ -729,8 +798,11 @@ describe('editing', () => {
     expect(fs.existsSync(h.roomFile(`${mine}~comments`))).toBe(false);
 
     await h.tool(token, 'create_objects', { boardId: mine, objects: [sticky({ text: 'kept' })] });
-    expect(await health()).toBe(base + 1);
-    await until(async () => (await health()) === base, 12_000);
+    // The room a write loads is gone again 1.2 s after the last use (ROOM_UNLOAD_MS above), and on a loaded runner the reply and this
+    // request can be more than that apart, so "one room is loaded right now" cannot be asserted without a race. What the write must
+    // leave behind is stable: the room goes after the idle delay, and what was written is on disk (a room was loaded to save it).
+    await until(async () => (await health()) === base, 30_000);
+    await until(() => fs.existsSync(h.roomFile(mine)), 30_000);
     expect(h.savedDoc(mine).getMap('objects').size).toBe(1);
     // and it loads again from disk for the next reader
     expect((await h.tool(token, 'get_board', { boardId: mine })).data.counts.total).toBe(1);
@@ -740,6 +812,21 @@ describe('editing', () => {
 // ---------------------------------------------------------------- what the tools say and take
 
 describe('tools', () => {
+  it('creates, updates and reads flip flags over MCP', async () => {
+    const me = await newMember();
+    const board = await h.newBoard(me.cookie);
+    const token = await tokenOf(me, 'write');
+    const made = await h.tool(token, 'create_objects', {
+      boardId: board,
+      objects: [{ type: 'shape', x: 10, y: 20, kind: 'arrow-right', flipX: true, flipY: false }],
+    });
+    expect(made.error).toBeUndefined();
+    const id = made.data.created[0].id;
+    expect((await h.tool(token, 'get_objects', { boardId: board, ids: [id] })).data.objects[0]).toMatchObject({ flipX: true, flipY: false });
+    expect((await h.tool(token, 'update_objects', { boardId: board, updates: [{ id, flipX: false, flipY: true }] })).error).toBeUndefined();
+    expect((await h.tool(token, 'get_objects', { boardId: board, ids: [id] })).data.objects[0]).toMatchObject({ flipX: false, flipY: true });
+  });
+
   it('checks arguments strictly and says where the problem is', async () => {
     const me = await newMember();
     const board = await h.newBoard(me.cookie);
@@ -958,6 +1045,8 @@ describe('a read-only hosted workspace', () => {
 
     const extra = await cloud.newToken(member.cookie, { scope: 'read' });
     expect((await limits({ readOnly: true })).status).toBe(200);
+    const beforeBoard = (await cloud.tool(writeToken, 'get_board', { boardId: mine })).data;
+    const beforeComments = (await cloud.tool(writeToken, 'list_comments', { boardId: mine })).data;
     const live = cloud.connect(mine, member.cookie);
     await live.synced();
     const before = Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64');
@@ -973,8 +1062,12 @@ describe('a read-only hosted workspace', () => {
       expect(res.error).toBe('read_only');
       expect(res.data.message).toBe('This workspace is read-only. Ask the workspace owner to check billing.');
     }
-    await sleep(100);
-    expect(Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64')).toBe(before);
+    // These following reads observe the state after every refused MCP request; the read-only relay cannot accept a socket marker.
+    const afterBoard = await cloud.tool(writeToken, 'get_board', { boardId: mine });
+    const afterComments = await cloud.tool(writeToken, 'list_comments', { boardId: mine });
+    expect(afterBoard.data).toEqual(beforeBoard);
+    expect(afterComments.data).toEqual(beforeComments);
+    expect(encodeState(live.doc)).toBe(before);
 
     expect((await cloud.tool(writeToken, 'get_board', { boardId: mine })).data).toMatchObject({ writable: false, board: { access: 'read' } });
     expect((await cloud.tool(writeToken, 'list_comments', { boardId: mine })).error).toBeUndefined();

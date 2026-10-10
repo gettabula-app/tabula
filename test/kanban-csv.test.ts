@@ -57,11 +57,11 @@ describe('a CSV cell', () => {
 
 describe('the CSV file', () => {
   it('starts with a byte order mark and the header, and ends every line with \\r\\n', () => {
-    const text = csvText([['K', 'L', 'todo', 1, 'T', '', '', '', '', 0, 'me', '', 'c1']]);
+    const text = csvText([['K', 'L', 'todo', 1, 'T', '', '', 'person', '', '', '', 0, 'me', '', 'c1']]);
     expect(text.startsWith(BOM)).toBe(true);
     const lines = text.slice(1).split('\r\n');
-    expect(lines[0]).toBe('container,lane,stage,position,title,description,owner,due,labels,comments,created_by,updated_at,id');
-    expect(lines[1]).toBe('K,L,todo,1,T,,,,,0,me,,c1');
+    expect(lines[0]).toBe('container,lane,stage,position,title,description,owner,owner_kind,due,link,labels,comments,created_by,updated_at,id');
+    expect(lines[1]).toBe('K,L,todo,1,T,,,person,,,,0,me,,c1');
     expect(lines[2]).toBe('');
     expect(text.replace(/\r\n/g, '')).not.toMatch(/\n/);
   });
@@ -89,8 +89,8 @@ function board() {
   const b = addCard(store, todo, 'Second, with "quotes"', { createdBy: 'bo' })!;
   const c = addCard(store, doing, 'Doing it', { createdBy: 'ada' })!;
   const d = addCard(store, k2.lanes[0].id, 'Elsewhere', { createdBy: 'ada' })!;
-  store.transact(() => {
-    store.update(a, { desc: 'line one\nline two', ownerName: 'Ada', due: '2026-10-12', labels: [bug, ui, 'deleted'] });
+    store.transact(() => {
+    store.update(a, { desc: 'line one\nline two', ownerName: 'Ada', ownerKind: 'agent', due: '2026-10-12', link: 'https://example.com/a,b?q="first"', labels: [bug, ui, 'deleted'] });
   });
   return { store, k1: k1.container.id, k2: k2.container.id, todo, doing, a, b, c, d };
 }
@@ -106,12 +106,12 @@ describe('the card rows', () => {
     }, [s.k1]);
     expect(rows.map((r) => [r[1], r[2], r[3], r[4]])).toEqual([['To do', 'todo', 1, '=cmd|calc'], ['To do', 'todo', 2, 'Second, with "quotes"'], ['Doing', 'doing', 1, 'Doing it']]);
     const [first, second] = rows;
-    expect(first).toEqual(['Kanban', 'To do', 'todo', 1, '=cmd|calc', 'line one\nline two', 'Ada', '2026-10-12', 'Bug; UI, phone', 0, 'ada', '2026-10-09T12:00:00.000Z', s.a]);
-    expect(second[9]).toBe(2);
+    expect(first).toEqual(['Kanban', 'To do', 'todo', 1, '=cmd|calc', 'line one\nline two', 'Ada', 'agent', '2026-10-12', 'https://example.com/a,b?q="first"', 'Bug; UI, phone', 0, 'ada', '2026-10-09T12:00:00.000Z', s.a]);
+    expect(second[11]).toBe(2);
     expect(rows[0]).toHaveLength(CSV_COLUMNS.length);
     // in the file, the formula is guarded and the rest quoted where it needs it (an id can start with - too)
     const text = csvText(rows);
-    expect(text).toContain(`Kanban,To do,todo,1,'=cmd|calc,"line one\nline two",Ada,2026-10-12,"Bug; UI, phone",0,ada,2026-10-09T12:00:00.000Z,${csvCell(s.a)}\r\n`);
+    expect(text).toContain(`Kanban,To do,todo,1,'=cmd|calc,"line one\nline two",Ada,agent,2026-10-12,"https://example.com/a,b?q=""first""","Bug; UI, phone",0,ada,2026-10-09T12:00:00.000Z,${csvCell(s.a)}\r\n`);
     expect(text).toContain('"Second, with ""quotes"""');
   });
 
@@ -126,8 +126,24 @@ describe('the card rows', () => {
       labels: listLabels(s.store),
       commentCount: () => 0,
     }, [s.k1]);
-    expect(rows[0][11]).toBe('');
-    expect(rows[1][11]).toBe('2026-10-09T12:00:00.000Z');
+    expect(rows[0][13]).toBe('');
+    expect(rows[1][13]).toBe('2026-10-09T12:00:00.000Z');
+  });
+
+  it('exports a valid link and leaves owner_kind empty when no owner fields exist', () => {
+    const s = board();
+    s.store.transact(() => s.store.update(s.b, { link: 'https://example.com/a,b', ownerKind: 'agent' }));
+    const rows = cardRows({
+      get: (id) => s.store.get(id) as BaseObj | undefined,
+      containerLayout: (id) => s.store.containerLayout(id),
+      labels: listLabels(s.store),
+      commentCount: () => 0,
+    }, [s.k1]);
+    const row = rows.find((r) => r[14] === s.b)!;
+    expect(row[7]).toBe('');
+    expect(row[9]).toBe('https://example.com/a,b');
+    expect(csvCell(row[9])).toBe('"https://example.com/a,b"');
+    expect(csvText([row])).toContain(',,,"https://example.com/a,b",');
   });
 });
 

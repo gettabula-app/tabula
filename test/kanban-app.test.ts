@@ -203,6 +203,14 @@ describe('what a click hits', () => {
     store.transact(() => store.update(container, { x: 500, y: 40 }));
     expect(app.hit({ x: before.x + 510, y: before.y + 50 })?.id).toBe(ids[0]);
   });
+
+  it('returns before card hit testing when pointerdown starts on the link target', () => {
+    const { app, store, r, ids } = harness();
+    const target = { closest: (selector: string) => selector === '[data-card-link]' ? {} : null };
+    call(app, 'onDown', { ...pointer(r, centre(store, ids[0])), target });
+    expect(app.dragging).toBe(false);
+    expect(app.selection).toEqual([]);
+  });
 });
 
 describe('the kanban tool', () => {

@@ -11,12 +11,13 @@ import { customStickyColors } from './palette';
 /** Transaction origin for edits made on this device; only these are undoable. */
 export const LOCAL = 'local';
 
-export type ChangeListener = (changed: Set<Id>) => void;
+export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => void;
 
 /** Object fields that hold a colour: what is written to them is checked against shared/colors.mjs (TAB-203). */
 export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'textColor']);
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
-const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked']);
+const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
+const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -116,19 +117,29 @@ export class Store {
 
     this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
+      const changedFields = new Map<Id, Set<string>>();
+      const noteFields = (id: Id, fields: Iterable<string>) => {
+        let set = changedFields.get(id);
+        if (!set) changedFields.set(id, (set = new Set()));
+        for (const field of fields) set.add(field);
+      };
       let scanForEmptyGroups = false;
       const createdGroups = new Set<Id>();
       for (const e of events) {
         if (e.target === this.objects) {
           for (const [id, change] of e.changes.keys) {
             changed.add(id);
+            // Root-map changes create or remove an object; treat them as more than a derived height write.
+            noteFields(id, ['*']);
             if (change.action === 'delete') scanForEmptyGroups = true;
             if (change.action === 'add' || change.action === 'update') {
               if (this.objects.get(id)?.get('type') === 'group') createdGroups.add(id);
             }
           }
         } else if (e.path.length > 0) {
-          changed.add(String(e.path[0]));
+          const id = String(e.path[0]);
+          changed.add(id);
+          noteFields(id, [...e.changes.keys.keys()].map(String));
           if (transaction.changed.get(e.target)?.has('parent')) scanForEmptyGroups = true;
         }
       }
@@ -175,7 +186,7 @@ export class Store {
       }
       this.orderDirty = true;
       this.shownCache = null;
-      this.listeners.forEach((l) => l(changed));
+      this.listeners.forEach((l) => l(changed, transaction.origin, changedFields));
     });
 
     // Only deletions and parent changes can empty an existing group. Local Store.remove and update calls handle those
@@ -384,7 +395,7 @@ export class Store {
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(stored)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean'))
+      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean') && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
@@ -398,12 +409,13 @@ export class Store {
     let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
+      const type = (patch as Record<string, unknown>).type ?? m.get('type');
+      if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
       if (raw === undefined) {
         if (m.has(k)) { m.delete(k); wroteField = true; if (k === 'parent') parentChanged = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
-      const type = (patch as Record<string, unknown>).type ?? m.get('type');
       const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;

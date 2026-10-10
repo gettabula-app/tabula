@@ -18,9 +18,23 @@ export type Account = { cookie: string; user: Body; email: string };
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export const until = async (fn: () => boolean | Promise<boolean>, ms = 10_000) => {
+// A relay that dies on its own (not through stop()) must fail the test that was waiting on it, with the relay's own
+// output, instead of letting every wait time out and every later request meet ECONNREFUSED (docs/testing.md).
+const relayGuards = new Set<() => string | null>();
+const relayDied = () => {
+  for (const guard of relayGuards) {
+    const message = guard();
+    if (message) return message;
+  }
+  return null;
+};
+
+// 30 s: a disk save under the relay's debounce can take that long on a shared Windows runner (the test timeout is 60 s).
+export const until = async (fn: () => boolean | Promise<boolean>, ms = 30_000) => {
   const t0 = Date.now();
   while (!(await fn())) {
+    const died = relayDied();
+    if (died) throw new Error(died);
     if (Date.now() - t0 > ms) throw new Error('timed out');
     await sleep(20);
   }
@@ -48,6 +62,11 @@ export function createHarness(options: HarnessOptions = {}) {
   const OWNER = 'owner@example.com';
   let proc: ChildProcess | null = null;
   let output = '';
+  // set when the relay exits without stop() having asked it to
+  let died: string | null = null;
+  let stopping = false;
+  const guard = () => died;
+  relayGuards.add(guard);
   let ipSeq = 0;
   let seq = 0;
 
@@ -59,6 +78,8 @@ export function createHarness(options: HarnessOptions = {}) {
     base = `http://127.0.0.1:${port}`;
     return new Promise<void>((resolve, reject) => {
       output = '';
+      died = null;
+      stopping = false;
       const settings = {
         ...(options.accounts ? { AUTH: 'on', OWNER_EMAIL: OWNER, MAIL: 'file', TRUST_PROXY: '1' } : {}),
         BASE_URL: base,
@@ -83,7 +104,10 @@ export function createHarness(options: HarnessOptions = {}) {
         output += String(d);
       });
       p.on('error', (e) => done(() => reject(e)));
-      p.on('close', (code) => done(() => reject(new Error(`relay exited with ${code}: ${output.slice(0, 1500)}`))));
+      p.on('close', (code, signal) => {
+        if (p === proc && !stopping) died = `relay exited with ${code ?? signal}: ${output.slice(-1500)}`;
+        done(() => reject(new Error(`relay exited with ${code}: ${output.slice(0, 1500)}`)));
+      });
       setTimeout(() => done(() => reject(new Error(`relay did not start: ${output.slice(-400)}`))), RELAY_START_MS);
     });
   };
@@ -91,6 +115,7 @@ export function createHarness(options: HarnessOptions = {}) {
   const stop = () =>
     new Promise<void>((resolve) => {
       const p = proc;
+      stopping = true;
       if (!p || p.exitCode !== null || p.signalCode !== null) return resolve();
       p.once('exit', () => resolve());
       p.kill('SIGTERM');
@@ -98,10 +123,12 @@ export function createHarness(options: HarnessOptions = {}) {
 
   const cleanup = async () => {
     await stop();
+    relayGuards.delete(guard);
     fs.rmSync(dir, { recursive: true, force: true });
   };
 
   async function api(cookie: string | undefined, method: string, urlPath: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
+    if (died) throw new Error(died);
     const res = await fetch(base + urlPath, {
       method,
       headers: {
@@ -250,7 +277,7 @@ export function createHarness(options: HarnessOptions = {}) {
   };
 
   return {
-    get port() { return port; }, dir, get base() { return base; }, OWNER, start, stop, cleanup, output: () => output,
+    get port() { return port; }, dir, get base() { return base; }, OWNER, start, stop, cleanup, output: () => output, relayPid: () => proc?.pid ?? null,
     api, signIn, signInOwner, newTeam, joinTeam, newBoard, share, newToken, rpc, call, tool, payloadOf,
     roomFile, savedDoc, connect, closeProviders, unique, nextIp, mails,
   };

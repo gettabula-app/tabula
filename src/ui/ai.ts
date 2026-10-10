@@ -438,7 +438,10 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
             key.readable ? null : h('div', { class: 'ai-meta ai-warn' }, 'This key cannot be read with the current TABULA_AI_SECRET. Enter it again.'),
             tested!.status),
           h('div', { class: 'btn-row' }, tested!.button, kit.armable('Remove', 'Click again to remove', removeKey)))
-        : kit.emptyLine('No workspace key yet. Without one, only people with a key of their own can run AI features.'),
+        : kit.emptyLine(state.creditsActive
+          ? 'No workspace key yet. People can run AI with their own key or AI credits.'
+          : 'No workspace key yet. Without one, only people with a key of their own can run AI features.'),
+      !key && state.creditsActive ? h('p', { class: 'ai-meta' }, 'AI credits are used until you add a key.') : null,
       state.hasSecret
         ? h('div', { class: 'ai-field' },
           // the same select with its chevron as the Model above: a bare select in this tab reads as a text box

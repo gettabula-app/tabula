@@ -7,6 +7,9 @@ const getCtx = () => {
 };
 
 const cache = new Map<string, number>();
+const graphemeSegmenter = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('und', { granularity: 'grapheme' })
+  : null;
 
 export function fontCss(slug: string | undefined, size: number, weight = 400, italic = false) {
   return `${italic ? 'italic ' : ''}${weight} ${size}px ${fontFamily(slug)}`;
@@ -48,9 +51,12 @@ export function wrap(text: string, font: string, maxWidth: number): string[] {
       const candidate = line + word;
       if (measure(candidate.trimEnd(), font) <= max || !line.trim()) {
         if (measure(word, font) > max && !line.trim()) {
-          // break an overlong word
+          // Emoji sequences can span several code points but must stay on one line.
           let chunk = '';
-          for (const ch of word) {
+          const parts = graphemeSegmenter
+            ? Array.from(graphemeSegmenter.segment(word), ({ segment }) => segment)
+            : Array.from(word);
+          for (const ch of parts) {
             if (measure(chunk + ch, font) > max && chunk) {
               out.push(chunk);
               chunk = ch;

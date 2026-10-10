@@ -1,5 +1,6 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isConnectable } from './connectable';
 import { isContainerType, validLabel } from '../shared/containers';
 import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
@@ -13,7 +14,7 @@ import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { ancestorsOf, isGroup } from './groups';
 import { PIN_R, pinCenter, pinPath, type PinView } from './pins';
-import type { GapMark, Guide } from './guides';
+import type { GapMark, Guide, SizeMark } from './guides';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const SELECTION_WIRE = 'var(--wire)';
@@ -110,9 +111,9 @@ const GUIDE = 'var(--guide, #D6247F)';
 /** A number for an attribute: guides and gaps are measured from stored geometry, which may not be numbers (TAB-203). */
 const fin = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-/** Bracket over a gap: a line with an end tick on each side and the distance on a canvas-coloured pill. */
-function gapMarkup(raw: GapMark, px: (v: number) => number): string {
-  const g = { ...raw, from: fin(raw.from), to: fin(raw.to), at: fin(raw.at), label: escapeXml(String(raw.label)) };
+/** Gap or size bracket with end ticks and a canvas-coloured label pill. */
+function gapMarkup(raw: GapMark | SizeMark, px: (v: number) => number, prefix = ''): string {
+  const g = { ...raw, from: fin(raw.from), to: fin(raw.to), at: fin(raw.at), label: escapeXml(`${prefix}${String(raw.label)}`) };
   const horizontal = g.axis === 'x';
   const mid = (g.from + g.to) / 2;
   const tick = px(4);
@@ -126,6 +127,11 @@ function gapMarkup(raw: GapMark, px: (v: number) => number): string {
   return `<g><path d="M${a.x} ${a.y}L${b.x} ${b.y}${ticks}" stroke="${GUIDE}" stroke-width="${px(1)}" fill="none"/>` +
     `<rect x="${c.x - w / 2}" y="${c.y - h / 2}" width="${w}" height="${h}" rx="${px(8)}" fill="var(--canvas, #EEF1F4)" stroke="${GUIDE}" stroke-width="${px(1)}"/>` +
     `<text x="${c.x}" y="${c.y + px(4)}" font-size="${px(11)}" font-weight="600" fill="var(--canvas-ink, #18212B)" text-anchor="middle" font-family="Switzer, system-ui, sans-serif">${g.label}</text></g>`;
+}
+
+/** Equal-size brackets use a leading equals sign to distinguish them from gap distances. */
+function sizeMarkup(raw: SizeMark, px: (v: number) => number): string {
+  return gapMarkup(raw, px, '= ');
 }
 
 export const MIN_ZOOM = 0.02;
@@ -777,7 +783,7 @@ export class Renderer {
     // connection anchors on hover
     if (ov.anchorsFor) {
       const o = get(ov.anchorsFor);
-      if (isBox(o) && o.type !== 'path') {
+      if (isConnectable(o)) {
         for (const side of ['top', 'right', 'bottom', 'left'] as const) {
           const a = sideAnchor(o, side);
           const hot = ov.anchorHot === `${o.id}:${side}`;
@@ -788,7 +794,9 @@ export class Renderer {
     }
 
     // snap guides and equal-gap brackets
-    for (const g of ov.guides) out += g.kind === 'line' ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>` : gapMarkup(g, px);
+    for (const g of ov.guides) out += g.kind === 'line'
+      ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>`
+      : g.kind === 'gap' ? gapMarkup(g, px) : sizeMarkup(g, px);
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;

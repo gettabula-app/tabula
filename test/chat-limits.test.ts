@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_LIMITS, createChatLimits, createWindow } from '../server/chat-limits.mjs';
+import { CHAT_LIMITS, chatLimitsFromTestEnv, createChatLimits, createWindow } from '../server/chat-limits.mjs';
 
 // docs/chat.md, "Limits": sliding windows in memory. The clock is a number the test moves. The 429 the routes answer
 // with is checked over the relay in chat-api.test.ts.
@@ -61,6 +61,15 @@ describe('a sliding window', () => {
 });
 
 describe('the chat limits', () => {
+  it('only lengthens the burst window for the chat API test relay', () => {
+    expect(chatLimitsFromTestEnv({})).toBe(CHAT_LIMITS);
+    expect(chatLimitsFromTestEnv({ NODE_ENV: 'test', TABULA_TEST_CHAT_BURST_WINDOW_MS: '600000' }).postBurst).toEqual({ max: 5, windowMs: 600_000 });
+    expect(() => chatLimitsFromTestEnv({ NODE_ENV: 'production', TABULA_TEST_CHAT_BURST_WINDOW_MS: '600000' })).toThrow(/only available when NODE_ENV=test/);
+    for (const value of ['1999', '3600001', '1.5', 'nope']) {
+      expect(() => chatLimitsFromTestEnv({ NODE_ENV: 'test', TABULA_TEST_CHAT_BURST_WINDOW_MS: value })).toThrow(/must be an integer/);
+    }
+  });
+
   it('allow a burst of five messages, then ask the sender to wait', () => {
     const { now } = clock();
     const limits = createChatLimits({ now });

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { KANBAN, layoutContainer } from '../shared/containers';
 import {
-  ADD_ROW, addRow, cardHeight, dropIndexAt, dropLine, dueChip, emptyBox, initials, keyboardMove, laneCards, laneCount,
+  ADD_ROW, EMPTY_FILTER, addRow, cardHeight, cardMatches, dropIndexAt, dropLine, dueChip, emptyBox, initials, keyboardMove, laneCards, laneCount,
   laneRegionAt, laneTargetAt, localToday, lowDetail, moveAnnouncement,
-  cardFillFromSticky, isDueDate, joinCardText, ownerKey, ownerOptions, readingOrder, splitStickyText, stickyFillFromCard,
+  cardFillFromSticky, isDueDate, joinCardText, ownerKey, ownerOptions, readingOrder, splitStickyText, stickyFillFromCard, type KanbanFilter,
 } from '../src/ui/kanban-logic';
 import { STICKY_COLORS } from '../src/palette';
 
@@ -175,10 +175,23 @@ describe('due chips', () => {
     expect(dueChip(undefined, today, false)).toBeNull();
     expect(dueChip('2026-02-30', today, false)).toBeNull();
     expect(dueChip('tomorrow', today, false)).toBeNull();
+    expect(dueChip('2201-01-01', today, false)).toBeNull();
   });
 
   it('reads the viewer local date', () => {
     expect(localToday(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
+
+describe('the Overdue filter', () => {
+  const overdue: KanbanFilter = { ...EMPTY_FILTER, due: ['overdue'] };
+  const ctx = { viewer: { id: 'u1', name: 'Ada', accounts: true }, today: '2026-10-09' };
+
+  it('matches dates before the viewer’s local today and excludes done lanes', () => {
+    expect(cardMatches({ due: '2026-10-08' }, overdue, { ...ctx, done: false })).toBe(true);
+    expect(cardMatches({ due: '2026-10-09' }, overdue, { ...ctx, done: false })).toBe(false);
+    expect(cardMatches({ due: '2026-10-10' }, overdue, { ...ctx, done: false })).toBe(false);
+    expect(cardMatches({ due: '2026-10-08' }, overdue, { ...ctx, done: true })).toBe(false);
   });
 });
 
@@ -251,6 +264,10 @@ describe('due dates', () => {
   it('accepts only real calendar dates', () => {
     expect(isDueDate('2026-01-16')).toBe(true);
     expect(isDueDate('2024-02-29')).toBe(true);
+    expect(isDueDate('1900-01-01')).toBe(true);
+    expect(isDueDate('2200-12-31')).toBe(true);
+    expect(isDueDate('1899-12-31')).toBe(false);
+    expect(isDueDate('2201-01-01')).toBe(false);
     expect(isDueDate('2026-02-29')).toBe(false);
     expect(isDueDate('2026-1-16')).toBe(false);
     expect(isDueDate('2026-01-16T00:00')).toBe(false);
@@ -263,7 +280,7 @@ describe('owner picker', () => {
     const opts = ownerOptions(
       { id: 'me', name: 'Visual QA' },
       [{ id: 'u2', name: 'Marta Ruiz' }, { id: 'me', name: 'Visual QA' }],
-      [{ ownerId: 'u3', ownerName: 'Ana Novak' }, { ownerName: 'Lea Brandt' }, { ownerName: 'lea brandt' }, { ownerName: 'Marta Ruiz' }, { ownerId: 'u2', ownerName: 'Old name' }],
+      [{ ownerId: 'u3', ownerName: 'Ana Novak' }, { ownerName: 'Lea Brandt' }, { ownerName: 'lea brandt' }, { ownerName: 'Marta Ruiz' }, { ownerId: 'u2', ownerName: 'Old name' }, { ownerId: 'token-1', ownerName: 'Build bot', ownerKind: 'agent' }],
     );
     expect(opts.map((o) => [o.key, o.name])).toEqual([
       ['id:me', 'Visual QA'], ['id:u3', 'Ana Novak'], ['name:Lea Brandt', 'Lea Brandt'], ['id:u2', 'Marta Ruiz'],
@@ -273,6 +290,8 @@ describe('owner picker', () => {
   it('names the current owner by id, else by name', () => {
     expect(ownerKey({ ownerId: 'u1', ownerName: 'A' })).toBe('id:u1');
     expect(ownerKey({ ownerName: ' A ' })).toBe('name:A');
+    expect(ownerKey({ ownerId: 'u1', ownerName: 'Build agent', ownerKind: 'agent' })).toBe('agent:id:u1');
+    expect(ownerKey({ ownerName: ' Build agent ', ownerKind: 'agent' })).toBe('agent:name:Build agent');
     expect(ownerKey({})).toBe('');
   });
 });

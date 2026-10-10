@@ -16,14 +16,16 @@ If you can only view a board, you cannot add one. Copying and pasting a kanban, 
 - Select **+ Add card** at the bottom of a lane, or double-click empty space in a lane.
 - Type a title. `Enter` adds the card and starts the next one. `Esc` stops.
 
-A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. Deleting a card works like deleting any other object.
+A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. People have a square initials badge; agents have an octagonal one. A link icon opens the card's HTTP or HTTPS link in a new tab. Deleting a card works like deleting any other object.
 
 ## Open a card
 
 Double-click a card, select it and press `Enter`, or choose **Open** in the quick-action bar. The card dialog has:
 
 - **Title** and **Description**.
-- **Owner**: you, the people on the board now, anyone already named on it, or a name you type.
+- **Owner**: you, the people on the board now, anyone already named on it, or a name you type. A card has one owner.
+- **Owner type**: person or agent. Old cards without an owner type are people. An agent owner is an AI tool that you have connected (see below); its badge has a distinct octagonal shape.
+- **Link**: one web address that goes with the card, for example the ticket it came from. Once saved, **Open link** opens it in a new tab.
 - **Due date**, with the date picker of your browser.
 - **Labels**, picked from the board's labels.
 - **Comment**, **Turn into sticky** and **Delete**.
@@ -31,6 +33,20 @@ Double-click a card, select it and press `Enter`, or choose **Open** in the quic
 Each field saves when you leave it, and each is one step in Undo. On a phone the dialog is a sheet at the bottom. Commenters see the card read-only and can still comment. Viewers cannot open it.
 
 ![The card dialog with title, description, owner, due date and labels](images/kanban-card-dialog.png)
+
+## Links
+
+Put the address of a page on a card, for example the issue it came from, a document or a design. Only web addresses starting with `http://` or `https://` are accepted, up to 2,000 characters long, with no spaces and no user name or password in them. Anything else, such as `javascript:` or a file address, is refused and nothing is saved. **Open link** opens the page in a new tab. In a list, each row with a link has its own **Open link**. Clear the field to remove the link.
+
+## Owners
+
+Choose **Owner** in the card dialog, or **Owner** in the quick-action bar. You can pick yourself or a person who is on the board now or was named on it before, or type a name for someone who has no account; the name is kept even if the person later leaves. A card has one owner, and **Mine** in the filter shows the cards you own.
+
+A card owned by an AI tool has an eight-sided badge instead of a round one, in the card, the dialog and the list. The card dialog cannot make a card agent-owned or rename that owner: it is tied to the access token that took the card. Opening and saving such a card in the dialog keeps the agent as its owner; it is never turned into a person by saving. The same goes for a typed name with no account: saving the card does not replace it with you. See [Access tokens and AI tools](ai-tools.md#kanban-cards-from-an-ai-tool).
+
+## Due dates and Overdue
+
+Set a **Due date** and the card shows it as "Today", "Tomorrow", a weekday and date, or "3 days ago". A card is **Overdue** when its date is before today and its lane is not a **done** lane, and it is then shown in a warning colour with the word as well as the colour. A card in a done lane is never overdue. "Today" is the date on your own device, so two people in different time zones can disagree for a few hours around midnight. Use **Due** in the filter to see overdue cards, cards due today or this week.
 
 ## Labels
 
@@ -50,6 +66,10 @@ Choose **Labels** in the card dialog, or in the quick-action bar or properties p
 - **With the keyboard**, select a card and press `Alt` with an arrow key: up or down moves it within its lane, left or right moves it to the next lane. A ring and the word "Moving" show it, and a screen reader hears where it went, for example "Moved to Doing, position 2 of 5".
 - Drop a card away from the kanban and it becomes a loose card on the board.
 - Viewers and commenters can look but cannot drag cards.
+
+## Connectors
+
+You can connect a card to a card, or a card to any other object, with a connector; it follows the card when the card moves to another lane. A lane, and the kanban itself, take no connectors: they show no connection dots and a connector dragged onto them stays loose.
 
 ## Lanes
 
@@ -78,7 +98,7 @@ The **⋯** in the kanban's header (editors) offers **Rename**, **Add lane**, **
 
 ## Filter the cards
 
-Select **Filter** in the kanban's header, or in the quick-action bar, to show only the cards you care about. You can combine:
+Select **Filter** in the kanban's header, or in the quick-action bar, to show only the cards you care about. The popover has quick chips for **Mine** and **Overdue**. Overdue means before today in your local time zone and skips cards in a **Done** lane. You can combine these with:
 
 - **Mine**: cards you own.
 - **Labels**: cards with any of the labels you pick.
@@ -107,13 +127,13 @@ On a touch screen, a card on the board lifts after you press and hold it for abo
 
 ## Kanban templates
 
-The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, due dates and links to trackers are never part of a template.
+The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, owner types, due dates, card links and tracker links are never part of a template.
 
-When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, due dates and tracker links.
+When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, owner types, due dates and card or tracker links.
 
 ## Export cards as CSV
 
-Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's **⋯** menu, or **Export cards (CSV)** in the quick-action bar. You get one row per card, for all kanbans on the board or just the selected ones. The columns are the kanban, lane, stage, position, title, description, owner, due date, labels, comment count, who created it, when it was last updated and its id. The file opens correctly in Excel. Any cell that starts with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet shows it as text and never runs it. Kanbans hidden in the Layers panel are left out.
+Choose **Cards as CSV** in the board menu, **Export cards (CSV)** in a kanban's **⋯** menu, or **Export cards (CSV)** in the quick-action bar. You get one row per card, for all kanbans on the board or just the selected ones. The columns are the kanban, lane, stage, position, title, description, owner, owner kind, due date, link, labels, comment count, who created it, when it was last updated and its id. An absent owner kind is exported as **person**. The file opens correctly in Excel. Any cell that starts with `=`, `+`, `-` or `@` gets an apostrophe in front, so a spreadsheet shows it as text and never runs it. Kanbans hidden in the Layers panel are left out.
 
 ## Older versions
 

@@ -44,7 +44,7 @@ Select an item and a small bar appears next to it. Depending on what you selecte
 
 ### Board menu
 
-The **Menu** button at the top right holds board-level actions: **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first, and it includes **Your AI key** when your administrator allows personal keys. See [Boards and the home screen](boards.md).
+The **Menu** button at the top right holds board-level actions: **User guide** (first in the list), **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first, and it includes **Your AI key** when your administrator allows personal keys. See [Boards and the home screen](boards.md).
 
 ## Move around
 
@@ -126,6 +126,8 @@ On Mac, use `Cmd` where the table says `Ctrl`. The board menu lists every shortc
 | `Ctrl+]` | Bring forward one step (`Cmd+]` on Mac) |
 | `Ctrl+[` | Send backward one step (`Cmd+[` on Mac) |
 | `[` | Send to back |
+| `Shift+H` | Flip the selection horizontally |
+| `Shift+V` | Flip the selection vertically |
 | `Ctrl+Z` | Undo |
 | `Shift+Ctrl+Z` or `Ctrl+Y` | Redo |
 

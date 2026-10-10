@@ -14,8 +14,8 @@ import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 
 // Shared by the POST /api/ai/run tests (docs/ai.md, "Running a feature"). The API runs in this process behind a real
-// HTTP server. A fake provider takes the place of the network, the rooms are plain Y.Docs, and the clock of the limits
-// is the test's own: nothing here leaves the machine or holds a real key.
+// HTTP server. Usually a fake provider takes the place of the network; proxy tests may use the Anthropic SDK against a
+// loopback fake. The rooms are plain Y.Docs, and the clock of the limits is test-owned.
 
 export const SECRET = crypto.randomBytes(32).toString('base64');
 export const newKey = () => `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
@@ -73,7 +73,7 @@ export function put(doc: Y.Doc, id: string, fields: Record<string, unknown>) {
 
 export type Role = 'owner' | 'admin' | 'member' | 'guest';
 
-export async function setup(options: { timeoutMs?: number; env?: Record<string, string> } = {}) {
+export async function setup(options: { timeoutMs?: number; env?: Record<string, string>; aiCredits?: boolean; useRealProvider?: boolean } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-run-'));
   const config = loadConfig(
     { TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: dir, TABULA_MAIL: 'file', TABULA_AI_SECRET: SECRET, ...options.env },
@@ -85,6 +85,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
 
   const state = {
     readOnly: false,
+    aiCredits: options.aiCredits === true,
     t: 1_000_000,
     script: null as Script | null,
     // by default: one note, and a frame when the feature asks for one
@@ -125,7 +126,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
     };
   };
   const live = createLiveRuns({ now: () => state.t });
-  const cloud = { limits: () => ({ readOnly: state.readOnly, seatLimit: null, banner: null }), workspaceView: () => ({}), seatsAvailable: () => true, tokenOk: () => false };
+  const cloud = { limits: () => ({ readOnly: state.readOnly, aiCredits: state.aiCredits, seatLimit: null, banner: null }), workspaceView: () => ({}), seatsAvailable: () => true, tokenOk: () => false };
 
   const api = createApi({
     directory,
@@ -136,7 +137,7 @@ export async function setup(options: { timeoutMs?: number; env?: Record<string, 
     mailer: { send: async () => {} },
     cloud: cloud as any,
     ai: {
-      createProvider,
+      ...(options.useRealProvider ? {} : { createProvider }),
       log: (...args: unknown[]) => logged.push(args),
       canWriteRoom,
       readRoom: (name: string, fn: (doc: Y.Doc) => unknown) => {

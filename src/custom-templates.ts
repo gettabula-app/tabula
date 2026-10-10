@@ -68,6 +68,7 @@ export function remapObjects(
   return objs.map((o) => {
     const c = structuredClone(o) as Obj;
     c.id = idMap.get(o.id)!;
+    c.parent = c.parent ? idMap.get(c.parent) : undefined;
     if (isConnector(c)) {
       const fix = (e: End): End => {
         if (e.kind === 'free') return { kind: 'free', x: e.x + offset.x, y: e.y + offset.y };
@@ -81,7 +82,6 @@ export function remapObjects(
     } else {
       c.x += offset.x;
       c.y += offset.y;
-      c.parent = c.parent ? idMap.get(c.parent) : undefined;
       delete c.privateStep;
       // a rank names its parent (docs/kanban.md, Ranks): it follows the new id, and goes with a parent left behind
       if (c.rank !== undefined) {
@@ -278,6 +278,10 @@ export function validateContent(c: unknown): TemplateContent {
     if (typeof o.type !== 'string' || !TYPE_NAMES.has(o.type)) fail(`Object "${o.id}" has an unknown type.`);
     if (typeof o.z !== 'string') fail(`Object "${o.id}" has no z order.`);
     // the board's one colour grammar (shared/colors.mjs, TAB-203), as the server checks it
+    for (const key of ['flipX', 'flipY']) {
+      if (o[key] !== undefined && typeof o[key] !== 'boolean') fail(`Object "${o.id}" has an invalid ${key}; it must be a boolean.`);
+    }
+    if (o.type === 'connector' && (o.flipX !== undefined || o.flipY !== undefined)) fail(`Connector "${o.id}" cannot have flip flags.`);
     for (const [key, values] of Object.entries(OBJ_ENUMS)) {
       if (o[key] !== undefined && !(typeof o[key] === 'string' && values.has(o[key]))) fail(`Object "${o.id}" has an unknown ${key}.`);
     }
@@ -318,6 +322,8 @@ export function validateContent(c: unknown): TemplateContent {
     if (isContainerType(o.type as string)) {
       // rebuilt from what is accepted: the common fields and the checked kanban ones
       const out: Record<string, unknown> = { id: o.id, type: o.type, x: o.x, y: o.y, w: o.w, h: o.h, rotation: isNum(o.rotation) ? o.rotation : 0, z: o.z };
+      if (typeof o.flipX === 'boolean') out.flipX = o.flipX;
+      if (typeof o.flipY === 'boolean') out.flipY = o.flipY;
       if (o.parent !== undefined) out.parent = o.parent;
       if (typeof o.font === 'string') out.font = o.font;
       return Object.assign(out, templateKanbanFields(o, `Object ${i + 1}`, kanbanCtx));

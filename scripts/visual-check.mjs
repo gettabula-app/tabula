@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1440];
+const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1280, 1440];
 // VISUAL_HEIGHT=390 npm run visual ... forces one window height for every width (a short landscape phone: --widths 844)
 const heightFor = (width) => Number(process.env.VISUAL_HEIGHT) || (width <= 500 ? 844 : 800);
 const BOARD_ID = 'visual-seed';
@@ -32,13 +32,13 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, vote-setup, vote-running, vote-running-touch, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
-                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
+                     kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -60,12 +60,78 @@ const list = (value) => value.split(',').map((v) => v.trim()).filter(Boolean);
 
 function readThemes() {
   const source = fs.readFileSync(path.join(root, 'src', 'themes.ts'), 'utf8');
-  const themes = [...source.matchAll(/id: '([\w-]+)',\s*name: '[^']*',\s*scheme: '(light|dark)'/g)].map(([, id, scheme]) => ({ id, scheme }));
+  const themes = [...source.matchAll(/id: '([\w-]+)',\s*name: '([^']*)',\s*scheme: '(light|dark)'/g)].map(([, id, name, scheme]) => ({ id, name, scheme }));
   if (!themes.length) throw new Error('could not read the themes from src/themes.ts');
   return themes;
 }
 
+function readHeads() {
+  const source = fs.readFileSync(path.join(root, 'src', 'shapes.ts'), 'utf8');
+  const start = source.indexOf('export const HEADS:');
+  const heads = [...source.slice(start).matchAll(/\{ head: '([\w-]+)', label: '([^']*)' \}/g)].map(([, head, label]) => ({ head, label }));
+  if (!heads.length) throw new Error('could not read connector heads from src/shapes.ts');
+  return heads;
+}
+
 // ---------------------------------------------------------------- states
+
+async function openEmojiPickerForNote(env) {
+  await openSeedBoard(env);
+  await env.page.evaluate(() => window.__board.editor.start('seed-note-1'));
+  await env.page.locator('.edit-bar.show').waitFor();
+  await env.page.waitForFunction(() => {
+    const textarea = document.querySelector('.text-editor');
+    return textarea && document.activeElement === textarea && textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length;
+  });
+  await env.page.locator('.text-editor').press('End');
+  await env.page.getByRole('button', { name: 'Add emoji' }).click();
+  await env.page.locator('.emoji-pop').waitFor();
+}
+
+/** The soft keyboard shrinks the visual viewport (not the window): the bar and the picker must stay in what is left, clear of the top bars. */
+async function emojiKeyboard(env, noteTop) {
+  const page = env.page;
+  await openSeedBoard(env);
+  await page.evaluate(() => {
+    window.__kb = 0;
+    const real = window.visualViewport;
+    const vv = new Proxy(real, { get(t, k) { if (k === 'height') return window.innerHeight - window.__kb; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+    Object.defineProperty(window, 'visualViewport', { get: () => vv, configurable: true });
+    window.__board.editor.start('seed-note-1');
+  });
+  await page.locator('.edit-bar.show').waitFor();
+  if (noteTop !== null) {
+    // pan so the note sits near the top of the screen, as on a phone where the board is zoomed on its first notes
+    await page.evaluate((top) => {
+      const app = window.__board;
+      const now = document.querySelector('.text-editor').getBoundingClientRect().top;
+      app.r.setCamera({ y: app.r.cam.y + (now - top) / app.zoom });
+    }, noteTop);
+    await page.waitForTimeout(200);
+  }
+  await page.evaluate(() => { window.__kb = 300; window.visualViewport.dispatchEvent(new Event('resize')); });
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Add emoji' }).click();
+  await page.locator('.emoji-pop').waitFor();
+  await page.waitForTimeout(300);
+  const result = await page.evaluate(() => {
+    const visible = innerHeight - window.__kb;
+    const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const bar = box('.edit-bar.show'), pop = box('.emoji-pop'), search = document.querySelector('.emoji-pop [aria-label="Search emoji"]').getBoundingClientRect();
+    const failures = [];
+    if (bar.bottom > visible) failures.push(`the Add emoji bar ends at ${Math.round(bar.bottom)}, under the keyboard (${visible} visible)`);
+    if (pop.bottom > visible) failures.push(`the picker ends at ${Math.round(pop.bottom)}, under the keyboard (${visible} visible)`);
+    if (search.bottom > visible || search.height < 40) failures.push('the search field is under the keyboard or squeezed');
+    if (pop.height < 200) failures.push(`the picker is only ${Math.round(pop.height)} px tall`);
+    for (const sel of ['.top-left', '.top-right']) {
+      const r = document.querySelector(sel)?.getBoundingClientRect();
+      if (r && bar.left < r.right && bar.right > r.left && bar.top < r.bottom && bar.bottom > r.top) failures.push(`the Add emoji bar is under ${sel}`);
+    }
+    return { failures, visible, bar: { top: bar.top, bottom: bar.bottom }, pop: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+  });
+  console.log(`emoji-keyboard ${JSON.stringify(result)}`);
+  if (result.failures.length) throw new Error(`emoji-keyboard: ${JSON.stringify(result.failures)}`);
+}
 
 // Pending Fontshare stylesheets and the fonts that follow them are the only thing that changes the picture after load.
 const settle = (page) =>
@@ -193,7 +259,7 @@ async function openSeedBoard({ page, base }, query = '?debug') {
 
 /**
  * Hands the page a message of the relay's AI runs (6 is MSG_AI_RUNS), through the handler the page registered for it, so the
- * live layer draws another person's runs without a model or a second browser. Needs `?debug&aibar`.
+ * live layer draws another person's runs without a model or a second browser. Needs `?debug`.
  */
 async function handAiRuns(page, runs) {
   await page.evaluate((list) => {
@@ -840,6 +906,61 @@ async function assertTouchTargets(page, stage) {
   console.log(`touch-targets ${stage}: ${report.measured} targets at least 44×44px; text fields at least 16px`);
 }
 
+/** The compact phone vote bar is ONE row, nothing sticks out of it, and the instructions stay folded away. */
+async function voteBarOneRow(env, label) {
+  await env.page.locator('.flowbar.vote-compact').waitFor();
+  await env.page.getByRole('button', { name: 'Remove dots' }).click();
+  await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
+  await env.page.locator('.toast.show').waitFor({ state: 'hidden' }).catch(() => {});
+  const rows = await env.page.evaluate(() => {
+    const bar = document.querySelector('.flowbar.vote-compact');
+    const b = bar.getBoundingClientRect();
+    const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
+    return { n: boxes.length, tops: new Set(boxes.map((x) => Math.round(x.top / 4))).size, out: boxes.filter((x) => x.right > b.right + 0.5 || x.left < b.left - 0.5).map((x) => x.name), boxes: boxes.map((x) => `${x.name}:${Math.round(x.left)}-${Math.round(x.right)}`), barW: b.width };
+  });
+  console.log(label, JSON.stringify(rows));
+  if (rows.tops !== 1) throw new Error(`${label}: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+  if (rows.out.length) throw new Error(`${label}: controls stick out of the vote bar: ${rows.out.join(', ')}`);
+}
+
+async function checkStepsOverlap(env, name) {
+    const result = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.show');
+      const pop = document.querySelector('.popover.wide');
+      const next = [...(bar?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.trim().startsWith('Next step'));
+      if (!bar || !pop || !next) return { failures: ['session bar, Steps popover or Next step button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const b = box(bar), p = box(pop), n = box(next);
+      const intersects = p.left < b.right && p.right > b.left && p.top < b.bottom && p.bottom > b.top;
+      const hit = document.elementFromPoint((n.left + n.right) / 2, (n.top + n.bottom) / 2);
+      const failures = [];
+      if (intersects) failures.push(`Steps popover intersects the session bar (${Math.round(p.top)}-${Math.round(p.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)})`);
+      if (hit !== next && !next.contains(hit)) failures.push(`Next step centre hits ${hit?.getAttribute('aria-label') ?? hit?.textContent?.trim() ?? hit?.tagName ?? 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, popover: { top: p.top, bottom: p.bottom }, bar: { top: b.top, bottom: b.bottom }, hit: hit?.textContent?.trim() };
+    });
+    console.log(`${name} ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`${name}: ${JSON.stringify(result.failures)}`);
+}
+
+// Press-kit shots: the seeded boards with the QA names swapped for roles, so nothing reads as a person or a localhost (business/press/press-kit.md)
+async function pressRoles(page) {
+  await page.evaluate(() => {
+    const swaps = [[/Visual QA/g, 'Facilitator'], [/VISUAL QA/g, 'FACILITATOR'], [/http:\/\/127\.0\.0\.1:\d+/g, 'https://sample.gettabula.app'], [/^\s*VQ\s*$/i, 'FA'], [/^\s*V\s*$/i, 'F']];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      let t = n.nodeValue;
+      for (const [re, to] of swaps) t = t.replace(re, to);
+      if (t !== n.nodeValue) n.nodeValue = t;
+    }
+    // a start message is not a feature of the product
+    document.querySelector('.toast')?.classList.remove('show');
+  });
+}
+async function pressZoom(page, factor) {
+  // a phone shows the retro frames at about 3x the fitted size, or the notes are unreadable
+  await page.evaluate(([f, phone]) => window.__board.zoomBy(phone && innerWidth < 500 ? f * 2 : f), [factor, true]);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -848,6 +969,241 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'resize-guides-size'(env) {
+    await openSeedBoard(env);
+    const { page } = env;
+    const drag = await page.evaluate(() => {
+      const app = window.__board;
+      app.r.setCamera({ zoom: 0.5 });
+      const vp = app.r.viewport();
+      const size = app.r.size();
+      const startPx = Math.max(96, (size.w - 190) / 2);
+      const x = vp.x + startPx / app.zoom;
+      const y = vp.y + 180 / app.zoom;
+      const moving = app.makeObj('sticky', { x, y, w: 100, h: 90 }, { text: 'Resize me', fontSize: 16, fill: '#FFE16B' });
+      const reference = app.makeObj('sticky', { x: x + 250, y, w: 130, h: 90 }, { text: 'Match width', fontSize: 16, fill: '#BCE88C' });
+      moving.id = 'visual-resize-size-target';
+      reference.id = 'visual-resize-size-reference';
+      delete moving.parent;
+      delete reference.parent;
+      [moving.z, reference.z] = app.store.topZs(2);
+      app.store.transact(() => {
+        app.store.create(moving);
+        app.store.create(reference);
+      });
+      app.setSelection([moving.id]);
+      const svg = app.r.svg.getBoundingClientRect();
+      const handle = app.r.toScreen({ x: moving.x + moving.w, y: moving.y + moving.h / 2 });
+      return {
+        start: { x: svg.left + handle.x, y: svg.top + handle.y },
+        end: { x: svg.left + handle.x + 14, y: svg.top + handle.y },
+      };
+    });
+    if (process.env.VISUAL_BROWSER === 'firefox' && page.viewportSize().width < 600) {
+      // Firefox's touch emulation turns Playwright's mouse into mouse events with no pointer events, so feed the pointer drag directly.
+      await page.evaluate(({ start, end }) => {
+        const svg = window.__board.r.svg;
+        svg.setPointerCapture = () => {};
+        const fire = (type, pt) => svg.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: pt.x, clientY: pt.y,
+        }));
+        fire('pointermove', start);
+        fire('pointerdown', start);
+        for (let i = 1; i <= 5; i++) fire('pointermove', { x: start.x + (end.x - start.x) * i / 5, y: start.y });
+      }, drag);
+    } else {
+      await page.mouse.move(drag.start.x, drag.start.y);
+      await page.mouse.down();
+      await page.mouse.move(drag.end.x, drag.end.y, { steps: 5 });
+    }
+    await page.waitForFunction(() => {
+      const width = window.__board.store.getPlaced('visual-resize-size-target')?.w;
+      return width !== undefined && width !== 100;
+    });
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const moving = app.store.getPlaced('visual-resize-size-target');
+      const reference = app.store.getPlaced('visual-resize-size-reference');
+      return {
+        width: moving?.w,
+        referenceWidth: reference?.w,
+        sizeMark: app.r.overlay.guides.some((guide) => guide.kind === 'size' && guide.axis === 'x'),
+      };
+    });
+    if (result.width === undefined || result.referenceWidth === undefined || Math.abs(result.width - result.referenceWidth) > 1e-9) {
+      throw new Error(`resize-guides-size: dragged width ${result.width} did not match reference width ${result.referenceWidth}`);
+    }
+    if (!result.sizeMark) throw new Error('resize-guides-size: overlay has no width size mark during the drag');
+    return { noPark: true };
+  },
+  async 'uml-arrows-themes'({ page, base }) {
+    await openSeedBoard({ page, base });
+    await page.getByRole('button', { name: 'UML', exact: true }).click();
+    await page.locator('.drawer.show[data-tab="uml"]').waitFor();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    const themes = readThemes();
+    for (const theme of themes) {
+      const row = page.getByRole('radio', { name: theme.name, exact: true });
+      await row.click();
+      await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
+      const result = await page.evaluate(() => {
+        const parse = (value) => {
+          const m = /^rgba?\(([^)]+)\)$/.exec(value);
+          if (!m) return null;
+          const parts = m[1].split(',').map((v) => Number.parseFloat(v.trim()));
+          return [parts[0], parts[1], parts[2], parts.length > 3 ? parts[3] : 1];
+        };
+        const blend = (front, back) => {
+          const a = front[3] + back[3] * (1 - front[3]);
+          if (!a) return [0, 0, 0, 0];
+          return [0, 1, 2].map((i) => (front[i] * front[3] + back[i] * back[3] * (1 - front[3])) / a).concat(a);
+        };
+        const luminance = (rgba) => {
+          const channels = rgba.slice(0, 3).map((v) => {
+            const c = v / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+        const contrast = (a, b) => {
+          const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+          return (light + 0.05) / (dark + 0.05);
+        };
+        const backgroundFor = (el) => {
+          const chain = [];
+          for (let node = el.parentElement; node; node = node.parentElement) chain.push(node);
+          let bg = [255, 255, 255, 1];
+          for (const node of chain.reverse()) {
+            const style = getComputedStyle(node);
+            const color = parse(style.backgroundColor);
+            if (color) {
+              color[3] *= Number.parseFloat(style.opacity || '1');
+              bg = blend(color, bg);
+            }
+          }
+          return bg;
+        };
+        const failures = [];
+        let checked = 0;
+        for (const row of document.querySelectorAll('.rel-row')) {
+          const label = row.querySelector('span')?.textContent?.trim() || '(unknown relation)';
+          const svg = row.querySelector('svg');
+          if (!svg) { failures.push(`${label}: missing svg`); continue; }
+          for (const shape of svg.querySelectorAll('path, line, polyline, polygon, circle, rect, ellipse')) {
+            const style = getComputedStyle(shape);
+            const bg = backgroundFor(shape);
+            const opacity = Number.parseFloat(style.opacity || '1');
+            for (const prop of ['stroke', 'fill']) {
+              const value = style[prop];
+              if (!value || value === 'none' || value === 'transparent') continue;
+              const color = parse(value);
+              if (!color) continue;
+              color[3] *= opacity;
+              const visible = blend(color, bg);
+              const ratio = contrast(visible, bg);
+              // Hollow arrowheads intentionally paint the tray colour into their interior; that's negative space,
+              // not glyph ink. Every visible stroke and every contrasting fill must still meet 3:1.
+              if (prop === 'fill' && ratio < 1.01) continue;
+              checked++;
+              if (ratio < 3) failures.push(`${label} ${prop} ${value} against rgb(${bg.slice(0, 3).map(Math.round).join(', ')}) (${ratio.toFixed(2)}:1)`);
+            }
+          }
+        }
+        return { failures, checked, relations: document.querySelectorAll('.rel-row').length };
+      });
+      console.log(`uml-arrows-themes ${theme.id} ${JSON.stringify(result)}`);
+      if (result.relations !== 13) throw new Error(`uml-arrows-themes: expected 13 relation glyphs in ${theme.id}, got ${result.relations}`);
+      if (result.failures.length) throw new Error(`uml-arrows-themes ${theme.id}: ${result.failures.slice(0, 6).join('; ')}`);
+    }
+    await page.keyboard.press('Escape');
+  },
+  async 'connector-heads'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.setSelection(['seed-conn-1']));
+    const more = page.getByRole('button', { name: 'More properties' });
+    await more.waitFor();
+    await more.evaluate((el) => el.click());
+    await page.locator('.props.show').waitFor();
+
+    const button = page.locator('.props.show [role="combobox"][aria-label="End arrowhead"]');
+    await button.waitFor();
+    const closedSvg = button.locator('.combo-option-icon svg');
+    await closedSvg.waitFor();
+    const closedPreview = await closedSvg.evaluate((svg) => {
+      return { width: Number(svg.getAttribute('width')), height: Number(svg.getAttribute('height')), ariaHidden: svg.getAttribute('aria-hidden') };
+    });
+    if (closedPreview.width <= 0 || closedPreview.height <= 0 || closedPreview.ariaHidden !== 'true') {
+      throw new Error(`connector-heads: closed value preview is not visible: ${JSON.stringify(closedPreview)}`);
+    }
+
+    await button.click();
+    const list = page.locator('.combo-list[aria-label="End arrowhead"]');
+    await list.waitFor();
+    const rows = await list.locator('.combo-opt').evaluateAll((options) => options.map((option) => {
+      const preview = option.querySelector('.combo-option-icon svg');
+      const box = preview?.getBoundingClientRect();
+      const rowBox = option.getBoundingClientRect();
+      const style = preview ? getComputedStyle(preview) : null;
+      return {
+        label: option.lastElementChild?.textContent?.trim() ?? '',
+        visible: !!preview && style?.display !== 'none' && style?.visibility !== 'hidden' && Number.parseFloat(style?.opacity || '1') > 0,
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+        ariaHidden: preview?.getAttribute('aria-hidden') ?? null,
+        rowHeight: rowBox.height,
+      };
+    }));
+    const expected = readHeads().map(({ label }) => label);
+    const failures = [];
+    if (rows.map(({ label }) => label).join('\0') !== expected.join('\0')) failures.push(`options ${rows.map(({ label }) => label).join(', ')} do not match HEADS`);
+    for (const row of rows) {
+      if (!row.visible || row.width <= 0 || row.height <= 0 || row.ariaHidden !== 'true') failures.push(`${row.label}: invalid preview ${JSON.stringify(row)}`);
+      if (page.viewportSize().width <= 600 && row.rowHeight < 44) failures.push(`${row.label}: row is ${row.rowHeight}px, below 44px`);
+    }
+    if (rows.length !== expected.length) failures.push(`expected ${expected.length} options, got ${rows.length}`);
+    const result = { viewport: page.viewportSize(), closedPreview, options: rows.length, rows, failures };
+    console.log(`connector-heads ${JSON.stringify(result)}`);
+    if (failures.length) throw new Error(`connector-heads: ${failures.slice(0, 6).join('; ')}`);
+    return { noPark: true };
+  },
+  async 'esc-trays'(env) {
+    await openSeedBoard(env);
+    const page = env.page;
+    const trays = [
+      { name: 'Shapes', open: () => page.getByRole('button', { name: 'Shapes', exact: true }).click(), focus: '.rail [aria-label="Shapes"]' },
+      { name: 'UML', open: () => page.getByRole('button', { name: 'UML', exact: true }).click(), focus: '.rail [data-drawer="uml"]' },
+      { name: 'Icons', open: () => page.getByRole('button', { name: 'Icons', exact: true }).click(), focus: '.rail [data-drawer="icons"]' },
+      { name: 'Stickers', open: () => page.getByRole('button', { name: 'Stickers', exact: true }).click(), focus: '.rail [data-drawer="stickers"]' },
+      { name: 'Templates', open: () => page.getByRole('button', { name: 'Templates and team exercises', exact: true }).click(), focus: '.rail [data-drawer="templates"]' },
+      { name: 'Layers', open: () => page.getByRole('button', { name: 'Layers', exact: true }).click(), focus: '.rail [data-drawer="layers"]' },
+      { name: 'Comments', open: () => page.locator('.comment-toggle').click(), focus: '.comment-toggle' },
+    ];
+    if (!(await page.locator('.chat-toggle').count())) throw new Error('esc-trays: Chat button is missing in accounts mode');
+    trays.push({ name: 'Chat', open: () => page.locator('.chat-toggle').click(), focus: '.chat-toggle' });
+    for (const tray of trays) {
+      await tray.open();
+      await page.locator(tray.name === 'Comments' || tray.name === 'Chat' ? '.side-tray.show' : '.drawer.show').waitFor();
+      await page.keyboard.press('Escape');
+      const result = await page.evaluate((focusSelector) => {
+        const open = document.querySelector('.drawer.show, .side-tray.show');
+        const focus = document.querySelector(focusSelector);
+        return { open: open?.getAttribute('aria-label') ?? open?.dataset.tab ?? null, focusReturned: document.activeElement === focus };
+      }, tray.focus);
+      if (result.open) throw new Error(`esc-trays: ${tray.name} tray is still shown (${result.open})`);
+      if (!result.focusReturned) throw new Error(`esc-trays: focus did not return to the ${tray.name} button`);
+    }
+  },
+  async 'join-short-code'({ page, base }) {
+    // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
+    await page.context().clearCookies();
+    await page.goto(`${base}/join`);
+    const code = page.getByLabel('Join code');
+    await code.fill('ABC');
+    await page.getByLabel('Display name').fill('Visual guest');
+    await page.getByRole('button', { name: 'Join board' }).click();
+    await page.getByText('That code looks too short', { exact: true }).waitFor();
   },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
@@ -860,6 +1216,144 @@ const STATES = {
     await STATES['quickbar-multi'](env);
     await env.page.locator('.quickbar.show').evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await env.page.waitForTimeout(150);
+  },
+  async 'flip-menu'(env) {
+    const { page, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const objects = [
+        { id: 'flip-menu-arrow', type: 'shape', kind: 'arrow-right', x: 20, y: 20, w: 140, h: 90, rotation: Math.PI / 6, text: 'Arrow', z: 'z1', fill: '#DCEBFF' },
+        { id: 'flip-menu-image', type: 'image', x: 190, y: 20, w: 120, h: 90, rotation: 0, asset: '00'.repeat(32), mime: 'image/png', z: 'z2' },
+        { id: 'flip-menu-icon', type: 'icon', x: 340, y: 20, w: 90, h: 90, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"/>', z: 'z3' },
+      ];
+      store.transact(() => objects.forEach((o) => {
+        if (!store.get(o.id)) store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+      }));
+      app.setSelection(objects.map((o) => o.id));
+      const bounds = app.r.contentBounds(objects.map((o) => o.id));
+      if (bounds) app.r.fit(bounds, 120, 1.15);
+    });
+    await page.locator('.quickbar.show').waitFor();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.locator('.qb-action-menu [role="menuitem"]').first().waitFor();
+    const quickItems = await page.locator('.qb-action-menu [role="menuitem"]').allTextContents();
+    if (!quickItems.some((x) => x.includes('Flip horizontal')) || !quickItems.some((x) => x.includes('Flip vertical'))) {
+      throw new Error(`flip-menu: quickbar entries missing: ${JSON.stringify(quickItems)}`);
+    }
+    if (width <= 500) {
+      const heights = await page.locator('.qb-action-menu [role="menuitem"]').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+      if (heights.some((height) => height < 44)) throw new Error(`flip-menu: quickbar phone rows are below 44px: ${heights.join(', ')}`);
+    }
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    await page.mouse.move(1, 1);
+    await page.screenshot({ path: path.join(outDir, `flip-menu-quickbar-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    await page.keyboard.press('Escape');
+    const at = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('flip-menu-arrow');
+      return app.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+    });
+    await page.mouse.click(at.x, at.y, { button: 'right' });
+    await page.locator('.ctx-menu [role="menuitem"]').first().waitFor();
+    const contextItems = await page.locator('.ctx-menu [role="menuitem"]').allTextContents();
+    if (!contextItems.some((x) => x.includes('Flip horizontal')) || !contextItems.some((x) => x.includes('Flip vertical'))) {
+      throw new Error(`flip-menu: context entries missing: ${JSON.stringify(contextItems)}`);
+    }
+    if (width <= 500) {
+      const heights = await page.locator('.ctx-menu [role="menuitem"]').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+      if (heights.some((height) => height < 44)) throw new Error(`flip-menu: context phone rows are below 44px: ${heights.join(', ')}`);
+    }
+    await page.screenshot({ path: path.join(outDir, `flip-menu-context-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+  },
+  async 'flip-visual'(env) {
+    const { page, outDir, theme, width } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      const at = Date.now();
+      const objects = [
+        { id: 'flip-arrow', type: 'shape', kind: 'arrow-right', x: -200, y: 0, w: 150, h: 90, rotation: Math.PI / 10, fill: '#DCEBFF', text: 'Start', z: 'z1' },
+        { id: 'flip-callout', type: 'shape', kind: 'callout-round', x: -10, y: -120, w: 170, h: 110, rotation: 0, fill: '#FFF2C2', text: 'Still readable', z: 'z2' },
+        { id: 'flip-triangle', type: 'shape', kind: 'triangle', x: 150, y: 0, w: 120, h: 110, rotation: 0, fill: '#DDF5E8', text: 'Turn', z: 'z3' },
+        { id: 'flip-path', type: 'path', x: -150, y: 150, w: 130, h: 70, rotation: 0, points: [0, 55, 30, 10, 65, 48, 95, 18, 130, 60], stroke: '#D64545', strokeWidth: 5, z: 'z4' },
+        { id: 'flip-icon', type: 'icon', x: 30, y: 155, w: 80, h: 80, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path fill="currentColor" d="M3 3h8v18H3zM13 3h8v8h-8zM13 13h8v8h-8z"/>', z: 'z5' },
+        { id: 'flip-connector', type: 'connector', from: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, to: { kind: 'bound', id: 'flip-triangle', anchor: 'left' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'z6' },
+        { id: 'flip-arrow-check', type: 'connector', from: { kind: 'free', x: 0, y: 45 }, to: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, route: 'straight', startHead: 'none', endHead: 'none', z: 'z7' },
+        { id: 'flip-callout-check', type: 'connector', from: { kind: 'bound', id: 'flip-callout', anchor: 'top' }, to: { kind: 'free', x: 180, y: -70 }, route: 'curved', startHead: 'none', endHead: 'none', z: 'z8' },
+      ];
+      store.transact(() => {
+        for (const o of objects) {
+          const current = store.get(o.id);
+          if (current) store.update(o.id, { ...o, flipX: undefined, flipY: undefined, createdBy: undefined, updatedAt: at });
+          else store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
+        }
+      });
+      app.setSelection(objects.filter((o) => o.type !== 'connector').map((o) => o.id));
+      const bounds = app.r.contentBounds(objects.filter((o) => o.type !== 'connector').map((o) => o.id));
+      if (bounds) app.r.fit(bounds, 32, 1.15);
+    });
+    await page.waitForTimeout(200);
+    const engine = process.env.VISUAL_BROWSER || 'chromium';
+    await page.screenshot({ path: path.join(outDir, `flip-visual-before-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Flip horizontal' }).click();
+    await page.waitForFunction(() => window.__board.store.get('flip-arrow')?.flipX === true && window.__board.store.get('flip-icon')?.flipX === true);
+    await page.evaluate(() => window.__board.setSelection(['flip-callout']));
+    await page.locator('.quickbar.show').waitFor();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Flip vertical' }).click();
+    await page.waitForFunction(() => window.__board.store.get('flip-callout')?.flipY === true);
+    await page.waitForTimeout(120);
+    const state = await page.evaluate(() => {
+      const app = window.__board;
+      const elbow = app.store.get('flip-connector');
+      const arrow = app.store.get('flip-arrow-check');
+      const callout = app.store.get('flip-callout-check');
+      const screenPoint = (path, atEnd) => {
+        const length = path.getTotalLength();
+        const point = path.getPointAtLength(atEnd ? length : 0);
+        return new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM());
+      };
+      const outlineDistance = (shapeId, point) => {
+        const outline = document.querySelector(`.objects [data-id="${shapeId}"] path`);
+        const length = outline?.getTotalLength() ?? 0;
+        if (!outline || !length) return Infinity;
+        const count = Math.max(300, Math.ceil(length * 2));
+        let closest = Infinity;
+        for (let i = 0; i <= count; i++) {
+          const p = outline.getPointAtLength((length * i) / count);
+          const screen = new DOMPoint(p.x, p.y).matrixTransform(outline.getScreenCTM());
+          closest = Math.min(closest, Math.hypot(screen.x - point.x, screen.y - point.y));
+        }
+        return closest;
+      };
+      const routePath = (id) => document.querySelector(`.objects [data-id="${id}"] path`);
+      const elbowRoute = routePath('flip-connector');
+      const arrowRoute = routePath('flip-arrow-check');
+      const calloutRoute = routePath('flip-callout-check');
+      const outlineErrors = {
+        arrowElbow: outlineDistance('flip-arrow', screenPoint(elbowRoute, false)),
+        arrowStraight: outlineDistance('flip-arrow', screenPoint(arrowRoute, true)),
+        calloutCurved: outlineDistance('flip-callout', screenPoint(calloutRoute, false)),
+      };
+      return {
+        flags: ['flip-arrow', 'flip-callout', 'flip-triangle', 'flip-path', 'flip-icon'].map((id) => app.store.get(id)?.flipX),
+        verticalCallout: app.store.get('flip-callout')?.flipY,
+        ends: [elbow.from.anchor, elbow.to.anchor, arrow.to.anchor, callout.from.anchor],
+        outlineErrors,
+        text: app.store.get('flip-callout')?.text,
+      };
+    });
+    if (state.flags.some((flag) => flag !== true) || state.verticalCallout !== true || state.ends.join(',') !== 'left,right,right,top' ||
+        Object.values(state.outlineErrors).some((distance) => distance > 1.5) || state.text !== 'Still readable') {
+      throw new Error(`flip-visual: incorrect result: ${JSON.stringify(state)}`);
+    }
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: path.join(outDir, `flip-visual-after-${engine}-${theme}-${width}.png`), animations: 'disabled', caret: 'hide' });
   },
   async 'touch-targets'(env) {
     const { page } = env;
@@ -969,13 +1463,13 @@ const STATES = {
   // TAB-253: a group selected and the Comments tray open on a phone: the quick bar, the properties panel and the group chips all wait
   async 'group-selected-tray'(env) {
     await STATES['group-selected-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
   async 'group-entered-tray'(env) {
     await STATES['group-entered-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
@@ -988,7 +1482,7 @@ const STATES = {
   },
   async 'group-multi-menu-tray'(env) {
     await STATES['group-multi'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await longPressMember(env.page, 'seed-note-1');
   },
@@ -1134,18 +1628,17 @@ const STATES = {
   },
   async 'vote-running-touch'(env) {
     await STATES['vote-running'](env);
-    await env.page.locator('.flowbar.vote-compact').waitFor();
-    await env.page.getByRole('button', { name: 'Remove dots' }).click();
-    await env.page.waitForFunction(() => document.querySelector('.remove-dots-toggle')?.getAttribute('aria-pressed') === 'true');
-    await env.page.locator('.toast.show').waitFor({ state: 'hidden' });
-    // the compact bar is ONE row: every visible control sits on the same line (the instructions stay folded away)
-    const rows = await env.page.evaluate(() => {
-      const bar = document.querySelector('.flowbar.vote-compact');
-      const boxes = [...bar.children].filter((el) => getComputedStyle(el).display !== 'none' && !el.hidden).map((el) => ({ name: el.className, ...el.getBoundingClientRect().toJSON() }));
-      return { n: boxes.length, tops: new Set(boxes.map((b) => Math.round(b.top / 4))).size, boxes: boxes.map((b) => `${b.name}:${Math.round(b.left)}-${Math.round(b.right)}`), barW: bar.getBoundingClientRect().width };
+    await voteBarOneRow(env, 'vote-running-touch');
+  },
+  // the same bar when the vote is one step of a session: Next step takes the place of Finish and must still fit the row
+  async 'vote-running-touch-steps'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vs1', title: 'Vote', instructions: 'Click any note or shape to add a dot.', mode: 'vote' }, { id: 'vs2', title: 'Discuss', instructions: '', mode: 'discuss' }]);
+      f.goto(0);
     });
-    console.log('vote-running-touch', JSON.stringify(rows));
-    if (rows.tops !== 1) throw new Error(`vote-running-touch: the compact vote bar wraps to ${rows.tops} rows (${rows.boxes.join(' ')})`);
+    await voteBarOneRow(env, 'vote-running-touch-steps');
   },
   // phones only: the properties panel folded to its title row (TAB-187); on wider windows the fold button is not shown
   async 'board-selected-folded'(env) {
@@ -1180,13 +1673,13 @@ const STATES = {
   },
   async comments(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().waitFor();
   },
   // TAB-231: one comment opened as a thread, its author named once
   async 'comment-thread'(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().click();
     await env.page.locator('.comment-msg').first().waitFor();
   },
@@ -1304,6 +1797,307 @@ const STATES = {
     await env.page.getByRole('button', { name: 'All steps' }).click();
     await env.page.locator('.step-list').waitFor();
   },
+  // QA's Firefox finding: the rail scrolls in a short window with no sign that it does. The edge with more behind it must fade (data-more-y plus a mask)
+  async 'rail-scroll-cue'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(async () => {
+      const tools = document.querySelector('.rail-tools');
+      if (!tools) return { failures: ['.rail-tools is missing'] };
+      const max = tools.scrollHeight - tools.clientHeight;
+      if (max <= 1) return { failures: [], scrolls: false, viewport: `${innerWidth}x${innerHeight}` };
+      const failures = [];
+      const mask = () => getComputedStyle(tools).maskImage || getComputedStyle(tools).webkitMaskImage || 'none';
+      const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      tools.scrollTop = 0; await settle();
+      if (tools.dataset.moreY !== 'down' || mask() === 'none') failures.push(`at the top: data-more-y is ${tools.dataset.moreY ?? 'missing'}, mask ${mask().slice(0, 20)}`);
+      tools.scrollTop = Math.floor(max / 2); await settle();
+      if (tools.dataset.moreY !== 'both' || mask() === 'none') failures.push(`in the middle: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = max; await settle();
+      if (tools.dataset.moreY !== 'up' || mask() === 'none') failures.push(`at the bottom: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = 0; await settle();
+      return { failures, scrolls: true, max, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
+  },
+  // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
+  async 'top-bars-320'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(() => {
+      const left = document.querySelector('.top-left');
+      const right = document.querySelector('.top-right');
+      const avatar = right?.querySelector('.people .avatar');
+      const share = right?.querySelector('.btn.primary');
+      const failures = [];
+      if (!left || !right || !avatar || !share) return { failures: ['board bars, first avatar or Share button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const l = box(left), r = box(right);
+      if (l.left < 0 || l.right > innerWidth || l.top < 0 || l.bottom > innerHeight) failures.push(`left bar is outside the viewport: ${JSON.stringify(l.toJSON())}`);
+      if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) failures.push(`right bar is outside the viewport: ${JSON.stringify(r.toJSON())}`);
+      if (l.left < r.right && l.right > r.left && l.top < r.bottom && l.bottom > r.top) failures.push('top-left and top-right bars intersect');
+      const rail = document.querySelector('.rail');
+      if (rail) {
+        const k = box(rail);
+        if (r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top) failures.push(`the tool rail (${Math.round(k.left)}-${Math.round(k.right)}) covers the right bar (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      for (const [name, target] of [['first avatar', avatar], ['Share', share]]) {
+        const rect = box(target);
+        const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+        if (rect.width < 44 || rect.height < 44) failures.push(`${name} target is ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
+        if (hit !== target && !target.contains(hit)) failures.push(`${name} centre hits ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, left: l.toJSON(), right: r.toJSON() };
+    });
+    console.log(`top-bars-320 ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
+  async 'press-board'(env) {
+    await openSeedBoard(env);
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-poll'(env) {
+    await STATES['vote-running'](env);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await pressZoom(env.page, 1.5);
+    const spots = await env.page.evaluate(() => {
+      const app = window.__board;
+      const at = { 'Reviews were fast': 3, 'Clear sprint goal': 1, 'Too many meetings': 4, 'Unclear ownership': 2, 'Flaky tests': 1 };
+      const box = app.r.svg.getBoundingClientRect();
+      return [...app.store.cache.values()].filter((o) => at[o.text]).map((o) => {
+        const c = app.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+        return { x: c.x + box.left, y: c.y + box.top, times: at[o.text] };
+      });
+    });
+    if (spots.length < 5) throw new Error(`press-poll: found ${spots.length} of the 5 notes`);
+    for (const { x, y, times } of spots) for (let i = 0; i < times; i++) await env.page.mouse.click(x, y);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await env.page.mouse.move(1, 1);
+    await pressRoles(env.page);
+  },
+  async 'press-timer'(env) {
+    await STATES['flow-write'](env);
+    await env.page.evaluate(() => window.__board.flow.startTimer());
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-comments'(env) {
+    await STATES['comment-thread'](env);
+    await pressRoles(env.page);
+  },
+  async 'press-admin'(env) {
+    await STATES.admin(env);
+    await pressRoles(env.page);
+  },
+  // sticky notes with emoji: the sequences that break when text is cut between code points (ZWJ families, skin tones, flags, keycaps), and a row too long for the note
+  async 'emoji-text'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const set = (id, text) => app.store.transact(() => app.store.update(id, { text }));
+      set('seed-note-1', 'Ship it \u{1F680} \u{1F44D}\u{1F3FD}');
+      set('seed-note-2', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} family \u{1F1F8}\u{1F1EA} 1\uFE0F\u20E3');
+      set('seed-note-3', '\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}1\uFE0F\u20E3\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}');
+      app.zoomToFit();
+      app.zoomBy(2.4);
+    });
+    await settle(env.page);
+  },
+  async 'emoji-picker'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const result = await page.evaluate(() => {
+      const bar = document.querySelector('.edit-bar.show').getBoundingClientRect();
+      const button = document.querySelector('.edit-emoji');
+      const buttonBox = button.getBoundingClientRect();
+      const picker = document.querySelector('.emoji-pop');
+      const pickerBox = picker.getBoundingClientRect();
+      const noteBox = document.querySelector('.text-editor').getBoundingClientRect();
+      const search = picker.querySelector('[aria-label="Search emoji"]');
+      const buttons = [...document.querySelectorAll('.edit-emoji, .emoji-cell')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { width: box.width, height: box.height, label: el.getAttribute('aria-label') };
+      });
+      const hit = document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
+      const outside = (box) => box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
+      return {
+        pickerHeight: pickerBox.height, overNote: !(pickerBox.right <= noteBox.left || pickerBox.left >= noteBox.right || pickerBox.bottom <= noteBox.top || pickerBox.top >= noteBox.bottom),
+        barOutside: outside(bar), pickerOutside: outside(pickerBox), pickerWidth: pickerBox.width, windowWidth: innerWidth,
+        small: buttons.filter((box) => box.width < 44 || box.height < 44), hitButton: hit === button, searchFocused: document.activeElement === search,
+      };
+    });
+    if (result.barOutside) throw new Error('emoji-picker: edit bar is outside the window');
+    if (result.pickerOutside) throw new Error('emoji-picker: picker is outside the window');
+    if (result.overNote) throw new Error('emoji-picker: the picker covers the note being edited');
+    if (result.pickerHeight < 220) throw new Error(`emoji-picker: the picker is only ${Math.round(result.pickerHeight)} px tall, under four rows`);
+    if (result.pickerWidth > result.windowWidth) throw new Error(`emoji-picker: picker width ${result.pickerWidth} exceeds ${result.windowWidth}`);
+    if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
+    if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
+    if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  async 'emoji-keyboard'(env) {
+    await emojiKeyboard(env, null);
+  },
+  // a note high on the screen: neither side has room for the panel, so it docks above the keyboard
+  async 'emoji-keyboard-high'(env) {
+    await emojiKeyboard(env, 126);
+  },
+  // a finger on Add emoji: WebKit drops the click of a tap whose pointerdown was cancelled, so the picker never opened
+  async 'emoji-tap'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.locator('.edit-bar.show').waitFor();
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.text-editor'));
+    const box = await page.locator('.edit-emoji').boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    const opened = await page.locator('.emoji-pop').waitFor({ timeout: 3000 }).then(() => true, () => false);
+    const active = await page.evaluate(() => window.__board.editor.active);
+    console.log(`emoji-tap ${JSON.stringify({ opened, active })}`);
+    if (!opened) throw new Error('emoji-tap: a touch tap on Add emoji did not open the picker');
+    if (!active) throw new Error('emoji-tap: the tap ended the edit');
+  },
+  async 'emoji-insert'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    await page.keyboard.type('rock');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && window.__board.store.get('seed-note-1').text.endsWith('🚀'));
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const textarea = document.querySelector('.text-editor');
+      let recent = [];
+      try {
+        recent = JSON.parse(localStorage.getItem('tabula.emoji.recent') || '[]');
+      } catch {
+        recent = [];
+      }
+      return {
+        text: app.store.get('seed-note-1').text, active: app.editor.active, focused: document.activeElement === textarea,
+        caretAtEnd: textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length,
+        pickerOpen: !!document.querySelector('.emoji-pop'), recentFirst: recent[0],
+      };
+    });
+    if (!result.text.endsWith('🚀')) throw new Error('emoji-insert: sticky text does not end with the matching rocket emoji');
+    if (!result.active) throw new Error('emoji-insert: editing ended after insertion');
+    if (!result.focused) throw new Error('emoji-insert: focus did not return to the textarea');
+    if (!result.caretAtEnd) throw new Error('emoji-insert: textarea caret is not after the emoji');
+    if (result.pickerOpen) throw new Error('emoji-insert: picker stayed open');
+    if (result.recentFirst !== '🚀') throw new Error('emoji-insert: recent emoji did not move to the front');
+  },
+  async 'emoji-esc'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const before = await page.evaluate(() => window.__board.store.get('seed-note-1').text);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && document.activeElement === document.querySelector('.text-editor'));
+    const afterPickerEscape = await page.evaluate(() => ({
+      active: window.__board.editor.active, focused: document.activeElement === document.querySelector('.text-editor'),
+      text: window.__board.store.get('seed-note-1').text,
+    }));
+    if (!afterPickerEscape.active || !afterPickerEscape.focused || afterPickerEscape.text !== before) {
+      throw new Error(`emoji-esc: first Escape changed the edit state: ${JSON.stringify(afterPickerEscape)}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__board.editor.active);
+    const afterEditorEscape = await page.evaluate(() => ({ active: window.__board.editor.active, text: window.__board.store.get('seed-note-1').text }));
+    if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
+  },
+  // frame size presets: pick one in the inspector, type an exact size, undo
+  async 'frame-size'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const b = window.__board;
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 1, fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.setSelection(['k-frame']);
+    });
+    const size = () => page.evaluate(() => { const o = window.__board.store.get('k-frame'); return `${o.w}x${o.h}`; });
+    const combo = page.getByRole('combobox', { name: 'Frame size' });
+    if (!await combo.count()) await page.getByRole('button', { name: 'More properties' }).click().catch(() => {});
+    await combo.waitFor({ timeout: 5000 }).catch(async (e) => { console.log(await page.evaluate(() => JSON.stringify({ sel: window.__board.selected().map((o) => o.type), props: document.querySelector('.props')?.className, text: document.querySelector('.props')?.innerText.slice(0, 200) }))); throw e; });
+    const before = await size();
+    await combo.click();
+    for (const [label, want] of [['A4 portrait', '794x1123'], ['1920 × 1080', '1920x1080'], ['390 × 844', '390x844'], ['Letter landscape', '1056x816']]) {
+      if (!await combo.getAttribute('aria-expanded').then((v) => v === 'true')) await combo.click();
+      const opt = page.getByRole('option', { name: label, exact: true });
+      await opt.scrollIntoViewIfNeeded();
+      const box = await opt.boundingBox();
+      // Firefox at phone width sends a mouse click at the list to the board's quick bar behind it (no pointerdown reaches the list), so there the option is activated by its click event
+      if (process.env.VISUAL_BROWSER === 'firefox' && page.viewportSize().width < 600) await opt.dispatchEvent('click');
+      else await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(200);
+      const got = await size();
+      if (got !== want) throw new Error(`frame-size: ${label} gave ${got}, wanted ${want}`);
+      await page.waitForFunction(([l]) => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes(l)), [label], { timeout: 3000 })
+        .catch(async () => { throw new Error(`frame-size: the box shows "${await combo.textContent()}" after choosing ${label}`); });
+    }
+    const width = page.getByRole('spinbutton', { name: 'Frame width' });
+    await width.fill('700');
+    await width.press('Enter');
+    await page.waitForFunction(() => window.__board.store.get('k-frame').w === 700);
+    await page.waitForFunction(() => [...document.querySelectorAll('[role=combobox]')].some((c) => c.getAttribute('aria-label') === 'Frame size' && c.textContent.includes('Custom')), null, { timeout: 3000 })
+      .catch(() => { throw new Error('frame-size: a typed width should read Custom'); });
+    await page.waitForFunction(() => !window.__board.styleEdit.active, null, { timeout: 3000 });
+    // the number field's Enter and blur both commit, which can leave one empty undo step above the real one
+    let undone = false;
+    for (let i = 0; i < 3 && !undone; i++) {
+      await page.evaluate(() => window.__board.store.undo.undo());
+      undone = (await page.evaluate(() => window.__board.store.get('k-frame').w)) !== 700;
+    }
+    if (!undone) throw new Error('frame-size: undo did not take back the typed width');
+    await page.evaluate(() => window.__board.zoomToFit?.());
+    console.log(`frame-size before ${before}, now ${await size()}`);
+  },
+  async 'steps-toast'(env) {
+    await STATES['flow-steps-overlap-edit'](env);
+    const result = await env.page.evaluate(async () => {
+      document.body.append(Object.assign(document.createElement('div'), { className: 'toast show', textContent: 'Dot vote started on 2 items, no limit. Click one to add a dot.' }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const toast = document.querySelector('.toast.show').getBoundingClientRect();
+      const pop = document.querySelector('.popover.wide').getBoundingClientRect();
+      const bar = document.querySelector('.flowbar.show').getBoundingClientRect();
+      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const failures = [];
+      if (hits(toast, pop)) failures.push(`the toast (${Math.round(toast.top)}-${Math.round(toast.bottom)}) covers the Steps list (${Math.round(pop.top)}-${Math.round(pop.bottom)})`);
+      if (hits(toast, bar)) failures.push('the toast covers the session bar');
+      return { failures, toast: { top: toast.top, bottom: toast.bottom }, popover: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`steps-toast ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`steps-toast: ${JSON.stringify(result.failures)}`);
+  },
+  async 'flow-steps-overlap'(env) {
+    await STATES['flow-steps'](env);
+    await checkStepsOverlap(env, 'flow-steps-overlap');
+  },
+  // a long session: the Steps list is tall, so a popover that is only placed above the bar runs down over it (the reported case)
+  // QA's WebKit case: Add step with its form open and the new step set to Dot vote makes the Steps list taller still
+  async 'flow-steps-overlap-edit'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps([{ id: 'vc-q', title: 'Quick poll', mode: 'write', instructions: 'Answer.', durationSec: 120 }]);
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await env.page.getByRole('button', { name: 'Add step' }).click();
+    const select = env.page.getByLabel('Step 2 mode');
+    await select.selectOption('vote');
+    await env.page.waitForTimeout(300);
+    await checkStepsOverlap(env, 'flow-steps-overlap-edit');
+  },
+  async 'flow-steps-overlap-many'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const f = window.__board.flow;
+      f.setSteps(Array.from({ length: 10 }, (_, i) => ({ id: `vc-m${i}`, title: `Step ${i + 1}: a longer title for the list`, mode: i % 3 === 1 ? 'vote' : 'write', instructions: 'Do the thing together.', durationSec: 180, votesPerPerson: i % 3 === 1 ? 3 : undefined })));
+      f.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await checkStepsOverlap(env, 'flow-steps-overlap-many');
+  },
   async 'chat-session'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
@@ -1320,6 +2114,32 @@ const STATES = {
     await STATES['flow-poll'](env);
     await env.page.locator('.chat-toggle').click();
     await env.page.getByRole('combobox', { name: 'Message' }).waitFor();
+  },
+  async 'chat-poll-overlap'(env) {
+    await resetChatMarker(env);
+    await STATES['flow-poll'](env);
+    await env.page.locator('.chat-toggle').click();
+    await env.page.locator('.side-tray.show .chat-composer').waitFor();
+    const result = await env.page.evaluate(() => {
+      const tray = document.querySelector('.side-tray.show');
+      const composer = tray?.querySelector('.chat-composer');
+      const surfaces = [...document.querySelectorAll('.poll-card:not([hidden]), .flowbar.show')];
+      if (!tray || !composer) return { failures: ['Chat tray or composer is missing'] };
+      const c = composer.getBoundingClientRect();
+      const hit = document.elementFromPoint((c.left + c.right) / 2, (c.top + c.bottom) / 2);
+      const failures = [];
+      const checks = surfaces.map((el) => {
+        const r = el.getBoundingClientRect();
+        const intersects = r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top;
+        const visible = getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+        if (visible && intersects) failures.push(`${el.className} visibly intersects the chat composer`);
+        return { name: el.className, intersects, visible };
+      });
+      if (!composer.contains(hit)) failures.push(`composer centre hits ${hit?.className || hit?.tagName || 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, surfaces: checks, hit: hit?.className || hit?.tagName };
+    });
+    console.log(`chat-poll-overlap ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`chat-poll-overlap: ${JSON.stringify(result.failures)}`);
   },
   async 'chat-object'(env) {
     await openSeedChat(env);
@@ -1357,6 +2177,19 @@ const STATES = {
   async templates({ page, base }) {
     await page.goto(`${base}/#/templates`);
     await page.locator('.tpl-card').first().waitFor();
+  },
+  async 'templates-esc'(env) {
+    await openSeedBoard(env);
+    const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
+    await button.click();
+    await env.page.locator('.drawer.show').waitFor();
+    await env.page.keyboard.press('Escape');
+    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    const result = await env.page.evaluate(() => ({
+      open: !!document.querySelector('.drawer.show'),
+      focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
+    }));
+    if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);
   },
   async settings(env) {
     await openSeedBoard(env);
@@ -1434,6 +2267,78 @@ const STATES = {
     await env.page.evaluate(() => document.activeElement?.blur());
     await settle(env.page);
   },
+  // v5: a card with an overdue date, an agent owner and a long link, in the phone card dialog and in the list sheet (360 and 390)
+  async 'kanban-card-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide-for-teams-moving-sprint-boards?ref=board-card&utm=press' }));
+      app.setSelection(['k-c2']);
+      app.openCardDialog('k-c2');
+    });
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const link = document.querySelector('.k-open-link');
+      const dlg = link?.closest('[role="dialog"]');
+      const mark = dlg?.querySelector('.k-owner-kind-btn[data-owner-kind="agent"]');
+      if (!dlg || !link) return { failures: ['card dialog or its Open link is missing'] };
+      const d = dlg.getBoundingClientRect();
+      if (d.left < -0.5 || d.right > innerWidth + 0.5) failures.push(`the dialog is wider than the window (${Math.round(d.left)}-${Math.round(d.right)})`);
+      if (dlg.scrollWidth > dlg.clientWidth + 1) failures.push(`the dialog scrolls sideways (${dlg.scrollWidth} > ${dlg.clientWidth})`);
+      if (link.hidden || link.getClientRects().length === 0) failures.push('Open link is not shown');
+      else {
+        link.scrollIntoView({ block: 'center' });
+        const r = link.getBoundingClientRect();
+        const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+        if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+        if (r.right > innerWidth || r.left < 0) failures.push(`Open link is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      if (mark) {
+        const m = mark.getBoundingClientRect();
+        if (m.right > innerWidth || m.left < 0) failures.push('the Agent owner button is outside the window');
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-card-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-card-meta: ${JSON.stringify(result.failures)}`);
+  },
+  async 'kanban-sheet-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide?ref=board-card' }));
+    });
+    await openSheet(env.page, 'k-todo');
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const row = [...document.querySelectorAll('.ks-sheet .ks-meta')].find((m) => m.querySelector('.ks-link'));
+      if (!row) return { failures: ['no row with an Open link in the sheet'] };
+      const link = row.querySelector('.ks-link');
+      const owner = row.querySelector('.ks-owner.agent');
+      const due = row.querySelector('.ks-due.overdue');
+      link.scrollIntoView({ block: 'center' });
+      const m = row.getBoundingClientRect();
+      if (row.scrollWidth > row.clientWidth + 1) failures.push(`the meta row overflows (${row.scrollWidth} > ${row.clientWidth})`);
+      if (m.right > innerWidth + 0.5) failures.push(`the meta row runs past the window (${Math.round(m.right)})`);
+      for (const [name, el] of [['Open link', link], ['agent owner', owner], ['overdue date', due]]) {
+        if (!el) { failures.push(`${name} is missing`); continue; }
+        const r = el.getBoundingClientRect();
+        if (r.right > innerWidth || r.left < 0) failures.push(`${name} is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      const r = link.getBoundingClientRect();
+      const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+      if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+      return { failures, row: { left: m.left, right: m.right, width: m.width }, link: { w: r.width, h: r.height }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-sheet-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-sheet-meta: ${JSON.stringify(result.failures)}`);
+    return { noPark: true };
+  },
   async 'kanban-labels'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLabels());
@@ -1480,6 +2385,80 @@ const STATES = {
     await settle(env.page);
   },
   // slice 4: the lane and kanban menus, the Filter popover, a filter on, a refused drop into a full block lane, a new lane
+  // a selected lane (and the kanban around it) shows no connector anchor dots: lanes and the kanban take no connectors; a hovered card still does
+  async 'kanban-lane-no-anchors'(env) {
+    await openKanbanBoard(env);
+    // a point on the screen where the pointer is over that object itself (not a card or the kanban around it)
+    const at = (id) => env.page.evaluate((id) => {
+      const app = window.__board;
+      const o = app.store.getPlaced(id);
+      const r = app.r.svg.getBoundingClientRect();
+      for (let fy = 0.02; fy < 1; fy += 0.04) for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+        const w = { x: o.x + o.w * fx, y: o.y + o.h * fy };
+        if (app.hit(w)?.id !== id) continue;
+        const q = app.r.toScreen(w);
+        return { x: r.left + q.x, y: r.top + q.y };
+      }
+      return null;
+    }, id);
+    const anchors = () => env.page.evaluate(() => document.querySelectorAll('svg .anchor').length);
+    await env.page.evaluate(() => window.__board.setSelection(['k-doing']));
+    const lane = await at('k-doing');
+    if (!lane) throw new Error('kanban-lane-no-anchors: no point of the Doing lane is reachable by the pointer');
+    await env.page.mouse.move(lane.x - 8, lane.y - 8);
+    await env.page.mouse.move(lane.x, lane.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onLane = await anchors();
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+    const card = await at('k-c2');
+    if (!card) throw new Error('kanban-lane-no-anchors: no point of the card is reachable by the pointer');
+    await env.page.mouse.move(card.x - 8, card.y - 8);
+    await env.page.mouse.move(card.x, card.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onCard = await anchors();
+    console.log(`kanban-lane-no-anchors ${JSON.stringify({ onLane, onCard })}`);
+    if (onLane !== 0) throw new Error(`kanban-lane-no-anchors: a selected lane shows ${onLane} anchor dots`);
+    if (onCard !== 4) throw new Error(`kanban-lane-no-anchors: a hovered card should keep its 4 anchors (found ${onCard}); the check would prove nothing`);
+    // dragging a connector from a note onto the lane must not bind to the lane or the kanban: the end stays free
+    await env.page.evaluate(() => { window.__board.setSelection([]); window.__board.setTool({ kind: 'connector' }); });
+    const from = await at('k-note-1');
+    if (!from) throw new Error('kanban-lane-no-anchors: no point of the note is reachable by the pointer');
+    await env.page.mouse.move(from.x, from.y);
+    await env.page.mouse.down();
+    await env.page.mouse.move((from.x + lane.x) / 2, (from.y + lane.y) / 2, { steps: 6 });
+    await env.page.mouse.move(lane.x, lane.y, { steps: 6 });
+    await env.page.mouse.up();
+    await env.page.waitForTimeout(250);
+    const end = await env.page.evaluate(() => {
+      const app = window.__board;
+      const c = [...app.store.cache.values()].find((o) => o.type === 'connector' && ((o.from.kind === 'bound' && o.from.id === 'k-note-1') || (o.to.kind === 'bound' && o.to.id === 'k-note-1')));
+      return c ? { from: c.from.kind === 'bound' ? c.from.id : 'free', to: c.to.kind === 'bound' ? c.to.id : 'free' } : null;
+    });
+    console.log(`kanban-lane-no-anchors drag ${JSON.stringify(end)}`);
+    if (!end) throw new Error('kanban-lane-no-anchors: dragging from the note made no connector, so the drag check proves nothing');
+    if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
+    await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
+  },
+  // the board menu opens with the User guide: first, an accent of at least 3:1 on its icon, the same button and name
+  async 'board-menu-guide'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.locator('.menu').waitFor();
+    const r = await env.page.evaluate(() => {
+      const rgb = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const menu = document.querySelector('.menu');
+      const first = menu.querySelector('.menu-item');
+      const icon = first.querySelector('.ico');
+      const bg = getComputedStyle(menu.closest('.popover') ?? menu).backgroundColor;
+      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.firstElementChild === first, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
+    });
+    console.log(`board-menu-guide ${JSON.stringify(r)}`);
+    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the first entry is not the User guide button (${JSON.stringify(r)})`);
+    if (r.ratio < 3) throw new Error(`board-menu-guide: the accent is ${r.ratio.toFixed(2)}:1, under 3:1`);
+    if (Number(r.weight) < 600) throw new Error(`board-menu-guide: the label is not heavier (${r.weight})`);
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
@@ -1752,16 +2731,146 @@ const STATES = {
     });
     await settle(env.page);
   },
+  async 'paste-text'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    const paste = async (worldPoint, text) => {
+      const screen = await page.evaluate((p) => {
+        const app = window.__board;
+        const point = app.r.toScreen(p);
+        const bounds = app.r.root.getBoundingClientRect();
+        return { x: bounds.left + point.x, y: bounds.top + point.y };
+      }, worldPoint);
+      await page.mouse.move(screen.x, screen.y);
+      // Mobile emulation in Firefox does not send a mouse pointermove from page.mouse; seed the canvas's pointer listener
+      // at the same client point so lastPointer has the same value in all three engines.
+      await page.evaluate((point) => {
+        window.__board.r.svg.dispatchEvent(new PointerEvent('pointermove', {
+          bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: point.x, clientY: point.y,
+        }));
+      }, screen);
+      const event = await page.evaluate((value) => {
+        const data = new DataTransfer();
+        data.setData('text/plain', value);
+        const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data });
+        if (paste.clipboardData !== data) Object.defineProperty(paste, 'clipboardData', { configurable: true, value: data });
+        window.dispatchEvent(paste);
+        return { prevented: paste.defaultPrevented, textCount: [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length };
+      }, text);
+      if (!event.prevented) throw new Error('paste-text: the window paste event was not handled');
+      return event;
+    };
+    await page.evaluate(() => window.__board.r.setCamera({ x: 0, y: 0, zoom: 0.7 }));
+    const firstText = 'First pasted line\nSecond pasted line\n\nFourth line';
+    const beforeFirstPaste = await page.evaluate(() => [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length);
+    const first = await paste({ x: 320, y: 600 }, firstText);
+    if (first.textCount !== beforeFirstPaste + 1) throw new Error('paste-text: the first clipboard paste did not add exactly one text object');
+    const firstObject = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, firstText);
+    if (!firstObject || firstObject.parent) throw new Error(`paste-text: multi-line clipboard text was not kept as one loose object: ${JSON.stringify(firstObject ?? null)}`);
+    const secondText = 'Text pasted inside a frame';
+    const second = await paste({ x: 220, y: 380 }, secondText);
+    const child = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, secondText);
+    if (!child || child.parent !== 'seed-frame-good') throw new Error(`paste-text: expected the second paste to be a child of seed-frame-good, got ${child?.parent ?? 'no object'}`);
+    if (second.textCount !== first.textCount + 1) throw new Error('paste-text: expected each paste to add exactly one text object');
+    await page.evaluate(() => window.__board.r.setCamera({ x: -50, y: 0, zoom: 0.7 }));
+    console.log(`paste-text ${JSON.stringify({ first: firstObject.text, firstWidth: firstObject.w, frameParent: child.parent })}`);
+    await settle(page);
+  },
+  async 'text-scale-touch'(env) {
+    const { page, browserName } = env;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const app = window.__board;
+      const store = app.store;
+      store.undo.stopCapturing();
+      store.transact(() => store.create({
+        id: 'visual-touch-text', type: 'text', x: 1100, y: 120, w: 300, h: 80, rotation: 0,
+        z: store.topZ(), text: 'Touch the corner to scale this text', fontSize: 26,
+        createdBy: app.user.id, updatedAt: Date.now(),
+      }));
+      store.undo.stopCapturing();
+      app.r.fit(app.r.contentBounds(['visual-touch-text']), 30, 1.4);
+      app.setSelection(['visual-touch-text']);
+    });
+    await settle(page);
+    const start = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('visual-touch-text');
+      const bounds = app.r.root.getBoundingClientRect();
+      const screen = (p) => {
+        const q = app.r.toScreen(p);
+        return { x: bounds.left + q.x, y: bounds.top + q.y };
+      };
+      const corner = screen({ x: o.x + o.w, y: o.y + o.h });
+      const opposite = screen({ x: o.x, y: o.y });
+      const target = { x: opposite.x + (corner.x - opposite.x) * 1.6, y: opposite.y + (corner.y - opposite.y) * 1.6 };
+      return {
+        corner: { x: corner.x + 21.9, y: corner.y + 21.9 }, target,
+        fontSize: o.fontSize, undoDepth: app.store.undo.undoStack.length,
+        coarse: matchMedia('(pointer: coarse)').matches,
+      };
+    });
+    if (env.width <= 500 && !start.coarse) throw new Error('text-scale-touch: the phone viewport did not get a coarse pointer');
+    const dragTouch = async (from, to) => {
+      if (browserName === 'chromium') {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1, x: from.x, y: from.y }] });
+        for (let i = 1; i <= 8; i++) {
+          await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchMove', touchPoints: [{ id: 1, x: from.x + ((to.x - from.x) * i) / 8, y: from.y + ((to.y - from.y) * i) / 8 }],
+          });
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await cdp.detach();
+        return;
+      }
+      // Playwright exposes tap but not a touch drag in WebKit and Firefox. Keep the same coarse-pointer hit path by
+      // checking the far edge with a real touch tap, then dispatching touch pointer moves on the canvas.
+      if (env.width <= 500) await page.touchscreen.tap(from.x, from.y);
+      await page.evaluate(({ from: a, to: b }) => {
+        const svg = window.__board.r.svg;
+        Object.defineProperty(svg, 'setPointerCapture', { configurable: true, value() {} });
+        const send = (type, point, buttons) => svg.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 31, pointerType: 'touch', isPrimary: true,
+          button: 0, buttons, clientX: point.x, clientY: point.y,
+        }));
+        send('pointerdown', a, 1);
+        for (let i = 1; i <= 8; i++) send('pointermove', { x: a.x + ((b.x - a.x) * i) / 8, y: a.y + ((b.y - a.y) * i) / 8 }, 1);
+        send('pointerup', b, 0);
+      }, { from, to });
+    };
+    await dragTouch(start.corner, start.target);
+    const scaled = await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('visual-touch-text');
+      return { fontSize: o.fontSize, undoDepth: app.store.undo.undoStack.length, coarse: matchMedia('(pointer: coarse)').matches };
+    });
+    if (scaled.fontSize <= start.fontSize) throw new Error(`text-scale-touch: font size did not grow from ${start.fontSize}`);
+    if (scaled.undoDepth !== start.undoDepth + 1) throw new Error(`text-scale-touch: drag used ${scaled.undoDepth - start.undoDepth} undo steps`);
+    await page.evaluate(() => window.__board.store.undo.undo());
+    await page.waitForFunction((size) => window.__board.store.get('visual-touch-text').fontSize === size, start.fontSize);
+    await page.evaluate(() => window.__board.store.undo.redo());
+    await page.waitForFunction((size) => window.__board.store.get('visual-touch-text').fontSize > size, start.fontSize);
+    await page.evaluate(() => window.__board.r.fit(window.__board.r.contentBounds(['visual-touch-text']), 30, 1.4));
+    console.log(`text-scale-touch ${JSON.stringify({ browser: browserName, from: start.fontSize, to: scaled.fontSize, hitTarget: start.coarse ? '44×44px' : 'coarse pointer not enabled at this width' })}`);
+    await settle(page);
+  },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
-    await openEmptyBoard(env, '?debug&aibar');
+    await openEmptyBoard(env, '?debug');
     await sendAiRun(env.page);
     await env.page.locator('.empty-hint').waitFor({ state: 'hidden' });
     await settle(env.page);
   },
   async 'ai-review'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await sendAiRun(page);
     await page.getByRole('button', { name: /review/i }).first().click();
     await page.locator('.aireview').first().waitFor();
@@ -1770,7 +2879,7 @@ const STATES = {
   // TAB-141: another person's AI run in flight, outlined in their colour around what it reads (docs/ai-toolbar.md, "Multiplayer")
   async 'ai-live-remote-ring'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{ id: 'visual-run', feature: 'cluster', status: 'running', private: false, startedAt: 1, readyAt: null, cut: false, by: ANA, target: { ids: ['seed-note-1', 'seed-note-2'] }, proposal: null }]);
     await page.locator('.ailive-run:not([hidden])').first().waitFor();
     await settle(page);
@@ -1779,7 +2888,7 @@ const STATES = {
   // not a preview beside it, so the view is fitted to the board and the room right of it, where the preview lands.
   async 'ai-live-remote-preview'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{
       id: 'visual-run', feature: 'generate', status: 'ready', private: false, startedAt: 1, readyAt: 2, cut: false, by: ANA, target: null,
       proposal: { kind: 'create', objects: [{ text: 'Pilot with five teams', color: 'Yellow' }, { text: 'Write the migration guide', color: 'Pink' }, { text: 'Decide the pricing copy', color: 'Blue' }], frame: { title: 'Ideas' } },
@@ -1802,11 +2911,11 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -1823,13 +2932,14 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable, chat }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
   if (mode === 'accounts') {
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
     if (chat) env.TABULA_CHAT = 'on';
+    if (joinCodes) env.TABULA_JOIN_CODES = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -1928,7 +3038,10 @@ async function serveOutside(route) {
   if (!fontCache.has(key)) {
     fontCache.set(key, route.fetch({ timeout: 8000 }).then(async (res) => ({
       status: res.status(),
-      headers: Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+      headers: {
+        ...Object.fromEntries(Object.entries(res.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/.test(name))),
+        ...(url.hostname === 'api.fontshare.com' ? { 'access-control-allow-origin': '*' } : {}),
+      },
       body: await res.body(),
     }), () => null));
   }
@@ -1936,7 +3049,7 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
-async function newPage(browser, { width, theme, mode, base, session, touch = false }) {
+async function newPage(browser, { width, theme, mode, base, session, touch = false, offlineFontCatalogue = false }) {
   const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
@@ -1956,15 +3069,16 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
       ...OTHER_BOARDS.map((b) => ({ id: b.id, name: b.title, createdAt: NOW - b.ago - HOUR, updatedAt: NOW - b.ago })),
     ]
     : null;
-  await context.addInitScript(({ themeId, user, index }) => {
+  await context.addInitScript(({ themeId, user, index, offlineFontCatalogue: cachedFonts }) => {
     try {
       localStorage.setItem('driftboard:theme', themeId);
       localStorage.setItem('driftboard:user', JSON.stringify(user));
       if (index) localStorage.setItem('driftboard:boards', JSON.stringify(index));
+      if (cachedFonts) localStorage.setItem('driftboard:fontshare-catalogue', JSON.stringify({ at: Date.now(), fonts: [] }));
     } catch {
       /* storage is not available in this frame */
     }
-  }, { themeId: theme, user: USER, index: boards });
+  }, { themeId: theme, user: USER, index: boards, offlineFontCatalogue });
   if (session) await context.addCookies([{ ...session, url: base, httpOnly: true, sameSite: 'Lax' }]);
   const page = await context.newPage();
   const errors = [];
@@ -1973,10 +3087,13 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
 }
 
 async function capture({ browser, state, theme, width, file, shared }) {
-  const { context, page, errors } = await newPage(browser, { width, theme, ...shared });
+  const { context, page, errors } = await newPage(browser, {
+    width, theme, ...shared, touch: shared.touch || (state === 'text-scale-touch' && width <= 500),
+    offlineFontCatalogue: state === 'paste-text' || state === 'text-scale-touch',
+  });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
-    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat });
+    const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat, outDir: shared.outDir, browserName: browser.browserType().name(), theme, width });
     // a state that holds the mouse down or keeps an input focused would be undone by parking
     if (shot?.noPark) { /* left as it is */ }
     else if (shot?.keepFocus) await page.mouse.move(1, 1);
@@ -2105,7 +3222,10 @@ async function launchChromium() {
     throw new UsageError('playwright is not installed. Run npm ci, then once: npx playwright install chromium', false);
   }
   try {
-    return await playwright.chromium.launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
+    // VISUAL_BROWSER=webkit or firefox runs the same states in another engine (cross-browser findings); the default is Chromium
+    const engine = process.env.VISUAL_BROWSER ?? 'chromium';
+    if (!['chromium', 'webkit', 'firefox'].includes(engine)) throw new UsageError(`VISUAL_BROWSER must be chromium, webkit or firefox, not ${engine}`, false);
+    return await playwright[engine].launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
   } catch (err) {
     if (/Executable doesn't exist/i.test(err.message)) throw new UsageError('Chromium for Playwright is not installed. Run once: npx playwright install chromium', false);
     throw err;
@@ -2138,7 +3258,8 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
+    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);

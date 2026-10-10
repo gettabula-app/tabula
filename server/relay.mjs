@@ -29,9 +29,11 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
+import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
-import { saveDelay } from './save-delay.mjs';
+import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
+import { renameSyncRetry } from './fs-retry.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
@@ -52,15 +54,19 @@ const env = withLegacyEnv();
 const config = loadConfig(env);
 // Off-site backups (docs/backups.md): null unless TABULA_BACKUP_* is set; half a configuration stops the start here.
 const backupConfig = loadBackupConfig(env);
+const snapshotBarrier = backupConfig
+  ? createSnapshotBarrier({ maxHoldMs: backupConfig.snapshotMaxHoldSeconds * 1000 })
+  : null;
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
 const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'));
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
-const SAVE_MAX_WAIT_MS = 30_000;
-// After a failed write (disk full, permissions), the next attempt
-const SAVE_RETRY_MS = Number(process.env.SAVE_RETRY_MS) > 0 ? Number(process.env.SAVE_RETRY_MS) : 5_000;
+const SAVE_MAX_WAIT_MS = saveMaxWaitMs(); // 30 s; the test-only TABULA_TEST_SAVE_MAX_WAIT_MS can only shorten it (server/save-delay.mjs)
+// After a failed write (disk full, permissions), the next attempt. A finite value from 0.25 s to 60 s: a tiny one would spin the retry log,
+// an infinite one would never retry.
+const SAVE_RETRY_MS = Math.min(60_000, Math.max(250, Number(process.env.SAVE_RETRY_MS) > 0 ? Number(process.env.SAVE_RETRY_MS) : 5_000));
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
@@ -229,7 +235,7 @@ if (config.authEnabled) {
     import('./api.mjs'),
     import('./cloud.mjs'),
   ]);
-  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
+  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier });
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -240,13 +246,14 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
       import('./chat-routes.mjs'),
       import('./chat-retention.mjs'),
       import('./chat-notify.mjs'),
+      import('./chat-limits.mjs'),
     ]);
     const store = () => {
       if (maintenance) throw new Error('the workspace is being restored');
@@ -266,7 +273,7 @@ if (config.authEnabled) {
     // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
     const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
-    chat = { store, access, hub: chatHub, notifier: chatNotifier };
+    chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
       if (maintenance || typeof userId !== 'string') return;
@@ -276,7 +283,7 @@ if (config.authEnabled) {
         log('chat: could not anonymise a removed member:', err?.message);
       }
     });
-    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
+    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
@@ -293,7 +300,15 @@ const openRoomState = (name) => {
   const room = rooms.get(name);
   return room ? Y.encodeStateAsUpdate(room.doc) : null;
 };
-const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
+const backup = createBackup({
+  config: backupConfig,
+  dataDir: DATA_DIR,
+  directory,
+  boardState: openRoomState,
+  snapshotBarrier,
+  prepareSnapshot: saveAllRooms,
+  log,
+});
 
 // Not documented: the relay tests give the restore engine a disk that is this full (0 to 1) instead of the real one, so the
 // retention they check (7 days, or until the next backup when the volume would pass 80%) does not depend on the machine.
@@ -339,12 +354,16 @@ if (assets) {
     log,
   });
   const sweep = () => {
-    try {
-      const summary = gc.run();
-      if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
-    } catch (err) {
-      log('asset gc failed', scrubText(err?.message));
-    }
+    const collect = () => {
+      try {
+        const summary = gc.run();
+        if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
+      } catch (err) {
+        log('asset gc failed', scrubText(err?.message));
+      }
+    };
+    if (snapshotBarrier) void snapshotBarrier.runWriter(collect);
+    else collect();
   };
   setTimeout(sweep, Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) : 2 * 60 * 1000).unref();
   setInterval(sweep, 24 * 60 * 60 * 1000).unref();
@@ -353,13 +372,17 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier });
 }
 
 // ---------------------------------------------------------------- rooms
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+
+snapshotBarrier?.onRelease(() => {
+  for (const room of rooms.values()) room.releaseDeferredMessages();
+});
 
 // Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
 function liveStats() {
@@ -417,6 +440,9 @@ class Room {
     this.unloadTimer = null;
     this.dirty = false;
     this.firstUnsavedAt = null;
+    this.pendingBarrierSave = false;
+    /** @type {Array<{ ws: import('ws').WebSocket, data: Buffer }>} */
+    this.deferredMessages = [];
 
     try {
       let saved;
@@ -507,16 +533,22 @@ class Room {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     if (roomsFrozen) return true;
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      // Not a failure: the snapshot barrier holds writes for a moment and the save runs again when it is released.
+      this.pendingBarrierSave = true;
+      return true;
+    }
+    this.pendingBarrierSave = false;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
     try {
       fs.writeFileSync(tmp, bytes);
-      fs.renameSync(tmp, this.file);
+      renameSyncRetry(tmp, this.file);
     } catch (err) {
       // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
-      log(`room ${this.name}: could not save, trying again in ${SAVE_RETRY_MS / 1000} s`, err?.message);
-      this.firstUnsavedAt = Date.now();
-      this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
+      log(`room ${this.name}: could not save, trying again in ${SAVE_RETRY_MS / 1000} s`, err?.code ?? err?.message);
+      this.firstUnsavedAt ??= Date.now();
+      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
       return false;
     }
     this.firstUnsavedAt = null;
@@ -605,6 +637,19 @@ class Room {
 
 
   onMessage(ws, data) {
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed && ws.canWrite === true) {
+      try {
+        const peek = decoding.createDecoder(new Uint8Array(data));
+        if (decoding.readVarUint(peek) === MSG_SYNC && decoding.peekVarUint(peek) !== syncProtocol.messageYjsSyncStep1) {
+          // Queue client state updates while the disk copies are made. State-vector reads and awareness still flow, and
+          // the open socket stays connected. Replaying the frame after release lets the normal debounced save run.
+          this.deferredMessages.push({ ws, data: Buffer.from(new Uint8Array(data)) });
+          return;
+        }
+      } catch {
+        // The usual handler below logs malformed frames; do not turn a bad frame into an unbounded queued write.
+      }
+    }
     try {
       const dec = decoding.createDecoder(new Uint8Array(data));
       const type = decoding.readVarUint(dec);
@@ -628,6 +673,13 @@ class Room {
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
     }
+  }
+
+  releaseDeferredMessages() {
+    const queued = this.deferredMessages;
+    this.deferredMessages = [];
+    for (const { ws, data } of queued) this.onMessage(ws, data);
+    if (this.pendingBarrierSave) this.scheduleSave();
   }
 }
 
@@ -711,7 +763,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
 }
 
 function workspaceHint(readOnly) {
@@ -888,6 +940,10 @@ function noteOpenWrite(req, res) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
+    const runOpenWriter = (fn) => {
+      const method = String(req.method).toUpperCase();
+      return snapshotBarrier && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? snapshotBarrier.runWriter(fn) : fn();
+    };
     // TAB-103: with TABULA_SOURCE_POLICY=proxy only loopback and Fly's proxy range may talk to this instance. The health
     // check is left open, because the platform's own check may not come from either.
     if (!sourceGate.allows(req.socket.remoteAddress) && !(req.method === 'GET' && url.pathname === '/api/health')) {
@@ -917,13 +973,13 @@ async function onRequest(req, res) {
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
-        await openAiRun.handle(req, res);
+        await openAiRun.handle(req, res); // streams for minutes and writes through the room: no barrier lease
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
-        await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
-      } else if (openAssets && (await openAssets(req, res, url))) {
+        await runOpenWriter(() => openAiRun.resolve(req, res, url.pathname.split('/')[4]));
+      } else if (openAssets && (await runOpenWriter(() => openAssets(req, res, url)))) {
         // answered: an image upload or download of open mode
         noteOpenWrite(req, res);
-      } else if (await history.handleOpen(req, res)) {
+      } else if (await runOpenWriter(() => history.handleOpen(req, res))) {
         noteOpenWrite(req, res);
       } else {
         sendJson(res, 404, { error: 'not_found' });
@@ -1240,7 +1296,9 @@ const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
-  let saved = saveAllRooms();
+  // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
+  const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());
+  let saved = saveNow();
   if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
     await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
   }
@@ -1252,7 +1310,7 @@ async function stopRelay() {
   if (stopping) {
     await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
     // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.
-    saved = saveAllRooms();
+    saved = saveNow();
   }
   history.close();
   closeChat();

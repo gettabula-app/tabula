@@ -71,10 +71,15 @@ describe('adding a card', () => {
     expect(addCard(store, lanes[0], '   ', { createdBy: 'me' })).toBeNull();
   });
 
-  it('cuts a title to 200 characters', () => {
+  it('flattens title newlines and refuses more than 200 normalised code points', () => {
     const { store, lanes } = board();
-    const id = addCard(store, lanes[0], 'x'.repeat(300), { createdBy: 'me' })!;
-    expect(title(store, id)).toHaveLength(200);
+    const id = addCard(store, lanes[0], '  first\n\t second  ', { createdBy: 'me' })!;
+    expect(title(store, id)).toBe('first second');
+    const collapsed = addCard(store, lanes[0], ' x '.repeat(100), { createdBy: 'me' });
+    expect(collapsed).not.toBeNull();
+    expect(title(store, collapsed!)).toBe(`${'x '.repeat(99)}x`);
+    expect(addCard(store, lanes[0], '😀'.repeat(201), { createdBy: 'me' })).toBeNull();
+    expect(addCard(store, lanes[0], 'x'.repeat(201), { createdBy: 'me' })).toBeNull();
   });
 
   it('writes nothing on a read-only board', () => {

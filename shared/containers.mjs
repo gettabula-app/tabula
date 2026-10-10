@@ -15,6 +15,57 @@ import { safeColor } from './colors.mjs';
 export const CONTAINER_TYPES = Object.freeze(['container', 'lane', 'card']);
 export const isContainerType = (type) => CONTAINER_TYPES.includes(type);
 
+/** Card owner kinds, shared by the browser, the MCP reader and the MCP writer. */
+export const OWNER_KINDS = Object.freeze(['person', 'agent']);
+/** Lane stages, shared by the browser and the MCP tools. */
+export const STAGES = Object.freeze(['todo', 'doing', 'done']);
+/** The lanes the app puts in a new kanban. */
+export const DEFAULT_KANBAN_LANES = Object.freeze([
+  Object.freeze({ name: 'To do', stage: STAGES[0] }),
+  Object.freeze({ name: 'Doing', stage: STAGES[1] }),
+  Object.freeze({ name: 'Done', stage: STAGES[2] }),
+]);
+export const CARD_LINK_MAX = 2000;
+export const OWNER_NAME_MAX = 80;
+
+/** Collapse whitespace and trim a card title. Line breaks are whitespace and become spaces. */
+export function cleanCardTitle(value) {
+  return typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+}
+
+/** Collapse whitespace and trim an owner name. */
+export function cleanOwnerName(value) {
+  return typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+}
+
+/** Count Unicode code points, matching the user-visible title and owner-name limits. */
+export function codePointLength(value) {
+  return [...value].length;
+}
+
+/** A single explicit, visible HTTP(S) URL of at most 2,000 characters; credentials and deceptive userinfo are refused. */
+export function isSafeHttpUrl(value) {
+  if (typeof value !== 'string' || !value || value.length > CARD_LINK_MAX || /[\p{White_Space}\p{Cc}\p{Cf}\\]/u.test(value)) return false;
+  if (!/^https?:\/\/[^/?#]+/i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !!url.hostname && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+/** A real calendar date in YYYY-MM-DD format, limited to years 1900 through 2200. */
+export function isDueDate(value) {
+  if (typeof value !== 'string') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+  if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 /** Board features this code understands. A board that lists another one opens read-only (docs/kanban.md, Version skew). */
 export const FEATURES = Object.freeze({ containers: 'containers' });
 export const KNOWN_FEATURES = Object.freeze(Object.values(FEATURES));
@@ -68,6 +119,35 @@ export const LIMITS = Object.freeze({
   wipMax: 99,
 });
 
+/** A label name as stored by the app: whitespace collapsed, trimmed and capped at 40 Unicode code points. */
+export function cleanLabelName(value) {
+  return typeof value === 'string' ? [...value.replace(/\s+/g, ' ').trim()].slice(0, LIMITS.labelName).join('').trim() : '';
+}
+
+/** A lane name as stored by the app: whitespace collapsed, trimmed and capped at 60 characters. */
+export function cleanLaneName(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, LIMITS.laneName).trim() : '';
+}
+
+/** Whether a normalized label name is already used, ignoring case and optionally the label being renamed. */
+export function labelNameTaken(labels, name, exceptId = null) {
+  const normalized = cleanLabelName(name).toLowerCase();
+  if (!normalized) return false;
+  for (const label of labels) {
+    if (label?.id !== exceptId && typeof label?.name === 'string' && cleanLabelName(label.name).toLowerCase() === normalized) return true;
+  }
+  return false;
+}
+
+/** A lane stage accepted by the board UI and MCP. */
+export const isLaneStage = (value) => STAGES.includes(value);
+
+/** A WIP limit accepted by the lane editor. */
+export const isWipLimit = (value) => Number.isInteger(value) && value >= LIMITS.wipMin && value <= LIMITS.wipMax;
+
+/** A label colour accepted by the board UI, canonicalized by the shared safe colour grammar. */
+export const validLabelColor = (value) => kanbanColor(value, null);
+
 /** Palette keys for board labels: the sticky swatches (a test keeps them equal to src/palette.ts), coloured by theme tokens. */
 export const LABEL_COLORS = Object.freeze(['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey']);
 
@@ -90,14 +170,14 @@ export function kanbanColor(value, fallback = null) {
 export const LABEL_DEFAULT_COLOR = 'grey';
 
 /**
- * A board label as it may be used, or null: an id and a name of at most 40 characters; a colour that `kanbanColor`
+ * A board label as it may be used, or null: an id and a name of at most 40 Unicode code points; a colour that `kanbanColor`
  * refuses becomes the default one. Anything read from the `labels` map goes through this first, since any client can write that map.
  * @returns {{ id: string, name: string, color: string, order: number } | null}
  */
 export function validLabel(value) {
   if (!value || typeof value !== 'object') return null;
   const { id, name, color, order } = value;
-  if (typeof id !== 'string' || !id || typeof name !== 'string' || name.length > LIMITS.labelName) return null;
+  if (typeof id !== 'string' || !id || typeof name !== 'string' || codePointLength(name) > LIMITS.labelName) return null;
   return { id, name, color: kanbanColor(color, LABEL_DEFAULT_COLOR), order: Number.isFinite(order) ? order : 0 };
 }
 
@@ -398,10 +478,10 @@ export function wipCheck(lane, cards, moving) {
 // ---------------------------------------------------------------- templates (docs/kanban.md, Templates)
 
 /**
- * Card fields a template never carries: it names no people and no dates, and the Linear and Jira link is reserved. Saving
- * a template strips them; a template that has them anyway is refused.
+ * Card fields a template never carries: it names no people or agents, no due dates or card links, and tracker links are
+ * reserved. Saving a template strips them; a template that has them anyway is refused.
  */
-export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'due', 'extProvider', 'extKey', 'extUrl']);
+export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extProvider', 'extKey', 'extUrl']);
 
 const TEMPLATE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // on one line: no control character and no line or paragraph separator
@@ -417,8 +497,8 @@ const refuse = (message) => {
   throw new TemplateKanbanError(message);
 };
 
-function line(v, what, max, min = 1) {
-  if (typeof v !== 'string' || v.trim().length < min || v.length > max || LINE_BREAK.test(v)) refuse(`${what} must be text of ${min ? `1 to ${max}` : `at most ${max}`} characters, on one line.`);
+function line(v, what, max, min = 1, length = (value) => value.length) {
+  if (typeof v !== 'string' || v.trim().length < min || length(v) > max || LINE_BREAK.test(v)) refuse(`${what} must be text of ${min ? `1 to ${max}` : `at most ${max}`} characters, on one line.`);
   return v;
 }
 
@@ -429,7 +509,7 @@ function intIn(v, what, min, max) {
 
 /**
  * A template's label list (docs/kanban.md, Templates: a small list merged by name into the board's labels when the
- * template is used), checked and rebuilt: at most 30, each an id, a name of 1 to 40 characters on one line and a
+ * template is used), checked and rebuilt: at most 30, each an id, a name of 1 to 40 Unicode code points on one line and a
  * colour `kanbanColor` accepts. Throws an Error naming what is wrong.
  * @returns {{ id: string, name: string, color: string }[]}
  */
@@ -446,7 +526,7 @@ export function templateLabels(list) {
     ids.add(l.id);
     const color = kanbanColor(l.color);
     if (color === null) refuse(`${what} has a colour the board cannot draw.`);
-    return { id: l.id, name: line(l.name, `${what} name`, LIMITS.labelName), color };
+    return { id: l.id, name: line(l.name, `${what} name`, LIMITS.labelName, 1, codePointLength), color };
   });
 }
 

@@ -61,6 +61,21 @@ export interface WipVerdict {
 export const CONTAINER_TYPES: readonly ['container', 'lane', 'card'];
 export function isContainerType(type: string): boolean;
 
+export const OWNER_KINDS: readonly ['person', 'agent'];
+export const STAGES: readonly ['todo', 'doing', 'done'];
+export const DEFAULT_KANBAN_LANES: readonly [
+  { readonly name: 'To do'; readonly stage: 'todo' },
+  { readonly name: 'Doing'; readonly stage: 'doing' },
+  { readonly name: 'Done'; readonly stage: 'done' },
+];
+export const CARD_LINK_MAX: 2000;
+export const OWNER_NAME_MAX: 80;
+export function cleanCardTitle(value: unknown): string;
+export function cleanOwnerName(value: unknown): string;
+export function codePointLength(value: string): number;
+export function isSafeHttpUrl(value: unknown): value is string;
+export function isDueDate(value: unknown): value is string;
+
 export const FEATURES: { readonly containers: 'containers' };
 export const KNOWN_FEATURES: readonly string[];
 export const FEATURE_PREFIX: 'feature:';
@@ -86,6 +101,13 @@ export const LIMITS: {
   readonly wipMin: 1;
   readonly wipMax: 99;
 };
+
+export function cleanLabelName(value: unknown): string;
+export function cleanLaneName(value: unknown): string;
+export function labelNameTaken(labels: Iterable<{ id?: string; name?: string }>, name: unknown, exceptId?: string | null): boolean;
+export function isLaneStage(value: unknown): value is 'todo' | 'doing' | 'done';
+export function isWipLimit(value: unknown): value is number;
+export function validLabelColor(value: unknown): string | null;
 
 export const LABEL_COLORS: readonly ['yellow', 'orange', 'pink', 'violet', 'blue', 'teal', 'green', 'grey'];
 

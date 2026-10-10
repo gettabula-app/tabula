@@ -7,11 +7,12 @@ import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
-import { SHAPE_GROUPS, SHAPE_KINDS, HEADS } from '../shapes';
+import { SHAPE_GROUPS, SHAPE_KINDS, HEADS, connectorHeadPreviewSvg } from '../shapes';
 import { RELATIONS } from '../uml';
 import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
 import { openFontPicker } from './fontpicker';
+import { CUSTOM_SIZE, FRAME_MAX, FRAME_MIN, FRAME_PRESETS, presetFor } from './frame-sizes';
 import { closeOpenCombo, combo, numberField } from './controls';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
@@ -125,6 +126,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       const name = h('input', { class: 'input', value: (first as BaseObj).name ?? '', 'aria-label': 'Frame name' });
       name.addEventListener('change', () => up({ name: name.value }));
       blocks.push(field('Name', name));
+      blocks.push(frameSizeFields(app, first as BaseObj));
     }
     if (same && first.type === 'uml-class') {
       const kinds = [['', 'Class'], ['interface', 'Interface'], ['abstract', 'Abstract'], ['enumeration', 'Enumeration'], ['entity', 'Entity'], ['service', 'Service']]
@@ -288,6 +290,48 @@ function btn(name: Parameters<typeof icon>[0], label: string, onClick: () => voi
   return h('button', { class: `icon-btn ${cls}`, 'aria-label': label, 'data-tip-key': key, onclick: onClick }, icon(name, 18));
 }
 
+/** Size of a frame: a preset list (screens, tablets, phone, paper, square) and exact width and height. */
+function frameSizeFields(app: BoardApp, frame: BaseObj): HTMLElement {
+  const id = frame.id;
+  const edit = app.styleEdit;
+  const only = (o: Obj) => o.id === id;
+  const size = () => {
+    const o = app.store.get(id) as BaseObj | undefined;
+    return { w: o?.w ?? frame.w, h: o?.h ?? frame.h };
+  };
+  const live = <T,>(toPatch: (v: T) => Record<string, unknown> | null) => ({
+    onPreview: (v: T) => { const p = toPatch(v); if (p) edit.preview(p, only); },
+    onCommit: (v: T) => { const p = toPatch(v); if (p) edit.commit(p, only); },
+    onRevert: () => edit.revert(),
+  });
+  const preset = (v: string) => {
+    const p = FRAME_PRESETS.find((x) => x.id === v);
+    return p ? { w: p.w, h: p.h } : null;
+  };
+  const options = [
+    ...FRAME_PRESETS.map((p) => ({ value: p.id, label: p.label, group: p.group })),
+    { value: CUSTOM_SIZE, label: 'Custom', group: 'Custom' },
+  ];
+  const dim = (key: 'w' | 'h', label: string) => numberField({
+    label, value: size()[key], min: FRAME_MIN, max: FRAME_MAX, step: 1, ...live((v: number) => ({ [key]: v })),
+  } as Parameters<typeof numberField>[0]);
+  const wrap = h('div', { class: 'frame-size' });
+  const sizeCombo = combo<string>({
+    label: 'Frame size', options, value: presetFor(size().w, size().h),
+    ...live(preset),
+    onCommit: (v) => {
+      const p = preset(v);
+      if (p) edit.commit(p, only);
+      else wrap.querySelector<HTMLInputElement>('.num-field')?.focus();
+    },
+  });
+  wrap.append(
+    field('Size', sizeCombo),
+    h('div', { class: 'row2' }, field('Width', dim('w', 'Frame width')), field('Height', dim('h', 'Frame height'))),
+  );
+  return wrap;
+}
+
 function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
   const c = sel[0];
   const up = (p: Partial<ConnectorObj>) => app.updateSelected(p, isConnector);
@@ -301,7 +345,10 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
   const edit = app.styleEdit;
   const same = <T,>(read: (x: ConnectorObj) => T): T | null => (sel.every((x) => read(x) === read(c)) ? read(c) : null);
   const headSel = (key: 'startHead' | 'endHead', label: string) => combo<Head>({
-    label, options: HEADS.map((x) => ({ value: x.head, label: x.label })), value: same((x) => x[key]),
+    label, options: HEADS.map((x) => ({
+      value: x.head, label: x.label,
+      icon: h('span', { class: 'connector-head-preview', 'aria-hidden': 'true', html: connectorHeadPreviewSvg(x.head, key === 'startHead' ? 'start' : 'end') }),
+    })), value: same((x) => x[key]),
     onPreview: (v) => edit.preview({ [key]: v, relation: undefined }, isConnector),
     onRevert: () => edit.revert(),
     onCommit: (v) => {

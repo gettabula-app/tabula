@@ -90,6 +90,8 @@ When the session ends, dots stay on the board. The bar shows **Vote results** wi
 
 ## Poll steps
 
+On a phone a running poll uses a compact session bar (the answered count and its buttons) so the poll card and the bar both fit; the card and bar wait while Chat or Comments is open. The message that says a poll or vote started sits above the card and the bar (at the very top of the window while the **All steps** list is open), and the **All steps** list re-places itself above the bar when you add a step, so **Next step** stays reachable.
+
 A **Poll** step shows an answering card above the bar. The bar has **Reveal results**, then **Copy results** and **Add results to board**. Moving to the next step closes the poll. Details are in [Polls](polls.md).
 
 ## Focus requests

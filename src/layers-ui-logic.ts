@@ -140,7 +140,7 @@ export function keyIntent(key: string, mods: Mods): KeyIntent | null {
     default: break;
   }
   const k = key.toLowerCase();
-  return k === 'h' ? 'hide' : k === 'l' ? 'lock' : null;
+  return k === 'h' && !mods.shift ? 'hide' : k === 'l' ? 'lock' : null;
 }
 
 export type Navigation = { focus: Id } | { expand: Id } | { collapse: Id };

@@ -21,6 +21,8 @@ import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
 import { groupActionForSelection, groupChipAvoidBox, groupChipText } from './group-ui-logic';
+import { authState } from '../auth';
+import { canSaveTemplate } from './share-logic';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -76,8 +78,11 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const railClear = isPhone() ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
     const right = 12 + safeRight;
     const bottom = 12 + safeBottom;
-    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...groupChipBoxes(a, top)], railClear, right, bottom);
-    bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear, right)}px, ${clearOfDock(p.y, bar.offsetHeight, dock, top)}px)`;
+    const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...sessionBoxes(), ...groupChipBoxes(a, top)], railClear, right, bottom);
+    // a tall selection leaves no free room above or below it: the bar then sits on the selection, above the session bar, never over it
+    const sessionTop = Math.min(Infinity, ...sessionBoxes().map((b) => b.y));
+    const y = Math.max(top, Math.min(clearOfDock(p.y, bar.offsetHeight, dock, top), sessionTop - 12 - bar.offsetHeight));
+    bar.style.transform = `translate(${clampX(p.x, bar.offsetWidth, view.w, railClear, right)}px, ${y}px)`;
     below = p.below;
     cue();
   }
@@ -96,6 +101,15 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
       width: chip?.offsetWidth || undefined,
     });
     return box ? [box] : [];
+  }
+
+  /** The session bar and the poll card sit over the board's foot: the bar flips above the selection instead of landing under them. */
+  function sessionBoxes(): Box[] {
+    const origin = parent.getBoundingClientRect();
+    return [...parent.querySelectorAll<HTMLElement>('.flowbar.show, .poll-card:not([hidden])')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height };
+    });
   }
 
   /** The AI bar (or its button) is one more thing the quick bar keeps off: it flips above the selection instead of landing under it. */
@@ -174,6 +188,24 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   function menu(name: IconName, label: string, content: () => HTMLElement) {
     const b: HTMLButtonElement = h('button', { class: 'icon-btn', 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
     return b;
+  }
+
+  function moreActions() {
+    const flipItem = (axis: 'horizontal' | 'vertical') => {
+      const horizontal = axis === 'horizontal';
+      const reason = app.flipReason(axis);
+      const label = horizontal ? 'Flip horizontal' : 'Flip vertical';
+      return h('button', {
+        class: 'menu-item', type: 'button', role: 'menuitem', disabled: reason !== null,
+        'aria-keyshortcuts': horizontal ? 'Shift+H' : 'Shift+V',
+        'data-tip': reason ?? label,
+        'data-tip-key': horizontal ? 'shift+h' : 'shift+v',
+        onclick: () => { closePopover(); app.flipSelection(axis); },
+      }, icon(horizontal ? 'flipHorizontal' : 'flipVertical', 18), h('span', null, label), h('span', { class: 'menu-hint' }, horizontal ? 'Shift+H' : 'Shift+V'));
+    };
+    return h('div', { class: 'menu qb-action-menu', role: 'menu', 'aria-label': 'More actions' },
+      flipItem('horizontal'), flipItem('vertical'),
+    );
   }
 
   function action(name: IconName, label: string, onClick: () => void, cls = '', key?: string) {
@@ -379,14 +411,16 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([menu('stickers', 'React with a sticker', () => reactionPicker(app))]);
 
     lock = h('button', { class: 'icon-btn', onclick: () => app.toggleLock() });
-    more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('dots', 18));
+    let actions: HTMLButtonElement;
+    actions = h('button', { class: 'icon-btn', 'aria-label': 'More actions', 'aria-haspopup': 'menu', onclick: () => open(actions, moreActions()) }, icon('dots', 18));
+    more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('properties', 18));
     groups.push([
       lock,
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
-      ...(opts.demo ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
+      ...(opts.demo || !canSaveTemplate(authState().mode) ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
       action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ]);
-    groups.push([more]);
+    groups.push([actions, more]);
 
     const parts = groups.filter((g) => g.length).flatMap((g, i) => (i ? [h('span', { class: 'qb-sep', 'aria-hidden': 'true' }), ...g] : g));
     bar.replaceChildren(...parts);
@@ -420,6 +454,16 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   });
   // the panel's top moves when it opens, closes or is rebuilt at another height, and the bar keeps clear of it
   new ResizeObserver(() => { if (shown) position(); }).observe(props.el);
+  // the session bar and poll card come, go and change height: the quick bar keeps clear of them
+  const sessionWatch = new ResizeObserver(() => { if (shown) position(); });
+  const watchSession = () => parent.querySelectorAll('.flowbar, .poll-card').forEach((el) => sessionWatch.observe(el));
+  watchSession();
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(() => {
+      watchSession();
+      if (shown) position();
+    }).observe(parent, { subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+  }
 
   build();
   sync();

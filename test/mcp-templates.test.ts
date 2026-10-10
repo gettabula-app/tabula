@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { createHarness, sleep, until, type Account, type Body } from './mcp-harness';
+import { createHarness, until, type Account, type Body } from './mcp-harness';
 
 // docs/mcp.md, "Templates": list them and add them to a board, never create, change or delete them.
 
@@ -8,6 +8,29 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 const h = createHarness({ accounts: true, settings: { MCP: 'on' }, env: { ROOM_UNLOAD_MS: '1200' } });
 const CLOUD_TOKEN = 'c'.repeat(48);
+
+function writeBarrier(doc: Y.Doc) {
+  const key = '__test_timing_barrier';
+  const value = `${Date.now()}-${Math.random()}`;
+  const origin = {};
+  let update: Uint8Array | undefined;
+  const capture = (next: Uint8Array, gotOrigin: unknown) => {
+    if (gotOrigin === origin) update = next;
+  };
+  doc.on('update', capture);
+  doc.transact(() => doc.getMap('meta').set(key, value), origin);
+  doc.off('update', capture);
+  if (!update) throw new Error('timing barrier produced no update');
+  return { key, value, update };
+}
+
+const encodeState = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+function stateAfter(before: string, update: Uint8Array) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Buffer.from(before, 'base64'));
+  Y.applyUpdate(doc, update);
+  return encodeState(doc);
+}
 
 /** A value with the name of the case it belongs to, so a failure in a loop says which one. */
 const at = (label: unknown, value: unknown) => ({ label, value });
@@ -239,7 +262,9 @@ describe('use_template', () => {
   it('is refused for every token and role that may not edit the board, and leaves it as it was', async () => {
     const live = h.connect(board, alice.cookie);
     await live.synced();
-    const before = Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64');
+    const observer = h.connect(board, alice.cookie);
+    await observer.synced();
+    const before = encodeState(live.doc);
     const use = (token: string, id = board) => h.tool(token, 'use_template', { boardId: id, templateId: workspaceTemplate });
     expect((await use(await tokenOf(alice, 'read'))).error).toBe('forbidden');
     expect((await use(await tokenOf(alice, 'comment'))).error).toBe('forbidden');
@@ -250,8 +275,11 @@ describe('use_template', () => {
     expect((await use(await tokenOf(gus, 'write'))).error).toBe('not_found');
     const elsewhere = await h.newBoard(alice.cookie);
     expect((await use(await tokenOf(wsOwner, 'write', [elsewhere]), elsewhere)).error).toBeUndefined();
-    await sleep(100);
-    expect(Buffer.from(Y.encodeStateAsUpdate(live.doc)).toString('base64')).toBe(before);
+    const barrier = writeBarrier(live.doc);
+    await until(() => observer.doc.getMap('meta').get(barrier.key) === barrier.value, 15_000);
+    const expected = stateAfter(before, barrier.update);
+    expect(encodeState(live.doc)).toBe(expected);
+    expect(encodeState(observer.doc)).toBe(expected);
   });
 
   it('lets an editor and a guest editor use a template they can see', async () => {

@@ -5,9 +5,9 @@ import { leftOutNote, nothingToAdd, settledNotice } from '../ai-live-logic';
 import type { SettledRun } from '../ai-runs';
 import {
   CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON,
-  addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos, contextAfterSelection, contextLabel, contextMenu,
+  addedMessage, aiAvailable, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos, contextAfterSelection, contextLabel, contextMenu,
   disclosure, dockBottom, dragPos, errorView, estimateFor, formatPos, formatWait, isAdminRole, modelChipLabel, modelChipText,
-  nearestIds, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi, runTarget, showSetUpAi,
+  nearestIds, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi, runTarget,
   runTip, runningText, serializeHistory, settledMessage, stepHistory, thisRunText, toggleArmed, HISTORY_SHOWN,
   type AiContext, type AiFailure, type BarUi, type ErrorView, type Facts, type Pos, type RunBody,
 } from '../ai-bar-logic';
@@ -128,11 +128,9 @@ export interface AiBarControl {
 
 const controls = new WeakMap<BoardApp, AiBarControl>();
 const watchers = new WeakMap<BoardApp, Set<(why: 'mount' | 'layout') => void>>();
-const setupItems = new WeakMap<BoardApp, boolean>();
 let shown = 0;
 
 export const aiBarFor = (app: BoardApp): AiBarControl | null => controls.get(app) ?? null;
-export const aiSetupFor = (app: BoardApp): boolean => aiBarFlag() && (setupItems.get(app) ?? false);
 
 /** The bar came or went ('mount': the entry points show or hide), or changed size or place ('layout': the quick bar makes way). */
 export function onAiBarChange(app: BoardApp, fn: (why: 'mount' | 'layout') => void): () => void {
@@ -149,40 +147,18 @@ const announce = (app: BoardApp, why: 'mount' | 'layout') => {
 export const aiBarShown = (): boolean => shown > 0;
 
 /**
- * The bar is behind a flag until a smoke run with a real key: `?aibar` in the URL, or
- * localStorage `driftboard:flag:aibar` set to `1`. Without it nothing of the bar exists, not even its shortcut.
- */
-export function aiBarFlag(): boolean {
-  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('aibar')) return true;
-  return read('driftboard:flag:aibar') === '1';
-}
-
-/**
- * Mounts the bar when AI is on for the workspace (GET /api/ai/config) and the person can edit this board, and takes it away
- * again, cancelling a preview, when either stops being true. Nothing is drawn for viewers, commenters or a workspace without AI.
+ * Mounts the bar when AI is enabled for this person, a usable key or credits are available, and they can edit this board.
+ * It takes the bar away again, cancelling a preview, when any of those conditions stops being true.
  */
 export function mountAiBar(app: BoardApp, chrome: HTMLElement): void {
-  if (!aiBarFlag()) return;
   let config: AiConfig | null = null;
   let bar: Bar | null = null;
   let loading = false;
   let gone = false;
 
-  const account = () => {
-    const a = authState();
-    return a.mode === 'signed-in' || a.mode === 'offline' ? a.me : null;
-  };
-  const updateSetup = () => {
-    const next = showSetUpAi({ flag: aiBarFlag(), config, role: account()?.user.role });
-    const previous = setupItems.get(app) ?? false;
-    setupItems.set(app, next);
-    if (next !== previous) announce(app, 'mount');
-  };
-
   const evaluate = () => {
     if (gone) return;
-    updateSetup();
-    if (config?.enabled && !app.readOnly) {
+    if (config && aiAvailable(config) && !app.readOnly) {
       if (bar) bar.setConfig(config);
       else bar = createBar(app, chrome, config);
     } else if (bar) {
@@ -191,9 +167,9 @@ export function mountAiBar(app: BoardApp, chrome: HTMLElement): void {
     }
   };
   const load = () => {
-    if (loading || gone || (app.readOnly && !isAdminRole(account()?.user.role))) return;
+    if (loading || gone || app.readOnly) return;
     loading = true;
-    // The config also decides whether an admin gets Set up AI on a view-only board. A refusal takes the bar away; a connection failure does not.
+    // A refusal takes the bar away; a connection failure does not.
     void api.aiConfig().then(
       (c) => { config = c; },
       (e: unknown) => {
@@ -477,7 +453,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const feature = idle ? st.armed : st.req?.feature ?? null;
     const [first, second] = disclosure({
       ui: st.ui, ctx: snap.ctx, facts: snap.facts, prompt: snap.prompt, withPrompt: promptSent(feature), keySource: config.keySource,
-      privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null,
+      credits: config.credits, privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null,
     });
     if (sends.textContent !== first) sends.textContent = first;
     if (pays.textContent !== second) pays.textContent = second;
@@ -544,7 +520,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       return;
     }
     const text = h('span');
-    if (v.kind === 'rate') {
+    if (v.kind === 'rate' && !v.staticText) {
       // the number counts down for the eye; a screen reader gets the sentence once, and again when the wait ends
       const visible: (Node | string)[] = [];
       if (st.wait > 0) {

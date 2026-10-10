@@ -1,0 +1,169 @@
+name: Nightly test suite
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-full-suite
+  cancel-in-progress: false
+
+jobs:
+  suite:
+    name: Suite (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Test run 1
+        id: run1
+        continue-on-error: true
+        run: npm test -- --reporter=default --reporter=json --outputFile.json=nightly-1.json
+      - name: Test run 2
+        id: run2
+        continue-on-error: true
+        run: npm test -- --reporter=default --reporter=json --outputFile.json=nightly-2.json
+      - name: Test run 3
+        id: run3
+        continue-on-error: true
+        run: npm test -- --reporter=default --reporter=json --outputFile.json=nightly-3.json
+      - name: Summarize test results
+        id: summarize
+        if: always()
+        shell: bash
+        env:
+          NIGHTLY_OS: ${{ matrix.os }}
+          NIGHTLY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NIGHTLY_RUN_1_OUTCOME: ${{ steps.run1.outcome }}
+          NIGHTLY_RUN_2_OUTCOME: ${{ steps.run2.outcome }}
+          NIGHTLY_RUN_3_OUTCOME: ${{ steps.run3.outcome }}
+        run: |
+          node scripts/nightly-report.mjs analyze \
+            --os "$NIGHTLY_OS" \
+            --output nightly-summary.json \
+            --report nightly-1.json --outcome "$NIGHTLY_RUN_1_OUTCOME" \
+            --report nightly-2.json --outcome "$NIGHTLY_RUN_2_OUTCOME" \
+            --report nightly-3.json --outcome "$NIGHTLY_RUN_3_OUTCOME"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-${{ matrix.os }}
+          path: nightly-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  report:
+    name: Report nightly results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: suite
+    if: always()
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Download OS results
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: nightly-*
+          path: nightly-results
+          merge-multiple: false
+      - name: Merge OS results
+        id: merge
+        if: always()
+        shell: bash
+        env:
+          SUITE_RESULT: ${{ needs.suite.result }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          NIGHTLY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node scripts/nightly-report.mjs merge \
+            --artifacts-dir nightly-results \
+            --output nightly-merged.json \
+            --issue-body nightly-issue.md \
+            --suite-result "$SUITE_RESULT" \
+            --download-outcome "$DOWNLOAD_OUTCOME" \
+            --run-url "$NIGHTLY_RUN_URL"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nightly-merged-report
+          path: nightly-merged.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Create or update the nightly issue
+        id: post
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ ! -f nightly-merged.json ]; then
+            echo "The merged nightly report is missing."
+            exit 1
+          fi
+          should_report=$(jq -r '.issueRequired' nightly-merged.json)
+          title='Nightly: failing or flaky tests'
+          # gh reports the state as OPEN or CLOSED; the checks below compare lower case
+          existing=$(gh issue list --state all --limit 100 --search 'in:title "Nightly: failing or flaky tests"' --json number,title,state --jq '.[] | select(.title == "Nightly: failing or flaky tests") | "\(.number)\t\(.state | ascii_downcase)"' | head -n 1)
+          if [ "$should_report" = true ]; then
+            if ! gh label list --limit 100 --json name --jq '.[].name' | grep -Fxq nightly; then
+              gh label create nightly --color 0e8a16 --description 'Nightly test results' || {
+                gh label list --limit 100 --json name --jq '.[].name' | grep -Fxq nightly
+              }
+            fi
+            if [ -n "$existing" ]; then
+              issue_number="${existing%%$'\t'*}"
+              issue_state="${existing#*$'\t'}"
+              if [ "$issue_state" = closed ]; then gh issue reopen "$issue_number"; fi
+              gh issue edit "$issue_number" --add-label nightly
+              gh issue comment "$issue_number" --body-file nightly-issue.md
+            else
+              gh issue create --title "$title" --label nightly --body-file nightly-issue.md
+            fi
+          elif [ -n "$existing" ]; then
+            issue_number="${existing%%$'\t'*}"
+            issue_state="${existing#*$'\t'}"
+            if [ "$issue_state" = open ]; then
+              gh issue close "$issue_number" --comment "Nightly suite is fully green. [View this workflow run]($NIGHTLY_RUN_URL)."
+            fi
+          fi
+      - name: Fail for infrastructure errors or consistently failing tests
+        if: always()
+        shell: bash
+        env:
+          MERGE_OUTCOME: ${{ steps.merge.outcome }}
+          POST_OUTCOME: ${{ steps.post.outcome }}
+        run: |
+          node scripts/nightly-report.mjs check \
+            --result-file nightly-merged.json \
+            --merge-outcome "$MERGE_OUTCOME" \
+            --post-outcome "$POST_OUTCOME"

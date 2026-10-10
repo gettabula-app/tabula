@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,8 +9,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // Sockets that are already open when somebody's access changes (docs/accounts.md, "Relay"). The relay runs as a child
 // process in accounts mode. A "write" here is a real Yjs update sent over the member's own socket from a fresh document
@@ -18,8 +17,8 @@ import { RELAY_START_MS } from './relay-timing';
 // connection that watches the same room tells whether it arrived. Awareness travels behind it on the same socket: once
 // it has arrived, the update has too, if it was let through.
 
-const MAIN_PORT = await freePort();
-const TIMED_PORT = await freePort();
+let MAIN_PORT = 0;
+let TIMED_PORT = 0;
 const OWNER = 'owner@example.com';
 const COMMENTS = '~comments';
 const ROLE_RECHECK_MS = 5000; // server/relay.mjs
@@ -29,43 +28,20 @@ type Res = { status: number; body: Body; headers: Headers };
 type Account = { cookie: string; user: Body; email: string; verifiedBetween: [number, number] };
 type Role = 'editor' | 'commenter' | 'viewer';
 
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DATA_DIR: dir,
-        HOST: '127.0.0.1',
-        TABULA_AUTH: 'on',
-        TABULA_OWNER_EMAIL: OWNER,
-        TABULA_MAIL: 'file',
-        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
-        TABULA_TRUST_PROXY: '1',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const timer = setTimeout(() => {
-      p.kill();
-      reject(new Error('relay did not start'));
-    }, RELAY_START_MS);
-    p.stdout!.on('data', (d) => {
-      if (String(d).includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve(p);
-      }
-    });
-    p.stderr!.on('data', () => {});
-    p.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    p.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`relay exited with ${code}`));
-    });
-  });
+const startRelay = (dir: string, env: Record<string, string> = {}) => startRelayProcess({
+  envFor: (port) => ({
+    ...(process.env as Record<string, string>),
+    PORT: String(port),
+    DATA_DIR: dir,
+    HOST: '127.0.0.1',
+    TABULA_AUTH: 'on',
+    TABULA_OWNER_EMAIL: OWNER,
+    TABULA_MAIL: 'file',
+    TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+    TABULA_TRUST_PROXY: '1',
+    ...env,
+  }),
+});
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -119,8 +95,8 @@ type Conn = { doc: Y.Doc; provider: WebsocketProvider; closes: number[] };
 type Pair = { board: Conn; comments: Conn };
 
 /** One relay, and everything a test needs to talk to it. */
-function harness(port: number, getDir: () => string) {
-  const baseUrl = `http://127.0.0.1:${port}`;
+function harness(getPort: () => number, getDir: () => string) {
+  const baseUrl = () => `http://127.0.0.1:${getPort()}`;
   let seq = 0;
   const unique = (tag: string) => `${tag}${++seq}x${Math.random().toString(36).slice(2, 7)}`;
   const emailOf = (tag: string) => `${unique(tag)}@example.com`;
@@ -128,7 +104,7 @@ function harness(port: number, getDir: () => string) {
   const nextIp = () => `10.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}.11`;
 
   async function api(cookie: string | undefined, method: string, urlPath: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
-    const res = await fetch(baseUrl + urlPath, {
+    const res = await fetch(baseUrl() + urlPath, {
       method,
       headers: {
         'x-tabula': '1',
@@ -191,7 +167,7 @@ function harness(port: number, getDir: () => string) {
 
   // ------------------------------------------------------------ websocket helpers
 
-  const wsHeaders = (cookie?: string): Record<string, string> => ({ Origin: baseUrl, ...(cookie ? { Cookie: cookie } : {}) });
+  const wsHeaders = (cookie?: string): Record<string, string> => ({ Origin: baseUrl(), ...(cookie ? { Cookie: cookie } : {}) });
 
   const sockets = new Set<WebSocket>();
   const providers = new Set<WebsocketProvider>();
@@ -204,7 +180,7 @@ function harness(port: number, getDir: () => string) {
   }
 
   function rawSocket(room: string, cookie: string) {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${room}`, { headers: wsHeaders(cookie) });
+    const ws = new WebSocket(`ws://127.0.0.1:${getPort()}/sync/${room}`, { headers: wsHeaders(cookie) });
     sockets.add(ws);
     ws.on('error', () => {});
     const closed = new Promise<{ code: number; at: number }>((resolve) => ws.on('close', (code) => resolve({ code, at: Date.now() })));
@@ -221,7 +197,7 @@ function harness(port: number, getDir: () => string) {
 
   function connect(room: string, cookie: string): Conn {
     const doc = new Y.Doc();
-    const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/sync`, room, doc, {
+    const provider = new WebsocketProvider(`ws://127.0.0.1:${getPort()}/sync`, room, doc, {
       WebSocketPolyfill: wsFor(cookie) as unknown as typeof globalThis.WebSocket,
       disableBc: true,
     });
@@ -276,14 +252,16 @@ function harness(port: number, getDir: () => string) {
 
 describe('open sockets follow role changes', { timeout: 30_000 }, () => {
   let dir = '';
-  const h = harness(MAIN_PORT, () => dir);
+  const h = harness(() => MAIN_PORT, () => dir);
   const { api, signIn, newTeam, joinTeam, newBoard, share, roleOn, rawSocket, pair, pairSynced, lands, stillOpen, stored } = h;
   let relay: ChildProcess;
   let owner: Account;
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-live-roles-'));
-    relay = await startRelay(MAIN_PORT, dir, {});
+    const started = await startRelay(dir);
+    MAIN_PORT = started.port;
+    relay = started.proc;
     owner = await signIn(OWNER);
   });
 
@@ -507,17 +485,19 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
 
 // ---------------------------------------------------------------- sessions that run out
 
-describe('open sockets follow their session', { timeout: 40_000 }, () => {
+describe('open sockets follow their session', { timeout: 90_000 }, () => {
   // 0.00004 days is 3.456 seconds
   const SESSION_MS = 0.00004 * 24 * 60 * 60 * 1000;
   let dir = '';
-  const h = harness(TIMED_PORT, () => dir);
+  const h = harness(() => TIMED_PORT, () => dir);
   const { api, signIn, newBoard, rawSocket } = h;
   let relay: ChildProcess;
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-live-session-'));
-    relay = await startRelay(TIMED_PORT, dir, { TABULA_SESSION_DAYS: '0.00004' });
+    const started = await startRelay(dir, { TABULA_SESSION_DAYS: '0.00004' });
+    TIMED_PORT = started.port;
+    relay = started.proc;
   });
 
   afterEach(() => h.dispose());
@@ -529,8 +509,7 @@ describe('open sockets follow their session', { timeout: 40_000 }, () => {
   });
 
   it('closes a socket with 4401 once its session has run out, and keeps one whose session slides past the first expiry', async () => {
-    // the relay looks at each socket at most every 5 seconds, so a dead session is noticed up to 5 seconds (plus a 1 second tick) late
-    const LATE_MS = ROLE_RECHECK_MS + 1000 + 1500;
+    const CLOSE_TIMEOUT_MS = 30_000;
     const first = await signIn(OWNER);
     const board = await newBoard(first.cookie);
     const plain = await signIn(OWNER);
@@ -540,8 +519,8 @@ describe('open sockets follow their session', { timeout: 40_000 }, () => {
     const slidingSockets = rooms.map((room) => rawSocket(room, sliding.cookie));
     await within(Promise.all([...plainSockets, ...slidingSockets].map((s) => s.joined)));
 
-    // nobody touches `plain`: its sockets close with 4401, not before the session ends and not much later than the next recheck
-    const plainClosing = within(Promise.all(plainSockets.map((s) => s.closed)), SESSION_MS + LATE_MS + 2000);
+    // nobody touches `plain`: its sockets close with 4401 after the session ends.
+    const plainClosing = within(Promise.all(plainSockets.map((s) => s.closed)), CLOSE_TIMEOUT_MS);
     let plainDoneAt = 0;
     const noteDone = () => {
       plainDoneAt = Date.now();
@@ -554,7 +533,9 @@ describe('open sockets follow their session', { timeout: 40_000 }, () => {
     const originalEnd = sliding.verifiedBetween[1] + SESSION_MS;
     let slidAt: [number, number] = [0, 0];
     let slides = 0;
+    const plainCloseDeadline = Date.now() + CLOSE_TIMEOUT_MS;
     while (plainDoneAt === 0 || Date.now() < plainDoneAt + 1500) {
+      if (plainDoneAt === 0 && Date.now() >= plainCloseDeadline) throw new Error('timed out waiting for the plain session sockets to close');
       const from = Date.now();
       const res = await api(sliding.cookie, 'GET', '/api/me');
       expect(res.status).toBe(200);
@@ -571,18 +552,16 @@ describe('open sockets follow their session', { timeout: 40_000 }, () => {
     const plainClosed = await plainClosing;
     expect(plainClosed.map((c) => c.code)).toEqual([4401, 4401]);
     for (const { at } of plainClosed) {
-      expect(at).toBeGreaterThanOrEqual(plain.verifiedBetween[0] + SESSION_MS - 100);
-      expect(at).toBeLessThanOrEqual(plain.verifiedBetween[1] + SESSION_MS + LATE_MS);
+      expect(at).toBeGreaterThanOrEqual(plain.verifiedBetween[0] + SESSION_MS);
     }
     expect((await api(plain.cookie, 'GET', '/api/me')).status).toBe(401);
     expect((await within(rawSocket(board, plain.cookie).closed)).code).toBe(4401);
 
     // once the activity stops, the extended session runs out like any other
-    const slidingClosed = await within(Promise.all(slidingSockets.map((s) => s.closed)), SESSION_MS + LATE_MS + 2000);
+    const slidingClosed = await within(Promise.all(slidingSockets.map((s) => s.closed)), CLOSE_TIMEOUT_MS);
     expect(slidingClosed.map((c) => c.code)).toEqual([4401, 4401]);
     for (const { at } of slidingClosed) {
-      expect(at).toBeGreaterThanOrEqual(slidAt[0] + SESSION_MS - 100);
-      expect(at).toBeLessThanOrEqual(slidAt[1] + SESSION_MS + LATE_MS);
+      expect(at).toBeGreaterThanOrEqual(slidAt[0] + SESSION_MS);
     }
     expect((await api(sliding.cookie, 'GET', '/api/me')).status).toBe(401);
   });

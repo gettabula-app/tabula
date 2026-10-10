@@ -14,7 +14,7 @@ import { openDirectory } from '../server/directory.mjs';
 import { CREDS, KEY, MIN, T0, harness, type Harness } from './backup-harness';
 import { isWindows, simulatedWindows } from './platform';
 import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/backups.md and docs/cloud.md. GET /api/internal/backup-status in process, and the relay as a child process with
 // backups configured, half configured, misconfigured and unreachable.
@@ -132,8 +132,31 @@ const running: { proc: ChildProcess; dir: string }[] = [];
 type Launched = { port: number; base: string; dir: string; proc: ChildProcess; out: () => string; err: () => string; exited: Promise<number | null> };
 
 async function launch(env: Record<string, string>, { waitForStart = true } = {}): Promise<Launched> {
-  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-backup-relay-'));
+  if (waitForStart) {
+    const started = await startRelayProcess({
+      envFor: (port) => ({
+        ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_MAIL: 'file',
+        TABULA_BASE_URL: `http://127.0.0.1:${port}`, ...env,
+      }),
+    });
+    running.push({ proc: started.proc, dir });
+    const exited = new Promise<number | null>((resolve) => {
+      if (started.proc.exitCode !== null || started.proc.signalCode !== null) resolve(started.proc.exitCode);
+      else started.proc.once('exit', (code) => resolve(code));
+    });
+    return {
+      port: started.port,
+      base: `http://127.0.0.1:${started.port}`,
+      dir,
+      proc: started.proc,
+      out: started.output,
+      err: started.output,
+      exited,
+    };
+  }
+
+  const port = await freePort();
   const proc = spawn(process.execPath, ['server/relay.mjs'], {
     env: {
       ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_MAIL: 'file',
@@ -147,18 +170,7 @@ async function launch(env: Record<string, string>, { waitForStart = true } = {})
   proc.stdout!.on('data', (d) => (out += d));
   proc.stderr!.on('data', (d) => (err += d));
   const exited = new Promise<number | null>((resolve) => proc.once('exit', (code) => resolve(code)));
-  return new Promise((resolve, reject) => {
-    const result = { port, base: `http://127.0.0.1:${port}`, dir, proc, out: () => out, err: () => err, exited };
-    if (!waitForStart) return void resolve(result);
-    const timer = setTimeout(() => reject(new Error(`relay did not start: ${err}`)), RELAY_START_MS);
-    proc.stdout!.on('data', () => {
-      if (out.includes('Tabula relay')) {
-        clearTimeout(timer);
-        resolve(result);
-      }
-    });
-    void exited.then(() => reject(new Error(`relay exited: ${err}`)));
-  });
+  return { port, base: `http://127.0.0.1:${port}`, dir, proc, out: () => out, err: () => err, exited };
 }
 
 afterAll(async () => {

@@ -162,6 +162,15 @@ describe('validateProposal', () => {
     });
   });
 
+  it('keeps emoji sequences and subdivision flags in prompts and proposals', () => {
+    const family = '👨‍👩‍👧‍👦';
+    const england = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}';
+    const raw = `Family ${family} ${england} A\u200DB`;
+    const clean = `Family ${family} ${england} AB`;
+    expect(parseInput('generate', { prompt: raw }).prompt).toBe(clean);
+    expect((validateProposal('generate', { objects: [{ text: raw }] }, ctx()) as any).objects[0].text).toBe(clean);
+  });
+
   it('accepts every colour of the palette by name, in any case', () => {
     for (const { name } of STICKY_COLORS) {
       expect((validateProposal('generate', { objects: [{ text: 'x', color: name.toUpperCase() }] }, ctx()) as any).objects[0].color).toBe(name);
