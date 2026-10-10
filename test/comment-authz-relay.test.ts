@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,13 +7,12 @@ import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/comment-authz.md over real sockets, in accounts mode: the relay corrects what a person's rules forbid, tells
 // only that person (message type 5), and every client converges on the corrected threads.
 
-const ACCOUNTS_PORT = await freePort();
+let ACCOUNTS_PORT = 0;
 const OWNER = 'owner@example.com';
 const COMMENTS = '~comments';
 const MSG_COMMENT_NOTICE = 5;
@@ -21,18 +20,6 @@ const MSG_COMMENT_NOTICE = 5;
 type Body = any;
 type Res = { status: number; body: Body; headers: Headers };
 type Account = { cookie: string; user: Body; email: string };
-
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(port), DATA_DIR: dir, HOST: '127.0.0.1', ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
 
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
@@ -52,7 +39,7 @@ const until = async (fn: () => boolean, ms = 5000) => {
 };
 
 describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 }, () => {
-  const baseUrl = `http://127.0.0.1:${ACCOUNTS_PORT}`;
+  let baseUrl = '';
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-comment-authz-'));
   const outbox = path.join(dataDir, 'outbox.jsonl');
   let relay: ChildProcess;
@@ -191,13 +178,22 @@ describe('comment authorship over the relay (accounts mode)', { timeout: 30_000 
   }
 
   beforeAll(async () => {
-    relay = await startRelay(ACCOUNTS_PORT, dataDir, {
-      TABULA_AUTH: 'on',
-      TABULA_OWNER_EMAIL: OWNER,
-      TABULA_MAIL: 'file',
-      TABULA_BASE_URL: baseUrl,
-      TABULA_TRUST_PROXY: '1',
+    const started = await startRelayProcess({
+      envFor: (port) => ({
+        ...(process.env as Record<string, string>),
+        PORT: String(port),
+        DATA_DIR: dataDir,
+        HOST: '127.0.0.1',
+        TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER,
+        TABULA_MAIL: 'file',
+        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+        TABULA_TRUST_PROXY: '1',
+      }),
     });
+    ACCOUNTS_PORT = started.port;
+    baseUrl = `http://127.0.0.1:${ACCOUNTS_PORT}`;
+    relay = started.proc;
     owner = await signIn(OWNER);
   });
 

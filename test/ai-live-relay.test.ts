@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -9,15 +9,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/ai.md, "Live runs": the relay as `npm start` runs it in open mode tells every socket on a board about its AI runs
 // (message type 6): a patch per change, and a snapshot for a socket that joins while runs are open. The provider is a
 // local HTTP server that answers like the Messages API, so nothing leaves the machine and the key is made up.
 
 const RELAY = fileURLToPath(new URL('../server/relay.mjs', import.meta.url));
-const PORT = await freePort();
+let PORT = 0;
 const KEY = `sk-ant-api03-${crypto.randomBytes(24).toString('hex')}`;
 const MSG_AI_RUNS = 6;
 
@@ -101,25 +100,21 @@ afterAll(async () => {
 async function start() {
   await new Promise<void>((r) => provider.server.listen(0, '127.0.0.1', r));
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-live-relay-'));
-  let out = '';
-  relay = spawn(process.execPath, [RELAY], {
+  const started = await startRelayProcess({
+    entry: RELAY,
     cwd: dir,
-    env: {
+    envFor: (port) => ({
       ...cleanEnv(),
-      PORT: String(PORT),
+      PORT: String(port),
       DATA_DIR: dir,
       HOST: '127.0.0.1',
       TABULA_AI_API_KEY: KEY,
       TABULA_AI_OPEN: '1',
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${(provider.server.address() as AddressInfo).port}`,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    }),
   });
-  relay.stdout!.on('data', (d) => (out += d));
-  relay.stderr!.on('data', (d) => (out += d));
-  await until(() => out.includes('Tabula relay'), RELAY_START_MS).catch(() => {
-    throw new Error(`relay did not start: ${out}`);
-  });
+  PORT = started.port;
+  relay = started.proc;
 }
 
 const post = async (url: string, body: unknown) => {

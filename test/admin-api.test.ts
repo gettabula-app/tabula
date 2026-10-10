@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,8 +7,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { openDirectory } from '../server/directory.mjs';
 import pkg from '../package.json';
-import { freePort } from './free-port';
-import { RELAY_START_MS } from './relay-timing';
+import { startRelayProcess } from './start-relay';
 
 // docs/admin.md. The relay runs as a child process in accounts mode (and once in open mode), exactly as `npm start`
 // would: revoking sessions has to close real sockets, and the events that do it only reach the relay in-process.
@@ -39,29 +38,6 @@ async function eventually(fn: () => Promise<void>, ms = 4000) {
   }
 }
 
-const startRelay = (port: number, dir: string, env: Record<string, string>) =>
-  new Promise<ChildProcess>((resolve, reject) => {
-    const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: {
-        ...process.env,
-        PORT: String(port),
-        DATA_DIR: dir,
-        HOST: '127.0.0.1',
-        TABULA_AUTH: 'on',
-        TABULA_OWNER_EMAIL: OWNER,
-        TABULA_MAIL: 'file',
-        TABULA_BASE_URL: `http://127.0.0.1:${port}`,
-        TABULA_TRUST_PROXY: '1',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    p.stdout!.on('data', (d) => String(d).includes('Tabula relay') && resolve(p));
-    p.stderr!.on('data', () => {});
-    p.on('error', reject);
-    setTimeout(() => reject(new Error('relay did not start')), RELAY_START_MS);
-  });
-
 const stopRelay = (p: ChildProcess) =>
   new Promise<void>((r) => {
     if (p.exitCode !== null || p.signalCode !== null) return r();
@@ -72,9 +48,22 @@ const stopRelay = (p: ChildProcess) =>
 const servers: Server[] = [];
 
 async function launch(env: Record<string, string> = {}): Promise<Server> {
-  const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-admin-'));
-  const server = { port, base: `http://127.0.0.1:${port}`, dir, proc: await startRelay(port, dir, env) };
+  const { proc, port } = await startRelayProcess({
+    envFor: (port) => ({
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: dir,
+      HOST: '127.0.0.1',
+      TABULA_AUTH: 'on',
+      TABULA_OWNER_EMAIL: OWNER,
+      TABULA_MAIL: 'file',
+      TABULA_BASE_URL: `http://127.0.0.1:${port}`,
+      TABULA_TRUST_PROXY: '1',
+      ...env,
+    }),
+  });
+  const server = { port, base: `http://127.0.0.1:${port}`, dir, proc };
   servers.push(server);
   return server;
 }
