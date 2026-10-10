@@ -178,7 +178,17 @@ function usageError(error) {
   process.stderr.write(`${message}\n`);
 }
 
+const USAGE = `Usage: node scripts/linear-import.mjs <command> [flags]
+Commands: fetch, dry-run, import, delta, verify (see docs/linear-import.md)
+Flags: --data-dir --snapshot --out --actor-email --numbering keep|allocate --mode create|update --fields --since --yes --max-issues --record --resume --replay
+Writes need --yes and a stopped relay (or a restored copy). The Linear key comes from LINEAR_API_KEY in the environment only.
+`;
+
 async function main(argv) {
+  if (argv[0] === '--help' || argv[0] === '-h' || argv.length === 0) {
+    process.stdout.write(USAGE);
+    return;
+  }
   const { command, flags } = parseArgs(argv);
   if (command === 'fetch') {
     const snapshot = await fetchAndSave(flags, flags.out ? path.resolve(flags.out) : null);
