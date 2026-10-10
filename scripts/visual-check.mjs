@@ -857,6 +857,25 @@ async function voteBarOneRow(env, label) {
   if (rows.out.length) throw new Error(`${label}: controls stick out of the vote bar: ${rows.out.join(', ')}`);
 }
 
+async function checkStepsOverlap(env, name) {
+    const result = await env.page.evaluate(() => {
+      const bar = document.querySelector('.flowbar.show');
+      const pop = document.querySelector('.popover.wide');
+      const next = [...(bar?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.trim().startsWith('Next step'));
+      if (!bar || !pop || !next) return { failures: ['session bar, Steps popover or Next step button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const b = box(bar), p = box(pop), n = box(next);
+      const intersects = p.left < b.right && p.right > b.left && p.top < b.bottom && p.bottom > b.top;
+      const hit = document.elementFromPoint((n.left + n.right) / 2, (n.top + n.bottom) / 2);
+      const failures = [];
+      if (intersects) failures.push(`Steps popover intersects the session bar (${Math.round(p.top)}-${Math.round(p.bottom)} vs ${Math.round(b.top)}-${Math.round(b.bottom)})`);
+      if (hit !== next && !next.contains(hit)) failures.push(`Next step centre hits ${hit?.getAttribute('aria-label') ?? hit?.textContent?.trim() ?? hit?.tagName ?? 'nothing'}`);
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, popover: { top: p.top, bottom: p.bottom }, bar: { top: b.top, bottom: b.bottom }, hit: hit?.textContent?.trim() };
+    });
+    console.log(`${name} ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`${name}: ${JSON.stringify(result.failures)}`);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -1358,8 +1377,9 @@ const STATES = {
       f.setSteps(Array.from({ length: 10 }, (_, i) => ({ id: `vc-m${i}`, title: `Step ${i + 1}: a longer title for the list`, mode: i % 3 === 1 ? 'vote' : 'write', instructions: 'Do the thing together.', durationSec: 180, votesPerPerson: i % 3 === 1 ? 3 : undefined })));
       f.start();
     });
-    console.log(`flow-steps-overlap ${JSON.stringify(result)}`);
-    if (result.failures.length) throw new Error(`flow-steps-overlap: ${JSON.stringify(result.failures)}`);
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.locator('.step-list').waitFor();
+    await checkStepsOverlap(env, 'flow-steps-overlap-many');
   },
   async 'chat-session'(env) {
     await resetChatMarker(env);
