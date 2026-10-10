@@ -226,7 +226,8 @@ const toInvite = (r) => ({
 const inviteActive = (invite, now) =>
   !invite.revoked && invite.expiresAt > now && (invite.maxUses == null || invite.uses < invite.maxUses);
 
-export function openDirectory(file) {
+/** @param {string} file @param {{ snapshotBarrier?: any }} [options] */
+export function openDirectory(file, { snapshotBarrier = null } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
@@ -246,11 +247,23 @@ export function openDirectory(file) {
   };
   const get = (sql, ...params) => stmt(sql).get(...params);
   const all = (sql, ...params) => stmt(sql).all(...params);
-  const run = (sql, ...params) => Number(stmt(sql).run(...params).changes);
+  const run = (sql, ...params) => {
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      // Most directory methods are synchronous. Queue their low-level writes so reads keep working and a barrier never
+      // makes a caller fail or silently discard a statement. API writer handlers hold an async lease, so multi-step
+      // operations arrive here only after the barrier has opened.
+      snapshotBarrier.deferWrite(() => run(sql, ...params));
+      return 0;
+    }
+    return Number(stmt(sql).run(...params).changes);
+  };
 
   let closed = false;
   let depth = 0;
   function transaction(fn) {
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      return snapshotBarrier.deferWrite(() => transaction(fn));
+    }
     const nested = depth > 0;
     const savepoint = `sp${depth}`;
     db.exec(nested ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');

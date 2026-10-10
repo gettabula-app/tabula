@@ -174,7 +174,7 @@ function linkValue(value, path) {
  * @param {{ read(room: string, fn: (doc: any) => any): any, write(room: string, origin: string, fn: (doc: any) => any): any, exists(room: string): boolean }} deps.roomAccess
  * @param {(...args: unknown[]) => void} deps.log
  */
-export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, log, now = Date.now }) {
+export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, log, now = Date.now, snapshotBarrier = null }) {
   const open = config.mcp.mode === 'open';
   for (const name of config.mcp.ignored ?? []) log(`${name} is ignored: it only applies in open mode`);
 
@@ -1438,7 +1438,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   }
 
   /** @returns {{ status: number, body?: object, headers?: object }} */
-  function dispatch(actor, message) {
+  async function dispatch(actor, message) {
     const { id, method } = message;
     if (method === 'initialize') {
       const params = typeof message.params === 'object' && message.params !== null ? message.params : {};
@@ -1461,7 +1461,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       }
       const wait = tools.find((t) => t.name === params.name)?.mutating ? writes.hit(actor.tokenId) : 0;
       if (wait) return limited(id, wait);
-      const done = callTool(actor, params);
+      const tool = tools.find((item) => item.name === params.name);
+      const done = tool?.mutating && snapshotBarrier
+        ? await snapshotBarrier.runWriter(() => callTool(actor, params))
+        : callTool(actor, params);
       if (done.rpc) return { status: 200, body: rpcError(id, done.rpc[0], done.rpc[1]) };
       return { status: 200, body: rpcResult(id, done.result) };
     }
@@ -1578,7 +1581,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       send(res, out.status, out.body, out.headers);
       return;
     }
-    const out = dispatch(actor, message);
+    const out = await dispatch(actor, message);
     send(res, out.status, out.body, out.headers);
   }
 

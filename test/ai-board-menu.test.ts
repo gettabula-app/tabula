@@ -111,4 +111,21 @@ describe('board AI entry points without a key or credits', () => {
     const dialog = browser!.document.body.querySelector('[role="dialog"]') as FakeElement | null;
     expect(textOf(dialog)).not.toContain('Ask AI');
   });
+
+  it('puts the User guide first in the menu, as a quiet accent on the same button', async () => {
+    const { root, app } = prepareBoard('member');
+    const { mountBoardUi } = await import('../src/ui/board');
+    mountBoardUi(app as never, root as unknown as HTMLElement, { home: () => undefined });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    control(root, 'Menu').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const menu = browser!.document.body.querySelector('.menu') as FakeElement;
+    const items = menu.querySelectorAll('.menu-item');
+    expect(textOf(items[0])).toContain('User guide');
+    expect(items[0].className).toContain('guide-item');
+    expect(items[0].tagName.toLowerCase()).toBe('button');
+    // nothing before it, not even the account block
+    expect(menu.children[0]).toBe(items[0]);
+    expect(items.filter((item) => textOf(item).includes('User guide'))).toHaveLength(1);
+  });
 });

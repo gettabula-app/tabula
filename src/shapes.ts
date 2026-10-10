@@ -493,6 +493,22 @@ export function headMarkup(head: Head, tip: Point, dir: Point, color: string, sw
   return { svg: '', inset: 0 };
 }
 
+/** A short horizontal connector sample with a real renderer head at its start (outward left) or end (outward right). */
+export function connectorHeadPreviewSvg(head: Head, end: 'start' | 'end'): string {
+  const width = 40, height = 16, y = 8, edge = 4, sw = 1.5;
+  const start = end === 'start';
+  const tip = { x: start ? edge : width - edge, y };
+  const dir = { x: start ? -1 : 1, y: 0 };
+  const geometry = headMarkup(head, tip, dir, 'var(--tray-text, #E9EDF2)', sw);
+  const lineStart = start ? tip.x + geometry.inset : edge;
+  const lineEnd = start ? width - edge : tip.x - geometry.inset;
+  const headSvg = geometry.svg
+    .replaceAll('var(--tray-text, #E9EDF2)', 'currentColor')
+    // Hollow heads reveal the tray they sit on; paper would be the wrong surface in this combobox.
+    .replaceAll('var(--paper, #FFFFFF)', 'var(--tray, #18212B)');
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><path d="M${lineStart} ${y}H${lineEnd}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round"/>${headSvg}</svg>`;
+}
+
 export const HEADS: { head: Head; label: string }[] = [
   { head: 'none', label: 'None' },
   { head: 'arrow', label: 'Arrow' },

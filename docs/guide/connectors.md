@@ -39,7 +39,7 @@ In the properties panel, a connector has **Line** colour, **Width** (1 to 6 px) 
 
 ## Arrowheads
 
-Open **More properties** and set **Start** and **End** arrowheads. The options are None, Arrow, Open arrow, Hollow triangle, Filled diamond, Hollow diamond, Circle, Bar, and Crow's foot (many or one). New connectors start with no head at the start and an arrow at the end. **Reverse direction** swaps the two ends.
+Open **More properties** and set **Start** and **End** arrowheads. Each option in the lists is shown with a small preview of its head, pointing the way the connector will, so you can pick by sight. The options are None, Arrow, Open arrow, Hollow triangle, Filled diamond, Hollow diamond, Circle, Bar, and Crow's foot (many or one). New connectors start with no head at the start and an arrow at the end. **Reverse direction** swaps the two ends.
 
 ## Labels
 

@@ -8,6 +8,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import * as Y from 'yjs';
+import { renameSyncRetry } from './fs-retry.mjs';
 import { csrfOk as sharedCsrfOk } from './auth.mjs';
 
 const MINUTE_MS = 60 * 1000;
@@ -187,7 +188,7 @@ export function createHistory({ dataDir, boardState, now = Date.now, log = conso
   function writeAtomic(file, data) {
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, data);
-    fs.renameSync(tmp, file);
+    renameSyncRetry(tmp, file);
   }
 
   function remember(boardId, entries) {

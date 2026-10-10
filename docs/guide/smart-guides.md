@@ -6,12 +6,13 @@ Smart guides show how the object you are moving or resizing lines up with the ob
 
 - **Alignment lines.** A thin line appears between the objects that line up, from the moving object to the farthest aligned object. It is drawn only between the objects, not across the whole view.
 - **Equal spacing.** When the gap to a neighbour matches a gap elsewhere in the same row or column, or the object sits exactly midway between two neighbours, a bracket appears over each equal gap with its distance on it.
+- **Equal size.** While resizing, a width or height can snap to the same dimension as another object. Brackets mark the resized object and up to three nearest matches, with an `=` before the rounded size.
 
 ## When they appear
 
 Guides show while you move an object and while you resize it. A multi-selection moves as one block. A selection of connectors alone shows no guides.
 
-When you resize, only the edges you are dragging snap. The opposite edge stays where it is. Resizing a rotated object shows no guides. Resizing from a corner with proportions locked, with **Shift** held or for icons and UML actors, also shows none.
+When you resize a free edge, only the edge you are dragging snaps and the opposite edge stays where it is. From a corner with proportions locked, the nearer horizontal or vertical match wins; the other edge follows the ratio and the opposite corner stays fixed. This works for **Shift**-resized corners and for images, icons and UML actors. Resizing a rotated object shows no guides.
 
 ## How close you need to be
 

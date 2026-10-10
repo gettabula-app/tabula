@@ -8,7 +8,7 @@ import { KANBAN, LIMITS as KANBAN_LIMITS, rankBetween, sortedChildren } from '..
 import {
   LIMITS, OpsError, SHAPE_KINDS, STICKY_COLORS, addReply, addThread, aiAuthor, applyPlan, cleanForModel, fence, getObjectsDetail,
   hiddenIds, listThreads, planAddKanbanLane, planCreate, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel,
-  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, summariseBoard,
+  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, stripInvisible, summariseBoard,
 } from '../server/board-ops.mjs';
 
 const who = { createdBy: 'user-1', now: 1000 };
@@ -121,6 +121,56 @@ describe('create', () => {
     const store = new Store(d);
     expect((store.get(res.created[0].id) as any).font).toBe('inter');
     expect((store.get(res.created[1].id) as any).font).toBe('lora');
+  });
+
+  it.each([
+    ['lane', 'lane'],
+    ['container', 'kanban'],
+  ] as const)('refuses a new connector end on a %s', (_type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    for (const end of ['from', 'to'] as const) {
+      const before = bytes(d);
+      const item: Record<string, unknown> = { type: 'connector', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } };
+      item[end] = { id: targetId };
+      const err = failure(() => planCreate(d, [item], who));
+      expect(err).toMatchObject({
+        code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `objects[0].${end}`,
+      });
+      expect(bytes(d)).toBe(before);
+    }
+  });
+
+  it('keeps card ends and same-call refs working, and refuses an atomic batch with a kanban end', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+    );
+    const cardConnector = create(d, [{ type: 'connector', from: { id: 'card' }, to: { x: 4, y: 5 } }]);
+    expect(new Store(d).get(cardConnector.created[0].id)).toMatchObject({ from: { kind: 'bound', id: 'card', anchor: 'auto' } });
+
+    const refConnector = create(d, [
+      { type: 'shape', ref: 'shape', x: 0, y: 0 },
+      { type: 'connector', from: { ref: 'shape' }, to: { x: 1, y: 1 } },
+    ]);
+    expect((new Store(d).get(refConnector.created[1].id) as any).from.id).toBe(refConnector.refs.shape);
+
+    const before = bytes(d);
+    const items = [
+      { type: 'connector', from: { id: 'card' }, to: { x: 0, y: 0 } },
+      { type: 'connector', from: { x: 0, y: 0 }, to: { id: 'lane' } },
+    ];
+    const err = failure(() => planCreate(d, items, who));
+    expect(err).toMatchObject({ code: 'invalid_input', path: 'objects[1].to', message: 'Connect to a card, not to a lane or the kanban' });
+    expect(bytes(d)).toBe(before);
   });
 
   it('accepts a parent that is an existing frame', () => {
@@ -257,6 +307,52 @@ describe('update', () => {
     expect(s.rotation).toBeCloseTo(Math.PI / 2);
     expect(new Store(d).get('cn')).toMatchObject({ label: 'x', route: 'curved', dash: 'dotted', updatedAt: 5000 });
     expect(new Store(d).get('sh')).not.toHaveProperty('updatedAt');
+  });
+
+  it.each([
+    ['from', 'lane', 'lane'],
+    ['to', 'lane', 'lane'],
+    ['from', 'container', 'kanban'],
+    ['to', 'container', 'kanban'],
+  ] as const)('refuses to change the connector %s end to a %s', (end, _type, targetId) => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', { from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 1, y: 1 } }),
+    );
+    const before = bytes(d);
+    const patch = { id: 'wire', [end]: { id: targetId } };
+    const err = failure(() => planUpdate(d, [patch]));
+    expect(err).toMatchObject({
+      code: 'invalid_input', message: 'Connect to a card, not to a lane or the kanban', path: `updates[0].${end}`,
+    });
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps an existing kanban-bound connector and allows its unchanged ends and label to be updated', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban', 'container', { layout: 'kanban' }),
+      boardObject('lane', 'lane', { parent: 'kanban' }),
+      boardObject('card', 'card', { parent: 'lane' }),
+      boardObject('wire', 'connector', {
+        from: { kind: 'bound', id: 'lane', anchor: 'left' },
+        to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+      }),
+    );
+
+    update(d, [{ id: 'wire', label: 'Legacy lane connector' }]);
+    expect(new Store(d).get('wire')).toMatchObject({ label: 'Legacy lane connector' });
+
+    update(d, [{ id: 'wire', from: { id: 'lane', side: 'left' }, to: { id: 'kanban' } }]);
+    expect(new Store(d).get('wire')).toMatchObject({
+      from: { kind: 'bound', id: 'lane', anchor: 'left' },
+      to: { kind: 'bound', id: 'kanban', anchor: 'auto' },
+    });
   });
 
   it('clears optional fields with null and re-parents', () => {
@@ -736,11 +832,59 @@ describe('the shared token', () => {
 });
 
 describe('text for the model', () => {
+  const blackFlag = '\u{1f3f4}';
+  const england = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}';
+  const scotland = '\u{1f3f4}\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}';
+  const wales = '\u{1f3f4}\u{e0077}\u{e006c}\u{e0073}\u{e007f}';
+
   it('removes tag, zero-width, bidirectional and control characters, and cuts by code point', () => {
     const dirty = 'a\u{E0041}\u{200B}b\u{202E}c\u{2066}d\u{FEFF}e\u0007f\u{2028}g\th\ni';
     expect(cleanForModel(dirty, 100)).toEqual({ text: 'abcdefg\th\ni', truncated: false });
     expect(cleanForModel('😀'.repeat(5), 3)).toEqual({ text: '😀😀😀…', truncated: true });
     expect(cleanForModel(42, 5)).toEqual({ text: '', truncated: false });
+  });
+
+  it('keeps emoji joiners and complete subdivision flags', () => {
+    const samples = [
+      '👨‍👩‍👧‍👦', '🏳️‍🌈', '👩🏽‍💻', england, scotland, wales,
+    ];
+    expect(samples.map(stripInvisible)).toEqual(samples);
+  });
+
+  it('removes joiners unless they sit between emoji code points', () => {
+    expect(stripInvisible('a\u200Db')).toBe('ab');
+    expect(stripInvisible('\u200Da')).toBe('a');
+    expect(stripInvisible('a\u200D')).toBe('a');
+    expect(stripInvisible('a \u200D👩')).toBe('a 👩');
+    expect(stripInvisible('👩\u200D\u200D👩')).toBe('👩👩');
+    expect(stripInvisible('A\u200DB')).toBe('AB');
+  });
+
+  it('strips incomplete, misplaced and overlong tag runs and is idempotent', () => {
+    const tags = '\u{e0061}\u{e0062}';
+    const nineTags = '\u{e0061}'.repeat(9);
+    const mixed = `Family 👨‍👩‍👧‍👦 ${england} A${tags}\u{e007f}`;
+    expect(stripInvisible(tags)).toBe('');
+    expect(stripInvisible(`${blackFlag}${tags}`)).toBe(blackFlag);
+    expect(stripInvisible(`letter${tags}\u{e007f}`)).toBe('letter');
+    expect(stripInvisible(`${blackFlag}${nineTags}\u{e007f}`)).toBe(blackFlag);
+    const clean = stripInvisible(mixed);
+    expect(clean).toBe(`Family 👨‍👩‍👧‍👦 ${england} A`);
+    expect(stripInvisible(clean)).toBe(clean);
+  });
+
+  it('cleans MCP object and comment writes while retaining valid emoji sequences', () => {
+    const raw = `Family 👨‍👩‍👧‍👦 ${england} A\u200DB`;
+    const clean = `Family 👨‍👩‍👧‍👦 ${england} AB`;
+    const board = new Y.Doc();
+    const created = create(board, [{ type: 'sticky', ref: 'emoji', text: raw, x: 0, y: 0 }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+    update(board, [{ id: created.refs.emoji, text: raw }]);
+    expect((new Store(board).get(created.refs.emoji) as any).text).toBe(clean);
+
+    const comments = new Y.Doc();
+    const { threadId } = addThread(comments, { author: AUTHOR, text: raw, anchor: { x: 0, y: 0 } }, 5000);
+    expect(new Comments(comments).get(threadId)?.text).toBe(clean);
   });
 
   it('fences with a fresh nonce, escapes the content, and cannot be closed from inside', () => {

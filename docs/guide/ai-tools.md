@@ -75,6 +75,8 @@ Kanban boards need care:
 - A tool cannot delete a kanban, and deletes a lane only with the lane tool below. It can delete a card that you can see, that is in a lane and is not locked. A card owned by another AI tool cannot be deleted by this one. A card that is hidden, or holds private session notes you cannot see yet, answers as if it does not exist.
 - Deleting a group deletes everything in it, including groups, frames and kanbans inside it, but a single locked item in the group stops the whole delete ("A member of this group is locked. Unlock it to delete the group."). Private notes from a running session that are not yet revealed are left on the board.
 - A delete that covers several objects is all or nothing, and connectors attached to deleted objects go with them.
+- A tool can connect things to cards and other objects, but not to a lane or to the kanban itself: a new or changed connector end on a lane or kanban is refused (connectors that already exist are left alone).
+- Text a tool writes keeps emoji made of several parts (families, flags such as England, Scotland and Wales) whole, while hidden characters are still removed.
 
 ## Kanban cards from an AI tool
 

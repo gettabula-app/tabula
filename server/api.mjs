@@ -147,7 +147,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -1350,7 +1350,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return true;
     }
     try {
-      await dispatch(req, res, pathname, query);
+      const method = String(req.method).toUpperCase();
+      // Whole-workspace restore takes its safety backup from inside this handler; that backup must be allowed to acquire
+      // the same barrier. Maintenance mode takes over the writers immediately after the safety copy succeeds.
+      // A streaming AI run lasts minutes and writes boards through the room, not the directory, so it must not hold a lease that would stall every other writer.
+      if (snapshotBarrier && !READ_METHODS.has(method) && pathname !== '/api/admin/backups/restore' && pathname !== '/api/ai/run') {
+        await snapshotBarrier.runWriter(() => dispatch(req, res, pathname, query));
+      } else {
+        await dispatch(req, res, pathname, query);
+      }
     } catch (err) {
       if (res.headersSent) {
         res.end();

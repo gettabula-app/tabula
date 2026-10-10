@@ -73,6 +73,12 @@ function drag(app: Harness, r: Renderer, from: Point, to: Point, pointerType = '
   call(app, 'onUp', pointer(r, to, 'pointerup', pointerType));
 }
 
+function seAtFactor(o: BaseObj, factor: number): Point {
+  const anchor = rotate({ x: o.x, y: o.y }, center(o), o.rotation || 0);
+  const corner = rotate({ x: o.x + o.w, y: o.y + o.h }, center(o), o.rotation || 0);
+  return { x: anchor.x + (corner.x - anchor.x) * factor, y: anchor.y + (corner.y - anchor.y) * factor };
+}
+
 beforeEach(() => {
   vi.stubGlobal('document', { createElement: () => new FakeEl(), createElementNS: () => new FakeEl(), activeElement: null });
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -179,6 +185,59 @@ describe('dragging a handle', () => {
     const anchor1 = rotate({ x: o.x, y: o.y }, center(o), o.rotation);
     expect(anchor1.x).toBeCloseTo(anchor0.x, 3);
     expect(anchor1.y).toBeCloseTo(anchor0.y, 3);
+  });
+
+  it.each([0, Math.PI / 6])('clamps corner scaling at both font limits and keeps the opposite corner fixed at rotation %s', (rotation) => {
+    const original = text({ rotation });
+    const fixed0 = rotate({ x: original.x, y: original.y }, center(original), rotation);
+    const ratio = original.w / original.h;
+
+    for (const [factor, expectedSize] of [[0.01, FONT_MIN], [30, FONT_MAX]] as const) {
+      const { app, store, r } = harness(original);
+      const from = seAtFactor(original, 1);
+      drag(app, r, from, seAtFactor(original, factor));
+      const resized = get(store);
+      const fixed1 = rotate({ x: resized.x, y: resized.y }, center(resized), rotation);
+
+      expect(resized.fontSize).toBe(expectedSize);
+      expect(resized.w / resized.h).toBeCloseTo(ratio, 2);
+      expect(fixed1.x).toBeCloseTo(fixed0.x, 3);
+      expect(fixed1.y).toBeCloseTo(fixed0.y, 3);
+    }
+  });
+
+  it('keeps every pointer frame of a long corner drag in one undo step and restores the exact object', () => {
+    vi.useFakeTimers();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = ++nextFrame;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const { app, store, r } = harness();
+    const original = structuredClone(get(store));
+    const from = { x: original.x + original.w, y: original.y + original.h };
+    const to = { x: from.x + original.w, y: from.y + original.h };
+    const flushFrame = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback(performance.now()));
+    };
+
+    call(app, 'onDown', pointer(r, from));
+    for (let i = 1; i <= 16; i++) {
+      const p = { x: from.x + ((to.x - from.x) * i) / 16, y: from.y + ((to.y - from.y) * i) / 16 };
+      call(app, 'onMove', pointer(r, p, 'pointermove'));
+      flushFrame();
+      vi.advanceTimersByTime(100);
+    }
+    call(app, 'onUp', pointer(r, to, 'pointerup'));
+
+    expect(store.undo.undoStack).toHaveLength(1);
+    store.undo.undo();
+    expect(get(store)).toEqual(original);
   });
 
   it('a finger takes a handle from further away than a mouse does', () => {

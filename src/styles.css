@@ -456,6 +456,9 @@ select.input {
 .menu-item:hover { background: var(--tray-hover); }
 .menu-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--tray-line); }
 .menu-item.danger { color: var(--danger); }
+/* the User guide entry stands out quietly: the accent colour of the theme on its icon, a heavier label */
+.menu-item.guide-item .ico { color: var(--signal); }
+.menu-item.guide-item > span:not([class]) { font-weight: 600; }
 .ctx-menu { min-width: 220px; }
 .menu-item[aria-checked='true'] { box-shadow: inset 4px 0 0 var(--signal); }
 .menu-item > span:not([class]) { flex: 1; }
