@@ -5,6 +5,7 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { createBackup, loadBackupConfig } from '../server/backup.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import type { createSnapshotBarrier } from '../server/snapshot-barrier.mjs';
 import { startFakeS3, type FakeS3 } from './backup-fake-s3';
 
 // Shared by the backup engine tests: a data directory like the relay's, a fake S3, a clock the test moves, and the
@@ -44,13 +45,13 @@ export const envFor = (fake: FakeS3, extra: Record<string, string> = {}): Record
 
 export type Harness = Awaited<ReturnType<typeof harness>>;
 
-export async function harness({ accounts = false, env = {}, pageSize = 1000, seed = true }: { accounts?: boolean; env?: Record<string, string>; pageSize?: number; seed?: boolean } = {}) {
+export async function harness({ accounts = false, env = {}, pageSize = 1000, seed = true, snapshotBarrier = null }: { accounts?: boolean; env?: Record<string, string>; pageSize?: number; seed?: boolean; snapshotBarrier?: ReturnType<typeof createSnapshotBarrier> | null } = {}) {
   const clock = { now: T0 };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-backup-'));
   const fake = await startFakeS3({ creds: CREDS, clock: () => clock.now, pageSize });
   const logs: string[] = [];
   const engines: Engine[] = [];
-  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite')) : null;
+  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite'), { snapshotBarrier }) : null;
   if (directory) {
     directory.createUser({ email: 'owner@example.com', name: 'Owner', role: 'owner' });
     directory.createUser({ email: 'member@example.com', name: 'Member', role: 'member' });
@@ -117,7 +118,8 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
     await Promise.all(engines.map((e) => e.stop()));
     directory?.close();
     await fake.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // A worker that was just stopped can still hold its temporary copy for a moment on Windows (EBUSY).
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 
   return { clock, dir, fake, logs, directory, file, write, config, engine, expectedPaths, runAt, close, index };

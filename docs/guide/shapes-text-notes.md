@@ -75,7 +75,7 @@ Board-wide heading and body fonts for new objects are set in **Board settings** 
 ## Drawing, frames and icons
 
 - **Pen** (`P`): drag to draw freehand. A tray shows colours and three widths while the pen is active.
-- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it.
+- **Frame** (`F`): drag to draw a titled area. Objects fully inside a new frame become its children and move with it. Double-click a frame to rename it. To set a frame's size, select it and open the properties (**More properties**): the **Size** menu offers Screen (1920 × 1080, 1440 × 900, 1280 × 800), Tablet (1024 × 768 and 768 × 1024), Phone (390 × 844), Paper (A3, A4 and Letter, portrait and landscape) and Square (1000 × 1000), and the **Width** and **Height** fields set any other size, which the menu then shows as Custom.
 - **Icons**: open the **Icons** drawer and type in **Search icons**. Search covers all icon sets, or the one you choose in the set list (**All icon sets** by default), and matches names, aliases and categories. Click an icon to add it or drag it onto the board. Each click places the icon 24 pixels right and down from the previous click's icon, so they do not land on top of each other, and the steps start again at the centre of the view after you move the view a step away or move or delete the last icon placed. Change its colour with the properties panel.
 - **Offline icons**: with **All icon sets** selected, the row **Popular icon sets (N)** has **Download for offline**. With one set selected, the row shows that set's name instead. Downloaded sets search and preview without a connection; **Update** and **Remove** work as they do for stickers (see [Stickers](stickers.md#offline)). Icons already on the board stay there.
 - **Online sets**: this button in the Icons drawer loads more sets from Iconify. Those sets cannot be downloaded, need a connection, and each search sends your query to Iconify.
@@ -119,8 +119,9 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 - Hold `Alt` while dragging to ignore the grid and [smart guides](smart-guides.md).
 - Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.
-- Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
-- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
+- Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Flip horizontal**, **Flip vertical**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
+- Flip a selection with `Shift+H` (horizontal) or `Shift+V` (vertical), from that right-click menu, or from the more-actions menu of the quick-action bar. Shapes, icons, stickers, images, paths and UML shapes are mirrored around the middle of the selection; text is never mirrored and stays readable, and connectors stay attached to the visible sides. Flip is disabled for a selection that cannot be mirrored, with the reason shown. On a two-sided card the action to see the other face is **Turn over**, not Flip.
+- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one text object with your line breaks kept; long text wraps at a set width.
 
 To keep objects together, put them in a **Frame** (moving the frame moves what is inside it) or make them a **group**.
 

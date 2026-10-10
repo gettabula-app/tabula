@@ -456,6 +456,9 @@ select.input {
 .menu-item:hover { background: var(--tray-hover); }
 .menu-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--tray-line); }
 .menu-item.danger { color: var(--danger); }
+/* the User guide entry stands out quietly: the accent colour of the theme on its icon, a heavier label */
+.menu-item.guide-item .ico { color: var(--signal); }
+.menu-item.guide-item > span:not([class]) { font-weight: 600; }
 .ctx-menu { min-width: 220px; }
 .menu-item[aria-checked='true'] { box-shadow: inset 4px 0 0 var(--signal); }
 .menu-item > span:not([class]) { flex: 1; }
@@ -596,6 +599,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 
 @media (max-width: 500px) {
+  .qb-action-menu .menu-item, .ctx-menu .menu-item { min-height: 44px; }
   /* A vote stays in one row (44px touch targets, TAB-273): reveal, undo mode, count, finish and Info. The step title and the other step buttons give way; the instruction opens below the row. */
   .flowbar.vote-compact { flex-wrap: wrap; gap: 1px; padding: 2px; }
   .flowbar.vote-compact > .flow-previous, .flowbar.vote-compact > .timer, .flowbar.vote-compact > .flow-timer-buttons,

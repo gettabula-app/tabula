@@ -7,7 +7,7 @@ import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
-import { SHAPE_GROUPS, SHAPE_KINDS, HEADS } from '../shapes';
+import { SHAPE_GROUPS, SHAPE_KINDS, HEADS, connectorHeadPreviewSvg } from '../shapes';
 import { RELATIONS } from '../uml';
 import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
@@ -345,7 +345,10 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
   const edit = app.styleEdit;
   const same = <T,>(read: (x: ConnectorObj) => T): T | null => (sel.every((x) => read(x) === read(c)) ? read(c) : null);
   const headSel = (key: 'startHead' | 'endHead', label: string) => combo<Head>({
-    label, options: HEADS.map((x) => ({ value: x.head, label: x.label })), value: same((x) => x[key]),
+    label, options: HEADS.map((x) => ({
+      value: x.head, label: x.label,
+      icon: h('span', { class: 'connector-head-preview', 'aria-hidden': 'true', html: connectorHeadPreviewSvg(x.head, key === 'startHead' ? 'start' : 'end') }),
+    })), value: same((x) => x[key]),
     onPreview: (v) => edit.preview({ [key]: v, relation: undefined }, isConnector),
     onRevert: () => edit.revert(),
     onCommit: (v) => {

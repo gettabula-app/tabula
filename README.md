@@ -1,8 +1,21 @@
 # Tabula
 
-A local-first infinite whiteboard: sticky notes, shapes on a snapping grid, connectors that stay attached, UML, Fontshare typography, self-hosted icon sets, and facilitated team exercises with timers, private writing and dot voting.
+Tabula is free software under AGPL-3.0-only. It is a self-hostable alternative to hosted whiteboards for workshops and teams. Boards work offline first and sync through a relay when it is available.
 
-Every board lives in your browser first (IndexedDB). A small relay syncs boards between people in real time when it is reachable; without it, everything still works and merges later.
+![Two Tabula boards side by side: a sprint retro with sticky notes, frames and connectors on the left, and a four-lane kanban board with labelled cards on the right](docs/images/readme-hero.png)
+
+## Features at a glance
+
+- Whiteboards with shapes, sticky notes, connectors, UML, frames with size presets, groups and images.
+- Kanban boards with lanes, cards, labels, owners and warn or block work-in-progress limits.
+- Workshop templates, session steps, a shared timer, private writing, dot voting and polls.
+- Accounts, teams and roles, with board comments, chat and guest join codes.
+- Emoji stickers and reactions, plus emoji in text.
+- Smart guides for alignment, spacing and equal-size matching while resizing.
+- Five themes, version history, and import and export in several formats.
+- MCP tools for AI agents, including tools for kanban cards.
+- An AI bar for editors when AI is enabled and a usable key or hosted plan credits are available.
+- Built-in user guide at `/docs/`, sourced from [docs/guide](docs/guide/index.md).
 
 ## Run it
 
@@ -16,7 +29,7 @@ npm start            # app + sync relay on http://localhost:8787
 
 Open http://localhost:8787, create a board, and share its URL. Anyone who can reach the same relay (for example `http://<your-ip>:8787/#/b/<board-id>` on your network) edits with you live: cursors, selections, presence and changes all sync.
 
-Development, with hot reload (Vite on :5173 proxies `/sync` to the relay on :8787):
+Development, with hot reload (Vite on :5173 proxies `/sync` to the relay on :8787). Set `VITE_PORT` to change Vite's port; `PORT` selects the relay port:
 
 ```bash
 npm run dev
@@ -29,6 +42,13 @@ docker build -t tabula .
 docker run -p 8787:8787 -v tabula-data:/data tabula
 ```
 
+Docker build arguments:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `ICON_SETS` | `all` | Choose `all`, `curated` or `demo`; `curated` builds the smaller set (see [Fonts and icons](#fonts-and-icons)) |
+| `TABULA_VERSION` | empty | Embed a release label, reported by the server to the control plane |
+
 If you ran the old `mira` image, keep mounting your existing volume (`-v mira-data:/data`) so your boards stay.
 
 ### Relay settings
@@ -37,15 +57,20 @@ If you ran the old `mira` image, keep mounting your existing volume (`-v mira-da
 | --- | --- | --- |
 | `PORT` | `8787` | HTTP + WebSocket port |
 | `HOST` | `0.0.0.0` | Interface to bind |
-| `DATA_DIR` | `./data` | Where each room's document is stored (`<board-id>.yjs`) |
-| `DIST_DIR` | `./dist` | Built app to serve |
+| `DATA_DIR` | `data/` under the app root (`/data` in Docker) | Where board documents (`<board-id>.yjs`) and server data are stored |
+| `DIST_DIR` | `dist/` under the app root | Built app to serve |
+| `SAVE_DEBOUNCE_MS` | `1000` | Idle time in milliseconds before saving a room; the 30-second maximum wait still applies |
+| `ROOM_UNLOAD_MS` | `60000` | How long an empty room stays in memory before it is unloaded |
 | `QUIET` | unset | `1` silences logs |
+| `TABULA_SKIP_DOTENV` | unset | Set to `1` to skip loading `.env` from the relay's working directory |
+
+The relay reads `.env` from its working directory at startup unless `TABULA_SKIP_DOTENV=1`; real environment variables take precedence. `.env` files are gitignored.
 
 The relay speaks the standard y-websocket protocol at `ws://host:PORT/sync/<boardId>`. In the app, **Menu → Board settings → Relay** accepts `auto` (the server that served the app), `off` (this device only), or any `wss://…/sync` URL.
 
 ### Stopping the relay
 
-Edits are written to disk a second after the last change, and never later than 30 seconds after the first unsaved one. When the relay gets SIGINT, SIGTERM or SIGHUP (and SIGBREAK on Windows) it writes every open board at once, closes its databases and exits with code 0. `docker stop`, systemd and Ctrl+C all work that way. A process that is killed instead (`kill -9`, `docker kill`, a supervisor that gives up waiting) loses the edits of the last 30 seconds at most.
+By default, edits are written to disk a second after the last change, and never later than 30 seconds after the first unsaved one. When the relay gets SIGINT, SIGTERM or SIGHUP (and SIGBREAK on Windows) it writes every open board at once, closes its databases and exits with code 0. `docker stop`, systemd and Ctrl+C all work that way. A process that is killed instead (`kill -9`, `docker kill`, a supervisor that gives up waiting) loses the edits of the last 30 seconds at most.
 
 **On Windows** a program cannot catch being killed and there is no SIGTERM, so the relay saves only when it receives Ctrl+C (or Ctrl+Break, or its console window is closed, which Windows follows about 10 seconds later by ending it). Run it under a service wrapper that stops it with Ctrl+C and gives it a few seconds before it resorts to a hard kill:
 
@@ -71,10 +96,32 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `TABULA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
 | `TABULA_MAIL_FROM` | `Tabula <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
 | `TABULA_SMTP_URL` | none | SMTP connection for `TABULA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
-| `.env` | none | The relay reads a `.env` file in its working directory at startup (existing environment variables take precedence); the file is gitignored |
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 | `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`: which header holds the client address, `x-forwarded-for` (its rightmost entry) or `fly-client-ip` (on Fly, see `docs/cloud.md`, Client addresses) |
+| `TABULA_CHAT` | `off` | Set to `on` to enable board, team and workspace chat in accounts mode |
+| `TABULA_JOIN_CODES` | `off` | Set to `on` to allow board-scoped guest join codes in accounts mode |
+
+### Hosted workspaces
+
+The hosted-workspace integration is active only with accounts mode and all three cloud variables set. Set all three together or leave them unset; a partial set prevents startup. The control plane supplies these values; self-hosted instances can leave them unset. See [docs/cloud.md](docs/cloud.md).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_CLOUD_TOKEN` | none | Shared control-plane credential; at least 32 characters with no spaces |
+| `TABULA_CLOUD_URL` | none | Control-plane base URL; HTTPS, or HTTP on loopback for local development |
+| `TABULA_CLOUD_WORKSPACE_ID` | none | Workspace identifier at the control plane |
+| `TABULA_FLY_VOLUME_ID` | none | Optional Fly volume identifier set by the control plane; a changed identifier marks a restored or replaced volume |
+| `TABULA_ADOPT_VOLUME` | none | One-start confirmation to adopt a volume from another hosted workspace; set it to this workspace's id, then remove it. Adoption ends sessions and revokes join codes, invite links and MCP tokens |
+
+### Source policy
+
+By default, the relay does not restrict connections by source address. `proxy` mode is intended for a deployment behind a trusted proxy; its default list is loopback and Fly's proxy range. See [docs/cloud.md](docs/cloud.md#source-policy).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TABULA_SOURCE_POLICY` | `off` | Set to `proxy` to reject connections outside the source allow-list |
+| `TABULA_ALLOW_SOURCES` | unset; built-in list when policy is `proxy` | Comma-separated IP addresses or CIDRs that replace the default allow-list when `TABULA_SOURCE_POLICY=proxy` |
 
 ### Behind a reverse proxy
 
@@ -105,14 +152,14 @@ Tabula can let an AI tool such as Claude Code read and edit boards while people 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TABULA_MCP` | `off` | `on` serves `/mcp` |
-| `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters. Required when `TABULA_MCP=on` without accounts |
+| `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters with no spaces. Required when `TABULA_MCP=on` without accounts |
 | `TABULA_MCP_SCOPE` | `read` | Open mode only: what the shared token may do, `read`, `comment` or `write` |
 
 In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
 
 ### Images
 
-The relay stores pictures that people add to a board (PNG, JPEG, GIF and WebP) as files under `DATA_DIR/assets/`, named by the SHA-256 of their content, and only serves a file through a board that owns it (see [docs/images.md](docs/images.md)). Metadata such as GPS position is removed on the server. It is on by default; the limits are set with these variables, in bytes or with a `K`, `M` or `G` suffix.
+The browser accepts PNG, JPEG, GIF, WebP and SVG pictures; SVG is converted to PNG before upload. The relay stores the resulting PNG, JPEG, GIF and WebP files under `DATA_DIR/assets/`, named by the SHA-256 of their content, and only serves a file through a board that owns it (see [docs/images.md](docs/images.md)). Metadata such as GPS position is removed on the server. It is on by default; the limits are set with these variables, in bytes or with a `K`, `M` or `G` suffix.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -146,7 +193,7 @@ Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted o
 
 ### AI features (bring your own key)
 
-AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic is the only provider for now. This release has the settings, the keys and the endpoint that runs the three features (`POST /api/ai/run`: generate stickies from a prompt, summarise a board, a frame or a selection with action items, group selected stickies into themes), each answered as a proposal that the board will preview and a person applies; the buttons on the board follow (see [docs/ai.md](docs/ai.md)).
+AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic and OpenAI-compatible providers are supported. The AI bar can generate stickies from a prompt, summarise a board, frame or selection with action items, and cluster selected stickies into themes. Each run returns a proposal for review before it is applied. The bar appears for editors when AI is enabled and a usable workspace or personal key, or hosted plan credits, are available (see [docs/ai.md](docs/ai.md) and [docs/ai-toolbar.md](docs/ai-toolbar.md)).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -154,9 +201,11 @@ AI features run on the relay with an API key that the workspace or the person br
 | `TABULA_AI_SECRET_PREVIOUS` | none | The secret you are rotating away from, so keys written under it still open and are sealed again under the new one on next use. See "Rotating TABULA_AI_SECRET" in [docs/ai.md](docs/ai.md) |
 | `TABULA_AI_API_KEY` | none | Open mode: the operator's provider key |
 | `TABULA_AI_OPEN` | unset | Open mode: `1` lets the AI features use `TABULA_AI_API_KEY`. A key alone never turns AI on |
-| `TABULA_AI_PROVIDER` | `anthropic` | The provider: `anthropic` or `openai-compatible` (open mode; in accounts mode each key names its own) |
-| `TABULA_AI_BASE_URL` | none | Open mode with `openai-compatible`: the API address, for example `https://integrate.api.nvidia.com/v1`; `http://` and a local address are allowed here, for a model server on the same machine |
-| `TABULA_AI_MODEL` | `claude-opus-5-5` | The default model: `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`; with `openai-compatible` it is required and is any model id the provider knows |
+| `TABULA_AI_PROVIDER` | `anthropic` | The provider: `anthropic` or `openai-compatible` in open mode; in accounts mode each saved key carries its provider |
+| `TABULA_AI_BASE_URL` | none | Open mode with `openai-compatible`: the API address, for example `https://integrate.api.nvidia.com/v1`; operator-supplied addresses may use `http://`, including a local model server |
+| `TABULA_AI_MODEL` | `claude-opus-5-5` | Default Anthropic model (`claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`). With `openai-compatible` in open mode, set a model id the provider knows; in accounts mode each key carries its model |
+| `TABULA_AI_PROXY_URL` | none | Hosted accounts mode: base URL for the workspace's Anthropic Messages proxy; HTTPS is required (HTTP is allowed for loopback tests) |
+| `TABULA_AI_PROXY_TOKEN` | none | Hosted accounts mode: credential sent to the AI proxy as `x-api-key`; needed with `TABULA_AI_PROXY_URL` for plan credits |
 
 In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
 
@@ -165,6 +214,8 @@ A run needs the right to edit the board, reads it without private notes, comment
 **Open mode warning:** with `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` set, anyone who has a board link spends your key, because open mode has no accounts. Only do this on a private instance, and set a spending limit with the provider.
 
 ## Screenshots
+
+Screenshots show demo data.
 
 | Shapes panel | Quick actions |
 | --- | --- |
@@ -187,25 +238,35 @@ A run needs the right to edit the board, reads it without private notes, comment
 | Local-first storage | Yjs document per board, persisted to IndexedDB; offline editing, reload while offline, merge on reconnect; per-user undo/redo that never reverts collaborators' work |
 | Sync | Relay with rooms, on-disk persistence, catch-up for late joiners, presence (named cursors, remote selections, participant list with go to a person, requests to look at someone's view that you can follow, go to, dismiss or mute), cross-tab sync |
 | Infinite canvas | Pan (space/middle-drag/trackpad/hand), zoom 2%–3200% around the pointer, pinch zoom, fit (Shift+1/2/0), minimap, viewport culling |
-| Grid | Dots, lines (with major lines), isometric, none; adaptive density; snap to grid; smart guides while moving and resizing: alignment lines to nearby objects and equal-spacing brackets with the distance, Alt to bypass (see [docs/guides.md](docs/guides.md)) |
-| Geometry | 31 shapes in four groups (Basic, Arrows, Callouts, Flowchart), picked from one **Shapes** button on the left toolbar that opens a searchable shapes-only panel (click a shape to draw it, or drag it onto the board); sticky notes (own toolbar button) with a folded corner (8 colours plus any custom colour, auto-shrinking text, ink switches to white on dark notes); text (in shapes and sticky notes: aligned left/centre/right and top/middle/bottom, and it stays where it will render while you type), frames (nested, carry their contents), freehand pen; resize, rotate (Shift snaps 15°), align, distribute, z-order, lock (locked items are click-through background; press and hold 0.6 s to unlock; hovering shows a lock badge), duplicate, copy/paste (also plain text → stickies); click an item for a quick-action bar above it (colour, shape, text, align, lock, duplicate, delete); More opens the full properties panel |
+| Grid and smart guides | Dots, lines (with major lines), isometric or none; adaptive density; snap to grid; guides align edges and centres and match equal spacing; while resizing, dragged edges snap to equal widths or heights. Hold Alt to bypass guides and grid snapping (see [the guide](docs/guide/smart-guides.md)) |
+| Geometry | 31 shapes in four groups (Basic, Arrows, Callouts, Flowchart), picked from one **Shapes** button on the left toolbar that opens a searchable shapes-only panel (click a shape to draw it, or drag it onto the board); sticky notes (own toolbar button) with a folded corner (8 colours plus any custom colour, auto-shrinking text, ink switches to white on dark notes); text (in shapes and sticky notes: aligned left/centre/right and top/middle/bottom, and it stays where it will render while you type); freehand pen; resize, rotate (Shift snaps 15°), align, distribute, z-order, lock (locked items are click-through background; press and hold 0.6 s to unlock; hovering shows a lock badge), duplicate, copy/paste (also plain text → stickies); click an item for a quick-action bar above it (colour, shape, text, align, lock, duplicate, delete); More opens the full properties panel |
+| Frames | Nested frames carry their contents. Size presets cover screens, tablets, phones, A3, A4, Letter and square, with custom width and height (see [Shapes, text and sticky notes](docs/guide/shapes-text-notes.md)) |
+| Groups | Group and ungroup selected items, including nested groups; enter a group to edit its members. See [the guide](docs/guide/shapes-text-notes.md#groups) |
+| Images | Add PNG, JPEG, GIF, WebP or SVG pictures; move, resize, rotate, comment, and include them in PNG/SVG and `.drift` exports. See [docs/images.md](docs/images.md) and [the guide](docs/guide/images.md) |
 | Themes | Default, Ayu, Kanagawa, Matrix and Evergreen, chosen under Appearance in the board menu; the whole app (canvas, grid, toolbars, and the default colour of text, drawings, icons and connectors) follows the theme; the choice is remembered on this device; exports always use the light colours on white |
 | Sticky colours | Pick a colour before placing (tray beside the toolbar while the sticky tool is on), recolour selected notes, or choose any colour with “+”; custom colours are saved to the board (up to 12) and shared with everyone; your last colour is remembered on your device |
 | Connectors | Bound or free ends, straight/elbow/curved routing, 10 arrowheads incl. UML and crow's foot, labels, reverse; drag from a shape's blue dots, or click a dot to add a connected copy; deleting a shape keeps its lines; connectors meet a shape's visible outline, including triangles, stars, arrows and callouts |
 | UML | Class/interface/abstract/enum (edited as text: name, `--`, members), actor, use case, lifeline, state, initial/final, package, component, note; 13 relationship presets; Mermaid import (flowchart, classDiagram, stateDiagram-v2, sequenceDiagram) with auto-layout; copy selection as Mermaid |
 | Fontshare | Full catalogue (100 families), searchable picker with live previews, weights per family, board heading/body fonts, offline caching via the service worker |
 | Icon sets | Search 344k+ icons from 188 sets that Tabula serves itself (no third-party request), filter by set, licence and trademark notes, an Icon credits dialog; "Download for offline" stores a set on this device. Sets Tabula does not host are online only, loaded on request from Iconify with failover to its backup hosts; placed icons store their SVG (sanitised) and render offline |
-| Stickers | Fluent, Twemoji and Noto emoji in a Stickers drawer, drawn in full colour; placed stickers are stored in the board, so they work offline and export with it; a React button in the quick-action bar drops a reaction next to the selection |
+| Stickers and emoji | Fluent, Twemoji and Noto emoji stickers; emoji can also be inserted into text, and the quick-action bar places sticker reactions next to a selection. Placed stickers are stored in the board, work offline and export with it (see [the guide](docs/guide/stickers.md)) |
 | Team exercises | 18 templates (Start/Stop/Continue, 4Ls, Mad/Sad/Glad, Sailboat, Crazy 8s, Brainstorm + affinity map, Lean Coffee, Impact/Effort, MoSCoW, story map, journey map, empathy map, SWOT, pre-mortem, Business Model Canvas, Lean Canvas, Service Blueprint, Design Sprint agenda); session bar with steps, shared timer with chime, private writing + reveal, ask everyone to look at my view (a request each person can answer with Go to, Follow, Dismiss or Mute; it moves nobody), step editor, Markdown summary |
 | Dot voting | One-click dot vote from the toolbar on any board (no template needed); dots per person can be any number or unlimited, set per step or changed live for everyone mid-vote, with the number of people on the board and dots placed so far shown alongside; click to add a dot, shift-click to remove; totals hidden until reveal; many dots on one note collapse into a counted badge; results stay on the board after the vote until cleared, with ranked results to copy |
 | Polls | Facilitated polls from the toolbar's quick poll button or as a session step: a question with 2–10 options, single or multiple choice, anonymous by default or named; one answer per person, changeable until the poll closes; a card above the session bar for answering and, after reveal, a ranked list with percentages; reveal, copy results as Markdown, or add them to the board as a sticky; answers sync live and work offline, travel in `.drift` and JSON exports, and appear in the Markdown summary once revealed |
-| Comments | Threaded comments pinned to a spot or an object (press C or use the speech-bubble tool): post, reply, edit, delete, resolve and reopen; pins follow the object through move, resize and rotate; a Comments panel lists open and resolved threads and flies to a pin; pins can be hidden from the board menu; comments sync live in their own room, work offline, travel in `.drift` and JSON exports, and never appear in PNG/SVG exports. In accounts mode the new **commenter** role can comment on a board without being able to edit it |
+| Comments | Threaded comments pinned to a spot or an object (press C or use the speech-bubble tool): post, reply, edit, delete, resolve and reopen; pins follow the object through move, resize and rotate; a Comments panel lists open and resolved threads and flies to a pin; pins can be hidden from the board menu; comments sync live in their own room, work offline, travel in `.drift` and JSON exports, and never appear in PNG/SVG exports. In accounts mode, commenters can comment on a board without being able to edit it |
+| Chat | Board, team and workspace channels in accounts mode; live messages, emoji reactions, mentions, in-app mention notices, mention emails, offline copy and unread counts (see [docs/chat.md](docs/chat.md) and [the guide](docs/guide/chat.md)) |
+| Join codes | Board-scoped guest access for commenters or editors, with expiry, use limits and revocation (accounts mode; see [docs/join-codes.md](docs/join-codes.md)) |
+| Accounts, teams and roles | Email sign-in, workspace and team roles, board sharing, and owner, editor, commenter and viewer access (see [docs/accounts.md](docs/accounts.md)) |
+| Kanban boards | Lanes and cards with labels, owners, due dates, filters, CSV export and warn/block WIP limits (limits are checked in the browser; see [docs/kanban.md](docs/kanban.md) and [the guide](docs/guide/kanban.md)) |
 | Version history | Browse earlier versions of a board, preview one read-only and restore it (board menu, owners and editors). The relay saves snapshots while people edit, before large deletions and when everyone leaves, and anyone can save a named version; a restore is an ordinary edit that syncs to everyone, shows up as a new version and undoes with Ctrl+Z. See [docs/history.md](docs/history.md) |
-| Import/export | `.drift` (zip of readable `board.json` + the board's sync data), JSON, SVG, PNG (2×, real fonts), Markdown summary, Mermaid; drop files on the board or open them from the home screen |
+| Import/export | `.drift` board files, JSON snapshots, SVG, PNG (2×, real fonts), Markdown summary, Mermaid and kanban cards as CSV; drop files on the board or open them from the home screen |
+| MCP tools | AI agents can read and edit boards, add comments, manage groups and use kanban card tools (see [docs/mcp.md](docs/mcp.md) and [the tool guide](docs/guide/ai-tools.md)) |
+| AI bar | Generate stickies, summarise a board or selection, and cluster stickies into themes. Shown to editors only when enabled with a usable key or hosted plan credits (see [docs/ai.md](docs/ai.md) and [docs/ai-credits.md](docs/ai-credits.md)) |
+| User guide | Built-in, searchable guide served at `/docs/`; source pages are in [docs/guide](docs/guide/index.md) |
 
 ### Not built yet (from the spec)
 
-End-to-end encryption, SSO, passkeys and two-factor sign-in, email-bound invites, comment mentions and notifications, the Tauri desktop app, PDF export, groups, tables, images, boolean shape operations, obstacle-avoiding routing and line jumps, character-level text merging (`Y.Text`), Miro/Excalidraw import, and peer-to-peer (WebRTC) sync.
+End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; editable data tables outside kanban boards; PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; peer-to-peer WebRTC sync; and a public desktop release with signing, an updater and supported Windows and Linux builds.
 
 ## Fonts and icons
 

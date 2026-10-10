@@ -159,12 +159,14 @@ describe('Store.restack', () => {
 describe('the context menu', () => {
   it('has stacking, grouping, duplicate, lock and delete in order', () => {
     const items = contextMenuItems({ count: 1, locked: false });
-    expect(items.map((i) => i.action)).toEqual(['front', 'forward', 'backward', 'back', 'group', 'ungroup', 'duplicate', 'lock', 'delete']);
+    expect(items.map((i) => i.action)).toEqual(['front', 'forward', 'backward', 'back', 'group', 'ungroup', 'flipHorizontal', 'flipVertical', 'duplicate', 'lock', 'delete']);
     expect(items.map((i) => i.label).slice(0, 4)).toEqual(['Bring to front', 'Bring forward', 'Send backward', 'Send to back']);
     expect(items.find((i) => i.action === 'delete')!.danger).toBe(true);
     expect(items.find((i) => i.action === 'duplicate')!.separatorBefore).toBe(true);
     expect(items.find((i) => i.action === 'group')).toMatchObject({ disabled: true, reason: 'Select at least two groupable items.' });
     expect(items.find((i) => i.action === 'ungroup')!.disabled).toBe(true);
+    expect(items.find((i) => i.action === 'flipHorizontal')).toMatchObject({ label: 'Flip horizontal', hint: 'Shift+H', disabled: false });
+    expect(items.find((i) => i.action === 'flipVertical')).toMatchObject({ label: 'Flip vertical', hint: 'Shift+V', disabled: false });
     expect(contextMenuItems({ count: 2, locked: false, groupReason: null, canUngroup: true }).filter((i) => i.action === 'group' || i.action === 'ungroup').every((i) => !i.disabled)).toBe(true);
   });
 
@@ -179,5 +181,8 @@ describe('the context menu', () => {
     expect(hints.back).toBe('[');
     expect(hints.forward).toMatch(/^(Ctrl|Cmd)\+\]$/);
     expect(hints.backward).toMatch(/^(Ctrl|Cmd)\+\[$/);
+    expect(hints.flipHorizontal).toBe('Shift+H');
+    expect(hints.flipVertical).toBe('Shift+V');
+    expect(contextMenuItems({ count: 1, locked: false, flipHorizontalReason: "Notes and text can't be flipped" }).find((i) => i.action === 'flipHorizontal')).toMatchObject({ disabled: true, reason: "Notes and text can't be flipped" });
   });
 });

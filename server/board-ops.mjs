@@ -11,6 +11,7 @@ import {
   layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -23,7 +24,7 @@ export const LIMITS = Object.freeze({
   boardObjects: 5000,
   threadsPerBoard: 2000,
   repliesPerThread: 200,
-  text: 4000,
+  text: OBJECT_TEXT_MAX,
   name: 100,
   label: 200,
   summaryText: 500,
@@ -69,24 +70,68 @@ export const AI_COLOR = 'var(--graphite, #5B6672)';
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_RE = /^[A-Za-z0-9_-]{1,32}$/;
 // Character classes by code point, not by regular expression: control characters other than newline and tab,
-// Unicode tag characters (invisible text), and zero-width and bidirectional controls.
+// Unicode tag characters except complete subdivision flags, and zero-width and bidirectional controls.
 const isControl = (cp) => cp <= 0x08 || (cp >= 0x0b && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f);
 const isTag = (cp) => cp >= 0xe0000 && cp <= 0xe007f;
+const isSubdivisionTag = (cp) => (cp >= 0xe0030 && cp <= 0xe0039) || (cp >= 0xe0061 && cp <= 0xe007a);
+const BLACK_FLAG = 0x1f3f4;
+const CANCEL_TAG = 0xe007f;
+const isEmojiModifier = (cp) => cp >= 0x1f3fb && cp <= 0x1f3ff;
+const isExtendedPictographic = (ch) => /\p{Extended_Pictographic}/u.test(ch);
 const isHidden = (cp) =>
-  (cp >= 0x200b && cp <= 0x200f) || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
+  (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
   (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp === 0xfeff;
-const isBadInput = (cp) => isControl(cp) || isTag(cp);
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
+
+/** Indices of tag characters that belong to complete subdivision-flag sequences. */
+function subdivisionTagMask(chars) {
+  const keep = Array.from({ length: chars.length }, () => false);
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i].codePointAt(0) !== BLACK_FLAG) continue;
+    let end = i + 1;
+    while (end < chars.length && isSubdivisionTag(chars[end].codePointAt(0))) end++;
+    const count = end - i - 1;
+    if (count < 1 || count > 8 || chars[end]?.codePointAt(0) !== CANCEL_TAG) continue;
+    for (let tag = i + 1; tag <= end; tag++) keep[tag] = true;
+  }
+  return keep;
+}
+
+function keepsEmojiJoiner(chars, index) {
+  if (index === 0 || index === chars.length - 1) return false;
+  let before = index - 1;
+  while (before >= 0) {
+    const cp = chars[before].codePointAt(0);
+    if (isEmojiModifier(cp) || cp === 0xfe0f) before--;
+    else break;
+  }
+  return before >= 0 && isExtendedPictographic(chars[before]) && isExtendedPictographic(chars[index + 1]);
+}
 
 /** Removes what a person cannot see but a model can read. */
 export function stripInvisible(value) {
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
   let out = '';
-  for (const ch of value) if (!isInvisible(ch.codePointAt(0))) out += ch;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const cp = ch.codePointAt(0);
+    if (isTag(cp)) {
+      if (keepTags[i]) out += ch;
+    } else if (cp === 0x200d) {
+      if (keepsEmojiJoiner(chars, i)) out += ch;
+    } else if (!isInvisible(cp)) out += ch;
+  }
   return out;
 }
 
 const hasBadInput = (value) => {
-  for (const ch of value) if (isBadInput(ch.codePointAt(0))) return true;
+  const chars = [...value];
+  const keepTags = subdivisionTagMask(chars);
+  for (let i = 0; i < chars.length; i++) {
+    const cp = chars[i].codePointAt(0);
+    if (isControl(cp) || (isTag(cp) && !keepTags[i])) return true;
+  }
   return false;
 };
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_';
@@ -364,6 +409,8 @@ export function summarise(o, textMax, detail = false) {
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
   if (o.locked === true) out.locked = true;
   if (o.hidden === true) out.hidden = true;
+  if (typeof o.flipX === 'boolean') out.flipX = o.flipX;
+  if (typeof o.flipY === 'boolean') out.flipY = o.flipY;
   // which AI run proposed it (TAB-160): only the feature and a short name reach a model or an agent, as untrusted text
   const proposed = proposedOf(o.proposedBy);
   if (proposed) out.proposedBy = proposed;
@@ -508,7 +555,9 @@ function text(v, path, min, max, length = (value) => value.length) {
   const measured = length(t);
   if (measured < min || measured > max) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
   if (hasBadInput(t)) throw invalid(path, 'Contains control or tag characters');
-  return t;
+  const clean = stripInvisible(t);
+  if (length(clean) < min) throw invalid(path, `Must be ${min === 0 ? 'at most' : `${min} to`} ${max} characters`);
+  return clean;
 }
 
 function choice(v, list, path) {
@@ -1066,7 +1115,16 @@ function fontOf(doc, key, fallback) {
   return typeof v === 'string' && v ? v : fallback;
 }
 
-function parseEnd(v, path, { allowRef, get, refs }) {
+const KANBAN_END_TYPES = new Set(['lane', 'container']);
+const KANBAN_END_MESSAGE = 'Connect to a card, not to a lane or the kanban';
+
+function sameEnd(a, b) {
+  if (!a || a.kind !== b.kind) return false;
+  if (a.kind === 'bound') return a.id === b.id && (a.anchor ?? 'auto') === b.anchor;
+  return a.x === b.x && a.y === b.y;
+}
+
+function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
   if (!isRecord(v)) throw invalid(path, 'Must be an object: {id}, {ref} or {x, y}');
   if (Object.hasOwn(v, 'ref')) {
     if (!allowRef) throw invalid(at(path, 'ref'), 'A ref is only allowed in create_objects');
@@ -1074,6 +1132,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const hit = typeof v.ref === 'string' ? refs.get(v.ref) : undefined;
     if (!hit) throw invalid(at(path, 'ref'), 'No object in this call has that ref');
     if (hit.type === 'connector') throw invalid(at(path, 'ref'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(hit.type)) throw invalid(path, KANBAN_END_MESSAGE);
     return { kind: 'bound', id: hit.id, anchor: v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side')) };
   }
   if (Object.hasOwn(v, 'id')) {
@@ -1082,6 +1141,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const target = get(id);
     if (!target) throw notFound('No such object to attach to', at(path, 'id'));
     if (target.type === 'connector') throw invalid(at(path, 'id'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(target.type)) throw invalid(path, KANBAN_END_MESSAGE);
     const side = v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side'));
     return { kind: 'bound', id, anchor: side };
   }
@@ -1096,10 +1156,10 @@ function textHeight(content, w, fontSize) {
 }
 
 const CREATE_KEYS = {
-  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent'],
-  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent'],
-  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent'],
-  frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent'],
+  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
+  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
+  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
+  frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
 };
 
@@ -1194,6 +1254,10 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
           fill: item.fill === undefined ? undefined : colour(item.fill, at(path, 'fill'), { none: true }),
         });
       }
+      for (const key of ['flipX', 'flipY']) {
+        if (item[key] !== undefined && typeof item[key] !== 'boolean') throw invalid(at(path, key), 'Must be a boolean');
+        if (typeof item[key] === 'boolean') fields[key] = item[key];
+      }
       if (item.parent !== undefined) {
         const p = item.parent;
         if (isRecord(p)) {
@@ -1233,7 +1297,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   };
 }
 
-const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent'];
+const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent', 'flipX', 'flipY'];
 const UPDATABLE = {
   sticky: [...BOX_FIELDS, 'text', 'color'],
   shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
@@ -1320,6 +1384,10 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'x': case 'y': sets.set(key, coordinate(v, fieldPath)); break;
         case 'w': case 'h': sets.set(key, size(v, fieldPath)); break;
         case 'rotation': sets.set(key, (num(v, fieldPath, -3600, 3600) * Math.PI) / 180); break;
+        case 'flipX': case 'flipY':
+          if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
+          sets.set(key, v);
+          break;
         case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' ? 1 : 0, LIMITS.text)); break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;
@@ -1332,7 +1400,14 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'route': sets.set(key, choice(v, ROUTES, fieldPath)); break;
         case 'startHead': case 'endHead': sets.set(key, choice(v, HEADS, fieldPath)); break;
         case 'dash': sets.set(key, choice(v, DASHES, fieldPath)); break;
-        case 'from': case 'to': sets.set(key, parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map() })); break;
+        case 'from': case 'to': {
+          const end = parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map(), allowKanbanTarget: true });
+          if (end.kind === 'bound' && KANBAN_END_TYPES.has(get(end.id)?.type) && !sameEnd(current[key], end)) {
+            throw invalid(fieldPath, KANBAN_END_MESSAGE);
+          }
+          sets.set(key, end);
+          break;
+        }
         case 'parent': {
           const parentId = idString(v, fieldPath);
           const parentType = get(parentId)?.type;

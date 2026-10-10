@@ -67,7 +67,7 @@ The diagram becomes editable shapes and connectors, placed to the right of exist
 
 ### Paste text and objects
 
-Pasting plain text on the board creates one sticky note per line (up to 50). Pasting objects copied from another Tabula board (`Ctrl+C`, `Ctrl+V`) places them at your pointer.
+Pasting plain text on the board creates one text object with your line breaks kept; long text wraps at a set width. Pasting objects copied from another Tabula board (`Ctrl+C`, `Ctrl+V`) places them at your pointer.
 
 ## Related
 
