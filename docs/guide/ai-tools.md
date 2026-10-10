@@ -65,6 +65,32 @@ Other tools use a settings file with the same details:
 
 The server address is the one you use for Tabula, followed by `/mcp`. Once connected, ask the tool to list your boards or read one.
 
+## Kanban cards from an AI tool
+
+A tool with a token can work with the cards of a [kanban board](kanban.md) as well as with ordinary objects. The tools are:
+
+| Tool | What it does | Needs |
+|---|---|---|
+| `list_kanban_cards` | Lists the cards of a kanban in order: title, description, lane, stage, owner, due date, link and label names | Read only or more |
+| `add_kanban_card` | Adds a card to a lane, or to the first lane with a stage (to do, doing or done) | Read and edit |
+| `update_kanban_card` | Changes a card's title, description, due date, labels, link or owner | Read and edit |
+| `move_kanban_card` | Moves a card to another lane, or to the first lane with a stage | Read and edit |
+
+The tools never create lanes, kanbans or labels: set those up in the app first. A tool can only use labels that already exist on the board, up to 10 on a card. It must name the lane or the stage, not both.
+
+What a tool is allowed to put on a card:
+
+- A **title** of up to 200 characters and a **description** of up to 4,000.
+- A **due date** that is a real calendar date, written like `2026-11-05`.
+- A **link** that is a web address starting with `http://` or `https://`, up to 2,000 characters, with no spaces and no user name or password. Other kinds, such as `javascript:`, are refused and no card is made.
+- An **owner**: a name for a person, or itself as an AI tool. A tool cannot assign a person's account. A card the tool owns shows the eight-sided badge, and only that token can change who owns it.
+
+A lane that blocks work in progress refuses a new or moved card when it is full, and a locked card cannot be changed. Cards appear on the board for everyone at once. They are made outside Undo, like other edits by tools, so remove a mistake with **Delete** on the card.
+
+## Signing in with OAuth
+
+Today a tool connects with a token, as above. Connecting from a tool's own **Add connector** screen with OAuth is **coming soon**, not available yet. Until then, use the command or settings file from the token dialog.
+
 ## Manage your tokens
 
 **AI tool access** lists your tokens with their name, level, boards, expiry and when each was last used, plus the last four characters of the token so you can tell them apart.
