@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   TrackerError,
-  createMockTrackerApi,
+  createUndoStack,
   createTrackerKeyResolver,
   createTrackerStore,
   type TrackerTicket,
 } from '../src/tracker-data';
+import { createMockTrackerApi } from '../src/tracker-mock';
 import { canonicalTrackerPath } from '../src/tracker-route';
 
 function ticket(overrides: Partial<TrackerTicket> = {}): TrackerTicket {
@@ -39,6 +40,42 @@ async function flushMicrotasks() {
 }
 
 describe('tracker store writes', () => {
+  it('passes an explicit optimistic concurrency sequence and defaults to the cached sequence', async () => {
+    const api = createMockTrackerApi({ tickets: [ticket()] });
+    const calls: Array<{ title?: string; ifUpdatedSeq?: number }> = [];
+    api.patchTicket = async (_key, patch) => {
+      calls.push(patch);
+      return { ticket: ticket({ title: patch.title ?? 'Original title', updatedSeq: calls.length + 3 }) };
+    };
+    const store = createTrackerStore(api);
+    await store.loadTicket('TAB-1');
+    await store.updateTicket('TAB-1', { title: 'Explicit token' }, { ifUpdatedSeq: 1 });
+    await store.updateTicket('TAB-1', { title: 'Default token' });
+    expect(calls).toEqual([
+      { title: 'Explicit token', ifUpdatedSeq: 1 },
+      { title: 'Default token', ifUpdatedSeq: 4 },
+    ]);
+    store.destroy();
+  });
+
+  it('adds the latest event actor to a conflict after refetching ticket activity', async () => {
+    const baseMeta = await createMockTrackerApi().meta();
+    baseMeta.members.push({ userId: 'user-ada', name: 'Ada Lovelace' });
+    const current = ticket({ title: 'Remote title', updatedSeq: 8 });
+    const api = createMockTrackerApi({
+      meta: baseMeta,
+      tickets: [current],
+      events: [{ id: 8, ticketKey: current.key, eventType: 'ticket.updated', at: 8, actor: { id: 'user-ada', type: 'user' } }],
+    });
+    api.patchTicket = async () => { throw new TrackerError('conflict', 'Stale', { current }); };
+    const store = createTrackerStore(api);
+    await store.loadTicket(current.key);
+    const error = await store.updateTicket(current.key, { title: 'Local title' }).then(() => null, (caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'conflict', current, by: { name: 'Ada Lovelace', kind: 'user' } });
+    expect(store.ticket(current.key)).toMatchObject({ conflict: current, conflictBy: { name: 'Ada Lovelace', kind: 'user' } });
+    store.destroy();
+  });
+
   it('shows an optimistic edit and restores the prior row after a failed request', async () => {
     const api = createMockTrackerApi({ tickets: [ticket()] });
     const store = createTrackerStore(api);
@@ -164,6 +201,85 @@ describe('tracker store writes', () => {
     expect(undone.results.every((result) => result.ok)).toBe(true);
     expect((await api.getTicket('TAB-1')).ticket.priority).toBe('none');
     expect((await api.getTicket('TAB-2')).ticket.priority).toBe('none');
+    store.destroy();
+  });
+
+  it('bulk patches state as one undo batch and the bounded stack redoes successful edits', async () => {
+    const second = ticket({ id: 'ticket-2', key: 'TAB-2', title: 'Second ticket', updatedSeq: 4 });
+    const api = createMockTrackerApi({ tickets: [ticket(), second], now: () => 100 });
+    const store = createTrackerStore(api, { now: () => 100 });
+    const stack = createUndoStack(store);
+    const batch = await store.bulk(['TAB-1', 'TAB-2'], { state: 'done' });
+    expect(Object.keys(batch.before)).toEqual(['TAB-1', 'TAB-2']);
+    expect(batch.before['TAB-1'].patch).toEqual({ state: 'todo' });
+    expect(batch.before['TAB-2'].patch).toEqual({ state: 'todo' });
+    stack.push(batch);
+    expect(stack.canUndo()).toBe(true);
+    expect(stack.canRedo()).toBe(false);
+    const undone = await stack.undo();
+    expect(undone?.results.every((result) => result.ok)).toBe(true);
+    expect(store.ticket('TAB-1').ticket?.state.key).toBe('todo');
+    expect(store.ticket('TAB-2').ticket?.state.key).toBe('todo');
+    expect(stack.canUndo()).toBe(false);
+    expect(stack.canRedo()).toBe(true);
+    const redone = await stack.redo();
+    expect(redone?.results.every((result) => result.ok)).toBe(true);
+    expect(store.ticket('TAB-1').ticket?.state.key).toBe('done');
+    expect(store.ticket('TAB-2').ticket?.state.key).toBe('done');
+    expect(stack.canRedo()).toBe(false);
+    expect(stack.canUndo()).toBe(true);
+    store.destroy();
+  });
+
+  it('retains a conflicted batch on the undo stack for resolution and caps history at 50 batches', async () => {
+    const api = createMockTrackerApi({ tickets: [ticket()] });
+    const store = createTrackerStore(api);
+    const stack = createUndoStack(store);
+    const batch = await store.bulk(['TAB-1'], { priority: 'high' });
+    stack.push(batch);
+    api.patchTicket = async () => { throw new TrackerError('conflict', 'Remote edit', { current: ticket({ priority: 'urgent', updatedSeq: 20 }) }); };
+    const result = await stack.undo();
+    expect(result?.results[0]).toMatchObject({ ok: false, error: 'conflict' });
+    expect(stack.canUndo()).toBe(true);
+    expect(stack.canRedo()).toBe(false);
+    store.destroy();
+
+    const seen: string[] = [];
+    const fakeStack = createUndoStack({
+      async undo(item) { seen.push(item.batchId); return { batchId: item.batchId, results: Object.keys(item.before).map((key) => ({ key, ok: true })), before: {} }; },
+      async redo(item) { return { batchId: item.batchId, results: Object.keys(item.before).map((key) => ({ key, ok: true })), before: {} }; },
+    });
+    for (let index = 0; index <= 50; index += 1) {
+      fakeStack.push({ batchId: String(index), before: { [`TAB-${index + 1}`]: { patch: { title: String(index) }, updatedSeq: index } } });
+    }
+    for (let index = 0; index < 51; index += 1) await fakeStack.undo();
+    expect(seen).toHaveLength(50);
+    expect(seen[0]).toBe('50');
+    expect(seen.at(-1)).toBe('1');
+    expect(fakeStack.canUndo()).toBe(false);
+  });
+
+  it('adds and updates projects, milestones, and saved views in the metadata cache', async () => {
+    const api = createMockTrackerApi({ tickets: [ticket()], now: () => 100 });
+    const store = createTrackerStore(api, { now: () => 100 });
+    await store.loadMeta();
+    const project = await store.createProject({ name: 'Payments', state: 'planned', ownerId: 'me' });
+    expect(store.snapshot().meta?.projects).toContainEqual(expect.objectContaining({ id: project.id, name: 'Payments' }));
+    const milestone = await store.createMilestone(project.id, { name: 'Launch', due: '2026-11-01' });
+    expect(store.snapshot().meta?.milestones).toContainEqual(expect.objectContaining({ id: milestone.id, projectId: project.id }));
+    await store.updateProject(project.id, { name: 'Payments v2', state: 'started' });
+    await store.updateMilestone(milestone.id, { due: null, state: 'started' });
+    expect((await store.listProjects()).map((item) => item.name)).toContain('Payments v2');
+    expect((await store.listMilestones(project.id))[0]).toMatchObject({ id: milestone.id, due: null, state: 'started' });
+
+    const view = await store.createView({ name: 'Todo', filter: ['state:todo'] });
+    expect(store.snapshot().meta?.views).toContainEqual({ id: view.id, name: 'Todo', shared: false, mine: true });
+    expect((await store.listViews()).map((item) => item.id)).toContain(view.id);
+    expect((await store.runView(view.id)).tickets).toHaveLength(1);
+    await store.updateView(view.id, { name: 'Current todo', shared: true });
+    expect(store.snapshot().meta?.views).toContainEqual({ id: view.id, name: 'Current todo', shared: true, mine: true });
+    await store.deleteView(view.id);
+    expect(store.snapshot().meta?.views).not.toContainEqual(expect.objectContaining({ id: view.id }));
     store.destroy();
   });
 

@@ -12,9 +12,18 @@ import {
   type TrackerListQuery,
   type TrackerMeta,
   type TrackerNotificationPrefs,
+  type TrackerProject,
+  type TrackerProjectInput,
+  type TrackerProjectPatch,
+  type TrackerMilestone,
+  type TrackerMilestoneInput,
+  type TrackerMilestonePatch,
   type TrackerPatch,
   type TrackerPriority,
   type TrackerRelationKind,
+  type TrackerSavedView,
+  type TrackerSavedViewInput,
+  type TrackerSavedViewPatch,
   type TrackerState,
   type TrackerTicket,
   type TrackerTicketDetail,
@@ -82,6 +91,12 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   let serial = 0;
   let batchSerial = 0;
   let preferences: TrackerNotificationPrefs = copy(seed.notificationPrefs ?? { email: true, mentions: true, assignments: true });
+  const projects = new Map<string, TrackerProject>((meta.projects ?? []).map((project) => [project.id, copy(project)]));
+  const milestones = new Map<string, TrackerMilestone>((meta.milestones ?? []).map((milestone) => [milestone.id, copy(milestone)]));
+  const views = new Map<string, TrackerSavedView>((meta.views ?? []).map((view) => [view.id, {
+    ...copy(view), filter: [], ownerUserId: view.mine ? meta.me.userId : undefined,
+    owner: view.mine ? { userId: meta.me.userId, name: meta.members.find((member) => member.userId === meta.me.userId)?.name ?? 'You' } : undefined,
+  }]));
   const actor = () => ({ userId: meta.me.userId, name: meta.members.find((member) => member.userId === meta.me.userId)?.name ?? 'You' });
   const newId = (kind: string) => `${kind}-${(++serial).toString(36)}`;
   const ensureWritable = () => {
@@ -99,6 +114,29 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     return state;
   };
   const stateValue = (state: TrackerState): TrackerTicket['state'] => ({ id: state.id, key: state.key, name: state.name, category: state.category });
+
+  function syncResourceMeta(): void {
+    meta.projects = [...projects.values()].filter((project) => project.archivedAt == null).map(copy);
+    meta.milestones = [...milestones.values()].filter((milestone) => milestone.archivedAt == null).map(copy);
+    meta.views = [...views.values()].map(({ id, name, shared, mine }) => ({ id, name, shared, mine }));
+  }
+
+  function latestActor(ticket: TrackerTicket): { name: string; kind: string } | undefined {
+    const latest = [...events.values()].filter((event) => event.ticketKey === ticket.key).sort((a, b) => a.id - b.id).at(-1);
+    const actor = latest?.actor;
+    if (!actor) return undefined;
+    return { name: actor.name ?? actor.userId ?? 'Unknown', kind: actor.type ?? 'user' };
+  }
+
+  function projectCounts(project: TrackerProject): TrackerProject {
+    const rows = [...tickets.values()].filter((ticket) => ticket.project?.id === project.id);
+    return { ...copy(project), ticketCount: rows.length, doneCount: rows.filter((ticket) => ['completed', 'canceled'].includes(ticket.state.category)).length };
+  }
+
+  function milestoneCounts(milestone: TrackerMilestone): TrackerMilestone {
+    const rows = [...tickets.values()].filter((ticket) => ticket.milestone?.id === milestone.id);
+    return { ...copy(milestone), ticketCount: rows.length, doneCount: rows.filter((ticket) => ['completed', 'canceled'].includes(ticket.state.category)).length };
+  }
 
   for (const ticket of seed.tickets ?? []) {
     tickets.set(ticket.key.toLocaleUpperCase(), copy(ticket));
@@ -146,6 +184,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       Object.assign(ticket, { title: patch.title.trim() });
     }
     if (patch.description !== undefined) ticket.description = patch.description;
+    if (patch.state !== undefined) ticket.state = stateValue(resolveState(patch.state));
     if (patch.priority !== undefined) {
       if (!['none', 'urgent', 'high', 'medium', 'low'].includes(patch.priority)) throw new TrackerError('invalid_input', 'Unknown priority.', { path: 'priority' });
       ticket.priority = patch.priority as TrackerPriority;
@@ -178,6 +217,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     const before: TrackerBulkPatch = {};
     if ('title' in patch) Object.assign(before, { title: ticket.title });
     if ('description' in patch) before.description = ticket.description;
+    if ('state' in patch) before.state = ticket.state.key;
     if ('priority' in patch) before.priority = ticket.priority;
     if ('assignee' in patch) before.assignee = ticket.assignee?.userId ?? null;
     if ('labels' in patch) before.labels = ticket.labels.map((label) => label.id);
@@ -307,7 +347,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   }
 
   return {
-    async meta() { return copy(meta); },
+    async meta() { syncResourceMeta(); return copy(meta); },
     async createLabel(name: string) {
       ensureWritable();
       const cleanName = name.trim();
@@ -318,6 +358,155 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       const label = { id: newId('label'), name: cleanName, color: null };
       meta.labels.push(label);
       return { label: copy(label) };
+    },
+    async listProjects(options = {}) {
+      const rows = [...projects.values()].filter((project) => options.includeArchived || project.archivedAt == null)
+        .sort((a, b) => compare(a.name, b.name) || compare(a.id, b.id)).map(projectCounts);
+      return { projects: copy(rows) };
+    },
+    async createProject(input: TrackerProjectInput) {
+      ensureWritable();
+      const name = input.name.trim();
+      if (!name || Array.from(name).length > 100) throw new TrackerError('invalid_input', 'Project name must be 1 to 100 characters.', { path: 'name' });
+      if ([...projects.values()].some((project) => project.archivedAt == null && project.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        throw new TrackerError('conflict', 'An active project with this name already exists.', { path: 'name' });
+      }
+      const ownerRef = input.ownerId;
+      const ownerMember = ownerRef === undefined || ownerRef === null || ownerRef === '' ? undefined
+        : ownerRef.toLocaleLowerCase() === 'me' ? meta.members.find((member) => member.userId === meta.me.userId)
+          : meta.members.find((member) => member.userId === ownerRef || member.name.toLocaleLowerCase() === ownerRef.toLocaleLowerCase());
+      if (ownerRef && !ownerMember) throw new TrackerError('invalid_input', 'No active workspace member matches this owner.', { path: 'ownerId' });
+      const state = input.state ?? 'planned';
+      if (!['planned', 'started', 'paused', 'completed', 'canceled'].includes(state)) throw new TrackerError('invalid_input', 'Unknown project state.', { path: 'state' });
+      const project: TrackerProject = {
+        id: newId('project'), name, description: input.description ?? '', state,
+        owner: ownerMember ? { userId: ownerMember.userId, name: ownerMember.name } : null,
+        createdAt: now(), updatedAt: now(), archivedAt: null,
+      };
+      projects.set(project.id, project);
+      syncResourceMeta();
+      return { project: projectCounts(project) };
+    },
+    async updateProject(id: string, patch: TrackerProjectPatch) {
+      ensureWritable();
+      const current = projects.get(id);
+      if (!current) throw new TrackerError('not_found', 'Project not found.', { status: 404 });
+      const name = patch.name?.trim() ?? current.name;
+      if (!name || Array.from(name).length > 100) throw new TrackerError('invalid_input', 'Project name must be 1 to 100 characters.', { path: 'name' });
+      if ([...projects.values()].some((project) => project.id !== id && project.archivedAt == null && name.toLocaleLowerCase() === project.name.toLocaleLowerCase())) {
+        throw new TrackerError('conflict', 'An active project with this name already exists.', { path: 'name' });
+      }
+      const ownerMember = patch.ownerId === undefined ? undefined
+        : patch.ownerId === null || patch.ownerId === '' ? null
+          : patch.ownerId.toLocaleLowerCase() === 'me' ? meta.members.find((member) => member.userId === meta.me.userId)
+            : meta.members.find((member) => member.userId === patch.ownerId || member.name.toLocaleLowerCase() === patch.ownerId?.toLocaleLowerCase());
+      if (patch.ownerId && !ownerMember) throw new TrackerError('invalid_input', 'No active workspace member matches this owner.', { path: 'ownerId' });
+      if (patch.state !== undefined && !['planned', 'started', 'paused', 'completed', 'canceled'].includes(patch.state)) {
+        throw new TrackerError('invalid_input', 'Unknown project state.', { path: 'state' });
+      }
+      const project: TrackerProject = {
+        ...current, name,
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.state !== undefined ? { state: patch.state } : {}),
+        ...(patch.ownerId !== undefined ? { owner: ownerMember ? { userId: ownerMember.userId, name: ownerMember.name } : null } : {}),
+        ...(patch.archived !== undefined ? { archivedAt: patch.archived ? (current.archivedAt ?? now()) : null } : {}),
+        updatedAt: now(),
+      };
+      projects.set(id, project);
+      syncResourceMeta();
+      return { project: projectCounts(project) };
+    },
+    async listMilestones(projectId: string) {
+      if (!projects.has(projectId) || projects.get(projectId)?.archivedAt != null) throw new TrackerError('not_found', 'Project not found.', { status: 404 });
+      const rows = [...milestones.values()].filter((milestone) => milestone.projectId === projectId && milestone.archivedAt == null)
+        .sort((a, b) => compare(a.due ?? '', b.due ?? '') || compare(a.name, b.name)).map(milestoneCounts);
+      return { milestones: copy(rows) };
+    },
+    async createMilestone(projectId: string, input: TrackerMilestoneInput) {
+      ensureWritable();
+      const project = projects.get(projectId);
+      if (!project || project.archivedAt != null) throw new TrackerError('not_found', 'Project not found.', { status: 404 });
+      const name = input.name.trim();
+      if (!name || Array.from(name).length > 100) throw new TrackerError('invalid_input', 'Milestone name must be 1 to 100 characters.', { path: 'name' });
+      if (!isValidDate(input.due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: 'due' });
+      const state = input.state ?? 'planned';
+      if (!['planned', 'started', 'completed'].includes(state)) throw new TrackerError('invalid_input', 'Unknown milestone state.', { path: 'state' });
+      const milestone: TrackerMilestone = {
+        id: newId('milestone'), projectId, projectName: project.name, name,
+        description: input.description ?? '', due: input.due, state,
+        createdAt: now(), updatedAt: now(), archivedAt: null,
+      };
+      milestones.set(milestone.id, milestone);
+      syncResourceMeta();
+      return { milestone: milestoneCounts(milestone) };
+    },
+    async updateMilestone(id: string, patch: TrackerMilestonePatch) {
+      ensureWritable();
+      const current = milestones.get(id);
+      if (!current) throw new TrackerError('not_found', 'Milestone not found.', { status: 404 });
+      const name = patch.name?.trim() ?? current.name;
+      if (!name || Array.from(name).length > 100) throw new TrackerError('invalid_input', 'Milestone name must be 1 to 100 characters.', { path: 'name' });
+      if (patch.due !== undefined && patch.due !== null && !isValidDate(patch.due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: 'due' });
+      if (patch.state !== undefined && !['planned', 'started', 'completed'].includes(patch.state)) throw new TrackerError('invalid_input', 'Unknown milestone state.', { path: 'state' });
+      const milestone: TrackerMilestone = {
+        ...current, name,
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.due !== undefined ? { due: patch.due } : {}),
+        ...(patch.state !== undefined ? { state: patch.state } : {}),
+        ...(patch.archived !== undefined ? { archivedAt: patch.archived ? (current.archivedAt ?? now()) : null } : {}),
+        updatedAt: now(),
+      };
+      milestones.set(id, milestone);
+      syncResourceMeta();
+      return { milestone: milestoneCounts(milestone) };
+    },
+    async listViews() {
+      return { views: copy([...views.values()].filter((view) => view.mine || view.shared).sort((a, b) => compare(a.name, b.name))) };
+    },
+    async runView(id: string, query = {}) {
+      const view = views.get(id);
+      if (!view || (!view.mine && !view.shared)) throw new TrackerError('not_found', 'Saved view not found.', { status: 404 });
+      const all = ticketList({ filter: view.filter, sort: { field: 'updatedAt', direction: 'desc' } });
+      const limit = Math.max(1, Math.min(50, Math.trunc(query.limit ?? 20)));
+      const offset = pageOffset(query.cursor);
+      const ticketRows = all.slice(offset, offset + limit).map(copy);
+      return { tickets: ticketRows, nextCursor: offset + limit < all.length ? String(offset + limit) : null, view: copy(view) };
+    },
+    async createView(input: TrackerSavedViewInput) {
+      ensureWritable();
+      const name = input.name.trim();
+      if (!name || Array.from(name).length > 80) throw new TrackerError('invalid_input', 'View name must be 1 to 80 characters.', { path: 'name' });
+      if (!Array.isArray(input.filter) || input.filter.some((token) => typeof token !== 'string')) throw new TrackerError('invalid_input', 'Filter must be a list of tokens.', { path: 'filter' });
+      ticketList({ filter: input.filter });
+      const view: TrackerSavedView = {
+        id: newId('view'), ownerUserId: meta.me.userId, owner: { userId: meta.me.userId, name: actor().name },
+        ownerName: actor().name, name, filter: copy(input.filter), sort: 'updated_desc', shared: input.shared ?? false,
+        mine: true, createdAt: now(), updatedAt: now(),
+      };
+      views.set(view.id, view); syncResourceMeta();
+      return { view: copy(view) };
+    },
+    async updateView(id: string, patch: TrackerSavedViewPatch) {
+      ensureWritable();
+      const current = views.get(id);
+      if (!current || !current.mine) throw new TrackerError(current ? 'forbidden' : 'not_found', current ? 'Only the owner can update a saved view.' : 'Saved view not found.', { status: current ? 403 : 404 });
+      const name = patch.name?.trim() ?? current.name;
+      if (!name || Array.from(name).length > 80) throw new TrackerError('invalid_input', 'View name must be 1 to 80 characters.', { path: 'name' });
+      if (patch.filter) ticketList({ filter: patch.filter });
+      const view = {
+        ...current, name,
+        ...(patch.filter !== undefined ? { filter: copy(patch.filter) } : {}),
+        ...(patch.shared !== undefined ? { shared: patch.shared } : {}),
+        updatedAt: now(),
+      };
+      views.set(id, view); syncResourceMeta();
+      return { view: copy(view) };
+    },
+    async deleteView(id: string) {
+      ensureWritable();
+      const current = views.get(id);
+      if (!current || !current.mine) throw new TrackerError(current ? 'forbidden' : 'not_found', current ? 'Only the owner can delete a saved view.' : 'Saved view not found.', { status: current ? 403 : 404 });
+      views.delete(id); syncResourceMeta();
     },
     async listTickets(query = {}) {
       const all = ticketList(query);
@@ -384,7 +573,9 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       ensureWritable();
       const ticket = resolveTicket(key);
       if (patch.ifUpdatedSeq !== undefined && patch.ifUpdatedSeq !== ticket.updatedSeq) {
-        throw new TrackerError('conflict', 'The ticket changed since it was loaded.', { current: copy(ticket), status: 409 });
+        throw new TrackerError('conflict', 'The ticket changed since it was loaded.', {
+          current: copy(ticket), by: latestActor(ticket), status: 409,
+        });
       }
       const before = copy(ticket);
       applyPatch(ticket, patch);
@@ -462,7 +653,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
           before[ticket.key] = { patch: patchValueBefore(ticket, input.patch), updatedSeq: ticket.updatedSeq };
           applyPatch(ticket, input.patch);
           addEvent(ticket, 'ticket.updated', { to: copy(input.patch) });
-          results.push({ key: ticket.key, ok: true, ticket: copy(ticket) });
+          results.push({ key: ticket.key, ok: true, ticket: copy(ticket), before: copy(before[ticket.key].patch) });
         } catch (error) {
           results.push({ key, ok: false, error: error instanceof TrackerError ? error.code : 'internal' });
         }

@@ -4,6 +4,7 @@ import {
   type TrackerBulkResult,
   type TrackerComment,
   type TrackerCommentPage,
+  type TrackerConflictActor,
   type TrackerCreateInput,
   type TrackerEventPage,
   type TrackerEvent,
@@ -14,9 +15,18 @@ import {
   type TrackerLabel,
   type TrackerMeta,
   type TrackerNotificationPrefs,
+  type TrackerProject,
+  type TrackerProjectInput,
+  type TrackerProjectPatch,
+  type TrackerMilestone,
+  type TrackerMilestoneInput,
+  type TrackerMilestonePatch,
   type TrackerPatch,
   type TrackerPriority,
   type TrackerRelationKind,
+  type TrackerSavedView,
+  type TrackerSavedViewInput,
+  type TrackerSavedViewPatch,
   type TrackerSort,
   type TrackerState,
   type TrackerStateCategory,
@@ -35,11 +45,26 @@ export interface TrackerPageOptions extends TrackerRequestOptions { before?: str
 export interface TrackerInboxQuery { limit?: number; before?: string; unread?: boolean }
 export type TrackerInboxReadInput = { ids: string[] } | { all: true };
 export interface TrackerBulkInput { keys: string[]; patch: TrackerBulkPatch }
+export interface TrackerUpdateOptions { ifUpdatedSeq?: number }
+export interface TrackerProjectListOptions extends TrackerRequestOptions { includeArchived?: boolean }
+export interface TrackerSavedViewRunQuery { limit?: number; cursor?: string }
+export interface TrackerSavedViewPage { tickets: TrackerTicket[]; nextCursor: string | null; view: TrackerSavedView }
 
 /** Typed transport for every public tracker endpoint used by the app. */
 export interface TrackerApi {
   meta(options?: TrackerRequestOptions): Promise<TrackerMeta>;
   createLabel(name: string, options?: TrackerRequestOptions): Promise<{ label: TrackerLabel }>;
+  listProjects(options?: TrackerProjectListOptions): Promise<{ projects: TrackerProject[] }>;
+  createProject(input: TrackerProjectInput, options?: TrackerRequestOptions): Promise<{ project: TrackerProject }>;
+  updateProject(id: string, patch: TrackerProjectPatch, options?: TrackerRequestOptions): Promise<{ project: TrackerProject }>;
+  listMilestones(projectId: string, options?: TrackerRequestOptions): Promise<{ milestones: TrackerMilestone[] }>;
+  createMilestone(projectId: string, input: TrackerMilestoneInput, options?: TrackerRequestOptions): Promise<{ milestone: TrackerMilestone }>;
+  updateMilestone(id: string, patch: TrackerMilestonePatch, options?: TrackerRequestOptions): Promise<{ milestone: TrackerMilestone }>;
+  listViews(options?: TrackerRequestOptions): Promise<{ views: TrackerSavedView[] }>;
+  runView(id: string, query?: TrackerSavedViewRunQuery, options?: TrackerRequestOptions): Promise<TrackerSavedViewPage>;
+  createView(input: TrackerSavedViewInput, options?: TrackerRequestOptions): Promise<{ view: TrackerSavedView }>;
+  updateView(id: string, patch: TrackerSavedViewPatch, options?: TrackerRequestOptions): Promise<{ view: TrackerSavedView }>;
+  deleteView(id: string, options?: TrackerRequestOptions): Promise<void>;
   listTickets(query?: TrackerListQuery, options?: TrackerListOptions): Promise<TrackerTicketListPage>;
   ticketsUpdatedSince(seq: number, options?: TrackerRequestOptions): Promise<TrackerUpdatedTickets>;
   createTicket(input: TrackerCreateInput, options?: TrackerRequestOptions): Promise<{ ticket: TrackerTicket }>;
@@ -95,7 +120,11 @@ function normalizeTrackerEvent(value: unknown): TrackerEvent {
   const changedFields = Object.keys(after);
   const inferredField = changedFields.length === 1 ? changedFields[0] : undefined;
   const field = typeof row.field === 'string' ? row.field : inferredField;
-  const actor = isRecord(row.actor) ? row.actor : null;
+  const rawActor = isRecord(row.actor) ? row.actor : null;
+  const actor = rawActor ? {
+    ...rawActor,
+    ...(typeof rawActor.id === 'string' && rawActor.userId === undefined ? { userId: rawActor.id } : {}),
+  } : null;
   const relation = isRecord(row.relation) ? row.relation
     : typeof details.relationKind === 'string' || typeof details.relatedTicketKey === 'string'
       ? { kind: details.relationKind, key: details.relatedTicketKey }
@@ -133,7 +162,22 @@ function trackerHttpError(status: number, body: unknown): TrackerError {
   const message = typeof fields.message === 'string' ? fields.message : code;
   const path = typeof fields.path === 'string' ? fields.path : undefined;
   const current = isRecord(fields.ticket) ? fields.ticket as unknown as TrackerTicket : undefined;
-  return new TrackerError(code, message, { path, current, status });
+  const rawBy = isRecord(fields.by) ? fields.by : isRecord(fields.actor) ? fields.actor : undefined;
+  const byName = typeof rawBy?.name === 'string' ? rawBy.name
+    : typeof rawBy?.userId === 'string' ? rawBy.userId
+      : typeof rawBy?.id === 'string' ? rawBy.id : undefined;
+  const by = rawBy && byName
+    ? { name: byName, kind: typeof rawBy.kind === 'string' ? rawBy.kind : typeof rawBy.type === 'string' ? rawBy.type : 'user' }
+    : undefined;
+  return new TrackerError(code, message, { path, current, by, status });
+}
+
+function normalizeBulkBefore(value: unknown): TrackerBulkPatch | undefined {
+  if (!isRecord(value)) return undefined;
+  const patch = { ...value } as TrackerBulkPatch & { assigneeId?: string | null };
+  if (Object.hasOwn(value, 'assigneeId')) patch.assignee = value.assigneeId as string | null;
+  delete patch.assigneeId;
+  return patch;
 }
 
 /** JSON transport matching src/api.ts same-origin and CSRF conventions. */
@@ -185,6 +229,17 @@ export function createHttpTrackerApi(fetchFn: typeof fetch = fetch): TrackerApi 
       const result = await request<{ label: TrackerLabel }>('POST', '/api/tracker/labels', { name }, options);
       return result;
     },
+    listProjects: (options = {}) => request('GET', `/api/tracker/projects${queryString([['archived', options.includeArchived ? 1 : undefined]])}`, undefined, options),
+    createProject: (input, options) => request('POST', '/api/tracker/projects', input, options),
+    updateProject: (id, patch, options) => request('PATCH', `/api/tracker/projects/${segment(id)}`, patch, options),
+    listMilestones: (projectId, options) => request('GET', `/api/tracker/projects/${segment(projectId)}/milestones`, undefined, options),
+    createMilestone: (projectId, input, options) => request('POST', `/api/tracker/projects/${segment(projectId)}/milestones`, input, options),
+    updateMilestone: (id, patch, options) => request('PATCH', `/api/tracker/milestones/${segment(id)}`, patch, options),
+    listViews: (options) => request('GET', '/api/tracker/views', undefined, options),
+    runView: (id, query = {}, options) => request('GET', `/api/tracker/views/${segment(id)}/tickets${queryString([['limit', query.limit], ['cursor', query.cursor]])}`, undefined, options),
+    createView: (input, options) => request('POST', '/api/tracker/views', input, options),
+    updateView: (id, patch, options) => request('PATCH', `/api/tracker/views/${segment(id)}`, patch, options),
+    deleteView: async (id, options) => { await request<void>('DELETE', `/api/tracker/views/${segment(id)}`, undefined, options); },
     listTickets: (query = {}, options) => {
       const filters = typeof query.filter === 'string' ? [query.filter] : query.filter ?? [];
       return request('GET', `/api/tracker/tickets${queryString([
@@ -231,11 +286,27 @@ export function createHttpTrackerApi(fetchFn: typeof fetch = fetch): TrackerApi 
     deleteComment: (id, options) => request('DELETE', `/api/tracker/comments/${segment(id)}`, undefined, options),
     setSubscription: (key, subscribed, options) => request(subscribed ? 'PUT' : 'DELETE', `/api/tracker/tickets/${segment(key)}/subscription`, undefined, options),
     feed: (since, options) => request('GET', `/api/tracker/feed${queryString([['since', since]])}`, undefined, options),
-    bulkTickets: (input, options) => request('POST', '/api/tracker/tickets/bulk', input, options),
+    bulkTickets: async (input, options) => {
+      const response = await request<{
+        batchId: string;
+        results: Array<TrackerBulkResult['results'][number] & { before?: unknown }>;
+        before?: TrackerBulkResult['before'];
+      }>(
+        'POST', '/api/tracker/tickets/bulk', input, options,
+      );
+      const results = response.results.map((item) => ({
+        ...item,
+        ...(normalizeBulkBefore(item.before) ? { before: normalizeBulkBefore(item.before) } : {}),
+      }));
+      const before = response.before ?? Object.fromEntries(results.flatMap((item) => item.ok && item.before
+        ? [[item.ticket?.key ?? item.key, { patch: item.before, updatedSeq: item.ticket?.updatedSeq ?? 0 }]]
+        : []));
+      return { ...response, results, before };
+    },
     archiveTicket: (key, options) => request('POST', `/api/tracker/tickets/${segment(key)}/archive`, {}, options),
     restoreTicket: (key, options) => request('POST', `/api/tracker/tickets/${segment(key)}/restore`, {}, options),
-    addRelation: (key, relation, options) => request('POST', `/api/tracker/tickets/${segment(key)}/relations`, relation, options),
-    removeRelation: (key, relation, options) => request('DELETE', `/api/tracker/tickets/${segment(key)}/relations`, relation, options),
+    addRelation: (key, relation, options) => request('POST', `/api/tracker/tickets/${segment(key)}/relations`, { relation: relation.kind, otherKey: relation.key }, options),
+    removeRelation: (key, relation, options) => request('DELETE', `/api/tracker/tickets/${segment(key)}/relations`, { relation: relation.kind, otherKey: relation.key }, options),
     inbox: (query = {}, options) => request('GET', `/api/tracker/inbox${queryString([
       ['limit', query.limit], ['before', query.before], ['unread', query.unread ? 1 : undefined],
     ])}`, undefined, options),
@@ -405,6 +476,7 @@ export interface TrackerTicketCache {
   loading: boolean;
   error?: TrackerError;
   conflict?: TrackerTicket;
+  conflictBy?: TrackerConflictActor;
   pending: boolean;
   offlineQueued: boolean;
   subscribed?: boolean;
@@ -444,6 +516,17 @@ export interface TrackerStore {
   snapshot(): TrackerStoreSnapshot;
   loadMeta(force?: boolean): Promise<TrackerMeta>;
   createLabel(name: string): Promise<TrackerLabel>;
+  listProjects(options?: TrackerProjectListOptions): Promise<TrackerProject[]>;
+  createProject(input: TrackerProjectInput): Promise<TrackerProject>;
+  updateProject(id: string, patch: TrackerProjectPatch): Promise<TrackerProject>;
+  listMilestones(projectId: string): Promise<TrackerMilestone[]>;
+  createMilestone(projectId: string, input: TrackerMilestoneInput): Promise<TrackerMilestone>;
+  updateMilestone(id: string, patch: TrackerMilestonePatch): Promise<TrackerMilestone>;
+  listViews(): Promise<TrackerSavedView[]>;
+  runView(id: string, query?: TrackerSavedViewRunQuery): Promise<TrackerSavedViewPage>;
+  createView(input: TrackerSavedViewInput): Promise<TrackerSavedView>;
+  updateView(id: string, patch: TrackerSavedViewPatch): Promise<TrackerSavedView>;
+  deleteView(id: string): Promise<void>;
   loadList(query?: TrackerListQuery, options?: { force?: boolean }): Promise<TrackerListCache>;
   loadMore(query?: TrackerListQuery): Promise<TrackerListCache>;
   list(query?: TrackerListQuery): TrackerListCache;
@@ -453,7 +536,7 @@ export interface TrackerStore {
   loadOlderActivity(key: string): Promise<TrackerTicketDetail>;
   watchTicket(key: string, listener: (state: TrackerTicketCache) => void): () => void;
   createTicket(input: Omit<TrackerCreateInput, 'idempotencyKey'> & { idempotencyKey?: string }): Promise<TrackerTicket>;
-  updateTicket(key: string, patch: Omit<TrackerPatch, 'ifUpdatedSeq'>): Promise<TrackerTicket>;
+  updateTicket(key: string, patch: Omit<TrackerPatch, 'ifUpdatedSeq'>, options?: TrackerUpdateOptions): Promise<TrackerTicket>;
   transitionTicket(key: string, state: string): Promise<TrackerTicket>;
   addComment(key: string, body: string, clientId?: string): Promise<TrackerComment>;
   editComment(key: string, id: string, body: string): Promise<TrackerComment>;
@@ -461,11 +544,20 @@ export interface TrackerStore {
   setSubscription(key: string, subscribed: boolean): Promise<boolean>;
   bulk(keys: string[], patch: TrackerBulkPatch): Promise<TrackerUndoBatch>;
   undo(batch: TrackerUndoBatch): Promise<TrackerBulkResult>;
+  redo(batch: TrackerUndoBatch): Promise<TrackerBulkResult>;
   /** Replays this process-local queue after reconnect. V1 does not persist queued edits across reloads. */
   replayOfflineQueue(): Promise<void>;
   addRelation(key: string, relation: { kind: TrackerRelationKind; key: string }): Promise<TrackerTicket>;
   removeRelation(key: string, relation: { kind: TrackerRelationKind; key: string }): Promise<TrackerTicket>;
   destroy(): void;
+}
+
+export interface TrackerUndoStack {
+  push(batch: TrackerUndoBatch): void;
+  undo(): Promise<TrackerBulkResult | undefined>;
+  redo(): Promise<TrackerBulkResult | undefined>;
+  canUndo(): boolean;
+  canRedo(): boolean;
 }
 
 interface QueuedEdit { kind: 'patch' | 'transition' | 'comment' | 'subscription'; value: unknown; baseSeq: number }
@@ -491,6 +583,12 @@ function ticketWithPatch(ticket: TrackerTicket, patch: TrackerBulkPatch, meta: T
   const next = cloneTrackerData(ticket);
   if (patch.title !== undefined) Object.assign(next, { title: patch.title });
   if (patch.description !== undefined) next.description = patch.description;
+  if (patch.state !== undefined) {
+    const state = meta?.states.find((candidate) => candidate.id === patch.state
+      || candidate.key.toLocaleLowerCase() === patch.state?.toLocaleLowerCase()
+      || candidate.name.toLocaleLowerCase() === patch.state?.toLocaleLowerCase());
+    if (state) next.state = { id: state.id, key: state.key, name: state.name, category: state.category };
+  }
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.due !== undefined) next.due = patch.due;
   if (patch.parent !== undefined) next.parent = patch.parent;
@@ -521,6 +619,7 @@ function patchValuesBefore(ticket: TrackerTicket, patch: TrackerBulkPatch): Trac
   const before: TrackerBulkPatch = {};
   if ('title' in patch) Object.assign(before, { title: ticket.title });
   if ('description' in patch) before.description = ticket.description;
+  if ('state' in patch) before.state = ticket.state.key;
   if ('priority' in patch) before.priority = ticket.priority;
   if ('assignee' in patch) before.assignee = ticket.assignee?.userId ?? null;
   if ('labels' in patch) before.labels = ticket.labels.map((label) => label.name);
@@ -635,13 +734,45 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     for (const ref of new Set([ticket.key, ...(ticket.aliases ?? [])])) {
       const state = ticketCache(ref);
       if (options.preserveLocal && state.pending) { shouldUpdateLists = false; continue; }
-      state.ticket = cloneTrackerData(ticket);
+      // A list or poll row is slim (no creator, labels, relations); it must not erase what a full ticket already told us.
+      const known = state.ticket && state.ticket.id === ticket.id ? state.ticket : state.detail?.ticket;
+      state.ticket = cloneTrackerData(known && !ticket.creator ? { ...known, ...ticket } : ticket);
     }
     if (shouldUpdateLists) updateListRows(ticket);
   }
 
   function setReadonlyFrom(error: TrackerError): void {
     if (error.code === 'read_only') readOnly = true;
+  }
+
+  function conflictActorFromDetail(detail: TrackerTicketDetail): TrackerConflictActor | undefined {
+    const event = [...detail.events].sort((left, right) => left.id - right.id).at(-1);
+    const actor = event?.actor;
+    if (!actor) return undefined;
+    const kind = actor.type ?? actor.provider ?? 'user';
+    const actorId = actor.userId ?? actor.id;
+    const member = actorId ? meta?.members.find((candidate) => candidate.userId === actorId) : undefined;
+    const knownName = kind === 'mcp_token' ? 'MCP token'
+      : kind === 'system' ? 'System'
+        : kind === 'integration' ? 'Integration'
+          : undefined;
+    const name = actor.name ?? member?.name ?? knownName ?? actorId;
+    return name ? { name, kind } : undefined;
+  }
+
+  async function enrichConflict(key: string, error: TrackerError): Promise<TrackerError> {
+    if (error.code !== 'conflict' || (error.current && error.by)) return error;
+    let current = error.current;
+    let by: TrackerConflictActor | undefined = error.by;
+    try {
+      const detail = await api.getTicket(key);
+      current ??= detail.ticket;
+      if (!by) {
+        if (!meta) { try { await loadMeta(); } catch { /* activity still provides the actor id and kind */ } }
+        by = conflictActorFromDetail(detail);
+      }
+    } catch { /* retain the conflict even when activity cannot be refetched */ }
+    return new TrackerError(error.code, error.message, { path: error.path, current, by, status: error.status });
   }
 
   function assertWritable(): void {
@@ -735,6 +866,240 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       const error = asTrackerError(caught);
       setReadonlyFrom(error);
       throw error;
+    }
+  }
+
+  function cacheProject(project: TrackerProject): void {
+    if (!meta) return;
+    const projects = meta.projects ?? [];
+    const active = project.archivedAt == null;
+    meta = {
+      ...meta,
+      projects: active
+        ? [...projects.filter((item) => item.id !== project.id), cloneTrackerData(project)]
+        : projects.filter((item) => item.id !== project.id),
+    };
+  }
+
+  function cacheMilestone(milestone: TrackerMilestone): void {
+    if (!meta) return;
+    const milestones = meta.milestones ?? [];
+    const active = milestone.archivedAt == null;
+    meta = {
+      ...meta,
+      milestones: active
+        ? [...milestones.filter((item) => item.id !== milestone.id), cloneTrackerData(milestone)]
+        : milestones.filter((item) => item.id !== milestone.id),
+    };
+  }
+
+  function cacheView(view: TrackerSavedView): void {
+    if (!meta) return;
+    const summary = { id: view.id, name: view.name, shared: view.shared, mine: view.mine };
+    meta = { ...meta, views: [...(meta.views ?? []).filter((item) => item.id !== view.id), summary] };
+  }
+
+  async function listProjects(projectOptions: TrackerProjectListOptions = {}): Promise<TrackerProject[]> {
+    if (!meta) await loadMeta();
+    try {
+      const result = await api.listProjects(projectOptions);
+      if (meta && !projectOptions.includeArchived) meta = { ...meta, projects: cloneTrackerData(result.projects) };
+      notify();
+      return cloneTrackerData(result.projects);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function createProject(input: TrackerProjectInput): Promise<TrackerProject> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    try {
+      const result = await api.createProject(input);
+      cacheProject(result.project);
+      notify();
+      return cloneTrackerData(result.project);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function updateProject(id: string, patch: TrackerProjectPatch): Promise<TrackerProject> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    const previous = meta?.projects ? cloneTrackerData(meta.projects) : undefined;
+    if (meta?.projects) {
+      const project = meta.projects.find((item) => item.id === id);
+      if (project) {
+        const owner = patch.ownerId === null ? null : typeof patch.ownerId === 'string'
+          ? meta.members.find((member) => member.userId === patch.ownerId || member.name.toLocaleLowerCase() === patch.ownerId?.toLocaleLowerCase())
+          : undefined;
+        cacheProject({
+          ...project,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.state !== undefined ? { state: patch.state } : {}),
+          ...(patch.ownerId !== undefined && (owner || patch.ownerId === null) ? { owner: owner ? { userId: owner.userId, name: owner.name } : null } : {}),
+          ...(patch.archived !== undefined ? { archivedAt: patch.archived ? (project.archivedAt ?? now()) : null } : {}),
+        });
+        notify();
+      }
+    }
+    try {
+      const result = await api.updateProject(id, patch);
+      cacheProject(result.project);
+      notify();
+      return cloneTrackerData(result.project);
+    } catch (caught) {
+      if (meta && previous) meta = { ...meta, projects: previous };
+      const error = asTrackerError(caught); setReadonlyFrom(error); notify(); throw error;
+    }
+  }
+
+  async function listMilestones(projectId: string): Promise<TrackerMilestone[]> {
+    if (!meta) await loadMeta();
+    try {
+      const result = await api.listMilestones(projectId);
+      if (meta) {
+        const listed = new Set(result.milestones.map((milestone) => milestone.id));
+        meta = {
+          ...meta,
+          milestones: [
+            ...(meta.milestones ?? []).filter((milestone) => milestone.projectId !== projectId && !listed.has(milestone.id)),
+            ...cloneTrackerData(result.milestones),
+          ],
+        };
+      }
+      notify();
+      return cloneTrackerData(result.milestones);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function createMilestone(projectId: string, input: TrackerMilestoneInput): Promise<TrackerMilestone> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    try {
+      const result = await api.createMilestone(projectId, input);
+      cacheMilestone(result.milestone);
+      notify();
+      return cloneTrackerData(result.milestone);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function updateMilestone(id: string, patch: TrackerMilestonePatch): Promise<TrackerMilestone> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    const previous = meta?.milestones ? cloneTrackerData(meta.milestones) : undefined;
+    if (meta?.milestones) {
+      const milestone = meta.milestones.find((item) => item.id === id);
+      if (milestone) {
+        cacheMilestone({
+          ...milestone,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.due !== undefined ? { due: patch.due } : {}),
+          ...(patch.state !== undefined ? { state: patch.state } : {}),
+          ...(patch.archived !== undefined ? { archivedAt: patch.archived ? (milestone.archivedAt ?? now()) : null } : {}),
+        });
+        notify();
+      }
+    }
+    try {
+      const result = await api.updateMilestone(id, patch);
+      cacheMilestone(result.milestone);
+      notify();
+      return cloneTrackerData(result.milestone);
+    } catch (caught) {
+      if (meta && previous) meta = { ...meta, milestones: previous };
+      const error = asTrackerError(caught); setReadonlyFrom(error); notify(); throw error;
+    }
+  }
+
+  async function listViews(): Promise<TrackerSavedView[]> {
+    if (!meta) await loadMeta();
+    try {
+      const result = await api.listViews();
+      if (meta) meta = { ...meta, views: result.views.map(({ id, name, shared, mine }) => ({ id, name, shared, mine })) };
+      notify();
+      return cloneTrackerData(result.views);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function runView(id: string, query: TrackerSavedViewRunQuery = {}): Promise<TrackerSavedViewPage> {
+    if (!meta) await loadMeta();
+    try {
+      const result = await api.runView(id, query);
+      cacheView(result.view);
+      notify();
+      return cloneTrackerData(result);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function createView(input: TrackerSavedViewInput): Promise<TrackerSavedView> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    try {
+      const result = await api.createView(input);
+      cacheView(result.view);
+      notify();
+      return cloneTrackerData(result.view);
+    } catch (caught) {
+      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+    }
+  }
+
+  async function updateView(id: string, patch: TrackerSavedViewPatch): Promise<TrackerSavedView> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    const previous = meta?.views ? cloneTrackerData(meta.views) : undefined;
+    if (meta?.views) {
+      const view = meta.views.find((item) => item.id === id);
+      if (view) {
+        const optimistic = { ...view, ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.shared !== undefined ? { shared: patch.shared } : {}) };
+        meta = { ...meta, views: [...meta.views.filter((item) => item.id !== id), optimistic] };
+        notify();
+      }
+    }
+    try {
+      const result = await api.updateView(id, patch);
+      cacheView(result.view);
+      notify();
+      return cloneTrackerData(result.view);
+    } catch (caught) {
+      if (meta && previous) meta = { ...meta, views: previous };
+      const error = asTrackerError(caught); setReadonlyFrom(error); notify(); throw error;
+    }
+  }
+
+  async function deleteView(id: string): Promise<void> {
+    assertWritable();
+    if (!meta) await loadMeta();
+    assertWritable();
+    const previous = meta?.views ? cloneTrackerData(meta.views) : undefined;
+    if (meta?.views) {
+      meta = { ...meta, views: meta.views.filter((view) => view.id !== id) };
+      notify();
+    }
+    try {
+      await api.deleteView(id);
+      notify();
+    } catch (caught) {
+      if (meta && previous) meta = { ...meta, views: previous };
+      const error = asTrackerError(caught); setReadonlyFrom(error); notify(); throw error;
     }
   }
 
@@ -837,7 +1202,8 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       state.loading = false;
       if (hadConflict) {
         state.conflict = cloneTrackerData(detail.ticket);
-        state.error = new TrackerError('conflict', 'This ticket changed while you were editing it.', { current: detail.ticket });
+        state.conflictBy = state.conflictBy ?? conflictActorFromDetail(detail);
+        state.error = new TrackerError('conflict', 'This ticket changed while you were editing it.', { current: detail.ticket, by: state.conflictBy });
       }
       saveTicket(detail.ticket, { preserveLocal: true });
       notify();
@@ -850,6 +1216,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
         state.detail = undefined;
         state.subscribed = undefined;
         state.conflict = undefined;
+        state.conflictBy = undefined;
       }
       setReadonlyFrom(state.error);
       notify();
@@ -930,23 +1297,23 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   }
 
   async function handleMutationFailure(key: string, state: TrackerTicketCache, prior: TrackerTicketCache, error: TrackerError): Promise<never> {
+    const surfacedError = await enrichConflict(key, error);
     setReadonlyFrom(error);
-    if (error.code === 'conflict') {
-      let current = error.current;
-      if (!current) {
-        try { current = (await api.getTicket(key)).ticket; } catch { current = undefined; }
-      }
+    if (surfacedError.code === 'conflict') {
+      const current = surfacedError.current;
       if (current) {
         updateCacheTicket(state, current);
         saveTicket(current);
         state.conflict = cloneTrackerData(current);
+        state.conflictBy = surfacedError.by;
       } else {
         state.ticket = prior.ticket;
         state.detail = prior.detail;
         state.conflict = prior.ticket;
+        state.conflictBy = surfacedError.by;
         if (prior.ticket) updateListRows(prior.ticket);
       }
-      state.error = error;
+      state.error = surfacedError;
       state.pending = false;
       state.offlineQueued = offlineQueue.has(cacheTicketKey(key));
       if (state.offlineQueued) blockedQueue.add(cacheTicketKey(key));
@@ -956,12 +1323,13 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       if (prior.ticket) updateListRows(prior.ticket);
       state.subscribed = prior.subscribed;
       state.conflict = prior.conflict;
+      state.conflictBy = prior.conflictBy;
       state.pending = prior.pending;
       state.offlineQueued = prior.offlineQueued;
-      state.error = error;
+      state.error = surfacedError;
     }
     notify();
-    throw error;
+    throw surfacedError;
   }
 
   async function ensureCurrent(key: string): Promise<TrackerTicket> {
@@ -991,23 +1359,26 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     }
   }
 
-  async function updateTicket(key: string, patch: Omit<TrackerPatch, 'ifUpdatedSeq'>): Promise<TrackerTicket> {
+  async function updateTicket(key: string, patch: Omit<TrackerPatch, 'ifUpdatedSeq'>, updateOptions: TrackerUpdateOptions = {}): Promise<TrackerTicket> {
     assertWritable();
+    if (patch.state !== undefined && !meta) await loadMeta();
     const current = await ensureCurrent(key);
     const state = ticketCache(key);
     const prior = cloneTrackerData(state);
+    const ifUpdatedSeq = updateOptions.ifUpdatedSeq ?? current.updatedSeq;
     const optimistic = ticketWithPatch(current, patch, meta, now());
     updateCacheTicket(state, optimistic);
     state.pending = true;
     state.error = undefined;
     state.conflict = undefined;
+    state.conflictBy = undefined;
     notify();
     if (!isOnline()) {
-      enqueue(key, { kind: 'patch', value: cloneTrackerData(patch), baseSeq: current.updatedSeq });
+      enqueue(key, { kind: 'patch', value: cloneTrackerData(patch), baseSeq: ifUpdatedSeq });
       return cloneTrackerData(optimistic);
     }
     try {
-      const result = await api.patchTicket(key, { ...patch, ifUpdatedSeq: current.updatedSeq });
+      const result = await api.patchTicket(key, { ...patch, ifUpdatedSeq });
       updateCacheTicket(state, result.ticket);
       saveTicket(result.ticket);
       state.pending = false;
@@ -1033,6 +1404,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     state.pending = true;
     state.error = undefined;
     state.conflict = undefined;
+    state.conflictBy = undefined;
     notify();
     if (!isOnline()) {
       enqueue(key, { kind: 'transition', value: stateName, baseSeq: current.updatedSeq });
@@ -1165,6 +1537,8 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
 
   async function bulk(keys: string[], patch: TrackerBulkPatch): Promise<TrackerUndoBatch> {
     assertWritable();
+    if (patch.state !== undefined && !meta) await loadMeta();
+    assertWritable();
     const uniqueKeys = [...new Set(keys.map((key) => cacheTicketKey(key)))];
     const tickets = await Promise.all(uniqueKeys.map((key) => ensureCurrent(key)));
     const prior = new Map(uniqueKeys.map((key) => [key, cloneTrackerData(ticketCache(key))]));
@@ -1175,6 +1549,8 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       updateCacheTicket(state, ticketWithPatch(tickets[index], patch, meta, now()));
       state.pending = true;
       state.error = undefined;
+      state.conflict = undefined;
+      state.conflictBy = undefined;
     });
     notify();
     if (!isOnline()) {
@@ -1183,6 +1559,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     }
     try {
       const result = await api.bulkTickets({ keys: uniqueKeys, patch });
+      const undoBefore: TrackerBulkResult['before'] = {};
       for (const item of result.results) {
         const state = ticketCache(item.key);
         if (item.ok && item.ticket) {
@@ -1190,18 +1567,39 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
           saveTicket(item.ticket);
           state.pending = false;
           state.offlineQueued = false;
+          const localBefore = before[cacheTicketKey(item.key)];
+          const priorPatch = item.before ?? result.before[cacheTicketKey(item.key)]?.patch ?? localBefore?.patch;
+          if (localBefore && priorPatch && Object.keys(priorPatch).length > 0) {
+            undoBefore[item.ticket.key] = { patch: cloneTrackerData(priorPatch), updatedSeq: localBefore.updatedSeq };
+          }
         } else {
           const old = prior.get(cacheTicketKey(item.key));
           if (old) { state.ticket = old.ticket; state.detail = old.detail; if (old.ticket) updateListRows(old.ticket); }
           state.pending = false;
-          state.error = new TrackerError(isErrorCode(item.error) ? item.error : 'internal', String(item.error ?? 'Bulk update failed.'));
+          const errorBody = isRecord(item.error) ? item.error : {};
+          const rawCode = isRecord(item.error) ? item.error.error : item.error;
+          state.error = new TrackerError(
+            isErrorCode(rawCode) ? rawCode : 'internal',
+            typeof errorBody.message === 'string' ? errorBody.message : String(rawCode ?? 'Bulk update failed.'),
+            { path: typeof errorBody.path === 'string' ? errorBody.path : undefined, current: item.ticket },
+          );
           setReadonlyFrom(state.error);
+          if (state.error.code === 'conflict') {
+            const conflict = await enrichConflict(item.ticket?.key ?? item.key, state.error);
+            state.error = conflict;
+            if (conflict.current) {
+              updateCacheTicket(state, conflict.current);
+              state.conflict = cloneTrackerData(conflict.current);
+              state.conflictBy = conflict.by;
+            }
+          }
         }
       }
       notify();
-      return { batchId: result.batchId, before: result.before };
+      return { batchId: result.batchId, before: undoBefore };
     } catch (caught) {
-      const error = asTrackerError(caught);
+      let error = asTrackerError(caught);
+      if (error.code === 'conflict') error = await enrichConflict(error.current?.key ?? uniqueKeys[0] ?? '', error);
       for (const key of uniqueKeys) {
         const state = ticketCache(key);
         const old = prior.get(key);
@@ -1216,6 +1614,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
         const state = ticketCache(error.current.key);
         updateCacheTicket(state, error.current);
         state.conflict = cloneTrackerData(error.current);
+        state.conflictBy = error.by;
       }
       setReadonlyFrom(error);
       notify();
@@ -1223,31 +1622,47 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     }
   }
 
-  async function undo(batch: TrackerUndoBatch): Promise<TrackerBulkResult> {
+  async function applyHistoryBatch(batch: TrackerUndoBatch, action: 'undo' | 'redo'): Promise<TrackerBulkResult> {
     const entries = Object.entries(batch.before);
-    const beforeRedo: TrackerBulkResult['before'] = {};
+    const beforeNext: TrackerBulkResult['before'] = {};
     const results = await Promise.all(entries.map(async ([key, before]) => {
       try {
         const current = await ensureCurrent(key);
-        beforeRedo[key] = { patch: patchValuesBefore(current, before.patch), updatedSeq: current.updatedSeq };
         const updated = await updateTicket(key, before.patch);
+        const priorPatch = patchValuesBefore(current, before.patch);
+        if (Object.keys(priorPatch).length > 0) {
+          beforeNext[updated.key] = { patch: priorPatch, updatedSeq: current.updatedSeq };
+        }
         return { key, ok: true, ticket: updated };
       } catch (caught) {
         const error = asTrackerError(caught);
         const state = ticketCache(key);
         setReadonlyFrom(error);
         if (error.code === 'conflict') {
-          let current = error.current;
-          if (!current) { try { current = (await api.getTicket(key)).ticket; } catch { current = undefined; } }
-          if (current) { updateCacheTicket(state, current); state.conflict = current; }
+          const conflict = await enrichConflict(key, error);
+          if (conflict.current) {
+            updateCacheTicket(state, conflict.current);
+            state.conflict = cloneTrackerData(conflict.current);
+            state.conflictBy = conflict.by;
+          }
+          state.error = conflict;
+        } else {
+          state.error = error;
         }
         state.pending = false;
-        state.error = error;
         return { key, ok: false, error: error.code };
       }
     }));
     notify();
-    return { batchId: `undo:${batch.batchId}`, results, before: beforeRedo };
+    return { batchId: `${action}:${batch.batchId}`, results, before: beforeNext };
+  }
+
+  async function undo(batch: TrackerUndoBatch): Promise<TrackerBulkResult> {
+    return applyHistoryBatch(batch, 'undo');
+  }
+
+  async function redo(batch: TrackerUndoBatch): Promise<TrackerBulkResult> {
+    return applyHistoryBatch(batch, 'redo');
   }
 
   async function replayOfflineQueue(): Promise<void> {
@@ -1296,14 +1711,19 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
             queue.shift();
             notify();
           } catch (caught) {
-            const error = asTrackerError(caught);
+            let error = asTrackerError(caught);
+            if (error.code === 'conflict') error = await enrichConflict(key, error);
             setReadonlyFrom(error);
             state.error = error;
             state.pending = false;
             if (error.code === 'conflict') {
-              let latest = error.current;
-              if (!latest) { try { latest = (await api.getTicket(key)).ticket; } catch { latest = undefined; } }
-              if (latest) { updateCacheTicket(state, latest); state.conflict = cloneTrackerData(latest); saveTicket(latest); }
+              const latest = error.current;
+              if (latest) {
+                updateCacheTicket(state, latest);
+                state.conflict = cloneTrackerData(latest);
+                state.conflictBy = error.by;
+                saveTicket(latest);
+              }
               blockedQueue.add(key);
             }
             if (error.code !== 'network' && error.code !== 'offline') blockedQueue.add(key);
@@ -1337,7 +1757,9 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       notify();
       return cloneTrackerData(result.ticket);
     } catch (caught) {
-      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+      let error = asTrackerError(caught);
+      if (error.code === 'conflict') error = await enrichConflict(key, error);
+      setReadonlyFrom(error); throw error;
     }
   }
 
@@ -1351,7 +1773,9 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       notify();
       return cloneTrackerData(result.ticket);
     } catch (caught) {
-      const error = asTrackerError(caught); setReadonlyFrom(error); throw error;
+      let error = asTrackerError(caught);
+      if (error.code === 'conflict') error = await enrichConflict(key, error);
+      setReadonlyFrom(error); throw error;
     }
   }
 
@@ -1394,6 +1818,17 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     snapshot,
     loadMeta,
     createLabel,
+    listProjects,
+    createProject,
+    updateProject,
+    listMilestones,
+    createMilestone,
+    updateMilestone,
+    listViews,
+    runView,
+    createView,
+    updateView,
+    deleteView,
     loadList,
     loadMore,
     list(query = {}) { return cloneTrackerData(listCache(query)); },
@@ -1411,6 +1846,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     setSubscription,
     bulk,
     undo,
+    redo,
     replayOfflineQueue,
     addRelation,
     removeRelation,
@@ -1421,6 +1857,61 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       generalListeners.clear(); ticketListeners.clear(); listListeners.clear(); watchQueries.clear();
       offlineQueue.clear(); blockedQueue.clear();
     },
+  };
+}
+
+/** Keeps at most 50 successful tracker batches and coordinates their inverse batches. */
+export function createUndoStack(store: Pick<TrackerStore, 'undo' | 'redo'>): TrackerUndoStack {
+  const undoStack: TrackerUndoBatch[] = [];
+  const redoStack: TrackerUndoBatch[] = [];
+  const limit = 50;
+
+  function pushBounded(stack: TrackerUndoBatch[], batch: TrackerUndoBatch): void {
+    if (Object.keys(batch.before).length === 0) return;
+    stack.push(cloneTrackerData(batch));
+    if (stack.length > limit) stack.splice(0, stack.length - limit);
+  }
+
+  function keepFailed(batch: TrackerUndoBatch, result: TrackerBulkResult): void {
+    const succeeded = new Set(result.results.filter((item) => item.ok).map((item) => cacheTicketKey(item.key)));
+    const remaining = Object.fromEntries(Object.entries(batch.before).filter(([key]) => !succeeded.has(cacheTicketKey(key))));
+    const top = undoStack.at(-1);
+    if (top?.batchId === batch.batchId) {
+      if (Object.keys(remaining).length) undoStack[undoStack.length - 1] = { ...batch, before: remaining };
+      else undoStack.pop();
+    }
+    const inverse = Object.fromEntries(Object.entries(result.before).filter(([key]) => succeeded.has(cacheTicketKey(key))));
+    if (Object.keys(inverse).length) pushBounded(redoStack, { batchId: result.batchId, before: inverse });
+  }
+
+  return {
+    push(batch) {
+      pushBounded(undoStack, batch);
+      redoStack.length = 0;
+    },
+    async undo() {
+      const batch = undoStack.at(-1);
+      if (!batch) return undefined;
+      const result = await store.undo(batch);
+      keepFailed(batch, result);
+      return result;
+    },
+    async redo() {
+      const batch = redoStack.at(-1);
+      if (!batch) return undefined;
+      const result = await store.redo(batch);
+      const succeeded = new Set(result.results.filter((item) => item.ok).map((item) => cacheTicketKey(item.key)));
+      const remaining = Object.fromEntries(Object.entries(batch.before).filter(([key]) => !succeeded.has(cacheTicketKey(key))));
+      if (redoStack.at(-1)?.batchId === batch.batchId) {
+        if (Object.keys(remaining).length) redoStack[redoStack.length - 1] = { ...batch, before: remaining };
+        else redoStack.pop();
+      }
+      const inverse = Object.fromEntries(Object.entries(result.before).filter(([key]) => succeeded.has(cacheTicketKey(key))));
+      if (Object.keys(inverse).length) pushBounded(undoStack, { batchId: result.batchId, before: inverse });
+      return result;
+    },
+    canUndo() { return undoStack.length > 0; },
+    canRedo() { return redoStack.length > 0; },
   };
 }
 
@@ -1503,5 +1994,3 @@ export function createTrackerKeyResolver(
     },
   };
 }
-
-export { createMockTrackerApi } from './tracker-mock';

@@ -92,7 +92,7 @@ describe('ticket page', () => {
     store = createTrackerStore(api, { pollMs: 60_000, now: () => NOW });
     const real = store;
     const slim = { ...issue, creator: undefined, labels: undefined, relations: undefined, links: undefined, aliases: undefined } as unknown as TrackerTicket;
-    const loadTicket = vi.fn(real.loadTicket);
+    const loadTicket = vi.fn<typeof real.loadTicket>(real.loadTicket);
     const wrapped = {
       ...real,
       ticket: (key: string) => ({ ...real.ticket(key), ticket: slim, detail: undefined }),
