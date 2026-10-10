@@ -952,7 +952,16 @@ function fontOf(doc, key, fallback) {
   return typeof v === 'string' && v ? v : fallback;
 }
 
-function parseEnd(v, path, { allowRef, get, refs }) {
+const KANBAN_END_TYPES = new Set(['lane', 'container']);
+const KANBAN_END_MESSAGE = 'Connect to a card, not to a lane or the kanban';
+
+function sameEnd(a, b) {
+  if (!a || a.kind !== b.kind) return false;
+  if (a.kind === 'bound') return a.id === b.id && (a.anchor ?? 'auto') === b.anchor;
+  return a.x === b.x && a.y === b.y;
+}
+
+function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
   if (!isRecord(v)) throw invalid(path, 'Must be an object: {id}, {ref} or {x, y}');
   if (Object.hasOwn(v, 'ref')) {
     if (!allowRef) throw invalid(at(path, 'ref'), 'A ref is only allowed in create_objects');
@@ -960,6 +969,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const hit = typeof v.ref === 'string' ? refs.get(v.ref) : undefined;
     if (!hit) throw invalid(at(path, 'ref'), 'No object in this call has that ref');
     if (hit.type === 'connector') throw invalid(at(path, 'ref'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(hit.type)) throw invalid(path, KANBAN_END_MESSAGE);
     return { kind: 'bound', id: hit.id, anchor: v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side')) };
   }
   if (Object.hasOwn(v, 'id')) {
@@ -968,6 +978,7 @@ function parseEnd(v, path, { allowRef, get, refs }) {
     const target = get(id);
     if (!target) throw notFound('No such object to attach to', at(path, 'id'));
     if (target.type === 'connector') throw invalid(at(path, 'id'), 'A connector cannot attach to a connector');
+    if (!allowKanbanTarget && KANBAN_END_TYPES.has(target.type)) throw invalid(path, KANBAN_END_MESSAGE);
     const side = v.side === undefined ? 'auto' : choice(v.side, SIDES, at(path, 'side'));
     return { kind: 'bound', id, anchor: side };
   }
@@ -1218,7 +1229,14 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'route': sets.set(key, choice(v, ROUTES, fieldPath)); break;
         case 'startHead': case 'endHead': sets.set(key, choice(v, HEADS, fieldPath)); break;
         case 'dash': sets.set(key, choice(v, DASHES, fieldPath)); break;
-        case 'from': case 'to': sets.set(key, parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map() })); break;
+        case 'from': case 'to': {
+          const end = parseEnd(v, fieldPath, { allowRef: false, get, refs: new Map(), allowKanbanTarget: true });
+          if (end.kind === 'bound' && KANBAN_END_TYPES.has(get(end.id)?.type) && !sameEnd(current[key], end)) {
+            throw invalid(fieldPath, KANBAN_END_MESSAGE);
+          }
+          sets.set(key, end);
+          break;
+        }
         case 'parent': {
           const parentId = idString(v, fieldPath);
           const parentType = get(parentId)?.type;
