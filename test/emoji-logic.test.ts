@@ -74,8 +74,8 @@ describe('emoji catalog', () => {
     expect(new Set(all.map((item) => item.e)).size).toBe(all.length);
     for (const item of all) {
       const segments = Array.from(segmenter.segment(item.e), ({ segment }) => segment);
-      expect(segments, item.n).toEqual([item.e]);
-      expect(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/u.test(item.e) || /^\p{Nd}\uFE0F?\u20E3$/u.test(item.e), item.n).toBe(true);
+      expect(segments).toEqual([item.e]);
+      expect(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/u.test(item.e) || /^\p{Nd}\uFE0F?\u20E3$/u.test(item.e)).toBe(true);
     }
   });
 });
