@@ -100,6 +100,7 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | ”Vilken förhandsvisning som helst” | ”Redigerare kan lägga till eller kasta bort vilken förhandsvisning som helst.” | Kontrollera att formuleringen tydligt betyder att en redigerare kan hantera andra personers förhandsvisningar. |
 | `copy-as-mermaid` heading link | linked to `export-import.md` without an anchor | The Swedish heading belongs to another page; add its translated anchor once that page's heading is available. |
 | connectors.md#uml-relationships | connectors.md (utan ankare) | Den svenska målrubriken finns inte i den här översättningsomgången, så ankaret togs bort. |
+| flip (horizontal/vertical) | vänd (vågrätt/lodrätt) | Ny/osäker term; ”spegla” är ett alternativ. Turn over på tvåsidiga kort heter ”Vänd kortet”. |
 
 ## Övriga anmärkningar från översättarna
 

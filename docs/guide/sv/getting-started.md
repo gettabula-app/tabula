@@ -126,6 +126,8 @@ På Mac använder du `Cmd` där tabellen anger `Ctrl`. Tavlans meny visar alla k
 | `Ctrl+]` | Flytta fram ett steg (`Cmd+]` på Mac) |
 | `Ctrl+[` | Flytta bakåt ett steg (`Cmd+[` på Mac) |
 | `[` | Flytta längst bak |
+| `Shift+H` | Vänd markeringen vågrätt |
+| `Shift+V` | Vänd markeringen lodrätt |
 | `Ctrl+Z` | Ångra |
 | `Shift+Ctrl+Z` eller `Ctrl+Y` | Gör om |
 
