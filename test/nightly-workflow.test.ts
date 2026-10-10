@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -52,5 +53,23 @@ describe('the nightly workflow', () => {
     expect(workflow).toContain('gh issue create');
     expect(workflow).toContain('gh issue comment');
     expect(workflow).toContain('gh issue close');
+  });
+
+  // The first run left issue #9 open on a green night because gh prints the state as OPEN and the script compared it with "open".
+  it('compares the issue state in lower case, as the checks of the report step do', () => {
+    const jqExpression = /--json number,title,state --jq '([^']+)'/.exec(workflow)?.[1];
+    expect(jqExpression).toContain('ascii_downcase');
+    expect(workflow).toContain('"$issue_state" = open');
+    expect(workflow).toContain('"$issue_state" = closed');
+    const jq = spawnSync('jq', ['--version'], { encoding: 'utf8' });
+    if (jq.error || jq.status !== 0) return; // jq is on the CI runners of ubuntu and macos; the text checks above cover the rest
+    const sample = JSON.stringify([
+      { number: 3, title: 'something else', state: 'OPEN' },
+      { number: 9, title: 'Nightly: failing or flaky tests', state: 'OPEN' },
+    ]);
+    const open = spawnSync('jq', ['-r', jqExpression!], { input: sample, encoding: 'utf8' });
+    expect(open.stdout.trim()).toBe('9\topen');
+    const closed = spawnSync('jq', ['-r', jqExpression!], { input: sample.replace('"OPEN"},{', '"OPEN"},{').replace(/"state":"OPEN"\}\]$/, '"state":"CLOSED"}]'), encoding: 'utf8' });
+    expect(closed.stdout.trim()).toBe('9\tclosed');
   });
 });
