@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -884,6 +884,33 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'esc-trays'(env) {
+    await openSeedBoard(env);
+    const page = env.page;
+    const trays = [
+      { name: 'Shapes', open: () => page.getByRole('button', { name: 'Shapes', exact: true }).click(), focus: '.rail [aria-label="Shapes"]' },
+      { name: 'UML', open: () => page.getByRole('button', { name: 'UML', exact: true }).click(), focus: '.rail [data-drawer="uml"]' },
+      { name: 'Icons', open: () => page.getByRole('button', { name: 'Icons', exact: true }).click(), focus: '.rail [data-drawer="icons"]' },
+      { name: 'Stickers', open: () => page.getByRole('button', { name: 'Stickers', exact: true }).click(), focus: '.rail [data-drawer="stickers"]' },
+      { name: 'Templates', open: () => page.getByRole('button', { name: 'Templates and team exercises', exact: true }).click(), focus: '.rail [data-drawer="templates"]' },
+      { name: 'Layers', open: () => page.getByRole('button', { name: 'Layers', exact: true }).click(), focus: '.rail [data-drawer="layers"]' },
+      { name: 'Comments', open: () => page.locator('.comment-toggle').click(), focus: '.comment-toggle' },
+    ];
+    if (!(await page.locator('.chat-toggle').count())) throw new Error('esc-trays: Chat button is missing in accounts mode');
+    trays.push({ name: 'Chat', open: () => page.locator('.chat-toggle').click(), focus: '.chat-toggle' });
+    for (const tray of trays) {
+      await tray.open();
+      await page.locator(tray.name === 'Comments' || tray.name === 'Chat' ? '.side-tray.show' : '.drawer.show').waitFor();
+      await page.keyboard.press('Escape');
+      const result = await page.evaluate((focusSelector) => {
+        const open = document.querySelector('.drawer.show, .side-tray.show');
+        const focus = document.querySelector(focusSelector);
+        return { open: open?.getAttribute('aria-label') ?? open?.dataset.tab ?? null, focusReturned: document.activeElement === focus };
+      }, tray.focus);
+      if (result.open) throw new Error(`esc-trays: ${tray.name} tray is still shown (${result.open})`);
+      if (!result.focusReturned) throw new Error(`esc-trays: focus did not return to the ${tray.name} button`);
+    }
   },
   async 'join-short-code'({ page, base }) {
     // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
@@ -1942,7 +1969,7 @@ const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
