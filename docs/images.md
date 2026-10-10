@@ -127,14 +127,16 @@ Counted per board as the sum of `bytes` over its rows. An upload that would pass
 
 ### Offline and the upload queue
 
-The browser keeps an asset store with two parts, both in IndexedDB (database `tabula-assets`, separate from the Yjs persistence):
+The browser keeps an asset store with two parts, both in IndexedDB (database `tabula-assets`, separate from the Yjs persistence). On the first pending-blob write, it makes a best-effort request for persistent browser storage so eviction is less likely:
 
 - `blobs`: `hash -> {blob, mime, width, height, boardId}`, an LRU-limited cache of everything this device has shown or created (cap 200 MB, entries for pending uploads are never evicted).
-- `uploads`: `{id, boardId, hash, tries, nextAt}` records for blobs that still need to reach the server.
+- `uploads`: `{id, boardId, hash, tries, nextAt}` records for blobs that still need to reach the server. A missing blob is kept with `lost: true`; a final server refusal is kept with `refused: <status>` and the blob stays cached. `notified: true` records that the uploader was told once.
 
 Flow when the relay is reachable: add, downscale, hash, put the blob in `blobs`, create the object with `asset = <hash>`, `POST` the bytes, rewrite `asset` if the server hash differs, drop the upload record.
 
-Flow when it is not (offline, or a local-only board with sync off): the object is created with `asset = pending:<uuid>` and the upload record keeps the `uuid` to hash mapping. Other people on the board cannot load a pending asset, so they see the placeholder with "Image not uploaded yet". On reconnect the queue runs oldest first with backoff (at most 3 in parallel), uploads, then writes the real hash into the object in one transaction, so the change syncs like an edit. If the object was deleted meanwhile, the queue drops the record and the blob stays only in the LRU.
+Flow when it is not (offline, or a local-only board with sync off): the object is created with `asset = pending:<uuid>` and the upload record keeps the `uuid` to hash mapping. Other people on the board cannot load a pending asset, so they still see the placeholder with "Image not uploaded yet". On reconnect the queue runs retryable records oldest first with backoff (at most 3 in parallel), uploads, then writes the real hash into the object in one transaction, so the change syncs like an edit. If the object was deleted meanwhile, the queue drops the record and the blob stays only in the LRU.
+
+If this browser has lost the pending bytes, the uploader keeps the record as `lost` and sees "Not uploaded. Add this image again" with one toast for the pass. A final refusal (400, 402, 403, 404 or 413) keeps both the record and blob, shows the existing refusal toast once, and uses the same placeholder label on the uploader's device. Neither state retries on the timer or while online; opening that board again clears a refusal and gives it one new attempt. A lost record stays lost until the image is added again. Viewers without this browser's upload record continue to see "Image not uploaded yet".
 
 A local-only board (sync off, as in the desktop shell's default) keeps images in `blobs` and renders from blob URLs; they travel in `.drift` exports, and if the board is later connected the queue uploads them.
 

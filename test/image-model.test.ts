@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { Store } from '../src/store';
 import { objectMarkup } from '../src/markup';
+import { FAILED_LABEL } from '../src/image-loader';
+import { fontCss, measure } from '../src/text';
 import { imagesLeftOut, toTemplateContent, validateContent } from '../src/custom-templates';
 import type { BaseObj, Obj } from '../src/types';
 
@@ -46,6 +48,18 @@ describe('image markup', () => {
     expect(loading).not.toContain('<image');
     expect(objectMarkup(image(), ctx({ kind: 'failed', why: 'not_uploaded' }))).toContain('Image not uploaded yet');
     expect(objectMarkup(image(), ctx({ kind: 'failed', why: 'denied' }))).toContain('No access to this image');
+  });
+
+  it('fits the lost-image label inside a 417 by 100 frame', () => {
+    for (const width of [417, 80]) {
+      const svg = objectMarkup(image({ w: width, h: 100 }), ctx({ kind: 'failed', why: 'lost' }));
+      const lines = [...svg.matchAll(/<text\b[^>]*font-size="([^"]+)"[^>]*>(.*?)<\/text>/g)].map((match) => ({
+        text: match[2], size: Number(match[1]),
+      }));
+
+      expect(lines.map((line) => line.text).join(' ')).toBe(`${FAILED_LABEL.lost} 400 × 200`);
+      for (const line of lines) expect(measure(line.text, fontCss('satoshi', line.size, 400))).toBeLessThanOrEqual(width - 16);
+    }
   });
 
   it('draws the placeholder without a loader, as an export does', () => {

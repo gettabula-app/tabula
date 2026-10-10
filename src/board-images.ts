@@ -45,9 +45,12 @@ export class BoardImages {
     this.loader = new ImageLoader({
       boardId,
       cache: this.cache,
+      uploadState: (asset) => this.queue.state(asset),
       changed: (ids) => app.r.invalidateObjects(ids),
     });
     app.r.imageState = (o) => this.loader.state(o);
+    let lostCount = 0;
+    let lostFlushQueued = false;
     this.queue = createUploadQueue({
       cache: this.cache,
       upload: async (id, blob, mime): Promise<UploadResult> => {
@@ -56,10 +59,31 @@ export class BoardImages {
         return { hash: info.hash, mime: info.mime, width: info.width, height: info.height };
       },
       apply: (rec, result) => this.apply(rec, result),
-      onRefused: (_rec, status) => toast(REFUSED[status] ?? 'An image could not be uploaded.', 6000),
+      onRefused: (_rec, status) => {
+        this.loader.retryFailed();
+        toast(REFUSED[status] ?? 'An image could not be uploaded.', 6000);
+      },
+      onLost: () => {
+        this.loader.retryFailed();
+        lostCount++;
+        if (lostFlushQueued) return;
+        lostFlushQueued = true;
+        queueMicrotask(() => {
+          const count = lostCount;
+          lostCount = 0;
+          lostFlushQueued = false;
+          toast(
+            count === 1
+              ? 'An image could not be uploaded because this browser no longer has it. Add it again.'
+              : `${count} images could not be uploaded because this browser no longer has them. Add them again.`,
+            8000,
+          );
+        });
+      },
       canApply: (id) => id === boardId && !app.readOnly,
     });
-    const run = () => void this.queue.run(boardId);
+    const ready = this.queue.retryBlocked(boardId).catch(() => undefined);
+    const run = () => void ready.then(() => this.queue.run(boardId));
     const off = app.conn.onStatus((s) => {
       if (s === 'live') {
         this.loader.retryFailed();

@@ -14,13 +14,14 @@ function setup(over: Partial<Parameters<typeof createUploadQueue>[0]> = {}) {
   const upload = vi.fn<(boardId: string, blob: Blob, mime: string) => Promise<UploadResult>>(async () => RESULT);
   const apply = vi.fn<(rec: UploadRecord, res: UploadResult) => boolean>(() => true);
   const onRefused = vi.fn<(rec: UploadRecord, status: number, code: string) => void>();
-  const queue = createUploadQueue({ cache, upload, apply, onRefused, now: () => t, ...over });
+  const onLost = vi.fn<(rec: UploadRecord) => void>();
+  const queue = createUploadQueue({ cache, upload, apply, onRefused, onLost, now: () => t, ...over });
   const add = async (id: string, objectId = `o-${id}`, boardId = 'b1') => {
     await cache.put({ key: `pending:${id}`, blob: blob(10), mime: 'image/png', width: 4, height: 3, boardId, pending: true });
     await queue.enqueue({ id: `pending:${id}`, boardId, objectId, hash: 'h' });
     t += 1;
   };
-  return { backend, cache, queue, upload, apply, onRefused, add, tick: (ms: number) => (t += ms) };
+  return { backend, cache, queue, upload, apply, onRefused, onLost, add, tick: (ms: number) => (t += ms) };
 }
 
 describe('the upload queue', () => {
@@ -38,18 +39,26 @@ describe('the upload queue', () => {
   it('sends three at a time', async () => {
     let running = 0;
     let peak = 0;
+    let release!: () => void;
+    let threeStarted!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const firstBatch = new Promise<void>((resolve) => { threeStarted = resolve; });
     const s = setup({
       upload: async () => {
         running += 1;
         peak = Math.max(peak, running);
-        await new Promise((r) => setTimeout(r, 5));
+        if (running === 3) threeStarted();
+        await gate;
         running -= 1;
         return RESULT;
       },
     });
     for (const id of ['1', '2', '3', '4', '5']) await s.add(id);
-    await s.queue.run();
+    const pass = s.queue.run();
+    await firstBatch;
     expect(peak).toBe(3);
+    release();
+    await pass;
     expect(await s.queue.pending()).toBe(0);
   });
 
@@ -78,13 +87,36 @@ describe('the upload queue', () => {
     expect(backoffMs(50)).toBe(60_000);
   });
 
-  it.each([400, 402, 403, 404, 413])('drops the record and says so on a %i, which waiting will not fix', async (status) => {
-    const s = setup({ upload: async () => { throw Object.assign(new Error('no'), { status, code: 'x' }); } });
+  it.each([400, 402, 403, 404, 413])('keeps a %i refusal blocked until the board is reopened, then retries once', async (status) => {
+    let attempts = 0;
+    const s = setup({ upload: async () => {
+      attempts++;
+      if (attempts === 1) throw Object.assign(new Error('no'), { status, code: 'x' });
+      return RESULT;
+    } });
     await s.add('1');
     await s.queue.run();
-    expect(await s.queue.pending()).toBe(0);
+    expect(await s.queue.pending()).toBe(1);
+    expect(await s.queue.state('pending:1')).toBe('refused');
+    expect(await s.backend.listUploads()).toEqual([expect.objectContaining({ id: 'pending:1', refused: status, notified: true })]);
     expect(s.onRefused).toHaveBeenCalledWith(expect.objectContaining({ id: 'pending:1' }), status, 'x');
-    expect(await s.backend.getBlob('pending:1')).toBeDefined(); // the bytes stay on this device
+    expect(s.onRefused).toHaveBeenCalledTimes(1);
+    expect(await s.backend.getBlob('pending:1')).toBeDefined();
+
+    await s.queue.run('b1');
+    expect(attempts).toBe(1);
+    expect(s.onRefused).toHaveBeenCalledTimes(1);
+
+    await s.queue.retryBlocked('b1');
+    expect(await s.queue.state('pending:1')).toBe('queued');
+    const [retryable] = await s.backend.listUploads();
+    expect(retryable).not.toHaveProperty('refused');
+    expect(retryable).not.toHaveProperty('notified');
+    await s.queue.run('b1');
+    expect(attempts).toBe(2);
+    expect(await s.queue.pending()).toBe(0);
+    expect(await s.backend.getBlob('pending:1')).toBeUndefined();
+    expect(await s.backend.getBlob(RESULT.hash)).toMatchObject({ key: RESULT.hash, pending: false });
   });
 
   it.each([0, 401, 429, 500, 502])('keeps the record on a %i', async (status) => {
@@ -104,12 +136,46 @@ describe('the upload queue', () => {
     expect(await s.backend.getBlob(RESULT.hash)).toBeUndefined();
   });
 
-  it('drops a record whose bytes are missing', async () => {
+  it('keeps a missing-blob record marked lost and reports it only once', async () => {
     const s = setup();
+    const deleteUpload = vi.spyOn(s.backend, 'deleteUpload');
+    expect(await s.queue.state('pending:ghost')).toBeUndefined();
     await s.queue.enqueue({ id: 'pending:ghost', boardId: 'b1', objectId: 'o', hash: 'h' });
     await s.queue.run();
-    expect(await s.queue.pending()).toBe(0);
+    expect(await s.queue.pending()).toBe(1);
+    expect(await s.queue.state('pending:ghost')).toBe('lost');
+    expect(await s.backend.listUploads()).toEqual([expect.objectContaining({ id: 'pending:ghost', lost: true, notified: true })]);
+    expect(s.onLost).toHaveBeenCalledTimes(1);
     expect(s.upload).not.toHaveBeenCalled();
+    await s.queue.run();
+    expect(s.onLost).toHaveBeenCalledTimes(1);
+    expect(deleteUpload).not.toHaveBeenCalled();
+    await s.queue.retryBlocked();
+    await s.queue.run();
+    expect(await s.queue.state('pending:ghost')).toBe('lost');
+    expect(s.onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports every newly lost record together at the end of a pass', async () => {
+    const s = setup();
+    await s.queue.enqueue({ id: 'pending:first', boardId: 'b1', objectId: 'o1', hash: 'h1' });
+    await s.queue.enqueue({ id: 'pending:second', boardId: 'b1', objectId: 'o2', hash: 'h2' });
+
+    await s.queue.run('b1');
+
+    expect(s.onLost.mock.calls.map(([rec]) => rec.id)).toEqual(['pending:first', 'pending:second']);
+  });
+
+  it('leaves uploads for a board that cannot be applied untouched', async () => {
+    const s = setup({ canApply: (id) => id === 'b1' });
+    await s.queue.enqueue({ id: 'pending:closed', boardId: 'b2', objectId: 'o', hash: 'h' });
+    await s.backend.putUpload({ id: 'pending:refused', boardId: 'b2', objectId: 'o', hash: 'h', tries: 0, nextAt: 0, at: 0, refused: 403, notified: true });
+    await s.queue.retryBlocked();
+    await s.queue.run();
+    expect(await s.queue.state('pending:closed')).toBe('queued');
+    expect(await s.queue.state('pending:refused')).toBe('refused');
+    expect(await s.queue.pending('b2')).toBe(2);
+    expect(s.onLost).not.toHaveBeenCalled();
   });
 
   it('works on one board at a time and only on a board that can be written now', async () => {
@@ -129,10 +195,19 @@ describe('the upload queue', () => {
   });
 
   it('does not start the same record twice when runs overlap', async () => {
-    const s = setup({ upload: async () => { await new Promise((r) => setTimeout(r, 10)); return RESULT; } });
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const uploadStarted = new Promise<void>((resolve) => { started = resolve; });
+    const s = setup({ upload: async () => { started(); await gate; return RESULT; } });
     await s.add('1');
-    await Promise.all([s.queue.run(), s.queue.run()]);
+    const first = s.queue.run();
+    await uploadStarted;
+    const second = s.queue.run();
+    release();
+    await Promise.all([first, second]);
     expect(s.apply).toHaveBeenCalledTimes(1);
+    expect(await s.queue.pending()).toBe(0);
   });
 
   it('can forget an upload', async () => {
@@ -163,7 +238,6 @@ describe('the blob cache', () => {
     await cache.put(rec('old', 10));
     await cache.put(rec('keep', 10));
     await cache.get('old'); // used more recently than 'keep'
-    await new Promise((r) => setTimeout(r)); // the use is written without waiting
     await cache.put(rec('new', 10));
     expect(await cache.backend.getBlob('keep')).toBeUndefined();
     expect(await cache.backend.getBlob('old')).toBeDefined();

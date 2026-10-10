@@ -664,8 +664,9 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const size = o.nw && o.nh ? `${Math.round(o.nw)} × ${Math.round(o.nh)}` : '';
   const fs = Math.max(10, Math.min(14, o.w / 12));
   const lines = [label, size].filter(Boolean);
+  const layout = fitText(lines.join('\n'), 'satoshi', 400, fs, Math.max(1, o.w - 16), Math.max(1, o.h - 16), 9);
   const text = o.w >= 80 && o.h >= 40
-    ? lines.map((t, i) => `<text x="${n(o.w / 2)}" y="${n(o.h / 2 + (i - (lines.length - 1) / 2) * fs * 1.4)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs)}" style="fill:var(--graphite, #5B6672)">${escapeXml(t)}</text>`).join('')
+    ? layout.lines.map((t, i) => `<text x="${n(o.w / 2)}" y="${n(o.h / 2 + (i - (layout.lines.length - 1) / 2) * layout.lineHeight)}" text-anchor="middle" dominant-baseline="middle" font-family="${escapeXml(fontFamily('satoshi'))}" font-size="${n(layout.size)}" style="fill:var(--graphite, #5B6672)">${escapeXml(t)}</text>`).join('')
     : '';
   const box = `<rect x="0" y="0" width="${w}" height="${h}" style="fill:color-mix(in srgb, var(--graphite, #5B6672) 12%, var(--paper, #FFFFFF));stroke:var(--rule, #D5DBE2)" stroke-width="1" stroke-dasharray="4 3"/>`;
   return wrapG(o, title + mirroredContent(o, box) + text, 1);
