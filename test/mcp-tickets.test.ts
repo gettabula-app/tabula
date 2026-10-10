@@ -8,8 +8,13 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 const TICKET_TOOLS = [
   'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket',
   'comment_ticket', 'list_ticket_states', 'list_ticket_labels', 'create_ticket_label',
+  'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view', 'delete_saved_view',
+  'list_projects', 'create_project', 'update_project', 'list_milestones', 'create_milestone', 'update_milestone',
 ].sort();
-const TICKET_READ_TOOLS = ['get_ticket', 'list_tickets', 'search_tickets', 'list_ticket_states', 'list_ticket_labels'].sort();
+const TICKET_READ_TOOLS = [
+  'get_ticket', 'list_tickets', 'search_tickets', 'list_ticket_states', 'list_ticket_labels',
+  'list_saved_views', 'get_saved_view', 'list_projects', 'list_milestones',
+].sort();
 const CLOUD_TOKEN = 'c'.repeat(48);
 
 const h = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' } });
@@ -40,6 +45,10 @@ function ticketCounts(directory: string) {
       ticketLabels: db.prepare('SELECT COUNT(*) AS n FROM ticket_labels').get()!.n,
       versions: db.prepare('SELECT COUNT(*) AS n FROM ticket_field_versions').get()!.n,
       searchRows: db.prepare('SELECT COUNT(*) AS n FROM ticket_search').get()!.n,
+      projects: db.prepare('SELECT COUNT(*) AS n FROM projects').get()!.n,
+      milestones: db.prepare('SELECT COUNT(*) AS n FROM milestones').get()!.n,
+      relations: db.prepare('SELECT COUNT(*) AS n FROM ticket_relations').get()!.n,
+      savedViews: db.prepare('SELECT COUNT(*) AS n FROM saved_views').get()!.n,
       nextNumber: db.prepare("SELECT next_number AS n FROM ticket_counters WHERE scope = 'trk_default' AND prefix = 'TAB'").get()!.n,
     };
   } finally {
@@ -103,12 +112,25 @@ describe('MCP tracker capability', () => {
     const labelId = madeLabel.data.label.id;
     expect((await h.tool(writer.token, 'list_ticket_labels')).data.labels).toContainEqual(expect.objectContaining({ id: labelId, name: 'Bug' }));
 
+    const project = await h.tool(writer.token, 'create_project', { name: 'Platform', owner: 'me', state: 'started', description: 'Project description' });
+    expect(project.error).toBeUndefined();
+    expect(project.data.project).toMatchObject({ name: 'Platform', state: 'started', owner: { userId: owner.user.id } });
+    expect(project.text).toContain('[board-content nonce=');
+    expect(project.data).toMatchObject({ cleaned: false, truncated: false });
+    const milestone = await h.tool(writer.token, 'create_milestone', {
+      projectId: project.data.project.id, name: 'Release 1', due: '2099-04-01', state: 'planned',
+    });
+    expect(milestone.error).toBeUndefined();
+    expect((await h.tool(writer.token, 'list_projects')).data.projects).toContainEqual(expect.objectContaining({ id: project.data.project.id }));
+    expect((await h.tool(writer.token, 'list_milestones', { projectId: project.data.project.id })).data.milestones)
+      .toContainEqual(expect.objectContaining({ id: milestone.data.milestone.id, due: '2099-04-01' }));
+
     const root = await h.tool(writer.token, 'create_ticket', {
       title: 'Private title for audit test', description: 'Parent description', state: 'in_progress', priority: 'urgent',
-      assignee: 'me', labels: ['Bug'], due: '2099-02-03', idempotencyKey: 'root-ticket-idem',
+      assignee: 'me', labels: ['Bug'], due: '2099-02-03', project: 'platform', milestone: 'release 1', idempotencyKey: 'root-ticket-idem',
     });
     expect(root.error).toBeUndefined();
-    expect(root.data.ticket).toMatchObject({ title: 'Private title for audit test', state: { key: 'in_progress', name: 'In progress' }, priority: 'urgent', due: '2099-02-03', labels: [expect.objectContaining({ id: labelId, name: 'Bug' })] });
+    expect(root.data.ticket).toMatchObject({ title: 'Private title for audit test', state: { key: 'in_progress', name: 'In progress' }, priority: 'urgent', due: '2099-02-03', project: { id: project.data.project.id, name: 'Platform' }, milestone: { id: milestone.data.milestone.id, name: 'Release 1', due: '2099-04-01' }, labels: [expect.objectContaining({ id: labelId, name: 'Bug' })] });
     const retried = await h.tool(writer.token, 'create_ticket', { title: 'ignored on retry', idempotencyKey: 'root-ticket-idem' });
     expect(retried.data.ticket.id).toBe(root.data.ticket.id);
     expect(retried.data.ticket.key).toBe(root.data.ticket.key);
@@ -127,10 +149,11 @@ describe('MCP tracker capability', () => {
     expect((await h.tool(writer.token, 'list_tickets', { filter: ['nonsense:value'] })).error).toBe('invalid_filter');
 
     const updated = await h.tool(writer.token, 'update_ticket', {
-      key: child.data.ticket.key, title: 'Search needle updated', assignee: 'me', due: '2099-03-04', ifUpdatedSeq: child.data.ticket.updatedSeq,
+      key: child.data.ticket.key, title: 'Search needle updated', assignee: 'me', due: '2099-03-04',
+      project: 'Platform', milestone: 'Release 1', ifUpdatedSeq: child.data.ticket.updatedSeq,
     });
     expect(updated.error).toBeUndefined();
-    expect(updated.data.ticket).toMatchObject({ title: 'Search needle updated', due: '2099-03-04', assignee: { userId: owner.user.id } });
+    expect(updated.data.ticket).toMatchObject({ title: 'Search needle updated', due: '2099-03-04', assignee: { userId: owner.user.id }, project: { name: 'Platform' }, milestone: { name: 'Release 1' } });
     const stale = await h.tool(writer.token, 'update_ticket', {
       key: child.data.ticket.key, title: 'stale update', ifUpdatedSeq: child.data.ticket.updatedSeq,
     });
@@ -138,6 +161,30 @@ describe('MCP tracker capability', () => {
 
     const transitioned = await h.tool(writer.token, 'transition_ticket', { key: child.data.ticket.key, state: 'Done' });
     expect(transitioned.data.ticket.state.name).toBe('Done');
+    const linked = await h.tool(writer.token, 'relate_tickets', { key: root.data.ticket.key, relation: 'blocks', otherKey: child.data.ticket.key });
+    expect(linked.error).toBeUndefined();
+    expect(linked.data.ticket.relations).toContainEqual({ kind: 'blocks', key: child.data.ticket.key });
+    await h.tool(writer.token, 'relate_tickets', { key: child.data.ticket.key, relation: 'blocked_by', otherKey: root.data.ticket.key });
+    const relatedDb = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
+    try {
+      expect(relatedDb.prepare('SELECT COUNT(*) AS n FROM ticket_relations').get()!.n).toBe(1);
+      expect(relatedDb.prepare("SELECT COUNT(*) AS n FROM ticket_events WHERE event_type = 'related'").get()!.n).toBe(2);
+    } finally { relatedDb.close(); }
+
+    const saved = await h.tool(writer.token, 'create_saved_view', { name: 'Done tickets', filter: ['state:done'], shared: true });
+    expect(saved.error).toBeUndefined();
+    expect((await h.tool(writer.token, 'list_saved_views')).data.views).toContainEqual(expect.objectContaining({ id: saved.data.view.id, shared: true }));
+    const savedRun = await h.tool(writer.token, 'get_saved_view', { viewId: saved.data.view.id, limit: 50 });
+    expect(savedRun.data.tickets.map((ticket: Body) => ticket.id)).toContain(child.data.ticket.id);
+    const savedUpdate = await h.tool(writer.token, 'update_saved_view', { viewId: saved.data.view.id, name: 'Renamed view', shared: false });
+    expect(savedUpdate.data.view.name).toBe('Renamed view');
+    expect((await h.tool(writer.token, 'delete_saved_view', { viewId: saved.data.view.id })).data.deleted).toBe(true);
+
+    const changedProject = await h.tool(writer.token, 'update_project', { projectId: project.data.project.id, state: 'paused' });
+    expect(changedProject.data.project.state).toBe('paused');
+    const changedMilestone = await h.tool(writer.token, 'update_milestone', { milestoneId: milestone.data.milestone.id, state: 'started' });
+    expect(changedMilestone.data.milestone.state).toBe('started');
+
     const comment = await h.tool(writer.token, 'comment_ticket', { key: child.data.ticket.key, body: 'A private comment', clientId: 'comment-client-1' });
     expect(comment.error).toBeUndefined();
     const commentRetry = await h.tool(writer.token, 'comment_ticket', { key: child.data.ticket.key, body: 'ignored on retry', clientId: 'comment-client-1' });
@@ -209,6 +256,18 @@ describe('MCP tracker capability', () => {
       ['transition_ticket', { key: baselineTicket.key, state: 'Done' }],
       ['comment_ticket', { key: baselineTicket.key, body: 'hidden comment' }],
       ['create_ticket_label', { name: 'Hidden' }],
+      ['relate_tickets', { key: baselineTicket.key, relation: 'relates_to', otherKey: baselineTicket.key }],
+      ['list_saved_views', {}],
+      ['get_saved_view', { viewId: 'hidden-view' }],
+      ['create_saved_view', { name: 'Hidden' }],
+      ['update_saved_view', { viewId: 'hidden-view', name: 'Hidden' }],
+      ['delete_saved_view', { viewId: 'hidden-view' }],
+      ['list_projects', {}],
+      ['create_project', { name: 'Hidden' }],
+      ['update_project', { projectId: 'hidden-project', name: 'Hidden' }],
+      ['list_milestones', { projectId: 'hidden-project' }],
+      ['create_milestone', { projectId: 'hidden-project', name: 'Hidden', due: '2099-01-01' }],
+      ['update_milestone', { milestoneId: 'hidden-milestone', name: 'Hidden' }],
     ];
     for (const [name, args] of attempts) expect((await h.tool(guestToken.token, name, args)).error).toBe('not_found');
   });
@@ -250,7 +309,7 @@ describe('tracker disabled and open mode', () => {
       const after = ticketCounts(disabled.dir);
       expect(after).toEqual(before);
       const version = new DatabaseSync(path.join(disabled.dir, 'directory.sqlite'));
-      try { expect(version.prepare('PRAGMA user_version').get()!.user_version).toBe(12); } finally { version.close(); }
+      try { expect(version.prepare('PRAGMA user_version').get()!.user_version).toBe(13); } finally { version.close(); }
     } finally {
       await disabled.cleanup();
     }
@@ -282,6 +341,9 @@ describe('read-only hosted tracker', () => {
       const writer = await cloud.newToken(cloudOwner.cookie, { scope: 'read', tracker: 'write' });
       const baseline = await cloud.tool(writer.token, 'create_ticket', { title: 'Read-only baseline', idempotencyKey: 'readonly-baseline' });
       expect(baseline.error).toBeUndefined();
+      const project = await cloud.tool(writer.token, 'create_project', { name: 'Read-only project' });
+      const milestone = await cloud.tool(writer.token, 'create_milestone', { projectId: project.data.project.id, name: 'Read-only milestone', due: '2099-01-01' });
+      const view = await cloud.tool(writer.token, 'create_saved_view', { name: 'Read-only view', filter: [] });
       const limits = await cloud.api(undefined, 'PUT', '/api/internal/limits', { readOnly: true }, { authorization: `Bearer ${CLOUD_TOKEN}` });
       expect(limits.status).toBe(200);
       const before = ticketCounts(cloud.dir);
@@ -291,6 +353,14 @@ describe('read-only hosted tracker', () => {
         ['transition_ticket', { key: baseline.data.ticket.key, state: 'Done' }],
         ['comment_ticket', { key: baseline.data.ticket.key, body: 'must not persist' }],
         ['create_ticket_label', { name: 'must not persist' }],
+        ['relate_tickets', { key: baseline.data.ticket.key, relation: 'relates_to', otherKey: baseline.data.ticket.key }],
+        ['create_project', { name: 'must not persist' }],
+        ['update_project', { projectId: project.data.project.id, name: 'must not persist' }],
+        ['create_milestone', { projectId: project.data.project.id, name: 'must not persist', due: '2099-01-01' }],
+        ['update_milestone', { milestoneId: milestone.data.milestone.id, name: 'must not persist' }],
+        ['create_saved_view', { name: 'must not persist', filter: [] }],
+        ['update_saved_view', { viewId: view.data.view.id, name: 'must not persist' }],
+        ['delete_saved_view', { viewId: view.data.view.id }],
       ];
       for (const [name, args] of attempts) {
         const result = await cloud.tool(writer.token, name, args);
