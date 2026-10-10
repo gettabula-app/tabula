@@ -174,6 +174,15 @@ export function hiddenOf({ boxes, connectors }) {
   return hidden;
 }
 
+/** Visibility shared by generic object writes and the kanban card tools. */
+export function objectVisibility(objects, revealed) {
+  const boxes = objects.filter((o) => o.type !== 'connector');
+  const connectors = objects.filter((o) => o.type === 'connector');
+  const hidden = hiddenOf({ boxes, connectors });
+  const isVisible = (o) => !hidden.has(o.id) && !(o.type === 'card' && !revealed && Boolean(o.privateStep));
+  return { hidden, isVisible };
+}
+
 export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];
@@ -790,6 +799,11 @@ const sameValue = (a, b) => (typeof a === 'object' || typeof b === 'object' ? JS
 export function planUpdate(doc, updates, { now = Date.now() } = {}) {
   const list = listOf(updates, 'updates', 1, LIMITS.updateItems);
   const { map, get } = snapshot(doc);
+  const all = [];
+  map.forEach((m, id) => {
+    if (m instanceof Y.Map) all.push({ ...m.toJSON(), id });
+  });
+  const { isVisible } = objectVisibility(all, isRevealed(doc));
   const seen = new Set();
   const pendingParent = new Map();
   const ops = [];
@@ -805,6 +819,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     seen.add(id);
     const current = get(id);
     if (!current) throw notFound('No such object', at(path, 'id'));
+    if (!isVisible(current)) throw notFound('No such object', at(path, 'id'));
     if (current.locked === true) throw conflict('The object is locked', at(path, 'id'));
 
     const fields = Object.keys(patch).filter((k) => k !== 'id');
@@ -902,24 +917,23 @@ export function planDelete(doc, ids, { tokenId } = {}) {
     if (m instanceof Y.Map) all.push({ ...m.toJSON(), id });
   });
   const byId = new Map(all.map((o) => [o.id, o]));
-  const boxes = all.filter((o) => o.type !== 'connector');
-  const connectors = all.filter((o) => o.type === 'connector');
-  const hidden = hiddenOf({ boxes, connectors });
   const revealed = isRevealed(doc);
+  const { isVisible } = objectVisibility(all, revealed);
   const isPrivateSticky = (o) => !revealed && o?.type === 'sticky' && Boolean(o.privateStep);
   const preserved = new Set();
   const pathOfId = new Map();
+  const cascadeMembers = new Set();
 
-  const checkCard = (card, path, { visible = true } = {}) => {
+  const checkCard = (card, path, { visible = true, checkLocked = true, checkOwner = true } = {}) => {
     if (visible) {
       const lane = byId.get(card.parent);
       const container = lane?.type === 'lane' ? byId.get(lane.parent) : undefined;
-      if (hidden.has(card.id) || (!revealed && Boolean(card.privateStep)) || container?.type !== 'container' || container.layout !== 'kanban') {
+      if (!isVisible(card) || container?.type !== 'container' || container.layout !== 'kanban') {
         throw notFound('No such object', path);
       }
     }
-    if (card.locked === true) throw conflict('The object is locked', path);
-    if (card.ownerKind === 'agent' && typeof card.ownerId === 'string' && card.ownerId !== tokenId) {
+    if (checkLocked && card.locked === true) throw conflict('The object is locked', path);
+    if (checkOwner && card.ownerKind === 'agent' && typeof card.ownerId === 'string' && card.ownerId !== tokenId) {
       throw conflict('The card is assigned to another agent', path);
     }
   };
@@ -933,8 +947,7 @@ export function planDelete(doc, ids, { tokenId } = {}) {
     pathOfId.set(id, path);
     if (o.type === 'lane') throw conflict('Lanes are removed with delete_kanban_lane (future); use the board UI for now', path);
     if (o.type === 'container') throw conflict('Kanbans are removed through the board UI', path);
-    if (o.type === 'card') checkCard(o, path);
-    if (o.locked === true) throw conflict('The object is locked', path);
+    if (o.type === 'card') checkCard(o, path, { checkLocked: false, checkOwner: false });
     doomed.add(id);
   });
 
@@ -953,6 +966,7 @@ export function planDelete(doc, ids, { tokenId } = {}) {
         preserved.add(child.id);
         continue;
       }
+      cascadeMembers.add(child.id);
       if (!doomed.has(child.id)) {
         doomed.add(child.id);
         pathOfId.set(child.id, pathOfId.get(parentId) ?? 'ids');
@@ -961,20 +975,25 @@ export function planDelete(doc, ids, { tokenId } = {}) {
     }
   }
 
-  for (const id of doomed) {
-    if (byId.get(id)?.type !== 'container') continue;
-    const lanes = all.filter((o) => o.type === 'lane' && o.parent === id);
-    const laneIds = new Set(lanes.map((lane) => lane.id));
-    const inside = [...lanes, ...all.filter((o) => o.type === 'card' && laneIds.has(o.parent))];
-    if (inside.some((o) => o.locked === true)) {
-      throw conflict('This kanban has locked lanes or cards. Unlock them to delete it.', pathOfId.get(id) ?? 'ids');
+  for (const id of cascadeMembers) {
+    if (byId.get(id)?.locked === true) {
+      throw conflict('A member of this group is locked. Unlock it to delete the group.', pathOfId.get(id) ?? 'ids');
     }
   }
+
+  list.forEach((value, i) => {
+    if (byId.get(value)?.locked === true && !cascadeMembers.has(value)) {
+      throw conflict('The object is locked', `ids[${i}]`);
+    }
+  });
 
   // Cascaded card removal follows the same lock and agent-owner rules as an explicit card id.
   for (const id of doomed) {
     const o = byId.get(id);
-    if (o?.type === 'card' && !list.some((value) => value === id)) checkCard(o, pathOfId.get(id) ?? 'ids', { visible: false });
+    if (o?.type === 'card') {
+      const explicitlyRequested = list.some((value) => value === id);
+      checkCard(o, pathOfId.get(id) ?? 'ids', { visible: explicitlyRequested, checkLocked: false });
+    }
   }
 
   const also = [];

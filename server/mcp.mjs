@@ -15,8 +15,9 @@ import {
 } from '../shared/containers.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
-  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, hiddenOf, newObjectId,
+  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
   listThreads, planCreate, planDelete, planUpdate, planUseTemplate, resolveAnchor, summariseBoard,
+  objectVisibility,
 } from './board-ops.mjs';
 
 export const MCP_SERVER_NAME = 'board';
@@ -313,11 +314,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     map.forEach((value, id) => {
       if (value instanceof Y.Map) all.push({ ...value.toJSON(), id, map: value });
     });
-    const boxes = all.filter((o) => o.type !== 'connector');
-    const connectors = all.filter((o) => o.type === 'connector');
-    const hidden = hiddenOf({ boxes, connectors });
     const revealed = doc.getMap('flow').get('reveal') === true;
-    const isVisible = (o) => !hidden.has(o.id) && !(o.type === 'card' && !revealed && Boolean(o.privateStep));
+    const { isVisible } = objectVisibility(all, revealed);
     const byId = new Map(all.map((o) => [o.id, o]));
     const container = byId.get(kanbanId);
     if (container?.type !== 'container' || container.layout !== 'kanban' || !isVisible(container)) {

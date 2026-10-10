@@ -341,6 +341,28 @@ describe('update', () => {
     expect(failure(() => planUpdate(d, [{ id: 'kanban', w: 400 }])).message).toContain('board UI');
   });
 
+  it('reports hidden objects as missing before generic type-specific refusals', () => {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('visible-kanban', 'container', { layout: 'kanban' }),
+      boardObject('visible-lane', 'lane', { parent: 'visible-kanban' }),
+      boardObject('hidden-card', 'card', { parent: 'visible-lane', hidden: true, locked: true }),
+      boardObject('private-card', 'card', { parent: 'visible-lane', privateStep: 'step-1' }),
+      boardObject('hidden-lane', 'lane', { parent: 'visible-kanban', hidden: true }),
+      boardObject('card-in-hidden-lane', 'card', { parent: 'hidden-lane' }),
+      boardObject('hidden-kanban', 'container', { layout: 'kanban', hidden: true }),
+    );
+    const before = bytes(d);
+    const missing = failure(() => planUpdate(d, [{ id: 'missing', x: 12 }]));
+    expect(missing).toMatchObject({ code: 'not_found', message: 'No such object', path: 'updates[0].id' });
+    for (const id of ['hidden-card', 'private-card', 'hidden-lane', 'card-in-hidden-lane', 'hidden-kanban']) {
+      const err = failure(() => planUpdate(d, [{ id, x: 12 }]));
+      expect(err).toMatchObject({ code: missing.code, message: missing.message, path: missing.path });
+    }
+    expect(bytes(d)).toBe(before);
+  });
+
   it('lets a group change only its name and lets icons and UML boxes use checked geometry and frame or group parents', () => {
     const d = new Y.Doc();
     seed(
@@ -458,7 +480,25 @@ describe('delete', () => {
     expect(new Store(d).get('member')).toBeUndefined();
   });
 
-  it('refuses a group delete that would remove a kanban with locked lanes or cards', () => {
+  it.each([
+    ['sticky', [boardObject('member', 'sticky', { parent: 'group', locked: true })]],
+    ['frame', [boardObject('member', 'frame', { parent: 'group', locked: true })]],
+    ['nested group member', [
+      boardObject('nested', 'group', { parent: 'group' }),
+      boardObject('member', 'text', { parent: 'nested', locked: true }),
+    ]],
+  ])('refuses a group cascade with a locked %s', (_label, members) => {
+    const d = new Y.Doc();
+    seed(d, boardObject('group', 'group'), ...members);
+    const before = bytes(d);
+    const err = failure(() => planDelete(d, ['group']));
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('refuses a group delete that would remove a kanban with a locked lane', () => {
     const d = new Y.Doc();
     seed(
       d,
@@ -469,7 +509,8 @@ describe('delete', () => {
     );
     const err = failure(() => planDelete(d, ['group']));
     expect(err.code).toBe('conflict');
-    expect(err.message).toContain('locked lanes or cards');
+    expect(err.message).toBe('A member of this group is locked. Unlock it to delete the group.');
+    expect(err.path).toBe('ids[0]');
   });
 });
 

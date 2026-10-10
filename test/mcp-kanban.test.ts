@@ -499,6 +499,43 @@ describe('kanban MCP card tools', () => {
     expect((await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total).toBe(before);
   });
 
+  it('returns the same not_found for hidden generic update targets as for a missing id', async () => {
+    const token = await addToken('hidden generic updates');
+    const live = await watcher();
+    const hiddenLaneId = 'mcp-hidden-lane';
+    const cardInHiddenLaneId = 'mcp-card-in-hidden-lane';
+    const hiddenKanbanId = 'mcp-hidden-kanban';
+    try {
+      live.doc.transact(() => {
+        const objects = live.doc.getMap('objects');
+        objects.set(hiddenLaneId, new Y.Map(Object.entries({
+          id: hiddenLaneId, type: 'lane', parent: kanbanId, rank: rankBetween(null, null, hiddenLaneId), name: 'Hidden lane', hidden: true,
+          x: 0, y: 0, w: 280, h: 300, rotation: 0, z: 'zz0',
+        })));
+        objects.set(cardInHiddenLaneId, new Y.Map(Object.entries({
+          id: cardInHiddenLaneId, type: 'card', parent: hiddenLaneId, rank: rankBetween(null, null, cardInHiddenLaneId), text: 'Hidden lane card',
+          x: 0, y: 0, w: 264, h: 72, rotation: 0, z: 'zz1',
+        })));
+        objects.set(hiddenKanbanId, new Y.Map(Object.entries({
+          id: hiddenKanbanId, type: 'container', layout: 'kanban', name: 'Hidden kanban', hidden: true,
+          x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'zz2',
+        })));
+      }, 'local');
+      await until(() => h.savedDoc(board).getMap('objects').has(cardInHiddenLaneId));
+
+      const missing = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: 'mcp-no-such-object', x: 12 }] });
+      expect(missing.error).toBe('not_found');
+      expect(missing.data).toEqual({ error: 'not_found', message: 'No such object', path: 'updates[0].id' });
+      for (const id of [hiddenId, privateId, hiddenLaneId, cardInHiddenLaneId, hiddenKanbanId]) {
+        const result = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id, x: 12 }] });
+        expect(result.error).toBe('not_found');
+        expect(result.data).toEqual(missing.data);
+      }
+    } finally {
+      live.provider.destroy();
+    }
+  });
+
   it('refuses lane and kanban deletes and protects locked, hidden, private and other-agent cards', async () => {
     const token = await addToken('generic delete refusals');
     expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [todoId] })).error).toBe('conflict');
