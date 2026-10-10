@@ -37,6 +37,7 @@ import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, 
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 import { escapeAction } from './ui/escape-priority';
+import { watchCardHeights } from './card-height-heal';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 const isCardLinkTarget = (target: EventTarget | null) => {
@@ -262,6 +263,7 @@ export class BoardApp {
       this.emit('readonly');
       this.emitSelection();
     });
+    this.disposers.push(this.watchCardHeights());
 
     this.bindPointer();
     this.bindKeys();
@@ -295,6 +297,18 @@ export class BoardApp {
   private handleUndoStackPopped(type: 'undo' | 'redo') {
     this.announce(type === 'undo' ? 'Undone' : 'Redone');
     this.resetScopeSelection(this.store.takeUndoChanged());
+  }
+
+  /** Repairs browser-measured card heights after remote edits and when this board opens. */
+  private watchCardHeights(): () => void {
+    return watchCardHeights({
+      store: this.store,
+      role: () => this.role,
+      busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
+      hidden: (card) => !this.store.isShown(card)
+        || this.flow.isHidden(card)
+        || Boolean(card.privateStep && !this.store.getFlow().reveal),
+    });
   }
 
   // ---------------------------------------------------------------- events

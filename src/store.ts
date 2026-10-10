@@ -11,7 +11,7 @@ import { customStickyColors } from './palette';
 /** Transaction origin for edits made on this device; only these are undoable. */
 export const LOCAL = 'local';
 
-export type ChangeListener = (changed: Set<Id>) => void;
+export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => void;
 
 /** Object fields that hold a colour: what is written to them is checked against shared/colors.mjs (TAB-203). */
 export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'textColor']);
@@ -116,19 +116,29 @@ export class Store {
 
     this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
+      const changedFields = new Map<Id, Set<string>>();
+      const noteFields = (id: Id, fields: Iterable<string>) => {
+        let set = changedFields.get(id);
+        if (!set) changedFields.set(id, (set = new Set()));
+        for (const field of fields) set.add(field);
+      };
       let scanForEmptyGroups = false;
       const createdGroups = new Set<Id>();
       for (const e of events) {
         if (e.target === this.objects) {
           for (const [id, change] of e.changes.keys) {
             changed.add(id);
+            // Root-map changes create or remove an object; treat them as more than a derived height write.
+            noteFields(id, ['*']);
             if (change.action === 'delete') scanForEmptyGroups = true;
             if (change.action === 'add' || change.action === 'update') {
               if (this.objects.get(id)?.get('type') === 'group') createdGroups.add(id);
             }
           }
         } else if (e.path.length > 0) {
-          changed.add(String(e.path[0]));
+          const id = String(e.path[0]);
+          changed.add(id);
+          noteFields(id, [...e.changes.keys.keys()].map(String));
           if (transaction.changed.get(e.target)?.has('parent')) scanForEmptyGroups = true;
         }
       }
@@ -175,7 +185,7 @@ export class Store {
       }
       this.orderDirty = true;
       this.shownCache = null;
-      this.listeners.forEach((l) => l(changed));
+      this.listeners.forEach((l) => l(changed, transaction.origin, changedFields));
     });
 
     // Only deletions and parent changes can empty an existing group. Local Store.remove and update calls handle those
