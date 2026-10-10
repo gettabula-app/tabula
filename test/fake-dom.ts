@@ -348,6 +348,9 @@ export class FakeDocument {
   createElement(tag: string) {
     return new FakeElement(tag);
   }
+  createElementNS(_namespace: string, tag: string) {
+    return new FakeElement(tag);
+  }
   createTextNode(text: string) {
     return new FakeText(text);
   }
