@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -876,6 +876,25 @@ async function checkStepsOverlap(env, name) {
     if (result.failures.length) throw new Error(`${name}: ${JSON.stringify(result.failures)}`);
 }
 
+// Press-kit shots: the seeded boards with the QA names swapped for roles, so nothing reads as a person or a localhost (business/press/press-kit.md)
+async function pressRoles(page) {
+  await page.evaluate(() => {
+    const swaps = [[/Visual QA/g, 'Facilitator'], [/VISUAL QA/g, 'FACILITATOR'], [/http:\/\/127\.0\.0\.1:\d+/g, 'https://sample.gettabula.app'], [/^\s*VQ\s*$/i, 'FA'], [/^\s*V\s*$/i, 'F']];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      let t = n.nodeValue;
+      for (const [re, to] of swaps) t = t.replace(re, to);
+      if (t !== n.nodeValue) n.nodeValue = t;
+    }
+    // a start message is not a feature of the product
+    document.querySelector('.toast')?.classList.remove('show');
+  });
+}
+async function pressZoom(page, factor) {
+  // a phone shows the retro frames at about 3x the fitted size, or the notes are unreadable
+  await page.evaluate(([f, phone]) => window.__board.zoomBy(phone && innerWidth < 500 ? f * 2 : f), [factor, true]);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -1042,13 +1061,13 @@ const STATES = {
   // TAB-253: a group selected and the Comments tray open on a phone: the quick bar, the properties panel and the group chips all wait
   async 'group-selected-tray'(env) {
     await STATES['group-selected-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
   async 'group-entered-tray'(env) {
     await STATES['group-entered-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
@@ -1061,7 +1080,7 @@ const STATES = {
   },
   async 'group-multi-menu-tray'(env) {
     await STATES['group-multi'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await longPressMember(env.page, 'seed-note-1');
   },
@@ -1252,13 +1271,13 @@ const STATES = {
   },
   async comments(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().waitFor();
   },
   // TAB-231: one comment opened as a thread, its author named once
   async 'comment-thread'(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().click();
     await env.page.locator('.comment-msg').first().waitFor();
   },
@@ -1429,6 +1448,44 @@ const STATES = {
     });
     console.log(`top-bars-320 ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
+  async 'press-board'(env) {
+    await openSeedBoard(env);
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-poll'(env) {
+    await STATES['vote-running'](env);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await pressZoom(env.page, 1.5);
+    const spots = await env.page.evaluate(() => {
+      const app = window.__board;
+      const at = { 'Reviews were fast': 3, 'Clear sprint goal': 1, 'Too many meetings': 4, 'Unclear ownership': 2, 'Flaky tests': 1 };
+      const box = app.r.svg.getBoundingClientRect();
+      return [...app.store.cache.values()].filter((o) => at[o.text]).map((o) => {
+        const c = app.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+        return { x: c.x + box.left, y: c.y + box.top, times: at[o.text] };
+      });
+    });
+    if (spots.length < 5) throw new Error(`press-poll: found ${spots.length} of the 5 notes`);
+    for (const { x, y, times } of spots) for (let i = 0; i < times; i++) await env.page.mouse.click(x, y);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await env.page.mouse.move(1, 1);
+    await pressRoles(env.page);
+  },
+  async 'press-timer'(env) {
+    await STATES['flow-write'](env);
+    await env.page.evaluate(() => window.__board.flow.startTimer());
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-comments'(env) {
+    await STATES['comment-thread'](env);
+    await pressRoles(env.page);
+  },
+  async 'press-admin'(env) {
+    await STATES.admin(env);
+    await pressRoles(env.page);
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
@@ -2020,7 +2077,7 @@ const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanba
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
