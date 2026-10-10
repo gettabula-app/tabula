@@ -50,6 +50,25 @@ describe('platform-specific shortcut labels', () => {
     expect(undo.ids).toEqual(['mod+z']);
     expect(redo.ids).toEqual(['mod+shift+z', 'mod+y']);
   });
+
+  it.each(['MacIntel', 'Win32', 'Android'])('keeps non-key Shift labels spelled out on %s', (platform) => {
+    expect(formatShortcutLabel('Shift+click', platform)).toBe('Shift+click');
+    expect(formatShortcutLabel('Shift while resizing', platform)).toBe('Shift while resizing');
+  });
+
+  it('uses Mac Shift glyphs only for keys, digits, arrows, and key chords', () => {
+    expect(formatShortcutLabel('Shift+1 / Shift+2 / Shift+0', 'MacIntel')).toBe('⇧1 / ⇧2 / ⇧0');
+    expect(formatShortcutLabel('Shift+Arrows', 'MacIntel')).toBe('⇧Arrows');
+    expect(formatShortcutLabel('Shift+Ctrl/Cmd+Z', 'MacIntel')).toBe('⇧⌘Z');
+    expect(formatShortcutLabel('Shift+1 / Shift+Arrows', 'Win32')).toBe('Shift+1 / Shift+Arrows');
+  });
+
+  it('shows Mac Option symbols for Alt chords and keeps other platforms unchanged', () => {
+    expect(formatShortcutLabel('Alt+Shift+Arrows', 'MacIntel')).toBe('⌥⇧Arrows');
+    expect(formatShortcutLabel('Alt+Arrows', 'MacIntel')).toBe('⌥Arrows');
+    expect(formatShortcutLabel('Alt+Shift+Arrows', 'Win32')).toBe('Alt+Shift+Arrows');
+    expect(formatShortcutLabel('Alt+Arrows', 'Android')).toBe('Alt+Arrows');
+  });
 });
 
 describe('keyboard shortcuts dialog', () => {

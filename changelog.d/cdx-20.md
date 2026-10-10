@@ -1,4 +1,5 @@
 section: Changed
 audience: user
 
-- Show platform-correct keyboard shortcut labels and hide desktop shortcut hints in touch menus.
+- Show platform-specific shortcut symbols, keep gesture labels readable, and hide desktop hints in touch menus.
+- Show the platform's undo shortcut after restoring a history version.

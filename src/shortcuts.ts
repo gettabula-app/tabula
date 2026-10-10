@@ -73,7 +73,8 @@ export function formatShortcutLabel(keys: string, platform: string): string {
     .replace(/Shift\+Ctrl\/Cmd\+/g, mac ? '⇧⌘' : 'Shift+Ctrl+')
     .replace(/Ctrl\/Cmd\+/g, mac ? '⌘' : 'Ctrl+')
     .replace(/Ctrl\/Cmd \+/g, mac ? '⌘ +' : 'Ctrl +')
-    .replace(/Shift\+/g, mac ? '⇧' : 'Shift+');
+    .replace(/Alt\+/g, mac ? '⌥' : 'Alt+')
+    .replace(/Shift\+(?=(?:[A-Z0-9]|Arrows)\b)/g, mac ? '⇧' : 'Shift+');
 }
 
 /**
