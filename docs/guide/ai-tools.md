@@ -96,7 +96,7 @@ What a tool is allowed to put on a card:
 - A **link** that is a web address starting with `http://` or `https://`, up to 2,000 characters, with no spaces and no user name or password. Other kinds, such as `javascript:`, are refused and no card is made.
 - An **owner**: a name for a person, or itself as an AI tool. A tool cannot assign a person's account. A card the tool owns shows the eight-sided badge, and only that token can change who owns it.
 
-A lane that blocks work in progress refuses a new or moved card when it is full, and a locked card cannot be changed. Cards appear on the board for everyone at once. They are made outside Undo, like other edits by tools, so remove a mistake with **Delete** on the card. Cards made this way settle to their true height when an editor has the board open; on a board that only viewers have open they keep a default height, so a label or date may look clipped until an editor opens it.
+A lane that blocks work in progress refuses a new or moved card when it is full, and a locked card cannot be changed. Cards appear on the board for everyone at once. They are made outside Undo, like other edits by tools, so remove a mistake with **Delete** on the card, or ask the tool to delete it (a tool can delete a card a person made, but not a card that another AI tool owns). Cards made this way settle to their true height when an editor has the board open; on a board that only viewers have open they keep a default height, so a label or date may look clipped until an editor opens it.
 
 ## Signing in with OAuth
 
