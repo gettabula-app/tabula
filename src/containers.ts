@@ -1,20 +1,24 @@
 // Client glue for containers (docs/kanban.md, slice 2): making a kanban, adding a card, and moving cards, each one
 // transaction and one undo step. Pure maths lives in src/ui/kanban-logic.ts and shared/containers.mjs.
 
-import { KANBAN, LIMITS, kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck } from '../shared/containers';
+import {
+  KANBAN, LIMITS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName, codePointLength, isDueDate, isSafeHttpUrl,
+  kanbanColor, layoutContainer, planInsert, ranksBetween, wipCheck,
+} from '../shared/containers';
+export { OWNER_NAME_MAX };
 import type { Store } from './store';
 import { newId } from './store';
 import type { BaseObj, Id, Obj, Point } from './types';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
-import { cardFillFromSticky, isDueDate, isStage, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
+import { cardFillFromSticky, isStage, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
 /** The three lanes a new kanban starts with (docs/kanban.md, Making one). */
 export const DEFAULT_LANES = [
-  { name: 'To do', stage: 'todo' },
-  { name: 'Doing', stage: 'doing' },
-  { name: 'Done', stage: 'done' },
+  { name: 'To do', stage: STAGES[0] },
+  { name: 'Doing', stage: STAGES[1] },
+  { name: 'Done', stage: STAGES[2] },
 ] as const;
 
 export interface NewObjectBase {
@@ -104,12 +108,13 @@ export function addCardRefusal(store: Store, laneId: Id): string | null {
 }
 
 /**
- * Adds a card with this title at the end of a lane: one transaction, one undo step. The title is cut to the limit and its
- * height is stored, so every client lays it out the same. Returns the new card's id, or null when nothing was written.
+ * Adds a card with this title at the end of a lane: one transaction, one undo step. Whitespace is collapsed and overlong
+ * titles are refused by code-point count; its height is stored so every client lays it out the same.
  */
 export function addCard(store: Store, laneId: Id, title: string, base: { createdBy: string; font?: string }): Id | null {
   const lane = store.get(laneId);
-  const text = title.trim().slice(0, LIMITS.title);
+  const text = cleanCardTitle(title);
+  if (codePointLength(text) > LIMITS.title) return null;
   if (lane?.type !== 'lane' || !lane.parent || !text || store.readOnly) return null;
   const layout = store.containerLayout(lane.parent);
   if (!layout || addCardRefusal(store, laneId)) return null;
@@ -283,8 +288,6 @@ export function planKanbanDelete(store: Store, selected: Id[]): DeletePlan {
 
 // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
 
-/** A free-text owner's name (one with no account): the spec gives no limit, so this one is the container name's. */
-export const OWNER_NAME_MAX = LIMITS.containerName;
 /** The width of a card that is not in a lane: the default lane's body. */
 export const LOOSE_CARD_W = KANBAN.laneW - KANBAN.lanePad * 2;
 /** A sticky's size when a card turns back into one. */
@@ -293,10 +296,12 @@ export const STICKY_SIZE = 192;
 export interface CardPatch {
   title?: string;
   desc?: string;
-  /** A person: `ownerId` and the name at the time; a name alone for someone with no account; null clears the owner. */
-  owner?: { id?: string; name: string } | null;
+  /** A person or agent: identity and kind are stored together; a name alone is allowed, null clears all owner fields. */
+  owner?: { id?: string; name: string; kind?: 'person' | 'agent' } | null;
   /** `YYYY-MM-DD`, or null to clear. */
   due?: string | null;
+  /** One http(s) URL of at most 2,000 characters, or null to clear. */
+  link?: string | null;
   labels?: Id[];
   /** The accent: a palette key or a colour `kanbanColor` accepts; null clears it. */
   fill?: string | null;
@@ -310,15 +315,16 @@ const cardWidth = (store: Store, card: Obj) => (store.isLaidOut(card) ? store.ge
 
 /**
  * The fields a card patch writes, checked: the title is one line of at most 200 characters (an empty title is not
- * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, labels only ones the
- * board has (which also drops ids of deleted labels, docs/kanban.md, Labels) and colours through `kanbanColor`. Null when
- * the patch asks for something that is not allowed. The height follows from the result, as the writer stores it.
+ * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, `link` one safe HTTP(S)
+ * URL up to 2,000 characters, labels only ones the board has (which also drops ids of deleted labels, docs/kanban.md,
+ * Labels) and colours through `kanbanColor`. Owner id, name and kind are one patch. Null when the patch asks for something
+ * that is not allowed. The height follows from the result, as the writer stores it.
  */
 export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Partial<BaseObj> | null {
   const out: Partial<BaseObj> = {};
   if (patch.title !== undefined) {
-    const t = patch.title.replace(/\s+/g, ' ').trim().slice(0, LIMITS.title).trim();
-    if (!t) return null;
+    const t = cleanCardTitle(patch.title);
+    if (!t || codePointLength(t) > LIMITS.title) return null;
     out.text = t;
   }
   if (patch.desc !== undefined) {
@@ -327,14 +333,25 @@ export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Parti
     out.desc = d || undefined;
   }
   if (patch.owner !== undefined) {
-    const name = (patch.owner?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, OWNER_NAME_MAX).trim();
+    const name = cleanOwnerName(patch.owner?.name);
+    if (patch.owner && codePointLength(name) > OWNER_NAME_MAX) return null;
     out.ownerName = patch.owner ? name || undefined : undefined;
-    out.ownerId = patch.owner?.id && typeof patch.owner.id === 'string' ? patch.owner.id : undefined;
+    if (patch.owner && patch.owner.kind !== undefined && patch.owner.kind !== 'person' && patch.owner.kind !== 'agent') return null;
+    const kind = patch.owner ? patch.owner.kind ?? (card.ownerKind === 'agent' ? 'agent' : 'person') : undefined;
+    if (patch.owner && kind === 'agent' && card.ownerKind !== 'agent') return null;
+    if (patch.owner && card.ownerKind === 'agent' && kind === 'agent' && ((patch.owner.id ?? card.ownerId) !== card.ownerId || name !== (card.ownerName ?? ''))) return null;
+    const staleAgentId = card.ownerKind === 'agent' && kind === 'person' && patch.owner?.id === card.ownerId;
+    out.ownerId = patch.owner?.id && typeof patch.owner.id === 'string' && !staleAgentId ? patch.owner.id : undefined;
+    out.ownerKind = kind;
     if (patch.owner && !out.ownerName && !out.ownerId) return null;
   }
   if (patch.due !== undefined) {
     if (patch.due !== null && patch.due !== '' && !isDueDate(patch.due)) return null;
     out.due = patch.due || undefined;
+  }
+  if (patch.link !== undefined) {
+    if (patch.link !== null && patch.link !== '' && !isSafeHttpUrl(patch.link)) return null;
+    out.link = patch.link || undefined;
   }
   const known = knownLabels(store);
   if (patch.labels !== undefined) out.labels = cleanCardLabels(patch.labels, known);

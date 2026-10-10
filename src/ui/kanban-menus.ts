@@ -283,7 +283,10 @@ export function openFilterPopover(app: BoardApp, id: Id, at: Rect) {
     if (document.activeElement !== text) text.value = get().text;
   });
   menu.append(
-    section('Owner', null, h('div', { class: 'k-seg' }, chip('Mine', () => get().mine, () => set({ mine: !get().mine }), undefined, 'user'))),
+    section('Quick filters', null, h('div', { class: 'k-seg' },
+      chip('Mine', () => get().mine, () => set({ mine: !get().mine }), undefined, 'user'),
+      chip('Overdue', () => get().due.includes('overdue'), () => set({ due: toggle(get().due, 'overdue') }), undefined, 'calendar'),
+    )),
     section('Labels', labels.length ? 'Any of' : null, labels.length
       ? h('div', { class: 'k-seg' }, ...labels.map((l) => chip(l.name, () => get().labels.includes(l.id), () => set({ labels: toggle(get().labels, l.id) }), l.color)))
       : h('p', { class: 'k-empty' }, 'This board has no labels yet.')),

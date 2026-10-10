@@ -9,8 +9,9 @@ import {
   cleanCardLabels, createLabel, deleteLabel, listLabels, moveLabel, planLabelMove, recolorLabel, renameLabel, toggleCardLabel,
 } from '../src/labels';
 import { cardContentHeight } from '../src/markup';
+import { safeObj } from '../src/safe-obj';
 import { KANBAN, LIMITS } from '../shared/containers';
-import type { BaseObj, Id, Label } from '../src/types';
+import type { BaseObj, Id, Label, Obj } from '../src/types';
 
 // docs/kanban.md, slice 3: the store side of cards. Every edit is one transaction and one undo step, nothing is written
 // on a read-only board, colours go through kanbanColor and text through the limits, labels under concurrent edits.
@@ -153,19 +154,49 @@ describe('editing a card', () => {
     const { store, cards } = board();
     const [a] = cards;
     expect(editCard(store, a, { title: '   ' })).toBe(false);
-    expect(editCard(store, a, { title: 'x'.repeat(300) })).toBe(true);
-    expect(bo(store, a).text).toHaveLength(LIMITS.title);
+    expect(editCard(store, a, { title: 'x'.repeat(300) })).toBe(false);
+    expect(bo(store, a).text).toBe('A');
     expect(editCard(store, a, { title: 'one\ntwo' })).toBe(true);
     expect(bo(store, a).text).toBe('one two');
     expect(editCard(store, a, { desc: 'x'.repeat(LIMITS.description + 1) })).toBe(false);
     expect(editCard(store, a, { due: '2026-02-30' })).toBe(false);
     expect(editCard(store, a, { due: '16/01/2026' })).toBe(false);
+    for (const link of ['javascript:alert(1)', 'data:text/html,x', 'ftp://example.com', ' https://example.com', 'https://example.com/a b', 'https://example.com/\u200b', `https://example.com/${'x'.repeat(2000)}`]) {
+      expect(editCard(store, a, { link })).toBe(false);
+    }
+    expect(editCard(store, a, { link: 'https://example.com/a?q=one&b=two' })).toBe(true);
+    expect(bo(store, a).link).toBe('https://example.com/a?q=one&b=two');
+    expect(editCard(store, a, { link: null })).toBe(true);
     expect(editCard(store, a, { owner: { name: '   ' } })).toBe(false);
-    expect(editCard(store, a, { owner: { name: 'y'.repeat(200) } })).toBe(true);
-    expect(bo(store, a).ownerName).toHaveLength(80);
+    expect(editCard(store, a, { owner: { name: '  Lea\n  Brandt  ' } })).toBe(true);
+    expect(bo(store, a).ownerName).toBe('Lea Brandt');
+    const collapsedOwner = `${'A'.repeat(39)}${' '.repeat(100)}${'B'.repeat(40)}`;
+    expect(editCard(store, a, { owner: { name: collapsedOwner } })).toBe(true);
+    expect(bo(store, a).ownerName).toBe(`${'A'.repeat(39)} ${'B'.repeat(40)}`);
+    expect(editCard(store, a, { owner: { name: '😀'.repeat(81) } })).toBe(false);
+    expect(editCard(store, a, { owner: { name: 'y'.repeat(81) } })).toBe(false);
     expect(bo(store, a).ownerId).toBeUndefined();
     expect(editCard(store, a, { owner: null })).toBe(true);
     expect(bo(store, a).ownerName).toBeUndefined();
+    expect(bo(store, a).ownerKind).toBeUndefined();
+  });
+
+  it('writes owner id, name and kind in one Yjs transaction, defaulting to person', () => {
+    const { store, cards } = board();
+    const [a] = cards;
+    const updates: Uint8Array[] = [];
+    const onUpdate = (update: Uint8Array) => updates.push(update);
+    store.doc.on('update', onUpdate);
+    try {
+      expect(editCard(store, a, { owner: { id: 'u1', name: 'Ada' } })).toBe(true);
+    } finally {
+      store.doc.off('update', onUpdate);
+    }
+    expect(updates).toHaveLength(1);
+    expect(bo(store, a)).toMatchObject({ ownerId: 'u1', ownerName: 'Ada', ownerKind: 'person' });
+
+    expect(editCard(store, a, { owner: { id: 'agent-1', name: 'Build agent', kind: 'agent' } })).toBe(false);
+    expect(bo(store, a)).toMatchObject({ ownerId: 'u1', ownerName: 'Ada', ownerKind: 'person' });
   });
 
   it('drops the ids of deleted labels on the next edit', () => {
@@ -428,6 +459,43 @@ describe('labels under concurrent edits (docs/kanban.md, Concurrent edits)', () 
     sync(a, b);
     expect(a.get(card)).toMatchObject({ type: 'sticky', desc: 'Written meanwhile' });
     expect(b.get(card)).toMatchObject({ type: 'sticky', desc: 'Written meanwhile' });
+  });
+});
+
+describe('owner fields under concurrent edits', () => {
+  function pair() {
+    const a = new Store(new Y.Doc());
+    const b = new Store(new Y.Doc());
+    a.doc.clientID = 1;
+    b.doc.clientID = 2;
+    const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'me' });
+    a.transact(() => [container, ...lanes].forEach((o) => a.create(o)));
+    const card = addCard(a, lanes[0].id, 'Owner race', { createdBy: 'me' })!;
+    editCard(a, card, { owner: { id: 'person-1', name: 'Ada' } });
+    sync(a, b);
+    return { a, b, card };
+  }
+  function sync(a: Store, b: Store) {
+    Y.applyUpdate(a.doc, Y.encodeStateAsUpdate(b.doc, Y.encodeStateVector(a.doc)));
+    Y.applyUpdate(b.doc, Y.encodeStateAsUpdate(a.doc, Y.encodeStateVector(b.doc)));
+  }
+
+  it('converges after owner change races a token kind flip and clear, and safeObj never exposes an orphan kind', () => {
+    const { a, b, card } = pair();
+    editCard(a, card, { owner: { name: 'Bea' } });
+    b.transact(() => b.update(card, { ownerId: 'token-2', ownerName: 'Build bot', ownerKind: 'agent' }));
+    editCard(a, card, { owner: null });
+    sync(a, b);
+
+    const rawA = a.get(card) as BaseObj;
+    const rawB = b.get(card) as BaseObj;
+    expect(rawA).toEqual(rawB);
+    const cleanA = safeObj(rawA as unknown as Obj) as BaseObj;
+    const cleanB = safeObj(rawB as unknown as Obj) as BaseObj;
+    expect(cleanA).toEqual(cleanB);
+    expect(Boolean(cleanA.ownerId || cleanA.ownerName) || !Object.hasOwn(cleanA, 'ownerKind')).toBe(true);
+    expect(cleanA.ownerKind !== 'agent' || Boolean(cleanA.ownerId)).toBe(true);
+    expect([undefined, 'person', 'agent']).toContain(cleanA.ownerKind);
   });
 });
 

@@ -75,6 +75,8 @@ describe.each(validators)('%s template validator', (_name, validate) => {
     ['labels that are not a list', 'c1', { labels: 'l1' }, /must be a list/],
     ['eleven labels', 'c1', { labels: Array.from({ length: 11 }, (_, i) => `l${i}`) }, /at most 10/],
     ['a due date', 'c1', { due: '2026-10-09' }, /due date/],
+    ['an owner kind', 'c1', { ownerKind: 'agent' }, /an owner/],
+    ['a card link', 'c1', { link: 'https://example.com' }, /a link/],
     ['an owner id', 'c1', { ownerId: 'u1' }, /an owner/],
     ['an owner name', 'c1', { ownerName: 'Ada' }, /an owner/],
     ['a tracker link', 'c1', { extUrl: 'https://example.com' }, /extUrl/],
@@ -133,15 +135,15 @@ describe('saving a template with a kanban', () => {
   const board = (): Obj[] => [
     { id: 'K', type: 'container', layout: 'kanban', name: 'Board', x: 10, y: 10, w: 400, h: 300, rotation: 0, z: 'a0', createdBy: 'me', updatedAt: 1, locked: true },
     { id: 'L', type: 'lane', parent: 'K', rank: 'a0@K', name: 'To do', x: 22, y: 70, w: 280, h: 200, rotation: 0, z: 'a0' },
-    { id: 'C', type: 'card', parent: 'L', rank: 'a0@L', text: 'Task', x: 30, y: 126, w: 264, h: 72, rotation: 0, z: 'a0', ownerId: 'u1', ownerName: 'Ada', due: '2026-10-09', extKey: 'TAB-1', labels: ['B1', 'gone'] },
+    { id: 'C', type: 'card', parent: 'L', rank: 'a0@L', text: 'Task', x: 30, y: 126, w: 264, h: 72, rotation: 0, z: 'a0', ownerId: 'u1', ownerName: 'Ada', ownerKind: 'agent', due: '2026-10-09', link: 'https://example.com/task', extKey: 'TAB-1', labels: ['B1', 'gone'] },
     { id: 'D', type: 'card', parent: 'L', rank: 'a1@L', text: 'Other', x: 30, y: 206, w: 264, h: 72, rotation: 0, z: 'a0', labels: ['B2'] },
   ] as unknown as Obj[];
   const labels = [{ id: 'B1', name: 'Bug', color: 'pink' }, { id: 'B2', name: 'Feature', color: 'blue' }, { id: 'B3', name: 'Unused', color: 'grey' }];
 
-  it('strips owners, due dates and tracker fields, keeps the labels the cards use, and names parents in ranks', () => {
+  it('strips owners, owner kinds, due dates, card links and tracker fields, keeps used labels and names parents in ranks', () => {
     const c = toTemplateContent(board(), [], { includeSteps: false, labels });
     const card = c.objects.find((o) => (o as BaseObj).text === 'Task') as BaseObj & Record<string, unknown>;
-    for (const key of ['ownerId', 'ownerName', 'due', 'extKey', 'locked']) expect(card[key]).toBeUndefined();
+    for (const key of ['ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extKey', 'locked']) expect(card[key]).toBeUndefined();
     expect(card.labels).toEqual(['l1']);
     expect(c.labels).toEqual([{ id: 'l1', name: 'Bug', color: 'pink' }, { id: 'l2', name: 'Feature', color: 'blue' }]);
     // ranks follow the new ids
@@ -167,7 +169,7 @@ describe('saving a template with a kanban', () => {
   });
 
   it('drops the card fields a sticky kept from when it was a card', () => {
-    const sticky = { id: 'S', type: 'sticky', text: 'Note', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a0', ownerName: 'Ada', due: '2026-10-09', desc: 'more', labels: ['B1'] } as unknown as Obj;
+    const sticky = { id: 'S', type: 'sticky', text: 'Note', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a0', ownerName: 'Ada', ownerKind: 'agent', due: '2026-10-09', link: 'https://example.com', desc: 'more', labels: ['B1'] } as unknown as Obj;
     const c = toTemplateContent([sticky], [], { includeSteps: false, labels });
     expect(Object.keys(c.objects[0]).sort()).toEqual(['h', 'id', 'rotation', 'text', 'type', 'w', 'x', 'y', 'z']);
     expect(c.labels).toBeUndefined();

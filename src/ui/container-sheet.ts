@@ -2,6 +2,7 @@ import './container-sheet.css';
 import type { BoardApp } from '../app';
 import type { BaseObj, Id } from '../types';
 import { LIMITS } from '../../shared/containers';
+import { isSafeHttpUrl } from '../../shared/containers';
 import { addCard, addCardRefusal, moveCards, moveRefusal } from '../containers';
 import { listLabels } from '../labels';
 import { kanbanSwatch } from '../markup';
@@ -280,12 +281,16 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
     const due = dueChip(card.due, today, done);
     const comments = app.r.commentCount(card.id);
     const owner = card.ownerName?.trim();
-    if (!due && !comments && !owner) return null;
+    const agent = owner ? card.ownerKind === 'agent' : false;
+    const link = isSafeHttpUrl(card.link) ? card.link : null;
+    if (!due && !comments && !owner && !link) return null;
     return h('div', { class: 'ks-meta' },
       due ? h('span', { class: `ks-due ${due.kind}` }, due.kind === 'done' ? icon('check', 12) : null, due.text, due.kind === 'overdue' ? h('span', { class: 'sr-only' }, ', overdue') : null) : null,
       h('span', { class: 'ks-spacer' }),
       comments ? h('span', { class: 'ks-ccount', title: `${comments} ${comments === 1 ? 'comment' : 'comments'}` }, icon('comment', 14), String(comments)) : null,
-      owner ? h('span', { class: 'ks-owner', title: `Owner: ${owner}`, 'aria-label': `Owner: ${owner}` }, initials(owner)) : null,
+      owner ? h('span', { class: `ks-owner${agent ? ' agent' : ''}`, title: `Owner: ${owner}${agent ? ' (agent)' : ''}`, 'aria-label': `Owner: ${owner}${agent ? ' (agent)' : ''}` },
+        agent ? h('span', { class: 'k-owner-kind-mark agent', 'aria-hidden': 'true' }) : null, initials(owner)) : null,
+      link ? h('a', { class: 'ks-link', href: link, rel: 'noopener noreferrer', target: '_blank', 'aria-label': `Open link for ${card.text?.trim() || 'Untitled card'}` }, 'Open link') : null,
     );
   };
 

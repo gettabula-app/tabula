@@ -1,16 +1,17 @@
 import './card-dialog.css';
 import type { BoardApp, CardFocus } from '../app';
 import type { BaseObj, Id } from '../types';
-import { LIMITS } from '../../shared/containers';
+import { isSafeHttpUrl, LIMITS } from '../../shared/containers';
 import { editCard, knownLabels, OWNER_NAME_MAX, type CardPatch } from '../containers';
+import { CARD_LINK_MAX } from '../safe-obj';
 import { listLabels, toggleCardLabel } from '../labels';
 import { kanbanSwatch } from '../markup';
 import { dialog } from './common';
 import { h, icon } from './dom';
 import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
 
-// The card dialog (docs/kanban.md, Cards): title, description, owner, due date and labels, a comment button, Turn into
-// sticky and Delete. Fields save as they are left, as everywhere in the app; there is no Save button. Read-only for
+// The card dialog (docs/kanban.md, Cards): title, description, owner and type, due date, link and labels, a comment
+// button, Turn into sticky and Delete. Fields save as they are left, as everywhere in the app; there is no Save button. Read-only for
 // commenters, who keep the comment button; viewers do not open it (BoardApp.canOpenCard). At phone width it is a bottom
 // sheet (card-dialog.css). Everything a person wrote reaches the page as text or as an input's value, never as markup.
 
@@ -45,8 +46,8 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   // ---- fields
   // Typed text is saved only when this person changed it: a field that was only focused never writes back what it showed,
   // so a change someone else made meanwhile stays.
-  const dirty = { head: false, desc: false };
-  const title = h('input', { class: 'input', type: 'text', maxlength: LIMITS.title, 'aria-label': 'Title', autocomplete: 'off' });
+  const dirty = { head: false, desc: false, link: false };
+  const title = h('input', { class: 'input', type: 'text', maxlength: LIMITS.title * 2, 'aria-label': 'Title', autocomplete: 'off' });
   const saveTitle = () => {
     if (!dirty.head) return;
     dirty.head = false;
@@ -69,8 +70,28 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   desc.addEventListener('input', () => (dirty.desc = true));
   desc.addEventListener('change', saveDesc);
 
+  let pendingOwnerKind: 'person' | 'agent' | null = null;
+  const ownerKindValue = () => pendingOwnerKind ?? (cardOf()?.ownerKind === 'agent' ? 'agent' : 'person');
   const owner = h('select', { class: 'input', 'aria-label': 'Owner' });
-  const ownerName = h('input', { class: 'input k-owner-name', type: 'text', maxlength: OWNER_NAME_MAX, 'aria-label': 'Owner\'s name', placeholder: 'Name', autocomplete: 'off' });
+  const ownerName = h('input', { class: 'input k-owner-name', type: 'text', maxlength: OWNER_NAME_MAX * 2, 'aria-label': 'Owner\'s name', placeholder: 'Name', autocomplete: 'off' });
+  const ownerKinds = h('div', { class: 'k-owner-kinds', role: 'group', 'aria-label': 'Owner type' },
+    ...(['person', 'agent'] as const).map((kind) => h('button', {
+      class: 'k-owner-kind-btn', type: 'button', 'data-owner-kind': kind, 'aria-pressed': 'false', disabled: kind === 'agent',
+      'aria-label': kind === 'agent' ? 'Agent owner (assigned through MCP tokens)' : undefined,
+      onclick: () => {
+        if (kind === 'agent') return;
+        const card = cardOf();
+        if (!card || ownerKindValue() === kind) return;
+        if (card.ownerId || card.ownerName) {
+          pendingOwnerKind = null;
+          save({ owner: { id: card.ownerId, name: card.ownerName ?? '', kind } });
+        } else {
+          pendingOwnerKind = kind;
+          render();
+        }
+      },
+    }, h('span', { class: `k-owner-kind-mark ${kind}`, 'aria-hidden': 'true' }), kind === 'agent' ? 'Agent' : 'Person')),
+  );
   owner.addEventListener('change', () => {
     if (owner.value === OTHER) {
       ownerName.hidden = false;
@@ -79,15 +100,24 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
       return;
     }
     ownerName.hidden = true;
-    if (owner.value === '') return save({ owner: null });
+    if (owner.value === '') {
+      pendingOwnerKind = null;
+      return save({ owner: null });
+    }
     // a choice the list no longer offers (it changed under the open menu) does nothing, never clears the owner
     const opt = options.find((o) => o.key === owner.value);
-    if (opt) save({ owner: { id: opt.id, name: opt.name } });
+    if (opt) {
+      pendingOwnerKind = null;
+      save({ owner: { id: opt.id, name: opt.name, kind: 'person' } });
+    }
     else render(true);
   });
   ownerName.addEventListener('change', () => {
     const name = ownerName.value.trim();
-    if (name) save({ owner: { name } });
+    if (name) {
+      pendingOwnerKind = null;
+      save({ owner: { name, kind: 'person' } });
+    }
   });
 
   const due = h('input', { class: 'input', type: 'date', 'aria-label': 'Due date' });
@@ -95,6 +125,35 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     if (!due.value || isDueDate(due.value)) save({ due: due.value || null });
   });
   const clearDue = h('button', { class: 'btn ghost k-clear', type: 'button', onclick: () => save({ due: null }) }, 'Clear');
+
+  const link = h('input', { class: 'input', type: 'url', maxlength: CARD_LINK_MAX, 'aria-label': 'Link', placeholder: editable ? 'https://example.com' : '', autocomplete: 'url', spellcheck: 'false' });
+  const linkErrorId = `k-link-error-${id}`;
+  const linkError = h('span', { class: 'k-link-error', id: linkErrorId, role: 'alert', hidden: true });
+  const openLink = h('a', { class: 'k-open-link', target: '_blank', rel: 'noopener noreferrer', hidden: true }, 'Open link');
+  const readOnlyLink = h('span', { class: 'k-link-readonly', hidden: true });
+  const showLinkError = () => {
+    linkError.textContent = 'Enter a full http:// or https:// URL without credentials.';
+    linkError.hidden = false;
+    link.setAttribute('aria-invalid', 'true');
+    link.setAttribute('aria-describedby', linkErrorId);
+  };
+  const clearLinkError = () => {
+    linkError.hidden = true;
+    link.removeAttribute('aria-invalid');
+    link.removeAttribute('aria-describedby');
+  };
+  link.addEventListener('input', () => { dirty.link = true; });
+  link.addEventListener('change', () => {
+    if (!dirty.link) return;
+    dirty.link = false;
+    if (link.value && !isSafeHttpUrl(link.value)) {
+      showLinkError();
+      return;
+    }
+    clearLinkError();
+    save({ link: link.value });
+  });
+  const clearLink = h('button', { class: 'btn ghost k-clear', type: 'button', onclick: () => { dirty.link = false; link.value = ''; clearLinkError(); save({ link: null }); } }, 'Clear');
 
   const labels = h('div', { class: 'k-labels', role: 'group', 'aria-label': 'Labels' });
   const manage = editable
@@ -114,9 +173,11 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     field('Title', title),
     field('Description', desc),
     h('div', { class: 'k-row2' },
-      field('Owner', h('div', { class: 'k-stack' }, owner, ownerName)),
+      field('Owner', h('div', { class: 'k-stack' }, owner, ownerName, ownerKinds)),
       field('Due', h('div', { class: 'k-due' }, due, editable ? clearDue : null)),
     ),
+    field('Link', h('div', { class: 'k-link-wrap' },
+      h('div', { class: 'k-link-field' }, link, openLink, readOnlyLink, editable ? clearLink : null), linkError)),
     h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
     actions,
   );
@@ -138,10 +199,11 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     options = ownerOptions({ id: app.user.id, name: app.user.name }, present, assigned);
     if (focused !== owner && !(focused === ownerName && !ownerName.hidden)) {
       const cur = ownerKey(card);
-      if (cur && !options.some((o) => o.key === cur)) options.push({ key: cur, id: card.ownerId, name: card.ownerName || 'Someone' });
+      const currentMissing = !!cur && !options.some((o) => o.key === cur);
       owner.replaceChildren(
         h('option', { value: '' }, 'No owner'),
         ...options.map((o) => h('option', { value: o.key }, o.me ? `${o.name} (you)` : o.name)),
+        ...(currentMissing ? [h('option', { value: cur, disabled: card.ownerKind === 'agent' }, `${card.ownerName || 'Someone'}${card.ownerKind === 'agent' ? ' (agent)' : ''}`)] : []),
         ...(editable ? [h('option', { value: OTHER }, 'Someone else…')] : []),
       );
       owner.value = cur;
@@ -149,6 +211,23 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     }
     if (focused !== due) due.value = isDueDate(card.due) ? card.due : '';
     clearDue.hidden = !card.due;
+    const validLink = isSafeHttpUrl(card.link) ? card.link : '';
+    if (!(dirty.link && document.activeElement === link)) link.value = validLink;
+    link.hidden = !editable;
+    openLink.hidden = !editable || !validLink;
+    if (validLink) openLink.href = validLink;
+    else openLink.removeAttribute('href');
+    readOnlyLink.hidden = editable || !validLink;
+    readOnlyLink.textContent = validLink;
+    clearLink.hidden = !validLink;
+    const ownerKind = ownerKindValue();
+    for (const button of ownerKinds.querySelectorAll<HTMLButtonElement>('button')) {
+      const active = button.dataset.ownerKind === ownerKind;
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-pressed', String(active));
+      button.disabled = !editable || button.dataset.ownerKind === 'agent';
+    }
+    ownerName.disabled = !editable || card.ownerKind === 'agent';
     const active = document.activeElement;
     const focusedLabel = active && labels.contains(active) ? (active as HTMLElement).dataset.label : undefined;
     const known = knownLabels(app.store);
@@ -177,7 +256,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   }
 
   for (const el of [title, desc]) el.readOnly = !editable;
-  for (const el of [owner, due]) el.disabled = !editable;
+  for (const el of [owner, due, link]) el.disabled = !editable;
 
   const lane = card0.parent ? app.store.get(card0.parent) : undefined;
   const heading = lane?.type === 'lane' ? `Card in ${(lane as BaseObj).name || 'a lane'}` : 'Card';
@@ -230,7 +309,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     }
     requestAnimationFrame(cue);
   }
-  const start = { title, owner, due, labels } as const;
+  const start = { title, owner, due, link, labels } as const;
   if (focus && focus !== 'title') {
     requestAnimationFrame(() => {
       const el = focus === 'labels' ? (labels.querySelector('button') as HTMLElement | null) ?? manage : start[focus];

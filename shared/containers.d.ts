@@ -61,6 +61,16 @@ export interface WipVerdict {
 export const CONTAINER_TYPES: readonly ['container', 'lane', 'card'];
 export function isContainerType(type: string): boolean;
 
+export const OWNER_KINDS: readonly ['person', 'agent'];
+export const STAGES: readonly ['todo', 'doing', 'done'];
+export const CARD_LINK_MAX: 2000;
+export const OWNER_NAME_MAX: 80;
+export function cleanCardTitle(value: unknown): string;
+export function cleanOwnerName(value: unknown): string;
+export function codePointLength(value: string): number;
+export function isSafeHttpUrl(value: unknown): value is string;
+export function isDueDate(value: unknown): value is string;
+
 export const FEATURES: { readonly containers: 'containers' };
 export const KNOWN_FEATURES: readonly string[];
 export const FEATURE_PREFIX: 'feature:';

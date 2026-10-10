@@ -89,6 +89,17 @@ describe('filter matching', () => {
     expect(cardMatches(card, f({ labels: ['bug'], text: 'other' }), at())).toBe(false);
   });
 
+  it('combines Overdue with Mine, labels and text using AND', () => {
+    const card = { ownerId: me.id, labels: ['bug'], due: '2026-10-08', text: 'Login regression' };
+    const filter = f({ mine: true, labels: ['bug'], due: ['overdue'], text: 'regression' });
+    expect(cardMatches(card, filter, at())).toBe(true);
+    expect(cardMatches({ ...card, ownerId: 'u2' }, filter, at())).toBe(false);
+    expect(cardMatches({ ...card, labels: ['ui'] }, filter, at())).toBe(false);
+    expect(cardMatches({ ...card, due: today }, filter, at())).toBe(false);
+    expect(cardMatches({ ...card, text: 'Other task' }, filter, at())).toBe(false);
+    expect(cardMatches(card, filter, at(me, true))).toBe(false);
+  });
+
   it('a filter read back from storage keeps only what a filter holds', () => {
     expect(cleanFilter(null)).toEqual(f());
     expect(cleanFilter('x')).toEqual(f());

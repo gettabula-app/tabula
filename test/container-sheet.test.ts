@@ -126,6 +126,25 @@ describe('the list sheet', () => {
     expect(rowsText()).toEqual(['A', 'B', 'C']);
   });
 
+  it('labels agent owners accessibly and renders a real safe link target', () => {
+    const s = setup();
+    s.store.transact(() => s.store.update(s.cards[0], {
+      ownerId: 'token-1', ownerName: 'Build bot', ownerKind: 'agent', link: 'https://example.com/plan',
+    }));
+    open(s);
+    const owner = sheet()!.querySelector('.ks-owner')!;
+    expect(owner.classList.contains('agent')).toBe(true);
+    expect(owner.getAttribute('title')).toBe('Owner: Build bot (agent)');
+    expect(owner.getAttribute('aria-label')).toBe('Owner: Build bot (agent)');
+    expect(owner.querySelector('.k-owner-kind-mark.agent')).not.toBeNull();
+    const link = sheet()!.querySelector('a.ks-link')!;
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('https://example.com/plan');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('aria-label')).toBe('Open link for A');
+  });
+
   it('opens on the lane asked for, and shows its empty state', () => {
     const s = setup();
     open(s, s.doing);

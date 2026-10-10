@@ -96,9 +96,58 @@ describe('the card dialog, for an editor', () => {
     change(byLabel('Due date'), '2026-01-16');
     change(byLabel('Owner'), 'id:u2');
     button('Bug')!.click();
-    expect(bo(store, card)).toMatchObject({ text: 'Fix the Safari login loop', desc: 'Steps:\n1. Open Safari 17', due: '2026-01-16', ownerId: 'u2', ownerName: 'Marta Ruiz', labels: [bug] });
+    expect(bo(store, card)).toMatchObject({ text: 'Fix the Safari login loop', desc: 'Steps:\n1. Open Safari 17', due: '2026-01-16', ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'person', labels: [bug] });
     expect(steps(store)).toBe(5);
     expect(button('Bug')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows token-owned agents as read-only and lets a member choice become a person owner', () => {
+    const { store, app, card } = setup();
+    store.transact(() => store.update(card, { ownerId: 'token-1', ownerName: 'Build agent', ownerKind: 'agent' }));
+    const d = open(app, card)!;
+    expect(button('Agent')!.disabled).toBe(true);
+    expect(byLabel('Owner\'s name').disabled).toBe(true);
+    expect(button('Agent')!.getAttribute('aria-pressed')).toBe('true');
+    expect(button('Person')!.getAttribute('aria-pressed')).toBe('false');
+    change(byLabel('Owner'), 'id:u2');
+    expect(bo(store, card)).toMatchObject({ ownerId: 'u2', ownerName: 'Marta Ruiz', ownerKind: 'person' });
+    d.close();
+
+    open(app, card);
+    expect(byLabel('Owner').value).toBe('id:u2');
+    expect(button('Agent')!.getAttribute('aria-pressed')).toBe('false');
+    expect(button('Person')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows a valid external link and reports a refused typed URL inline', () => {
+    const { store, app, card } = setup();
+    const d = open(app, card)!;
+    change(byLabel('Link'), 'https://example.com/plan?q=one&b=two');
+    expect(bo(store, card).link).toBe('https://example.com/plan?q=one&b=two');
+    expect(box()!.querySelector('.k-open-link')!.hidden).toBe(false);
+    expect(box()!.querySelector('.k-open-link')!.getAttribute('target')).toBe('_blank');
+    expect(box()!.querySelector('.k-open-link')!.getAttribute('rel')).toBe('noopener noreferrer');
+    change(byLabel('Link'), 'example.com');
+    const input = byLabel('Link');
+    expect(input.value).toBe('example.com');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toContain('k-link-error-');
+    expect(textOf(box()!.querySelector('.k-link-error')!)).toContain('full http:// or https:// URL');
+    expect(bo(store, card).link).toBe('https://example.com/plan?q=one&b=two');
+    d.close();
+  });
+
+  it('gives read-only roles a safe plain-text link and hides a stored credential link entirely', () => {
+    const { store, app, card } = setup('commenter');
+    const object = store.doc.getMap<Y.Map<unknown>>('objects').get(card)!;
+    store.doc.transact(() => object.set('link', 'https://example.com/read'), 'remote');
+    open(app, card);
+    expect(box()!.querySelector('.k-open-link')!.hidden).toBe(true);
+    expect(textOf(box()!.querySelector('.k-link-readonly')!)).toBe('https://example.com/read');
+    expect(byLabel('Link').hidden).toBe(true);
+    store.doc.transact(() => object.set('link', 'https://u:p@evil.example/'), 'remote');
+    expect(byLabel('Link').value).toBe('');
+    expect(box()!.querySelector('.k-link-readonly')!.hidden).toBe(true);
   });
 
   it('offers me, the people here and those already named, plus a free-text owner', () => {
@@ -262,6 +311,8 @@ describe('the card dialog, by role', () => {
     expect(byLabel('Description').readOnly).toBe(true);
     expect(byLabel('Owner').disabled).toBe(true);
     expect(byLabel('Due date').disabled).toBe(true);
+    expect(byLabel('Link').disabled).toBe(true);
+    expect(button('Agent')!.disabled).toBe(true);
     expect(button('Comment')).toBeTruthy();
     expect(button('Turn into sticky')).toBeUndefined();
     expect(button('Delete')).toBeUndefined();

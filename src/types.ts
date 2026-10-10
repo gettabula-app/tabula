@@ -2,6 +2,8 @@
 // concurrent edits to different fields of one object merge cleanly and the same
 // field resolves last-writer-wins.
 
+import type { OWNER_KINDS, STAGES } from '../shared/containers';
+
 export type Id = string;
 
 export type ShapeKind =
@@ -107,13 +109,15 @@ export interface BaseObj extends Partial<StyleFields> {
   layout?: string;
   rank?: string;
   laneW?: number;
-  stage?: 'todo' | 'doing' | 'done';
+  stage?: typeof STAGES[number];
   wip?: number;
   wipMode?: 'warn' | 'block';
   desc?: string;
   ownerId?: string;
   ownerName?: string;
+  ownerKind?: typeof OWNER_KINDS[number];
   due?: string;
+  link?: string;
   labels?: Id[];
 }
 
