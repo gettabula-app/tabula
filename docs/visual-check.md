@@ -76,10 +76,10 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `kanban-sheet-filter` | The list with a filter on and the Filter popover open from its header |
 | `kanban-sheet-adding` | The list's Add card bar with a title typed |
 | `kanban-sheet-full` | The list on a full block lane: the Add card bar refused, with the lock |
-| `ai-review` | (open mode) The review panel of someone else's AI proposal, with `?aibar` and a run handed to the board the way the relay does |
+| `ai-review` | (open mode) The review panel of someone else's AI proposal, with a run handed to the board the way the relay does |
 | `text-handles` | (open mode) A selected text with its side handles (wrap width) and corner handles (type size) |
 | `ai-preview-empty` | (open mode) An AI preview on an empty board: the "An empty board" hint is hidden (TAB-214) |
-| `ai-live-remote-ring` | (open mode) Another person's AI run in flight, from the relay's message, with `?aibar`: the outline in their amber around two notes and the "asking AI" label |
+| `ai-live-remote-ring` | (open mode) Another person's AI run in flight, from the relay's message: the outline in their amber around two notes and the "asking AI" label |
 | `ai-live-remote-preview` | (open mode) Their ready preview beside the board: ghost frame "Ideas" and stickies, dashed outline with its dark halo, the "Ana's AI preview" label row with Discard, Review and Accept. The view is fitted to the board and the room beside it, because `zoomToFit` leaves a preview out |
 | `ai-key-test` | (accounts mode) The account menu's "Your AI key" dialog after Test key answers "The key works." (the replies are mocked) |
 | `ai-key-test-error` | The same after the provider rejected the key: the status line in the danger colour |
@@ -93,6 +93,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `ai-admin-openai-saved`, `ai-admin-anthropic-saved` | The tab with a saved workspace key: for an OpenAI-compatible one the Model row is read-only ("From the key") |
 | `ai-key-me-keyboard`, `ai-admin-keyboard` | The key form without a pointer: Tab to the Provider select, type `O` to choose OpenAI-compatible, Tab through Base URL, Model and API key to Save key, and Shift+Tab back. The state fails (and the run exits 1) when the order is wrong, Save stays disabled, or the focused field shows no focus indicator |
 | `kanban-sheet-viewer` | The list as a viewer: no grips, no Add card bar, scrolled to the end |
+| `kanban-lane-no-anchors` | A selected, hovered lane shows no connector anchor dots (nor does the kanban around it), a hovered card still shows its four, and a connector dragged from a note onto the lane ends free, not bound to the lane or the kanban. It throws otherwise. |
 | `kanban-lane-drag` | A lane held by its header over the gap after the next one: its dashed outline where it came from and the vertical drop line |
 | `kanban-moveto` | **Move to…** for a card of the list |
 | `kanban-moveto-full` | **Move to…** with a full block lane disabled ("Full") |

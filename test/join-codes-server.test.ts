@@ -290,7 +290,10 @@ describe('guest scope and role enforcement', () => {
     const commentsObserver = h.connect(`${board}~comments`, owner.cookie);
     await Promise.all([boardObserver.synced(), commentsObserver.synced()]);
     boardRoom.doc.getMap('objects').set('commenter-write', true);
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    const barrierKey = '__test_timing_barrier';
+    const barrierValue = `${Date.now()}-${Math.random()}`;
+    ownerBoard.doc.getMap('meta').set(barrierKey, barrierValue);
+    await until(() => boardObserver.doc.getMap('meta').get(barrierKey) === barrierValue, 15_000);
     expect(boardObserver.doc.getMap('objects').has('commenter-write')).toBe(false);
     const thread = new Y.Map<unknown>(Object.entries({
       id: 'guest-comment', createdAt: Date.now(), authorId: 'forged', authorName: 'Forged', authorColor: '#123456',

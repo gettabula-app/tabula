@@ -2,6 +2,7 @@ import { planStep } from './z-order';
 import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
 import type { BaseObj, ConnectorObj, End, Group, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
+import { isConnectable } from './connectable';
 import { isBox, isConnector } from './types';
 import type { BoardConn } from './sync';
 import type { Anchor, Comments, Thread } from './comments';
@@ -37,6 +38,7 @@ import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, 
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 import { escapeAction } from './ui/escape-priority';
+import { watchCardHeights } from './card-height-heal';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 const isCardLinkTarget = (target: EventTarget | null) => {
@@ -97,8 +99,7 @@ type Events = 'selection' | 'tool' | 'flow' | 'meta' | 'objects' | 'status' | 'p
 /** The phone layout's breakpoint (styles.css, `max-width: 860px`): where a kanban opens as a list on a double tap. */
 const phoneWidth = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
 
-const CONNECTABLE = (o: Obj | undefined): o is BaseObj =>
-  isBox(o) && o.type !== 'path' && o.type !== 'frame';
+const CONNECTABLE = isConnectable;
 
 const COMMENTS_VISIBLE_KEY = 'driftboard:comments-visible';
 function loadCommentsVisible(): boolean {
@@ -189,7 +190,7 @@ export class BoardApp {
   openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
-  /** Set by the board UI: closes its open library drawer when Escape reaches it. */
+  /** Set by the board UI: closes its open library drawer or Comments/Chat tray when Escape reaches it. */
   closeEscapeDrawer: (() => boolean) | null = null;
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
@@ -262,6 +263,7 @@ export class BoardApp {
       this.emit('readonly');
       this.emitSelection();
     });
+    this.disposers.push(this.watchCardHeights());
 
     this.bindPointer();
     this.bindKeys();
@@ -295,6 +297,18 @@ export class BoardApp {
   private handleUndoStackPopped(type: 'undo' | 'redo') {
     this.announce(type === 'undo' ? 'Undone' : 'Redone');
     this.resetScopeSelection(this.store.takeUndoChanged());
+  }
+
+  /** Repairs browser-measured card heights after remote edits and when this board opens. */
+  private watchCardHeights(): () => void {
+    return watchCardHeights({
+      store: this.store,
+      role: () => this.role,
+      busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
+      hidden: (card) => !this.store.isShown(card)
+        || this.flow.isHidden(card)
+        || Boolean(card.privateStep && !this.store.getFlow().reveal),
+    });
   }
 
   // ---------------------------------------------------------------- events
@@ -2248,7 +2262,7 @@ export class BoardApp {
           overlayOpen: !!document.querySelector('.popover, .modal-back'),
           dragging: !!this.drag || !!this.longPress,
           groupOpen: !!this.scope,
-          drawerOpen: !!document.querySelector('.drawer.show'),
+          drawerOpen: document.querySelector<HTMLElement>('.drawer.show, .side-tray.show')?.dataset.tab ?? null,
         });
         if (action === 'overlay' || action === 'none') return;
         if (action === 'drag') {

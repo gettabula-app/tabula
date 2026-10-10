@@ -158,7 +158,7 @@ select.input {
 .top-left { position: absolute; top: calc(12px + var(--safe-top)); left: calc(12px + var(--safe-left)); display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px - var(--safe-left) - var(--safe-right)); }
 .board-name {
   min-width: 80px; width: 22ch; max-width: 40ch; height: 36px; padding: 0 8px; border: 0; border-radius: 0;
-  background: transparent; font: 600 15px var(--ui); outline: none; text-overflow: ellipsis;
+  background: transparent; font: 600 15px var(--ui); text-overflow: ellipsis;
 }
 .board-name:hover { background: var(--tray-hover); }
 .board-name:focus { background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
@@ -241,7 +241,7 @@ select.input {
   .drawer, .tool-tray { left: calc(70px + var(--safe-left)); }
 }
 .drawer-head, .props-head, .pop-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
-.drawer-head h2, .props-head h2, .pop-head h3, .modal-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
+.drawer-head h2, .props-head h2, .pop-head h2, .pop-head h3, .modal-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
 .drawer-head .icon-btn:last-child, .modal-head .icon-btn:last-child { margin-right: -9px; }
 .drawer-body { padding: 8px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-x: hidden; }
 .drawer-body > * { flex-shrink: 0; }
@@ -508,7 +508,6 @@ select.input {
 .modal .btn.armed:not(:disabled):hover, .popover .btn.armed:not(:disabled):hover, .modal .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 .modal .input, .popover .input { border-radius: 0; }
 .modal .input:focus, .popover .input:focus { border-color: var(--tray-text); }
-.modal .input:focus-visible, .popover .input:focus-visible { outline: none; }
 .modal .icon-btn, .popover .icon-btn, .modal kbd { border-radius: 0; }
 .modal :focus-visible, .popover :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
@@ -528,6 +527,9 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* a wide panel open above the session bar (the Steps list) would sit under the toast and hide its buttons: the toast takes the top of the window instead, below the top bars */
+body:has(.popover.wide) .toast { bottom: auto; top: calc(72px + var(--safe-top)); transform: translate(-50%, -12px); }
+body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .toast, .toast.show { transform: translate(-50%, 0); transition: opacity 80ms linear; } .timer-fill { transition: none; } }
 
 /* z-index -1: the hint lies under everything else in the chrome (drawers, dialogs, focus cards), which it is appended after */
@@ -564,6 +566,13 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
   .top-right { top: calc(64px + var(--safe-top)); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
+  /* the Steps list fills the window from under the top bars, so its message sits over the top bars (two lines at most) for its 2.6 s instead of over the list */
+  body:has(.popover.wide) .toast { top: calc(8px + var(--safe-top)); width: max-content; padding: 8px 12px; font-size: 13px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
+  /* the narrowest phones (320 px): the bar would run under the tool rail, so its gaps and the Share padding give way until it starts right of the rail */
+  @media (max-width: 340px) {
+    .top-right { gap: 2px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); }
+    .top-right .btn.primary { padding-left: 10px; padding-right: 10px; }
+  }
   .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
@@ -596,6 +605,11 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: 0; background: 
   }
   .flowbar.vote-compact > .remove-dots-toggle { order: 2; height: 44px; padding: 0 4px; font-size: 10.5px; }
   .flowbar.vote-compact > .remove-dots-toggle .ico { display: none; }
+  /* the narrowest phones (320 px): Remove dots is its minus icon, still named and shown pressed */
+  @media (max-width: 340px) {
+    .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
+    .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
+  }
   .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }

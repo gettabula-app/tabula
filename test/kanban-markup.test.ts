@@ -169,6 +169,8 @@ describe('a card', () => {
     expect(agent).toContain('data-owner-kind="agent"');
     expect(agent).toContain('<polygon points=');
     expect(agent).toContain('>BA</text>');
+    expect(agent).toContain('<title>Build agent (agent)</title>');
+    expect(agent).not.toContain('(no account)');
   });
 
   it('puts a 24 by 24 keyboard-focusable safe external link on the card face', () => {

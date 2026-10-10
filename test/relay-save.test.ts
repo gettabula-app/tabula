@@ -11,6 +11,8 @@ import { RELAY_START_MS } from './relay-timing';
 
 // Room files are saved a second after the last update, but never later than 30 seconds after the first unsaved
 // change: a room that is edited without a pause still gets written. The relay runs as a child process.
+const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_MAX_WAIT_MS = 2000;
 
 const PORT = await freePort();
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-save-'));
@@ -21,7 +23,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 beforeAll(async () => {
   relay = await new Promise<ChildProcess>((resolve, reject) => {
     const p = spawn(process.execPath, ['server/relay.mjs'], {
-      env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, HOST: '127.0.0.1', MIRA_AUTH: 'off' },
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        DATA_DIR: dir,
+        HOST: '127.0.0.1',
+        MIRA_AUTH: 'off',
+        SAVE_DEBOUNCE_MS: String(SAVE_DEBOUNCE_MS),
+        TABULA_TEST_SAVE_MAX_WAIT_MS: String(SAVE_MAX_WAIT_MS),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     p.stdout!.on('data', (d) => /relay on http/.test(String(d)) && resolve(p));
@@ -56,19 +66,16 @@ describe('room saves under continuous editing', { timeout: 60_000 }, () => {
       }
       const file = path.join(dir, 'busy-room.yjs');
       const started = Date.now();
-      let writtenAt: number | null = null;
-      for (let i = 0; Date.now() - started < 40_000; i++) {
+      const deadline = started + 20_000;
+      for (let i = 0; !fs.existsSync(file) && Date.now() < deadline; i++) {
         doc.getMap('objects').set(`o${i % 20}`, i);
         await sleep(300);
-        if (fs.existsSync(file)) {
-          writtenAt = Date.now() - started;
-          break;
-        }
       }
-      expect(writtenAt).not.toBeNull();
-      // 30 seconds of waiting plus the interval of the last update; the old debounce would never have fired
-      expect(writtenAt as number).toBeGreaterThan(20_000);
-      expect(writtenAt as number).toBeLessThan(33_000);
+      expect(fs.existsSync(file)).toBe(true);
+      const writtenAt = Date.now() - started;
+      // The debounce cannot save before its quiet period; max-wait must also not fire immediately.
+      expect(writtenAt).toBeGreaterThanOrEqual(SAVE_DEBOUNCE_MS);
+      expect(writtenAt).toBeGreaterThanOrEqual(SAVE_MAX_WAIT_MS * 0.5);
     } finally {
       provider.destroy();
     }

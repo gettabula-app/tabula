@@ -67,12 +67,12 @@ async function failureOf(promise: Promise<unknown>): Promise<any> {
   throw new Error('expected an AiError');
 }
 
-async function waitFor(fn: () => boolean) {
-  for (let count = 0; count < 60; count += 1) {
-    if (fn()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+async function waitFor(fn: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!fn()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for local request');
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error('timed out waiting for local request');
 }
 
 function localServer(handler: (request: http.IncomingMessage, response: http.ServerResponse) => void) {

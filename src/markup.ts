@@ -589,7 +589,7 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
         const agent = o.ownerKind === 'agent';
         const x = right - 24;
         const agentPoints = `${n(x + 6)},${n(cy - 11)} ${n(x + 18)},${n(cy - 11)} ${n(x + 23)},${n(cy - 6)} ${n(x + 23)},${n(cy + 6)} ${n(x + 18)},${n(cy + 11)} ${n(x + 6)},${n(cy + 11)} ${n(x + 1)},${n(cy + 6)} ${n(x + 1)},${n(cy - 6)}`;
-        inner += `<g data-owner-kind="${agent ? 'agent' : 'person'}"><title>${escapeXml(o.ownerName || 'Owner')}${agent ? ' (agent)' : ''}${ring ? '' : ' (no account)'}</title>`;
+        inner += `<g data-owner-kind="${agent ? 'agent' : 'person'}"><title>${escapeXml(o.ownerName || 'Owner')}${agent ? ' (agent)' : ring ? '' : ' (no account)'}</title>`;
         if (agent) {
           inner += `<polygon points="${agentPoints}" ${fillStyle(K.paper)}/>`;
           inner += ring

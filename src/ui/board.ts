@@ -15,6 +15,7 @@ import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
+import { mountEditBar } from './edit-bar';
 import { mountGroupUI } from './group-ui';
 import { mountTouchMenu } from './touch-menu';
 import { mountLibrary, openMermaidImport } from './library';
@@ -42,7 +43,7 @@ import { SHORTCUTS } from '../shortcuts';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
-import { aiBarFlag, aiBarFor, aiBarShown, aiSetupFor, glyph, mountAiBar, onAiBarChange } from './ai-bar';
+import { aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
 import { liveRunsFor, mountAiLive, onLiveChange } from './ai-live';
 import './ai-review-panel';
 import { avatarLine, badgeRun } from '../ai-live-logic';
@@ -148,10 +149,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
       const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
+      const avatarText = initials(p.user.name);
       const tip = busy ? `${avatarLine(busy)} · ${name}` : p.isMe ? `${name} (you)` : `Go to ${name}`;
-      const children = [initials(p.user.name), p.user.guest ? guestMark('avatar-guest') : null,
+      const children = [h('span', { 'aria-hidden': 'true' }, avatarText), p.user.guest ? guestMark('avatar-guest') : null,
         busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null] as const;
-      const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': tip };
+      const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
     }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
@@ -273,9 +275,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   app.closeEscapeDrawer = () => {
     const tab = library.tab;
-    if (!tab) return false;
-    library.open(null);
-    rail.querySelector<HTMLElement>(`[data-drawer="${tab}"]`)?.focus();
+    if (tab) {
+      library.open(null);
+      (tab === 'shapes' ? shapesBtn : rail.querySelector<HTMLElement>(`[data-drawer="${tab}"]`))?.focus();
+      return true;
+    }
+    const sideTab = sideTray.current();
+    if (!sideTab) return false;
+    sideTray.hide();
+    (sideTab === 'comments' ? comments.button : chat?.button)?.focus();
     return true;
   };
   app.lifetime.signal.addEventListener('abort', () => { app.closeEscapeDrawer = null; }, { once: true });
@@ -366,12 +374,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props, { demo });
+  mountEditBar(app, chrome);
   mountGroupUI(app, chrome);
   mountTouchMenu(app);
   mountFocus(app, chrome);
   mountFlowBar(app, chrome);
   // the live layer first: it shows the AI runs of other people also to those who have no bar (viewers, commenters)
-  if (!scratch && !demo && aiBarFlag()) {
+  if (!scratch && !demo) {
     mountAiLive(app);
     liveRunsFor(app)?.onChange(renderPeople);
   }
@@ -438,9 +447,9 @@ const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0
 export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   if (app.store.cache.size || app.readOnly) return;
   // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
-  const generate = aiBarFlag() ? h('button', {
+  const generate = h('button', {
     class: 'btn ailive-generate', type: 'button', hidden: !aiBarFor(app), onclick: () => aiBarFor(app)?.open({ arm: 'generate', context: 'none' }),
-  }, glyph('spark', 16), 'Generate') : null;
+  }, glyph('spark', 16), 'Generate');
   const hint = h('div', { class: 'empty-hint' },
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
@@ -452,7 +461,7 @@ export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
   );
   hint.hidden = hasPreview(app);
   chrome.appendChild(hint);
-  if (generate) onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
+  onAiBarChange(app, (why) => { if (why === 'mount') generate.hidden = !aiBarFor(app); });
   // while an AI preview is on the board the hint has done its job (the person has started); it returns if the preview goes
   // and the board is still empty (TAB-214)
   const offLive = onLiveChange(app, () => { hint.hidden = hasPreview(app); });
@@ -621,10 +630,6 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       h('div', { class: 'list-label' }, 'AI'),
       h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
         glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
-    ] : aiSetupFor(app) ? [
-      h('div', { class: 'list-label' }, 'AI'),
-      h('button', { class: 'menu-item', onclick: () => { pop.close(); location.hash = '#/admin/ai'; } },
-        glyph('spark', 18), h('span', null, 'Set up AI'), h('span', { class: 'menu-hint' }, 'Admin')),
     ] : null,
     h('div', { class: 'list-label' }, 'Appearance'),
     themeGroup,

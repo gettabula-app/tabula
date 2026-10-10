@@ -40,9 +40,12 @@ function addKanban(store: Store, spec: Spec) {
 const kanban = () => ({ lanes: { todo: ['t1', 't2', 't3'], doing: ['d1'], done: [] as string[] } });
 
 /** Moves one card to `index` in a lane the way a drop will: the shared plan, written in one transaction. */
-function moveCard(store: Store, cardId: Id, laneId: Id, index: number) {
+function moveCard(store: Store, cardId: Id, laneId: Id, index: number, onCandidateVisit?: () => void) {
   const layout = store.containerLayout(store.get(laneId)!.parent!)!;
-  const here = (layout.cards.get(laneId) ?? []).filter((id) => id !== cardId).map((id) => store.get(id)!);
+  const here = (layout.cards.get(laneId) ?? []).filter((id) => {
+    onCandidateVisit?.();
+    return id !== cardId;
+  }).map((id) => store.get(id)!);
   const { ranks, repairs } = planInsert(here, laneId, index, 1);
   store.transact(() => {
     for (const r of repairs) store.update(r.id, { parent: r.parent, rank: r.rank });
@@ -440,22 +443,54 @@ describe('what changes when something inside a container does', () => {
   it('stays quick with 2,000 cards on the board', () => {
     const s = new Store(new Y.Doc());
     const cards = (prefix: string) => Array.from({ length: 500 }, (_, i) => `${prefix}${i}`);
-    const t0 = performance.now();
+    let layoutRecomputations = 0;
+    let layoutCacheHits = 0;
+    const knownLayouts = new Map<Id, NonNullable<ReturnType<Store['containerLayout']>>>();
+    const containerLayout = s.containerLayout.bind(s);
+    s.containerLayout = (id) => {
+      const layout = containerLayout(id);
+      if (layout) {
+        if (knownLayouts.get(id) === layout) layoutCacheHits++;
+        else {
+          knownLayouts.set(id, layout);
+          layoutRecomputations++;
+        }
+      }
+      return layout;
+    };
+    let layoutItemsVisited = 0;
+    const childrenOf = s.childrenOf.bind(s);
+    s.childrenOf = (parentId) => {
+      const children = childrenOf(parentId);
+      layoutItemsVisited += children.length;
+      return children;
+    };
+
     addKanban(s, { lanes: { a: cards('a'), b: cards('b'), c: cards('c'), d: cards('d') } });
-    const built = performance.now() - t0;
     expect(s.cache.size).toBe(2000 + 4 + 1);
     expect(s.containerLayout('c')!.rects.size).toBe(2005);
-    const t1 = performance.now();
-    for (let i = 0; i < 20; i++) moveCard(s, `a${i}`, 'c-b', 3);
-    const moves = (performance.now() - t1) / 20;
-    const t2 = performance.now();
-    s.ordered();
-    const painted = performance.now() - t2;
+    let rankCandidatesVisited = 0;
+    for (let i = 0; i < 20; i++) moveCard(s, `a${i}`, 'c-b', 3, () => { rankCandidatesVisited++; });
     expect(cardOrder(s, 'c-b').slice(3, 6)).toEqual(['a19', 'a18', 'a17']);
-    // measured at about 50 ms, 4 ms and 1 ms; the budgets leave room for a loaded CI runner
-    expect(built).toBeLessThan(2000);
-    expect(moves).toBeLessThan(200);
-    expect(painted).toBeLessThan(500);
+
+    // One build, then one invalidation/rebuild per move; each layout reads 4 lanes and 2,000 cards.
+    expect(layoutRecomputations).toBe(21);
+    expect(layoutCacheHits).toBeGreaterThanOrEqual(21);
+    expect(layoutItemsVisited).toBe(21 * (4 + 2000));
+    // Each move examines the destination lane's 500 existing cards plus all cards moved before it.
+    expect(rankCandidatesVisited).toBe(20 * 500 + (19 * 20) / 2);
+
+    let orderingItemsVisited = 0;
+    const isLaidOut = s.isLaidOut.bind(s);
+    s.isLaidOut = (o) => {
+      orderingItemsVisited++;
+      return isLaidOut(o);
+    };
+    const ordered = s.ordered();
+    expect(ordered).toHaveLength(s.cache.size);
+    expect(orderingItemsVisited).toBeLessThanOrEqual(s.cache.size + 1);
+    expect(s.ordered()).toBe(ordered);
+    expect(orderingItemsVisited).toBeLessThanOrEqual(s.cache.size + 1);
   });
 });
 

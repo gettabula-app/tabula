@@ -6,10 +6,10 @@ export interface EscapeContext {
   overlayOpen: boolean;
   dragging: boolean;
   groupOpen: boolean;
-  drawerOpen: boolean;
+  drawerOpen: string | null;
 }
 
-/** Chooses the topmost Escape action while preserving overlay, drag and group priority over the library drawer. */
+/** Chooses the topmost Escape action while preserving overlay, drag and group priority over any open tray. */
 export function escapeAction(c: EscapeContext): EscapeAction {
   if (c.key !== 'Escape' || c.defaultPrevented) return 'none';
   if (c.overlayOpen) return 'overlay';

@@ -41,4 +41,4 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 ## AI
 
 - [Your AI key](ai-keys.md)
-- [The AI bar (preview)](ai-bar.md)
+- [The AI bar](ai-bar.md)

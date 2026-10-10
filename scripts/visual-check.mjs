@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1440];
+const DEFAULT_WIDTHS = [360, 390, 500, 860, 1024, 1280, 1440];
 // VISUAL_HEIGHT=390 npm run visual ... forces one window height for every width (a short landscape phone: --widths 844)
 const heightFor = (width) => Number(process.env.VISUAL_HEIGHT) || (width <= 500 ? 844 : 800);
 const BOARD_ID = 'visual-seed';
@@ -32,11 +32,11 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -66,6 +66,19 @@ function readThemes() {
 }
 
 // ---------------------------------------------------------------- states
+
+async function openEmojiPickerForNote(env) {
+  await openSeedBoard(env);
+  await env.page.evaluate(() => window.__board.editor.start('seed-note-1'));
+  await env.page.locator('.edit-bar.show').waitFor();
+  await env.page.waitForFunction(() => {
+    const textarea = document.querySelector('.text-editor');
+    return textarea && document.activeElement === textarea && textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length;
+  });
+  await env.page.locator('.text-editor').press('End');
+  await env.page.getByRole('button', { name: 'Add emoji' }).click();
+  await env.page.locator('.emoji-pop').waitFor();
+}
 
 // Pending Fontshare stylesheets and the fonts that follow them are the only thing that changes the picture after load.
 const settle = (page) =>
@@ -193,7 +206,7 @@ async function openSeedBoard({ page, base }, query = '?debug') {
 
 /**
  * Hands the page a message of the relay's AI runs (6 is MSG_AI_RUNS), through the handler the page registered for it, so the
- * live layer draws another person's runs without a model or a second browser. Needs `?debug&aibar`.
+ * live layer draws another person's runs without a model or a second browser. Needs `?debug`.
  */
 async function handAiRuns(page, runs) {
   await page.evaluate((list) => {
@@ -876,6 +889,25 @@ async function checkStepsOverlap(env, name) {
     if (result.failures.length) throw new Error(`${name}: ${JSON.stringify(result.failures)}`);
 }
 
+// Press-kit shots: the seeded boards with the QA names swapped for roles, so nothing reads as a person or a localhost (business/press/press-kit.md)
+async function pressRoles(page) {
+  await page.evaluate(() => {
+    const swaps = [[/Visual QA/g, 'Facilitator'], [/VISUAL QA/g, 'FACILITATOR'], [/http:\/\/127\.0\.0\.1:\d+/g, 'https://sample.gettabula.app'], [/^\s*VQ\s*$/i, 'FA'], [/^\s*V\s*$/i, 'F']];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      let t = n.nodeValue;
+      for (const [re, to] of swaps) t = t.replace(re, to);
+      if (t !== n.nodeValue) n.nodeValue = t;
+    }
+    // a start message is not a feature of the product
+    document.querySelector('.toast')?.classList.remove('show');
+  });
+}
+async function pressZoom(page, factor) {
+  // a phone shows the retro frames at about 3x the fitted size, or the notes are unreadable
+  await page.evaluate(([f, phone]) => window.__board.zoomBy(phone && innerWidth < 500 ? f * 2 : f), [factor, true]);
+}
+
 const STATES = {
   async home({ page, base }) {
     await page.goto(`${base}/#/`);
@@ -884,6 +916,33 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'esc-trays'(env) {
+    await openSeedBoard(env);
+    const page = env.page;
+    const trays = [
+      { name: 'Shapes', open: () => page.getByRole('button', { name: 'Shapes', exact: true }).click(), focus: '.rail [aria-label="Shapes"]' },
+      { name: 'UML', open: () => page.getByRole('button', { name: 'UML', exact: true }).click(), focus: '.rail [data-drawer="uml"]' },
+      { name: 'Icons', open: () => page.getByRole('button', { name: 'Icons', exact: true }).click(), focus: '.rail [data-drawer="icons"]' },
+      { name: 'Stickers', open: () => page.getByRole('button', { name: 'Stickers', exact: true }).click(), focus: '.rail [data-drawer="stickers"]' },
+      { name: 'Templates', open: () => page.getByRole('button', { name: 'Templates and team exercises', exact: true }).click(), focus: '.rail [data-drawer="templates"]' },
+      { name: 'Layers', open: () => page.getByRole('button', { name: 'Layers', exact: true }).click(), focus: '.rail [data-drawer="layers"]' },
+      { name: 'Comments', open: () => page.locator('.comment-toggle').click(), focus: '.comment-toggle' },
+    ];
+    if (!(await page.locator('.chat-toggle').count())) throw new Error('esc-trays: Chat button is missing in accounts mode');
+    trays.push({ name: 'Chat', open: () => page.locator('.chat-toggle').click(), focus: '.chat-toggle' });
+    for (const tray of trays) {
+      await tray.open();
+      await page.locator(tray.name === 'Comments' || tray.name === 'Chat' ? '.side-tray.show' : '.drawer.show').waitFor();
+      await page.keyboard.press('Escape');
+      const result = await page.evaluate((focusSelector) => {
+        const open = document.querySelector('.drawer.show, .side-tray.show');
+        const focus = document.querySelector(focusSelector);
+        return { open: open?.getAttribute('aria-label') ?? open?.dataset.tab ?? null, focusReturned: document.activeElement === focus };
+      }, tray.focus);
+      if (result.open) throw new Error(`esc-trays: ${tray.name} tray is still shown (${result.open})`);
+      if (!result.focusReturned) throw new Error(`esc-trays: focus did not return to the ${tray.name} button`);
+    }
   },
   async 'join-short-code'({ page, base }) {
     // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
@@ -1015,13 +1074,13 @@ const STATES = {
   // TAB-253: a group selected and the Comments tray open on a phone: the quick bar, the properties panel and the group chips all wait
   async 'group-selected-tray'(env) {
     await STATES['group-selected-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
   async 'group-entered-tray'(env) {
     await STATES['group-entered-zoom'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await env.page.waitForTimeout(150);
   },
@@ -1034,7 +1093,7 @@ const STATES = {
   },
   async 'group-multi-menu-tray'(env) {
     await STATES['group-multi'](env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
     await longPressMember(env.page, 'seed-note-1');
   },
@@ -1225,13 +1284,13 @@ const STATES = {
   },
   async comments(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().waitFor();
   },
   // TAB-231: one comment opened as a thread, its author named once
   async 'comment-thread'(env) {
     await openSeedBoard(env);
-    await env.page.getByRole('button', { name: 'Comments', exact: true }).click();
+    await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show .comment-row').first().click();
     await env.page.locator('.comment-msg').first().waitFor();
   },
@@ -1371,6 +1430,184 @@ const STATES = {
     });
     console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
+  },
+  // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
+  async 'top-bars-320'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(() => {
+      const left = document.querySelector('.top-left');
+      const right = document.querySelector('.top-right');
+      const avatar = right?.querySelector('.people .avatar');
+      const share = right?.querySelector('.btn.primary');
+      const failures = [];
+      if (!left || !right || !avatar || !share) return { failures: ['board bars, first avatar or Share button is missing'] };
+      const box = (el) => el.getBoundingClientRect();
+      const l = box(left), r = box(right);
+      if (l.left < 0 || l.right > innerWidth || l.top < 0 || l.bottom > innerHeight) failures.push(`left bar is outside the viewport: ${JSON.stringify(l.toJSON())}`);
+      if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) failures.push(`right bar is outside the viewport: ${JSON.stringify(r.toJSON())}`);
+      if (l.left < r.right && l.right > r.left && l.top < r.bottom && l.bottom > r.top) failures.push('top-left and top-right bars intersect');
+      const rail = document.querySelector('.rail');
+      if (rail) {
+        const k = box(rail);
+        if (r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top) failures.push(`the tool rail (${Math.round(k.left)}-${Math.round(k.right)}) covers the right bar (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      for (const [name, target] of [['first avatar', avatar], ['Share', share]]) {
+        const rect = box(target);
+        const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+        if (rect.width < 44 || rect.height < 44) failures.push(`${name} target is ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
+        if (hit !== target && !target.contains(hit)) failures.push(`${name} centre hits ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, left: l.toJSON(), right: r.toJSON() };
+    });
+    console.log(`top-bars-320 ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
+  async 'press-board'(env) {
+    await openSeedBoard(env);
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-poll'(env) {
+    await STATES['vote-running'](env);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await pressZoom(env.page, 1.5);
+    const spots = await env.page.evaluate(() => {
+      const app = window.__board;
+      const at = { 'Reviews were fast': 3, 'Clear sprint goal': 1, 'Too many meetings': 4, 'Unclear ownership': 2, 'Flaky tests': 1 };
+      const box = app.r.svg.getBoundingClientRect();
+      return [...app.store.cache.values()].filter((o) => at[o.text]).map((o) => {
+        const c = app.r.toScreen({ x: o.x + o.w / 2, y: o.y + o.h / 2 });
+        return { x: c.x + box.left, y: c.y + box.top, times: at[o.text] };
+      });
+    });
+    if (spots.length < 5) throw new Error(`press-poll: found ${spots.length} of the 5 notes`);
+    for (const { x, y, times } of spots) for (let i = 0; i < times; i++) await env.page.mouse.click(x, y);
+    await env.page.evaluate(() => window.__board.setSelection([]));
+    await env.page.mouse.move(1, 1);
+    await pressRoles(env.page);
+  },
+  async 'press-timer'(env) {
+    await STATES['flow-write'](env);
+    await env.page.evaluate(() => window.__board.flow.startTimer());
+    await pressZoom(env.page, 1.5);
+    await pressRoles(env.page);
+  },
+  async 'press-comments'(env) {
+    await STATES['comment-thread'](env);
+    await pressRoles(env.page);
+  },
+  async 'press-admin'(env) {
+    await STATES.admin(env);
+    await pressRoles(env.page);
+  },
+  // sticky notes with emoji: the sequences that break when text is cut between code points (ZWJ families, skin tones, flags, keycaps), and a row too long for the note
+  async 'emoji-text'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const set = (id, text) => app.store.transact(() => app.store.update(id, { text }));
+      set('seed-note-1', 'Ship it \u{1F680} \u{1F44D}\u{1F3FD}');
+      set('seed-note-2', '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} family \u{1F1F8}\u{1F1EA} 1\uFE0F\u20E3');
+      set('seed-note-3', '\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}1\uFE0F\u20E3\u{1F680}\u{1F44D}\u{1F3FD}\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u{1F1F8}\u{1F1EA}');
+      app.zoomToFit();
+      app.zoomBy(2.4);
+    });
+    await settle(env.page);
+  },
+  async 'emoji-picker'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const result = await page.evaluate(() => {
+      const bar = document.querySelector('.edit-bar.show').getBoundingClientRect();
+      const button = document.querySelector('.edit-emoji');
+      const buttonBox = button.getBoundingClientRect();
+      const picker = document.querySelector('.emoji-pop');
+      const pickerBox = picker.getBoundingClientRect();
+      const noteBox = document.querySelector('.text-editor').getBoundingClientRect();
+      const search = picker.querySelector('[aria-label="Search emoji"]');
+      const buttons = [...document.querySelectorAll('.edit-emoji, .emoji-cell')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { width: box.width, height: box.height, label: el.getAttribute('aria-label') };
+      });
+      const hit = document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
+      const outside = (box) => box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
+      return {
+        pickerHeight: pickerBox.height, overNote: !(pickerBox.right <= noteBox.left || pickerBox.left >= noteBox.right || pickerBox.bottom <= noteBox.top || pickerBox.top >= noteBox.bottom),
+        barOutside: outside(bar), pickerOutside: outside(pickerBox), pickerWidth: pickerBox.width, windowWidth: innerWidth,
+        small: buttons.filter((box) => box.width < 44 || box.height < 44), hitButton: hit === button, searchFocused: document.activeElement === search,
+      };
+    });
+    if (result.barOutside) throw new Error('emoji-picker: edit bar is outside the window');
+    if (result.pickerOutside) throw new Error('emoji-picker: picker is outside the window');
+    if (result.overNote) throw new Error('emoji-picker: the picker covers the note being edited');
+    if (result.pickerHeight < 220) throw new Error(`emoji-picker: the picker is only ${Math.round(result.pickerHeight)} px tall, under four rows`);
+    if (result.pickerWidth > result.windowWidth) throw new Error(`emoji-picker: picker width ${result.pickerWidth} exceeds ${result.windowWidth}`);
+    if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
+    if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
+    if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  async 'emoji-insert'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    await page.keyboard.type('rock');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && window.__board.store.get('seed-note-1').text.endsWith('🚀'));
+    const result = await page.evaluate(() => {
+      const app = window.__board;
+      const textarea = document.querySelector('.text-editor');
+      let recent = [];
+      try {
+        recent = JSON.parse(localStorage.getItem('tabula.emoji.recent') || '[]');
+      } catch {
+        recent = [];
+      }
+      return {
+        text: app.store.get('seed-note-1').text, active: app.editor.active, focused: document.activeElement === textarea,
+        caretAtEnd: textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length,
+        pickerOpen: !!document.querySelector('.emoji-pop'), recentFirst: recent[0],
+      };
+    });
+    if (!result.text.endsWith('🚀')) throw new Error('emoji-insert: sticky text does not end with the matching rocket emoji');
+    if (!result.active) throw new Error('emoji-insert: editing ended after insertion');
+    if (!result.focused) throw new Error('emoji-insert: focus did not return to the textarea');
+    if (!result.caretAtEnd) throw new Error('emoji-insert: textarea caret is not after the emoji');
+    if (result.pickerOpen) throw new Error('emoji-insert: picker stayed open');
+    if (result.recentFirst !== '🚀') throw new Error('emoji-insert: recent emoji did not move to the front');
+  },
+  async 'emoji-esc'(env) {
+    const page = env.page;
+    await openEmojiPickerForNote(env);
+    const before = await page.evaluate(() => window.__board.store.get('seed-note-1').text);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.emoji-pop') && document.activeElement === document.querySelector('.text-editor'));
+    const afterPickerEscape = await page.evaluate(() => ({
+      active: window.__board.editor.active, focused: document.activeElement === document.querySelector('.text-editor'),
+      text: window.__board.store.get('seed-note-1').text,
+    }));
+    if (!afterPickerEscape.active || !afterPickerEscape.focused || afterPickerEscape.text !== before) {
+      throw new Error(`emoji-esc: first Escape changed the edit state: ${JSON.stringify(afterPickerEscape)}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__board.editor.active);
+    const afterEditorEscape = await page.evaluate(() => ({ active: window.__board.editor.active, text: window.__board.store.get('seed-note-1').text }));
+    if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
+  },
+  async 'steps-toast'(env) {
+    await STATES['flow-steps-overlap-edit'](env);
+    const result = await env.page.evaluate(async () => {
+      document.body.append(Object.assign(document.createElement('div'), { className: 'toast show', textContent: 'Dot vote started on 2 items, no limit. Click one to add a dot.' }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const toast = document.querySelector('.toast.show').getBoundingClientRect();
+      const pop = document.querySelector('.popover.wide').getBoundingClientRect();
+      const bar = document.querySelector('.flowbar.show').getBoundingClientRect();
+      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const failures = [];
+      if (hits(toast, pop)) failures.push(`the toast (${Math.round(toast.top)}-${Math.round(toast.bottom)}) covers the Steps list (${Math.round(pop.top)}-${Math.round(pop.bottom)})`);
+      if (hits(toast, bar)) failures.push('the toast covers the session bar');
+      return { failures, toast: { top: toast.top, bottom: toast.bottom }, popover: { top: pop.top, bottom: pop.bottom }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`steps-toast ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`steps-toast: ${JSON.stringify(result.failures)}`);
   },
   async 'flow-steps-overlap'(env) {
     await STATES['flow-steps'](env);
@@ -1573,6 +1810,78 @@ const STATES = {
     await env.page.evaluate(() => document.activeElement?.blur());
     await settle(env.page);
   },
+  // v5: a card with an overdue date, an agent owner and a long link, in the phone card dialog and in the list sheet (360 and 390)
+  async 'kanban-card-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide-for-teams-moving-sprint-boards?ref=board-card&utm=press' }));
+      app.setSelection(['k-c2']);
+      app.openCardDialog('k-c2');
+    });
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const link = document.querySelector('.k-open-link');
+      const dlg = link?.closest('[role="dialog"]');
+      const mark = dlg?.querySelector('.k-owner-kind-btn[data-owner-kind="agent"]');
+      if (!dlg || !link) return { failures: ['card dialog or its Open link is missing'] };
+      const d = dlg.getBoundingClientRect();
+      if (d.left < -0.5 || d.right > innerWidth + 0.5) failures.push(`the dialog is wider than the window (${Math.round(d.left)}-${Math.round(d.right)})`);
+      if (dlg.scrollWidth > dlg.clientWidth + 1) failures.push(`the dialog scrolls sideways (${dlg.scrollWidth} > ${dlg.clientWidth})`);
+      if (link.hidden || link.getClientRects().length === 0) failures.push('Open link is not shown');
+      else {
+        link.scrollIntoView({ block: 'center' });
+        const r = link.getBoundingClientRect();
+        const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+        if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+        if (r.right > innerWidth || r.left < 0) failures.push(`Open link is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      if (mark) {
+        const m = mark.getBoundingClientRect();
+        if (m.right > innerWidth || m.left < 0) failures.push('the Agent owner button is outside the window');
+      }
+      return { failures, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-card-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-card-meta: ${JSON.stringify(result.failures)}`);
+  },
+  async 'kanban-sheet-meta'(env) {
+    await openKanbanBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.update('k-c2', { due: '2020-01-01', ownerId: 'agent-token-1', ownerName: 'Build agent for the release', ownerKind: 'agent', link: 'https://example.com/team/releases/2026/q1/migration-guide?ref=board-card' }));
+    });
+    await openSheet(env.page, 'k-todo');
+    const result = await env.page.evaluate(() => {
+      const failures = [];
+      const row = [...document.querySelectorAll('.ks-sheet .ks-meta')].find((m) => m.querySelector('.ks-link'));
+      if (!row) return { failures: ['no row with an Open link in the sheet'] };
+      const link = row.querySelector('.ks-link');
+      const owner = row.querySelector('.ks-owner.agent');
+      const due = row.querySelector('.ks-due.overdue');
+      link.scrollIntoView({ block: 'center' });
+      const m = row.getBoundingClientRect();
+      if (row.scrollWidth > row.clientWidth + 1) failures.push(`the meta row overflows (${row.scrollWidth} > ${row.clientWidth})`);
+      if (m.right > innerWidth + 0.5) failures.push(`the meta row runs past the window (${Math.round(m.right)})`);
+      for (const [name, el] of [['Open link', link], ['agent owner', owner], ['overdue date', due]]) {
+        if (!el) { failures.push(`${name} is missing`); continue; }
+        const r = el.getBoundingClientRect();
+        if (r.right > innerWidth || r.left < 0) failures.push(`${name} is outside the window (${Math.round(r.left)}-${Math.round(r.right)})`);
+      }
+      const r = link.getBoundingClientRect();
+      const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (r.height < 44) failures.push(`Open link is ${Math.round(r.height)} px tall`);
+      if (hit !== link && !link.contains(hit)) failures.push(`Open link centre hits ${hit?.className || hit?.tagName}`);
+      return { failures, row: { left: m.left, right: m.right, width: m.width }, link: { w: r.width, h: r.height }, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`kanban-sheet-meta ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`kanban-sheet-meta: ${JSON.stringify(result.failures)}`);
+    return { noPark: true };
+  },
   async 'kanban-labels'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLabels());
@@ -1619,6 +1928,60 @@ const STATES = {
     await settle(env.page);
   },
   // slice 4: the lane and kanban menus, the Filter popover, a filter on, a refused drop into a full block lane, a new lane
+  // a selected lane (and the kanban around it) shows no connector anchor dots: lanes and the kanban take no connectors; a hovered card still does
+  async 'kanban-lane-no-anchors'(env) {
+    await openKanbanBoard(env);
+    // a point on the screen where the pointer is over that object itself (not a card or the kanban around it)
+    const at = (id) => env.page.evaluate((id) => {
+      const app = window.__board;
+      const o = app.store.getPlaced(id);
+      const r = app.r.svg.getBoundingClientRect();
+      for (let fy = 0.02; fy < 1; fy += 0.04) for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+        const w = { x: o.x + o.w * fx, y: o.y + o.h * fy };
+        if (app.hit(w)?.id !== id) continue;
+        const q = app.r.toScreen(w);
+        return { x: r.left + q.x, y: r.top + q.y };
+      }
+      return null;
+    }, id);
+    const anchors = () => env.page.evaluate(() => document.querySelectorAll('svg .anchor').length);
+    await env.page.evaluate(() => window.__board.setSelection(['k-doing']));
+    const lane = await at('k-doing');
+    if (!lane) throw new Error('kanban-lane-no-anchors: no point of the Doing lane is reachable by the pointer');
+    await env.page.mouse.move(lane.x - 8, lane.y - 8);
+    await env.page.mouse.move(lane.x, lane.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onLane = await anchors();
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+    const card = await at('k-c2');
+    if (!card) throw new Error('kanban-lane-no-anchors: no point of the card is reachable by the pointer');
+    await env.page.mouse.move(card.x - 8, card.y - 8);
+    await env.page.mouse.move(card.x, card.y, { steps: 4 });
+    await env.page.waitForTimeout(250);
+    const onCard = await anchors();
+    console.log(`kanban-lane-no-anchors ${JSON.stringify({ onLane, onCard })}`);
+    if (onLane !== 0) throw new Error(`kanban-lane-no-anchors: a selected lane shows ${onLane} anchor dots`);
+    if (onCard !== 4) throw new Error(`kanban-lane-no-anchors: a hovered card should keep its 4 anchors (found ${onCard}); the check would prove nothing`);
+    // dragging a connector from a note onto the lane must not bind to the lane or the kanban: the end stays free
+    await env.page.evaluate(() => { window.__board.setSelection([]); window.__board.setTool({ kind: 'connector' }); });
+    const from = await at('k-note-1');
+    if (!from) throw new Error('kanban-lane-no-anchors: no point of the note is reachable by the pointer');
+    await env.page.mouse.move(from.x, from.y);
+    await env.page.mouse.down();
+    await env.page.mouse.move((from.x + lane.x) / 2, (from.y + lane.y) / 2, { steps: 6 });
+    await env.page.mouse.move(lane.x, lane.y, { steps: 6 });
+    await env.page.mouse.up();
+    await env.page.waitForTimeout(250);
+    const end = await env.page.evaluate(() => {
+      const app = window.__board;
+      const c = [...app.store.cache.values()].find((o) => o.type === 'connector' && ((o.from.kind === 'bound' && o.from.id === 'k-note-1') || (o.to.kind === 'bound' && o.to.id === 'k-note-1')));
+      return c ? { from: c.from.kind === 'bound' ? c.from.id : 'free', to: c.to.kind === 'bound' ? c.to.id : 'free' } : null;
+    });
+    console.log(`kanban-lane-no-anchors drag ${JSON.stringify(end)}`);
+    if (!end) throw new Error('kanban-lane-no-anchors: dragging from the note made no connector, so the drag check proves nothing');
+    if (end.to === 'k-doing' || end.to === 'k-box') throw new Error(`kanban-lane-no-anchors: a dragged connector bound to ${end.to}`);
+    await env.page.evaluate(() => { window.__board.setTool({ kind: 'select' }); window.__board.setSelection(['k-doing']); });
+  },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.openLaneMenu('k-doing'));
@@ -1893,14 +2256,14 @@ const STATES = {
   },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
-    await openEmptyBoard(env, '?debug&aibar');
+    await openEmptyBoard(env, '?debug');
     await sendAiRun(env.page);
     await env.page.locator('.empty-hint').waitFor({ state: 'hidden' });
     await settle(env.page);
   },
   async 'ai-review'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await sendAiRun(page);
     await page.getByRole('button', { name: /review/i }).first().click();
     await page.locator('.aireview').first().waitFor();
@@ -1909,7 +2272,7 @@ const STATES = {
   // TAB-141: another person's AI run in flight, outlined in their colour around what it reads (docs/ai-toolbar.md, "Multiplayer")
   async 'ai-live-remote-ring'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{ id: 'visual-run', feature: 'cluster', status: 'running', private: false, startedAt: 1, readyAt: null, cut: false, by: ANA, target: { ids: ['seed-note-1', 'seed-note-2'] }, proposal: null }]);
     await page.locator('.ailive-run:not([hidden])').first().waitFor();
     await settle(page);
@@ -1918,7 +2281,7 @@ const STATES = {
   // not a preview beside it, so the view is fitted to the board and the room right of it, where the preview lands.
   async 'ai-live-remote-preview'(env) {
     const { page } = env;
-    await openSeedBoard(env, '?debug&aibar');
+    await openSeedBoard(env, '?debug');
     await handAiRuns(page, [{
       id: 'visual-run', feature: 'generate', status: 'ready', private: false, startedAt: 1, readyAt: 2, cut: false, by: ANA, target: null,
       proposal: { kind: 'create', objects: [{ text: 'Pilot with five teams', color: 'Yellow' }, { text: 'Write the migration guide', color: 'Pink' }, { text: 'Decide the pricing copy', color: 'Blue' }], frame: { title: 'Ideas' } },
@@ -1941,11 +2304,11 @@ const STATES = {
 const FULL_PAGE = new Set(['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'vote-running-touch', 'vote-running-touch-steps']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay

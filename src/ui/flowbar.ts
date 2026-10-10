@@ -109,7 +109,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
       running
         ? h('button', { class: 'icon-btn', 'aria-label': 'Pause timer', disabled: ro, onclick: () => app.flow.pauseTimer() }, icon('pause', 18))
         : h('button', { class: 'icon-btn', 'aria-label': 'Start timer', disabled: ro, onclick: () => (rem === 0 || !f.timer ? app.flow.startTimer(step.durationSec ?? 300) : app.flow.startTimer()) }, icon('play', 18)),
-      h('button', { class: 'icon-btn text', 'aria-label': 'Add one minute', disabled: ro, onclick: () => app.flow.addTime(60_000) }, '+1'),
+      h('button', { class: 'icon-btn text', 'aria-label': '+1. Add one minute', disabled: ro, onclick: () => app.flow.addTime(60_000) }, '+1'),
     );
 
     const extras: HTMLElement[] = [];
@@ -134,7 +134,7 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     const info = compactVote
       ? h('button', {
         class: 'icon-btn vote-info',
-        'aria-label': voteInstructionOpen ? 'Hide voting instructions' : 'Show voting instructions',
+        'aria-label': voteInstructionOpen ? 'Info: Hide voting instructions' : 'Info: Show voting instructions',
         'aria-expanded': String(voteInstructionOpen),
         'aria-controls': 'flow-vote-instructions',
         onclick: (e: Event) => {
@@ -143,14 +143,17 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
           bar.classList.toggle('vote-instructions-open', voteInstructionOpen);
           const button = e.currentTarget as HTMLButtonElement;
           button.setAttribute('aria-expanded', String(voteInstructionOpen));
-          button.setAttribute('aria-label', voteInstructionOpen ? 'Hide voting instructions' : 'Show voting instructions');
+          button.setAttribute('aria-label', voteInstructionOpen ? 'Info: Hide voting instructions' : 'Info: Show voting instructions');
         },
       }, 'Info')
       : null;
 
     bar.replaceChildren(
       h('button', { class: 'icon-btn flow-previous', 'aria-label': 'Previous step', disabled: ro || f.active === 0, onclick: () => app.flow.prev() }, icon('prev', 18)),
-      h('button', { class: 'flow-step', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement), 'aria-label': 'All steps' },
+      h('button', {
+        class: 'flow-step', disabled: ro, onclick: (e: Event) => openSteps(app, e.currentTarget as HTMLElement),
+      },
+        h('span', { class: 'sr-only' }, 'All steps'),
         h('span', { class: 'step-count' }, `${f.active + 1}/${f.steps.length}`),
         h('span', { class: 'step-text' },
           h('span', { class: 'flow-title' }, h('span', { class: 'title-text', title: step.title }, step.title), h('span', { class: `mode mode-${step.mode}` }, MODE_LABEL[step.mode])),
@@ -327,22 +330,24 @@ function dotsButton(app: BoardApp): HTMLElement {
   const unlimited = app.flow.isUnlimited(step);
   const left = unlimited ? Infinity : Math.max(0, limit - mine);
   let body: (HTMLElement | string)[];
+  const countLabel = unlimited ? (mine ? `${mine} ${mine === 1 ? 'dot' : 'dots'} placed, no limit` : 'No limit') : limit <= 10 ? (left ? `${left} left` : 'All dots used') : (left ? `${left} of ${limit} left` : 'All dots used');
   if (unlimited) {
-    body = [h('span', { class: 'dot on' }), h('span', null, mine ? `${mine} placed, no limit` : 'No limit')];
+    body = [h('span', { class: 'dot on' }), h('span', null, countLabel)];
   } else if (limit <= 10) {
-    body = [...Array.from({ length: limit }, (_, i) => h('span', { class: i < left ? 'dot on' : 'dot' })), h('span', null, left ? `${left} left` : 'All dots used')];
+    body = [...Array.from({ length: limit }, (_, i) => h('span', { class: i < left ? 'dot on' : 'dot' })), h('span', null, countLabel)];
   } else {
-    body = [h('span', { class: 'dot on' }), h('span', null, left ? `${left} of ${limit} left` : 'All dots used')];
+    body = [h('span', { class: 'dot on' }), h('span', null, countLabel)];
   }
   // placing or removing a dot changes this count; say it once the person stops clicking
-  const said = unlimited ? `${mine} dots placed` : `${left} of ${limit} dots left`;
+  const said = unlimited ? `${mine} ${mine === 1 ? 'dot' : 'dots'} placed` : `${left} of ${limit} ${limit === 1 ? 'dot' : 'dots'} left`;
   if (lastDots && lastDots.step === step.id && lastDots.text !== said) announce(said, { key: 'dots', delay: 500 });
   lastDots = { step: step.id, text: said };
+  const accessibleCount = unlimited ? countLabel : left ? `${countLabel} (${left} of ${limit} ${limit === 1 ? 'dot' : 'dots'} left)` : countLabel;
   const b = h('button', {
     class: `votes-left${left === 0 ? ' none' : ''}`,
     disabled: app.readOnly,
     'data-tip': dotsButtonTip(typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches),
-    'aria-label': `${unlimited ? 'No dot limit' : `${left} of ${limit} dots left`}. Change dots per person`,
+    'aria-label': `${accessibleCount}. Change dots per person`,
   }, ...body, h('span', { class: 'vote-compact-count', 'aria-hidden': 'true' }, unlimited ? '∞' : String(left)), icon('chevron', 14));
   b.addEventListener('click', () => openDotLimit(app, b));
   return b;
@@ -395,7 +400,7 @@ export function openVoteSetup(app: BoardApp, anchor: HTMLElement) {
   });
   sync();
   pop = popover(anchor, h('div', { class: 'dots-pop vote-setup' },
-    h('div', { class: 'pop-head' }, h('h3', null, 'What can be voted on?')),
+    h('div', { class: 'pop-head' }, h('h2', null, 'What can be voted on?')),
     radios,
     summary,
     h('div', { class: 'copy-row' }, start, h('button', { class: 'btn', onclick: () => { pop.close(); startVote(app, { kind: 'all' }); } }, 'Start on everything')),

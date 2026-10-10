@@ -27,7 +27,7 @@ let nextFrame: number;
 
 const group = { kind: 'group' as const, groups: [{ title: 'Went well', ids: ['a', 'b'] }, { title: 'To fix', ids: ['c'] }] };
 const ME = { id: 'viewer', name: 'Johan', color: '#2F6FED' };
-const config = { enabled: true, features: ['summarise', 'cluster', 'generate'], keySource: 'workspace', model: 'claude-haiku-5-5', personalKeys: false, hasSecret: false, myKey: null };
+const config = { enabled: true, features: ['summarise', 'cluster', 'generate'], keySource: 'workspace', model: 'claude-haiku-5-5', personalKeys: false, hasSecret: false, myKey: null, credits: false };
 
 beforeEach(() => {
   browser = installFakeBrowser();
@@ -46,8 +46,6 @@ beforeEach(() => {
   }
   vi.stubGlobal('ResizeObserver', NoObserver);
   vi.stubGlobal('MutationObserver', NoObserver);
-  // the bar is behind a flag (`?aibar`, or this key)
-  vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'driftboard:flag:aibar' ? '1' : null), setItem: () => undefined, removeItem: () => undefined });
 });
 
 afterEach(() => {
@@ -143,8 +141,10 @@ async function rig() {
 const toasted = () => vi.mocked(toast).mock.calls.map((c) => c[0] as string);
 
 describe('Add to board on the bar, after the stickies changed (TAB-213)', () => {
-  it('has nothing to add when every sticky changed: no ask to the relay, no write, the right sentence', async () => {
+  it('mounts from a usable AI config without an opt-in, then has nothing to add when every sticky changed', async () => {
     const t = await rig();
+    expect(t.chrome.querySelector('.aibar')).not.toBeNull();
+    expect(t.chrome.querySelector('.aibar-fab')).not.toBeNull();
     expect(t.calls).toEqual(['/api/ai/config', '/api/ai/run']);
     t.edit('a', { text: 'edited elsewhere' });
     t.edit('b', { locked: true });

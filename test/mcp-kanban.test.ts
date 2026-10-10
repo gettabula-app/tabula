@@ -233,7 +233,7 @@ describe('kanban MCP card tools', () => {
     }
   });
 
-  it('uses the shared card height when a link change triggers re-layout', async () => {
+  it('leaves the stored card height to editor clients when a link changes', async () => {
     const token = await addToken('link layout');
     const live = await watcher();
     const card = live.doc.getMap('objects').get(cardId) as Y.Map<unknown>;
@@ -246,7 +246,9 @@ describe('kanban MCP card tools', () => {
         boardId: board, kanbanId, cardId, link: 'https://example.com/new-link-layout',
       });
       expect(result.error).toBeUndefined();
-      await until(() => card.get('h') === KANBAN.cardH);
+      await until(() => card.get('link') === 'https://example.com/new-link-layout');
+      // the server no longer guesses a height on update: an editor client measures the content and repairs it
+      expect(card.get('h')).toBe(KANBAN.cardH + 31);
     } finally {
       if (typeof oldLink === 'string') card.set('link', oldLink); else card.delete('link');
       card.set('h', oldHeight);
@@ -279,7 +281,7 @@ describe('kanban MCP card tools', () => {
     }
   });
 
-  it('recomputes the shared default card height when only the link changes', async () => {
+  it('does not write a card height when only the link changes', async () => {
     const token = await addToken('link relayout');
     const live = await watcher();
     const card = live.doc.getMap('objects').get(cardId) as Y.Map<unknown>;
@@ -290,8 +292,8 @@ describe('kanban MCP card tools', () => {
         boardId: board, kanbanId, cardId, link: 'https://example.com/layout-change',
       });
       expect(result.error).toBeUndefined();
-      await until(() => card.get('h') === KANBAN.cardH);
-      expect(card.get('h')).toBe(KANBAN.cardH);
+      await until(() => card.get('link') === 'https://example.com/layout-change');
+      expect(card.get('h')).toBe(319);
     } finally {
       live.provider.destroy();
     }

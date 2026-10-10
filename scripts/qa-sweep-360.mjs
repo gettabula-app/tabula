@@ -96,7 +96,7 @@ for (const theme of ['default', 'matrix']) {
   await state(theme, 'rail-icons', p3.page, () => p3.page.getByRole('button', { name: /Icons/i }).first().click());
   await state(theme, 'rail-templates', p3.page, () => p3.page.getByRole('button', { name: /Templates/i }).first().click());
   await state(theme, 'rail-comments', p3.page, () => p3.page.getByRole('button', { name: 'Comments', exact: true }).click());
-  await state(theme, 'ai-bar', p3.page, async () => { await p3.page.goto(`http://127.0.0.1:${port}/?debug&aibar#/b/sweep-pop-${theme}`); await sleep(800); });
+  await state(theme, 'ai-bar', p3.page, async () => { await p3.page.goto(`http://127.0.0.1:${port}/?debug#/b/sweep-pop-${theme}`); await sleep(800); });
   await p3.ctx.close();
 }
 await browser.close(); relay.kill('SIGTERM'); await sleep(400); fs.rmSync(WORK, { recursive: true, force: true });

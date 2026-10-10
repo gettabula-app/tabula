@@ -22,6 +22,8 @@ export interface Workspace {
   seatsUsed: number;
   /** False for a workspace that is provided free (education, internal): no subscription, no billing portal. Absent on older servers. */
   billing?: boolean;
+  /** Whether the control plane enabled the AI credits capability; absent on older servers. */
+  aiCredits?: boolean;
   /** Present only for owners and admins on cloud instances. */
   trialEndsAt?: string | null;
   /** Present only for owners and admins on cloud instances. Unknown lifecycle values are allowed. */
@@ -184,6 +186,8 @@ export interface AiConfig {
   model: string;
   /** Whether this person may add a key of their own. */
   personalKeys: boolean;
+  /** Whether this hosted workspace advertises the AI credits capability for keyless availability. */
+  credits: boolean;
   /** Whether the server can store keys (TABULA_AI_SECRET is set). */
   hasSecret: boolean;
   myKey: AiKeyInfo | null;
@@ -198,6 +202,8 @@ export interface AdminAi {
   membersOnly: boolean;
   limits: { perPersonHour: number; perWorkspaceHour: number };
   hasSecret: boolean;
+  /** Whether runs without a saved workspace key will use hosted AI credits. */
+  creditsActive: boolean;
   /** `readable` is false when the key was written under a secret this server no longer has. */
   key: (AiKeyInfo & { readable: boolean }) | null;
 }

@@ -1,5 +1,6 @@
 import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isConnectable } from './connectable';
 import { isContainerType, validLabel } from '../shared/containers';
 import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
@@ -777,7 +778,7 @@ export class Renderer {
     // connection anchors on hover
     if (ov.anchorsFor) {
       const o = get(ov.anchorsFor);
-      if (isBox(o) && o.type !== 'path') {
+      if (isConnectable(o)) {
         for (const side of ['top', 'right', 'bottom', 'left'] as const) {
           const a = sideAnchor(o, side);
           const hot = ov.anchorHot === `${o.id}:${side}`;

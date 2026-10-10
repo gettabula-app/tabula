@@ -26,7 +26,6 @@
 .tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: 0; border: 1px solid var(--tray-line); }
 .tokens-dialog .input:focus { border-color: var(--tray-text); }
 .tokens-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
-.tokens-dialog .input:focus-visible { outline: none; }
 
 /* Exclusive options: rectangles on hairlines; the chosen one is the one signal fill. */
 .tokens-opts { display: flex; flex-wrap: wrap; gap: 8px; }

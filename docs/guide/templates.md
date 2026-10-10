@@ -2,6 +2,8 @@
 
 Templates are ready-made boards for team exercises such as retrospectives, brainstorming and prioritisation. Tabula includes built-in templates, and you can save your own from any board. In a workspace with sign-in, you can also share your templates with a team or with the whole workspace.
 
+Press `Esc` to close the templates drawer, or any other shape library (Shapes, UML, Icons, Stickers) and the Comments or Chat tray; focus goes back to the control that opened it.
+
 ## Browse templates
 
 Choose **Templates** in the top bar of the Boards page, or open the `#/templates` address of your Tabula server.

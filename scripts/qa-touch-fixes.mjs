@@ -162,6 +162,41 @@ if (want('toast')) {
   }
 }
 
+if (want('votebar')) {
+  // the compact phone vote bar is one row down to 320 px wide, for a quick vote and for a vote that is a session step
+  for (const w of [390, 360, 320]) for (const kind of ['quick', 'steps']) await phone(w, 640, async (page) => {
+    await page.evaluate((k) => {
+      const f = window.__board.flow;
+      if (k === 'steps') { f.setSteps([{ id: 'a', title: 'Vote', instructions: 'x', mode: 'vote' }, { id: 'b', title: 'Discuss', instructions: '', mode: 'discuss' }]); f.goto(0); } else f.quickVote(Infinity);
+    }, kind);
+    await sleep(900);
+    const r = await page.evaluate(() => { const bar = document.querySelector('.flowbar.vote-compact'); if (!bar) return null; const b = bar.getBoundingClientRect(); const kids = [...bar.children].filter((e) => getComputedStyle(e).display !== 'none' && !e.hidden).map((e) => e.getBoundingClientRect()); return { rows: new Set(kids.map((k) => Math.round(k.top / 4))).size, out: kids.filter((k) => k.right > b.right + 0.5).length, minSide: Math.round(Math.min(...kids.map((k) => Math.min(k.width, k.height)))) }; });
+    record(`vote bar is one row, nothing outside it, 44 px targets (${kind}, ${w} px)`, !!r && r.rows === 1 && r.out === 0 && r.minSide >= 44, JSON.stringify(r));
+  });
+}
+
+if (want('tipregion')) {
+  // the tooltip portal sits under <body>, outside every landmark: it is hidden from the reading order and still described by aria-describedby
+  //   node scripts/qa-touch-fixes.mjs --only tipregion [--axe path/to/axe.min.js]   (axe is optional; it is not a dependency)
+  const axeArg = process.argv.indexOf('--axe');
+  const axeSrc = axeArg > 0 ? fs.readFileSync(process.argv[axeArg + 1], 'utf8') : null;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: Boolean(axeSrc) });
+  const page = await ctx.newPage();
+  await page.goto(`${base}/?debug#/b/qtip`);
+  await page.waitForFunction(() => window.__board);
+  await sleep(800);
+  await page.getByRole('button', { name: 'Hand', exact: true }).hover();
+  await sleep(1200);
+  const facts = await page.evaluate(() => { const tip = document.querySelector('[role=tooltip]'); const target = document.querySelector('[aria-describedby]'); return { hidden: tip?.getAttribute('aria-hidden'), described: !!target && (target.getAttribute('aria-describedby') || '').includes(tip?.id ?? '#'), visible: !!tip && getComputedStyle(tip).visibility !== 'hidden' && tip.getBoundingClientRect().width > 0 }; });
+  record('tooltip is aria-hidden and still the description of its target while it shows', facts.hidden === 'true' && facts.described, JSON.stringify(facts));
+  if (axeSrc) {
+    await page.addScriptTag({ content: axeSrc });
+    const bad = await page.evaluate(async () => { const r = await window.axe.run(document, { runOnly: { type: 'rule', values: ['region'] } }); return r.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' '))).filter((t) => /tip/.test(t)); });
+    record('axe region: the tooltip is not reported outside a landmark', bad.length === 0, bad.join(' | '));
+  }
+  await ctx.close();
+}
+
 await browser.close();
 relay.kill();
 await sleep(500);

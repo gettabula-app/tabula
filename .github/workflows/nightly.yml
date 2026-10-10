@@ -132,7 +132,8 @@ jobs:
           fi
           should_report=$(jq -r '.issueRequired' nightly-merged.json)
           title='Nightly: failing or flaky tests'
-          existing=$(gh issue list --state all --limit 100 --search 'in:title "Nightly: failing or flaky tests"' --json number,title,state --jq '.[] | select(.title == "Nightly: failing or flaky tests") | "\(.number)\t\(.state)"' | head -n 1)
+          # gh reports the state as OPEN or CLOSED; the checks below compare lower case
+          existing=$(gh issue list --state all --limit 100 --search 'in:title "Nightly: failing or flaky tests"' --json number,title,state --jq '.[] | select(.title == "Nightly: failing or flaky tests") | "\(.number)\t\(.state | ascii_downcase)"' | head -n 1)
           if [ "$should_report" = true ]; then
             if ! gh label list --limit 100 --json name --jq '.[].name' | grep -Fxq nightly; then
               gh label create nightly --color 0e8a16 --description 'Nightly test results' || {

@@ -19,6 +19,8 @@ export function placePopover(
   safe: PopoverInsets,
   side: 'right' | 'bottom' | 'top' | 'left',
   avoidAbove?: PopoverRect,
+  /** A bottom panel keeps below the anchor and scrolls inside the room left, instead of sliding up over the anchor. */
+  fitBelow = false,
 ): PopoverPlacement {
   const edge = 8;
   const gap = side === 'top' ? 10 : 8;
@@ -42,6 +44,10 @@ export function placePopover(
   }
 
   left = Math.max(edge + safe.left, Math.min(viewport.width - safe.right - panel.width - edge, left));
+  if (side === 'bottom' && fitBelow) {
+    maxHeight = Math.max(0, viewport.height - safe.bottom - edge - top);
+    height = Math.min(height, maxHeight);
+  }
   if (side !== 'top') {
     top = Math.max(edge + safe.top, Math.min(viewport.height - safe.bottom - height - edge, top));
   }

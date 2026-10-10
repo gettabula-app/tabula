@@ -20,6 +20,7 @@ const saved = (extra: Partial<AdminAi> = {}): AdminAi => ({
   limits: { perPersonHour: 20, perWorkspaceHour: 200 },
   hasSecret: true,
   key: null,
+  creditsActive: false,
   ...extra,
 });
 

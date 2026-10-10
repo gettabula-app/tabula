@@ -550,7 +550,9 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     const fields = {
       id, type: 'card', parent: lane.id, rank: insertion.ranks[0], text: input.title,
       x: (Number(lane.x) || 0) + KANBAN.lanePad, y: Number(lane.y) || 0,
-      w: Math.max(8, (Number(lane.w) || KANBAN.laneW) - KANBAN.lanePad * 2), h: KANBAN.cardH,
+      w: Math.max(8, (Number(lane.w) || KANBAN.laneW) - KANBAN.lanePad * 2),
+      // Initial fallback only: an editor client measures the content in its browser and shares the corrected height.
+      h: KANBAN.cardH,
       rotation: 0, z: typeof lane.z === 'string' ? lane.z : '', createdBy: actor.createdBy, updatedAt: stamp,
       ...(input.description ? { desc: input.description } : {}), ...(input.due ? { due: input.due } : {}),
       ...(input.link ? { link: input.link } : {}), ...(input.labels === undefined ? {} : { labels: input.labels }),
@@ -1096,10 +1098,6 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           const owner = ownerChanges(actor, card, input);
           Object.assign(sets, owner.sets);
           owner.unsets.forEach((key) => unsets.add(key));
-          const visualFields = ['text', 'labels', 'due', 'ownerId', 'ownerName', 'ownerKind', 'link'];
-          if (visualFields.some((key) => Object.hasOwn(sets, key) || unsets.has(key))) {
-            sets.h = KANBAN.cardH;
-          }
           let changed = false;
           for (const [key, value] of Object.entries(sets)) {
             if (value === undefined || JSON.stringify(card[key]) === JSON.stringify(value)) continue;

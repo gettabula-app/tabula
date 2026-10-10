@@ -2,7 +2,7 @@
 // route open mode has. A key travels only in the body of the request that stores it. No response, log line or audit
 // row ever carries it, and a provider error is mapped to a code before it gets this far.
 
-import { FEATURES, aiEnabledFor, personalKeysFor, readAiSettings, validateAdminAi, validateKeyBody, writeAiSettings } from './settings.mjs';
+import { FEATURES, aiCreditsAvailable, aiEnabledFor, personalKeysFor, readAiSettings, validateAdminAi, validateKeyBody, writeAiSettings } from './settings.mjs';
 import { AiError, describeError } from './errors.mjs';
 import { hostOf } from './base-url.mjs';
 import { createKeyRing } from './keys.mjs';
@@ -15,7 +15,7 @@ const UNCONFIGURED = 'AI keys cannot be saved because the server has no TABULA_A
 /** The answer of GET /api/ai/config in open mode: on only with the operator's key and TABULA_AI_OPEN=1. */
 export function openAiConfig(config) {
   const on = config.ai.open !== null;
-  return { enabled: on, features: [...FEATURES], keySource: on ? 'workspace' : null, provider: on ? config.ai.provider : null, model: config.ai.model, personalKeys: false, hasSecret: false };
+  return { enabled: on, features: [...FEATURES], keySource: on ? 'workspace' : null, provider: on ? config.ai.provider : null, model: config.ai.model, personalKeys: false, hasSecret: false, credits: false };
 }
 
 /**
@@ -101,6 +101,7 @@ export function createAiRoutes({
     return {
       ...settingsNow(),
       hasSecret: ring.configured,
+      creditsActive: !info && aiCreditsAvailable(config, cloud) && Boolean(config.ai.proxyUrl && config.ai.proxyToken),
       key: info ? { ...keyView(info), readable: ring.configured && directory.aiKeyReadable({ ring, scope: 'workspace' }) } : null,
     };
   }
@@ -132,6 +133,7 @@ export function createAiRoutes({
           personalKeys: personal,
           hasSecret: ring.configured,
           myKey: keyView(mine),
+          credits: aiCreditsAvailable(config, cloud),
         },
       ];
     }),
@@ -198,7 +200,7 @@ export function createAiRoutes({
       return testStoredKey(res, user, 'workspace');
     }),
 
-    ...createRunRoutes({ compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, live, log, now, timeoutMs }),
+    ...createRunRoutes({ config, compile, errors, audit, directory, cloud, ring, settingsNow, canWriteRoom, readRoom, createProvider: makeProvider, live, log, now, timeoutMs }),
 
     compile('DELETE', 'admin/ai/key', { readOnlyOk: true }, ({ user }) => {
       requireAdmin(user);
