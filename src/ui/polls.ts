@@ -175,7 +175,7 @@ export function pollResultsBlock(app: BoardApp, poll: Poll, onHide: () => void):
 
 /** The composer shared by the quick poll popover and the step editor dialog. */
 function composer(initial: PollInput | null, submitLabel: string, onSubmit: (input: PollInput) => void, onCancel: () => void): HTMLElement {
-  const question = h('input', { class: 'input', maxlength: String(POLL_LIMITS.question), placeholder: 'Ask a question', 'aria-label': 'Question', value: initial?.question ?? '' });
+  const question = h('input', { class: 'input', maxlength: String(POLL_LIMITS.question), 'aria-label': 'Question', value: initial?.question ?? '' });
   const multiple = h('input', { type: 'checkbox', checked: initial?.multiple ?? false });
   const anonymous = h('input', { type: 'checkbox', checked: initial?.anonymous ?? true });
   const options = initial ? [...initial.options] : ['', ''];

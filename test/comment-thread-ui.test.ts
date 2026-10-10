@@ -25,13 +25,22 @@ afterEach(() => {
 
 const author: Author = { id: 'visual-qa', name: 'Visual QA', color: '#2F6FED' };
 
-function mountThread(commentAuthor: Author = author) {
+function mountThread(commentAuthor: Author = author, focusCanvas = false) {
   const chromeElement = browser.document.createElement('div');
   browser.document.body.appendChild(chromeElement);
   const chrome = chromeElement as unknown as HTMLElement;
   const comments = new Comments(new Y.Doc());
   const threadId = comments.addThread(commentAuthor, { x: 100, y: 100 }, 'Root message');
   if (!threadId) throw new Error('could not seed the comment thread');
+  const opener = browser.document.createElement('button') as unknown as HTMLElement;
+  opener.className = 'rail-btn';
+  opener.setAttribute('aria-label', 'Comment');
+  chromeElement.appendChild(opener as unknown as FakeElement);
+  if (focusCanvas) {
+    const canvas = browser.document.createElement('div');
+    chromeElement.appendChild(canvas);
+    canvas.focus();
+  } else opener.focus();
 
   const listeners = new Map<string, Set<() => void>>();
   let openThreadId: string | null = null;
@@ -61,14 +70,14 @@ function mountThread(commentAuthor: Author = author) {
     },
   } as unknown as BoardApp;
 
-  mountComments(app, chrome, mountSideTray(chrome));
+  const { button } = mountComments(app, chrome, mountSideTray(chrome));
   app.onOpenComment?.({ threadId, screen: { x: 100, y: 100 } });
   const card = need(chromeElement, '.comment-card');
   cleanups.push(() => {
     need(card, 'button[aria-label="Close"]').click();
     comments.doc.destroy();
   });
-  return { app, card, comments, threadId };
+  return { app, card, comments, threadId, button, opener };
 }
 
 describe('comment thread card', () => {
@@ -116,5 +125,24 @@ describe('comment thread card', () => {
     expect(buttons).not.toContain('Resolve');
     expect(card.querySelectorAll('textarea')).toHaveLength(0);
     expect(card.textContent).toContain('You can read comments on this board but not add them.');
+  });
+
+  it('includes the visible open-comment count in the Comments button name', () => {
+    const { button } = mountThread();
+    expect(button.getAttribute('aria-label')).toBe('Comments, 1 open comment');
+  });
+
+  it('returns focus to the control that opened the comment card', () => {
+    const { card, opener } = mountThread();
+    need(card, 'textarea[aria-label="Reply"]').focus();
+    need(card, 'button[aria-label="Close"]').click();
+    expect(browser.document.activeElement).toBe(opener);
+  });
+
+  it('returns canvas comment editing to the Comment tool when the canvas itself had focus', () => {
+    const { card, opener } = mountThread(author, true);
+    need(card, 'textarea[aria-label="Reply"]').focus();
+    need(card, 'button[aria-label="Close"]').click();
+    expect(browser.document.activeElement).toBe(opener);
   });
 });
