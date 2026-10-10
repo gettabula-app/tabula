@@ -472,4 +472,86 @@ describe('kanban MCP card tools', () => {
       live.provider.destroy();
     }
   });
+
+  it('keeps kanban-only types out of generic create and update tools', async () => {
+    const token = await addToken('generic object refusals');
+    const listed = await h.call(token.token, 'tools/list');
+    const createTool = listed.body.result.tools.find((tool: Body) => tool.name === 'create_objects');
+    expect(createTool.inputSchema.properties.objects.items.properties.type.enum).toEqual(['sticky', 'shape', 'text', 'frame', 'connector']);
+
+    const before = (await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total;
+    for (const type of ['container', 'lane', 'card', 'group', 'image']) {
+      const refused = await h.tool(token.token, 'create_objects', { boardId: board, objects: [{ type, x: 0, y: 0 }] });
+      expect(refused.error).toBe('invalid_input');
+      expect(refused.data.path).toBe('objects[0].type');
+    }
+
+    const cardUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: cardId, x: 12, parent: doingId }] });
+    expect(cardUpdate.error).toBe('invalid_input');
+    expect(cardUpdate.data.path).toBe('updates[0].id');
+    expect(cardUpdate.data.message).toContain('update_kanban_card');
+    const laneUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: todoId, x: 12 }] });
+    expect(laneUpdate.error).toBe('invalid_input');
+    expect(laneUpdate.data.message).toContain('board UI');
+    const kanbanUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: kanbanId, w: 900 }] });
+    expect(kanbanUpdate.error).toBe('invalid_input');
+    expect(kanbanUpdate.data.message).toContain('board UI');
+    expect((await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total).toBe(before);
+  });
+
+  it('refuses lane and kanban deletes and protects locked, hidden, private and other-agent cards', async () => {
+    const token = await addToken('generic delete refusals');
+    expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [todoId] })).error).toBe('conflict');
+    expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [kanbanId] })).error).toBe('conflict');
+    expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [lockedId] })).error).toBe('conflict');
+    for (const id of [hiddenId, privateId, privateNoteId]) {
+      expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [id] })).error).toBe('not_found');
+    }
+
+    const other = await addToken('second card agent');
+    const added = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Agent-owned card', ownerKind: 'agent' });
+    expect(added.error).toBeUndefined();
+    const agentCardId = added.data.card.id as string;
+    const denied = await h.tool(other.token, 'delete_objects', { boardId: board, ids: [agentCardId] });
+    expect(denied.error).toBe('conflict');
+    expect(denied.data.message).toBe('The card is assigned to another agent');
+    expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [agentCardId] })).error).toBeUndefined();
+
+    const personCard = await h.tool(other.token, 'add_kanban_card', {
+      boardId: board, kanbanId, laneId: todoId, title: 'Person-owned card', ownerKind: 'person', ownerName: 'Priya',
+    });
+    expect(personCard.error).toBeUndefined();
+    expect((await h.tool(token.token, 'delete_objects', { boardId: board, ids: [personCard.data.card.id] })).error).toBeUndefined();
+  });
+
+  it('deletes group members but keeps an unrevealed private note outside the group', async () => {
+    const token = await addToken('delete group');
+    const live = await watcher();
+    const groupId = 'mcp-delete-group';
+    const nestedId = 'mcp-delete-nested';
+    const memberId = 'mcp-delete-member';
+    const secretId = 'mcp-delete-secret';
+    try {
+      live.doc.transact(() => {
+        const objects = live.doc.getMap('objects');
+        objects.set(groupId, new Y.Map(Object.entries({ id: groupId, type: 'group', name: 'Group', z: 'zz0' })));
+        objects.set(nestedId, new Y.Map(Object.entries({ id: nestedId, type: 'group', name: 'Nested', parent: groupId, z: 'zz1' })));
+        objects.set(memberId, new Y.Map(Object.entries({ id: memberId, type: 'shape', kind: 'rect', text: 'Member', x: 0, y: 0, w: 100, h: 100, rotation: 0, parent: nestedId, z: 'zz2' })));
+        objects.set(secretId, new Y.Map(Object.entries({ id: secretId, type: 'sticky', text: 'PRIVATE GROUP NOTE', x: 0, y: 0, w: 100, h: 100, parent: nestedId, privateStep: 'step-1', z: 'zz3' })));
+      }, 'local');
+      await until(() => h.savedDoc(board).getMap('objects').has(secretId));
+
+      const removed = await h.tool(token.token, 'delete_objects', { boardId: board, ids: [groupId] });
+      expect(removed.error).toBeUndefined();
+      expect(removed.data.deleted.sort()).toEqual([groupId, memberId, nestedId].sort());
+      expect(removed.text).not.toContain('PRIVATE GROUP NOTE');
+      expect(removed.text).not.toContain(secretId);
+      await until(() => {
+        const objects = h.savedDoc(board).getMap('objects');
+        return !objects.has(groupId) && objects.has(secretId) && (objects.get(secretId) as Y.Map<unknown>).get('parent') === undefined;
+      });
+    } finally {
+      live.provider.destroy();
+    }
+  });
 });
