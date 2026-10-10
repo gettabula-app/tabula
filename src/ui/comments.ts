@@ -343,7 +343,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
         },
         ...t.replies.map((r) => ({ ...r, root: false })),
       ];
-      if (!list.some((m) => m.id === editing)) editing = null;
+      if (ro || !list.some((m) => m.id === editing)) editing = null;
       if (!list.some((m) => m.id === confirming)) confirming = null;
       const hadFocus = document.activeElement === editArea;
       head.replaceChildren(...(t.resolved ? [h('span', { class: 'comment-badge' }, 'Resolved')] : []), closeBtn);
@@ -376,7 +376,10 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     });
     unsubs.push(
       app.comments.onChange(onChange),
-      app.comments.onReadOnly(onChange),
+      app.comments.onReadOnly((readOnly) => {
+        if (readOnly && anchor) close(false);
+        else onChange();
+      }),
       app.on('comments', onComments),
       app.r.onCamera(() => {
         if (performance.now() >= flightUntil) close(true);

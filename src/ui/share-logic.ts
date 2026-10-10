@@ -1,4 +1,18 @@
 import type { BoardRole, Me, Member, PrincipalType, Share, ShareRole, Team, TeamMember } from '../api';
+import type { AuthState } from '../auth';
+import type { DeniedReason } from '../sync';
+
+export function canChangeProfile(mode: AuthState['mode']): boolean {
+  return mode !== 'guest';
+}
+
+export function canSaveTemplate(mode: AuthState['mode']): boolean {
+  return mode !== 'guest';
+}
+
+export function isRemovedGuestLink(mode: AuthState['mode'], reason: DeniedReason | null): boolean {
+  return mode === 'guest' && reason === 'access_removed';
+}
 
 export const SHARE_ROLES: { value: ShareRole; label: string; hint: string }[] = [
   { value: 'editor', label: 'Editor', hint: 'Can edit' },

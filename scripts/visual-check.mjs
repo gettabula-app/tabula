@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
                      kanban-sheet-filter, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -865,6 +865,16 @@ const STATES = {
   },
   async board(env) {
     await openSeedBoard(env);
+  },
+  async 'join-short-code'({ page, base }) {
+    // the page is signed in as the owner, which leaves /join for the home page: a guest is signed out; the relay runs with TABULA_JOIN_CODES=on (without it /join goes to sign-in)
+    await page.context().clearCookies();
+    await page.goto(`${base}/join`);
+    const code = page.getByLabel('Join code');
+    await code.fill('ABC');
+    await page.getByLabel('Display name').fill('Visual guest');
+    await page.getByRole('button', { name: 'Join board' }).click();
+    await page.getByText('That code looks too short', { exact: true }).waitFor();
   },
   // TAB-239: three stickies selected, so the quick bar is at its longest; at phone widths it scrolls, and `-end` scrolls it to Delete and More properties
   async 'quickbar-multi'(env) {
@@ -1822,7 +1832,7 @@ const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanba
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -1839,13 +1849,14 @@ const freePort = () =>
 
 const removeDir = (dir) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
-function relayEnv({ mode, port, dataDir, distDir, frameable, chat }) {
+function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes }) {
   // Nothing from the caller's shell may reach the relay: it would turn on MCP, backups, AI or a hosted workspace.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(key)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
   if (mode === 'accounts') {
     Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: `http://127.0.0.1:${port}` });
     if (chat) env.TABULA_CHAT = 'on';
+    if (joinCodes) env.TABULA_JOIN_CODES = 'on';
   }
   if (frameable) env.TABULA_DEV_ALLOW_FRAMING = '1';
   return env;
@@ -2154,7 +2165,8 @@ async function main() {
     fs.mkdirSync(options.outDir, { recursive: true });
     relay = newRelayHandle();
     const chat = options.mode === 'accounts' && options.states.some((s) => CHAT_STATES.has(s));
-    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat });
+    const joinCodes = options.mode === 'accounts' && options.states.includes('join-short-code');
+    await startRelay(relay, { mode: options.mode, distDir, frameable: options.frameable, chat, joinCodes });
     const shared = { base: relay.base, mode: options.mode, outDir: options.outDir, session: null, dataDir: relay.dataDir, chat: null, touch: options.touch };
     if (options.mode === 'accounts') {
       const owner = await prepareAccounts(relay);

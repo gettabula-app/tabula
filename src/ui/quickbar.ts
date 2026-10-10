@@ -21,6 +21,8 @@ import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
 import { groupActionForSelection, groupChipAvoidBox, groupChipText } from './group-ui-logic';
+import { authState } from '../auth';
+import { canSaveTemplate } from './share-logic';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -383,7 +385,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([
       lock,
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
-      ...(opts.demo ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
+      ...(opts.demo || !canSaveTemplate(authState().mode) ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
       action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),
     ]);
     groups.push([more]);

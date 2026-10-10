@@ -51,7 +51,7 @@ import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
-import { canManageJoinCodes, canManageShares } from './share-logic';
+import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
@@ -99,12 +99,18 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
     } else if (s === 'denied') {
       const restoring = app.conn.denied === 'restoring';
-      label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
-      tip = restoring
+      const guestLinkRemoved = isRemovedGuestLink(authState().mode, app.conn.denied);
+      if (guestLinkRemoved) app.comments.setReadOnly(true);
+      label = guestLinkRemoved ? 'Join link expired' : restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = guestLinkRemoved
+        ? 'This join link has expired or was revoked. Comments are read only.'
+        : restoring
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
     status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
+    if (s === 'denied' && isRemovedGuestLink(authState().mode, app.conn.denied)) status.setAttribute('aria-label', 'This join link has expired or was revoked');
+    else status.removeAttribute('aria-label');
     status.dataset.tip = tip;
     // a change of state is announced; the count of people changing inside "live" is announced by name below
     if (lastState !== null && s !== lastState) announce(`Sync: ${label}`, { key: 'sync', delay: 800 });
@@ -128,6 +134,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const canEditProfile = canChangeProfile(authState().mode);
     // who arrived and who left since the last time, said once the first list is known
     const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, `${p.user.name}${p.user.guest ? ' · Guest' : ''}`]));
     if (knownPeople) {
@@ -141,11 +148,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const busy = p.isMe ? null : badgeRun(p.user, runs);
       const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
       const tip = busy ? `${avatarLine(busy)} · ${name}` : p.isMe ? `${name} (you)` : `Go to ${name}`;
-      return h('button', {
-        class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': tip,
-        onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)),
-      }, initials(p.user.name), p.user.guest ? guestMark('avatar-guest') : null,
-      busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null);
+      const children = [initials(p.user.name), p.user.guest ? guestMark('avatar-guest') : null,
+        busy ? h('span', { class: 'avatar-ai', 'aria-hidden': 'true' }, glyph('spark', 10)) : null] as const;
+      const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': tip };
+      if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
+      return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
     }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
   };
   app.on('presence', renderPeople);
@@ -573,13 +580,13 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
-    scratch || demo ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
+    scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     demo ? [
       h('div', { class: 'list-label' }, 'Workspace features'),
       demoWorkspaceItems(),
     ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
-    demo ? null : item('user', 'Your name and colour', () => openProfile(app)),
+    demo || !canChangeProfile(auth.mode) ? null : item('user', 'Your name and colour', () => openProfile(app)),
     mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
     scratch ? null : showComments,
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),

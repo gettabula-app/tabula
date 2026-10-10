@@ -5,6 +5,7 @@
 .join-page .join-code-input { font-size: 20px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
 .join-page .join-code-input:focus { outline-offset: 3px; }
 .join-page .join-name-help { color: var(--graphite); font-size: 12px; font-weight: 400; letter-spacing: normal; text-transform: none; }
+.join-page .signin-field .signin-error { text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 400; }
 
 @media (max-width: 400px) {
   .join-page .signin-body { padding-right: 16px; padding-left: 16px; }
