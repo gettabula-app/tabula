@@ -174,6 +174,7 @@ describe('content that is accepted', () => {
     });
 
     expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
+    expect(idReads).toBeGreaterThan(objects.length);
     // A scan for each parent step in this 1,500-frame chain reads millions of ids. Count reads, not one array method.
     expect(idReads).toBeLessThanOrEqual(objects.length * 5);
   });
