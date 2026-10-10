@@ -56,7 +56,7 @@ Names here are **proposals**. Where the architecture spec already has a name, it
 
 ### 2.2 Ticket fields ⟂
 
-`key`, `title` (one line, up to 200 code points), `description` (rich text: paragraphs, lists, code, links, @mentions, images; stored as Markdown), `state` (state id), `priority` (API names `none | urgent | high | medium | low`, stored as an integer 0 to 4 in that order), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number: stored, **no UI in v1**), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
+`key`, `title` (one line, up to 200 code points), `description` (Markdown text), `state` (state id), `priority` (API names `none | urgent | high | medium | low`, stored as an integer 0 to 4 in that order), `assignee` (user id), `creator`, `labels[]`, `project`, `milestone`, `estimate` (optional number: stored, **no UI in v1**), `due` (`YYYY-MM-DD`), `parent`, `relations[]`, `links[]`, `createdAt`, `updatedAt`, `archivedAt`.
 
 Card fields that exist today and map: `text` → `title`, `desc` → `description`, `ownerId` → `assignee`, `due` → `due`, `labels` → `labels` (tracker labels replace the board label set for linked cards), lane → `state`.
 
@@ -247,7 +247,7 @@ TAB-123  In progress ▾                         ⋯  ←  →  ✕
 
 One chronological feed, oldest first (so the composer sits at the bottom), with a filter **All / Comments / History** (default All; History collapses runs of field changes: "Mara changed state, assignee and priority · 3 changes").
 
-- **Comment**: author, time, body (the same rich text as the description, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
+- **Comment**: author, time, body (Markdown, rendered as the description is, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
 - **History rows**: a glyph, "Mara moved this from Todo to In progress", time. Field changes show old → new. Integration events are attributed to the integration ("GitHub · merged PR #482 moved this to Done" with the rule noted). **Actors that are not people** (an agent's access token, the GitHub integration, an import) never get a person's avatar: they show a square **label badge** ("Agent · claude-code", "GitHub", "Import") in the same place and the same grey, so a feed can be scanned for who is human. The ticket's creator line says "Created by Mara" or "Created by agent claude-code" / "Created from GitHub" / "Imported from Linear" from the `source` (`app`, `import`, `mcp`, `integration`).
 - **Resolve**: threads can be resolved (collapsed with "Resolved by Idris" and re-opened by a reply).
 - **Edit history**: edited comments show "edited" with the time; there is no per-edit diff in v1.
