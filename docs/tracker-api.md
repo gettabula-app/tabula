@@ -2,7 +2,7 @@
 
 The session API exposes the workspace tracker under `/api/tracker/`. It is available only in accounts mode when `TABULA_TRACKER=on`. The directory migration can exist while the feature is off, but the HTTP routes then behave exactly like unknown routes and return `404`.
 
-Every request needs a signed-in session cookie and the `x-tabula: 1` CSRF header, including `GET` requests. Guests and board-only users receive `404` for every tracker route so the API does not reveal whether a ticket exists. Disabled accounts are rejected by the session layer. `GET /api/me` includes `tracker: true` only for an account that can access the tracker while the feature is on.
+Every request needs a signed-in session cookie; mutating requests also need the `x-tabula: 1` CSRF header (reads follow the rest of `/api`). Guests and board-only users receive `404` for every tracker route so the API does not reveal whether a ticket exists. Disabled accounts are rejected by the session layer. `GET /api/me` includes `tracker: true` while the feature is on (it is also what tells the app to offer the tracker board object); whether the account may use the routes is decided by the routes themselves, which answer `404` to anyone without tracker access.
 
 Ticket writes use the current user as the actor and are audited with record IDs only. A hosted workspace in read-only mode keeps all reads available; every tracker mutation returns `403 {"error":"read_only"}` before writing. Mutations are limited to 60 per user per minute and return `429` with `Retry-After` when the limit is reached.
 
