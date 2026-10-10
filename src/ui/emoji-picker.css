@@ -24,3 +24,4 @@
 .emoji-cell:hover { background: var(--tray-hover); }
 .emoji-cell:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 .emoji-empty { margin: 12px 4px 8px; color: var(--tray-muted); font-size: 13px; }
+.emoji-picker.docked { max-height: min(300px, 60vh); overflow-y: auto; overscroll-behavior: contain; }

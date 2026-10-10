@@ -47,7 +47,11 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
     const above = box.top - 8 - height;
     const below = box.bottom + 8;
     // the side with more room, so the picker that opens away from the note is tall enough to use instead of two rows
-    const side = box.top - topEdge >= bottomEdge - box.bottom - height ? 'above' : 'below';
+    // never under the top bars (a high note on a phone): they are drawn over the canvas
+    const chrome = [...document.querySelectorAll<HTMLElement>('.top-left, .top-right')].map((el) => el.getBoundingClientRect());
+    const hits = (top: number) => chrome.some((r) => x < r.right && x + width > r.left && top < r.bottom && top + height > r.top);
+    const side = hits(above) && !hits(below) ? 'below' : hits(below) && !hits(above) ? 'above'
+      : box.top - topEdge >= bottomEdge - box.bottom - height ? 'above' : 'below';
     bar.dataset.side = side;
     let y = side === 'above' ? above : below;
     y = Math.max(topEdge, Math.min(y, bottomEdge - height));
