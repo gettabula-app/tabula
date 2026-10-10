@@ -29,6 +29,7 @@ import { loadConfig } from './config.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
+import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
 import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs';
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
@@ -53,6 +54,9 @@ const env = withLegacyEnv();
 const config = loadConfig(env);
 // Off-site backups (docs/backups.md): null unless TABULA_BACKUP_* is set; half a configuration stops the start here.
 const backupConfig = loadBackupConfig(env);
+const snapshotBarrier = backupConfig
+  ? createSnapshotBarrier({ maxHoldMs: backupConfig.snapshotMaxHoldSeconds * 1000 })
+  : null;
 const PORT = config.port;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = config.dataDir;
@@ -227,7 +231,7 @@ if (config.authEnabled) {
     import('./api.mjs'),
     import('./cloud.mjs'),
   ]);
-  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'));
+  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier });
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -275,7 +279,7 @@ if (config.authEnabled) {
         log('chat: could not anonymise a removed member:', err?.message);
       }
     });
-    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, log });
+    chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
@@ -292,7 +296,15 @@ const openRoomState = (name) => {
   const room = rooms.get(name);
   return room ? Y.encodeStateAsUpdate(room.doc) : null;
 };
-const backup = createBackup({ config: backupConfig, dataDir: DATA_DIR, directory, boardState: openRoomState, log });
+const backup = createBackup({
+  config: backupConfig,
+  dataDir: DATA_DIR,
+  directory,
+  boardState: openRoomState,
+  snapshotBarrier,
+  prepareSnapshot: saveAllRooms,
+  log,
+});
 
 // Not documented: the relay tests give the restore engine a disk that is this full (0 to 1) instead of the real one, so the
 // retention they check (7 days, or until the next backup when the volume would pass 80%) does not depend on the machine.
@@ -338,12 +350,16 @@ if (assets) {
     log,
   });
   const sweep = () => {
-    try {
-      const summary = gc.run();
-      if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
-    } catch (err) {
-      log('asset gc failed', scrubText(err?.message));
-    }
+    const collect = () => {
+      try {
+        const summary = gc.run();
+        if (directory && (summary.rows || summary.files)) directory.audit(null, 'assets.gc', { rows: summary.rows, bytes: summary.bytes, files: summary.files });
+      } catch (err) {
+        log('asset gc failed', scrubText(err?.message));
+      }
+    };
+    if (snapshotBarrier) void snapshotBarrier.runWriter(collect);
+    else collect();
   };
   setTimeout(sweep, Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_ASSET_GC_DELAY_MS) : 2 * 60 * 1000).unref();
   setInterval(sweep, 24 * 60 * 60 * 1000).unref();
@@ -352,13 +368,17 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier });
 }
 
 // ---------------------------------------------------------------- rooms
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+
+snapshotBarrier?.onRelease(() => {
+  for (const room of rooms.values()) room.releaseDeferredMessages();
+});
 
 // Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
 function liveStats() {
@@ -418,6 +438,9 @@ class Room {
     this.unloadTimer = null;
     this.dirty = false;
     this.firstUnsavedAt = null;
+    this.pendingBarrierSave = false;
+    /** @type {Array<{ ws: import('ws').WebSocket, data: Buffer }>} */
+    this.deferredMessages = [];
 
     if (fs.existsSync(this.file)) {
       try {
@@ -499,6 +522,11 @@ class Room {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     if (roomsFrozen) return;
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      this.pendingBarrierSave = true;
+      return;
+    }
+    this.pendingBarrierSave = false;
     this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
@@ -593,6 +621,19 @@ class Room {
 
 
   onMessage(ws, data) {
+    if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed && ws.canWrite === true) {
+      try {
+        const peek = decoding.createDecoder(new Uint8Array(data));
+        if (decoding.readVarUint(peek) === MSG_SYNC && decoding.peekVarUint(peek) !== syncProtocol.messageYjsSyncStep1) {
+          // Queue client state updates while the disk copies are made. State-vector reads and awareness still flow, and
+          // the open socket stays connected. Replaying the frame after release lets the normal debounced save run.
+          this.deferredMessages.push({ ws, data: Buffer.from(new Uint8Array(data)) });
+          return;
+        }
+      } catch {
+        // The usual handler below logs malformed frames; do not turn a bad frame into an unbounded queued write.
+      }
+    }
     try {
       const dec = decoding.createDecoder(new Uint8Array(data));
       const type = decoding.readVarUint(dec);
@@ -616,6 +657,13 @@ class Room {
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
     }
+  }
+
+  releaseDeferredMessages() {
+    const queued = this.deferredMessages;
+    this.deferredMessages = [];
+    for (const { ws, data } of queued) this.onMessage(ws, data);
+    if (this.pendingBarrierSave) this.scheduleSave();
   }
 }
 
@@ -688,7 +736,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
 }
 
 function workspaceHint(readOnly) {
@@ -865,6 +913,10 @@ function noteOpenWrite(req, res) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
+    const runOpenWriter = (fn) => {
+      const method = String(req.method).toUpperCase();
+      return snapshotBarrier && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? snapshotBarrier.runWriter(fn) : fn();
+    };
     // TAB-103: with TABULA_SOURCE_POLICY=proxy only loopback and Fly's proxy range may talk to this instance. The health
     // check is left open, because the platform's own check may not come from either.
     if (!sourceGate.allows(req.socket.remoteAddress) && !(req.method === 'GET' && url.pathname === '/api/health')) {
@@ -894,13 +946,13 @@ async function onRequest(req, res) {
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {
-        await openAiRun.handle(req, res);
+        await openAiRun.handle(req, res); // streams for minutes and writes through the room: no barrier lease
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
-        await openAiRun.resolve(req, res, url.pathname.split('/')[4]);
-      } else if (openAssets && (await openAssets(req, res, url))) {
+        await runOpenWriter(() => openAiRun.resolve(req, res, url.pathname.split('/')[4]));
+      } else if (openAssets && (await runOpenWriter(() => openAssets(req, res, url)))) {
         // answered: an image upload or download of open mode
         noteOpenWrite(req, res);
-      } else if (await history.handleOpen(req, res)) {
+      } else if (await runOpenWriter(() => history.handleOpen(req, res))) {
         noteOpenWrite(req, res);
       } else {
         sendJson(res, 404, { error: 'not_found' });

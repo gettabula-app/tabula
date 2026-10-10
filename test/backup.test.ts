@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import * as Y from 'yjs';
 import { BackupError, createKeyring, deriveKeys, formatManifestName, loadBackupConfig, parseManifestName, seal, unseal } from '../server/backup.mjs';
+import { createSnapshotBarrier } from '../server/snapshot-barrier.mjs';
 import {
   DAY, HOUR, KEY, KEY_OTHER, KEY_PREVIOUS, MIN, T0, VERSION_A, VERSION_B, VERSION_C, docBytes, envFor, harness, type Harness,
 } from './backup-harness';
@@ -42,6 +44,7 @@ describe.each([
     const manifest = await engine.readManifest(listed[0].name);
     expect(manifest.files.map((f: { path: string }) => f.path)).toEqual(h.expectedPaths());
     expect(manifest).toMatchObject({ version: 1, keyId: engine.keyId, createdAt: '2026-10-08T19:30:00.000Z' });
+    expect(manifest.snapshotBarrier).toMatchObject({ completed: true, snapshotSeq: 1, startedAt: T0, endedAt: T0 });
     expect(manifest.appVersion).toMatch(/^\d+\.\d+\.\d+/);
     expect(manifest.totals.files).toBe(manifest.files.length);
 
@@ -107,8 +110,59 @@ describe.each([
     expect(newest.name).toBe('20261008T213000Z.json.enc');
     const a = await engine.readManifest(newest.name);
     const b = await engine.readManifest(older.name);
+    expect(a.snapshotBarrier!.snapshotSeq).toBe(b.snapshotBarrier!.snapshotSeq + 1);
     const differing = a.files.filter((f: { path: string; objectId: string }, i: number) => f.objectId !== b.files[i].objectId);
     expect(differing.map((f: { path: string }) => f.path)).toEqual(['b2.yjs']);
+  });
+
+  it('keeps an open room and the directory database at one point when a writer arrives between their copies', async () => {
+    const barrier = createSnapshotBarrier({ maxHoldMs: 5000, now: () => h.clock.now });
+    h = await harness({ accounts: true, snapshotBarrier: barrier });
+    h.directory!.setSetting('snapshot.marker', 'before');
+    const doc = new Y.Doc();
+    doc.getMap('markers').set('snapshot', 'before');
+    let queued: Promise<unknown> | null = null;
+    const engine = h.engine({
+      snapshotBarrier: barrier,
+      boardState: (room: string) => {
+        if (room === 'b1' && queued === null) {
+          // snapshotFiles asks for the room only after its directory.sqlite copy has completed.
+          h.directory!.setSetting('snapshot.marker', 'after');
+          queued = barrier.runWriter(() => {
+            doc.getMap('markers').set('snapshot', 'after');
+          });
+        }
+        return room === 'b1' ? Y.encodeStateAsUpdate(doc) : null;
+      },
+    });
+
+    const result = await engine.runNow();
+    expect(result).toMatchObject({ ok: true, changed: true });
+    const manifestName = (result as { manifest?: string }).manifest;
+    if (result.ok !== true || typeof manifestName !== 'string') throw new Error('the snapshot backup did not create a manifest');
+    if (!queued) throw new Error('the room snapshot did not start the concurrent writer');
+    await queued;
+
+    const manifest = await engine.readManifest(manifestName);
+    const directoryEntry = manifest.files.find((file: { path: string }) => file.path === 'directory.sqlite');
+    const boardEntry = manifest.files.find((file: { path: string }) => file.path === 'b1.yjs');
+    expect(directoryEntry).toBeTruthy();
+    expect(boardEntry).toBeTruthy();
+    const databaseFile = h.file('snapshot-point.sqlite');
+    fs.writeFileSync(databaseFile, await engine.readObject(directoryEntry.objectId));
+    const snapshotDb = new DatabaseSync(databaseFile, { readOnly: true });
+    try {
+      expect(snapshotDb.prepare('SELECT value FROM settings WHERE key = ?').get('snapshot.marker')).toMatchObject({ value: 'before' });
+    } finally {
+      snapshotDb.close();
+    }
+    const room = new Y.Doc();
+    Y.applyUpdate(room, await engine.readObject(boardEntry.objectId));
+    expect(room.getMap('markers').get('snapshot')).toBe('before');
+    expect(h.directory!.getSetting('snapshot.marker')).toBe('after');
+    expect(doc.getMap('markers').get('snapshot')).toBe('after');
+    doc.destroy();
+    room.destroy();
   });
 
   it('a new file, a deleted file and a new history version show up', async () => {
@@ -1006,6 +1060,7 @@ describe('reading a backup', () => {
       ['a size that is not a number', (b: any) => { b.files[0].size = '10'; }],
       ['another version', (b: any) => { b.version = 2; }],
       ['a different key id', (b: any) => { b.keyId = '00000000'; }],
+      ['an incomplete snapshot barrier', (b: any) => { b.snapshotBarrier = { snapshotSeq: 1, startedAt: T0, endedAt: T0 }; }],
       ['no file list', (b: any) => { b.files = 'all of them'; }],
       ['a file entry that is not an object', (b: any) => { b.files[0] = 'b1.yjs'; }],
     ])('refuses %s', async (_name, mutate) => {

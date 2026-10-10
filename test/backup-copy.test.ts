@@ -29,7 +29,8 @@ async function until(test: () => boolean, ms = 5000) {
     await sleep(5);
   }
 }
-const temps = () => fs.readdirSync(h.dir).filter((n) => n.includes('.backup-'));
+const temps = () => fs.readdirSync(h.dir).filter((n) => n.includes('.backup-') && !n.startsWith('.backup-snapshot-'));
+const snapshotDirs = () => fs.readdirSync(h.dir).filter((n) => n.startsWith('.backup-snapshot-'));
 const scratchDir = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-copy-'));
   scratch.push(dir);
@@ -279,6 +280,7 @@ describe('a copy that fails or is stopped', () => {
     expect(await run).toMatchObject({ ok: false, aborted: true });
     expect(made[0].terminated).toBe(1);
     expect(temps()).toEqual([]);
+    expect(snapshotDirs()).toEqual([]);
     expect(h.fake.keys(/manifests/)).toEqual([]);
     expect(engine.status().lastError).toBeNull();
   });
