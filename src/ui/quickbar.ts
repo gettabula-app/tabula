@@ -473,8 +473,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   app.on('tool', sync);
   app.on('readonly', sync);
   props.onToggle(build);
-  app.lifetime.signal.addEventListener('abort', onAuth(() => { build(); sync(); }), { once: true });
-  app.lifetime.signal.addEventListener('abort', onTrackerLinkSeamChange(() => { build(); sync(); }), { once: true });
+  // a bare test app has no lifetime; the real one always does
+  app.lifetime?.signal.addEventListener('abort', onAuth(() => { build(); sync(); }), { once: true });
+  app.lifetime?.signal.addEventListener('abort', onTrackerLinkSeamChange(() => { build(); sync(); }), { once: true });
   // the AI bar mounting adds or takes away Cluster; its moving makes the quick bar find its place again
   onAiBarChange(app, (why) => {
     if (why === 'layout') {

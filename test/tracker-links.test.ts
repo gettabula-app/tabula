@@ -38,7 +38,7 @@ function mockKanban(): TrackerMockKanban {
 describe('tracker link dialog model', () => {
   it('binds submit to a store, reports created keys, and folds failures into errorCode', async () => {
     const result = { link: { id: 'l1' }, created: [{ cardId: 'c1', key: 'TAB-5' }, { cardId: 'c2', key: 'TAB-6' }], skipped: [] } as unknown as TrackerLinkKanbanResult;
-    const linkKanban = vi.fn().mockResolvedValueOnce(result).mockRejectedValueOnce(new TrackerError('forbidden', 'Only board editors can link a kanban.')).mockRejectedValueOnce(new TrackerError('network', 'offline'));
+    const linkKanban = vi.fn<(input: unknown) => Promise<TrackerLinkKanbanResult>>().mockResolvedValueOnce(result).mockRejectedValueOnce(new TrackerError('forbidden', 'Only board editors can link a kanban.')).mockRejectedValueOnce(new TrackerError('network', 'offline'));
     const model = createLinkDialogModel({ lanes, states, suggestion, existingCardCount: 2 });
     model.setMapping('lane-review', 'in_review');
     const bound = bindLinkDialogModel(model, { linkKanban }, { boardId: 'board-1', kanbanId: 'kanban-1' });
