@@ -120,7 +120,7 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 - Alignment lines and equal-spacing brackets appear while you move or resize; see [Smart guides](smart-guides.md).
 - `Shift` while resizing keeps proportions.
 - Right-click an item (or a selection) for a menu with **Bring to front**, **Bring forward**, **Send backward**, **Send to back**, **Duplicate**, **Lock** or **Unlock**, and **Delete**. Bring forward and Send backward move the selection one step: past the nearest item it overlaps, not to the very top or bottom.
-- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one sticky note per line (up to 50).
+- Copy and paste with `Ctrl+C` and `Ctrl+V`. Pasting plain text creates one text object with your line breaks kept; long text wraps at a set width.
 
 To keep objects together, put them in a **Frame** (moving the frame moves what is inside it) or make them a **group**.
 
