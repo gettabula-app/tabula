@@ -122,6 +122,25 @@ function loadAi(env, authEnabled, warn) {
   const previous = parseSecret(env.TABULA_AI_SECRET_PREVIOUS, 'TABULA_AI_SECRET_PREVIOUS');
   if (previous && !secret) throw new Error('TABULA_AI_SECRET_PREVIOUS needs TABULA_AI_SECRET too');
 
+  const rawProxyUrl = (env.TABULA_AI_PROXY_URL || '').trim();
+  let proxyUrl = null;
+  if (rawProxyUrl) {
+    let url;
+    try {
+      url = new URL(rawProxyUrl);
+    } catch {
+      throw new Error('TABULA_AI_PROXY_URL is not a valid URL');
+    }
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname))) {
+      throw new Error('TABULA_AI_PROXY_URL must be an https:// URL (http:// is only allowed for loopback tests)');
+    }
+    if (url.username || url.password || url.search || url.hash || rawProxyUrl.includes('?') || rawProxyUrl.includes('#')) {
+      throw new Error('TABULA_AI_PROXY_URL must not contain credentials, a query or a fragment');
+    }
+    proxyUrl = `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+  }
+  const proxyToken = (env.TABULA_AI_PROXY_TOKEN || '').trim() || null;
+
   const apiKey = (env.TABULA_AI_API_KEY || '').trim();
   if (apiKey && !AI_KEY_RE.test(apiKey)) throw new Error('TABULA_AI_API_KEY must be 8 to 512 characters without spaces');
   const flag = (env.TABULA_AI_OPEN || '').trim();
@@ -138,7 +157,7 @@ function loadAi(env, authEnabled, warn) {
     warn('TABULA_AI_OPEN=1 does nothing without TABULA_AI_API_KEY');
   }
   if (authEnabled && (provider === 'openai-compatible' || (env.TABULA_AI_BASE_URL || '').trim())) warn('TABULA_AI_PROVIDER, TABULA_AI_BASE_URL and TABULA_AI_MODEL are ignored for OpenAI-compatible providers in accounts mode: each key carries its own provider, address and model');
-  return hide({ provider, model, baseUrl, secret, previous, open }, ['secret', 'previous', 'open']);
+  return hide({ provider, model, baseUrl, secret, previous, open, proxyUrl, proxyToken }, ['secret', 'previous', 'open', 'proxyToken']);
 }
 
 // Hosted workspaces (docs/cloud.md). All three variables or none; the result is null unless accounts mode is on too.

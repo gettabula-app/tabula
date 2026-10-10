@@ -2,7 +2,7 @@
 
 The floating bar where a person asks the AI to work on the board: summarise it, cluster stickies, generate ideas. It is the front door to the features in `docs/ai.md`; it adds no new AI capability.
 
-Status: built behind the `?aibar` flag (TAB-123, TAB-141). The bar, its entry points and live previews are in the app; remove the flag after a smoke run with a real key. An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
+Status: shipped as part of the normal board (TAB-123, TAB-141). The bar appears when AI is enabled for the person and a workspace key, an allowed personal key or plan credits are available. An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
 
 Read `docs/ai.md` first. This document only covers the bar: how it looks, where it sits, what it does in each state, and the words it uses. Calls, keys, proposals, limits and errors come from there.
 
@@ -14,18 +14,18 @@ Read `docs/ai.md` first. This document only covers the bar: how it looks, where 
 - **Three actions in v1**, as chips: Summarise, Cluster, Generate ideas. A chip arms its action and shows the cost; Run or Enter starts it. A free-text prompt runs Generate. The other chips in the Linear spec are not built, so they are not shown (see "Chips").
 - **The single entry point.** The Generate, Summarise and Cluster items elsewhere in the app open this bar with their action armed (see "Entry points").
 - **Nothing touches the board until the person says so.** A run produces a preview on the canvas (ghosts), and the bar offers Discard, Retry and Add to board. Add is one undo step.
-- **Absent for people who cannot apply a result** (viewers, commenters) and when AI is off for the workspace.
+- **Absent for people who cannot apply a result** (viewers, commenters), when AI is off for the person, or when no workspace key, allowed personal key or plan credits are available.
 - **Multiplayer.** Others see a run in flight and its preview in the runner's colour; any editor can accept or discard it, and the first action wins. A personal key can run privately. See "Multiplayer (TAB-141)".
 
 ## Where it appears
 
-| Who | AI on for the workspace | The bar |
+| Who | AI enabled for this person and a key or plan credits are available | The bar |
 | --- | --- | --- |
 | Owner, admin, editor, guest with edit rights | yes | Shown |
 | Viewer, commenter | yes | Not rendered. The shortcut does nothing. No menu item. |
-| Anyone | no | Not rendered. An admin sees one extra item, **Set up AI**, in the board menu; nobody else sees anything. No banner, no badge, no nag. |
+| Owner, admin, member or guest | no | Not rendered. No AI menu item, banner, badge or nag. Setup is in Admin → AI. |
 
-The rule matches `docs/ai.md`: a person can run a feature only if `canWriteRoom(role, 'board')` and the workspace has AI enabled with a resolvable key (or, in phase 2, credits). The app reads `GET /api/ai/config` (`enabled`, `features`, `keySource`, `model`, `credits?`) when the board opens and mounts the bar only when it says yes. A role change mid-session removes the bar (and closes any open preview) without a reload. The relay re-checks on every run, so hiding the bar is a convenience, not the gate.
+The rule matches `docs/ai.md`: the app mounts the bar only when `enabled` is true and `keySource` names a usable workspace or personal key, or `credits` is true. The server's `credits` capability is false until phase 2. A role change mid-session removes the bar (and closes any open preview) without a reload. The relay re-checks on every run, so hiding the bar is a convenience, not the gate. In open mode, the relay reports AI enabled only when its operator key and open-mode setting are both present.
 
 ## Anatomy
 
@@ -125,7 +125,8 @@ Always visible, in every state. It says what leaves the instance and who pays.
 | --- | --- |
 | `workspace` | "Uses the workspace key" |
 | `user` | "Uses your key" |
-| `platform` (phase 2) | "Uses AI credits" |
+| no key source, with `credits: true` | "Uses AI credits" |
+| no key source, without credits | "No AI key set" (the bar is hidden in this state) |
 
 Private notes are never sent (`docs/ai.md`); the line does not repeat that. When the relay will cut content (400 objects, 60,000 characters), the count in the line is the capped count: "Sends the 400 stickies nearest the selection to Anthropic". The mock does not show the cut case.
 
@@ -197,16 +198,21 @@ The proposal is drawn on the canvas, not in the bar.
 
 ### Errors
 
-Errors replace the status line in place. Each has a red icon and message, then one action that helps, then a dismiss ✕ (Esc does the same). The text colour is `color-mix(in srgb, var(--danger) 54%, var(--tray-text))`, the red the app already uses on trays. The message container is `role="alert"`. The bar never shows a code, a stack, a key or a provider's raw message, and never says "you".
+Errors replace the status line in place. Each has a red icon and message, then one action that helps, then a dismiss ✕ (Esc does the same). The text colour is `color-mix(in srgb, var(--danger) 54%, var(--tray-text))`, the red the app already uses on trays. The message container is `role="alert"`. The bar never shows a code, a stack, a key or a provider's raw response; for hosted credits proxy errors it shows the relay's `message` verbatim, with a short default when it is missing.
 
 | Condition (`docs/ai.md`) | Message | Action |
 | --- | --- | --- |
-| No key (`ai_unconfigured`, or the key was removed while the bar was open) | "AI isn't set up for this workspace." | Admin: link "Set up AI". Others: plain text "Ask a workspace admin." |
+| No key (`ai_unconfigured`, or the key was removed while the bar was open) | "AI isn't set up for this workspace." | Admin: plain text "Check the Admin → AI tab." Others: plain text "Ask a workspace admin." |
 | Key rejected (`ai_key_invalid`) | "The AI key was rejected. Check it in AI settings." | Admin, or the person's own key: link "AI settings". Others: "The AI key was rejected. Ask a workspace admin to check it." |
 | Rate limited (`ai_rate_limited`, with `retry-after`) | "Too many requests. Try again in 40 s." | **Retry**, disabled until the countdown ends. The number counts down live each second; at zero the text becomes "Too many requests. You can try again now." and Retry enables. |
-| Provider down (`ai_unavailable`) | "Anthropic isn't responding. Try again in a moment." | **Retry** |
+| Proxy rate limited (`rate_limited`) | The server message verbatim; fallback: "Too many requests. Try again later." | **Retry**, disabled until `retry-after` ends when present |
+| Credits exhausted (`credits_exhausted`) | The server message verbatim; fallback: "AI credits are used up. Try again later." | No Retry; try again when credits reset |
+| Credits not included (`credits_not_included`) | The server message verbatim; fallback: "AI credits aren't included for this workspace." | Ask a workspace admin; no Retry |
+| Model not allowed (`model_not_allowed`) | The server message verbatim; fallback: "This model is not allowed. Ask a workspace admin to change it." | No Retry |
+| Reply limit too large (`max_tokens_too_large`) | The server message verbatim; fallback: "The requested reply is too large. Try a smaller request." | No Retry |
+| Request too large (`request_too_large`) | The server message verbatim; fallback: "This request is too large. Reduce the amount of content and try again." | No Retry |
+| Provider down (`ai_unavailable`) | The server message verbatim; fallback: "AI is temporarily unavailable. Try again in a moment." | **Retry** |
 | Refused (`refused`) | "The AI declined this request. Nothing was changed." | **Edit request** (back to the prompt) |
-| Out of credits (`402 ai_credits_exhausted`) | "Your workspace has used this month's AI credits." | Admin: link "Add credits". Others: "Ask a workspace admin." |
 | Offline | "You're offline. AI needs a connection." | **Retry** |
 
 The rate-limit countdown is for the eye only. Screen readers get the static sentence once ("Too many requests. Try again in 40 seconds.") and once more when it ends ("You can try again now."); the changing number is `aria-hidden`.
@@ -380,7 +386,7 @@ All of it, as built in the mock. Sentence case, plain, no exclamation marks, no 
 | Toast after Add | "Added 6 stickies." + "Undo"; "Moved 9 stickies into 3 groups." + "Undo" |
 | Dismiss | Tooltip "Dismiss" + "Esc" |
 | Errors | See "Errors". Not in the mock: "The board changed while you were looking. Run it again." |
-| Board menu (admin, AI off) | "Set up AI" |
+| Board menu (AI unavailable) | No AI entry |
 
 ## Persistence
 
@@ -504,7 +510,7 @@ Reviewer controls: **Other person (Ana)**: none, running, preview. **Two preview
 
 ## What the build needs
 
-For the engineer. The bar, its entry points and live previews are built behind `?aibar`; remove the flag after a smoke run with a real key.
+For the engineer. The bar, its entry points and live previews ship with the normal board and are controlled by the per-person AI config.
 
 - `src/ui/ai-bar.ts` and `src/ui/ai-bar.css` for the bar; `src/ai-bar-logic.ts` for the pure parts, with unit tests for context counts and defaults, chip availability and reasons, arming and what Run starts, the disclosure text, the token and credit estimate, the error-to-view mapping (including role and key source), history, position clamping and setup visibility.
 - `src/ui/board.ts` mounts it in `.chrome` when `GET /api/ai/config` says it should.
@@ -512,9 +518,9 @@ For the engineer. The bar, its entry points and live previews are built behind `
 - The sticky tray's Generate, the board menu's Summarise, the session bar's Summarise next to Vote results after Finish, and the quick bar's Cluster call the bar control's `open({ arm, context })` instead of running anything (see "Entry points").
 - `src/ui/quickbar.ts` passes the bar's rectangle to `placeBar` as an obstacle.
 - `toast()` in `src/ui/common.ts` supports an optional action button and longer duration, and reads `--ai-top`; `focus.ts` and the poll card also read `--ai-top` (see "Placement").
-- The board menu shows admin-only **Set up AI** when the config has loaded with AI off; it links to `#/admin/ai`.
-- The status is recorded in `docs/ai.md` and `CHANGELOG.md`; the launch step left is removing `?aibar` after a smoke run with a real key.
-- Multiplayer (TAB-141): the relay and app live-run work is built behind the flag, including the in-flight target outline and other people's previews. This change adds the 1px dark halos to those outlines. Tests cover snapshots and patches, settled previews, resolve races, role-based trays, open mode, label-row collisions and reduced motion.
+- The board menu has no AI entry while AI cannot run. Workspace setup is in **Admin → AI**.
+- The status is recorded in `docs/ai.md` and the user-facing changelog.
+- Multiplayer (TAB-141): the relay and app live-run work includes the in-flight target outline and other people's previews. Tests cover snapshots and patches, settled previews, resolve races, role-based trays, open mode, label-row collisions and reduced motion.
 - Tests (from the Linear spec): context selection, preview, accept and undo, permission gating, each error state, a mock provider (no network).
 
 ## Decisions beyond the brief
@@ -525,7 +531,7 @@ For the engineer. The bar, its entry points and live previews are built behind `
 4. **Chips and the context button are dimmed (and the chips inert) while running and previewing**, so the height does not change and nothing can start a second run.
 5. **Collapse is disabled while running and previewing**, so a run or a preview is never orphaned behind a button.
 6. **"Edit request" on a refusal**, and a **dismiss ✕ on every error**, so the person can get back to the prompt.
-7. **"Uses AI credits"** for the platform key source (`docs/ai.md` says only "the platform with credits").
+7. **"Uses AI credits"** when no key source applies and hosted credits are active (`docs/ai.md` says only "the platform with credits").
 8. **The bar is centred on the page** (review, 2026-10-09), with equal 244px insets so it never reaches the zoom tray; the brief placed it between the rail and the zoom tray, which put it 78px left of the page centre at 1440px. Below 1000px it rises above the zoom tray instead of narrowing further.
 9. **The phone layout runs up to 860px**, not 600, and the bar is capped at 640px there.
 10. **Phone bottom offset is 64px** (zoom tray row plus 8px), because the zoom tray stays bottom right at every width and the brief says it is never covered.
@@ -580,7 +586,7 @@ Open `design/ai-toolbar/index.html`. The strip at the top is the reviewer panel 
 
 - **Theme**: all five, with the exact values from `src/themes.ts`.
 - **State**: idle, collapsed, prompt typed, armed (Summarise; Cluster with 9 selected; Generate with a prompt), opened from the board menu, sticky tray or quick bar (each with its action armed), running, preview (create), preview (group), just added (undo toast), and each of the seven errors.
-- **Role**: admin, editor, commenter, viewer. With AI off the board menu (dots, top right) shows "Set up AI" for an admin.
+- **Role**: admin, editor, commenter, viewer. With AI unavailable, the board menu shows no AI entry for any role.
 - **Key source**: workspace key, your key, credits (1,240 left).
 - **Selected stickies and context**: 0, 1, 3, 9 or 12 selected; selection, visible area, whole board, prompt only.
 - **Session bar**: on or off; the AI bar stacks above it.

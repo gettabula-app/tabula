@@ -19,7 +19,6 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => (frames.set(++nextFrame, cb), nextFrame));
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
   vi.stubGlobal('Element', FakeElement);
-  vi.stubGlobal('location', { search: '?aibar', hash: '' });
 });
 
 afterEach(() => {

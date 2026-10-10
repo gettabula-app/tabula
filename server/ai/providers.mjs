@@ -9,8 +9,8 @@ import { createOpenAiCompatibleProvider } from './openai-compatible.mjs';
 export const PROVIDERS = ['anthropic', 'openai-compatible'];
 
 /**
- * `model` and `trusted` are for the OpenAI-compatible kind: the model id the key was saved with, and whether the address comes
- * from the operator's environment (http and a local address allowed) rather than from a key screen.
+ * `model` and `trusted` are for the OpenAI-compatible kind, except that trusted Anthropic addresses may use loopback http in
+ * tests. The trusted flag never permits a non-loopback Anthropic address over http.
  * @param {{ kind: string, apiKey: string, baseUrl?: string | null, model?: string | null, trusted?: boolean, client?: any, verifyTimeoutMs?: number }} options
  */
 export function createProvider({ kind, apiKey, baseUrl = null, model = null, trusted = false, client = null, ...rest }) {
@@ -24,7 +24,8 @@ export function createProvider({ kind, apiKey, baseUrl = null, model = null, tru
     } catch {
       throw new Error('baseUrl is not a valid URL');
     }
-    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('baseUrl must be an https:// URL without credentials');
+    const loopbackHttp = trusted && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname.toLowerCase());
+    if ((url.protocol !== 'https:' && !loopbackHttp) || url.username || url.password) throw new Error('baseUrl must be an https:// URL without credentials');
   }
   return createAnthropicProvider({ apiKey, baseUrl, client, ...rest });
 }

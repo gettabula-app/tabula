@@ -229,9 +229,10 @@ export function thisRunText(tokens: number, cap: number): string {
 /** A private run is for a personal key only; on the workspace key the switch does not exist and the relay refuses it. */
 export const effectivePrivate = (on: boolean, keySource: AiConfig['keySource']): boolean => on && keySource === 'user';
 
-export function keyText(keySource: AiConfig['keySource'], privateRun: boolean): string {
+export function keyText(keySource: AiConfig['keySource'], privateRun: boolean, credits = false): string {
   if (keySource === 'user') return privateRun ? 'Uses your key · Private run' : 'Uses your key';
   if (keySource === 'workspace') return 'Uses the workspace key';
+  if (credits) return 'Uses AI credits';
   return 'No AI key set';
 }
 
@@ -269,6 +270,7 @@ export interface DisclosureInput {
   /** Whether the typed prompt goes with the request (not for a cluster). */
   withPrompt: boolean;
   keySource: AiConfig['keySource'];
+  credits: boolean;
   privateRun: boolean;
   proposalKind: AiProposal['kind'] | null;
 }
@@ -279,7 +281,7 @@ export function disclosure(o: DisclosureInput): [string, string] {
   if (o.ui === 'preview') return [PREVIEW_NOTE, previewKeys(o.proposalKind ?? 'create')];
   const sends = sendsText(o.ctx, o.facts, o.prompt, o.withPrompt);
   if (o.ui === 'running') return [sends, priv ? 'Private run · Esc stops' : 'Esc stops'];
-  return [sends, keyText(o.keySource, priv)];
+  return [sends, keyText(o.keySource, priv, o.credits)];
 }
 
 // ---------------------------------------------------------------- the request
@@ -586,6 +588,8 @@ export interface ErrorView {
   /** Seconds the Retry button stays disabled. */
   wait: number | null;
   offline: boolean;
+  /** Rate-limit copy from the server must stay static while its Retry countdown runs. */
+  staticText?: boolean;
 }
 
 export const DEFAULT_WAIT = 30;
@@ -594,9 +598,15 @@ export const ASK_ADMIN = 'Ask a workspace admin.';
 
 export const isAdminRole = (role: string | null | undefined): boolean => role === 'owner' || role === 'admin';
 
-/** An admin can open workspace AI settings from a board only after the disabled config has loaded. */
-export function showSetUpAi(o: { flag: boolean; config: Partial<Pick<AiConfig, 'enabled' | 'hasSecret'>> | null | undefined; role: string | null | undefined }): boolean {
-  return o.flag && o.config?.enabled === false && isAdminRole(o.role);
+/** AI runs for this person when enabled and backed by a usable key or the workspace's credits. */
+export function aiAvailable(config: Partial<Pick<AiConfig, 'enabled' | 'keySource' | 'personalKeys' | 'credits'>> | null | undefined): boolean {
+  const enabledForMe = config?.enabled === true;
+  const hasWorkspaceKey = config?.keySource === 'workspace';
+  const personalKeysAllowed = config?.personalKeys === true;
+  // keySource is null when a personal key cannot be used, or when the server cannot read stored keys.
+  const hasPersonalKey = config?.keySource === 'user';
+  const credits = config?.credits === true;
+  return enabledForMe && (hasWorkspaceKey || (personalKeysAllowed && hasPersonalKey) || credits);
 }
 
 /** "40 s", and "3 min" once a wait is longer than a minute and a half. */
@@ -617,7 +627,9 @@ export interface ErrorContext {
 /** Seconds to wait from a retry-after header: 30 when it is missing, and no more than an hour. */
 export const waitOf = (retryAfter: number | null | undefined): number => (retryAfter && retryAfter > 0 ? Math.min(MAX_WAIT, Math.ceil(retryAfter)) : DEFAULT_WAIT);
 
-/** The row the bar shows for a failure (docs/ai-toolbar.md, "Errors"). It never carries a raw code, a key or a provider's own message. */
+const serverText = (message: string | null | undefined, fallback: string): string => (message?.trim() ? message : fallback);
+
+/** The row the bar shows for a failure (docs/ai-toolbar.md, "Errors"). It never carries a raw code or a key. */
 export function errorView(code: string, ctx: ErrorContext): ErrorView {
   const row = (kind: ErrorKind, text: string, extra: Partial<ErrorView> = {}): ErrorView => ({
     kind, text, link: null, note: null, retry: false, edit: false, wait: null, offline: false, ...extra,
@@ -628,9 +640,7 @@ export function errorView(code: string, ctx: ErrorContext): ErrorView {
     case 'ai_no_key':
     case 'ai_key_unreadable':
     case 'ai_unconfigured':
-      return ctx.admin
-        ? row('nokey', "AI isn't set up for this workspace.", { link: { before: '', label: 'Set up AI', after: '', target: 'admin-ai' } })
-        : row('nokey', "AI isn't set up for this workspace.", { note: ASK_ADMIN });
+      return row('nokey', "AI isn't set up for this workspace.", { note: ctx.admin ? 'Check the Admin → AI tab.' : ASK_ADMIN });
     case 'ai_key_invalid': {
       const own = ctx.keySource === 'user';
       if (ctx.admin || own) return row('invalid', 'The AI key was rejected.', { link: { before: 'Check it in ', label: 'AI settings', after: '.', target: own ? 'my-key' : 'admin-ai' } });
@@ -644,12 +654,26 @@ export function errorView(code: string, ctx: ErrorContext): ErrorView {
     }
     case 'ai_bad_output':
       return row('unusable', 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.', { retry: true });
-    case 'rate_limited':
     case 'ai_rate_limited': {
       const wait = waitOf(ctx.retryAfter);
       return row('rate', rateText(wait), { retry: true, wait });
     }
+    case 'credits_exhausted':
+      return row('rate', serverText(ctx.message, 'AI credits are used up. Try again later.'), { staticText: true });
+    case 'credits_not_included':
+      return row('nokey', serverText(ctx.message, "AI credits aren't included for this workspace."), { note: ASK_ADMIN });
+    case 'rate_limited': {
+      const wait = waitOf(ctx.retryAfter);
+      return row('rate', serverText(ctx.message, 'Too many requests. Try again later.'), { retry: true, wait, staticText: true });
+    }
+    case 'model_not_allowed':
+      return row('invalid', serverText(ctx.message, 'This model is not allowed. Ask a workspace admin to change it.'));
+    case 'max_tokens_too_large':
+      return row('request', serverText(ctx.message, 'The requested reply is too large. Try a smaller request.'));
+    case 'request_too_large':
+      return row('request', serverText(ctx.message, 'This request is too large. Reduce the amount of content and try again.'));
     case 'ai_unavailable':
+      return row('down', serverText(ctx.message, 'AI is temporarily unavailable. Try again in a moment.'), { retry: true });
     case 'ai_timeout':
     case 'internal':
       return row('down', "Anthropic isn't responding. Try again in a moment.", { retry: true });

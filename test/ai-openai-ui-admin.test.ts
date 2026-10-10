@@ -15,6 +15,7 @@ const blank = (): AdminAi => ({
   membersOnly: false,
   limits: { perPersonHour: 20, perWorkspaceHour: 200 },
   hasSecret: true,
+  creditsActive: false,
   key: null,
 });
 
@@ -64,6 +65,21 @@ async function mountPanel() {
 }
 
 describe('the workspace compatible-provider key settings', () => {
+  it('explains that credits will be used until a workspace key is added', async () => {
+    settings.creditsActive = true;
+    const panel = await mountPanel();
+    expect(textOf(panel)).toContain('AI credits are used until you add a key.');
+    expect(textOf(panel)).toContain('People can run AI with their own key or AI credits.');
+    expect(textOf(panel)).not.toContain('only people with a key of their own can run AI features');
+  });
+
+  it('hides the credits note when a workspace key exists', async () => {
+    settings.creditsActive = true;
+    settings.key = { provider: 'anthropic', hint: 'abcd', baseUrl: null, model: null, createdAt: 1, lastUsedAt: null, readable: true };
+    const panel = await mountPanel();
+    expect(textOf(panel)).not.toContain('AI credits are used until you add a key.');
+  });
+
   it('shows the saved model as a fact instead of the Anthropic model selector', async () => {
     settings.key = {
       provider: 'openai-compatible', hint: 'abcd', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'moonshotai/kimi-k3', createdAt: 1, lastUsedAt: null, readable: true,

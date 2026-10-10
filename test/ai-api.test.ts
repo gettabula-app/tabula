@@ -125,6 +125,7 @@ describe('GET /api/ai/config', () => {
       personalKeys: false,
       hasSecret: true,
       myKey: null,
+      credits: false,
     });
   });
 
@@ -187,6 +188,7 @@ describe('PUT /api/admin/ai', () => {
       membersOnly: false,
       limits: { perPersonHour: 20, perWorkspaceHour: 200 },
       hasSecret: true,
+      creditsActive: false,
       key: null,
     });
   });

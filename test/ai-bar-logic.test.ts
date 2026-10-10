@@ -3,10 +3,10 @@ import type { AiProposal } from '../src/ai-apply';
 import type { AiFeature } from '../src/api';
 import {
   CHIPS, HISTORY_MAX, NO_FACTS, SEND_MAX, addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos,
-  contextAfterSelection, contextIds, contextLabel, contextMenu, createSseParser, disclosure, dockBottom, dragPos, errorPlain, errorView,
+  contextAfterSelection, contextIds, contextLabel, contextMenu, createSseParser, disclosure, dockBottom, dragPos, errorPlain, errorView, keyText,
   estimateFor, estimateTokens, formatExact, formatPos, formatTokens, formatWait, isAdminRole, modelChipLabel, modelChipText, modelShort, nearestIds,
   parseAiEvent, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi,
-  runTarget, runTip, runningText, sendsText, serializeHistory, settledMessage, showSetUpAi, stepHistory, thisRunText, toggleArmed, waitOf,
+  runTarget, runTip, runningText, sendsText, serializeHistory, settledMessage, aiAvailable, stepHistory, thisRunText, toggleArmed, waitOf,
   type AiOutcome, type Facts, type SseMessage,
 } from '../src/ai-bar-logic';
 import { parseRequest } from '../server/ai/run.mjs';
@@ -173,7 +173,7 @@ describe('arming', () => {
 
 describe('the disclosure line', () => {
   const d = (over: Partial<Parameters<typeof disclosure>[0]> = {}) =>
-    disclosure({ ui: 'idle', ctx: 'selection', facts: sel(3), prompt: '', withPrompt: true, keySource: 'workspace', privateRun: false, proposalKind: null, ...over });
+    disclosure({ ui: 'idle', ctx: 'selection', facts: sel(3), prompt: '', withPrompt: true, keySource: 'workspace', credits: false, privateRun: false, proposalKind: null, ...over });
 
   it('says what is sent for each context', () => {
     expect(sendsText('selection', sel(3), '')).toBe('Sends 3 selected stickies to Anthropic');
@@ -213,6 +213,9 @@ describe('the disclosure line', () => {
     expect(d({ keySource: 'user' })[1]).toBe('Uses your key');
     expect(d({ keySource: 'user', privateRun: true })[1]).toBe('Uses your key · Private run');
     expect(d({ keySource: null })[1]).toBe('No AI key set');
+    expect(keyText(null, false, true)).toBe('Uses AI credits');
+    expect(d({ keySource: null, credits: true })[1]).toBe('Uses AI credits');
+    expect(d({ keySource: 'workspace', credits: true })[1]).toBe('Uses the workspace key');
   });
 
   it('ignores the private switch on a key that cannot run privately', () => {
@@ -533,8 +536,23 @@ describe('runAi and resolveAiRun', () => {
   it('reads an error before the stream, with its retry-after', async () => {
     const out = await runAi(fake(() => json(429, { error: 'rate_limited', message: 'Wait' }, { 'retry-after': '40' })).fn, body);
     expect(out).toEqual({ ok: false, failure: { code: 'rate_limited', status: 429, message: 'Wait', retryAfter: 40 } });
+    const failure = (out as Extract<AiOutcome, { ok: false }>).failure;
+    expect(errorView(failure.code, { admin: false, keySource: null, message: failure.message, retryAfter: failure.retryAfter })).toMatchObject({ text: 'Wait', retry: true, wait: 40, staticText: true });
     const missing = (await runAi(fake(() => json(429, { error: 'rate_limited' })).fn, body)) as Extract<AiOutcome, { ok: false }>;
     expect(missing.failure.retryAfter).toBeNull();
+  });
+
+  it('passes proxy messages from both the HTTP body and an SSE error event into the row verbatim', async () => {
+    const message = 'AI credits are used up until 1 November.';
+    const outcomes = [
+      await runAi(fake(() => json(429, { error: 'credits_exhausted', message })).fn, body),
+      await runAi(fake(() => sse(`event: error\ndata: ${JSON.stringify({ error: 'credits_exhausted', message })}\n\n`)).fn, body),
+    ];
+    for (const outcome of outcomes) {
+      const failure = outcome as Extract<AiOutcome, { ok: false }>;
+      expect(failure.failure).toMatchObject({ code: 'credits_exhausted', message });
+      expect(errorView(failure.failure.code, { admin: false, keySource: null, message: failure.failure.message }).text).toBe(message);
+    }
   });
 
   it('names a code from the status when the answer has none', async () => {
@@ -604,11 +622,11 @@ describe('runAi and resolveAiRun', () => {
 describe('errors', () => {
   const view = (code: string, over: Partial<Parameters<typeof errorView>[1]> = {}) => errorView(code, { admin: false, keySource: 'workspace', ...over });
 
-  it('says AI is not set up, with a link for an admin and a note for everyone else', () => {
+  it('says AI is not set up without adding a board link for an admin', () => {
     for (const code of ['ai_disabled', 'ai_feature_disabled', 'ai_no_key', 'ai_key_unreadable', 'ai_unconfigured']) {
       const admin = view(code, { admin: true });
-      expect(admin).toMatchObject({ kind: 'nokey', text: "AI isn't set up for this workspace.", link: { label: 'Set up AI', target: 'admin-ai' }, note: null, retry: false });
-      expect(errorPlain(admin)).toBe("AI isn't set up for this workspace. Set up AI");
+      expect(admin).toMatchObject({ kind: 'nokey', text: "AI isn't set up for this workspace.", link: null, note: 'Check the Admin → AI tab.', retry: false });
+      expect(errorPlain(admin)).toBe("AI isn't set up for this workspace. Check the Admin → AI tab.");
       expect(view(code)).toMatchObject({ kind: 'nokey', link: null, note: 'Ask a workspace admin.' });
     }
   });
@@ -638,8 +656,8 @@ describe('errors', () => {
     });
   });
 
-  it('counts down a rate limit from retry-after, 30 seconds when it is missing', () => {
-    for (const code of ['rate_limited', 'ai_rate_limited']) {
+  it('counts down an AI provider rate limit from retry-after, 30 seconds when it is missing', () => {
+    for (const code of ['ai_rate_limited']) {
       expect(view(code, { retryAfter: 40 })).toMatchObject({ kind: 'rate', text: 'Too many requests. Try again in 40 s.', retry: true, wait: 40 });
       expect(view(code)).toMatchObject({ wait: 30, text: 'Too many requests. Try again in 30 s.' });
       expect(view(code, { retryAfter: null }).wait).toBe(30);
@@ -647,6 +665,26 @@ describe('errors', () => {
     expect(waitOf(0)).toBe(30);
     expect(waitOf(2.2)).toBe(3);
     expect(waitOf(99999)).toBe(3600);
+  });
+
+  it('shows proxy errors verbatim with the correct retry action and a short fallback', () => {
+    const cases = [
+      ['credits_exhausted', 'Your credits reset on 1 November.', false, 'AI credits are used up. Try again later.'],
+      ['credits_not_included', 'This plan does not include AI credits.', false, "AI credits aren't included for this workspace."],
+      ['rate_limited', 'Too many requests until 12:30.', true, 'Too many requests. Try again later.'],
+      ['model_not_allowed', 'Model X is not allowed.', false, 'This model is not allowed. Ask a workspace admin to change it.'],
+      ['max_tokens_too_large', 'Maximum output tokens must be 4096 or less.', false, 'The requested reply is too large. Try a smaller request.'],
+      ['request_too_large', 'The request exceeds the 60,000 character limit.', false, 'This request is too large. Reduce the amount of content and try again.'],
+      ['ai_unavailable', 'The AI service is temporarily unavailable.', true, 'AI is temporarily unavailable. Try again in a moment.'],
+    ] as const;
+    for (const [code, message, retry, fallback] of cases) {
+      expect(view(code, { message })).toMatchObject({ text: message, retry });
+      expect(view(code)).toMatchObject({ text: fallback, retry });
+      expect(view(code, { message: '' })).toMatchObject({ text: fallback, retry });
+    }
+    expect(view('credits_not_included', { message: 'Not included.' })).toMatchObject({ note: 'Ask a workspace admin.', retry: false });
+    expect(view('credits_exhausted', { message: 'Out of credits.' })).toMatchObject({ kind: 'rate', retry: false, staticText: true });
+    expect(view('rate_limited', { message: 'Try later.', retryAfter: 40 })).toMatchObject({ kind: 'rate', retry: true, wait: 40, staticText: true });
   });
 
   it('words a countdown for the eye and for a screen reader', () => {
@@ -661,8 +699,8 @@ describe('errors', () => {
     expect(rateSpoken(600)).toBe('Too many requests. Try again in 10 minutes.');
   });
 
-  it('says the provider is not responding for an unavailable provider, a timeout and an internal error', () => {
-    for (const code of ['ai_unavailable', 'ai_timeout', 'internal']) {
+  it('says the provider is not responding for a timeout and an internal error', () => {
+    for (const code of ['ai_timeout', 'internal']) {
       expect(view(code)).toMatchObject({ kind: 'down', text: "Anthropic isn't responding. Try again in a moment.", retry: true });
     }
   });
@@ -691,7 +729,7 @@ describe('errors', () => {
   });
 
   it('never shows a raw code, also for a code it does not know', () => {
-    const codes = ['ai_disabled', 'ai_key_invalid', 'ai_model_invalid', 'ai_bad_output', 'rate_limited', 'ai_unavailable', 'ai_refused', 'read_only', 'network', 'ai_invalid_proposal', 'board_changed', 'forbidden', 'unauthenticated', 'weird_code_7'];
+    const codes = ['ai_disabled', 'ai_key_invalid', 'ai_model_invalid', 'ai_bad_output', 'rate_limited', 'ai_rate_limited', 'credits_exhausted', 'credits_not_included', 'model_not_allowed', 'max_tokens_too_large', 'request_too_large', 'ai_unavailable', 'ai_refused', 'read_only', 'network', 'ai_invalid_proposal', 'board_changed', 'forbidden', 'unauthenticated', 'weird_code_7'];
     for (const code of codes) {
       for (const admin of [true, false]) {
         const text = errorPlain(view(code, { admin }));
@@ -712,16 +750,14 @@ describe('errors', () => {
   });
 });
 
-describe('Set up AI menu item', () => {
-  it('appears for an owner or admin after AI is known to be off, behind the flag', () => {
-    expect(showSetUpAi({ flag: true, config: { enabled: false, hasSecret: undefined }, role: 'owner' })).toBe(true);
-    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'admin' })).toBe(true);
-    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'member' })).toBe(false);
-    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'viewer' })).toBe(false);
-    expect(showSetUpAi({ flag: true, config: { enabled: false }, role: 'commenter' })).toBe(false);
-    expect(showSetUpAi({ flag: true, config: { enabled: true }, role: 'admin' })).toBe(false);
-    expect(showSetUpAi({ flag: true, config: null, role: 'admin' })).toBe(false);
-    expect(showSetUpAi({ flag: false, config: { enabled: false }, role: 'admin' })).toBe(false);
+describe('AI availability', () => {
+  it('requires AI to be enabled for the person and a workspace key, allowed personal key, or credits', () => {
+    expect(aiAvailable({ enabled: true, keySource: 'workspace', personalKeys: false, credits: false })).toBe(true);
+    expect(aiAvailable({ enabled: true, keySource: 'user', personalKeys: true, credits: false })).toBe(true);
+    expect(aiAvailable({ enabled: true, keySource: 'user', personalKeys: false, credits: false })).toBe(false);
+    expect(aiAvailable({ enabled: true, keySource: null, personalKeys: false, credits: true })).toBe(true);
+    expect(aiAvailable({ enabled: true, keySource: null, personalKeys: false, credits: false })).toBe(false);
+    expect(aiAvailable({ enabled: false, keySource: 'workspace', personalKeys: false, credits: true })).toBe(false);
   });
 });
 

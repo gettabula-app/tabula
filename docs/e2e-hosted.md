@@ -99,7 +99,7 @@ Run T1 steps 1 to 4 and T2 step 1 at 360 and 390 px wide in a mobile emulation, 
 1. Site: no sideways scroll, the sign-up action reachable without zooming, text at least 16 px in the form fields (iOS zooms smaller fields), tap targets at least 44 px, the keyboard does not hide the submit button.
 2. Form errors from T2 and T3 stay visible next to the field on a phone.
 3. Checkout is Stripe's page: only note whether the return to the site works.
-4. Workspace after sign-in: the boards page and a board at 390 px, the chat and comments trays, the AI bar if enabled (it appears only with `?aibar` for now).
+4. Workspace after sign-in: the boards page and a board at 390 px, the chat and comments trays, and the AI bar when AI is enabled for the person and a key is available.
 5. Take the five themes only for the workspace, not for the site.
 
 ## T6. Smaller checks to add once the main path passes

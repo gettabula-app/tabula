@@ -17,7 +17,7 @@ const TRIAL_ENDS_AT_MAX = 40;
 const TRIAL_YEAR_MIN = 2000;
 const TRIAL_YEAR_MAX = 2100;
 const SEAT_ROLES = ['owner', 'admin', 'member'];
-const LIMIT_FIELDS = ['seatLimit', 'readOnly', 'banner', 'billing', 'trialEndsAt', 'state'];
+const LIMIT_FIELDS = ['seatLimit', 'readOnly', 'banner', 'billing', 'aiCredits', 'trialEndsAt', 'state'];
 const TRIAL_ENDS_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/;
 const STATE_RE = /^[a-z0-9_-]{1,32}$/;
 const NOT_SINGLE_LINE_RE = /[\p{Cc}\u2028\u2029]/u;
@@ -40,7 +40,7 @@ const NOTIFY_TEMPLATES = {
 };
 
 // `billing: false` is a workspace that is provided free (education, internal): it has no subscription and no billing portal.
-const DEFAULT_LIMITS = Object.freeze({ seatLimit: null, readOnly: false, banner: null, billing: true, trialEndsAt: null, state: null });
+const DEFAULT_LIMITS = Object.freeze({ seatLimit: null, readOnly: false, banner: null, billing: true, aiCredits: false, trialEndsAt: null, state: null });
 
 /** A call to the control plane failed. The message is safe to show; the reason went to the log. */
 export class CloudError extends Error {
@@ -74,6 +74,10 @@ function checkLimits(body) {
   if (body.billing !== undefined) {
     if (typeof body.billing !== 'boolean') return { error: 'billing must be a boolean' };
     patch.billing = body.billing;
+  }
+  if (body.aiCredits !== undefined) {
+    if (typeof body.aiCredits !== 'boolean') return { error: 'aiCredits must be a boolean' };
+    patch.aiCredits = body.aiCredits;
   }
   if (body.banner !== undefined) {
     if (body.banner !== null && typeof body.banner !== 'string') return { error: 'banner must be a string or null' };
@@ -242,6 +246,7 @@ export function createCloud({
     seatLimit: limits.seatLimit,
     seatsUsed: seatUsage().seats,
     billing: limits.billing,
+    aiCredits: limits.aiCredits,
   });
 
   // The timeout covers reading the answer too: a control plane that stalls mid-body must not hold the request.

@@ -1,8 +1,8 @@
 # Your AI key
 
-**Your AI key** lets you save your own API key in Tabula: an Anthropic key, or a key for any service that speaks the OpenAI API (NVIDIA's catalogue, OpenAI, OpenRouter, or a model server of your own). Once AI features are available, they use your key instead of the workspace key.
+**Your AI key** lets you save your own API key in Tabula: an Anthropic key, or a key for any service that speaks the OpenAI API (NVIDIA's catalogue, OpenAI, OpenRouter, or a model server of your own). When personal keys are allowed, AI uses your key in preference to the workspace key.
 
-> Adding a key does not change anything in the app yet. The AI features that use it are still being built, so you cannot run AI features today.
+> AI can use a workspace key, or your key when an admin allows personal keys. AI also needs to be enabled for you. The board shows AI controls only when a key or plan credits are available.
 
 ## When you see it
 
@@ -65,4 +65,4 @@ With an OpenAI-compatible key, you choose the model: it is saved with your key a
 
 > Board content is sent to the chosen provider and processed under its API terms. The dialog shows this notice.
 
-The [AI bar](ai-bar.md), still in preview, is where these features run.
+The [AI bar](ai-bar.md) is where these features run.

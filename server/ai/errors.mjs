@@ -9,6 +9,12 @@ export const AI_STATUS = {
   ai_key_unreadable: 409,
   ai_rate_limited: 429,
   ai_unavailable: 502,
+  credits_exhausted: 429,
+  credits_not_included: 403,
+  rate_limited: 429,
+  model_not_allowed: 400,
+  max_tokens_too_large: 400,
+  request_too_large: 413,
   ai_aborted: 499,
   ai_timeout: 504,
   ai_refused: 422,
@@ -25,6 +31,12 @@ const MESSAGES = {
   ai_key_unreadable: 'The saved key cannot be read with the current TABULA_AI_SECRET. Enter it again.',
   ai_rate_limited: 'The provider is rate limiting this key. Try again later.',
   ai_unavailable: 'The provider is not available right now. Try again later.',
+  credits_exhausted: 'AI credits have been used for this period.',
+  credits_not_included: 'AI credits are not included in this workspace plan.',
+  rate_limited: 'AI is receiving too many requests. Try again later.',
+  model_not_allowed: 'This AI model is not available for credits.',
+  max_tokens_too_large: 'This AI request asks for too many output tokens.',
+  request_too_large: 'This AI request is too large.',
   ai_aborted: 'The request was cancelled',
   ai_timeout: 'The AI took too long and was stopped. Nothing was changed.',
   ai_refused: 'The AI declined this request. Nothing was changed.',
@@ -36,12 +48,12 @@ const MESSAGES = {
 };
 
 export class AiError extends Error {
-  /** @param {keyof typeof AI_STATUS} code @param {{ retryAfter?: number | null }} [extra] */
-  constructor(code, { retryAfter = null } = {}) {
-    super(MESSAGES[code] ?? MESSAGES.internal);
+  /** @param {keyof typeof AI_STATUS} code @param {{ retryAfter?: number | null, message?: string, status?: number }} [extra] */
+  constructor(code, { retryAfter = null, message = null, status = null } = {}) {
+    super(typeof message === 'string' ? message : MESSAGES[code] ?? MESSAGES.internal);
     this.name = 'AiError';
     this.code = code in AI_STATUS ? code : 'internal';
-    this.status = AI_STATUS[this.code];
+    this.status = Number.isInteger(status) ? status : AI_STATUS[this.code];
     this.retryAfter = retryAfter;
   }
 }

@@ -95,6 +95,7 @@ describe('open mode', () => {
       model: 'claude-opus-5-5',
       personalKeys: false,
       hasSecret: false,
+      credits: false,
     });
   });
 
@@ -124,6 +125,7 @@ describe('open mode', () => {
       model: 'claude-sonnet-5-5',
       personalKeys: false,
       hasSecret: false,
+      credits: false,
     });
     expect(res.text).not.toContain(KEY);
     expect(relay.output()).not.toContain(KEY);
