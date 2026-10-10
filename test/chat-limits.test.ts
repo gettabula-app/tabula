@@ -26,6 +26,19 @@ describe('a sliding window', () => {
     expect(w.wait('k')).toBe(0);
   });
 
+  it('keeps a busy key when the map is full, and forgets the key idle longest', () => {
+    const { c, now } = clock();
+    const w = createWindow({ max: 1, windowMs: 60_000 }, now);
+    w.record('busy');
+    for (let i = 0; i < 49_999; i++) w.record(`k${i}`);
+    c.now += 1000;
+    // still at its limit: asking again counts as use, so 'busy' is no longer the oldest key
+    expect(w.wait('busy')).toBeGreaterThan(0);
+    w.record('fresh');
+    expect(w.wait('busy')).toBeGreaterThan(0);
+    expect(w.wait('k0')).toBe(0);
+  });
+
   it('slides rather than resetting', () => {
     const { c, now } = clock();
     const w = createWindow({ max: 2, windowMs: 10_000 }, now);
@@ -106,6 +119,23 @@ describe('the chat limits', () => {
     c.now += 2_000;
     // had the refused ones counted toward the burst window, this would wait
     for (let i = 0; i < 4; i++) expect(limits.post('ana', `board/other${i}`)).toBe(0);
+  });
+
+  it('keeps an active channel count when another window refuses the request and the map fills up', () => {
+    const { c, now } = clock();
+    const limits = createChatLimits({ now, limits: {
+      ...CHAT_LIMITS,
+      postPerChannel: { max: 2, windowMs: 60_000 },
+      postBurst: { max: 1, windowMs: 2_000 },
+    } });
+    expect(limits.post('ana', 'board/b1')).toBe(0);
+    for (let i = 0; i < 49_999; i++) limits.post(`person${i}`, 'board/b1');
+    expect(limits.post('ana', 'board/b1')).toBe(2);
+    expect(limits.post('fresh', 'board/b1')).toBe(0);
+    c.now += 2_000;
+    expect(limits.post('ana', 'board/b1')).toBe(0);
+    c.now += 2_000;
+    expect(limits.post('ana', 'board/b1')).toBe(56);
   });
 
   it('allow 20 edits and deletes a minute', () => {
