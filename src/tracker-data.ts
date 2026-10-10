@@ -825,14 +825,18 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     if (destroyed || watchedCount() === 0) return;
     if (!isVisible()) { schedulePoll(pollMs); return; }
     try {
+      // The first poll has no cursor: the server answers with the current seq and no events, so anything that changed between a watcher's
+      // load and this answer would be missed. Refetch what is watched once instead of trusting the empty page.
+      const bootstrap = feedSeq === 0;
       const page = await api.feed(feedSeq);
       feedSeq = Math.max(feedSeq, page.seq, ...page.events.map((event) => event.id));
       pollErrors = 0;
       const changedKeys = new Set(page.events.map((event) => cacheTicketKey(event.ticketKey)));
+      if (bootstrap && page.seq > 0) for (const key of ticketListeners.keys()) changedKeys.add(key);
       for (const key of changedKeys) {
         if (ticketListeners.has(key)) void loadTicket(key, true).catch(() => undefined);
       }
-      if (page.events.length > 0) {
+      if (page.events.length > 0 || (bootstrap && page.seq > 0)) {
         for (const [key, query] of watchQueries) {
           if (listListeners.has(key)) void loadList(query, { force: true }).catch(() => undefined);
         }
