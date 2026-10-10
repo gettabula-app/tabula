@@ -35,6 +35,8 @@ GET /api/tracker/tickets?filter=state:started&filter=assignee:me&limit=20&cursor
 GET /api/tracker/tickets?q=payment&filter=label:Bug&limit=20
 ```
 
+A search result carries a `snippet`: the text is HTML-escaped (`&`, `<`, `>`, `"`, `'`) and the only tags in it are `<mark>` and `</mark>` around the matched words; a client may set it as HTML, but rendering the pieces between the marks as text is still the safest.
+
 The filter grammar is shared with MCP: `assignee`, `state`, `label`, `due`, `has:link`, `is:archived`, and `created` filters. The response is `{ "tickets": [...], "nextCursor": string|null }`. Search tickets include the `<mark>` snippet returned by the search command. Pages contain at most 50 tickets.
 
 For polling changes instead of browsing pages, use `updatedSince`:
