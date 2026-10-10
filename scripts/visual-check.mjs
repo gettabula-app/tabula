@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
@@ -1348,6 +1348,29 @@ const STATES = {
     });
     await env.page.getByRole('button', { name: 'All steps' }).click();
     await env.page.locator('.step-list').waitFor();
+  },
+  // QA's Firefox finding: the rail scrolls in a short window with no sign that it does. The edge with more behind it must fade (data-more-y plus a mask)
+  async 'rail-scroll-cue'(env) {
+    await openSeedBoard(env);
+    const result = await env.page.evaluate(async () => {
+      const tools = document.querySelector('.rail-tools');
+      if (!tools) return { failures: ['.rail-tools is missing'] };
+      const max = tools.scrollHeight - tools.clientHeight;
+      if (max <= 1) return { failures: [], scrolls: false, viewport: `${innerWidth}x${innerHeight}` };
+      const failures = [];
+      const mask = () => getComputedStyle(tools).maskImage || getComputedStyle(tools).webkitMaskImage || 'none';
+      const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      tools.scrollTop = 0; await settle();
+      if (tools.dataset.moreY !== 'down' || mask() === 'none') failures.push(`at the top: data-more-y is ${tools.dataset.moreY ?? 'missing'}, mask ${mask().slice(0, 20)}`);
+      tools.scrollTop = Math.floor(max / 2); await settle();
+      if (tools.dataset.moreY !== 'both' || mask() === 'none') failures.push(`in the middle: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = max; await settle();
+      if (tools.dataset.moreY !== 'up' || mask() === 'none') failures.push(`at the bottom: data-more-y is ${tools.dataset.moreY ?? 'missing'}`);
+      tools.scrollTop = 0; await settle();
+      return { failures, scrolls: true, max, viewport: `${innerWidth}x${innerHeight}` };
+    });
+    console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
   },
   async 'flow-steps-overlap'(env) {
     await STATES['flow-steps'](env);

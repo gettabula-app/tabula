@@ -188,6 +188,10 @@ select.input {
 .rail-btn { width: 40px; height: 40px; position: relative; }
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
 .rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+/* a rail that scrolls fades the edge with more behind it (the tools scroll when the window is short and the scrollbar is hidden) */
+.rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); }
 .rail-end { display: flex; flex: none; flex-direction: column; align-items: center; gap: inherit; }
 /* Tall desktop rails fit their contents; flatten the wrappers there to preserve the original flow. */
 @media (min-width: 861px) and (min-height: 981px) {

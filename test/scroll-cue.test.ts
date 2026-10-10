@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centredScroll, moreCue } from '../src/ui/scroll-cue';
+import { centredScroll, moreCue, moreCueY } from '../src/ui/scroll-cue';
 
 describe('moreCue (TAB-239, TAB-245)', () => {
   it('is empty when everything fits', () => {
@@ -21,5 +21,16 @@ describe('centredScroll', () => {
     expect(centredScroll(10, 60, 300, 900)).toBe(0);
     expect(centredScroll(850, 100, 300, 900)).toBe(600);
     expect(centredScroll(0, 100, 300, 250)).toBe(0);
+  });
+});
+
+describe('moreCueY (the tool rail)', () => {
+  it('is empty when the column fits', () => {
+    expect(moreCueY(0, 500, 500)).toBe('');
+  });
+  it('names the edge with more behind it', () => {
+    expect(moreCueY(0, 500, 600)).toBe('down');
+    expect(moreCueY(100, 500, 600)).toBe('up');
+    expect(moreCueY(50, 500, 600)).toBe('both');
   });
 });
