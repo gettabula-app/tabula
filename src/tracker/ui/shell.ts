@@ -129,10 +129,58 @@ function isTextTarget(target: EventTarget | null): boolean {
 }
 
 function stableQuery(state: TrackerViewerState): TrackerListQuery {
-  const supportedGroup = ['state', 'assignee', 'label'].includes(state.group) ? state.group : null;
+  // The REST list route currently accepts filters, q and limit. Grouping, facets and sorting are applied locally.
   return {
-    filter: [...state.filter], q: state.queryText.trim() || undefined, limit: 50, includeFacets: true, group: supportedGroup,
-    sort: { ...state.sort },
+    filter: [...state.filter], q: state.queryText.trim() || undefined, limit: 50,
+  };
+}
+
+/** The server's list endpoint returns a compact projection; fill fields used by the shared row UI. */
+function ticketFromListRow(row: TrackerRow, meta: TrackerMeta, trackerId: string): TrackerTicket {
+  const partial = row as unknown as Partial<TrackerTicket>;
+  const listedState = partial.state as Partial<TrackerTicket['state']> | undefined;
+  const stateReference = listedState?.id ?? listedState?.key ?? listedState?.name;
+  const canonicalState = meta.states.find((item) => item.id === stateReference || item.key === stateReference || item.name === stateReference);
+  const categories = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const;
+  const category = listedState?.category;
+  const priorities: readonly TrackerPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
+  const updatedAt = typeof partial.updatedAt === 'number' && Number.isFinite(partial.updatedAt) ? partial.updatedAt : 0;
+  const labels = Array.isArray(partial.labels) ? partial.labels.filter((label) => label && typeof label.name === 'string') : [];
+  const assignee = partial.assignee && typeof partial.assignee.userId === 'string' && typeof partial.assignee.name === 'string'
+    ? partial.assignee : null;
+  const project = partial.project && typeof partial.project.id === 'string' && typeof partial.project.name === 'string'
+    ? partial.project : null;
+  const milestone = partial.milestone && typeof partial.milestone.id === 'string' && typeof partial.milestone.name === 'string'
+    ? partial.milestone : null;
+  return {
+    ...partial,
+    id: typeof partial.id === 'string' ? partial.id : `list:${row.key}`,
+    key: row.key,
+    trackerId: typeof partial.trackerId === 'string' ? partial.trackerId : trackerId,
+    title: typeof partial.title === 'string' ? partial.title : row.key,
+    description: typeof partial.description === 'string' ? partial.description : '',
+    state: {
+      id: typeof listedState?.id === 'string' ? listedState.id : canonicalState?.id ?? stateReference ?? 'unknown',
+      key: typeof listedState?.key === 'string' ? listedState.key : canonicalState?.key ?? stateReference ?? 'unknown',
+      name: typeof listedState?.name === 'string' ? listedState.name : canonicalState?.name ?? String(stateReference ?? 'Unknown state'),
+      category: categories.includes(category as (typeof categories)[number]) ? category as TrackerTicket['state']['category'] : canonicalState?.category ?? 'unstarted',
+    },
+    priority: priorities.includes(partial.priority as TrackerPriority) ? partial.priority! : 'none',
+    assignee,
+    creator: partial.creator ?? { type: 'system', id: null, name: 'System' },
+    labels,
+    project,
+    milestone,
+    estimate: typeof partial.estimate === 'number' ? partial.estimate : null,
+    due: typeof partial.due === 'string' ? partial.due : null,
+    parent: typeof partial.parent === 'string' ? partial.parent : null,
+    relations: Array.isArray(partial.relations) ? partial.relations : [],
+    links: Array.isArray(partial.links) ? partial.links : [],
+    aliases: Array.isArray(partial.aliases) ? partial.aliases : [],
+    archivedAt: typeof partial.archivedAt === 'number' ? partial.archivedAt : null,
+    createdAt: typeof partial.createdAt === 'number' ? partial.createdAt : updatedAt,
+    updatedAt,
+    updatedSeq: typeof partial.updatedSeq === 'number' ? partial.updatedSeq : 0,
   };
 }
 
@@ -231,6 +279,22 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     errorBanner.hidden = false;
   };
 
+  const showListError = (message: string) => {
+    if (!errorHost) { showError(message); return; }
+    const target = errorHost;
+    target.replaceChildren(h('span', null, message), h('button', {
+      class: 'trk-small-button', type: 'button', onclick: () => {
+        target.hidden = true;
+        void options.store.loadList(stableQuery(state), { force: true }).catch((error: unknown) =>
+          showListError(error instanceof Error ? error.message : 'Could not load issues.'));
+      },
+    }, 'Retry'));
+    target.hidden = false;
+    if (skeletonHost) skeletonHost.hidden = true;
+    if (listRenderHost) listRenderHost.replaceChildren();
+    if (resultsHost) resultsHost.textContent = 'Issues unavailable';
+  };
+
   const renderTabs = () => {
     tabs.replaceChildren(...TABS.map((tab) => h('button', {
       class: `trk-tab${state.tab === tab.id ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -258,9 +322,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     currentCache = options.store.list(query);
     stopList = options.store.watchList(query, (cache) => {
       currentCache = cache;
-      drawRows(cache);
-      publishCurrentSnapshot();
-      if (cache.error) showError(cache.error.message);
+      try {
+        drawRows(cache);
+        publishCurrentSnapshot();
+      } catch (error) {
+        showListError(error instanceof Error ? error.message : 'Could not render issues.');
+      }
     });
   };
 
@@ -278,18 +345,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (!info) return;
     try {
       if (field === 'state') {
-        const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.id, label: item.name })), value: ticket.state.id });
-        if (typeof picked === 'string' && picked !== ticket.state.id) {
+        const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.key, label: item.name })), value: ticket.state.key });
+        if (typeof picked === 'string' && picked !== ticket.state.key) {
           const next = await options.store.transitionTicket(ticket.key, picked);
-          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.id));
+          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.key));
           announce(`${next.key} moved to ${next.state.name}`);
         }
       } else if (field === 'assignee') {
-        const picked = await openPicker<string>(anchor, { label: 'Assignee', options: info.members.map((item) => ({ value: item.userId, label: item.name })), value: ticket.assignee?.userId ?? null });
-        if ((picked === null || typeof picked === 'string') && picked !== (ticket.assignee?.userId ?? null)) {
+        const picked = await openPicker<string>(anchor, { label: 'Assignee', options: info.members.map((item) => ({ value: item.name, label: item.name })), value: ticket.assignee?.name ?? null });
+        if ((picked === null || typeof picked === 'string') && picked !== (ticket.assignee?.name ?? null)) {
           await options.store.updateTicket(ticket.key, { assignee: picked });
-          recordUndo('Assignee changed', () => options.store.updateTicket(ticket.key, { assignee: ticket.assignee?.userId ?? null }));
-          announce(`${ticket.key} assigned to ${picked === null ? 'no one' : info.members.find((member) => member.userId === picked)?.name ?? picked}`);
+          recordUndo('Assignee changed', () => options.store.updateTicket(ticket.key, { assignee: ticket.assignee?.name ?? null }));
+          announce(`${ticket.key} assigned to ${picked === null ? 'no one' : picked}`);
         }
       } else if (field === 'priority') {
         const priorities: TrackerPriority[] = ['urgent', 'high', 'medium', 'low', 'none'];
@@ -299,11 +366,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Priority changed', () => options.store.updateTicket(ticket.key, { priority: ticket.priority }));
         }
       } else if (field === 'labels') {
-        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.id), options: info.labels.map((item) => ({ value: item.id, label: item.name })) });
+        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name })) });
         if (Array.isArray(picked)) {
           const labels = picked.filter((value): value is string => typeof value === 'string');
           await options.store.updateTicket(ticket.key, { labels });
-          recordUndo('Labels changed', () => options.store.updateTicket(ticket.key, { labels: ticket.labels.map((label) => label.id) }));
+          recordUndo('Labels changed', () => options.store.updateTicket(ticket.key, { labels: ticket.labels.map((label) => label.name) }));
         }
       } else if (field === 'due') {
         const today = new Date().toISOString().slice(0, 10);
@@ -314,10 +381,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Due date changed', () => options.store.updateTicket(ticket.key, { due: ticket.due }));
         }
       } else {
-        const projects = [...new Map(currentCache.tickets.flatMap((row) => row.project ? [[row.project.id, row.project.name] as const] : [])).entries()]
-          .map(([id, name]) => ({ value: id, label: name }));
+        const projects = [...new Map(currentCache.tickets.flatMap((row) => row.project ? [[row.project.name, row.project.name] as const] : [])).entries()]
+          .map(([name, label]) => ({ value: name, label }));
         if (!projects.length) { toast('Projects are not available yet.'); return; }
-        const picked = await openPicker<string>(anchor, { label: 'Project', options: projects, value: ticket.project?.id ?? null });
+        const picked = await openPicker<string>(anchor, { label: 'Project', options: projects, value: ticket.project?.name ?? null });
         if (picked !== undefined) toast('Project updates are not available in the tracker store yet.');
       }
     } catch (caught) {
@@ -338,7 +405,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       let undoBatch: Awaited<ReturnType<TrackerStore['bulk']>> | undefined;
       if (patch.state) {
         // The current bulk store contract has no state field; transition one ticket at a time until that API lands.
-        const before = state.selectedKeys.map((key) => [key, currentCache.tickets.find((ticket) => ticket.key === key)?.state.id] as const);
+        const before = state.selectedKeys.map((key) => [key, currentCache.tickets.find((ticket) => ticket.key === key)?.state.key] as const);
         const transitioned: string[] = [];
         try {
           for (const key of state.selectedKeys) {
@@ -374,14 +441,14 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const bulkPicker = (anchor: HTMLElement, field: 'state' | 'assignee' | 'priority' | 'labels' | 'due') => {
     const info = getMeta();
     if (!info || !state.selectedKeys.length) return;
-    if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.id, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
-    else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.userId, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
+    if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.key, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
+    else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.name, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
     else if (field === 'priority') renderMenu(anchor, 'Priority', ['urgent', 'high', 'medium', 'low', 'none'].map((value) => ({ value, label: priorityLabel(value as TrackerPriority) })), '', (value) => void doBulk({ priority: value as TrackerPriority }, anchor));
-    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.id, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
+    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
     else renderMenu(anchor, 'Due date', [{ value: '__none', label: 'No date' }, { value: new Date().toISOString().slice(0, 10), label: 'Today' }], '', (value) => void doBulk({ due: value === '__none' ? null : value }, anchor));
   };
 
-  const drawRows = (cache: typeof currentCache) => {
+  const renderRows = (cache: typeof currentCache) => {
     if (!listRenderHost || !resultsHost || !skeletonHost || !errorHost) return;
     if (!meta) {
       skeletonHost.hidden = false;
@@ -389,6 +456,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       resultsHost.textContent = '';
       return;
     }
+    if (cache.error) showListError(cache.error.message || 'Could not load issues.');
+    else errorHost.hidden = true;
     listModel = buildListModel({
       pages: [cache.tickets as unknown as TrackerRow[]], facets: listFacets(cache), group: state.group,
       sort: { field: state.sort.field === 'updatedAt' || state.sort.field === 'createdAt' || state.sort.field === 'priority' || state.sort.field === 'due' || state.sort.field === 'title' || state.sort.field === 'key' ? state.sort.field : 'updatedAt', direction: state.sort.direction },
@@ -398,8 +467,6 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.selectedKeys = listModel.selectedKeys;
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
-    errorHost.hidden = !cache.error;
-    if (cache.error) errorHost.textContent = cache.error.message;
     const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-search-input');
     if (searchInput) {
       if (cache.error && trackerErrorField(cache.error.path) === 'search') searchInput.setAttribute('aria-invalid', 'true');
@@ -407,6 +474,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
     if (!cache.loading && cache.tickets.length === 0) {
+      if (cache.error) {
+        listRenderHost.replaceChildren();
+        resultsHost.textContent = 'Issues unavailable';
+        return;
+      }
       listRenderHost.replaceChildren(h('div', { class: 'trk-empty-state' },
         h('h2', null, filterActive ? 'No issues match.' : 'No issues yet.'),
         filterActive
@@ -442,7 +514,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       }
       if (group.collapsed) continue;
       for (const raw of group.rows) {
-        const ticket = raw as unknown as TrackerTicket;
+        const ticket = ticketFromListRow(raw, meta, options.trackerId);
         const selectedHere = state.selectedKeys.includes(ticket.key);
         const cursor = state.cursorKey === ticket.key;
         const cells: Node[] = [];
@@ -487,11 +559,16 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }
     listRenderHost.replaceChildren(...rows);
     listRenderHost.setAttribute('aria-rowcount', String(model.visibleRows.length));
-    if (cache.nextCursor) listRenderHost.appendChild(h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more'));
+    if (cache.nextCursor) listRenderHost.appendChild(h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more'));
     const facets = facetsForGroup(state.group, cache.facets)?.[state.group];
     const total = facets?.reduce((sum, facet) => sum + facet.count, 0) ?? cache.tickets.length;
     resultsHost.textContent = cache.nextCursor ? `${total}+ issues` : `${total} ${total === 1 ? 'issue' : 'issues'}`;
     announce(selected ? `${selected} selected` : '');
+  };
+
+  const drawRows = (cache: typeof currentCache) => {
+    try { renderRows(cache); }
+    catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
   };
 
   const publishCurrentSnapshot = () => {
@@ -587,7 +664,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const info = getMeta();
     if (!info || readOnly) return;
     openNewIssueDialog({ store: options.store, meta: info, viewerId: options.viewerId, trackerId: options.trackerId,
-      defaultState: state.group === 'state' ? state.cursorKey ? options.store.list(stableQuery(state)).tickets.find((item) => item.key === state.cursorKey)?.state.id : undefined : undefined,
+      defaultState: state.group === 'state' ? state.cursorKey ? options.store.list(stableQuery(state)).tickets.find((item) => item.key === state.cursorKey)?.state.key : undefined : undefined,
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       onCreated: (key) => { options.onCreated?.(key); startWatch(); announce(`${key} created`); },
     });
@@ -746,7 +823,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       const row = action.edge === 'first' ? listModel.visibleRows[0] : listModel.visibleRows.at(-1)!;
       state.cursorKey = row.key; listModel = moveCursorTo(listModel, row.key); drawRows(currentCache);
     } else if (action.type === 'page') {
-      if (action.direction > 0) void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load more issues.'));
+      if (action.direction > 0) void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.'));
       else listRenderHost?.scrollTo({ top: 0 });
     } else if (action.type === 'toggle-selection' && listModel) {
       listModel = toggleSelection(listModel); state.selectedKeys = listModel.selectedKeys; state.anchorKey = listModel.anchorKey;
