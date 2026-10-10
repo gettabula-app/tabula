@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { BoardApp } from '../src/app';
 import type { AiConfig, UserRole } from '../src/api';
 import { aiBarFor, aiBarShown, mountAiBar } from '../src/ui/ai-bar';
@@ -160,7 +161,7 @@ function textFiles(dir: string): string[] {
 
 describe('the AI bar has no feature-flag opt-in', () => {
   it('keeps the old local-storage key, URL parameter and flag reader out of the app and its docs', () => {
-    const root = new URL('..', import.meta.url).pathname;
+    const root = fileURLToPath(new URL('..', import.meta.url));
     const files = ['src', 'server', 'scripts', 'test', 'docs', 'changelog.d'].flatMap((dir) => textFiles(join(root, dir)));
     // CHANGELOG.md is history and stays as written; the fragments in changelog.d are scanned instead
     const localStorageFlag = ['driftboard:flag:', 'aibar'].join('');
