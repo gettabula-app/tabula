@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, paste-text, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, chat, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
@@ -2367,6 +2367,57 @@ const STATES = {
     });
     await settle(env.page);
   },
+  async 'paste-text'(env) {
+    const { page } = env;
+    await openSeedBoard(env);
+    const paste = async (worldPoint, text) => {
+      const screen = await page.evaluate((p) => {
+        const app = window.__board;
+        const point = app.r.toScreen(p);
+        const bounds = app.r.root.getBoundingClientRect();
+        return { x: bounds.left + point.x, y: bounds.top + point.y };
+      }, worldPoint);
+      await page.mouse.move(screen.x, screen.y);
+      // Mobile emulation in Firefox does not send a mouse pointermove from page.mouse; seed the canvas's pointer listener
+      // at the same client point so lastPointer has the same value in all three engines.
+      await page.evaluate((point) => {
+        window.__board.r.svg.dispatchEvent(new PointerEvent('pointermove', {
+          bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: point.x, clientY: point.y,
+        }));
+      }, screen);
+      const event = await page.evaluate((value) => {
+        const data = new DataTransfer();
+        data.setData('text/plain', value);
+        const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data });
+        if (paste.clipboardData !== data) Object.defineProperty(paste, 'clipboardData', { configurable: true, value: data });
+        window.dispatchEvent(paste);
+        return { prevented: paste.defaultPrevented, textCount: [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length };
+      }, text);
+      if (!event.prevented) throw new Error('paste-text: the window paste event was not handled');
+      return event;
+    };
+    await page.evaluate(() => window.__board.r.setCamera({ x: 0, y: 0, zoom: 0.7 }));
+    const firstText = 'First pasted line\nSecond pasted line\n\nFourth line';
+    const beforeFirstPaste = await page.evaluate(() => [...window.__board.store.cache.values()].filter((o) => o.type === 'text').length);
+    const first = await paste({ x: 320, y: 600 }, firstText);
+    if (first.textCount !== beforeFirstPaste + 1) throw new Error('paste-text: the first clipboard paste did not add exactly one text object');
+    const firstObject = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, firstText);
+    if (!firstObject || firstObject.parent) throw new Error(`paste-text: multi-line clipboard text was not kept as one loose object: ${JSON.stringify(firstObject ?? null)}`);
+    const secondText = 'Text pasted inside a frame';
+    const second = await paste({ x: 220, y: 380 }, secondText);
+    const child = await page.evaluate((value) => {
+      const app = window.__board;
+      return [...app.store.cache.values()].find((o) => o.type === 'text' && o.text === value);
+    }, secondText);
+    if (!child || child.parent !== 'seed-frame-good') throw new Error(`paste-text: expected the second paste to be a child of seed-frame-good, got ${child?.parent ?? 'no object'}`);
+    if (second.textCount !== first.textCount + 1) throw new Error('paste-text: expected each paste to add exactly one text object');
+    await page.evaluate(() => window.__board.r.setCamera({ x: -50, y: 0, zoom: 0.7 }));
+    console.log(`paste-text ${JSON.stringify({ first: firstObject.text, firstWidth: firstObject.w, frameParent: child.parent })}`);
+    await settle(page);
+  },
   async 'ai-preview-empty'(env) {
     // TAB-214: a preview on an empty board hides the "An empty board" hint
     await openEmptyBoard(env, '?debug');
@@ -2421,7 +2472,7 @@ const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanba
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
@@ -2552,7 +2603,7 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
-async function newPage(browser, { width, theme, mode, base, session, touch = false }) {
+async function newPage(browser, { width, theme, mode, base, session, touch = false, offlineFontCatalogue = false }) {
   const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
@@ -2572,15 +2623,16 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
       ...OTHER_BOARDS.map((b) => ({ id: b.id, name: b.title, createdAt: NOW - b.ago - HOUR, updatedAt: NOW - b.ago })),
     ]
     : null;
-  await context.addInitScript(({ themeId, user, index }) => {
+  await context.addInitScript(({ themeId, user, index, offlineFontCatalogue: cachedFonts }) => {
     try {
       localStorage.setItem('driftboard:theme', themeId);
       localStorage.setItem('driftboard:user', JSON.stringify(user));
       if (index) localStorage.setItem('driftboard:boards', JSON.stringify(index));
+      if (cachedFonts) localStorage.setItem('driftboard:fontshare-catalogue', JSON.stringify({ at: Date.now(), fonts: [] }));
     } catch {
       /* storage is not available in this frame */
     }
-  }, { themeId: theme, user: USER, index: boards });
+  }, { themeId: theme, user: USER, index: boards, offlineFontCatalogue });
   if (session) await context.addCookies([{ ...session, url: base, httpOnly: true, sameSite: 'Lax' }]);
   const page = await context.newPage();
   const errors = [];
@@ -2589,7 +2641,7 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
 }
 
 async function capture({ browser, state, theme, width, file, shared }) {
-  const { context, page, errors } = await newPage(browser, { width, theme, ...shared });
+  const { context, page, errors } = await newPage(browser, { width, theme, ...shared, offlineFontCatalogue: state === 'paste-text' });
   const result = { state, theme, width, file, overflow: 0, errors, failed: null };
   try {
     const shot = await STATES[state]({ page, base: shared.base, dataDir: shared.dataDir, chat: shared.chat });

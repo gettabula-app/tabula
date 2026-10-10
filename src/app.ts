@@ -39,6 +39,8 @@ import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
+import { fontCss, measure } from './text';
+import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 const isCardLinkTarget = (target: EventTarget | null) => {
@@ -2617,19 +2619,35 @@ export class BoardApp {
       }
     } catch { /* not JSON */ }
     if (this.clipboard.length && text === JSON.stringify({ driftboard: 1, objects: this.clipboard })) return;
-    // Plain text: one sticky per line (up to 50), laid out in a grid.
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 50);
-    if (!lines.length) return;
-    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
-    if (lines.length === 1 && lines[0].length > 80) {
-      this.placeAt('text', at, 360, 28, { text: lines[0] });
-      return;
+    // Preserve the clipboard's line breaks, removing only empty lines at either end.
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const normalized = lines.join('\n');
+    if (!normalized) return;
+
+    // The board operation validator uses UTF-16 length; stop at a code point boundary so a pasted emoji stays intact.
+    let length = 0;
+    const kept: string[] = [];
+    for (const char of normalized) {
+      if (length + char.length > OBJECT_TEXT_MAX) break;
+      kept.push(char);
+      length += char.length;
     }
-    const cols = Math.ceil(Math.sqrt(lines.length));
-    const objs = lines.map((l, i) => this.makeObj('sticky', { x: at.x + (i % cols) * 216, y: at.y + Math.floor(i / cols) * 216, w: 192, h: 192 }, { text: l }));
-    this.store.undo.stopCapturing();
-    this.store.transact(() => objs.forEach((o) => this.store.create(o)));
-    this.resetScopeSelection(objs.map((o) => o.id));
+    const content = kept.join('');
+    if (normalized.length > OBJECT_TEXT_MAX) this.notify(`Pasted text was cut to ${OBJECT_TEXT_MAX.toLocaleString('en-US')} characters.`);
+    if (!content.trim()) return;
+
+    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
+    const font = this.store.getMeta().bodyFont;
+    const css = fontCss(font, 20, 400);
+    const naturalWidth = Math.max(...content.split('\n').map((line) => measure(line.trimEnd(), css)));
+    const w = Math.min(360, Math.max(8, Math.ceil(naturalWidth)));
+    const probe = { id: '', type: 'text', x: 0, y: 0, w, h: 0, rotation: 0, z: '', text: content, font } as BaseObj;
+    const h = textHeight(probe);
+    // makeObj applies the same frame parenting as the Text tool; centring the box makes its centre the paste point.
+    const o = this.makeObj('text', { x: at.x - w / 2, y: at.y - h / 2, w, h }, { text: content });
+    this.createObject(o);
   }
 
   pasteInternal() {
