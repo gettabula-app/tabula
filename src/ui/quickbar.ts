@@ -78,7 +78,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const safeLeft = parseFloat(style.getPropertyValue('--safe-left')) || 0;
     const safeRight = parseFloat(style.getPropertyValue('--safe-right')) || 0;
     const safeBottom = parseFloat(style.getPropertyValue('--safe-bottom')) || 0;
-    const railClear = isPhone() ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
+    // with the chat dock open the bar sits between the rail and the dock, so it never runs under the rail
+    const railClear = isPhone() || dockInset > 0 ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
     const right = 12 + safeRight;
     const bottom = 12 + safeBottom;
     const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...sessionBoxes(), ...groupChipBoxes(a, top)], railClear, right, bottom);

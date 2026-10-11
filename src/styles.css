@@ -735,7 +735,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 
 /* quick actions */
-.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
+.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right) - var(--dock-inset, 0px)); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
 .quickbar.show { display: flex; }
 /* TAB-239: a bar wider than its room scrolls sideways and fades out at the edge that has more behind it */
 .quickbar[data-more='right'] { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); }

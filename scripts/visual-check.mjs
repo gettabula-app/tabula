@@ -2876,6 +2876,8 @@ const STATES = {
         if (!el || getComputedStyle(el).display === 'none') continue;
         const r = el.getBoundingClientRect();
         if (r.width && r.right > dock.left + 0.5 && r.left < dock.right && r.bottom > dock.top && r.top < dock.bottom) failures.push(`${selector} runs under the dock (${Math.round(r.right)} > ${Math.round(dock.left)})`);
+        const rail = document.querySelector('.rail').getBoundingClientRect();
+        if (r.width && r.left < rail.right - 0.5 && r.right > rail.left && r.bottom > rail.top && r.top < rail.bottom && selector !== '.zoom-tray') failures.push(`${selector} runs under the tool rail (${Math.round(r.left)} < ${Math.round(rail.right)})`);
       }
       const app = window.__board;
       app.zoomToFit();
