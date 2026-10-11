@@ -111,7 +111,7 @@ describe('the error table', () => {
     'bad_request', 'confirmation_mismatch', 'read_only', 'forbidden', 'manifest_not_found', 'board_not_in_backup', 'backups_off', 'restore_in_progress', 'rate_limited',
     'unknown_key', 'tamper', 'content_mismatch', 'invalid_manifest', 'invalid_path', 'unexpected_file', 'duplicate_path', 'size_mismatch', 'backup_incomplete', 'no_directory',
     'invalid_backup', 'schema_too_new', 'integrity_check_failed', 'no_active_owner', 's3', 'network', 'timeout', 'safety_backup_failed', 'not_enough_space', 'space_unknown',
-    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated', 'tracker_restoring', 'key_epoch_confirmation_mismatch', 'drill_record_invalid',
+    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated', 'tracker_restoring', 'key_epoch_confirmation_mismatch', 'drill_record_invalid', 'cutover_record_invalid',
   ];
 
   it('has a sentence for every code of the brief and every code the server answers', () => {
