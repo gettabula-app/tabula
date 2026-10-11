@@ -20,6 +20,8 @@ import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
 import { createDirClient } from './backup-dir-client.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createSnapshotBarrier, testCaptureDelayMs } from './snapshot-barrier.mjs';
+import { CHECK_JOB } from './tracker/backup-check-worker.mjs';
+import { sanitizeTrackerBlock } from './tracker/backup-check.mjs';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -57,6 +59,8 @@ const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
 const SETTLE_RETRY_CAP_MS = 30 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
 const COPY_WORKER_URL = new URL('./backup-copy-worker.mjs', import.meta.url);
+const CHECK_WORKER_URL = new URL('./tracker/backup-check-worker.mjs', import.meta.url);
+const CHECK_TIMEOUT_MS = 60_000;
 /** What a deep verify may find wrong with an object: the codes of readObject that mean the stored bytes are not the object. Anything else (the network, the provider) is not damage. */
 const DAMAGE_CODES = new Set(['not_found', 'tamper', 'content_mismatch', 'bad_format', 'unknown_key', 'too_large']);
 /** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
@@ -841,7 +845,7 @@ export function createS3Client({
 
 // ---------------------------------------------------------------- manifests
 
-function parseManifest(bytes, keys, name) {
+export function parseManifest(bytes, keys, name) {
   const bad = (what) => new BackupError('invalid_manifest', `The backup manifest is not valid (${what})`);
   let data;
   try {
@@ -864,6 +868,8 @@ function parseManifest(bytes, keys, name) {
     ) throw bad('snapshot barrier');
     snapshotBarrier = { completed: true, snapshotSeq: barrier.snapshotSeq, startedAt: barrier.startedAt, endedAt: barrier.endedAt };
   }
+  // Advisory: a malformed block parses to null and the rest of the manifest is accepted.
+  const tracker = data.tracker === undefined ? null : sanitizeTrackerBlock(data.tracker);
   const paths = new Set();
   let total = 0;
   const files = data.files.map((entry) => {
@@ -883,6 +889,7 @@ function parseManifest(bytes, keys, name) {
     createdAt: data.createdAt,
     appVersion: typeof data.appVersion === 'string' ? data.appVersion : null,
     ...(snapshotBarrier ? { snapshotBarrier } : {}),
+    tracker,
     files,
     totals: { files: files.length, bytes: total },
   };
@@ -893,6 +900,7 @@ function parseManifest(bytes, keys, name) {
 const EMPTY_STATUS = Object.freeze({
   lastSuccessAt: null,
   snapshotEndedAt: null,
+  tracker: null,
   lastRunAt: null,
   lastError: null,
   lastFailureAt: null,
@@ -926,6 +934,20 @@ const timeOrNull = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
 const countOr0 = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
 const shareOr0 = (v) => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0);
 
+function trackerStatusOrNull(value) {
+  if (!isObject(value) || !Number.isSafeInteger(value.checkedAt) || value.checkedAt < 0
+    || !Number.isSafeInteger(value.tickets) || value.tickets < 0
+    || !Number.isSafeInteger(value.events) || value.events < 0
+    || !Array.isArray(value.findings) || value.findings.length > 20) return null;
+  const findings = [];
+  for (const finding of value.findings) {
+    if (!isObject(finding) || typeof finding.code !== 'string' || !/^[a-z_]{1,40}$/.test(finding.code)
+      || !Number.isSafeInteger(finding.count) || finding.count < 0) return null;
+    findings.push({ code: finding.code, count: finding.count });
+  }
+  return { checkedAt: value.checkedAt, tickets: value.tickets, events: value.events, findings };
+}
+
 function readStatus(directory, scrub) {
   const status = { ...EMPTY_STATUS };
   try {
@@ -933,6 +955,7 @@ function readStatus(directory, scrub) {
     if (!isObject(stored)) return status;
     status.lastSuccessAt = timeOrNull(stored.lastSuccessAt);
     status.snapshotEndedAt = timeOrNull(stored.snapshotEndedAt);
+    status.tracker = trackerStatusOrNull(stored.tracker);
     status.lastRunAt = timeOrNull(stored.lastRunAt);
     status.lastFailureAt = timeOrNull(stored.lastFailureAt);
     status.lastError = typeof stored.lastError === 'string' ? scrub(stored.lastError).slice(0, ERROR_MAX) : null;
@@ -1483,6 +1506,38 @@ export function createBackup({
     }
   }
 
+  /** The tracker check of the snapshot copy, in a one-shot worker thread (it can take hundreds of ms on a big tracker). Never throws. */
+  async function inspectSnapshotTracker(snapshot) {
+    const failed = { present: true, summary: null, findings: [{ code: 'check_failed', count: 1 }] };
+    if (!snapshot.files.some((file) => file.path === 'directory.sqlite')) return { present: false, summary: null, findings: [] };
+    let worker;
+    try {
+      worker = new Worker(CHECK_WORKER_URL, {
+        workerData: { job: CHECK_JOB, file: path.join(snapshot.root, 'directory.sqlite'), at: snapshot.startedAt },
+        env: {},
+        execArgv: ['--disable-warning=ExperimentalWarning'],
+      });
+    } catch {
+      return failed;
+    }
+    return await new Promise((resolve) => {
+      let timer = null;
+      const done = (value) => {
+        clearTimeout(timer);
+        stop.signal.removeEventListener('abort', onAbort);
+        worker.terminate().catch(() => {});
+        resolve(value);
+      };
+      const onAbort = () => done(failed);
+      timer = setTimeout(() => done(failed), CHECK_TIMEOUT_MS);
+      timer.unref?.();
+      stop.signal.addEventListener('abort', onAbort, { once: true });
+      worker.once('message', (message) => done(message?.result && typeof message.result === 'object' ? message.result : failed));
+      worker.once('error', () => done(failed));
+      worker.once('exit', () => done(failed));
+    });
+  }
+
   // ------------------------------------------------------------ one run
 
   /** The objects the deep verify found damaged that are not put right yet; a count from an earlier process, whose ids are gone, stays until a rotation is complete. */
@@ -1521,6 +1576,7 @@ export function createBackup({
     let repaired = 0;
     const snapshot = await stageSnapshot(counters);
     try {
+      const trackerCheck = await inspectSnapshotTracker(snapshot);
       for (const file of snapshot.files) {
         if (stop.signal.aborted) throw aborted();
         const data = await readCapped(path.join(snapshot.root, ...file.path.split('/')), file.path, stop.signal);
@@ -1547,6 +1603,11 @@ export function createBackup({
         previous.keyId === keys.keyId &&
         previous.files.length === entries.length &&
         previous.files.every((f, i) => f.path === entries[i].path && f.objectId === entries[i].objectId);
+      // What is written passes through the same sanitiser the parser uses, so it always round-trips.
+      const trackerBlock = trackerCheck.present ? sanitizeTrackerBlock({ checkedAt: snapshot.startedAt, summary: trackerCheck.summary, findings: trackerCheck.findings }) : null;
+      const previousFindingCodes = new Set((state.tracker?.findings ?? []).map((finding) => finding.code));
+      const trackerNewFindings = unchanged ? [] : (trackerBlock?.findings ?? [])
+        .filter((finding) => !previousFindingCodes.has(finding.code));
 
     // Every object is checked before a manifest names it, so a bad upload never leaves a manifest behind.
       for (const [objectId, sealedLength] of uploaded) {
@@ -1573,6 +1634,7 @@ export function createBackup({
           createdAt: new Date(startedAt).toISOString(),
           appVersion: VERSION,
           snapshotBarrier: { completed: true, snapshotSeq, startedAt: snapshot.startedAt, endedAt: snapshot.endedAt },
+          ...(trackerBlock ? { tracker: trackerBlock } : {}),
           files: entries,
           totals: { files: entries.length, bytes: entries.reduce((sum, e) => sum + e.size, 0) },
         };
@@ -1595,6 +1657,13 @@ export function createBackup({
       return {
         objects: unique,
         changed: !unchanged,
+        trackerStatus: !unchanged && manifest?.tracker ? {
+          checkedAt: manifest.tracker.checkedAt,
+          tickets: manifest.tracker.summary?.tickets ?? 0,
+          events: manifest.tracker.summary?.events ?? 0,
+          findings: manifest.tracker.findings,
+        } : (!unchanged ? null : undefined),
+        trackerNewFindings,
         manifestName,
         snapshotEndedAt: Number.isFinite(manifest?.snapshotBarrier?.endedAt) ? manifest.snapshotBarrier.endedAt : null,
         files: manifest.files.length,
@@ -1737,6 +1806,7 @@ export function createBackup({
       lastRunAt: startedAt,
       lastSuccessAt: finishedAt,
       snapshotEndedAt: timeOrNull(summary.snapshotEndedAt),
+      ...(summary.changed ? { tracker: trackerStatusOrNull(summary.trackerStatus) } : {}),
       lastError: null,
       consecutiveFailures: 0,
       lastManifest: summary.manifestName,
@@ -1769,6 +1839,9 @@ export function createBackup({
         manifestsDeleted: pruned.manifestsDeleted,
         objectsDeleted: pruned.objectsDeleted,
       });
+    }
+    if (summary.changed && summary.trackerNewFindings?.length) {
+      auditRow('backup.tracker_findings', { findings: summary.trackerNewFindings });
     }
     say(
       summary.changed

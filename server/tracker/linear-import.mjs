@@ -1026,7 +1026,7 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
         }
         return batchResults;
       });
-      const currentNext = Number(db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?').get('trk_default', 'TAB')?.next_number ?? observedNext);
+      const currentNext = Number(db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?').get(planned.numbering.trackerId, planned.numbering.prefix)?.next_number ?? observedNext);
       if (currentNext > observedNext) counterChanged = true;
       observedNext = Math.max(observedNext, currentNext);
       created += batchStats.created;

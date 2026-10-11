@@ -29,6 +29,7 @@ import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
 import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
 import { createTrackerAdminRoutes } from './tracker/admin-routes.mjs';
+import { checkTrackerData as checkTrackerDataReal } from './tracker/backup-check.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -447,7 +448,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
-  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
+  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered', 'tracker'];
 
   function ownerBackupStatus() {
     const status = backupStatus() ?? {};
@@ -607,8 +608,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
 
-  // Part A wiring point: supply checkTrackerData here when server/tracker/backup-check.mjs lands.
-  const trackerBackupCheck = checkTrackerData;
+  const trackerBackupCheck = checkTrackerData ?? checkTrackerDataReal;
   const readinessBackupStatus = () => ({ ...backupStatus(), ...backupExport?.status?.() });
   const trackerAdminRoutes = config.authEnabled && config.tracker
     ? createTrackerAdminRoutes({

@@ -99,6 +99,7 @@ describe('the copy of a database', () => {
     h.directory!.setSetting(STATUS_KEY, JSON.stringify({ lastSuccessAt: 1 }));
     h.directory!.audit(null, 'backup.run', { files: 1 });
     h.directory!.audit(null, 'backup.failed', { error: 'x' });
+    h.directory!.audit(null, 'backup.tracker_findings', { findings: [{ code: 'fts_missing', count: 1 }] });
     pad(1);
     const dir = scratchDir();
     const chat = path.join(dir, 'chat.sqlite');
