@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MIGRATIONS } from '../server/directory.mjs';
-import { DRILL_BOX_IDS } from '../server/tracker/admin-routes.mjs';
+import { DRILL_BOX_IDS, validateDrill } from '../server/tracker/admin-routes.mjs';
 import { buildTrackerDrillRecord, checklist, TRACKER_BOXES } from '../scripts/drill-local.mjs';
 
 function report(assertions: Array<{ title: string; status: string; duration?: number; failureMessages?: string[] }>) {
@@ -51,5 +51,16 @@ describe('local drill report', () => {
     expect(buildTrackerDrillRecord(checklist(report([
       { title: '[tracker.seed] not run', status: 'skipped' },
     ])))).toBeNull();
+  });
+  it('prints a record the server accepts when every tracker box passes', () => {
+    const titles = [...TRACKER_BOXES].map((box: { id: string }) => `[tracker.${box.id}] box`);
+    const rows = checklist(report(titles.map((title) => ({ title, status: 'passed', duration: 10 }))));
+    const record = buildTrackerDrillRecord(rows, { trackerRestoreSeconds: 2.8, trackerDataAgeAtRestoreSeconds: 0 }, { at: Date.now() });
+    expect(record?.overall).toBe('pass');
+    const accepted = validateDrill(JSON.parse(JSON.stringify(record)), Date.now());
+    expect(accepted).not.toBeNull();
+    expect(accepted?.boxes).toHaveLength(record!.boxes.length);
+    // and the validator really can say no: an id outside the closed list is refused
+    expect(validateDrill({ ...record, boxes: [{ id: 'not_a_box', result: 'pass' }] }, Date.now())).toBeNull();
   });
 });

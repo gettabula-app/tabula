@@ -32,7 +32,8 @@ function normalizeDrillAt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function validateDrill(body, nowMs) {
+/** Exported for the local drill's test: the record it prints must be one this validator accepts. */
+export function validateDrill(body, nowMs) {
   const fields = ['at', 'kind', 'schema', 'restoreSeconds', 'dataLossSeconds', 'boxes', 'overall'];
   if (!matchesFields(body, fields) || Object.keys(body).length !== fields.length) return null;
   const at = normalizeDrillAt(body.at);
