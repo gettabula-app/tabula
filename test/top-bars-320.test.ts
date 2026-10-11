@@ -2,15 +2,24 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Keep the phone bars in separate rows and put the tool rail below them. Read CSS as text, as toast-steps.test.ts does.
+// Keep the compact phone top chrome in one row with room for the tool rail. Read CSS as text, as toast-steps.test.ts does.
 const css = readFileSync(fileURLToPath(new URL('../src/styles.css', import.meta.url)), 'utf8');
 
-describe('the right top bar at the narrowest phones', () => {
-  it('keeps the tray on one row, gives it eight pixels below the left bar, and moves the rail beneath it', () => {
+describe('phone top chrome', () => {
+  it('uses one compact row with 44px controls and measures panels below it', () => {
     expect(css).toMatch(/\.top-right \{[^}]*display: flex; flex-wrap: nowrap;/);
-    expect(css).toContain('.top-right { top: calc(64px + var(--safe-top)); gap: 4px; padding: 4px 2px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); justify-content: flex-end; }');
-    expect(css).toContain('.top-right { gap: 2px; }');
-    expect(css).toMatch(/\.top-right \.btn\.primary \{ padding-left: 10px; padding-right: 10px; \}/);
+    expect(css).toContain(':root { --panel-top: calc(72px + var(--safe-top)); }');
+    expect(css).toMatch(/\.top-left \{[^}]*flex: 1 1 0; min-width: 0;/);
+    expect(css).toMatch(/\.top-left \.board-name \{[^}]*flex: 1 1 0; min-width: 0;[^}]*text-overflow: ellipsis;/);
+    expect(css).toMatch(/\.top-right \{\s+top: calc\(12px \+ var\(--safe-top\)\); gap: 0; padding: 4px 2px;/);
+    expect(css).toMatch(/\.top-right > button \{[^}]*width: 44px; min-width: 44px; height: 44px;/);
+    expect(css).toMatch(/\.top-right > \.phone-people \{ width: 52px; min-width: 52px; flex-basis: 52px; \}/);
+    expect(css).toContain('.phone-people { display: none; }');
+    expect(css).toMatch(/\.people \{ display: none; \}[\s\S]*?\.phone-people \{\s+display: inline-flex/);
+    expect(css).toMatch(/\.share-btn \{ background: transparent !important; color: var\(--tray-text\) !important; \}/);
+    expect(css).toMatch(/\.top-right \.comment-count \{ top: 0; right: 0; \}/);
+    expect(css).toContain('.demo-board > .chrome .top-left { top: calc(100px + var(--safe-top)); }');
+    expect(css).toContain('.demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }');
     expect(css).toContain('.chrome > .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }');
     expect(css).toContain('.demo-board > .chrome .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }');
   });

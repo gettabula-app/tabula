@@ -184,6 +184,7 @@ select.input {
 .top-right .comment-count { right: -2px; }
 .top-right > * { flex: none; white-space: nowrap; }
 .people { display: flex; flex: none; padding-right: 4px; }
+.phone-people { display: none; }
 .avatar {
   position: relative; width: 30px; height: 30px; margin-left: -6px; flex: none; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
   color: #fff; font: 700 11px var(--ui); display: grid; place-items: center; padding: 0;
@@ -587,7 +588,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
   /* the Steps list fills the window from under the top bars, so its message sits over the top bars (two lines at most) for its 2.6 s instead of over the list */
   body:has(.popover.wide) .toast { top: calc(8px + var(--safe-top)); width: max-content; padding: 8px 12px; font-size: 13px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
-  /* Keep the phone tray on one line below the left bar; the rail starts below both bars. */
+  /* At widths above the compact phone row, keep the right tray below the left bar. */
   @media (max-width: 500px) {
     .top-right { top: calc(64px + var(--safe-top)); gap: 4px; padding: 4px 2px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); justify-content: flex-end; }
     .top-right .btn.primary { padding-left: 10px; padding-right: 10px; }
@@ -618,6 +619,57 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .chrome:has(> :is(.drawer, .side-tray).show) > :is(.quickbar, .props, .flowbar, .poll-card) { visibility: hidden; }
   /* the rail runs the full height here: the hint is centred in the room right of it, not under it */
   .empty-hint { left: calc(50% + var(--rail-clear) / 2 - 6px); width: min(440px, calc(100% - var(--rail-clear) - 24px - var(--safe-right))); }
+}
+
+@media (max-width: 480px) {
+  :root { --panel-top: calc(72px + var(--safe-top)); }
+  .top-left {
+    top: calc(12px + var(--safe-top)); max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right));
+    flex: 1 1 0; min-width: 0; gap: 2px; padding: 4px 2px;
+  }
+  .demo-board > .chrome .top-left { top: calc(100px + var(--safe-top)); }
+  .top-right {
+    top: calc(12px + var(--safe-top)); gap: 0; padding: 4px 2px; max-width: none; justify-content: flex-end;
+  }
+  .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
+  .top-left > .icon-btn, .top-left > .sync-status { width: 44px; height: 44px; flex: 0 0 44px; }
+  .top-left .board-name {
+    flex: 1 1 0; min-width: 0; width: auto; max-width: none; height: 44px; padding: 0 2px;
+    box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sync-status { justify-content: center; gap: 0; padding: 0; background: transparent; }
+  .sync-status:hover { background: var(--tray-hover); }
+  .sync-status > .ico, .sync-status-label { display: none; }
+  .sync-status-dot { display: block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
+  .top-right > button { width: 44px; min-width: 44px; height: 44px; padding: 0; flex: 0 0 44px; box-sizing: border-box; }
+  .people { display: none; }
+  .phone-people {
+    display: inline-flex; align-items: center; justify-content: center; gap: 2px; width: 52px; height: 44px; flex: 0 0 52px;
+    padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
+  }
+  .top-right > .phone-people { width: 52px; min-width: 52px; flex-basis: 52px; }
+  .phone-people:hover { background: var(--tray-hover); }
+  .phone-people-avatars { display: flex; align-items: center; flex: none; }
+  .phone-avatar {
+    display: grid; place-items: center; position: relative; width: 22px; height: 22px; margin-left: -8px; flex: none;
+    border: 2px solid var(--tray); border-radius: 50%; background: var(--c, var(--graphite));
+    font: 700 8px var(--ui); box-sizing: border-box;
+  }
+  .phone-avatar.first { margin-left: 0; }
+  .phone-people-count { min-width: 10px; color: var(--tray-text); font-size: 11px; font-weight: 650; line-height: 1; text-align: center; }
+  .share-btn { background: transparent !important; color: var(--tray-text) !important; }
+  .share-btn:hover { background: var(--tray-hover) !important; }
+  .share-label { display: none; }
+  .top-right .comment-count { top: 0; right: 0; }
+  .phone-people-pop { width: 248px; max-width: calc(100vw - 16px); }
+  .phone-people-list { display: grid; gap: 2px; }
+  .phone-person-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 10px; text-align: left; color: var(--tray-text); }
+  .phone-person-option[aria-disabled='true'] { opacity: 0.72; }
+  .phone-person-avatar { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 2px solid var(--tray-line); border-radius: 50%; background: var(--c, var(--graphite)); font: 700 10px var(--ui); }
+  .phone-person-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .phone-person-mark { flex: none; padding: 2px 6px; border-radius: var(--radius-xs); background: var(--tray-2); color: var(--tray-muted); font-size: 11px; }
+  .phone-person-mark.guest { color: var(--signal); }
 }
 
 @media (max-width: 500px) {
@@ -697,3 +749,5 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .swatch.on, .tile.on, .font-row.on, .segmented button.on, .chip.on, .icon-btn.on, .rail-btn.on, .dot-presets button.on,
   .menu-item[aria-checked='true'], .combo-opt[aria-selected='true'], .history-row.on { outline: 2px solid Highlight; outline-offset: -2px; }
 }
+
+.phone-people[hidden] { display: none !important; }
