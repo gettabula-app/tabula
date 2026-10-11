@@ -1,17 +1,37 @@
 export type OAuthScope = 'read' | 'comment' | 'write';
 
 export type OAuthDecisionInput =
-  | { request: string; decision: 'allow'; scope: OAuthScope; nonce: string }
+  | { request: string; decision: 'allow'; scope: OAuthScope; nonce: string; boardIds?: string[] }
   | { request: string; decision: 'deny'; scope?: OAuthScope; nonce: string };
 
 export type OAuthDecisionBody =
-  | { request: string; decision: 'allow'; scope: OAuthScope; nonce: string }
+  | { request: string; decision: 'allow'; scope: OAuthScope; nonce: string; boardIds?: string[] }
   | { request: string; decision: 'deny'; nonce: string };
 
 export interface OAuthScopeOption {
   value: OAuthScope;
   label: string;
   help: string;
+}
+
+export const MAX_OAUTH_BOARD_IDS = 50;
+
+/** Mirrors server/api.mjs oauthRoleScope: owners and editors write, commenters comment, all other roles read. */
+export function roleScope(role: string): OAuthScope {
+  if (role === 'editor' || role === 'owner') return 'write';
+  return role === 'commenter' ? 'comment' : 'read';
+}
+
+function scopeRank(scope: OAuthScope): number {
+  return scope === 'write' ? 3 : scope === 'comment' ? 2 : 1;
+}
+
+/** Apply the all-board ceiling and the strongest role among the ticked boards. */
+export function boardsCeiling(scopesBoards: OAuthScope, tickedRoles: string[]): OAuthScope {
+  const strongest = tickedRoles.reduce<OAuthScope>((max, role) => (
+    scopeRank(roleScope(role)) > scopeRank(max) ? roleScope(role) : max
+  ), 'read');
+  return scopeRank(scopesBoards) <= scopeRank(strongest) ? scopesBoards : strongest;
 }
 
 export const OAUTH_REQUEST_INVALID = 'This connection request is no longer valid. Go back to the app and start again.';
@@ -81,6 +101,7 @@ export function errorSentence(status: number, code: string, retryAfter?: number)
   if (status === 402 && code === 'read_only') return 'This workspace is read-only. Ask the workspace owner to check billing.';
   if (status === 409 && code === 'grant_limit') return 'You can have at most 20 connected apps. Disconnect one first.';
   if (status === 400 && code === 'invalid_scope') return 'The available access level changed. Review the updated request.';
+  if (status === 400 && code === 'invalid_boards') return 'One of the chosen boards is no longer available. Review the updated list.';
   return 'Could not complete this connection request. Try again.';
 }
 
@@ -89,5 +110,8 @@ export function decisionBody(input: OAuthDecisionInput): OAuthDecisionBody {
   if (input.decision === 'deny') {
     return { request: input.request, decision: 'deny', nonce: input.nonce };
   }
-  return { request: input.request, decision: 'allow', scope: input.scope, nonce: input.nonce };
+  return {
+    request: input.request, decision: 'allow', scope: input.scope, nonce: input.nonce,
+    ...(Array.isArray(input.boardIds) && input.boardIds.length > 0 ? { boardIds: input.boardIds } : {}),
+  };
 }
