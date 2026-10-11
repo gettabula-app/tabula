@@ -112,9 +112,9 @@ export function checkTrackerData(db, { at = Date.now() } = {}) {
          LEFT JOIN tickets t ON t.tracker_id = c.scope AND t.prefix = c.prefix
         GROUP BY c.scope, c.prefix, c.next_number
         ORDER BY c.scope, c.prefix LIMIT 100`,
-    ).all().map((row) => ({
-      scope: row.scope,
-      prefix: row.prefix,
+    ).all().filter((row) => ['string', 'number'].includes(typeof row.scope) && ['string', 'number'].includes(typeof row.prefix)).map((row) => ({
+      scope: String(row.scope),
+      prefix: String(row.prefix),
       next: nonNegativeInt(row.next_number),
       maxNumber: nonNegativeInt(row.max_number),
     })),
@@ -237,4 +237,51 @@ export function checkTrackerData(db, { at = Date.now() } = {}) {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([code, count]) => ({ code, count })),
   };
+}
+
+const SUMMARY_FIELDS = [
+  'schema', 'trackers', 'tickets', 'archived', 'events', 'maxEventId', 'comments', 'aliases',
+  'links', 'kanbanLinks', 'outboxPending', 'notifications', 'ftsRows',
+];
+
+/**
+ * The one shape a manifest's `tracker` block may have (docs/tracker-s7.md, 4.2). Used by the writer before sealing and
+ * by the parser after unsealing, so what is written always round-trips. It never throws: an unusable block gives null
+ * (the block is advisory, a bad one must never make a backup unlistable or unrestorable); single bad entries are skipped.
+ * @param {unknown} value
+ */
+export function sanitizeTrackerBlock(value) {
+  try {
+    const count = (n) => (Number.isSafeInteger(n) && n >= 0 ? n : null);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const block = /** @type {any} */ (value);
+    const checkedAt = count(block.checkedAt);
+    if (checkedAt === null || !Array.isArray(block.findings)) return null;
+    const findings = [];
+    for (const finding of block.findings.slice(0, 20)) {
+      const n = count(finding?.count);
+      if (typeof finding?.code === 'string' && /^[a-z_]{1,40}$/.test(finding.code) && n !== null) findings.push({ code: finding.code, count: n });
+    }
+    let summary = null;
+    const source = block.summary;
+    if (source && typeof source === 'object' && !Array.isArray(source) && SUMMARY_FIELDS.every((field) => count(source[field]) !== null) && Array.isArray(source.counters)) {
+      const counters = [];
+      for (const row of source.counters) {
+        if (counters.length >= 100) break;
+        const next = count(row?.next);
+        const maxNumber = count(row?.maxNumber);
+        if (!row || !['string', 'number'].includes(typeof row.scope) || !['string', 'number'].includes(typeof row.prefix) || next === null || maxNumber === null) continue;
+        counters.push({ scope: String(row.scope).slice(0, 128), prefix: String(row.prefix).slice(0, 128), next, maxNumber });
+      }
+      summary = Object.fromEntries(SUMMARY_FIELDS.map((field) => [field, source[field]]));
+      summary.counters = counters;
+    }
+    if (summary === null && !findings.some((finding) => finding.code === 'check_failed')) {
+      if (findings.length >= 20) findings.pop();
+      findings.push({ code: 'check_failed', count: 1 });
+    }
+    return { checkedAt, summary, findings };
+  } catch {
+    return null;
+  }
 }

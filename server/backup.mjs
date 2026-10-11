@@ -14,14 +14,14 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { BackupError } from './backup-error.mjs';
 import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
 import { createDirClient } from './backup-dir-client.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createSnapshotBarrier, testCaptureDelayMs } from './snapshot-barrier.mjs';
-import { checkTrackerData } from './tracker/backup-check.mjs';
+import { CHECK_JOB } from './tracker/backup-check-worker.mjs';
+import { sanitizeTrackerBlock } from './tracker/backup-check.mjs';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -59,6 +59,8 @@ const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
 const SETTLE_RETRY_CAP_MS = 30 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
 const COPY_WORKER_URL = new URL('./backup-copy-worker.mjs', import.meta.url);
+const CHECK_WORKER_URL = new URL('./tracker/backup-check-worker.mjs', import.meta.url);
+const CHECK_TIMEOUT_MS = 60_000;
 /** What a deep verify may find wrong with an object: the codes of readObject that mean the stored bytes are not the object. Anything else (the network, the provider) is not damage. */
 const DAMAGE_CODES = new Set(['not_found', 'tamper', 'content_mismatch', 'bad_format', 'unknown_key', 'too_large']);
 /** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
@@ -866,41 +868,8 @@ export function parseManifest(bytes, keys, name) {
     ) throw bad('snapshot barrier');
     snapshotBarrier = { completed: true, snapshotSeq: barrier.snapshotSeq, startedAt: barrier.startedAt, endedAt: barrier.endedAt };
   }
-  let tracker = null;
-  if (data.tracker !== undefined) {
-    const value = data.tracker;
-    const validCount = (n) => Number.isSafeInteger(n) && n >= 0;
-    if (!isObject(value) || !validCount(value.checkedAt) || !Array.isArray(value.findings) || value.findings.length > 20) {
-      throw bad('tracker');
-    }
-    const findings = [];
-    for (const finding of value.findings) {
-      if (!isObject(finding) || typeof finding.code !== 'string' || !/^[a-z_]{1,40}$/.test(finding.code)
-        || !validCount(finding.count)) throw bad('tracker');
-      findings.push({ code: finding.code, count: finding.count });
-    }
-    let summary = null;
-    if (value.summary === null) {
-      if (!findings.some((finding) => finding.code === 'check_failed')) throw bad('tracker');
-    } else {
-      const source = value.summary;
-      const numeric = [
-        'schema', 'trackers', 'tickets', 'archived', 'events', 'maxEventId', 'comments', 'aliases',
-        'links', 'kanbanLinks', 'outboxPending', 'notifications', 'ftsRows',
-      ];
-      if (!isObject(source) || numeric.some((field) => !validCount(source[field]))
-        || !Array.isArray(source.counters) || source.counters.length > 100) throw bad('tracker');
-      const counters = [];
-      for (const counter of source.counters) {
-        if (!isObject(counter) || typeof counter.scope !== 'string' || typeof counter.prefix !== 'string'
-          || !validCount(counter.next) || !validCount(counter.maxNumber)) throw bad('tracker');
-        counters.push({ scope: counter.scope, prefix: counter.prefix, next: counter.next, maxNumber: counter.maxNumber });
-      }
-      summary = Object.fromEntries(numeric.map((field) => [field, source[field]]));
-      summary.counters = counters;
-    }
-    tracker = { checkedAt: value.checkedAt, summary, findings };
-  }
+  // Advisory: a malformed block parses to null and the rest of the manifest is accepted.
+  const tracker = data.tracker === undefined ? null : sanitizeTrackerBlock(data.tracker);
   const paths = new Set();
   let total = 0;
   const files = data.files.map((entry) => {
@@ -1537,19 +1506,36 @@ export function createBackup({
     }
   }
 
-  function inspectSnapshotTracker(snapshot) {
-    if (!snapshot.files.some((file) => file.path === 'directory.sqlite')) {
-      return { present: false, summary: null, findings: [] };
-    }
-    let db = null;
+  /** The tracker check of the snapshot copy, in a one-shot worker thread (it can take hundreds of ms on a big tracker). Never throws. */
+  async function inspectSnapshotTracker(snapshot) {
+    const failed = { present: true, summary: null, findings: [{ code: 'check_failed', count: 1 }] };
+    if (!snapshot.files.some((file) => file.path === 'directory.sqlite')) return { present: false, summary: null, findings: [] };
+    let worker;
     try {
-      db = new DatabaseSync(path.join(snapshot.root, 'directory.sqlite'), { readOnly: true });
-      return checkTrackerData(db, { at: snapshot.startedAt });
+      worker = new Worker(CHECK_WORKER_URL, {
+        workerData: { job: CHECK_JOB, file: path.join(snapshot.root, 'directory.sqlite'), at: snapshot.startedAt },
+        env: {},
+        execArgv: ['--disable-warning=ExperimentalWarning'],
+      });
     } catch {
-      return { present: true, summary: null, findings: [{ code: 'check_failed', count: 1 }] };
-    } finally {
-      try { db?.close(); } catch { /* a read-only check cannot fail the backup */ }
+      return failed;
     }
+    return await new Promise((resolve) => {
+      let timer = null;
+      const done = (value) => {
+        clearTimeout(timer);
+        stop.signal.removeEventListener('abort', onAbort);
+        worker.terminate().catch(() => {});
+        resolve(value);
+      };
+      const onAbort = () => done(failed);
+      timer = setTimeout(() => done(failed), CHECK_TIMEOUT_MS);
+      timer.unref?.();
+      stop.signal.addEventListener('abort', onAbort, { once: true });
+      worker.once('message', (message) => done(message?.result && typeof message.result === 'object' ? message.result : failed));
+      worker.once('error', () => done(failed));
+      worker.once('exit', () => done(failed));
+    });
   }
 
   // ------------------------------------------------------------ one run
@@ -1589,8 +1575,8 @@ export function createBackup({
     const uploaded = new Map();
     let repaired = 0;
     const snapshot = await stageSnapshot(counters);
-    const trackerCheck = inspectSnapshotTracker(snapshot);
     try {
+      const trackerCheck = await inspectSnapshotTracker(snapshot);
       for (const file of snapshot.files) {
         if (stop.signal.aborted) throw aborted();
         const data = await readCapped(path.join(snapshot.root, ...file.path.split('/')), file.path, stop.signal);
@@ -1617,8 +1603,10 @@ export function createBackup({
         previous.keyId === keys.keyId &&
         previous.files.length === entries.length &&
         previous.files.every((f, i) => f.path === entries[i].path && f.objectId === entries[i].objectId);
+      // What is written passes through the same sanitiser the parser uses, so it always round-trips.
+      const trackerBlock = trackerCheck.present ? sanitizeTrackerBlock({ checkedAt: snapshot.startedAt, summary: trackerCheck.summary, findings: trackerCheck.findings }) : null;
       const previousFindingCodes = new Set((state.tracker?.findings ?? []).map((finding) => finding.code));
-      const trackerNewFindings = unchanged ? [] : trackerCheck.findings
+      const trackerNewFindings = unchanged ? [] : (trackerBlock?.findings ?? [])
         .filter((finding) => !previousFindingCodes.has(finding.code));
 
     // Every object is checked before a manifest names it, so a bad upload never leaves a manifest behind.
@@ -1646,9 +1634,7 @@ export function createBackup({
           createdAt: new Date(startedAt).toISOString(),
           appVersion: VERSION,
           snapshotBarrier: { completed: true, snapshotSeq, startedAt: snapshot.startedAt, endedAt: snapshot.endedAt },
-          ...(trackerCheck.present ? {
-            tracker: { checkedAt: snapshot.startedAt, summary: trackerCheck.summary, findings: trackerCheck.findings },
-          } : {}),
+          ...(trackerBlock ? { tracker: trackerBlock } : {}),
           files: entries,
           totals: { files: entries.length, bytes: entries.reduce((sum, e) => sum + e.size, 0) },
         };

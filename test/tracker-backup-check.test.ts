@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { BackupError, parseManifest } from '../server/backup.mjs';
+import { parseManifest } from '../server/backup.mjs';
 import { copyDatabase } from '../server/backup-copy-worker.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { FINDING_SEVERITY, checkTrackerData } from '../server/tracker/backup-check.mjs';
@@ -297,10 +297,9 @@ describe('tracker manifest normalisation', () => {
     });
   });
 
-  it('rejects invalid tracker data as an invalid manifest', () => {
-    let error: unknown;
-    try { parse({ ...base, tracker: { ...tracker, checkedAt: -1 } }); } catch (caught) { error = caught; }
-    expect(error).toBeInstanceOf(BackupError);
-    expect(error).toMatchObject({ code: 'invalid_manifest' });
+  it('gives null for a bad tracker block and the manifest is still valid', () => {
+    const manifest = parse({ ...base, tracker: { ...tracker, checkedAt: -1 } });
+    expect(manifest.tracker).toBeNull();
+    expect(manifest).toMatchObject({ keyId: 'test-key', files: [], totals: { files: 0, bytes: 0 } });
   });
 });
