@@ -128,6 +128,7 @@ function makeFixture(): Fixture {
   const ignoredTarget = path.join(scratch, 'large ignored dependency directory');
   fs.mkdirSync(ignoredTarget, { recursive: true });
   fs.writeFileSync(path.join(ignoredTarget, 'bundle.bin'), Buffer.alloc(2 * 1024 * 1024, 1));
+  // Windows directory junctions do not require the symbolic-link privilege.
   fs.symlinkSync(ignoredTarget, path.join(paths.ahead, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
 
   fs.writeFileSync(path.join(paths.ahead, 'staged.txt'), 'staged content\n');
@@ -156,16 +157,19 @@ function reportFor(options: { root?: string; main?: string; includeSize?: boolea
   });
 }
 
-function normalizedPath(value: string): string {
+function normalizedPath(value: string, platform = process.platform): string {
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  let normalized: string;
   try {
-    return path.normalize(fs.realpathSync(value));
+    normalized = pathApi.normalize(fs.realpathSync(value));
   } catch {
     try {
-      return path.join(path.normalize(fs.realpathSync(path.dirname(value))), path.basename(value));
+      normalized = pathApi.join(pathApi.normalize(fs.realpathSync(pathApi.dirname(value))), pathApi.basename(value));
     } catch {
-      return path.resolve(value);
+      normalized = pathApi.resolve(value);
     }
   }
+  return platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function byPath<T extends { path: string }>(report: { worktrees: T[] }, target: string): T | undefined {
@@ -189,6 +193,11 @@ afterAll(() => {
 });
 
 describe('worktree audit inventory', () => {
+  it('normalizes Windows path separators and case when comparing worktree paths', () => {
+    expect(normalizedPath('C:/Users/Runner/worktree', 'win32'))
+      .toBe(normalizedPath('c:\\users\\runner\\WORKTREE', 'win32'));
+  });
+
   it('classifies task, prototype, and other paths and keeps directory registration separate from branch names', async () => {
     const report = await reportFor();
     const merged = byPath(report, fixture.paths.merged);
