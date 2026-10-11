@@ -4,13 +4,15 @@ import { createTicket, updateTicket, transitionTicket } from './tickets.mjs';
 import { enqueueTicketProjection, enqueueTicketProjectionRemoval, reconcileTrackerProjection, SERVER_CARD_FIELDS } from './projection.mjs';
 import { appendTicketEvent } from './events.mjs';
 import { actorInfo, cleanTicketTitle, conflict, getDb, newId } from './shared.mjs';
-import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from '../window-limiter.mjs';
+import { createWindowLimiter } from '../window-limiter.mjs';
 
 const TRACKER_ACCESS_CHECK = Object.freeze({ id: 'tracker-access-check' });
 const UPDATE_WINDOW_MS = 60_000;
 const MAX_UPDATES_PER_WINDOW = 240;
 const MAX_LINKED_CARDS_PER_UPDATE = 100;
 const MAX_TICKETS_PER_UPDATE = 500;
+// People paste and add cards by hand, so this is far above MCP's budget (10 a minute for an agent); it only bounds a flood.
+export const GUARD_TICKET_CREATES_PER_WINDOW = 120;
 const TITLE_QUIET_MS = 400;
 const TITLE_MAX_WAIT_MS = 2000;
 const RESTORE_WINDOW_MS = 15_000;
@@ -220,7 +222,7 @@ function setNotice(notices, cardId, reason) {
 export function createTrackerGuard({
   directory, config = {}, now = Date.now, log = () => {},
   setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
-  ticketCreateLimit = TICKET_CREATES_PER_WINDOW, maxLinkedCardsPerUpdate = MAX_LINKED_CARDS_PER_UPDATE,
+  ticketCreateLimit = GUARD_TICKET_CREATES_PER_WINDOW, maxLinkedCardsPerUpdate = MAX_LINKED_CARDS_PER_UPDATE,
 } = {}) {
   const caches = new Map();
   const rateWindows = new Map();
