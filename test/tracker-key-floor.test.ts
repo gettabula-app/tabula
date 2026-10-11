@@ -149,6 +149,45 @@ describe('tracker key floors', () => {
     expect(createTicket({ directory, actor, title: 'two' }).key).toBe('TAB-2');
   });
 
+  it('rolls the whole jump back with its transaction', () => {
+    const directory = open();
+    const before = directory.db.prepare('SELECT next_number FROM ticket_counters').all();
+    expect(() => directory.transaction(() => {
+      expect(epochJump(directory.db, 5)).toHaveLength(1);
+      expect(directory.db.prepare('SELECT next_number FROM ticket_counters').all()).not.toEqual(before);
+      throw new Error('audit failed');
+    })).toThrow('audit failed');
+    expect(directory.db.prepare('SELECT next_number FROM ticket_counters').all()).toEqual(before);
+  });
+
+  it('keeps reporting during a steady stream of creates: never more than 25 behind live', async () => {
+    const directory = open();
+    const timers = timerRig();
+    const events = new EventEmitter();
+    const reports: Array<Array<{ floor: number }>> = [];
+    const reporter = createKeyFloorReporter({
+      directory, events,
+      cloud: { reportKeyFloor: async (counters: Array<{ floor: number }>) => { reports.push(counters); } },
+      now: timers.now, setTimeout: timers.setTimeout as any, clearTimeout: timers.clearTimeout as any,
+    });
+    await reporter.flush();
+    const live = () => Number((directory.db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?').get('trk_default', 'TAB') as { next_number: number }).next_number);
+    let firstAfter25: number | null = null;
+    for (let i = 1; i <= 200; i++) {
+      directory.db.prepare('UPDATE ticket_counters SET next_number = next_number + 1 WHERE scope = ? AND prefix = ?').run('trk_default', 'TAB');
+      events.emit(KEY_FLOOR_CHANGED_EVENT);
+      timers.advance(1000);
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      if (i === 25) firstAfter25 = i;
+      const last = reports.at(-1)![0].floor;
+      expect(live() - last, `after create ${i}`).toBeLessThanOrEqual(25);
+    }
+    expect(firstAfter25).toBe(25);
+    expect(reports.length).toBeGreaterThanOrEqual(8);
+    reporter.close();
+  });
+
   it('reads and atomically writes a validated self-host floor file', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tracker-floor-'));
     roots.push(root);

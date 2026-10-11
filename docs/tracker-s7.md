@@ -119,6 +119,7 @@ While `tracker.restore_gate` is set:
 
 - tracker mutating routes (`/api/tracker/*` writes, MCP tracker tools that write) answer `503 tracker_restoring` with `{ error, message, floor: 'pending'|'known' }`; reads work. The guard treats linked cards as read-only (`read_only` notice), non-linked boards are unaffected, and the outbound slice 8 deliveries are paused.
 - it is cleared automatically when the floor is known (section 6.2), the reconcile of 5.4 has finished, and the FTS is ready. Clearing writes the audit row `tracker.gate_cleared` (counts, how long it was closed).
+- the two completion signals are settings rows written by the restore code: `tracker.reconcile_done` and `tracker.fts_ready`, value `'1'` (absent means not done; the gate-setting step of 5.2 deletes both). `key-epoch` marks the floor known but clears the gate only when both are `'1'`; it never opens the gate ahead of the reconcile or the search rebuild.
 - the owner can read its state at `GET /api/admin/tracker/readiness` (section 9). Nobody can clear it by hand except through the epoch action of 6.4.
 - the gate is a setting, so it survives a second restart; a restore of a backup that was itself taken while a gate was set opens with the gate set again (the setting is not carried: the staged database's own value is overwritten by step 5.2.3 whenever tracker rows exist).
 

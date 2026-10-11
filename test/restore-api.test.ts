@@ -324,6 +324,18 @@ describe('maintenance mode', () => {
     expect(s.exits).toEqual([]);
   });
 
+  it('answers the tracker key-epoch route directly with tracker_restoring, with no session, no directory read and no route', async () => {
+    const s = await setup({ restoring: () => true });
+    for (const cookie of [s.cookies.owner, null, `${s.config.cookieName}=garbage`]) {
+      const res = await s.call('POST', '/api/admin/tracker/key-epoch', { cookie, body: { confirm: 'JUMP' } });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'tracker_restoring', message: 'Ticket writes are paused while the workspace is being restored.', floor: 'pending' });
+      expect(res.headers.get('retry-after')).toBe('30');
+    }
+    // the generic reply is unchanged for every other path
+    expect((await s.call('GET', '/api/admin/tracker/readiness')).body).toMatchObject({ error: 'restoring' });
+  });
+
   it('keeps answering the backup status, with the restore in it, to the control plane', async () => {
     const s = await setup({ cloud: true, restoring: () => true });
     const ok = await s.call('GET', '/api/internal/backup-status', { cookie: null, token: TOKEN });

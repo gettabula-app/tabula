@@ -141,15 +141,24 @@ describe('tracker admin records', () => {
     running = false;
     expect(errorOf(() => routes.call('POST', 'admin/tracker/key-epoch', { body: { confirm: 'wrong' } })))
       .toMatchObject({ status: 400, code: 'key_epoch_confirmation_mismatch' });
-    const [epochStatus, epoch] = routes.call('POST', 'admin/tracker/key-epoch', { body: { confirm: 'JUMP' } }) as [number, any];
+    // Part B has not reported the reconcile and the search rebuild: the jump marks the floor known, the gate stays closed.
+    const [epochStatus, first] = routes.call('POST', 'admin/tracker/key-epoch', { body: { confirm: 'JUMP' } }) as [number, any];
     expect(epochStatus).toBe(200);
-    expect(epoch).toMatchObject({ gateCleared: true, counters: [{ scope: 'trk_default', prefix: 'TAB', oldNext: 2, newNext: 1002 }] });
+    expect(first).toMatchObject({ gateCleared: false, counters: [{ scope: 'trk_default', prefix: 'TAB', oldNext: 2, newNext: 1002 }] });
+    expect(JSON.parse(String(directory.getSetting('tracker.restore_gate')))).toMatchObject({ floor: 'known' });
+    directory.setSetting('tracker.reconcile_done', '1');
+    expect(JSON.parse(String(directory.getSetting('tracker.restore_gate')))).toMatchObject({ floor: 'known' });
+    const [, onlyOne] = routes.call('POST', 'admin/tracker/key-epoch', { body: { confirm: 'JUMP' } }) as [number, any];
+    expect(onlyOne.gateCleared).toBe(false);
+    directory.setSetting('tracker.fts_ready', '1');
+    const [, epoch] = routes.call('POST', 'admin/tracker/key-epoch', { body: { confirm: 'JUMP' } }) as [number, any];
+    expect(epoch).toMatchObject({ gateCleared: true });
     expect(directory.getSetting('tracker.restore_gate')).toBeNull();
-    expect(emitted).toEqual(['tracker-key-floor-changed']);
+    expect(emitted).toEqual(['tracker-key-floor-changed', 'tracker-key-floor-changed', 'tracker-key-floor-changed']);
     const serialized = JSON.stringify({ epoch, audit: directory.listAudit(20) });
     expect(serialized).not.toContain(privateTitle);
     expect(serialized).not.toContain(privateComment);
-    expect(directory.listAudit(20).map((row) => row.action)).toEqual(['tracker.gate_cleared', 'tracker.key_epoch']);
+    expect(directory.listAudit(20).map((row) => row.action)).toEqual(['tracker.gate_cleared', 'tracker.key_epoch', 'tracker.key_epoch', 'tracker.key_epoch']);
   });
 
   it('clears a gate only when floor, reconcile and FTS signals are all true', () => {

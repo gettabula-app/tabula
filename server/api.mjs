@@ -1728,20 +1728,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
     const method = String(req.method).toUpperCase();
-    let trackerEpochDuringRestore = false;
-    if (method === 'POST' && pathname === '/api/admin/tracker/key-epoch') {
-      try { trackerEpochDuringRestore = restore?.isRunning?.() === true; } catch { /* the route will fail closed */ }
-    }
-    if (maintenance() && !(pathname === '/api/internal/backup-status' && method === 'GET') && !trackerEpochDuringRestore) {
+    if (maintenance() && !(pathname === '/api/internal/backup-status' && method === 'GET')) {
       res.setHeader('retry-after', '30');
-      send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      // Same disclosure as the generic reply, with the code the tracker client reads. No auth, no directory read, no route.
+      if (method === 'POST' && pathname === '/api/admin/tracker/key-epoch') {
+        send(res, 503, { error: 'tracker_restoring', message: 'Ticket writes are paused while the workspace is being restored.', floor: 'pending' });
+      } else {
+        send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      }
       return true;
     }
     try {
       // Whole-workspace restore takes its safety backup from inside this handler; that backup must be allowed to acquire
       // the same barrier. Maintenance mode takes over the writers immediately after the safety copy succeeds.
       // A streaming AI run lasts minutes and writes boards through the room, not the directory, so it must not hold a lease that would stall every other writer.
-      if (snapshotBarrier && !READ_METHODS.has(method) && pathname !== '/api/admin/backups/restore' && pathname !== '/api/ai/run' && !trackerEpochDuringRestore) {
+      if (snapshotBarrier && !READ_METHODS.has(method) && pathname !== '/api/admin/backups/restore' && pathname !== '/api/ai/run') {
         await snapshotBarrier.runWriter(() => dispatch(req, res, pathname, query));
       } else {
         await dispatch(req, res, pathname, query);

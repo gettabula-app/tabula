@@ -32,11 +32,11 @@ function normalizeDrillAt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function validateDrill(body) {
+function validateDrill(body, nowMs) {
   const fields = ['at', 'kind', 'schema', 'restoreSeconds', 'dataLossSeconds', 'boxes', 'overall'];
   if (!matchesFields(body, fields) || Object.keys(body).length !== fields.length) return null;
   const at = normalizeDrillAt(body.at);
-  if (at === null || !['production', 'local'].includes(body.kind)
+  if (at === null || at < 0 || at > nowMs + 24 * HOUR_MS || !['production', 'local'].includes(body.kind)
     || !Number.isSafeInteger(body.schema) || body.schema <= 0
     || !Number.isFinite(body.restoreSeconds) || body.restoreSeconds < 0 || body.restoreSeconds > 1e7
     || !Number.isFinite(body.dataLossSeconds) || body.dataLossSeconds < 0 || body.dataLossSeconds > 1e7
@@ -91,6 +91,7 @@ export function createTrackerAdminRoutes({
   });
   const readinessLimiter = createWindowLimiter(60, now);
   const epochLimiter = createWindowLimiter(5, now, HOUR_MS);
+  const recordLimiter = createWindowLimiter(30, now, HOUR_MS);
   const limited = (limiter, user, res, label) => {
     const retryAfter = limiter.hit(user.id);
     if (!retryAfter) return;
@@ -116,25 +117,29 @@ export function createTrackerAdminRoutes({
         throw error;
       }
       limited(epochLimiter, user, res, 'Ticket key epoch changes are limited to 5 per hour.');
-      const counters = epochJump(directory.db, now());
-      directory.transaction(() => {
-        auditRecord(user, 'tracker.key_epoch', { counters });
+      let gateCleared = false;
+      // One transaction: the jump, its audit row, the gate's floor marking and the gate clearing commit together or not at all.
+      const counters = directory.transaction(() => {
+        const jumped = epochJump(directory.db, now());
+        auditRecord(user, 'tracker.key_epoch', { counters: jumped });
         if (directory.getSetting(TRACKER_RESTORE_GATE_KEY) !== null) markGateFloorKnown(directory);
+        // Part B writes these two settings when the post-restore reconcile and the search rebuild finish; absent means not done.
+        gateCleared = maybeClearGate(directory, {
+          floorKnown: true,
+          reconcileDone: directory.getSetting('tracker.reconcile_done') === '1',
+          ftsReady: directory.getSetting('tracker.fts_ready') === '1',
+          now,
+        }, (action, detail) => auditRecord(user, action, detail));
+        if (jumped.length) directory.afterCommit(() => emit(KEY_FLOOR_CHANGED_EVENT));
+        return jumped;
       });
-      // Part B owns the reconcile and FTS completion signals; these true values are its hook point.
-      const gateCleared = maybeClearGate(directory.db, {
-        floorKnown: true,
-        reconcileDone: true,
-        ftsReady: true,
-        now,
-      }, (action, detail) => auditRecord(user, action, detail));
       readiness.invalidate();
-      if (counters.length) emit(KEY_FLOOR_CHANGED_EVENT);
       return [200, { counters, gateCleared }];
     }),
-    compile('POST', 'admin/tracker/drill-record', { body: true, readOnlyOk: true }, ({ user, body }) => {
+    compile('POST', 'admin/tracker/drill-record', { body: true, readOnlyOk: true }, ({ user, res, body }) => {
       requireOwner(user);
-      const record = validateDrill(body);
+      limited(recordLimiter, user, res, 'Tracker records are limited to 30 per hour.');
+      const record = validateDrill(body, now());
       if (!record) throw invalid(errors, 'drill_record_invalid', 'The tracker drill record is invalid.');
       directory.transaction(() => {
         directory.setSetting('tracker.drill.last', JSON.stringify(record));
@@ -143,8 +148,9 @@ export function createTrackerAdminRoutes({
       readiness.invalidate();
       return [200, record];
     }),
-    compile('POST', 'admin/tracker/cutover-record', { body: true, readOnlyOk: true }, ({ user, body }) => {
+    compile('POST', 'admin/tracker/cutover-record', { body: true, readOnlyOk: true }, ({ user, res, body }) => {
       requireOwner(user);
+      limited(recordLimiter, user, res, 'Tracker records are limited to 30 per hour.');
       if (!matchesFields(body, ['importVerifiedAt', 'lossReportAccepted']) || Object.keys(body).length !== 2
         || !validCutoverDate(body.importVerifiedAt, now) || body.lossReportAccepted !== true) {
         throw invalid(errors, 'cutover_record_invalid', 'The tracker cutover record is invalid.');

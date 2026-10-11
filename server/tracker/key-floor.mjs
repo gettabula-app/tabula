@@ -71,26 +71,21 @@ export function computeKeyFloor({ restored = [], liveBefore, manifestMax, contro
   return { counters, known: hasOtherSource || !hasRestoredTickets };
 }
 
-/** Raise every ticket counter past its current high-water mark, plus 1000, atomically. */
+/**
+ * Raise every ticket counter past its current high-water mark, plus 1000. Runs inside the caller's transaction
+ * (directory.transaction), so the jump, its audit row and the gate marking commit or roll back together.
+ */
 export function epochJump(db, now = Date.now()) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const rows = db.prepare('SELECT scope, prefix, next_number FROM ticket_counters ORDER BY scope, prefix').all();
-    const maxFor = db.prepare('SELECT COALESCE(MAX(number), 0) AS max_number FROM tickets WHERE tracker_id = ? AND prefix = ?');
-    const update = db.prepare('UPDATE ticket_counters SET next_number = ?, updated_at = ? WHERE scope = ? AND prefix = ?');
-    const changed = rows.map((row) => {
-      const oldNext = Number(row.next_number);
-      const maxNumber = Number(maxFor.get(row.scope, row.prefix).max_number);
-      const newNext = Math.max(oldNext, maxNumber + 1) + 1000;
-      update.run(newNext, now, row.scope, row.prefix);
-      return { scope: row.scope, prefix: row.prefix, oldNext, newNext };
-    });
-    db.exec('COMMIT');
-    return changed;
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
+  const rows = db.prepare('SELECT scope, prefix, next_number FROM ticket_counters ORDER BY scope, prefix').all();
+  const maxFor = db.prepare('SELECT COALESCE(MAX(number), 0) AS max_number FROM tickets WHERE tracker_id = ? AND prefix = ?');
+  const update = db.prepare('UPDATE ticket_counters SET next_number = ?, updated_at = ? WHERE scope = ? AND prefix = ?');
+  return rows.map((row) => {
+    const oldNext = Number(row.next_number);
+    const maxNumber = Number(maxFor.get(row.scope, row.prefix).max_number);
+    const newNext = Math.max(oldNext, maxNumber + 1) + 1000;
+    update.run(newNext, now, row.scope, row.prefix);
+    return { scope: row.scope, prefix: row.prefix, oldNext, newNext };
+  });
 }
 
 function checkedFileData(value) {
@@ -192,8 +187,8 @@ export function createKeyFloorReporter({
   };
 
   function schedule(delay = debounceMs) {
-    if (closed || retryTimer !== null) return;
-    cancel(debounceTimer);
+    // A throttle, not a debounce: an armed timer is never re-armed, so a steady stream of creates cannot starve the report.
+    if (closed || retryTimer !== null || debounceTimer !== null) return;
     debounceTimer = setTimer(() => {
       debounceTimer = null;
       void push(false).catch(() => {});
@@ -208,6 +203,15 @@ export function createKeyFloorReporter({
     return counters.some((row) => sinks.some((sink) => {
       const last = reported[sink].get(counterKey(row));
       return last === undefined || row.next - last >= REPORT_AFTER;
+    }));
+  }
+
+  // A counter that has advanced REPORT_AFTER past what a sink last saw must be reported now, not after a quiet period.
+  function advancedPastReport(counters) {
+    const sinks = [...(cloud ? ['cloud'] : []), ...(floorFile ? ['file'] : [])];
+    return counters.some((row) => sinks.some((sink) => {
+      const last = reported[sink].get(counterKey(row));
+      return last !== undefined && row.next - last >= REPORT_AFTER;
     }));
   }
 
@@ -271,7 +275,13 @@ export function createKeyFloorReporter({
         retryIndex = 0;
       }
       return status();
-    })().finally(() => { inFlight = null; });
+    })().finally(() => {
+      inFlight = null;
+      // Creates that landed while this report was out may already be 25 past it.
+      if (!closed && retryTimer === null) {
+        try { if (advancedPastReport(readLiveCounters(directory))) void push(false).catch(() => {}); } catch { /* best effort */ }
+      }
+    });
     return inFlight;
   }
 
@@ -279,7 +289,11 @@ export function createKeyFloorReporter({
     try {
       queued = true;
       const counters = readLiveCounters(directory);
-      if (due(counters)) schedule();
+      if (advancedPastReport(counters)) {
+        cancel(debounceTimer);
+        debounceTimer = null;
+        void push(false).catch(() => {});
+      } else if (due(counters)) schedule();
     } catch { /* key-floor reporting cannot interfere with a committed ticket */ }
   }
 
