@@ -97,6 +97,24 @@ describe('tracker shell slice', () => {
     store.destroy();
   });
 
+  it('ignores Escape while a modal dialog is open, even when focus is outside it', async () => {
+    browser = installTrackerUiBrowser();
+    const api = createMockTrackerApi(createTrackerVisualSeed());
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const listeners = captureDocumentKeydown();
+    const onFullscreenChange = vi.fn();
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'key-escape-modal', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, onFullscreenChange });
+    await store.loadMeta();
+    await flush(20);
+    const row = (shell.el as unknown as FakeElement).querySelector('.trk-list-row[data-key="TAB-101"]')!;
+    const modal = document.createElement('div');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    document.body.appendChild(modal);
+    dispatchTrackerKey(listeners, row, 'Escape');
+    expect(onFullscreenChange).not.toHaveBeenCalled();
+  });
+
   it('keeps Enter on a focused issue row opening its ticket', async () => {
     browser = installTrackerUiBrowser();
     const api = createMockTrackerApi(createTrackerVisualSeed());
