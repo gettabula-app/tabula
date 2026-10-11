@@ -840,8 +840,11 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
       icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
     : null;
+  // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
+  const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
   const pop = popover(anchor, h('div', { class: 'menu' },
     guide,
+    chatNarrow,
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
