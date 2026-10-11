@@ -766,6 +766,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       if (sets.length) run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, ...params, id);
       if (patch.disabled) revokeUserSessions(id);
+      if (patch.disabled === true || patch.role === 'guest') oauthStore.revokeUserGrants(id, 'user_state');
     });
     return getUser(id);
   }
@@ -776,6 +777,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       run('DELETE FROM login_tokens WHERE email = ?', user.email);
       run("DELETE FROM board_shares WHERE principal_type = 'user' AND principal_id = ?", id);
+      oauthStore.revokeUserGrants(id, 'user_state');
       run('DELETE FROM users WHERE id = ?', id);
     });
   }
@@ -1425,6 +1427,9 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     setSetting,
     ...tokenStore,
     ...oauthStore,
+    invalidateOauthAfterRestore(reason = 'restore', now = Date.now(), purgeClients = false) {
+      return oauthStore.invalidateAfterRestore(now, reason, purgeClients);
+    },
     // The personal-token API keeps its established name; OAuth has its distinct lookup method.
     findAccessToken: tokenStore.findAccessToken,
     ...createTemplateStore({ get, all, run }),

@@ -407,6 +407,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     const client = getClientRow(clientId, now);
     const user = get('SELECT id, email, name, role, disabled, created_at FROM users WHERE id = ?', userId);
     if (!client) throw new Error('OAuth client is unavailable');
+    if (rankScope(scope) > rankScope(client.max_scope)) throw new Error('OAuth grant scope exceeds client maximum');
     if (!user || user.disabled || user.role === 'guest') throw new Error('OAuth user is unavailable');
 
     run(`UPDATE oauth_grants SET revoked_at = ?, revoked_reason = 'replaced'
@@ -516,7 +517,11 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     if (decision === 'deny') return { decision, request, client: toClient(client) };
     if (decision !== 'allow' || typeof userId !== 'string') return null;
     const selectedScope = scope ?? (request.scope ? request.scope.split(' ')[0] : 'read');
-    if (!OAUTH_SCOPES.includes(selectedScope) || (request.scope && request.scope.split(' ').some((s) => rankScope(s) > rankScope(selectedScope)))) return null;
+    const requestMaxScope = request.scope
+      ? request.scope.split(' ').reduce((max, item) => rankScope(item) > rankScope(max) ? item : max, 'read')
+      : client.maxScope;
+    if (!OAUTH_SCOPES.includes(selectedScope) || rankScope(selectedScope) > rankScope(requestMaxScope)
+      || rankScope(selectedScope) > rankScope(client.maxScope)) return null;
 
     return transaction(() => {
       const currentClient = getClientRow(request.clientId, now);
@@ -619,7 +624,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     }
   }
 
-  function refresh({ refreshToken, clientId, scope = undefined, resource = undefined, now = Date.now() }) {
+  function refresh({ refreshToken, clientId, scope = undefined, resource = undefined, expectedResource = undefined, now = Date.now() }) {
     if (typeof refreshToken !== 'string' || !REFRESH_TOKEN_RE.test(refreshToken)) return { error: 'invalid_grant' };
     const tokenHash = sha256Hex(refreshToken);
     return transaction(() => {
@@ -633,10 +638,16 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
       );
       if (!row) return { error: 'invalid_grant' };
       if (typeof clientId !== 'string' || clientId !== row.client_id || !getClientRow(clientId, now)) return { error: 'invalid_client' };
+      if (resource !== undefined && resource !== row.grant_resource) return { error: 'invalid_target' };
+      if (expectedResource !== undefined && row.grant_resource !== expectedResource) {
+        if (row.grant_revoked_at == null) revokeGrantInside(row.grant_id, 'user_state', now);
+        return { error: 'invalid_grant' };
+      }
       if (row.used_at != null) {
         if (row.replay_ciphertext && row.replay_until > now && row.replay_count === 0) {
           const pair = decryptReplay(row.replay_ciphertext, tokenHash, row.replay_until);
-          if (pair && row.grant_revoked_at == null && row.grant_expires_at > now && !row.user_disabled && row.user_role !== 'guest') {
+          if (pair && (scope === undefined || scope === pair.scope)
+            && row.grant_revoked_at == null && row.grant_expires_at > now && !row.user_disabled && row.user_role !== 'guest') {
             run('UPDATE oauth_tokens SET replay_ciphertext = NULL, replay_until = NULL, replay_count = 1 WHERE id = ? AND replay_count = 0', row.id);
             return pair;
           }
@@ -649,11 +660,9 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
         if (row.grant_revoked_at == null && (row.grant_expires_at <= now || row.user_disabled || row.user_role === 'guest')) revokeGrantInside(row.grant_id, 'user_state', now);
         return { error: 'invalid_grant' };
       }
-      if (resource !== undefined && resource !== row.grant_resource) return { error: 'invalid_target' };
       const currentScope = minScope(row.scope, row.grant_scope);
       const nextScope = scope === undefined ? currentScope : scope;
-      if (!OAUTH_SCOPES.includes(nextScope)) return { error: 'invalid_scope' };
-      if (rankScope(nextScope) > rankScope(currentScope)) return { error: 'invalid_scope' };
+      if (!OAUTH_SCOPES.includes(nextScope) || rankScope(nextScope) > rankScope(currentScope)) return { error: 'invalid_scope' };
 
       if (nextScope !== row.grant_scope) run('UPDATE oauth_grants SET scope = ? WHERE id = ?', nextScope, row.grant_id);
       const grant = get('SELECT * FROM oauth_grants WHERE id = ?', row.grant_id);
@@ -671,7 +680,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     });
   }
 
-  function redeemCode({ code, clientId, redirectUri, codeVerifier, resource = undefined, scope = undefined, now = Date.now() }) {
+  function redeemCode({ code, clientId, redirectUri, codeVerifier, resource = undefined, expectedResource = undefined, scope = undefined, now = Date.now() }) {
     return transaction(() => {
       sweepInside(now);
       const row = readCodeRow(code);
@@ -690,7 +699,15 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
            FROM oauth_grants g JOIN users u ON u.id = g.user_id
           WHERE g.id = ?`, row.grant_id,
       );
-      if (!grant || grant.revoked_at != null || grant.expires_at <= now || grant.user_disabled || grant.user_role === 'guest') return { error: 'invalid_grant' };
+      if (!grant || grant.revoked_at != null || grant.expires_at <= now) return { error: 'invalid_grant' };
+      if (grant.user_disabled || grant.user_role === 'guest') {
+        revokeGrantInside(row.grant_id, 'user_state', now);
+        return { error: 'invalid_grant' };
+      }
+      if (expectedResource !== undefined && grant.resource !== expectedResource) {
+        revokeGrantInside(row.grant_id, 'user_state', now);
+        return { error: 'invalid_grant' };
+      }
       const selectedScope = scope === undefined ? minScope(row.scope, grant.scope) : scope;
       if (!OAUTH_SCOPES.includes(selectedScope) || rankScope(selectedScope) > rankScope(minScope(row.scope, grant.scope))) return { error: 'invalid_scope' };
 
@@ -723,7 +740,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
          JOIN oauth_clients c ON c.id = g.client_id JOIN users u ON u.id = g.user_id
         WHERE t.token_hash = ? AND t.kind = 'access'`, sha256Hex(token),
     );
-    if (!row || row.revoked_at != null || row.grant_expires_at <= now || row.token_expires_at <= now || row.disabled) return null;
+    if (!row || row.revoked_at != null || row.grant_expires_at <= now || row.token_expires_at <= now || row.disabled || row.user_role === 'guest') return null;
     const client = getClientRow(row.client_id, now);
     if (!client) return null;
     return {
@@ -785,6 +802,36 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     return transaction(() => revokeGrantInside(id, reason, now));
   }
 
+  function findRefreshGrant(refreshToken) {
+    if (typeof refreshToken !== 'string' || !REFRESH_TOKEN_RE.test(refreshToken)) return null;
+    const row = get(
+      `SELECT g.id AS grant_id, g.client_id FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
+        WHERE t.token_hash = ? AND t.kind = 'refresh'`,
+      sha256Hex(refreshToken),
+    );
+    return row ? { grantId: row.grant_id, clientId: row.client_id } : null;
+  }
+
+  function revokeToken(token, clientId, now = Date.now()) {
+    if (typeof token !== 'string' || typeof clientId !== 'string') return null;
+    const isAccess = ACCESS_TOKEN_RE.test(token);
+    const isRefresh = REFRESH_TOKEN_RE.test(token);
+    if (!isAccess && !isRefresh) return null;
+    return transaction(() => {
+      const row = get(
+        `SELECT g.id AS grant_id, g.user_id, g.client_id, g.revoked_at, g.expires_at,
+                c.name AS client_name, t.expires_at AS token_expires_at
+           FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
+           JOIN oauth_clients c ON c.id = g.client_id
+          WHERE t.token_hash = ? AND t.kind = ?`,
+        sha256Hex(token), isAccess ? 'access' : 'refresh',
+      );
+      if (!row || row.client_id !== clientId || row.revoked_at != null || row.expires_at <= now || row.token_expires_at <= now) return null;
+      if (!revokeGrantInside(row.grant_id, 'client', now)) return null;
+      return { grantId: row.grant_id, userId: row.user_id, clientId: row.client_id, clientName: row.client_name };
+    });
+  }
+
   function revokeGrantFamily(id, reason = 'self', now = Date.now()) {
     return revokeGrant(id, reason, now);
   }
@@ -806,13 +853,14 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     });
   }
 
-  function invalidateAfterRestore(now = Date.now()) {
+  function invalidateAfterRestore(now = Date.now(), reason = 'restore', purgeClients = false) {
     return transaction(() => {
-      const revoked = revokeAll('restore', now);
+      const revoked = revokeAll(reason, now);
       run('DELETE FROM oauth_requests');
       run('DELETE FROM oauth_codes');
       run('UPDATE oauth_tokens SET replay_ciphertext = NULL, replay_until = NULL, replay_count = 0');
-      return revoked;
+      const clients = purgeClients ? run('DELETE FROM oauth_clients') : 0;
+      return { revoked, clients };
     });
   }
 
@@ -842,6 +890,8 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     consumeCode,
     issueTokens,
     refresh,
+    findRefreshGrant,
+    revokeToken,
     signRequest,
     readRequest,
     decideRequest,

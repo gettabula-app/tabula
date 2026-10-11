@@ -220,8 +220,8 @@ describe('OAuth store migration and persistence', () => {
     expect(d.db.prepare('SELECT replay_ciphertext FROM oauth_tokens WHERE token_hash = ?')
       .get(crypto.createHash('sha256').update(first.refreshToken).digest('hex')))
       .toEqual({ replay_ciphertext: null });
-    expect(d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: afterWindow }))
-      .toMatchObject({ error: 'reuse' });
+    const lateRefresh = d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: afterWindow });
+    expect(lateRefresh.error).toBe('reuse');
     expect(d.getGrant(fixture.value.id)?.revokedAt).toBe(afterWindow);
   });
 
@@ -238,13 +238,14 @@ describe('OAuth store migration and persistence', () => {
       resource: 'https://tabula.example/mcp',
       now: T0,
     });
-    expect(d.redeemCode({
+    const wrongVerifier = d.redeemCode({
       code: code.code,
       clientId: fixture.registered.clientId,
       redirectUri: fixture.registered.redirectUris[0],
       codeVerifier: 'x'.repeat(43),
       now: T0,
-    })).toMatchObject({ error: 'invalid_grant' });
+    });
+    expect(wrongVerifier.error).toBe('invalid_grant');
     expect(d.redeemCode({
       code: code.code,
       clientId: fixture.registered.clientId,
@@ -252,6 +253,109 @@ describe('OAuth store migration and persistence', () => {
       codeVerifier: verifier,
       now: T0 + 1,
     })).toMatchObject({ error: 'reuse' });
+  });
+
+  it('serializes concurrent refreshes to one replacement pair with one replay', async () => {
+    const d = directory();
+    const fixture = grant(d);
+    const original = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    let now = T0 + 1;
+    const results = await Promise.all([
+      Promise.resolve().then(() => d.refresh({ refreshToken: original.refreshToken, clientId: fixture.registered.clientId, now })),
+      Promise.resolve().then(() => d.refresh({ refreshToken: original.refreshToken, clientId: fixture.registered.clientId, now })),
+    ]);
+    expect(results[0]).toHaveProperty('accessToken');
+    expect(results[1]).toEqual(results[0]);
+    expect(d.getGrant(fixture.value.id)?.revokedAt).toBeNull();
+  });
+
+  it('permanently lowers the grant ceiling when refresh narrows scope', () => {
+    const d = directory();
+    const fixture = grant(d);
+    const original = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const narrowed = d.refresh({ refreshToken: original.refreshToken, clientId: fixture.registered.clientId, scope: 'comment', now: T0 + 2 } as any);
+    expect(narrowed).toMatchObject({ scope: 'comment' });
+    expect(d.getGrant(fixture.value.id)?.scope).toBe('comment');
+    const attemptToWiden = d.refresh({ refreshToken: narrowed.refreshToken, clientId: fixture.registered.clientId, scope: 'write', now: T0 + 3 } as any);
+    expect(attemptToWiden.error).toBe('invalid_scope');
+    const next = d.refresh({ refreshToken: narrowed.refreshToken, clientId: fixture.registered.clientId, now: T0 + 4 });
+    expect(next).toMatchObject({ scope: 'comment' });
+    expect(d.getGrant(fixture.value.id)?.scope).toBe('comment');
+  });
+
+  it('revokes access and refresh together through RFC 7009 token lookup', () => {
+    const d = directory();
+    const fixture = grant(d);
+    const pair = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    expect(d.revokeToken(pair.accessToken, fixture.registered.clientId, T0 + 1)).toMatchObject({ grantId: fixture.value.id });
+    expect(d.findOauthAccessToken(pair.accessToken, T0 + 1)).toBeNull();
+    expect(d.refresh({ refreshToken: pair.refreshToken, clientId: fixture.registered.clientId, now: T0 + 1 })).toMatchObject({ error: 'invalid_grant' });
+    expect(d.revokeToken(pair.refreshToken, 'another-client', T0 + 2)).toBeNull();
+  });
+
+  it('enforces one active grant per client, the per-person cap and the stored client scope ceiling', () => {
+    const d = directory();
+    const person = d.createUser({ email: 'oauth-grant-cap@example.com', role: 'member' })!;
+    const firstClient = d.registerClient({ name: 'App 1', redirectUris: ['https://claude.ai/callback'], maxScope: 'read', now: T0 }).client!;
+    const grantFields = { clientId: firstClient.clientId, userId: person.id, scope: 'read' as const, resource: 'https://tabula.example/mcp', now: T0 };
+    const first = d.createGrant(grantFields);
+    const replacement = d.createGrant(grantFields);
+    expect(d.getGrant(first.id)).toMatchObject({ revokedReason: 'replaced' });
+    expect(d.getGrant(replacement.id)).toMatchObject({ revokedAt: null });
+    expect(() => d.createGrant({ ...grantFields, scope: 'write' })).toThrow(/scope exceeds client maximum/);
+
+    for (let index = 2; index <= 20; index++) {
+      const client = d.registerClient({ name: `App ${index}`, redirectUris: [`https://claude.ai/${index}`], maxScope: 'read', now: T0 }).client!;
+      d.createGrant({ ...grantFields, clientId: client.clientId });
+    }
+    const capClient = d.registerClient({ name: 'App 21', redirectUris: ['https://claude.ai/21'], maxScope: 'read', now: T0 }).client!;
+    let capError: unknown;
+    try {
+      d.createGrant({ ...grantFields, clientId: capClient.clientId });
+    } catch (error) {
+      capError = error;
+    }
+    expect(capError).toMatchObject({ code: 'grant_limit' });
+  });
+
+  it('touches a grant at most once per minute', () => {
+    const d = directory();
+    const fixture = grant(d);
+    expect(d.touchGrant(fixture.value.id, T0 + 1)).toBe(true);
+    expect(d.touchGrant(fixture.value.id, T0 + 59_999)).toBe(false);
+    expect(d.touchGrant(fixture.value.id, T0 + 60_001)).toBe(true);
+    expect(d.getGrant(fixture.value.id)?.lastUsedAt).toBe(T0 + 60_001);
+  });
+
+  it('revokes the grant when the user is disabled, removed or demoted to guest, and on resource change', () => {
+    const d = directory();
+    const disabled = grant(d);
+    const disabledPair = d.issueTokens({ grantId: disabled.value.id, scope: 'write', now: T0 });
+    d.updateUser(disabled.person.id, { disabled: true });
+    expect(d.findOauthAccessToken(disabledPair.accessToken, Date.now())).toBeNull();
+    expect(d.getGrant(disabled.value.id)?.revokedReason).toBe('user_state');
+
+    const guest = grant(d);
+    const guestPair = d.issueTokens({ grantId: guest.value.id, scope: 'write', now: T0 });
+    d.updateUser(guest.person.id, { role: 'guest' });
+    expect(d.findOauthAccessToken(guestPair.accessToken, Date.now())).toBeNull();
+    expect(d.getGrant(guest.value.id)?.revokedReason).toBe('user_state');
+
+    const removed = grant(d);
+    const removedPair = d.issueTokens({ grantId: removed.value.id, scope: 'write', now: T0 });
+    d.removeUser(removed.person.id);
+    expect(d.findOauthAccessToken(removedPair.accessToken, Date.now())).toBeNull();
+    expect(d.getGrant(removed.value.id)).toBeNull();
+
+    const changed = grant(d);
+    const changedPair = d.issueTokens({ grantId: changed.value.id, scope: 'write', now: T0 });
+    expect(d.refresh({
+      refreshToken: changedPair.refreshToken,
+      clientId: changed.registered.clientId,
+      expectedResource: 'https://new.example/mcp',
+      now: T0 + 1,
+    } as any)).toMatchObject({ error: 'invalid_grant' });
+    expect(d.getGrant(changed.value.id)?.revokedReason).toBe('user_state');
   });
 });
 

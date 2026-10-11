@@ -1064,13 +1064,11 @@ async function onRequest(req, res) {
       sendJson(res, 503, { error: 'restoring' });
     } else if (oauthPath) {
       await runOpenWriter(() => oauthRoutes.handle(req, res));
-    } else if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
-      sendJson(res, 403, { error: 'forbidden', message: 'This guest session is limited to one board' });
     } else if (url.pathname === '/mcp' && maintenance) {
       res.setHeader('retry-after', '30');
       sendJson(res, 503, { error: 'restoring' });
     } else if (url.pathname === '/mcp') {
-      // Never the single-page app: /mcp is either the endpoint or a 404.
+      // Never the single-page app: /mcp is either the endpoint or a 404. It is bearer-only; do not inspect cookies here.
       if (mcp) await mcp.handle(req, res);
       else sendJson(res, 404, { error: 'not_found' });
     } else if (url.pathname === '/api/health' && auth?.authenticateGuest(req.headers.cookie)) {

@@ -1,5 +1,5 @@
 // MCP endpoint (docs/mcp.md): POST /mcp, stateless JSON-RPC 2.0 over Streamable HTTP, answered with application/json.
-// Bearer token only (a personal access token in accounts mode, one shared token in open mode); cookies are never read.
+// Bearer token only (personal/OAuth access tokens in accounts mode, one shared token in open mode); cookies are never read.
 // Every tool call is authorised when it runs. Tool handlers never touch a room: they get closures that check the board,
 // the token and the role first, and edits land on the relay's live room documents through `roomAccess`.
 // This file does not touch the file system: the relay's room facade does the loading and saving.
@@ -193,6 +193,22 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         boardIds: null, expiresAt: null, createdBy: 'mcp',
       };
     }
+    if (config.mcp.oauth && presented.startsWith('tbo_')) {
+      const found = directory.findOauthAccessToken(presented, now());
+      if (!found) return null;
+      const expectedResource = `${config.mcp.issuer}/mcp`;
+      if (found.resource !== expectedResource) {
+        directory.revokeGrant(found.grantId, 'user_state', now());
+        return null;
+      }
+      const wide = (found.user.role === 'owner' || found.user.role === 'admin') && found.scope !== 'read' && found.boardIds === null;
+      return {
+        mode: 'accounts', userId: found.userId, user: found.user, userName: found.user.name,
+        tokenId: found.tokenId, tokenName: found.clientName, scope: wide ? 'read' : found.scope,
+        boardIds: found.boardIds, tracker: null, expiresAt: found.expiresAt, createdBy: found.userId,
+        source: 'oauth', clientName: found.clientName, grantId: found.grantId, rateLimitId: found.grantId,
+      };
+    }
     const found = directory.findAccessToken(presented, now());
     if (!found) return null;
     // Owners and admins are the owner of every board, so a token that can write must name its boards. That is checked when
@@ -201,6 +217,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     return {
       mode: 'accounts', userId: found.userId, user: found.user, userName: found.user.name, tokenId: found.id, tokenName: found.name,
       scope: wide ? 'read' : found.scope, boardIds: found.boardIds, tracker: found.tracker ?? null, expiresAt: found.expiresAt, createdBy: found.userId,
+      rateLimitId: found.id,
     };
   }
 
@@ -208,11 +225,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   function touch(actor) {
     if (open) return;
     const t = now();
-    if (t - (lastTouch.get(actor.tokenId) ?? 0) < TOUCH_MS) return;
-    lastTouch.set(actor.tokenId, t);
+    const key = actor.source === 'oauth' ? actor.grantId : actor.tokenId;
+    if (t - (lastTouch.get(key) ?? 0) < TOUCH_MS) return;
+    lastTouch.set(key, t);
     if (lastTouch.size > 10_000) lastTouch.delete(lastTouch.keys().next().value);
     try {
-      directory.touchAccessToken(actor.tokenId, t);
+      if (actor.source === 'oauth') directory.touchGrant(actor.grantId, t);
+      else directory.touchAccessToken(actor.tokenId, t);
     } catch (err) {
       log('mcp: could not record the use of a token', err?.message);
     }
@@ -709,6 +728,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           user: open ? null : { id: actor.userId, name: cleanForModel(actor.userName, 100).text },
           token: { name: cleanForModel(actor.tokenName, 100).text, scope: actor.scope, expiresAt: actor.expiresAt, boardIds: actor.boardIds },
           workspaceReadOnly: readOnlyNow(),
+          ...(actor.source === 'oauth' ? { connector: cleanForModel(actor.clientName, 100).text } : {}),
         });
       },
     },
@@ -2046,7 +2066,16 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         return { status: 200, body: rpcError(id, -32602, 'params.name must be a tool name') };
       }
       const tool = tools.find((t) => t.name === params.name && !(open && t.accountsOnly) && trackerVisible(actor, t));
-      const wait = tool?.mutating ? writes.hit(actor.tokenId) : 0;
+      if (actor.source === 'oauth' && tool && RANK[actor.scope] < RANK[tool.scope]) {
+        const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
+        return {
+          status: 403,
+          body: { error: 'insufficient_scope', message: 'The access token does not include the required scope.' },
+          headers: { 'www-authenticate': `Bearer error="insufficient_scope", scope="${tool.scope}", resource_metadata="${metadata}"` },
+        };
+      }
+      const limitKey = actor.rateLimitId ?? actor.tokenId;
+      const wait = tool?.mutating ? writes.hit(limitKey) : 0;
       if (wait) return limited(id, wait);
       if (tool?.name === 'create_ticket') {
         const args = params.arguments;
@@ -2054,7 +2083,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           directory, actor: trackerActor(actor), source: 'mcp', idempotencyKey: args.idempotencyKey,
         });
         if (!retry) {
-          const createWait = ticketCreates.hit(actor.tokenId);
+          const createWait = ticketCreates.hit(limitKey);
           if (createWait) return limited(id, createWait);
         }
       }
@@ -2131,7 +2160,14 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         send(res, 429, rpcError(null, -32000, 'Too many failed attempts. Try again later.', { error: 'rate_limited', retryAfterSec: wait }), { 'retry-after': String(wait) });
         return;
       }
-      res.setHeader('www-authenticate', 'Bearer');
+      if (config.mcp.mode === 'accounts' && config.mcp.oauth) {
+        const supplied = typeof req.headers.authorization === 'string' && req.headers.authorization.trim() !== '';
+        const error = supplied ? 'error="invalid_token", ' : '';
+        const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
+        res.setHeader('www-authenticate', `Bearer ${error}resource_metadata="${metadata}"`);
+      } else {
+        res.setHeader('www-authenticate', 'Bearer');
+      }
       throw new HttpFail(401, 'invalid_token', 'The token is unknown, expired or revoked.');
     }
     if (!/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] ?? ''))) {
@@ -2171,7 +2207,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       send(res, 202);
       return;
     }
-    const spent = calls.hit(actor.tokenId);
+    const spent = calls.hit(actor.rateLimitId ?? actor.tokenId);
     if (spent) {
       const out = limited(message.id, spent);
       send(res, out.status, out.body, out.headers);
