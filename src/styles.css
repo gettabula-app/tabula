@@ -454,7 +454,7 @@ select.input {
 }
 
 /* popovers, menus, dialogs, toast */
-.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
+.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
 .popover.tray, :root:not([data-theme='default']) .popover.tray {
   border-radius: var(--radius-md); box-shadow: 0 0 0 1px var(--tray-line);
@@ -477,7 +477,7 @@ select.input {
 .menu-item > span:not([class]) { flex: 1; }
 .menu-hint { color: var(--tray-muted); font-size: 12px; }
 
-.font-picker { width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; max-height: min(620px, calc(100vh - 32px)); }
+.font-picker { width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; max-height: min(620px, calc(100vh - 32px)); max-height: min(620px, calc(100dvh - 32px)); }
 .font-picker .pop-head { padding: 12px 0 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { height: 26px; padding: 0 10px; border: 0; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--tray-text) 6%, transparent); font-size: 12px; font-weight: 500; }
