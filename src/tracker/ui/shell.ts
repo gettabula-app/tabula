@@ -83,7 +83,7 @@ export function trackerViewerState(store: TrackerStore, viewerId: string, tracke
 export function visibleColumns(width: number, chosen: ReadonlySet<Column>): Column[] {
   const columns: Column[] = [...REQUIRED_COLUMNS];
   if (width >= 800 && chosen.has('project')) columns.push('project');
-  if (width >= 920 && chosen.has('due')) columns.push('due');
+  if ((width < 600 || width >= 920) && chosen.has('due')) columns.push('due'); // on a phone the due date sits under the key
   if (width >= 1080 && chosen.has('updated')) columns.push('updated');
   return columns;
 }
@@ -371,7 +371,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     stopList = options.store.watchList(query, (cache) => {
       currentCache = cache;
       try {
-        filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+        if (cache.error?.code === 'invalid_filter') filterController?.setError(cache.error.message); // never clears: a typed token the bar rejected stays reported until the next keystroke
         drawRows(cache);
         publishCurrentSnapshot();
       } catch (error) {
@@ -552,7 +552,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const sortPlan: ListSortPlan = state.tab === 'my'
       ? [{ field: primarySort, direction: state.sort.direction }, ...(primarySort === 'due' ? [] : [{ field: 'due' as const, direction: 'asc' as const }])]
       : { field: primarySort, direction: state.sort.direction };
-    filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+    if (cache.error?.code === 'invalid_filter') filterController?.setError(cache.error.message); // never clears: a typed token the bar rejected stays reported until the next keystroke
     if (cache.error) {
       if (cache.error.code === 'invalid_filter') {
         errorHost.hidden = true;

@@ -112,7 +112,7 @@ describe('tracker UI styles', () => {
     expect(css).toContain('outline-offset: 2px');
     expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--trk-focus); }");
     expect(css).toContain('(pointer: coarse), (max-width: 860px)');
-    expect(css).toContain("grid-template-areas: 'select state key title priority' 'select state key title assignee'");
+    expect(css).toContain("grid-template-areas: 'select state key title priority' 'select state due title assignee'");
     expect(css).toMatch(/\.trk input, \.trk select, \.trk \.trk-picker-search,[\s\S]*?\.trk-filter-input \{ min-height: 44px; \}/);
     expect(css).toMatch(/\.trk \.trk-filter-button,[\s\S]*?\.trk-gallery-picker-button \{ min-height: 44px; \}/);
     expect(css).toContain('width: 280px; min-width: 280px');
@@ -123,6 +123,12 @@ describe('tracker UI styles', () => {
     expect(css).toContain('min-height: 48px');
     expect(css).toContain('prefers-reduced-motion: reduce');
     expect(css).toContain('forced-colors: active');
+  });
+
+  it('keeps the phone New issue circle from leaking its text label, and the filter bar from being squeezed', () => {
+    // .trk .trk-primary-button sets font-size 13px: the circle's font-size: 0 must be at least as specific
+    expect(css).toMatch(/\.trk \.trk-new-trigger \{[^}]*font-size: 0/);
+    expect(css).toMatch(/\.trk-filter-host \{[^}]*flex: none/);
   });
 
   it('uses quiet text tabs, ghost tools, tracker surfaces, and one board action menu', () => {

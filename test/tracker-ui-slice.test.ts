@@ -379,7 +379,7 @@ describe('tracker shell slice', () => {
     expect(labels.groups.find((group) => group.label === 'Extra')?.rows.map((row) => row.key)).toContain(multiLabelTicket.key);
     expect(selectAll(labels).selectedKeys).toEqual([multiLabelTicket.key]);
     expect(visibleColumns(700, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toEqual(['state', 'key', 'title', 'priority', 'assignee']);
-    expect(visibleColumns(1440, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toHaveLength(8);
+    expect(visibleColumns(390, new Set(['priority', 'key', 'state', 'title', 'assignee', 'due']))).toEqual(['state', 'key', 'title', 'priority', 'assignee', 'due']);    expect(visibleColumns(1440, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toHaveLength(8);
     expect(setGroupCollapsed(model, model.groups[0].id, true).visibleRows.length).toBeLessThan(model.visibleRows.length);
   });
 

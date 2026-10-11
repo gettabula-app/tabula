@@ -238,7 +238,7 @@
 .trk-results-count { margin-left: auto; color: var(--graphite); font-size: 12px; white-space: nowrap; }
 .trk-selection-bar { overflow-x: auto; background: color-mix(in srgb, var(--signal) 6%, var(--paper)); }
 .trk-selection-bar strong { padding: 0 5px; white-space: nowrap; }
-.trk-filter-host { display: flex; min-height: 42px; flex-wrap: wrap; align-items: center; gap: 7px; padding: 5px 10px; }
+.trk-filter-host { display: flex; flex: none; min-height: 42px; flex-wrap: wrap; align-items: center; gap: 7px; padding: 5px 10px; }
 .trk-filter-host .trk-filter-chips { min-width: 0; }
 .trk-filter-host .trk-filter-input { min-height: 32px; }
 .trk-filter-host .trk-filter-chip { min-height: 28px; }
@@ -419,19 +419,21 @@
   .trk-board-lane-cards { padding-right: 2px; }
   .trk-board-menu-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; opacity: 1; }
   .trk-board-add { width: 44px; min-width: 44px; min-height: 44px; }
-  .trk-list-grid { padding-bottom: 2px; }
+  .trk-list-grid { padding-bottom: 88px; }
   .trk-grid-header { display: none; }
-  .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 44px 58px minmax(0, 1fr) 44px !important; grid-template-rows: 30px 30px; grid-template-areas: 'select state key title priority' 'select state key title assignee'; column-gap: 5px; padding: 2px 8px; }
+  .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 44px 58px minmax(0, 1fr) 44px !important; grid-template-rows: 30px 30px; grid-template-areas: 'select state key title priority' 'select state due title assignee'; column-gap: 5px; padding: 2px 8px; }
   .trk-density-compact .trk-list-row { min-height: 64px; }
   .trk-col-priority { display: flex; grid-area: priority; }
-  .trk-col-key { grid-area: key; }
+  .trk-col-key { grid-area: key; align-self: end; }
   .trk-col-title { grid-area: title; }
   .trk-col-state { grid-area: state; justify-content: center; }
   .trk-col-state > span:last-child { display: none; }
   .trk .trk-col-state .trk-state-value > span:last-child { display: none; }
   .trk-col-state .trk-state-value { width: 44px; min-width: 44px; min-height: 44px; justify-content: center; }
   .trk-col-assignee { grid-area: assignee; justify-content: end; }
-  .trk-col-project, .trk-col-due, .trk-col-updated { display: none; }
+  .trk-col-project, .trk-col-updated { display: none; }
+  .trk-col-due { grid-area: due; min-width: 0; align-self: start; font-size: 12px; color: var(--trk-muted); }
+  .trk-col-due button { min-height: 0; padding: 0; font-size: 12px; color: inherit; }
   .trk-col-title .trk-label-chip { display: none; }
   .trk-state-value { min-height: 26px; }
   .trk .trk-row-select { position: static; grid-area: select; width: 44px; min-width: 44px; height: 44px; min-height: 44px; transform: none; opacity: 1; }
@@ -455,8 +457,8 @@
   .trk-new-properties .trk-small-button { min-height: 44px; }
   .trk-new-actions { flex-direction: column-reverse; }
   .trk-new-actions button { width: 100%; min-height: 48px; }
-  .trk-new-trigger { position: absolute; z-index: 4; right: calc(12px + env(safe-area-inset-right)); bottom: calc(64px + env(safe-area-inset-bottom) + 16px); display: grid; width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; place-items: center; overflow: hidden; border-radius: 50%; font-size: 0; box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 18%, transparent); }
-  .trk-new-trigger::before { content: '+'; font-size: 28px; line-height: 1; }
+  .trk .trk-new-trigger { position: absolute; z-index: 4; right: calc(12px + env(safe-area-inset-right)); bottom: calc(64px + env(safe-area-inset-bottom) + 16px); display: grid; width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; place-items: center; overflow: hidden; border-radius: 50%; font-size: 0; box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 18%, transparent); }
+  .trk .trk-new-trigger::before { content: '+'; font-size: 28px; line-height: 1; }
   .trk-command-trigger { display: none; }
   .trk-header-actions { padding-inline: 12px; }
   .trk-fullscreen-strip { padding-inline: 12px; }
@@ -474,7 +476,7 @@
 @media (max-width: 520px) {
   .trk-shell { --trk-key-width: 74px; --trk-title-width: minmax(110px, 1fr); --trk-state-width: 78px; --trk-assignee-width: 44px; }
   .trk-command-trigger { display: none; }
-  .trk-new-trigger { min-height: 56px; padding: 0; }
+  .trk .trk-new-trigger { min-height: 56px; padding: 0; }
   .trk-icon-button { min-height: 44px; }
 }
 @media (max-width: 600px) {
