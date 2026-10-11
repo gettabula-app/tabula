@@ -65,12 +65,14 @@ describe('tracker linked-card relay guard', () => {
       observerParents.push(((observer.doc.getMap('objects').get('relay-card')) as Y.Map<unknown> | undefined)?.get('parent'));
     });
 
-    const card = client.doc.getMap('objects').get('relay-card') as Y.Map<unknown>;
-    client.doc.transact(() => card.set('parent', 'relay-doing'), 'guest-drag');
-    expect(card.get('parent')).toBe('relay-doing');
-    await until(() => observerUpdates > 0 && card.get('parent') === 'relay-todo' && notices.some((notice) =>
+    // the projection may have replaced the card's map since the client synced, so always read it afresh
+    const card = () => client.doc.getMap('objects').get('relay-card') as Y.Map<unknown>;
+    await until(() => card()?.get('trackerId') === 'trk_default');
+    client.doc.transact(() => card().set('parent', 'relay-doing'), 'guest-drag');
+    expect(card().get('parent')).toBe('relay-doing');
+    await until(() => observerUpdates > 0 && card().get('parent') === 'relay-todo' && notices.some((notice) =>
       notice.undone.some((entry) => entry.cardId === 'relay-card' && entry.reason === 'forbidden')));
-    expect(card.get('parent')).toBe('relay-todo');
+    expect(card().get('parent')).toBe('relay-todo');
     expect(notices).toContainEqual({ undone: [{ cardId: 'relay-card', reason: 'forbidden' }] });
     expect(observerParents).not.toContain('relay-doing');
 
