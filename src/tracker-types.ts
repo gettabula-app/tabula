@@ -283,6 +283,7 @@ export interface TrackerCreateInput {
   priority?: TrackerPriority;
   assignee?: string | null;
   labels?: string[];
+  project?: string | null;
   due?: string | null;
   parent?: string | null;
   idempotencyKey: string;

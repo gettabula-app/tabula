@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { openDirectory } from '../server/directory.mjs';
-import { createTicketForCard, linkKanban, listLinks, suggestMapping, unlinkKanban } from '../server/tracker/links.mjs';
+import { attachTicketToCard, createTicketForCard, linkKanban, listLinks, suggestMapping, unlinkKanban } from '../server/tracker/links.mjs';
 import {
   createTrackerProjectionWorker, drainTicketProjection, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad,
   writeTrackerContainerLink, writeTrackerContainerUnlink,
 } from '../server/tracker/projection.mjs';
-import { transitionTicket } from '../server/tracker/tickets.mjs';
+import { createTicket, transitionTicket } from '../server/tracker/tickets.mjs';
 
 const objs = (doc: { getMap(name: string): unknown }): any => doc.getMap('objects');
 
@@ -360,5 +360,33 @@ describe('tracker link commands', () => {
     const fresh = fixture(1);
     expect(suggestMapping({ directory: fresh.directory, actor: owner, boardId: 'board-1', kanbanId: 'kanban-1', roomAccess: fresh.roomAccess }))
       .toMatchObject({ mapping: { 'lane-todo': 'todo', 'lane-done': 'done' }, nextKey: 'TAB-1', cardCount: 1 });
+  });
+});
+
+describe('attach existing ticket: board kept first', () => {
+  it('runs beforeAttach after every check, links nothing when it throws, and skips replays', () => {
+    const fx = fixture(1);
+    const link = makeLink(fx, { createTickets: false });
+    put(fx.doc, 'card-late', 'card', { parent: 'lane-done', rank: 'a9@lane-done', text: 'Late card' });
+    const linked = createTicketForCard({
+      directory: fx.directory, actor: owner, linkId: link.link.id, cardId: 'card-late', idempotencyKey: 'seed-ticket-key-123', roomAccess: fx.roomAccess, now: 110,
+    }).ticket;
+    const loose = createTicket({ directory: fx.directory, actor: owner, title: 'Loose ticket', now: 120 });
+    const seen: string[] = [];
+    const attach = (cardId: string, ticket: string, beforeAttach: (info: { ticketKey: string }) => void) => attachTicketToCard({
+      directory: fx.directory, actor: owner, linkId: link.link.id, cardId, ticket, roomAccess: fx.roomAccess, beforeAttach, now: 150,
+    });
+    const hook = (info: { ticketKey: string }) => { seen.push(info.ticketKey); };
+    expect(() => attach('no-card', loose.key, hook)).toThrow('linked kanban');
+    expect(() => attach('card-1', linked.key, hook)).toThrow('already on a card'); // already on a card of this kanban
+    expect(attach('card-late', linked.key, hook)).toMatchObject({ replayed: true });
+    expect(seen).toEqual([]);
+    const rows = (ticketId: string) => fx.directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_links WHERE ticket_id = ? AND removed_at IS NULL').get(ticketId);
+    expect(() => attach('card-1', loose.key, (info) => { hook(info); throw new Error('no snapshot'); })).toThrow('no snapshot');
+    expect(seen).toEqual([loose.key]);
+    expect(rows(loose.id)).toEqual({ n: 0 });
+    expect(attach('card-1', loose.key, hook)).toMatchObject({ replayed: false });
+    expect(seen).toEqual([loose.key, loose.key]);
+    expect(rows(loose.id)).toEqual({ n: 1 });
   });
 });

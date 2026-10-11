@@ -72,6 +72,10 @@ describe('tracker link dialog', () => {
   it('starts on lanes, shows suggestions and warnings, and refuses a state already used by Doing', async () => {
     browser = installTrackerUiBrowser();
     const { host, model } = fixture();
+    const modal = need(host, '.trk-link-modal');
+    expect(modal.classList.contains('trk-modal')).toBe(true);
+    expect(modal.classList.contains('tray')).toBe(false);
+    expect(modal.closest('.tray')).toBeNull();
     expect(textOf(host)).toContain('1Lanes');
     expect(textOf(host)).toContain('2Review');
     expect(textOf(host)).toContain('Suggested');

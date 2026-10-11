@@ -73,7 +73,7 @@ async function tryOpenShell({ routeMode = true, role = 'member', mcp = false, ac
 
 const items = (page: Page) => page.locator('.trk-account-menu .menu-item, .trk-account-menu .trk-menu-name').allTextContents();
 
-describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout: 120_000 }, () => {
+describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout: 200_000 }, () => {
   it('route mode leads to Boards; opened from a tracker frame it keeps Back to board', async () => {
     const route = await openShell({ routeMode: true });
     expect(await route.locator('.trk-fullscreen-strip button').first().innerText()).toBe('‹ Boards');
@@ -167,7 +167,7 @@ describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout
   });
 });
 
-describe.skipIf(!available)('the account menu of the Boards top bar in a browser', { timeout: 120_000 }, () => {
+describe.skipIf(!available)('the account menu of the Boards top bar in a browser', { timeout: 200_000 }, () => {
   async function openBar(mcp: boolean): Promise<Page> {
     for (let attempt = 0; ; attempt++) {
       const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });

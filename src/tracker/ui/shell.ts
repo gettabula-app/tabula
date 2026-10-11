@@ -7,7 +7,7 @@ import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMe
 import type { TrackerApi, TrackerStore } from '../../tracker-data';
 import { build, parse, type FilterChip } from './filter';
 import { createFilterBar, type FilterBarController } from './filter-bar';
-import { avatar, keyChip, labelChip, relativeTime, dueChip } from './primitives';
+import { avatar, keyChip, labelChip, relativeTime, dueChip, formatTrackerDate } from './primitives';
 import { priorityGlyph, priorityLabel, stateGlyph } from './glyphs';
 import { buildListModel, moveCursor, moveCursorTo, selectAll, toggleSelection, extendSelection, type ListFacets, type ListGroupBy, type ListRenderModel, type ListSortPlan, type TrackerRow } from './list-model';
 import { buildCommandItems, openCommandBox, type CommandItem } from './command-box';
@@ -21,12 +21,12 @@ import { renderSnippet } from './snippet';
 import { trackerErrorField } from './error-path';
 import { buildTrackerPath } from '../../tracker-route';
 
-const TABS: ReadonlyArray<{ id: TrackerView; label: string; glyph: string }> = [
-  { id: 'inbox', label: 'Inbox', glyph: '◉' },
-  { id: 'my', label: 'My issues', glyph: '◎' },
-  { id: 'all', label: 'All issues', glyph: '≡' },
-  { id: 'board', label: 'Board', glyph: '▦' },
-  { id: 'projects', label: 'Projects', glyph: '▤' },
+const TABS: ReadonlyArray<{ id: TrackerView; label: string; shortLabel: string; glyph: string }> = [
+  { id: 'inbox', label: 'Inbox', shortLabel: 'Inbox', glyph: '◉' },
+  { id: 'my', label: 'My issues', shortLabel: 'Mine', glyph: '◎' },
+  { id: 'all', label: 'All issues', shortLabel: 'All', glyph: '≡' },
+  { id: 'board', label: 'Board', shortLabel: 'Board', glyph: '▦' },
+  { id: 'projects', label: 'Projects', shortLabel: 'Projects', glyph: '▤' },
 ];
 const GROUPS: Array<{ value: ListGroupBy; label: string }> = [
   { value: 'none', label: 'No grouping' }, { value: 'state', label: 'State' }, { value: 'assignee', label: 'Assignee' },
@@ -37,7 +37,7 @@ const SORTS: Array<{ value: TrackerSortField; label: string }> = [
   { value: 'updatedAt', label: 'Updated' }, { value: 'createdAt', label: 'Created' }, { value: 'priority', label: 'Priority' },
   { value: 'due', label: 'Due date' }, { value: 'title', label: 'Title' }, { value: 'key', label: 'Key' },
 ];
-const REQUIRED_COLUMNS = ['priority', 'key', 'state', 'title', 'assignee'] as const;
+const REQUIRED_COLUMNS = ['state', 'key', 'title', 'priority', 'assignee'] as const;
 const OPTIONAL_COLUMNS = ['project', 'due', 'updated'] as const;
 type Column = typeof REQUIRED_COLUMNS[number] | typeof OPTIONAL_COLUMNS[number];
 type TrackerSort = { field: TrackerSortField; direction: 'asc' | 'desc' };
@@ -85,7 +85,7 @@ export function trackerViewerState(store: TrackerStore, viewerId: string, tracke
 export function visibleColumns(width: number, chosen: ReadonlySet<Column>): Column[] {
   const columns: Column[] = [...REQUIRED_COLUMNS];
   if (width >= 800 && chosen.has('project')) columns.push('project');
-  if (width >= 920 && chosen.has('due')) columns.push('due');
+  if ((width < 600 || width >= 920) && chosen.has('due')) columns.push('due'); // on a phone the due date sits under the key
   if (width >= 1080 && chosen.has('updated')) columns.push('updated');
   return columns;
 }
@@ -261,7 +261,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   );
   const tabs = h('nav', { class: 'trk-tabs', role: 'tablist', 'aria-label': 'Tracker sections' });
   const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, '⌘K');
-  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button' }, '+ New issue');
+  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': 'New issue' }, '+ New issue');
   const fullscreenButton = h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
   const offlineLine = h('div', { class: 'trk-offline-line', role: 'status', hidden: typeof navigator === 'undefined' || navigator.onLine !== false },
     h('span', null, 'Offline. Changes are saved here and will sync.'),
@@ -375,7 +375,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         tabs.querySelector<HTMLButtonElement>(`[data-tab-id="${next.id}"]`)?.focus();
       },
       onclick: () => switchTab(tab.id),
-    }, h('span', { class: 'trk-tab-glyph', 'aria-hidden': 'true' }, tab.glyph), h('span', { class: 'trk-tab-name' }, tab.label),
+    }, h('span', { class: 'trk-tab-glyph', 'aria-hidden': 'true' }, tab.glyph),
+    h('span', { class: 'trk-tab-name trk-tab-name-full' }, tab.label), h('span', { class: 'trk-tab-name trk-tab-name-short' }, tab.shortLabel),
     tab.id === 'inbox' ? h('span', { class: 'trk-unread-count', 'aria-label': `${unreadCount} unread` }, String(unreadCount)) : null)));
     if (restoreTabFocus) tabs.querySelector<HTMLButtonElement>(`[data-tab-id="${state.tab}"]`)?.focus();
     root.dataset.width = String(layoutWidth);
@@ -412,7 +413,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     stopList = options.store.watchList(query, (cache) => {
       currentCache = cache;
       try {
-        filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+        if (cache.error?.code === 'invalid_filter') filterController?.setError(cache.error.message); // never clears: a typed token the bar rejected stays reported until the next keystroke
         drawRows(cache);
         publishCurrentSnapshot();
       } catch (error) {
@@ -422,7 +423,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const rowButton = (text: string, label: string, action: () => void, className = 'trk-cell-button'): HTMLButtonElement =>
-    h('button', { class: className, type: 'button', 'aria-label': label, onclick: (event: Event) => { event.stopPropagation(); action(); } }, text);
+    h('button', { class: className, type: 'button', 'aria-label': label, onclick: (event: Event) => { event.stopPropagation(); action(); } },
+      className === 'trk-avatar-button' ? h('span', { class: 'trk-avatar-mark' }, text) : text,
+    );
 
   const recordUndo = (message: string, undo: () => Promise<unknown>) => {
     lastUndoAction = undo;
@@ -456,7 +459,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Priority changed', () => options.store.updateTicket(ticket.key, { priority: ticket.priority }));
         }
       } else if (field === 'labels') {
-        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name })) });
+        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name, color: item.color })) });
         if (Array.isArray(picked)) {
           const labels = picked.filter((value): value is string => typeof value === 'string');
           await options.store.updateTicket(ticket.key, { labels });
@@ -534,8 +537,27 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.key, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
     else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.name, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
     else if (field === 'priority') renderMenu(anchor, 'Priority', ['urgent', 'high', 'medium', 'low', 'none'].map((value) => ({ value, label: priorityLabel(value as TrackerPriority) })), '', (value) => void doBulk({ priority: value as TrackerPriority }, anchor));
-    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
+    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name, color: item.color })), '', (value) => void doBulk({ labels: [value] }, anchor));
     else renderMenu(anchor, 'Due date', [{ value: '__none', label: 'No date' }, { value: new Date().toISOString().slice(0, 10), label: 'Today' }], '', (value) => void doBulk({ due: value === '__none' ? null : value }, anchor));
+  };
+
+  const openBulkActions = (anchor: HTMLElement) => {
+    const count = state.selectedKeys.length;
+    if (!count) return;
+    const menu = h('div', { class: 'trk-bulk-actions-sheet', role: 'group', 'aria-label': 'Bulk actions' });
+    for (const field of ['state', 'assignee', 'priority', 'labels', 'due'] as const) {
+      const label = field === 'due' ? 'Due date' : `${field[0].toUpperCase()}${field.slice(1)}`;
+      const action = h('button', { class: 'trk-bulk-action', type: 'button' }, label);
+      action.addEventListener('click', () => bulkPicker(action, field));
+      menu.appendChild(action);
+    }
+    menu.append(
+      h('button', { class: 'trk-bulk-action', type: 'button', onclick: () => { closePopover(); void doBulk({ archived: true }); } }, 'Archive'),
+      h('button', { class: 'trk-bulk-action', type: 'button', onclick: () => {
+        closePopover(); state.selectedKeys = []; announce('Selection cleared'); drawRows(currentCache); updateSelectionBar();
+      } }, 'Clear selection'),
+    );
+    popover(anchor, menu, { className: 'trk trk-pop trk-pop-sheet', label: `Actions for ${count} selected` });
   };
 
   const issuesForView = (cache: typeof currentCache): TrackerTicket[] => {
@@ -573,9 +595,16 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const sortPlan: ListSortPlan = state.tab === 'my'
       ? [{ field: primarySort, direction: state.sort.direction }, ...(primarySort === 'due' ? [] : [{ field: 'due' as const, direction: 'asc' as const }])]
       : { field: primarySort, direction: state.sort.direction };
-    filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
+    if (cache.error?.code === 'invalid_filter') filterController?.setError(cache.error.message); // never clears: a typed token the bar rejected stays reported until the next keystroke
     if (cache.error) {
       updateListLoadMore(cache, false);
+      if (cache.error.code === 'invalid_filter') {
+        errorHost.hidden = true;
+        listRenderHost.replaceChildren();
+        resultsHost.textContent = '0 issues';
+        skeletonHost.hidden = true;
+        return;
+      }
       showListError(cache.error.message || 'Could not load issues.');
       const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
       if (searchInput) {
@@ -594,8 +623,6 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.selectedKeys = listModel.selectedKeys;
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
-    const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
-    searchInput?.removeAttribute('aria-invalid');
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
     const columns = visibleColumns(layoutWidth, state.columns);
     if (!cache.loading && tickets.length === 0) {
@@ -609,9 +636,13 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         h('div', { class: 'trk-empty-grid-cell', role: 'gridcell', 'aria-colspan': String(columns.length) },
           h('div', { class: 'trk-empty-state' },
             h('h2', null, emptyMessage),
+            h('p', { class: 'trk-empty-copy' }, filterActive
+              ? 'Try a different search or clear the active filters.'
+              : myEmpty ? 'Issues assigned to you or created by you appear here.'
+                : 'Create the first issue in this tracker.'),
             filterActive
               ? h('button', { class: 'trk-small-button', type: 'button', onclick: () => { state.filter = []; state.queryText = ''; filterController?.setChips(lockedFilterChips()); if (filterController) filterController.focusSearch(); watchQuery(); } }, 'Clear filters')
-              : (!readOnly ? h('button', { class: 'trk-primary-button', type: 'button', onclick: () => openCreate() }, '+ New issue') : null),
+              : (!readOnly ? h('button', { class: 'trk-small-button', type: 'button', onclick: () => openCreate() }, '+ New issue') : null),
           ),
         ),
       ));
@@ -683,7 +714,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             : (readOnly ? '—' : rowButton('—', 'Assign issue', () => void editOne(ticket, 'assignee', document.activeElement as HTMLElement), 'trk-avatar-button')),
           ));
           else if (column === 'due') cells.push(h('div', { class: 'trk-cell trk-col-due', role: 'gridcell' },
-            readOnly ? dueChip(ticket.due, now) : rowButton(ticket.due ?? '—', ticket.due ? `Due ${ticket.due}` : 'Set due date', () => void editOne(ticket, 'due', document.activeElement as HTMLElement)),
+            readOnly ? dueChip(ticket.due, now, ticket.state.category === 'completed' || ticket.state.category === 'canceled') : rowButton(ticket.due ? formatTrackerDate(ticket.due) : '—', ticket.due ? `Due ${ticket.due}` : 'Set due date', () => void editOne(ticket, 'due', document.activeElement as HTMLElement)),
           ));
           else cells.push(h('div', { class: 'trk-cell trk-col-updated', role: 'gridcell' }, relativeTime(now, new Date(ticket.updatedAt).toISOString())));
         }
@@ -800,7 +831,14 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       selectionBar.hidden = selectionCount === 0;
       viewBar.hidden = selectionCount > 0;
       if (!selectionCount) return;
-      selectionBar.replaceChildren(h('strong', null, `${selectionCount} selected`),
+      const count = h('strong', null, `${selectionCount} selected`);
+      if (layoutWidth <= 600) {
+        const actions = h('button', { class: 'trk-small-button trk-bulk-actions-trigger', type: 'button', 'aria-haspopup': 'dialog' }, 'Actions');
+        actions.addEventListener('click', () => openBulkActions(actions));
+        selectionBar.replaceChildren(count, actions);
+        return;
+      }
+      selectionBar.replaceChildren(count,
         ...(['state', 'assignee', 'priority', 'labels', 'due'] as const).map((field) => {
           const b = h('button', { class: 'trk-small-button', type: 'button' }, field[0].toUpperCase() + field.slice(1));
           b.addEventListener('click', () => bulkPicker(b, field));
@@ -831,6 +869,54 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       onCreated: (key) => { options.onCreated?.(key); startWatch(); announce(`${key} created`); },
     });
+  };
+
+  const renderProjectsPage = () => {
+    const projects = (getMeta()?.projects ?? []).filter((project) => project.archivedAt == null);
+    const createButton = h('button', {
+      class: 'trk-small-button', type: 'button', onclick: () => openNewProject(),
+    }, 'New project');
+    const page = h('section', { class: 'trk-projects-page', 'aria-label': 'Projects' },
+      h('header', { class: 'trk-projects-head' }, h('h1', null, 'Projects'), projects.length ? createButton : null),
+      projects.length
+        ? h('div', { class: 'trk-project-list' }, ...projects.map((project) => h('div', { class: 'trk-project-row' },
+          h('span', null, project.name), h('span', null, `${project.ticketCount ?? 0} issues`),
+        )))
+        : h('div', { class: 'trk-projects-empty' },
+          h('h2', null, 'Group tickets into projects with milestones.'),
+          h('p', { class: 'trk-projects-copy' }, 'Bring related issues together and track their milestones.'),
+          h('button', { class: 'trk-small-button', type: 'button', onclick: () => openNewProject() }, 'New project'),
+        ),
+    );
+    content.replaceChildren(page);
+    publishCurrentSnapshot();
+  };
+
+  const openNewProject = () => {
+    if (readOnly) return;
+    const name = h('input', { class: 'trk-new-title', type: 'text', maxlength: '120', placeholder: 'Project name', 'aria-label': 'Project name' });
+    const description = h('input', { class: 'trk-project-description', type: 'text', maxlength: '300', placeholder: 'Add a short description (optional)', 'aria-label': 'Project description' });
+    const error = h('p', { class: 'trk-inline-error', role: 'alert', hidden: true });
+    dialog('New project', h('div', { class: 'trk-project-create' }, name, description, error), [
+      { label: 'Cancel' },
+      { label: 'Create project', primary: true, onClick: async () => {
+        const projectName = name.value.trim();
+        if (!projectName) { name.focus(); name.setAttribute('aria-invalid', 'true'); return false; }
+        name.removeAttribute('aria-invalid');
+        error.hidden = true;
+        try {
+          await options.store.createProject({ name: projectName, description: description.value.trim() || undefined, state: 'planned', ownerId: getMeta()?.me.userId ?? null });
+          meta = options.store.snapshot().meta ?? meta;
+          toast('Project created');
+          if (state.tab === 'projects') renderProjectsPage();
+          return true;
+        } catch (caught) {
+          error.textContent = caught instanceof Error ? caught.message : 'Could not create the project.';
+          error.hidden = false;
+          return false;
+        }
+      } },
+    ], { className: 'trk trk-modal trk-project-modal' });
   };
 
   function openTicket(key: string) {
@@ -909,6 +995,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const target = lanes[at + direction];
     if (target) void moveBoardTicket(ticket, target.key, anchor);
   };
+  const openBoardMovePicker = (ticket: TrackerTicket, anchor: HTMLElement) => {
+    void openPicker<string>(anchor, {
+      label: `Move ${ticket.key} to`, options: meta?.states.map((item) => ({ value: item.key, label: item.name })) ?? [], value: ticket.state.key,
+    }).then((picked) => { if (typeof picked === 'string') void moveBoardTicket(ticket, picked, anchor); });
+  };
   const renderBoardContents = () => {
     if (!boardLaneStrip || !boardLanesHost || !meta) return;
     const lanes = boardStates();
@@ -940,17 +1031,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         }, '+'),
       );
       const cards = tickets.map((ticket) => {
-        const moveButton = h('button', {
-          class: 'trk-board-move', type: 'button', 'aria-label': `Move ${ticket.key} to…`,
-          onclick: async (event: Event) => {
-            event.stopPropagation();
-            const anchor = event.currentTarget as HTMLElement;
-            const picked = await openPicker<string>(anchor, {
-              label: `Move ${ticket.key} to`, options: meta!.states.map((stateOption) => ({ value: stateOption.key, label: stateOption.name })), value: ticket.state.key,
-            });
-            if (typeof picked === 'string') void moveBoardTicket(ticket, picked, anchor);
-          },
-        }, 'Move to…');
+        const menuButton = readOnly ? null : h('button', {
+          class: 'trk-board-menu-button', type: 'button', 'aria-label': `Actions for ${ticket.key}`, 'aria-haspopup': 'dialog',
+          onclick: (event: Event) => { event.stopPropagation(); openBoardMovePicker(ticket, event.currentTarget as HTMLElement); },
+        }, '⋯');
         const labels = ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color));
         if (ticket.labels.length > 2) labels.push(h('span', { class: 'trk-board-label-count' }, `+${ticket.labels.length - 2}`));
         const card = h('article', {
@@ -960,15 +1044,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           onkeydown: (event: KeyboardEvent) => {
             if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); moveBoardByStep(ticket, -1, event.currentTarget as HTMLElement); }
             else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); moveBoardByStep(ticket, 1, event.currentTarget as HTMLElement); }
+            else if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === 's' && event.target === event.currentTarget) {
+              event.preventDefault(); openBoardMovePicker(ticket, event.currentTarget as HTMLElement);
+            }
             else if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) { event.preventDefault(); openTicket(ticket.key); }
           },
         },
-          h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), moveButton),
+          h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), menuButton),
           h('button', { class: 'trk-board-card-title', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title),
           h('div', { class: 'trk-board-card-meta' },
             h('span', { class: 'trk-board-priority', 'aria-label': priorityLabel(ticket.priority) }, priorityGlyph(ticket.priority)),
             ticket.assignee ? avatar({ kind: 'person', name: ticket.assignee.name }) : null,
-            dueChip(ticket.due, Date.now()),
+            dueChip(ticket.due, Date.now(), ticket.state.category === 'completed' || ticket.state.category === 'canceled'),
           ),
           labels.length ? h('div', { class: 'trk-board-labels' }, ...labels) : null,
         );
@@ -1060,8 +1147,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       publishCurrentSnapshot();
       return;
     }
-    content.replaceChildren(h('section', { class: 'trk-coming-next trk-projects-empty' }, h('h1', null, 'Projects are coming next.')));
-    publishCurrentSnapshot();
+    renderProjectsPage();
   }
 
   function watchQuery() {
@@ -1105,7 +1191,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const showShortcuts = () => {
     const body = h('div', { class: 'trk-shortcuts' }, ...SHORTCUTS.map((row) => h('div', { class: 'trk-shortcut-row' }, h('kbd', null, row.keys), h('span', null, row.description))));
-    dialog('Keyboard shortcuts', body, [], { className: 'trk-shortcuts-back' });
+    dialog('Keyboard shortcuts', body, [], { className: 'trk trk-modal trk-shortcuts-back' });
   };
 
   const dispatch = (action: TrackerAction) => {

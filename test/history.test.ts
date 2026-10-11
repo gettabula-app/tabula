@@ -681,6 +681,30 @@ describe('named versions and restores', () => {
     expect(s.files()).toHaveLength(2);
   });
 
+  it('keeps a labelled automatic version before a server edit, without duplicating a version of the same content', () => {
+    const s = serverSetup();
+    const r = s.room();
+    s.add(r, 0, 5);
+    s.save(r);
+    const first = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-1' });
+    expect(first).toMatchObject({ kind: 'auto', label: 'Before attaching TAB-1' });
+    expect(s.list()).toHaveLength(1);
+    // the board moved on (an unsaved edit the live state already has): a second version holds that content
+    s.add(r, 5, 2);
+    s.states.set('board1', Y.encodeStateAsUpdate(r.doc));
+    const second = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-2' });
+    expect(second).toMatchObject({ kind: 'auto', label: 'Before attaching TAB-2', by: ana.id });
+    expect(s.list()).toHaveLength(2);
+    expect(s.objectCountOf('board1', second!.id)).toBe(7);
+    expect(s.objectCountOf('board1', first!.id)).toBe(5);
+    // a named version of the same content is left as it is
+    s.history.actions.create('board1', bo, { label: 'Keep' });
+    const again = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-3' });
+    expect(again).toMatchObject({ kind: 'named', label: 'Keep' });
+    expect(s.list()).toHaveLength(2);
+    expect(s.history.actions.snapshotBefore('empty-board', ana, { label: 'Before attaching TAB-4' })).toBeNull();
+  });
+
   it('saves a named version of the room as it is now, from the live room or the file', () => {
     const s = serverSetup();
     const r = s.room();

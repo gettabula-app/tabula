@@ -56,7 +56,7 @@ One tray, three rows. Row 2 comes first in the document and in the tab order; CS
 | Disclosure | Row 3. 11px/16px, `--tray-muted`, 1px `--tray-line` rule above, padding 6px 12px 8px. Two segments separated by a centred dot: what is sent, then who pays. |
 | Progress rule | 2px, along the tray's bottom edge, `var(--signal)`, only while running. |
 
-Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. Chips use the 4px radius, buttons 8px, and the bar and popovers 12px. Trays keep their 1px `--tray-line` hairline; no added shadows. Avatars stay round, and the bar follows the shared UI chrome tokens.
+Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. Chips use the 4px radius, buttons and popovers 8px, and the bar 12px. Trays keep their 1px `--tray-line` hairline; no added shadows. Avatars stay round, and the bar follows the shared UI chrome tokens.
 
 ### Chips
 
