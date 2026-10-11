@@ -58,11 +58,13 @@ describe.skipIf(!available)('the tool rail in a short window', { timeout: 120_00
     await page.context().close();
   });
 
-  it('compresses on a mouse at 720 px high: 32 px tools, 18 px icons', async () => {
+  it('compresses on a mouse at 720 px high: 30 px tools, 18 px icons, and does not scroll', async () => {
     const page = await openBoard(720);
     const box = (await page.locator('.rail-tools .rail-btn').first().boundingBox())!;
-    expect(Math.round(box.width)).toBe(32);
-    expect(Math.round(box.height)).toBe(32);
+    expect(Math.round(box.width)).toBe(30);
+    expect(Math.round(box.height)).toBe(30);
+    expect(await page.locator('.rail-more').isHidden()).toBe(true);
+    expect(await page.evaluate(() => { const t = document.querySelector('.rail-tools') as HTMLElement; return t.scrollHeight - t.clientHeight; })).toBeLessThanOrEqual(1);
     const icon = (await page.locator('.rail-tools .rail-btn svg').first().boundingBox())!;
     expect(Math.round(icon.width)).toBe(18);
     await page.context().close();
