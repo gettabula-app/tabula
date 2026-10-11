@@ -113,7 +113,7 @@ At the first start after a workspace restore (`recoverOnStart` has finished, roo
 1. For every board with an active `kanban_tracker_links` row, open the room and run `reconcileTrackerProjection` in `sql-wins` mode. Only that mode unlinks a card that no longer exists on its board (with a `restore` event) and resets `parent` and `rank` to the SQL lane; on a coherent barrier snapshot the layout part is a no-op, and the unlinking covers a room file that was missing from the manifest (8.1 step 9).
 2. Drain the projection outbox.
 3. Boards are processed one at a time, at most 50 boards per second; the report counts `boardsReconciled`, `cardsStripped`, `cardsRepaired`, `unlinked`.
-4. A board that fails to open is counted `boardsFailed` and keeps the workspace gate closed. Recovery logs a numeric failure count and continues with the remaining boards; the next start retries the active links.
+4. A board that fails to open is counted `boardsFailed` in the restore record and does not hold the gate: it is corrected by the normal room-load reconcile when it is next opened, and holding the whole tracker for one unreadable file (with no owner action that could release it) was judged worse. This changes the first draft of this section, which kept that board's linked cards read-only. Recovery logs a numeric failure count and continues with the remaining boards.
 
 ### 5.5 The restore gate
 

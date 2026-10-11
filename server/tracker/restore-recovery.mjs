@@ -65,11 +65,6 @@ function rebuildFts(directory, refreshSearch) {
   return result;
 }
 
-function totalRepaired(repaired) {
-  return Object.entries(repaired ?? {}).reduce((sum, [code, value]) =>
-    sum + (code === 'event_missing' ? 0 : safeCount(value)), 0);
-}
-
 function readRecord(directory) {
   try {
     const value = JSON.parse(setting(directory, RESTORE_STATUS_KEY) ?? 'null');
@@ -90,29 +85,6 @@ function updateRestoreRecord(directory, { counts, ftsRepaired }) {
     directory.setSetting(RESTORE_STATUS_KEY, JSON.stringify(record));
   });
   return record;
-}
-
-function updateCompletionAudit(directory, record) {
-  if (!record?.tracker || typeof record.manifest !== 'string') return false;
-  const db = directory.db;
-  const rows = db.prepare("SELECT id, detail FROM audit WHERE action = 'restore.done' ORDER BY id DESC LIMIT 50").all();
-  for (const row of rows) {
-    let detail;
-    try { detail = JSON.parse(row.detail); } catch { continue; }
-    if (detail?.kind !== 'workspace' || detail.manifest !== record.manifest) continue;
-    detail.tracker = {
-      tickets: safeCount(record.tracker.summary?.tickets),
-      repaired: totalRepaired(record.tracker.repaired),
-      boardsReconciled: safeCount(record.tracker.boardsReconciled),
-      cardsStripped: safeCount(record.tracker.cardsStripped),
-      cardsRepaired: safeCount(record.tracker.cardsRepaired),
-      unlinked: safeCount(record.tracker.unlinked),
-      boardsFailed: safeCount(record.tracker.boardsFailed),
-    };
-    db.prepare('UPDATE audit SET detail = ? WHERE id = ?').run(JSON.stringify(detail), row.id);
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -158,12 +130,14 @@ export function createTrackerRestoreRecovery({
 
     const counts = { boardsReconciled: 0, cardsStripped: 0, cardsRepaired: 0, unlinked: 0, boardsFailed: 0 };
     let boards = [];
+    let listFailed = false;
     try {
       boards = directory.db.prepare(
         'SELECT DISTINCT board_id FROM kanban_tracker_links WHERE removed_at IS NULL ORDER BY board_id',
       ).all().map((row) => row.board_id).filter((boardId) => typeof boardId === 'string');
     } catch {
       counts.boardsFailed = 1;
+      listFailed = true;
       log('tracker restore recovery: board_list_failed=1');
     }
 
@@ -211,7 +185,8 @@ export function createTrackerRestoreRecovery({
       }
     }
 
-    const reconcileDone = counts.boardsFailed === 0;
+    // A board that fails to open is counted (restore record) and picks up its correction when it is next opened; it does not freeze the whole tracker.
+    const reconcileDone = !listFailed;
     if (reconcileDone) directory.setSetting(RECONCILE_DONE_KEY, '1');
     const currentGate = readRestoreGate(directory);
     const gateCleared = clearGate(directory, {
@@ -221,10 +196,7 @@ export function createTrackerRestoreRecovery({
       now,
     }, (action, detail) => directory.audit(null, action, detail));
 
-    const record = updateRestoreRecord(directory, { counts, ftsRepaired });
-    if (ftsReady && reconcileDone && record) {
-      directory.transaction(() => { updateCompletionAudit(directory, record); });
-    }
+    updateRestoreRecord(directory, { counts, ftsRepaired });
     return { ...counts, ftsReady, ftsRepaired, floor: currentGate?.floor ?? gate.floor, gateCleared };
   }
 

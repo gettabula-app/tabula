@@ -70,7 +70,8 @@ describe('post-restore tracker recovery', () => {
       tracker: { boardsReconciled: 0, cardsStripped: 0, cardsRepaired: 0, unlinked: 0, boardsFailed: 0 },
     });
     const detail = JSON.parse(String(directory.db.prepare("SELECT detail FROM audit WHERE action = 'restore.done' ORDER BY id DESC LIMIT 1").get()!.detail));
-    expect(detail).toMatchObject({ manifest, tracker: { tickets: 1, boardsReconciled: 0, boardsFailed: 0 } });
+    expect(detail).toMatchObject({ manifest, tracker: { tickets: 1 } });
+    expect(detail.tracker).not.toHaveProperty('boardsReconciled');
     expect(directory.listAudit(10).filter((row) => row.action === 'tracker.gate_cleared')).toHaveLength(1);
   });
 
@@ -87,12 +88,12 @@ describe('post-restore tracker recovery', () => {
     expect(directory.getSetting('tracker.fts_ready')).toBe('1');
   });
 
-  it.skipIf(!fts5Available)('keeps the gate closed after a board failure and resumes that work on a later start', async () => {
+  it.skipIf(!fts5Available)('counts a board that fails to open in the restore record without freezing the tracker', async () => {
     const directory = open();
     const { owner } = seed(directory);
     addLinkedBoard(directory, owner.id);
     let openedBoards = 0;
-    const failedStart = createTrackerRestoreRecovery({
+    const recovery = createTrackerRestoreRecovery({
       directory,
       roomAccess: { read: () => undefined, write: () => undefined },
       reconcile: () => { openedBoards++; throw new Error('hidden board error'); },
@@ -101,22 +102,26 @@ describe('post-restore tracker recovery', () => {
       now: () => 2100,
     });
 
-    const failed = await failedStart.run();
+    const result = await recovery.run();
     expect(openedBoards).toBe(1);
-    expect(failed).toMatchObject({ boardsFailed: 1, boardsReconciled: 0, gateCleared: false });
-    expect(directory.getSetting('tracker.reconcile_done')).toBeNull();
-    expect(readRestoreGate(directory)).toMatchObject({ floor: 'known' });
+    expect(result).toMatchObject({ boardsFailed: 1, boardsReconciled: 0, gateCleared: true });
+    expect(readRestoreGate(directory)).toBeNull();
+    expect(JSON.parse(String(directory.getSetting('restore.status')))).toMatchObject({ tracker: { boardsFailed: 1, boardsReconciled: 0 } });
+  });
 
+  it.skipIf(!fts5Available)('reconciles every linked board in sql-wins mode and counts what it changed', async () => {
+    const directory = open();
+    const { owner } = seed(directory);
+    addLinkedBoard(directory, owner.id);
     let reconciled = 0;
-    const restarted = createTrackerRestoreRecovery({
+    const recovery = createTrackerRestoreRecovery({
       directory,
       roomAccess: { read: () => undefined, write: () => undefined },
       reconcile: ({ mode }: { mode: string }) => { expect(mode).toBe('sql-wins'); reconciled++; return { stripped: 2, repaired: 3 }; },
       drain: () => ({ applied: 1, projectionPending: false }),
       now: () => 3100,
     });
-    const recovered = await restarted.run();
-
+    const recovered = await recovery.run();
     expect(reconciled).toBe(1);
     expect(recovered).toMatchObject({ boardsReconciled: 1, cardsStripped: 2, cardsRepaired: 3, boardsFailed: 0, gateCleared: true });
     expect(readRestoreGate(directory)).toBeNull();
