@@ -51,9 +51,44 @@ export function avatar(actor: AvatarActor): HTMLElement {
   return h('span', { class: 'trk-avatar', 'aria-label': actor.name }, initials(actor.name) || '?');
 }
 
+function parseTrackerDate(value: string | number | Date): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  const date = dateOnly ? new Date(`${value}T00:00:00.000Z`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  if (dateOnly && date.toISOString().slice(0, 10) !== value) return null;
+  return date;
+}
+
+function utcDay(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+export function formatTrackerDate(value: string | number | Date, now = Date.now(), options: { relative?: boolean } = {}): string {
+  const date = parseTrackerDate(value);
+  if (!date) return 'Unknown date';
+  if (options.relative) {
+    const today = new Date(now);
+    if (Number.isNaN(today.getTime())) return 'Unknown date';
+    const difference = Math.round((utcDay(date) - utcDay(today)) / 86_400_000);
+    if (difference === -1) return 'Yesterday';
+    if (difference === 0) return 'Today';
+    if (difference === 1) return 'Tomorrow';
+  }
+  const month = new Intl.DateTimeFormat('en', { month: 'short', timeZone: 'UTC' }).format(date);
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  const current = new Date(now);
+  return year === current.getUTCFullYear() ? `${month} ${day}` : `${month} ${day}, ${year}`;
+}
+
 function absoluteTime(iso: string): string {
   const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? 'Unknown time' : at.toLocaleString();
+  return Number.isNaN(at.getTime()) ? 'Unknown time' : `${formatTrackerDate(at)} · ${at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 export function formatRelative(now: number, iso: string): string {
@@ -83,18 +118,18 @@ export function relativeTime(now: number, iso: string): HTMLTimeElement {
   );
 }
 
-export function dueChip(due: string | null, now: number): HTMLElement | null {
+/** A finished ticket (completed or canceled) is never overdue: it only shows its date. */
+export function dueChip(due: string | null, now: number, finished = false): HTMLElement | null {
   if (!due) return null;
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(due) ? new Date(`${due}T00:00:00Z`) : null;
-  const valid = !!parsed && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === due;
-  if (!valid) return h('span', { class: 'trk-due-chip' }, `Due ${due}`);
+  const parsed = parseTrackerDate(due);
+  if (!parsed || !/^\d{4}-\d{2}-\d{2}$/u.test(due)) return h('span', { class: 'trk-due-chip' }, `Due ${formatTrackerDate(due, now)}`);
   const today = new Date(now).toISOString().slice(0, 10);
-  const overdue = due < today;
-  const date = new Date(`${due}T00:00:00Z`);
-  const shortDate = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
-  const text = due === today ? 'Due today' : overdue ? `Overdue · ${shortDate}` : `Due ${shortDate}`;
+  const overdue = due < today && !finished;
+  const relative = formatTrackerDate(due, now, { relative: true });
+  const shortDate = formatTrackerDate(due, now);
+  const text = due === today ? 'Due today' : due > today && relative === 'Tomorrow' ? 'Due tomorrow' : overdue ? `Overdue · ${relative === 'Yesterday' ? relative : shortDate}` : `Due ${shortDate}`;
   return h('span', {
     class: `trk-due-chip${overdue ? ' trk-overdue' : ''}`,
-    'aria-label': overdue ? `Overdue, due ${date.toLocaleDateString(undefined, { dateStyle: 'long', timeZone: 'UTC' })}` : text,
+    'aria-label': overdue ? `Overdue, due ${shortDate}` : text,
   }, text);
 }

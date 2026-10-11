@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { actorBadgeGlyph, priorityGlyph, priorityLabel, prStateGlyph, prStateLabel, stateGlyph, stateLabel } from '../src/tracker/ui/glyphs';
-import { avatar, countBadge, dueChip, formatRelative, keyChip, labelChip, relativeTime } from '../src/tracker/ui/primitives';
+import { avatar, countBadge, dueChip, formatRelative, formatTrackerDate, keyChip, labelChip, relativeTime } from '../src/tracker/ui/primitives';
 import { parseTicketKey, ticketChipText, ticketPath } from '../src/tracker/ui/keys-util';
 import { installTrackerUiBrowser } from './tracker-ui-test-helpers';
 
@@ -99,15 +99,40 @@ describe('tracker primitive chips and times', () => {
     expect(time.getAttribute('title')).not.toBe('');
   });
 
+  it('formats ticket dates consistently with year and adjacent-day labels', () => {
+    const now = Date.UTC(2026, 9, 10, 12);
+    expect(formatTrackerDate('2026-10-03', now)).toBe('Oct 3');
+    expect(formatTrackerDate('2025-10-03', now)).toBe('Oct 3, 2025');
+    expect(formatTrackerDate('2026-10-09', now, { relative: true })).toBe('Yesterday');
+    expect(formatTrackerDate('2026-10-10', now, { relative: true })).toBe('Today');
+    expect(formatTrackerDate('2026-10-11', now, { relative: true })).toBe('Tomorrow');
+    expect(formatTrackerDate('not-a-date', now)).toBe('Unknown date');
+  });
+
   it('spells out overdue due dates and never relies on color alone', () => {
     browser = installTrackerUiBrowser();
     const now = Date.UTC(2026, 9, 10, 12);
-    expect(dueChip('2026-10-09', now)?.textContent).toMatch(/^Overdue/);
+    expect(dueChip('2026-10-09', now)?.textContent).toBe('Overdue · Yesterday');
     expect(dueChip('2026-10-09', now)?.getAttribute('aria-label')).toMatch(/^Overdue/);
     expect(dueChip('2026-10-10', now)?.textContent).toBe('Due today');
-    expect(dueChip('2026-10-12', now)?.textContent).toMatch(/^Due /);
-    expect(dueChip('2026-02-30', now)?.textContent).toBe('Due 2026-02-30');
+    expect(dueChip('2026-10-11', now)?.textContent).toBe('Due tomorrow');
+    expect(dueChip('2026-10-12', now)?.textContent).toBe('Due Oct 12');
+    expect(dueChip('2025-10-03', now)?.textContent).toBe('Overdue · Oct 3, 2025');
+    expect(dueChip('2026-02-30', now)?.textContent).toBe('Due Unknown date');
     expect(dueChip(null, now)).toBeNull();
+  });
+
+  it('never marks a finished ticket overdue, and draws low priority as a readable bar', () => {
+    browser = installTrackerUiBrowser();
+    const now = Date.UTC(2026, 9, 10, 12);
+    const finished = dueChip('2026-10-01', now, true)!;
+    expect(finished.textContent).toBe('Due Oct 1');
+    expect(finished.className).not.toContain('trk-overdue');
+    expect(finished.getAttribute('aria-label')).not.toMatch(/Overdue/);
+    expect(dueChip('2026-10-01', now, false)?.className).toContain('trk-overdue');
+    const low = priorityGlyph('low').querySelector('path')!;
+    expect(low.getAttribute('d')).toBe('M3 13v-5');
+    expect(low.getAttribute('stroke-width')).toBe('2');
   });
 });
 

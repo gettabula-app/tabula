@@ -2,7 +2,7 @@ import { formatFilterTokens, parseFilterTokens, type TrackerFilterField } from '
 
 export type FilterField = TrackerFilterField;
 export type FilterChip = {
-  field: FilterField | 'creator' | 'text';
+  field: FilterField | 'text';
   value: string;
   not?: boolean;
   /** Fixed view filters stay visible but cannot be removed or serialized as user filters. */
@@ -43,7 +43,6 @@ export function build(chips: readonly FilterChip[]): string[] {
       if (chip.value.includes('\n')) throw new FilterTokenError(chip.value);
       return [chip.value];
     }
-    if (chip.field === 'creator') throw new FilterTokenError(`${chip.field}:${chip.value}`);
     try {
       return formatFilterTokens([{ field: chip.field, value: chip.value, not: Boolean(chip.not) }]);
     } catch {

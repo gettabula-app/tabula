@@ -17,9 +17,9 @@ export function confirmUnlink(opts: { cardCount: number }): Promise<boolean> {
       resolve(value);
     };
     const modal = dialog('Unlink from tracker?', h('p', { class: 'trk-unlink-copy' }, bodyText), [
-      { label: 'Unlink', primary: true, onClick: () => { settle(true); } },
       { label: 'Cancel', onClick: () => { settle(false); } },
-    ], { className: 'trk trk-unlink-back', onClose: () => settle(false) });
+      { label: 'Unlink', primary: true, onClick: () => { settle(true); } },
+    ], { className: 'trk trk-modal trk-unlink-back', onClose: () => settle(false) });
     requestAnimationFrame(() => {
       const cancel = Array.from(modal.box.querySelectorAll<HTMLButtonElement>('.modal-actions button')).find((button) => button.textContent === 'Cancel');
       cancel?.focus({ preventScroll: true });

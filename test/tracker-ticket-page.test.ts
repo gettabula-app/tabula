@@ -125,9 +125,14 @@ describe('ticket page', () => {
   it('renders a ticket and edits its title with Enter while Escape cancels', async () => {
     const { host, store: tracker } = await setup();
     expect(host.querySelector('.tk-title')?.textContent).toBe('Original title');
-    expect(host.querySelector('.tk-properties')?.textContent).toContain('No due date');
+    expect(host.querySelector('.tk-properties')?.textContent).toContain('Set due date');
+    expect(host.querySelector('[data-property="property-priority"] svg')).toBeNull();
+    const title = host.querySelector('.tk-title')!;
+    expect(title.getAttribute('role')).toBe('button');
+    expect(title.getAttribute('aria-label')).toBeNull();
+    expect(buttonByText(host, 'Edit title')).toBeUndefined();
 
-    buttonByText(host, 'Edit title')?.click();
+    title.click();
     let input = inputByLabel(host, 'Title')!;
     input.value = 'Changed title';
     input.dispatchEvent(uiEvent('input'));
@@ -135,7 +140,7 @@ describe('ticket page', () => {
     await until(() => tracker.ticket('TAB-1').ticket?.title === 'Changed title');
     expect(host.querySelector('.tk-title')?.textContent).toBe('Changed title');
 
-    buttonByText(host, 'Edit title')?.click();
+    host.querySelector('.tk-title')?.dispatchEvent(uiEvent('keydown', { key: 'Enter' }));
     input = inputByLabel(host, 'Title')!;
     input.value = 'Discard this';
     input.dispatchEvent(uiEvent('input'));
@@ -143,7 +148,7 @@ describe('ticket page', () => {
     expect(host.querySelector('.tk-title')?.textContent).toBe('Changed title');
     expect(tracker.ticket('TAB-1').ticket?.title).toBe('Changed title');
 
-    buttonByText(host, 'Edit title')?.click();
+    host.querySelector('.tk-title')?.click();
     input = inputByLabel(host, 'Title')!;
     input.value = '😀'.repeat(201);
     input.dispatchEvent(uiEvent('input'));
@@ -188,7 +193,8 @@ describe('ticket page', () => {
 
   it('switches a description between Write and safe Preview, then commits on Ctrl+Enter', async () => {
     const { host, store: tracker } = await setup();
-    buttonByText(host, 'Add description')?.click();
+    expect(buttonByText(host, 'Edit description')).toBeUndefined();
+    buttonByText(host, 'Add description…')?.dispatchEvent(uiEvent('keydown', { key: 'Enter' }));
     const textarea = inputByLabel(host, 'Description in Markdown')!;
     textarea.value = '**Ready** for TAB-2';
     textarea.dispatchEvent(uiEvent('input'));
@@ -207,7 +213,8 @@ describe('ticket page', () => {
   it('cancels a description draft with Escape while Preview has focus', async () => {
     const issue = ticket({ description: 'Keep this text' });
     const { host, store: tracker } = await setup({ issue });
-    buttonByText(host, 'Edit description')?.click();
+    expect(buttonByText(host, 'Edit description')).toBeUndefined();
+    host.querySelector('.tk-description-body')?.dispatchEvent(uiEvent('keydown', { key: 'Enter' }));
     const textarea = inputByLabel(host, 'Description in Markdown')!;
     textarea.value = 'Discard this draft';
     textarea.dispatchEvent(uiEvent('input'));
@@ -226,7 +233,7 @@ describe('ticket page', () => {
     const { host, api, store: tracker } = await setup();
     let rejectRequest!: (error: Error) => void;
     api.patchTicket = async () => new Promise((_resolve, reject) => { rejectRequest = reject; });
-    buttonByText(host, 'Edit title')?.click();
+    host.querySelector('.tk-title')?.click();
     const input = inputByLabel(host, 'Title')!;
     input.value = 'Temporary title';
     input.dispatchEvent(uiEvent('input'));
@@ -249,7 +256,7 @@ describe('ticket page', () => {
       if (reject) throw new TrackerError('network', 'Connection lost');
       return patch(...args);
     };
-    buttonByText(host, 'Edit title')?.click();
+    host.querySelector('.tk-title')?.click();
     const input = inputByLabel(host, 'Title')!;
     input.value = 'Keep this draft';
     input.dispatchEvent(uiEvent('input'));
@@ -273,7 +280,7 @@ describe('ticket page', () => {
       if (calls === 1) throw new TrackerError('conflict', 'Stale', { current: remote });
       return { ticket: { ...remote, title: patchArg.title ?? remote.title, updatedSeq: remote.updatedSeq + 1 } };
     };
-    buttonByText(host, 'Edit title')?.click();
+    host.querySelector('.tk-title')?.click();
     const input = inputByLabel(host, 'Title')!;
     input.value = 'Mine';
     input.dispatchEvent(uiEvent('input'));
@@ -315,7 +322,7 @@ describe('ticket page', () => {
     buttonByText(host, 'Restore')?.click();
     await until(() => tracker.ticket('TAB-1').ticket?.archivedAt === null);
     expect(host.querySelector('.tk-archived-banner')).toBeNull();
-    expect(buttonByText(host, 'Edit title')).toBeDefined();
+    expect(host.querySelector('.tk-title')?.getAttribute('tabindex')).toBe('0');
   });
 
   it('lights up project and milestone pickers when slice 2 metadata is present', async () => {
@@ -336,13 +343,18 @@ describe('ticket page', () => {
     expect(host.querySelector('[data-field="milestone"]')?.textContent).toBe('Beta');
   });
 
-  it('uses the overdue header key signal only when the ticket is assigned to me', async () => {
+  it('keeps the ticket key as a quiet copy-key action', async () => {
     const { host } = await setup({ issue: ticket({ due: '2026-10-09', assignee: { userId: 'user-me', name: 'Mara' } }) });
-    expect(host.querySelector('.tk-header-key--overdue')).toBeDefined();
+    const keyButton = host.querySelector('.tk-header-key');
+    expect(keyButton?.getAttribute('aria-label')).toBe('Copy key TAB-1');
+    expect(keyButton?.getAttribute('data-tip')).toBe('Copy key');
+    expect(keyButton?.querySelector('.tk-copy-icon')).not.toBeNull();
+    expect(host.querySelector('.tk-header-key--overdue')).toBeNull();
   });
 
   it('posts comments with one client id across an idempotent retry', async () => {
     const { host, api } = await setup();
+    expect(host.querySelector('.tk-comment-submit')?.classList.contains('tk-button--quiet')).toBe(true);
     const add = api.addComment.bind(api);
     let calls = 0;
     let clientId = '';
@@ -499,6 +511,71 @@ describe('ticket page', () => {
     buttonByText(host, 'Subscribe')?.click();
     await until(() => tracker.ticket('TAB-1').subscribed === true);
     expect(buttonByText(host, 'Subscribed')).toBeDefined();
+  });
+
+  it('folds empty sections into ghost actions and omits empty linked-work sections', async () => {
+    const { host } = await setup();
+    expect(host.querySelector('.tk-subissues-section h2')).toBeNull();
+    expect(host.querySelector('.tk-subissues-section .tk-empty-copy')).toBeNull();
+    expect(buttonByText(host, '+ Add sub-issues')).toBeDefined();
+    expect(host.querySelector('.tk-relations-section h2')).toBeNull();
+    expect(host.querySelector('.tk-relations-section .tk-empty-copy')).toBeNull();
+    expect(buttonByText(host, '+ Add relation')).toBeDefined();
+    expect(host.querySelector('.tk-linked-work-section')).toBeNull();
+    expect(host.querySelector('.tk-linked-cards-section')).toBeNull();
+  });
+
+  it('creates one sub-issue in the default state even when Create is pressed twice', async () => {
+    const issue = ticket({ state: { id: 'done', key: 'done', name: 'Done', category: 'completed' } });
+    const api = createMockTrackerApi({ meta: META, tickets: [issue], now: () => NOW });
+    const createTicket = vi.spyOn(api, 'createTicket');
+    const { host, store: tracker } = await setup({ issue, api });
+    buttonByText(host, '+ Add sub-issues')?.click();
+    const input = inputByLabel(host, 'Sub-issue title')!;
+    input.value = 'Child task';
+    input.dispatchEvent(uiEvent('input'));
+    const create = buttonByText(host, 'Create sub-issue')!;
+    create.click();
+    create.click();
+    await until(() => createTicket.mock.calls.length > 0);
+    await flush();
+    const inputs = createTicket.mock.calls.map((call) => call[0]);
+    expect(inputs.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(inputs.map((input) => input.idempotencyKey)).size).toBe(1);
+    expect(inputs[0]).toMatchObject({ title: 'Child task', parent: 'TAB-1' });
+    expect(inputs[0]).not.toHaveProperty('state');
+    expect(Object.values(tracker.snapshot().tickets).filter((entry) => entry.ticket?.title === 'Child task')).toHaveLength(1);
+  });
+
+  it('labels compact property values accessibly and expands the secondary properties on demand', async () => {
+    const meta: TrackerMeta = {
+      ...META,
+      projects: [{ id: 'proj-1', name: 'Frames' }],
+      milestones: [{ id: 'mile-1', name: 'Beta', due: '2026-11-01', projectId: 'proj-1' }],
+    };
+    const { host } = await setup({ meta, issue: ticket({ assignee: { userId: 'user-me', name: 'Mara' }, due: '2031-10-12', priority: 'high' }) });
+    const names = ['State: To do', 'Assignee: Mara', 'Priority: High priority', 'Due: Oct 12, 2031'];
+    for (const name of names) expect(host.querySelectorAll('.tk-primary-property [aria-label]').some((control) => control.getAttribute('aria-label') === name)).toBe(true);
+    expect(host.querySelectorAll('.tk-primary-property .tk-property-name').every((nameNode) => nameNode.classList.contains('tk-sr-only'))).toBe(true);
+    const more = host.querySelector('.tk-properties-more-toggle')!;
+    expect(more.textContent).toBe('More');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(host.querySelector('.tk-properties-more')?.getAttribute('data-expanded')).toBe('false');
+    more.click();
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelector('.tk-properties-more')?.getAttribute('data-expanded')).toBe('true');
+    expect(host.querySelector('.tk-properties-more')?.textContent).toContain('Labels');
+    expect(host.querySelector('.tk-properties-more')?.textContent).toContain('Project');
+    expect(host.querySelector('.tk-properties-more')?.textContent).toContain('Parent / Related');
+  });
+
+  it('keeps focus on the same property when a ticket update rerenders the page', async () => {
+    const { host, store: tracker } = await setup();
+    const state = host.querySelector('[data-focus-id="property-state"]') as unknown as FakeElement;
+    state.focus();
+    await tracker.updateTicket('TAB-1', { description: 'An external update' });
+    await until(() => browser?.document.activeElement?.getAttribute('data-focus-id') === 'property-state');
+    expect(browser?.document.activeElement?.getAttribute('aria-label')).toBe('State: To do');
   });
 
   it('renders hostile Markdown as text and never creates an HTML or javascript link', () => {

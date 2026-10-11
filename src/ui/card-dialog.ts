@@ -162,7 +162,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const labels = h('div', { class: 'k-labels', role: 'group', 'aria-label': 'Labels' });
   const trackerValues = h('div', { class: 'k-stack', role: 'group', 'aria-label': 'Tracker fields' });
   const manage = editable
-    ? h('button', { class: 'btn ghost', type: 'button', onclick: () => app.openLabels?.() }, 'Edit labels')
+    ? h('button', { class: 'btn ghost k-label-edit', type: 'button', onclick: () => app.openLabels?.() }, 'Edit labels')
     : null;
 
   // ---- actions

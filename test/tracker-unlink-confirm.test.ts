@@ -22,6 +22,9 @@ describe('tracker unlink confirmation', () => {
   it('uses the plural copy and starts with Cancel focused, then resolves true or false', async () => {
     browser = installTrackerUiBrowser();
     let decision = confirmUnlink({ cardCount: 4 });
+    const modal = browser.document.querySelector('.trk-unlink-back .modal') as FakeElement;
+    expect(modal.classList.contains('tray')).toBe(false);
+    expect(modal.closest('.tray')).toBeNull();
     expect(textOf(browser.document.body)).toContain('Unlink from tracker?');
     expect(textOf(browser.document.body)).toContain('The 4 cards stay on this board with their titles and lanes. The tickets stay in the tracker. The cards will no longer follow ticket changes.');
     expect(browser.document.activeElement).toBe(action('Cancel'));

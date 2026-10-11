@@ -60,9 +60,10 @@ describe('tracker accessibility semantics', () => {
     const buttons = (modal.box as unknown as FakeElement).querySelectorAll('.trk-new-properties button');
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
       expect.stringMatching(/^State: /),
-      expect.stringMatching(/^Assignee: /),
       'Priority: No priority',
+      expect.stringMatching(/^Assignee: /),
       'Labels: No labels',
+      'Project: No project',
       'Due date: No due date',
     ]);
     modal.close();
