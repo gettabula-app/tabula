@@ -191,11 +191,12 @@ describe('tracker linked-card relay guard', () => {
     (sender.provider as any).messageHandlers[7] = (_encoder: unknown, decoder: ReturnType<typeof decoding.createDecoder>) => {
       notices.push(JSON.parse(decoding.readVarString(decoder)));
     };
-    const current = card(sender.doc, cardId)!;
-    sender.doc.transact(() => current.set('parent', 'relay-doing'), 'guest-drag');
-    expect(current.get('parent')).toBe('relay-doing');
+    // read the card afresh each time: a room reloaded from its file can replace the map the client first synced
+    const current = () => card(sender.doc, cardId)!;
+    sender.doc.transact(() => current().set('parent', 'relay-doing'), 'guest-drag');
+    expect(current().get('parent')).toBe('relay-doing');
 
-    await until(() => changes.length > 0 && current.get('parent') === 'relay-todo' && notices.some((notice) =>
+    await until(() => changes.length > 0 && current().get('parent') === 'relay-todo' && notices.some((notice) =>
       notice.undone.some((entry) => entry.cardId === cardId && entry.reason === 'forbidden')));
     expect(changes.length).toBeGreaterThan(0);
     expect(changes.some((entry) => entry[cardId]?.parent === 'relay-doing')).toBe(false);
