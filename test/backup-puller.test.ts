@@ -103,6 +103,8 @@ function baseConfig() {
     keepDaily: 7,
     keepWeekly: 4,
     objectGraceDays: 35,
+    deletedGraceDays: 30,
+    workspacesMaxAgeHours: 48,
     metricsFile: path.join(dirs.stateDir, 'tabula_backup.prom'),
     requestTimeoutSeconds: 120,
   };
@@ -114,9 +116,31 @@ async function writeMainInputs(workspaces: unknown[] = [workspace], mode = 0o600
   await fs.promises.writeFile(config.pullMasterFile, `${master}\n`, { mode: 0o600 });
   await fs.promises.chmod(config.pullMasterFile, mode);
   await fs.promises.writeFile(config.workspacesFile, JSON.stringify(workspaces));
+  await fs.promises.utimes(config.workspacesFile, new Date(NOW), new Date(NOW));
   const configFile = path.join(tempRoot, 'puller.json');
   await fs.promises.writeFile(configFile, JSON.stringify(config));
   return { config, configFile };
+}
+
+async function snapshotDirectory(directory: string) {
+  const snapshot: Record<string, { type: string; bytes?: string; target?: string; mtimeMs: number }> = {};
+  async function visit(current: string, relative = ''): Promise<void> {
+    for (const name of await fs.promises.readdir(current)) {
+      const file = path.join(current, name);
+      const key = relative ? path.join(relative, name) : name;
+      const stat = await fs.promises.lstat(file);
+      if (stat.isDirectory()) {
+        snapshot[key] = { type: 'directory', mtimeMs: stat.mtimeMs };
+        await visit(file, key);
+      } else if (stat.isSymbolicLink()) {
+        snapshot[key] = { type: 'symlink', target: await fs.promises.readlink(file), mtimeMs: stat.mtimeMs };
+      } else {
+        snapshot[key] = { type: 'file', bytes: (await fs.promises.readFile(file)).toString('base64'), mtimeMs: stat.mtimeMs };
+      }
+    }
+  }
+  await visit(directory);
+  return snapshot;
 }
 
 function manifestName(day: string, time = '120000') {
@@ -162,9 +186,36 @@ describe('backup puller token and config', () => {
     ['non-HTTPS origin', (value: any) => ({ ...value, baseUrlTemplate: 'http://{slug}.backup.invalid' })],
     ['invalid concurrency', (value: any) => ({ ...value, concurrency: 0 })],
     ['invalid retention type', (value: any) => ({ ...value, keepDaily: '7' })],
+    ['invalid deleted grace period', (value: any) => ({ ...value, deletedGraceDays: -1 })],
+    ['zero deleted grace period', (value: any) => ({ ...value, deletedGraceDays: 0 })],
+    ['deleted grace period above maximum', (value: any) => ({ ...value, deletedGraceDays: 3651 })],
+    ['fractional deleted grace period', (value: any) => ({ ...value, deletedGraceDays: 1.5 })],
+    ['invalid workspace list age', (value: any) => ({ ...value, workspacesMaxAgeHours: 0 })],
+    ['workspace list age above maximum', (value: any) => ({ ...value, workspacesMaxAgeHours: 8761 })],
     ['missing config field', (value: any) => { const { metricsFile: _drop, ...rest } = value; return rest; }],
   ])('rejects %s', (_name, mutate) => {
     expect(() => validateConfig(mutate(baseConfig()))).toThrow('invalid_');
+  });
+
+  it('defaults the deleted grace period to 30 days and workspace list age to 48 hours', () => {
+    const config = baseConfig();
+    delete (config as any).deletedGraceDays;
+    delete (config as any).workspacesMaxAgeHours;
+    expect(validateConfig(config).deletedGraceDays).toBe(30);
+    expect(validateConfig(config).workspacesMaxAgeHours).toBe(48);
+    expect(validateConfig({ ...baseConfig(), deletedGraceDays: 1 }).deletedGraceDays).toBe(1);
+    expect(validateConfig({ ...baseConfig(), deletedGraceDays: 3650 }).deletedGraceDays).toBe(3650);
+    expect(validateConfig({ ...baseConfig(), workspacesMaxAgeHours: 8760 }).workspacesMaxAgeHours).toBe(8760);
+  });
+
+  it('refuses a zero-day deleted grace period with configuration exit code 2', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    config.deletedGraceDays = 0;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile], now, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain('configuration error invalid_deleted_grace_days');
   });
 });
 
@@ -440,6 +491,8 @@ describe('retention and metrics', () => {
       '# TYPE tabula_backup_has_manifest gauge',
       '# HELP tabula_backup_last_run_ok Whether the last backup pull run succeeded or was intentionally skipped.',
       '# TYPE tabula_backup_last_run_ok gauge',
+      '# HELP tabula_backup_pending_purge Whether a deleted workspace is still inside its purge grace period.',
+      '# TYPE tabula_backup_pending_purge gauge',
       'tabula_backup_age_seconds{workspace="studio"} 7200',
       'tabula_backup_last_attempt_timestamp_seconds{workspace="studio"} 1791716400',
       'tabula_backup_last_success_timestamp_seconds{workspace="studio"} 1791712800',
@@ -454,6 +507,18 @@ describe('retention and metrics', () => {
       `tabula_backup_files{${escapedLabel}} 0`,
       `tabula_backup_has_manifest{${escapedLabel}} 0`,
       `tabula_backup_last_run_ok{${escapedLabel}} 0`,
+      '# HELP tabula_backup_purged_total Number of workspace copies purged by this pull host.',
+      '# TYPE tabula_backup_purged_total counter',
+      'tabula_backup_purged_total 0',
+      '# HELP tabula_backup_workspace_list_age_seconds Age of the workspace list file in seconds.',
+      '# TYPE tabula_backup_workspace_list_age_seconds gauge',
+      'tabula_backup_workspace_list_age_seconds 1000000000000',
+      '# HELP tabula_backup_purge_leftovers Number of interrupted purge tombstones found at run start.',
+      '# TYPE tabula_backup_purge_leftovers gauge',
+      'tabula_backup_purge_leftovers 0',
+      '# HELP tabula_backup_orphan_workspaces Number of store directories missing from workspaces.json.',
+      '# TYPE tabula_backup_orphan_workspaces gauge',
+      'tabula_backup_orphan_workspaces 0',
       '# HELP tabula_backup_puller_last_run_timestamp_seconds Unix timestamp of the last puller run.',
       '# TYPE tabula_backup_puller_last_run_timestamp_seconds gauge',
       'tabula_backup_puller_last_run_timestamp_seconds 1791720000',
@@ -486,5 +551,348 @@ describe('retention and metrics', () => {
     expect(code).toBe(2);
     expect(lines.join('\n')).not.toContain(master);
     expect(lines.join('\n')).not.toContain(pullToken(master, workspace.id));
+  });
+});
+
+describe('deleted workspace purge', () => {
+  const deletedWorkspace = { ...workspace, state: 'deleted' };
+  const twoDays = 2 * 24 * 60 * 60 * 1000;
+
+  it('starts the grace timer once, waits until the boundary, then removes all three paths', async () => {
+    const other = { id: 'workspace-2', slug: 'other', state: 'suspended' };
+    const { config, configFile } = await writeMainInputs([deletedWorkspace, other]);
+    config.deletedGraceDays = 2;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'sealed-copy'), 'ciphertext');
+    await fs.promises.mkdir(path.join(config.storeDir, 'other'), { recursive: true });
+    await fs.promises.writeFile(path.join(config.storeDir, 'other', 'keep'), 'other workspace');
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: null, lastSuccessAt: '2026-10-01T00:00:00.000Z' }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.seen.json'), JSON.stringify({ lastSeen: {} }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'other.json'), JSON.stringify({ lastSuccessAt: '2026-10-01T00:00:00.000Z' }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'other.seen.json'), JSON.stringify({ lastSeen: {} }));
+    const noFetch = async () => { throw new Error('deleted workspace contacted'); };
+
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: noFetch, log: () => {} })).toBe(0);
+    const started = JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'studio.json'), 'utf8'));
+    expect(started.deletedSince).toBe('2026-10-11T12:00:00.000Z');
+    expect(await fs.promises.readFile(path.join(config.metricsFile), 'utf8')).toContain('tabula_backup_pending_purge{workspace="studio"} 1');
+    expect(await fs.promises.stat(path.join(store, 'sealed-copy'))).toBeDefined();
+
+    expect(await runMain({ argv: ['--config', configFile], now: () => NOW + 1 * 24 * 60 * 60 * 1000, fetch: noFetch, log: () => {} })).toBe(0);
+    const stillStarted = JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'studio.json'), 'utf8'));
+    expect(stillStarted.deletedSince).toBe(started.deletedSince);
+    expect(await fs.promises.stat(path.join(store, 'sealed-copy'))).toBeDefined();
+
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile], now: () => NOW + twoDays, fetch: noFetch, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('purged studio (deleted 2 days ago)');
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.promises.stat(path.join(config.stateDir, 'studio.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.promises.stat(path.join(config.stateDir, 'studio.seen.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.promises.readFile(path.join(config.storeDir, 'other', 'keep'), 'utf8')).toBe('other workspace');
+    expect(await fs.promises.stat(path.join(config.stateDir, 'other.json'))).toBeDefined();
+    const metrics = await fs.promises.readFile(config.metricsFile, 'utf8');
+    expect(metrics).not.toContain('workspace="studio"');
+    expect(metrics).toContain('tabula_backup_purged_total 1');
+    expect(metrics).toContain('tabula_backup_workspaces_total 2');
+    expect(metrics).not.toContain('tabula_backup_pending_purge{workspace="studio"}');
+
+    await fs.promises.utimes(config.workspacesFile, new Date(NOW + 3 * 24 * 60 * 60 * 1000), new Date(NOW + 3 * 24 * 60 * 60 * 1000));
+    expect(await runMain({ argv: ['--config', configFile], now: () => NOW + 3 * 24 * 60 * 60 * 1000, fetch: noFetch, log: () => {} })).toBe(0);
+    await expect(fs.promises.stat(path.join(config.stateDir, 'studio.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    const nextMetrics = await fs.promises.readFile(config.metricsFile, 'utf8');
+    expect(nextMetrics).not.toContain('workspace="studio"');
+    expect(nextMetrics).not.toContain('tabula_backup_pending_purge{workspace="studio"}');
+    expect(JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'purged.json'), 'utf8')).slugs).toContain('studio');
+  });
+
+  it('skips expired purges for a stale workspace list, still pulls live workspaces, and exits 1', async () => {
+    const oldDeleted = { id: 'workspace-2', slug: 'old', state: 'deleted' };
+    const { config, configFile } = await writeMainInputs([workspace, oldDeleted]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const oldStore = path.join(config.storeDir, 'old');
+    await fs.promises.mkdir(oldStore, { recursive: true });
+    await fs.promises.writeFile(path.join(oldStore, 'keep'), 'ciphertext');
+    await fs.promises.writeFile(path.join(config.stateDir, 'old.json'), JSON.stringify({ deletedSince: '2026-10-01T00:00:00.000Z' }));
+    await fs.promises.utimes(config.workspacesFile, new Date(NOW - 49 * 60 * 60 * 1000), new Date(NOW - 49 * 60 * 60 * 1000));
+    const fake = makeFetch(new Map());
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: fake.fetch, log: (line: string) => logs.push(line) })).toBe(1);
+    expect(logs).toContain('purge skipped stale list');
+    expect(fake.calls.length).toBeGreaterThan(0);
+    expect(await fs.promises.readFile(path.join(oldStore, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_workspace_list_age_seconds 176400');
+  });
+
+  it('treats the configured workspace list age boundary as fresh for purge', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: '2026-10-01T00:00:00.000Z' }));
+    const boundary = NOW - config.workspacesMaxAgeHours * 60 * 60 * 1000;
+    await fs.promises.utimes(config.workspacesFile, new Date(boundary), new Date(boundary));
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('deleted workspace contacted'); }, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('purged studio (deleted 10 days ago)');
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('resets deletedSince when a listed workspace returns to another state', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('deleted workspace contacted'); }, log: () => {} });
+    await fs.promises.writeFile(config.workspacesFile, JSON.stringify([workspace]));
+    await fs.promises.utimes(config.workspacesFile, new Date(NOW), new Date(NOW));
+    const fake = makeFetch(new Map());
+    expect(await runMain({ argv: ['--config', configFile], now: () => NOW + twoDays, fetch: fake.fetch, log: () => {} })).toBe(0);
+    const state = JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'studio.json'), 'utf8'));
+    expect(state.deletedSince).toBe(null);
+    expect(fake.calls.length).toBeGreaterThan(0);
+  });
+
+  it('reports an unlisted store directory as an orphan without starting or advancing its timer', async () => {
+    const { config, configFile } = await writeMainInputs([{ id: 'workspace-2', slug: 'other', state: 'suspended' }]);
+    const orphanDir = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(orphanDir, { recursive: true });
+    await fs.promises.writeFile(path.join(orphanDir, 'sealed-copy'), 'ciphertext');
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('unexpected network'); }, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('orphan studio');
+    expect(await fs.promises.stat(path.join(orphanDir, 'sealed-copy'))).toBeDefined();
+    await expect(fs.promises.stat(path.join(config.stateDir, 'studio.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_orphan_workspaces 1');
+  });
+
+  it('reports and removes a leftover purge tombstone at the start of the next run', async () => {
+    const { config, configFile } = await writeMainInputs([{ ...workspace, state: 'suspended' }]);
+    const leftover = path.join(config.storeDir, '.purging-studio-crashed');
+    await fs.promises.mkdir(leftover, { recursive: true });
+    await fs.promises.writeFile(path.join(leftover, 'sealed'), 'ciphertext');
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('suspended workspace contacted'); }, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('purge leftover .purging-studio-crashed');
+    await expect(fs.promises.stat(leftover)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(logs).not.toContain('orphan .purging-studio-crashed');
+    expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_purge_leftovers 1');
+  });
+
+  it.each([
+    ['empty file', ''],
+    ['empty array', '[]'],
+    ['half-written list', '[{"id":"workspace-2"'],
+  ])('treats an %s workspace list as a config error before erasing anything', async (_name, contents) => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: '2026-01-01T00:00:00.000Z' }));
+    await fs.promises.writeFile(config.workspacesFile, contents);
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('unexpected network'); }, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(await fs.promises.readFile(path.join(store, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(await fs.promises.stat(path.join(config.stateDir, 'studio.json'))).toBeDefined();
+    await expect(fs.promises.readFile(config.metricsFile, 'utf8')).resolves.toContain('tabula_backup_workspace_list_age_seconds');
+  });
+
+  it.each(['suspended', 'provisioning'])('does not start a timer for %s and clears a prior timer', async (stateName) => {
+    const item = { ...workspace, state: stateName };
+    const { config, configFile } = await writeMainInputs([item]);
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: '2026-10-01T00:00:00.000Z' }));
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('skipped workspace contacted'); }, log: () => {} })).toBe(0);
+    expect(JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'studio.json'), 'utf8')).deletedSince).toBe(null);
+  });
+
+  it('unlinks a nested symlink without following it when purging', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const outside = path.join(tempRoot, 'outside');
+    await fs.promises.mkdir(outside);
+    await fs.promises.writeFile(path.join(outside, 'keep'), 'outside data');
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.symlink(outside, path.join(store, 'linked'));
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: '2026-10-10T12:00:00.000Z' }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.seen.json'), JSON.stringify({ lastSeen: {} }));
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('deleted workspace contacted'); }, log: () => {} })).toBe(0);
+    expect(await fs.promises.readFile(path.join(outside, 'keep'), 'utf8')).toBe('outside data');
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a symlinked workspace root without deleting its target or state', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const outside = path.join(tempRoot, 'outside');
+    await fs.promises.mkdir(outside);
+    await fs.promises.writeFile(path.join(outside, 'keep'), 'outside data');
+    await fs.promises.mkdir(config.storeDir, { recursive: true });
+    await fs.promises.symlink(outside, path.join(config.storeDir, 'studio'));
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ deletedSince: '2026-10-10T12:00:00.000Z' }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.seen.json'), JSON.stringify({ lastSeen: {} }));
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: async () => { throw new Error('deleted workspace contacted'); }, log: (line: string) => logs.push(line) })).toBe(1);
+    expect(logs).toContain('failed studio unsafe_path');
+    expect(await fs.promises.readFile(path.join(outside, 'keep'), 'utf8')).toBe('outside data');
+    expect((await fs.promises.lstat(path.join(config.storeDir, 'studio'))).isSymbolicLink()).toBe(true);
+    expect(await fs.promises.stat(path.join(config.stateDir, 'studio.json'))).toBeDefined();
+  });
+
+  it('unlinks a tombstone swapped to a symlink without touching the external target', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    const outside = path.join(tempRoot, 'outside');
+    const held = path.join(tempRoot, 'held-store');
+    await fs.promises.mkdir(outside);
+    await fs.promises.writeFile(path.join(outside, 'keep'), 'outside data');
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'sealed'), 'ciphertext');
+    const logs: string[] = [];
+    const purgeHooks = {
+      afterTombstoneRename: async ({ tombstone }: { tombstone: string }) => {
+        await fs.promises.rename(tombstone, held);
+        await fs.promises.symlink(outside, tombstone);
+      },
+    };
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes'], now, log: (line: string) => logs.push(line), purgeHooks })).toBe(0);
+    expect(logs).toContain('purge symlink removed for studio; target untouched');
+    expect(await fs.promises.readFile(path.join(outside, 'keep'), 'utf8')).toBe('outside data');
+    expect(await fs.promises.readFile(path.join(held, 'sealed'), 'utf8')).toBe('ciphertext');
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await fs.promises.readdir(config.storeDir)).some((name) => name.startsWith('.purging-'))).toBe(false);
+  });
+
+  it('requires --yes for operator purge and only prints the removal paths', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const target = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(target, { recursive: true });
+    await fs.promises.writeFile(path.join(target, 'keep'), 'ciphertext');
+    await fs.promises.rm(config.pullMasterFile);
+    await fs.promises.writeFile(config.workspacesFile, 'not json');
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio'], now, fetch: async () => { throw new Error('network'); }, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain(`would remove ${target}`);
+    expect(logs).toContain(`would remove ${path.join(config.stateDir, 'studio.json')}`);
+    expect(logs).toContain(`would remove ${path.join(config.stateDir, 'studio.seen.json')}`);
+    expect(await fs.promises.readFile(path.join(target, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(logs.join('\n')).not.toContain(master);
+  });
+
+  it('purges an unlisted slug immediately without reading the master or contacting the network', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const slug = 'retired';
+    const store = path.join(config.storeDir, slug);
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'sealed'), 'ciphertext');
+    await fs.promises.writeFile(path.join(config.stateDir, `${slug}.json`), JSON.stringify({ deletedSince: null }));
+    await fs.promises.writeFile(path.join(config.stateDir, `${slug}.seen.json`), JSON.stringify({ lastSeen: {} }));
+    await fs.promises.rm(config.pullMasterFile);
+    await fs.promises.writeFile(config.workspacesFile, 'not json');
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile, '--purge', slug, '--yes'], now, fetch: async () => { throw new Error('network'); }, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('purged retired (operator request)');
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.promises.stat(path.join(config.stateDir, `${slug}.json`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.promises.stat(path.join(config.stateDir, `${slug}.seen.json`))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'purged.json'), 'utf8')).count).toBe(1);
+    expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_purged_total 1');
+    expect(logs.join('\n')).not.toContain(master);
+    expect(logs.join('\n')).not.toContain(pullToken(master, workspace.id));
+  });
+
+  it('refuses a listed live workspace unless --force is supplied', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes'], now, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain('purge refused studio: listed workspace state is running; pass --force to purge');
+    expect(await fs.promises.readFile(path.join(store, 'keep'), 'utf8')).toBe('ciphertext');
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes', '--force'], now, log: () => {} })).toBe(0);
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('allows immediate operator purge of a workspace listed as deleted', async () => {
+    const { config, configFile } = await writeMainInputs([deletedWorkspace]);
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes'], now, log: () => {} })).toBe(0);
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects operator purge slugs outside the workspace slug charset', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile, '--purge', '../studio', '--yes'], now, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain('configuration error invalid_arguments');
+    await expect(fs.promises.stat(path.join(config.storeDir, 'studio'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('says nothing to remove and succeeds for an already absent operator purge target', async () => {
+    const { configFile } = await writeMainInputs([workspace]);
+    const logs: string[] = [];
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'missing', '--yes'], now, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('nothing to remove for missing');
+  });
+
+  it('dry-run reports purge decisions without changing any state bytes, mtimes, or paths', async () => {
+    const oldDeleted = { id: 'workspace-2', slug: 'old', state: 'deleted' };
+    const restoredWorkspace = { id: 'workspace-3', slug: 'restored', state: 'running' };
+    const { config, configFile } = await writeMainInputs([deletedWorkspace, oldDeleted, restoredWorkspace]);
+    config.deletedGraceDays = 1;
+    await fs.promises.writeFile(configFile, JSON.stringify(config));
+    const store = path.join(config.storeDir, 'studio');
+    const oldStore = path.join(config.storeDir, 'old');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.mkdir(oldStore, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+    await fs.promises.writeFile(path.join(oldStore, 'keep'), 'ciphertext');
+    const oldStateFile = path.join(config.stateDir, 'old.json');
+    const oldState = { deletedSince: '2026-10-01T00:00:00.000Z' };
+    await fs.promises.writeFile(oldStateFile, JSON.stringify(oldState));
+    const leftover = path.join(config.storeDir, '.purging-dry-run');
+    await fs.promises.mkdir(leftover, { recursive: true });
+    await fs.promises.writeFile(path.join(leftover, 'keep'), 'ciphertext');
+    await fs.promises.writeFile(path.join(config.stateDir, 'restored.json'), JSON.stringify({ deletedSince: '2026-10-01T00:00:00.000Z' }));
+    await fs.promises.writeFile(path.join(config.stateDir, 'purged.json'), JSON.stringify({ count: 4, slugs: ['restored'] }));
+    await fs.promises.writeFile(config.metricsFile, 'existing metrics\n');
+    const before = await snapshotDirectory(config.stateDir);
+    const logs: string[] = [];
+    const fake = makeFetch(new Map());
+    expect(await runMain({ argv: ['--config', configFile, '--dry-run'], now, fetch: fake.fetch, log: (line: string) => logs.push(line) })).toBe(0);
+    expect(logs).toContain('would start deleted grace for studio');
+    expect(logs).toContain('would purge old (deleted 10 days ago)');
+    expect(await snapshotDirectory(config.stateDir)).toEqual(before);
+    expect(await fs.promises.readFile(path.join(store, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(await fs.promises.readFile(path.join(oldStore, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(await fs.promises.readFile(path.join(leftover, 'keep'), 'utf8')).toBe('ciphertext');
+    expect(await fs.promises.readFile(oldStateFile, 'utf8')).toBe(JSON.stringify(oldState));
+    await expect(fs.promises.stat(path.join(config.stateDir, 'studio.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('loads old state files that do not have deletedSince', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    await fs.promises.writeFile(path.join(config.stateDir, 'studio.json'), JSON.stringify({ lastSuccessAt: '2026-10-01T00:00:00.000Z' }));
+    const fake = makeFetch(new Map());
+    expect(await runMain({ argv: ['--config', configFile], now, fetch: fake.fetch, log: () => {} })).toBe(0);
+    const saved = JSON.parse(await fs.promises.readFile(path.join(config.stateDir, 'studio.json'), 'utf8'));
+    expect(saved.deletedSince).toBe(null);
+    expect(saved.lastSuccessAt).toBe('2026-10-11T12:00:00.000Z');
   });
 });
