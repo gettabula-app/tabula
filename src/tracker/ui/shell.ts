@@ -1112,7 +1112,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const onKey = (event: KeyboardEvent) => {
     if (!active()) return;
     const target = event.target as HTMLElement | null;
-    if (target?.closest('[role="dialog"][aria-modal="true"]')) return;
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     if (!fullScreen && !root.contains(target) && !target?.closest('.trk-pop')) return;
     if (state.tab === 'my' && !isTextTarget(event.target) && !isNativeActivationTarget(event.target) && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === '[' || event.key === ']')) {
       event.preventDefault();
