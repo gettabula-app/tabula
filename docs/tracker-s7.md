@@ -260,6 +260,7 @@ Invalid or future dates and any other body return `400 cutover_record_invalid`.
 - Readiness: exactly 9.1. The client has its own wording for the 12 check ids and falls back to `label` for an unknown id.
 - `POST /api/admin/tracker/key-epoch` body `{ confirm: 'JUMP' }`: 200 with any JSON; errors `key_epoch_confirmation_mismatch`, `tracker_restoring`, `rate_limited`.
 - `POST /api/admin/tracker/drill-record`: the record as the drill script prints it; the client checks shape only (box id a lowercase token, result a short string); the server owns the closed list of box ids; error `drill_record_invalid`. `overall` is `'pass'` or `'fail'`.
+- `POST /api/admin/tracker/cutover-record`: body `{ importVerifiedAt: 'YYYY-MM-DD', lossReportAccepted: true }`; 200 echoes the record; error `cutover_record_invalid` (400; added in part C, not in the first freeze).
 - Audit detail shapes (emit exactly these): `tracker.key_epoch` `{ counters: [{ scope, prefix, oldNext, newNext }] }`; `tracker.gate_cleared` `{ closedSeconds }`; `backup.tracker_findings` `{ findings: [{ code, count }] }`; `tracker.drill_record` `{ kind }`; `restore.done` may carry `{ tracker: { tickets, repaired } }`; `tracker.cutover_record` `{ importVerifiedAt }` (the date string only).
 
 ### 9.5 Admin UI
