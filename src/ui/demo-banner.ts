@@ -4,7 +4,7 @@ import { h } from './dom';
 export function mountDemoBanner(root: HTMLElement): HTMLElement {
   const banner = h('aside', { class: 'demo-banner', role: 'note', 'data-demo-banner': '' },
     h('span', { class: 'demo-banner-wide-copy' }, 'Demo: nothing is saved unless you export it. Reload and it resets.'),
-    h('span', { class: 'demo-banner-short-copy' }, 'Demo: nothing is saved unless you export it.'),
+    h('span', { class: 'demo-banner-short-copy' }, 'Demo: nothing is saved.'),
     h('a', { href: '/#pricing', target: '_top', rel: 'noopener' }, 'Make it yours →'));
   root.appendChild(banner);
   return banner;
