@@ -829,8 +829,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const openNewProject = () => {
     if (readOnly) return;
     const name = h('input', { class: 'trk-new-title', type: 'text', maxlength: '120', placeholder: 'Project name', 'aria-label': 'Project name' });
+    const description = h('input', { class: 'trk-project-description', type: 'text', maxlength: '300', placeholder: 'Add a short description (optional)', 'aria-label': 'Project description' });
     const error = h('p', { class: 'trk-inline-error', role: 'alert', hidden: true });
-    dialog('New project', h('div', { class: 'trk-project-create' }, name, error), [
+    dialog('New project', h('div', { class: 'trk-project-create' }, name, description, error), [
       { label: 'Cancel' },
       { label: 'Create project', primary: true, onClick: async () => {
         const projectName = name.value.trim();
@@ -838,7 +839,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         name.removeAttribute('aria-invalid');
         error.hidden = true;
         try {
-          await options.store.createProject({ name: projectName, state: 'planned', ownerId: getMeta()?.me.userId ?? null });
+          await options.store.createProject({ name: projectName, description: description.value.trim() || undefined, state: 'planned', ownerId: getMeta()?.me.userId ?? null });
           meta = options.store.snapshot().meta ?? meta;
           toast('Project created');
           if (state.tab === 'projects') renderProjectsPage();

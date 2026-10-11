@@ -35,33 +35,39 @@ describe('tracker notification preferences UI', () => {
     await flush();
     expect(textOf(host)).toContain('Email goes out two minutes after the notice, only if you have not read it.');
     expect(host.querySelectorAll('.trk-prefs-row')).toHaveLength(7);
-    const radios = host.querySelectorAll('[role="radio"]');
-    expect(radios).toHaveLength(21);
-    expect(host.querySelectorAll('[role="radiogroup"]')[0].getAttribute('aria-label')).toBe('Assigned to me');
-    expect(radios.filter((radio) => radio.getAttribute('tabindex') === '0')).toHaveLength(7);
+    expect(textOf(host)).toContain('When someone assigns a ticket to you.');
+    expect(host.querySelectorAll('.trk-prefs-select')).toHaveLength(7);
+    expect(host.querySelectorAll('[role="radio"], [role="radiogroup"]')).toHaveLength(0);
+    const assigned = host.querySelector('[data-kind="assigned"]')!;
+    expect(assigned.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(assigned.getAttribute('aria-label')).toBe('Assigned to me: In Tabula and email');
 
-    host.querySelector('[data-kind="assigned"][data-choice="app"]')!.click();
-    expect(host.querySelector('[data-kind="assigned"][data-choice="app"]')?.getAttribute('aria-checked')).toBe('true');
+    assigned.click();
+    const options = browser.document.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(3);
+    expect(options.map((option) => textOf(option))).toEqual(['In Tabula and email', 'In Tabula only', 'Off']);
+    options.find((option) => textOf(option) === 'In Tabula only')!.click();
     await flush();
+    expect(host.querySelector('[data-kind="assigned"]')?.textContent).toContain('In Tabula only');
     expect((await api.notificationPrefs()).prefs.assigned).toBe('app');
     expect(announced).toEqual(['Assigned to me: In Tabula only']);
   });
 
-  it('supports arrow selection within one radiogroup and leaves Tab to move between groups', async () => {
+  it('uses the picker listbox keyboard controls and leaves Tab to move between settings', async () => {
     browser = installTrackerUiBrowser();
     const { host } = mount();
     await flush();
-    const group = host.querySelector('[role="radiogroup"]')!;
-    const event = uiEvent('keydown', { key: 'ArrowRight' });
-    group.dispatchEvent(event);
+    host.querySelector('[data-kind="assigned"]')!.click();
+    const list = browser.document.querySelector('[role="listbox"]')!;
+    const event = uiEvent('keydown', { key: 'ArrowDown' });
+    list.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    expect(event.propagationStopped).toBe(true);
+    list.dispatchEvent(uiEvent('keydown', { key: 'Enter' }));
     await flush();
-    expect(host.querySelector('[data-kind="assigned"][data-choice="app"]')?.getAttribute('aria-checked')).toBe('true');
-    expect((browser.document.activeElement as unknown as FakeElement).getAttribute('data-choice')).toBe('app');
+    expect(host.querySelector('[data-kind="assigned"]')?.textContent).toContain('In Tabula only');
 
     const tab = uiEvent('keydown', { key: 'Tab' });
-    group.dispatchEvent(tab);
+    host.querySelector('[data-kind="assigned"]')!.dispatchEvent(tab);
     expect(tab.defaultPrevented).toBe(false);
     expect(tab.propagationStopped).toBe(false);
   });
@@ -79,14 +85,14 @@ describe('tracker notification preferences UI', () => {
     const { host, announced } = mount(api);
     await flush();
 
-    host.querySelector('[data-kind="assigned"][data-choice="off"]')!.click();
-    expect(host.querySelector('[data-kind="assigned"][data-choice="off"]')?.getAttribute('aria-checked')).toBe('true');
+    host.querySelector('[data-kind="assigned"]')!.click();
+    browser.document.querySelectorAll('[role="option"]').find((option) => textOf(option) === 'Off')!.click();
     await flush();
-    expect(host.querySelector('[data-kind="assigned"][data-choice="both"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(host.querySelector('[data-kind="assigned"]')?.textContent).toContain('In Tabula and email');
     expect(textOf(need(host, '.trk-prefs-row-error'))).toContain('Could not save this preference.');
     control(host, 'Retry').click();
     await flush();
-    expect(host.querySelector('[data-kind="assigned"][data-choice="off"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(host.querySelector('[data-kind="assigned"]')?.textContent).toContain('Off');
     expect(textOf(host)).not.toContain('Could not save this preference.');
     expect(announced).toEqual(['Assigned to me: Off']);
   });
@@ -113,6 +119,6 @@ describe('tracker notification preferences UI', () => {
     expect(textOf(need(retry.host, '.trk-prefs-load-error'))).toContain('Could not load notification settings.');
     control(retry.host, 'Retry').click();
     await flush();
-    expect(retry.host.querySelectorAll('[role="radiogroup"]')).toHaveLength(7);
+    expect(retry.host.querySelectorAll('.trk-prefs-select')).toHaveLength(7);
   });
 });

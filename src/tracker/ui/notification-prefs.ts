@@ -1,6 +1,7 @@
 import type { TrackerApi } from '../../tracker-data';
 import type { TrackerNotificationKind, TrackerNotificationPrefs, TrackerNotifyChoice } from '../../tracker-types';
 import { h } from '../../ui/dom';
+import { openPicker } from './picker';
 import { choiceLabel, kindLabel } from './inbox-model';
 import './tracker.css';
 import './inbox.css';
@@ -16,6 +17,15 @@ export interface NotificationPrefsController {
 }
 
 const CHOICES: TrackerNotifyChoice[] = ['both', 'app', 'off'];
+const KIND_DESCRIPTIONS: Record<TrackerNotificationKind, string> = {
+  assigned: 'When someone assigns a ticket to you.',
+  mentioned: 'When someone mentions you in a ticket.',
+  commented: 'New comments on tickets you follow.',
+  status_changed: 'When a followed ticket changes state.',
+  relation_changed: 'When a followed ticket’s relations change.',
+  due_soon: 'For tickets approaching their due date.',
+  integration_activity: 'Updates from linked pull requests and commits.',
+};
 
 /** Mounts the notification delivery controls inside the supplied host. */
 export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPrefsDependencies): NotificationPrefsController {
@@ -44,7 +54,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
     rowErrors.delete(kind);
     preferences = { ...preferences, prefs: { ...preferences.prefs, [kind]: choice } };
     render();
-    if (focus) root.querySelector<HTMLElement>(`.trk-prefs-radio[data-kind="${kind}"][data-choice="${choice}"]`)?.focus();
+    if (focus) root.querySelector<HTMLElement>(`.trk-prefs-select[data-kind="${kind}"]`)?.focus();
 
     const controller = new AbortController();
     controllers.add(controller);
@@ -55,7 +65,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
         rowErrors.delete(kind);
         render();
         deps.announce?.(`${kindLabel(kind)}: ${choiceLabel(choice)}`);
-        if (focus) root.querySelector<HTMLElement>(`.trk-prefs-radio[data-kind="${kind}"][data-choice="${choice}"]`)?.focus();
+        if (focus) root.querySelector<HTMLElement>(`.trk-prefs-select[data-kind="${kind}"]`)?.focus();
       })
       .catch(() => {
         if (destroyed || controller.signal.aborted || latestRequest.get(kind) !== serial) return;
@@ -66,32 +76,32 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
       .finally(() => controllers.delete(controller));
   };
 
+  const choose = async (kind: TrackerNotificationKind, anchor: HTMLButtonElement): Promise<void> => {
+    if (!preferences || destroyed) return;
+    const value = await openPicker(anchor, {
+      label: kindLabel(kind),
+      options: CHOICES.map((choice) => ({ value: choice, label: choiceLabel(choice) })),
+      value: preferences.prefs[kind],
+      includeEmpty: false,
+    });
+    if (typeof value === 'string' && CHOICES.includes(value as TrackerNotifyChoice)) setChoice(kind, value as TrackerNotifyChoice, true);
+  };
+
   const renderRows = (kinds: TrackerNotificationKind[]) => kinds.map((kind) => {
     const current = preferences!.prefs[kind];
-    const group = h('div', {
-      class: 'trk-prefs-options', role: 'radiogroup', 'aria-label': kindLabel(kind),
-      onkeydown: (event: KeyboardEvent) => {
-        const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
-          : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
-        if (!direction) return;
-        const from = CHOICES.indexOf(current);
-        const next = CHOICES[(from + direction + CHOICES.length) % CHOICES.length];
-        event.preventDefault();
-        event.stopPropagation();
-        setChoice(kind, next, true);
-      },
-    }, ...CHOICES.map((choice) => h('button', {
-      class: 'trk-prefs-radio', type: 'button', role: 'radio',
-      'aria-checked': String(current === choice),
-      tabindex: current === choice ? '0' : '-1',
+    const select = h('button', {
+      class: 'trk-prefs-select', type: 'button', 'aria-haspopup': 'listbox', 'aria-expanded': 'false',
+      'aria-label': `${kindLabel(kind)}: ${choiceLabel(current)}`,
       'data-kind': kind,
-      'data-choice': choice,
-      onclick: () => setChoice(kind, choice),
-    }, choiceLabel(choice))));
+      onclick: (event: Event) => { void choose(kind, event.currentTarget as HTMLButtonElement); },
+    }, h('span', { class: 'trk-prefs-value' }, choiceLabel(current)), h('span', { class: 'trk-prefs-chevron', 'aria-hidden': 'true' }, '⌄'));
     const rowError = rowErrors.get(kind);
     return h('div', { class: 'trk-prefs-row' },
-      h('h3', { class: 'trk-prefs-kind' }, kindLabel(kind)),
-      group,
+      h('div', { class: 'trk-prefs-copy' },
+        h('h3', { class: 'trk-prefs-kind' }, kindLabel(kind)),
+        h('p', { class: 'trk-prefs-description' }, KIND_DESCRIPTIONS[kind]),
+      ),
+      select,
       rowError ? h('div', { class: 'trk-prefs-row-error', role: 'alert' },
         h('span', null, 'Could not save this preference.'),
         h('button', { class: 'trk-prefs-retry', type: 'button', onclick: () => setChoice(kind, rowError.choice) }, 'Retry'),
@@ -113,7 +123,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
         )),
       ));
     } else if (preferences) {
-      children.push(h('div', { class: 'trk-prefs-rows' }, ...renderRows(preferences.kinds)));
+      children.push(h('div', { class: 'trk-prefs-rows', role: 'group', 'aria-label': 'Notification delivery' }, ...renderRows(preferences.kinds)));
     }
     root.replaceChildren(...children.filter((child): child is HTMLElement => child !== null));
   }

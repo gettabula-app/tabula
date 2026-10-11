@@ -754,6 +754,8 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       }
       const state = input.state ? resolveState(input.state) : meta.states.find((item) => item.key === 'todo') ?? meta.states[0];
       if (!state) throw new TrackerError('internal', 'No states are configured.');
+      const project = input.project == null ? null : (meta.projects ?? []).find((item) => item.name.toLocaleLowerCase() === input.project?.toLocaleLowerCase()) ?? null;
+      if (input.project != null && !project) throw new TrackerError('invalid_input', `Unknown project: ${input.project}`, { path: 'project', status: 400 });
       const due = input.due ?? null;
       if (due !== null && !isValidDate(due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: 'due' });
       const ticket: TrackerTicket = {
@@ -761,7 +763,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
         title: input.title.trim(), description: input.description ?? '', state: stateValue(state),
         priority: input.priority ?? 'none', assignee: assigneeValue(input.assignee),
         creator: { type: 'user', id: meta.me.userId, name: actor().name }, labels: labelValues(input.labels),
-        project: null, milestone: null, estimate: null, due, parent: input.parent ?? null,
+        project: project ? { id: project.id, name: project.name } : null, milestone: null, estimate: null, due, parent: input.parent ?? null,
         relations: [], links: [], aliases: [], archivedAt: null, createdAt: now(), updatedAt: now(), updatedSeq: 0,
       };
       if (ticket.parent) resolveTicket(ticket.parent);

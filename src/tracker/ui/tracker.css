@@ -360,19 +360,35 @@
 .trk-route-root ~ .popover { z-index: 20001; }
 .trk-route-root ~ .modal-back { z-index: 20002; }
 
-.trk-modal .modal { width: min(720px, calc(100vw - 32px)); max-height: min(760px, 100%); border: 1px solid var(--trk-rule); border-radius: var(--radius-lg, 14px); background: var(--trk-ground); color: var(--trk-text); box-shadow: 0 12px 32px color-mix(in srgb, var(--trk-text) 14%, transparent); }
-.trk-modal .modal-head { min-height: 56px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--trk-rule); background: var(--trk-ground); color: var(--trk-text); }
-.trk-modal .modal-head h2 { margin: 0; color: var(--trk-text); font: 600 20px/1.25 var(--display); letter-spacing: 0; }
-.trk-modal .modal-head .icon-btn { min-width: 44px; min-height: 44px; border: 0; color: var(--trk-muted); }
+.trk-modal.modal-back { background: color-mix(in srgb, var(--trk-text) 28%, transparent); }
+.trk-modal .modal {
+  width: min(540px, calc(100vw - 32px)); max-height: min(760px, 100%);
+  border: 1px solid var(--trk-rule); border-radius: 12px; background: var(--trk-ground); color: var(--trk-text);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--trk-text) 10%, transparent), 0 1px 2px color-mix(in srgb, var(--trk-text) 6%, transparent);
+}
+.trk-modal .modal-head { min-height: 44px; padding: 16px 20px 0; border: 0; background: var(--trk-ground); color: var(--trk-text); }
+.trk-modal .modal-head h2 { margin: 0; color: var(--trk-text); font: 600 15px/1.3 var(--ui); letter-spacing: 0; }
+.trk-modal .modal-head .icon-btn {
+  display: grid; width: 28px; min-width: 28px; height: 28px; min-height: 28px; flex: none; padding: 0;
+  place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--trk-muted);
+}
+.trk-modal .modal-head .icon-btn:hover { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); }
+.trk-modal .modal-head .icon-btn svg { width: 14px; height: 14px; }
 .trk-modal .modal-body, .trk-modal .modal-actions { background: var(--trk-ground); color: var(--trk-text); }
+.trk-modal .modal-body { padding: 16px 20px 20px; }
+.trk-modal .modal-actions { align-items: center; gap: 8px; padding: 12px 20px 16px; border: 0; }
 .trk-modal :focus-visible { outline: 1px solid var(--trk-focus); outline-offset: 2px; }
-.trk-modal .modal .btn { min-height: 44px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-text); font: 500 13px var(--ui); }
-.trk-modal .modal .btn.primary { background: var(--ink); color: var(--paper); }
-:root[data-scheme='dark'] .trk-modal .modal .btn.primary { background: var(--signal); color: var(--on-signal); }
-.trk-new-issue { display: grid; gap: 14px; }
-.trk-new-title { width: 100%; min-height: 46px; padding: 8px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 600 22px/1.25 var(--display) !important; }
-.trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--graphite); font-size: 12px; }
-.trk-new-description { width: 100%; min-height: 160px; resize: vertical; padding: 8px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); }
+.trk-modal .modal .btn { min-height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--trk-muted); font: 500 13px var(--ui); }
+.trk-modal .modal .btn:not(:disabled):hover { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); }
+.trk-modal .modal .btn.primary { background: var(--trk-text); color: var(--trk-ground); }
+.trk-modal .modal .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--trk-text) 88%, var(--trk-ground)); color: var(--trk-ground); }
+.trk-unlink-back .modal { width: min(440px, calc(100vw - 32px)); }
+.trk-new-issue { display: grid; gap: 12px; }
+.trk-new-title { width: 100%; min-height: 34px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 500 18px/1.35 var(--ui) !important; }
+.trk-new-title::placeholder, .trk-new-description::placeholder, .trk-project-description::placeholder { color: var(--trk-muted); opacity: 1; }
+.trk-new-title:focus-visible, .trk-new-description:focus-visible { outline: 0; outline-offset: 0; }
+.trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--trk-muted); font-size: 12px; }
+.trk-new-description { width: 100%; min-height: 84px; resize: vertical; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 400 14px/1.5 var(--ui); }
 .trk-new-preview { min-height: 160px; padding: 10px; border: 1px solid var(--trk-rule); border-radius: var(--radius-sm, 8px); overflow-wrap: anywhere; }
 .trk-new-issue-back .trk-new-issue { color: var(--trk-text); }
 .trk-new-issue-back .trk-new-description-head { color: var(--trk-muted); }
@@ -380,11 +396,17 @@
 .trk-markdown-preview > :first-child { margin-top: 0; }
 .trk-markdown-preview > :last-child { margin-bottom: 0; }
 .trk-markdown-preview code { padding: 1px 4px; border: 1px solid var(--trk-rule); border-radius: var(--radius-xs, 4px); }
-.trk-new-properties { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 0; border-top: 1px solid var(--trk-rule); border-bottom: 0; }
-.trk-new-properties .trk-small-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; }
-.trk-new-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.trk-new-actions .trk-small-button { border: 0; }
-.trk-new-actions .trk-primary-button { min-height: 48px; }
+.trk-new-properties { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 0; border: 0; }
+.trk-new-properties .trk-small-button { display: inline-flex; min-height: 28px; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); font-size: 12px; }
+.trk-new-properties .trk-small-button:hover { background: color-mix(in srgb, var(--trk-text) 9%, var(--trk-ground)); }
+.trk-new-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 4px; }
+.trk-new-actions .trk-create-hint { margin-right: auto; color: var(--trk-muted); font-size: 12px; }
+.trk-new-actions .trk-small-button { min-height: 32px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 500; }
+.trk-new-actions .trk-small-button:hover:not(:disabled) { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); }
+.trk-modal.trk-new-issue-back .trk-new-actions .trk-primary-button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--trk-text); color: var(--trk-ground); font-size: 13px; font-weight: 500; }
+.trk-modal.trk-new-issue-back .trk-new-actions .trk-primary-button:hover:not(:disabled) { background: color-mix(in srgb, var(--trk-text) 88%, var(--trk-ground)); color: var(--trk-ground); }
+.trk-project-create { display: grid; gap: 10px; }
+.trk-project-description { width: 100%; min-height: 32px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 400 14px/1.45 var(--ui); }
 .trk-new-issue .trk-inline-error { margin: 0; }
 
 @media (max-width: 600px) {
@@ -451,13 +473,17 @@
   .trk-group-row { top: 0; }
   .trk-group-heading { min-height: 40px; }
   .trk-empty-state { min-height: 50vh; }
-  .trk-new-issue-back.modal-back { align-items: stretch; padding: 0; }
-  .trk-new-issue-back .modal { position: absolute; inset: auto 0 0; width: 100%; max-width: none; max-height: 94dvh; margin: 0; border-radius: var(--radius-lg, 14px) var(--radius-lg, 14px) 0 0; }
-  .trk-new-issue-back .modal-body { overflow: auto; }
+  .trk-modal.modal-back { display: flex; align-items: flex-end; padding: env(safe-area-inset-top, 0px) 0 0; }
+  .trk-modal .modal { position: relative; width: 100%; max-width: none; max-height: 94dvh; margin: 0; padding-bottom: env(safe-area-inset-bottom, 0px); border-radius: 12px 12px 0 0; }
+  .trk-modal .modal-head { padding: 16px 16px 0; }
+  .trk-modal .modal-body { padding: 16px; }
+  .trk-modal .modal-actions { padding: 12px 16px 16px; }
   .trk-new-description { min-height: 120px; }
   .trk-new-properties .trk-small-button { min-height: 44px; }
-  .trk-new-actions { flex-direction: column-reverse; }
-  .trk-new-actions button { width: 100%; min-height: 48px; }
+  .trk-new-actions { flex-wrap: wrap; }
+  .trk-new-actions button { min-height: 44px; }
+  .trk-modal .modal-head .icon-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .trk-modal .modal .btn { min-height: 44px; }
   .trk .trk-new-trigger { position: absolute; z-index: 4; right: calc(12px + env(safe-area-inset-right)); bottom: calc(64px + env(safe-area-inset-bottom) + 16px); display: grid; width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; place-items: center; overflow: hidden; border-radius: 50%; font-size: 0; box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 18%, transparent); }
   .trk .trk-new-trigger::before { content: '+'; font-size: 28px; line-height: 1; }
   .trk-command-trigger { display: none; }
@@ -466,6 +492,11 @@
   .trk-view-bar, .trk-filter-host { padding-inline: 12px; }
   .trk-empty-state { padding: 24px 12px; }
   .trk-frame-open, .trk-frame-expand { min-height: 44px; }
+}
+@media (pointer: coarse) {
+  .trk-modal .modal-head .icon-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .trk-modal .modal .btn { min-height: 44px; }
+  .trk-modal .trk-new-properties .trk-small-button, .trk-modal .trk-new-actions button { min-height: 44px; }
 }
 @media (max-width: 720px) {
   .trk-narrow-frame .trk-tab-name { display: none; }
@@ -484,10 +515,10 @@
   .trk-shell .trk-icon-button { width: 44px; }
   .trk-shell .trk-small-button, .trk-shell .trk-view-button, .trk-shell .trk-filter-button,
   .trk-shell .trk-glyph-button, .trk-shell .trk-avatar-button, .trk-shell .trk-cell-button,
-  .trk .trk-filter-chip button, .trk-new-issue-back .icon-btn, .trk-new-issue-back .trk-small-button {
+  .trk .trk-filter-chip button, .trk-modal .modal-head .icon-btn, .trk-new-issue-back .trk-small-button {
     min-width: 44px;
   }
-  .trk-new-issue-back .icon-btn { width: 44px; min-height: 44px; }
+  .trk-modal .modal-head .icon-btn { width: 44px; min-height: 44px; }
 }
 @media (pointer: coarse) {
   .trk-board-menu-button { width: 44px; min-width: 44px; height: 44px; min-height: 44px; opacity: 1; }
@@ -506,7 +537,7 @@
 .trk-projects-empty { align-items: flex-start; padding: clamp(20px, 4vw, 48px); text-align: left; }
 .trk-modal .trk-new-issue { color: var(--trk-text); }
 .trk-new-property-glyph { width: 14px; height: 14px; }
-.trk-new-property-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--signal); }
+.trk-new-property-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--trk-text); }
 .trk-new-property-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) {
   .trk-projects-page { padding: 18px 12px; }

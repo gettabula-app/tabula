@@ -1553,7 +1553,7 @@ const STATES = {
   async 'tracker-notification-prefs'({ page, base }) {
     await page.goto(`${base}/?debug=tracker-foundation&inbox=prefs`);
     await page.locator('.trk-prefs').waitFor();
-    await page.getByRole('radiogroup', { name: 'Assigned to me' }).waitFor();
+    await page.getByRole('button', { name: /^Assigned to me: / }).waitFor();
   },
   async home({ page, base }) {
     await page.goto(`${base}/#/`);

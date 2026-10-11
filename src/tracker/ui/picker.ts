@@ -16,6 +16,7 @@ export interface PickerOptions<T> {
   value?: T | null;
   selected?: readonly (T | null)[];
   multi?: boolean;
+  includeEmpty?: boolean;
   emptyLabel?: 'No one' | 'None';
 }
 
@@ -28,7 +29,7 @@ export function openPicker<T>(anchor: HTMLElement, options: PickerOptions<T>): P
   const id = `trk-picker-${++pickerId}`;
   const items = [...options.options];
   const emptyLabel = options.emptyLabel ?? (options.label.toLocaleLowerCase().includes('assignee') ? 'No one' : 'None');
-  if (!items.some((item) => item.value === null)) items.unshift({ value: null, label: emptyLabel });
+  if (options.includeEmpty !== false && !items.some((item) => item.value === null)) items.unshift({ value: null, label: emptyLabel });
   const search = h('input', {
     class: 'trk-picker-search', type: 'search', 'aria-label': `Search ${options.label.toLowerCase()}`,
     placeholder: 'Search', autocomplete: 'off', spellcheck: 'false',

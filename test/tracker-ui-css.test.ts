@@ -4,6 +4,8 @@ import { contrast, THEMES } from '../src/themes';
 
 const css = readFileSync(new URL('../src/tracker/ui/tracker.css', import.meta.url), 'utf8');
 const ticketCss = readFileSync(new URL('../src/tracker/ui/ticket-page.css', import.meta.url), 'utf8');
+const inboxCss = readFileSync(new URL('../src/tracker/ui/inbox.css', import.meta.url), 'utf8');
+const notificationPrefsUi = readFileSync(new URL('../src/tracker/ui/notification-prefs.ts', import.meta.url), 'utf8');
 const trackerUiCss = readdirSync(new URL('../src/tracker/ui/', import.meta.url))
   .filter((file) => file.endsWith('.css'))
   .map((file) => readFileSync(new URL(`../src/tracker/ui/${file}`, import.meta.url), 'utf8'));
@@ -78,6 +80,16 @@ function highWeightViolations(source: string): string[] {
 }
 
 describe('tracker UI styles', () => {
+  it('uses one borderless tracker dialog header and listbox select buttons for preferences', () => {
+    const modalHeader = declarations(css, '.trk-modal .modal-head');
+    expect(modalHeader).not.toMatch(/border-bottom\s*:/);
+    expect(modalHeader).toMatch(/border:\s*0/);
+    expect(notificationPrefsUi).toMatch(/const select = h\('button', \{[\s\S]*?class: 'trk-prefs-select',[\s\S]*?'aria-haspopup': 'listbox'/);
+    expect(notificationPrefsUi).not.toMatch(/role:\s*'(?:radio|radiogroup)'/);
+    expect(inboxCss).toContain('.trk .trk-prefs-select');
+    expect(inboxCss).not.toContain('.trk-prefs-radio');
+  });
+
   it('uses app theme variables instead of fixed colors and scopes every selector to .trk', () => {
     for (const source of trackerStyles) {
       const uncommented = source.replace(/\/\*[\s\S]*?\*\//g, '');

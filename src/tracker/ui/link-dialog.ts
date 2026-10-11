@@ -61,7 +61,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
   }, h('span', { class: 'trk-link-close-mark', 'aria-hidden': 'true' }, '×'));
   const heading = h('h2', { id: titleId }, 'Link to tracker');
   const subtitle = h('p', { class: 'trk-link-kanban-name' }, context.kanban.name);
-  const header = h('div', { class: 'modal-head trk-link-head' }, h('div', { class: 'trk-link-heading' }, heading, subtitle), closeButton);
+  const header = h('div', { class: 'modal-head trk-link-head' }, heading, closeButton);
   const body = h('div', { class: 'modal-body trk-link-body' });
   const box = h('section', {
     class: 'modal trk-modal trk-link-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1',
@@ -99,7 +99,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
     ) : null;
     const actions = step === 0
       ? h('div', { class: 'trk-link-actions' },
-        h('button', { class: 'btn', type: 'button', disabled: true, 'data-focus-id': 'back' }, 'Back'),
+        h('button', { class: 'btn', type: 'button', 'data-focus-id': 'cancel', onclick: () => close() }, 'Cancel'),
         h('button', {
           class: 'btn primary', type: 'button', disabled: !state.canSubmit, 'data-focus-id': 'next',
           onclick: () => { step = 1; render(model.state); },
@@ -115,7 +115,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
           'data-focus-id': state.submitting ? 'submit' : 'submit', onclick: () => { void submit(); },
         }, state.submitting ? 'Linking…' : state.createTickets && existingCardCount > 0 ? `Link and create ${existingCardCount} tickets` : 'Link'),
       );
-    body.replaceChildren(progress, pane, h('div', { class: 'trk-link-footer' }, alert, actions));
+    body.replaceChildren(subtitle, progress, pane, h('div', { class: 'trk-link-footer' }, alert, actions));
 
     if (focusId) {
       const restoredId = focusId === 'next' ? 'submit' : focusId === 'submit' && !state.submitting && state.errorCode ? 'retry' : focusId;

@@ -228,6 +228,29 @@ describe('tracker shell slice', () => {
     store.destroy();
   });
 
+  it('creates a project with the shared dialog fields and optional description', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    const createProject = vi.spyOn(api, 'createProject');
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'project-create-viewer', trackerId: 'tracker-demo', initialTab: 'projects' });
+    await store.loadMeta();
+    shell.el.querySelector<HTMLButtonElement>('.trk-projects-empty .trk-small-button')!.click();
+    const modal = browser.document.querySelector<FakeElement>('.trk-project-modal .modal')!;
+    const name = modal.querySelector<FakeElement>('.trk-new-title')!;
+    const description = modal.querySelector<FakeElement>('.trk-project-description')!;
+    expect(description.getAttribute('placeholder')).toBe('Add a short description (optional)');
+    name.value = 'Design pass';
+    description.value = 'Polish the tracker surfaces';
+    modal.querySelector<FakeElement>('.modal-actions .primary')!.click();
+    await flush(40);
+    expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ name: 'Design pass', description: 'Polish the tracker surfaces', state: 'planned' }));
+    expect(shell.el.textContent).toContain('Design pass');
+    shell.destroy();
+    store.destroy();
+  });
+
   it('shows the server invalid_filter message inline beside the filter chips', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
@@ -532,6 +555,7 @@ describe('new issue dialog', () => {
   it('creates a ticket from the shared store after a title is entered', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
+    seed.meta = { ...seed.meta!, projects: [{ id: 'project-foundation', name: 'Foundation' }] };
     const api = createMockTrackerApi(seed);
     const create = vi.spyOn(api, 'createTicket');
     const store = createTrackerStore(api, { isVisible: () => false });
@@ -540,9 +564,12 @@ describe('new issue dialog', () => {
     const title = modalBox.querySelector<FakeElement>('.trk-new-title')!;
     title.value = 'New issue through the shell store';
     title.dispatchEvent(new FakeEvent('input'));
+    modalBox.querySelectorAll<FakeElement>('.trk-new-properties button')[4].click();
+    browser.document.querySelectorAll('[role="option"]').find((option) => option.textContent === 'Foundation')!.click();
+    await flush();
     modalBox.querySelector<FakeElement>('.trk-primary-button')!.click();
     await flush(40);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: 'New issue through the shell store', state: 'todo' }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ title: 'New issue through the shell store', state: 'todo', project: 'Foundation' }));
     expect(modal.box.isConnected).toBe(false);
     store.destroy();
   });
