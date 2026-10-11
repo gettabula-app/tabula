@@ -152,10 +152,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-label' }, label));
-    if (guestLinkRemoved) status.setAttribute('aria-label', GUEST_ENDED_SYNC_LABEL);
-    else status.removeAttribute('aria-label');
-    status.dataset.tip = tip;
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, label));
+    status.setAttribute('aria-label', label);
+    if (window.innerWidth <= 480) {
+      status.dataset.tip = label;
+    } else {
+      status.dataset.tip = tip;
+    }
     // a change of state is announced; the count of people changing inside "live" is announced by name below
     if (lastState !== null && s !== lastState) announce(`Sync: ${label}`, { key: 'sync', delay: 800 });
     lastState = s;
@@ -176,6 +179,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
+  const phonePeople = h('button', { class: 'phone-people', type: 'button', 'aria-label': 'People on this board', 'aria-haspopup': 'dialog' });
   let fitSixAvatars = false;
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
@@ -203,7 +207,42 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
     }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
+    const peopleLabel = ps.length === 1 ? 'People on this board: 1 person' : `People on this board: ${ps.length} people`;
+    phonePeople.hidden = ps.length < 2; // alone, the chip only repeats your own avatar; the menu still has your name and colour
+    phonePeople.setAttribute('aria-label', peopleLabel);
+    phonePeople.dataset.tip = peopleLabel;
+    phonePeople.replaceChildren(
+      h('span', { class: 'phone-people-avatars', 'aria-hidden': 'true' }, ...ps.slice(0, 2).map((p, index) => h('span', {
+        class: `avatar phone-avatar${index === 0 ? ' first' : ''}`, style: `--c:${p.user.color}`,
+      }, initials(p.user.name)))),
+      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, String(ps.length))] : []),
+    );
   };
+  phonePeople.addEventListener('click', () => {
+    const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const canEditProfile = canChangeProfile(authState().mode);
+    let pop: ReturnType<typeof popover>;
+    const list = h('div', { class: 'phone-people-list', role: 'menu', 'aria-label': 'People on this board' }, ...ps.map((p) => {
+      const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
+      const initialsText = initials(p.user.name);
+      const children = [
+        h('span', { class: 'avatar phone-person-avatar', style: `--c:${p.user.color}`, 'aria-hidden': 'true' }, initialsText),
+        h('span', { class: 'phone-person-name' }, p.user.name),
+        p.isMe ? h('span', { class: 'phone-person-mark' }, 'You') : p.user.guest ? h('span', { class: 'phone-person-mark guest' }, 'Guest') : null,
+      ] as const;
+      if (p.isMe && !canEditProfile) return h('div', { class: 'menu-item phone-person-option', role: 'menuitem', 'aria-disabled': 'true' }, ...children);
+      return h('button', {
+        class: 'menu-item phone-person-option', type: 'button', role: 'menuitem',
+        'aria-label': `${p.isMe ? `${name} (you)` : `Go to ${name}`}, initials ${initialsText}`,
+        onclick: () => {
+          pop.close();
+          if (p.isMe) openProfile(app);
+          else app.followUser(p.clientId);
+        },
+      }, ...children);
+    }));
+    pop = popover(phonePeople, list, { side: 'bottom', className: 'phone-people-pop', label: 'People on this board' });
+  });
   let refreshPresenceLayout = renderPeople;
   app.on('presence', () => refreshPresenceLayout());
   renderPeople();
@@ -216,9 +255,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const chat = !scratch && !demo && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch || demo ? null : people,
+    scratch || demo ? null : phonePeople,
     scratch ? null : comments.button,
     chat?.button,
-    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary share-btn', 'aria-label': 'Share', onclick: () => openShare(app) }, icon('share', 16), h('span', { class: 'share-label' }, 'Share')),
     menuBtn,
   );
 
@@ -323,6 +363,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
     ),
   );
+  // The phone demo keeps six tools (see .demo-board in styles.css).
+  for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
   if (railTools) trackMoreY(railTools);
@@ -440,6 +483,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     chrome.style.setProperty('--panel-top', `${Math.max(72, Math.ceil(lowest - origin + 8))}px`);
   };
   const positionPhoneTray = () => {
+    if (window.innerWidth <= 480) {
+      topRight.style.removeProperty('top');
+      const safeRight = typeof getComputedStyle === 'function'
+        ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0
+        : 0;
+      const rightWidth = topRight.getBoundingClientRect().width;
+      topLeft.style.right = `${Math.ceil(rightWidth + 16 + safeRight)}px`;
+      updatePanelTop();
+      return;
+    }
+    topLeft.style.removeProperty('right');
     if (window.innerWidth > 860) {
       topRight.style.removeProperty('top');
       updatePanelTop();
@@ -450,13 +504,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const safeTop = typeof getComputedStyle === 'function'
       ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-top')) || 0
       : 0;
-    const minimumTop = (chrome.closest('.demo-board') ? 100 : 64) + safeTop;
+    // the phone demo hides the board-name chip, so the menu pill rises to the banner's edge
+    const demoTop = topLeft.getBoundingClientRect().height === 0 ? 46 : 100;
+    const minimumTop = (chrome.closest('.demo-board') ? demoTop : 64) + safeTop;
     topRight.style.top = `${Math.ceil(Math.max(minimumTop, leftBottom + 8))}px`;
     updatePanelTop();
   };
   const refreshPeopleLayout = () => {
     fitSixAvatars = false;
-    if (window.innerWidth >= 480) {
+    if (window.innerWidth > 480) {
       // Measure the whole tray with the six-avatar candidate rendered. Keep it only if the actual row fits.
       fitSixAvatars = true;
       renderPeople();
@@ -475,11 +531,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   refreshPresenceLayout = refreshPeopleLayout;
   const topLeftObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(positionPhoneTray);
   topLeftObserver?.observe(topLeft);
-  window.addEventListener('resize', refreshPeopleLayout);
+  const onWindowResize = () => {
+    renderStatus();
+    refreshPeopleLayout();
+  };
+  window.addEventListener('resize', onWindowResize);
   refreshPeopleLayout();
   app.onDestroy(() => {
     topLeftObserver?.disconnect();
-    window.removeEventListener('resize', refreshPeopleLayout);
+    window.removeEventListener('resize', onWindowResize);
   });
   renderStickyTray();
   const props = mountProps(app, chrome);
@@ -780,11 +840,16 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
       icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
     : null;
+  // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
+  const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
   const pop = popover(anchor, h('div', { class: 'menu' },
     guide,
+    chatNarrow,
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
+    // The demo opens as a plain board; voting is something the visitor starts.
+    demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     demo ? [
       h('div', { class: 'list-label' }, 'Workspace features'),

@@ -46,6 +46,13 @@ const demoConfigPlugin = {
     return {
       publicDir: false,
       define: { 'import.meta.env.VITE_DEMO': '"1"' },
+      // No account, no tracker: keep its UI and data code out of the one-file demo bundle.
+      resolve: {
+        alias: [{
+          find: /^(?:\.{1,2}\/)+(?:tracker-data|tracker\/ui\/(?:frame|shell|link-dialog-open|unlink-confirm))$/,
+          replacement: path.join(ROOT, 'src/demo/no-tracker.ts'),
+        }],
+      },
       build: { sourcemap: false, rolldownOptions: { output: { codeSplitting: false } } },
     };
   },

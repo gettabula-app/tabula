@@ -335,7 +335,7 @@
 .trk-route-root ~ .popover { z-index: 20001; }
 .trk-route-root ~ .modal-back { z-index: 20002; }
 
-.trk-new-issue-back .modal { width: min(720px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); }
+.trk-new-issue-back .modal { width: min(720px, calc(100vw - 32px)); max-height: min(760px, 100%); }
 .trk-new-issue { display: grid; gap: 14px; }
 .trk-new-title { width: 100%; min-height: 46px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: var(--paper); font-size: 18px !important; font-weight: 600 !important; }
 .trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--graphite); font-size: 12px; }

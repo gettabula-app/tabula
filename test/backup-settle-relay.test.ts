@@ -81,7 +81,11 @@ function readRoomFile(file: string): Buffer {
       return fs.readFileSync(file);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code ?? '';
-      if (process.platform !== 'win32' || !['EISDIR', 'EPERM', 'EBUSY'].includes(code) || attempt >= 20) throw err;
+      if (process.platform !== 'win32' || !['EISDIR', 'EPERM', 'EBUSY'].includes(code) || attempt >= 20) {
+        // say what is on disk, so a failure shows whether the room file itself became a directory
+        const kind = (name: string) => { try { const st = fs.lstatSync(name); return st.isDirectory() ? 'directory' : st.isFile() ? `file ${st.size} bytes` : 'other'; } catch { return 'missing'; } };
+        throw new Error(`${(err as Error).message} (${path.basename(file)}: ${kind(file)}; ${path.basename(file)}.tmp: ${kind(`${file}.tmp`)})`, { cause: err });
+      }
       console.warn(`[settle-test] reading ${path.basename(file)} failed with ${code}; reading again (${attempt + 1})`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
@@ -290,11 +294,12 @@ describe('the final backup of a relay that is asked to stop', { timeout: 100_000
       const tmp = `${roomFile('late-room')}.tmp`;
       for (let attempt = 0; ; attempt++) {
         try {
-          fs.rmSync(tmp, { force: true });
+          // never remove the name first: a relay save that is mid-write owns it, and taking it away between the write and the
+          // rename lets the rename move this directory onto the room file on Windows (it turned late-room.yjs into a directory)
           fs.mkdirSync(tmp);
           break;
         } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 50) throw err;
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 100) throw err;
           await sleep(10);
         }
       }

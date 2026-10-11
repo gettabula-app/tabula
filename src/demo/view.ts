@@ -24,7 +24,7 @@ export interface DemoCamera {
 }
 
 const PAD = 12;
-/** The least zoom the intro may use: 50% where it fits, down to 40% on a small phone so the whole intro stays above the vote bar. */
+/** The least zoom the intro may use: 50% where it fits, down to 40% on a small phone. */
 const MIN_ZOOM = 0.4;
 
 /** Returns a camera that fits the demo intro inside the viewport, clear of its bars and toolbars. */
@@ -33,18 +33,20 @@ export function initialDemoView(viewport: ViewportSize, bounds: ViewRect, insets
   const height = Math.max(1, viewport.h - insets.top - insets.bottom - PAD * 2);
   const zoom = Math.min(1, Math.max(MIN_ZOOM, Math.min(width / Math.max(1, bounds.w), height / Math.max(1, bounds.h))));
   const centerX = insets.left + PAD + width / 2;
+  // A phone opens with the content at the top and nothing else showing below it; wider screens centre it.
   const centerY = insets.top + PAD + height / 2;
+  const phone = viewport.w <= 500;
   return {
     zoom,
     x: bounds.x + bounds.w / 2 - centerX / zoom,
-    y: bounds.y + bounds.h / 2 - centerY / zoom,
+    y: phone ? bounds.y - (insets.top + PAD) / zoom : bounds.y + bounds.h / 2 - centerY / zoom,
   };
 }
 
-/** Safe canvas area for the demo intro; the phone vote bar wraps to multiple rows above the zoom control. */
+/** Safe canvas area for the demo intro, clear of the toolbars. A session bar (if one is showing) lowers the bottom edge to its top. */
 export function demoViewInsets(viewport: ViewportSize, flowbarTop?: number): ViewInsets {
   const base = viewport.w <= 500
-    ? { top: 142, right: 12, bottom: 148, left: 72 }
+    ? { top: 84, right: 16, bottom: 84, left: 72 }
     : { top: 112, right: 16, bottom: 80, left: 80 };
   return flowbarTop === undefined ? base : { ...base, bottom: Math.max(0, viewport.h - flowbarTop) };
 }

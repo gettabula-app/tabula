@@ -220,7 +220,7 @@ export function onCommentNotice(provider: HintTarget, callback: (undone: string[
 export const MSG_TRACKER_NOTICE = 7;
 
 export interface TrackerNoticeMessage {
-  undone: { cardId: string; reason: TrackerNoticeReason }[];
+  undone: { cardId?: string; reason: TrackerNoticeReason }[];
 }
 
 export function onTrackerNotice(provider: HintTarget, callback: (message: TrackerNoticeMessage) => void): void {
@@ -238,7 +238,10 @@ export function onTrackerNotice(provider: HintTarget, callback: (message: Tracke
       if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
       const item = value as { cardId?: unknown; reason?: unknown };
       const reason = trackerNoticeReason(item.reason);
-      if (typeof item.cardId === 'string' && reason) entries.push({ cardId: item.cardId, reason });
+      if (!reason) continue;
+      // A whole-socket notice (rate_limited) names no card: it still earns a toast, but undoes nothing locally.
+      if (typeof item.cardId === 'string') entries.push({ cardId: item.cardId, reason });
+      else if (item.cardId === undefined) entries.push({ reason });
     }
     if (!entries.length) return;
     try {

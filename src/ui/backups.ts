@@ -1,11 +1,12 @@
 import './backups.css';
-import { ApiError, api, type BackupBoard, type BackupList, type BackupPreview, type BackupSummary, type BoardCopy, type Me } from '../api';
+import { ApiError, api, type BackupBoard, type BackupList, type BackupPreview, type BackupSummary, type BoardCopy, type Me, type TrackerCheckState, type TrackerReadinessReport } from '../api';
 import { setSignedOut } from '../auth';
 import { freeWorkspaceNote, portalTarget } from '../cloud-logic';
 import { countLabel, matchesQuery } from './admin-logic';
 import {
-  CONFIRM_WORD, LIST_CAP, errorSentence, formatSize, formatUtc, lastRestoreSentence, manifestTime, nextScreen, noteOf, relativeTime, restoreGate,
-  selectable, shortKey, statusRows, submitOutcome, type Screen, type ScreenEvent, type StatusRow,
+  ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, LIST_CAP, checkStateSentence, errorSentence, formatSize, formatUtc, gateBannerSentence,
+  confirmMatches, lastRestoreSentence, manifestTime, nextScreen, noteOf, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome,
+  trackerCheckLabel, validateDrillRecord, type Screen, type ScreenEvent, type StatusRow,
 } from './backups-logic';
 import { h, icon } from './dom';
 import { showRestoring } from './restoring';
@@ -69,6 +70,23 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let screen: Screen = { name: 'list' };
   let listing: BackupList | null = null;
   let focusRow: string | null = null;
+  let readiness: TrackerReadinessReport | null = null;
+  let readinessError: unknown = null;
+  let readinessActionError: unknown = null;
+  let readinessUnavailable = false;
+  let readinessAuthFailed = false;
+  let readinessLoading = false;
+  let readinessRequested = false;
+  let readinessRun = 0;
+  let readinessSection: HTMLElement | null = null;
+  let epochTyped = '';
+  let epochBusy = false;
+  let drillJson = '';
+  let drillIssue = '';
+  let drillBusy = false;
+  let cutoverDate = '';
+  let cutoverAccepted = false;
+  let cutoverBusy = false;
 
   const go = (event: ScreenEvent) => {
     const next = nextScreen(screen, event);
@@ -86,6 +104,264 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       body);
 
   const errorBox = (e: unknown) => h('div', { class: 'admin-state admin-error', role: 'alert' }, h('span', null, sentenceOf(e)));
+  const textError = (sentence: string) => h('div', { class: 'admin-state admin-error', role: 'alert' }, h('span', null, sentence));
+
+  function checkStateLabel(state: TrackerCheckState): string {
+    switch (state) {
+      case 'pass': return 'Pass';
+      case 'fail': return 'Fail';
+      case 'unknown': return 'Unknown';
+      case 'na': return 'Not applicable';
+    }
+  }
+
+  const CHECK_ORDER: Record<TrackerCheckState, number> = { fail: 0, unknown: 1, pass: 2, na: 3 };
+  let ownerActionsOpen = false;
+
+  function readinessCheckRow(check: TrackerReadinessReport['checks'][number]): HTMLElement {
+    const stateIcon = check.state === 'pass' ? icon('check', 14) : check.state === 'fail' ? icon('close', 14) : check.state === 'unknown' ? icon('timer', 14) : null;
+    return h('div', { class: 'backups-readiness-row', 'data-check-id': check.id },
+      h('div', { class: 'backups-readiness-name' },
+        h('strong', null, trackerCheckLabel(check.id, check.label)),
+        h('span', { class: `admin-badge backups-badge backups-check-state ${check.state === 'fail' ? 'bad' : ''}` }, stateIcon, h('span', null, checkStateLabel(check.state)))),
+      // the badge already says Pass; the sentence is for the checks that need a second look
+      check.state === 'fail' || check.state === 'unknown' ? h('p', { class: 'backups-readiness-sentence' }, checkStateSentence(check.state)) : null,
+      check.detail === undefined ? null : h('p', { class: 'muted small backups-readiness-detail' }, check.detail));
+  }
+
+  function renderReadinessSection(): void {
+    if (!readinessSection) return;
+    if (readinessUnavailable) {
+      readinessSection.replaceChildren(h('p', { class: 'muted small' }, 'Tracker readiness is not available on this server yet.'));
+      return;
+    }
+    if (readinessAuthFailed) {
+      readinessSection.replaceChildren();
+      return;
+    }
+
+    const refresh = h('button', {
+      class: 'btn', disabled: readinessLoading,
+      onclick: () => void refreshReadiness(true),
+    }, readinessLoading ? 'Refreshing…' : 'Refresh');
+    const body: Node[] = [
+      h('div', { class: 'backups-readiness-heading' }, h('h3', { class: 'admin-sub' }, 'Tracker readiness'), refresh),
+    ];
+    if (readinessLoading) body.push(h('p', { class: 'muted small', role: 'status' }, readiness ? 'Refreshing the readiness report…' : 'Loading tracker readiness…'));
+    if (readinessError) body.push(errorBox(readinessError));
+    if (readiness) {
+      const overallLabel = readinessOverallLabel(readiness.overall);
+      const overallIcon = readiness.overall === 'go' ? 'check' : readiness.overall === 'no_go' ? 'close' : 'timer';
+      body.push(h('div', { class: 'backups-readiness-overall' },
+        h('span', { class: `admin-badge backups-badge ${readiness.overall === 'no_go' ? 'bad' : ''}`, 'aria-label': `Overall readiness: ${overallLabel}` }, icon(overallIcon, 16), h('span', null, overallLabel)),
+        h('p', { class: 'muted small' }, `Targets: ${readiness.targets.rpoMinutes} ${readiness.targets.rpoMinutes === 1 ? 'minute' : 'minutes'} RPO, ${readiness.targets.rtoHours} ${readiness.targets.rtoHours === 1 ? 'hour' : 'hours'} RTO, ${readiness.targets.retentionDays} days retained.`)));
+      if (readiness.gate) body.push(h('p', { class: 'backups-notice backups-readiness-gate' }, gateBannerSentence(readiness.gate, Date.now())));
+      body.push(h('div', { class: 'backups-readiness-checks' }, [...readiness.checks].sort((x, y) => CHECK_ORDER[x.state] - CHECK_ORDER[y.state]).map(readinessCheckRow)));
+      const owner = h('details', { class: 'backups-readiness-owner', open: ownerActionsOpen || Boolean(drillIssue || readinessActionError || epochBusy) },
+        h('summary', null, 'Owner records and actions'),
+        epochForm(), drillRecordForm(), cutoverRecordForm());
+      owner.addEventListener('toggle', () => { ownerActionsOpen = (owner as HTMLDetailsElement).open; });
+      body.push(owner);
+    } else if (!readinessError && !readinessLoading) {
+      body.push(h('p', { class: 'muted small', role: 'status' }, 'Loading tracker readiness…'));
+    }
+    if (readinessActionError) body.push(errorBox(readinessActionError));
+    readinessSection.replaceChildren(...body);
+  }
+
+  function createReadinessSection(): HTMLElement | null {
+    if (me.tracker !== true) return null;
+    readinessSection = h('section', { class: 'backups-readiness', 'aria-label': 'Tracker readiness' });
+    renderReadinessSection();
+    return readinessSection;
+  }
+
+  function refreshReadiness(force: boolean): Promise<void> {
+    if (me.tracker !== true || readinessLoading || (!force && readinessRequested)) return Promise.resolve();
+    readinessRequested = true;
+    readinessLoading = true;
+    readinessError = null;
+    readinessActionError = null;
+    readinessUnavailable = false;
+    readinessAuthFailed = false;
+    const mine = ++readinessRun;
+    renderReadinessSection();
+    return api.adminTrackerReadiness().then(
+      (report) => {
+        if (mine !== readinessRun) return;
+        readiness = report;
+        readinessError = null;
+        readinessUnavailable = false;
+        readinessLoading = false;
+        renderReadinessSection();
+      },
+      (e: unknown) => {
+        if (mine !== readinessRun) return;
+        readinessLoading = false;
+        if (signedOut(e)) {
+          readinessAuthFailed = true;
+          readinessError = null;
+        } else if (e instanceof ApiError && (e.status === 404 || e.code === 'not_found')) {
+          readiness = null;
+          readinessError = null;
+          readinessUnavailable = true;
+        } else {
+          readinessError = e;
+        }
+        renderReadinessSection();
+      },
+    );
+  }
+
+  function epochForm(): HTMLElement {
+    const problem = h('div', { class: 'backups-readiness-form-error' });
+    const submit = h('button', {
+      class: 'btn', disabled: epochBusy || readinessLoading || !confirmMatches(epochTyped, EPOCH_CONFIRM_WORD),
+      'aria-describedby': 'tracker-epoch-warning',
+      onclick: () => void submitEpoch(),
+    }, epochBusy ? 'Moving counters…' : 'Move counters forward');
+    const input = h('input', {
+      class: 'input', id: 'tracker-epoch-confirm', type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+      value: epochTyped, 'aria-describedby': 'tracker-epoch-warning',
+      oninput: (event: Event) => {
+        epochTyped = (event.currentTarget as HTMLInputElement).value;
+        submit.disabled = epochBusy || readinessLoading || !confirmMatches(epochTyped, EPOCH_CONFIRM_WORD);
+      },
+    });
+    return h('div', { class: 'backups-readiness-form' },
+      h('h4', { class: 'admin-kicker' }, 'Move the tracker counter epoch'),
+      h('p', { class: 'muted small', id: 'tracker-epoch-warning' }, EPOCH_WARNING_COPY),
+      h('label', { class: 'backups-label', for: 'tracker-epoch-confirm' }, `Type ${EPOCH_CONFIRM_WORD} to confirm`),
+      input,
+      h('div', { class: 'btn-row backups-actions' }, submit),
+      problem);
+  }
+
+  async function submitEpoch(): Promise<void> {
+    if (epochBusy || readinessLoading || !confirmMatches(epochTyped, EPOCH_CONFIRM_WORD)) return;
+    epochBusy = true;
+    readinessActionError = null;
+    renderReadinessSection();
+    try {
+      await api.adminTrackerKeyEpoch();
+      epochTyped = '';
+      await refreshReadiness(true);
+    } catch (e) {
+      if (signedOut(e)) return;
+      readinessActionError = e;
+    } finally {
+      epochBusy = false;
+      renderReadinessSection();
+    }
+  }
+
+  function drillRecordForm(): HTMLElement {
+    const problem = h('div', { class: 'backups-readiness-form-error' }, drillIssue ? textError(drillIssue) : null);
+    async function submitDrill(): Promise<void> {
+      if (drillBusy || readinessLoading) return;
+      const result = validateDrillRecord(drillJson);
+      if ('reason' in result) {
+        drillIssue = result.reason;
+        problem.replaceChildren(textError(drillIssue));
+        return;
+      }
+      drillIssue = '';
+      problem.replaceChildren();
+      drillBusy = true;
+      readinessActionError = null;
+      renderReadinessSection();
+      try {
+        await api.adminTrackerDrillRecord(result.record);
+        drillJson = '';
+        await refreshReadiness(true);
+      } catch (e) {
+        if (signedOut(e)) return;
+        readinessActionError = e;
+      } finally {
+        drillBusy = false;
+        renderReadinessSection();
+      }
+    }
+    const onSubmit = (event: Event) => {
+      event.preventDefault();
+      void submitDrill();
+    };
+    const submit = h('button', {
+      class: 'btn', type: 'submit', disabled: drillBusy || readinessLoading,
+      onclick: onSubmit,
+    }, drillBusy ? 'Saving drill record…' : 'Save drill record');
+    return h('form', {
+      class: 'backups-readiness-form',
+      onsubmit: onSubmit,
+    },
+      h('h4', { class: 'admin-kicker' }, 'Record a restore drill'),
+      h('p', { class: 'muted small' }, ATTESTATION_DISCLAIMER),
+      h('label', { class: 'backups-label', for: 'tracker-drill-json' }, 'Paste the drill JSON'),
+      h('textarea', {
+        class: 'input backups-readiness-json', id: 'tracker-drill-json', rows: 8, value: drillJson,
+        oninput: (event: Event) => {
+          drillJson = (event.currentTarget as HTMLTextAreaElement).value;
+          if (drillIssue) {
+            drillIssue = '';
+            problem.replaceChildren();
+          }
+        },
+      }),
+      h('div', { class: 'btn-row backups-actions' }, submit),
+      problem);
+  }
+
+  function cutoverRecordForm(): HTMLElement {
+    let submit: HTMLButtonElement | null = null;
+    const updateSubmit = () => {
+      if (submit) submit.disabled = cutoverBusy || readinessLoading || !cutoverDate || !cutoverAccepted;
+    };
+    async function submitCutover(): Promise<void> {
+      if (cutoverBusy || readinessLoading || !cutoverDate || !cutoverAccepted) return;
+      cutoverBusy = true;
+      readinessActionError = null;
+      renderReadinessSection();
+      try {
+        await api.adminTrackerCutoverRecord({ importVerifiedAt: cutoverDate, lossReportAccepted: true });
+        await refreshReadiness(true);
+      } catch (e) {
+        if (signedOut(e)) return;
+        readinessActionError = e;
+      } finally {
+        cutoverBusy = false;
+        renderReadinessSection();
+      }
+    }
+    const onSubmit = (event: Event) => {
+      event.preventDefault();
+      void submitCutover();
+    };
+    submit = h('button', {
+      class: 'btn', type: 'submit', disabled: cutoverBusy || readinessLoading || !cutoverDate || !cutoverAccepted,
+      onclick: onSubmit,
+    }, cutoverBusy ? 'Saving cutover check…' : 'Save cutover check');
+    return h('form', { class: 'backups-readiness-form', onsubmit: onSubmit },
+      h('h4', { class: 'admin-kicker' }, 'Record the cutover check'),
+      h('p', { class: 'muted small' }, ATTESTATION_DISCLAIMER),
+      h('label', { class: 'backups-label', for: 'tracker-import-verified-at' }, 'Import verified at'),
+      h('input', {
+        class: 'input', id: 'tracker-import-verified-at', type: 'date', value: cutoverDate,
+        oninput: (event: Event) => {
+          cutoverDate = (event.currentTarget as HTMLInputElement).value;
+          updateSubmit();
+        },
+      }),
+      h('label', { class: 'backups-readiness-checkbox' },
+        h('input', {
+          type: 'checkbox', checked: cutoverAccepted,
+          onchange: (event: Event) => {
+            cutoverAccepted = (event.currentTarget as HTMLInputElement).checked;
+            updateSubmit();
+          },
+        }),
+        h('span', null, 'I accepted the loss report')),
+      h('div', { class: 'btn-row backups-actions' }, submit));
+  }
 
   // ------------------------------------------------------------ not set up
 
@@ -97,6 +373,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       h('h3', { class: 'admin-sub' }, 'Not set up'),
       h('p', { class: 'backups-lead' }, lead),
       hosted ? (freeWorkspaceNote(me) ? h('p', { class: 'muted' }, freeWorkspaceNote(me)) : addBackups()) : h('a', { class: 'btn', href: BACKUP_DOCS }, 'How to turn on backups'),
+      ...nodes(readinessSection),
     ];
   }
 
@@ -179,11 +456,14 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       last ? h('p', { class: 'backups-last' }, last) : null,
       h('h3', { class: 'admin-sub' }, countLabel(data.backups.length, 'backup', 'backups')),
       table(data, now),
-      data.truncated ? h('p', { class: 'muted small backups-more', role: 'status' }, `Showing the newest ${LIST_CAP} backups. Older ones are not listed.`) : null);
+      data.truncated ? h('p', { class: 'muted small backups-more', role: 'status' }, `Showing the newest ${LIST_CAP} backups. Older ones are not listed.`) : null,
+      readinessSection);
   }
 
   function listScreen(): HTMLElement {
     const box = h('div', { class: 'backups-screen' });
+    createReadinessSection();
+    if (me.tracker === true) void refreshReadiness(false);
     kit.loadList(box, loadListing, (loaded) => {
       if (loaded.off) {
         listing = null;

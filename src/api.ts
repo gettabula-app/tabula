@@ -411,6 +411,52 @@ export interface BackupList {
   restore: RestoreStatus;
 }
 
+export type TrackerReadinessOverall = 'go' | 'no_go' | 'unknown';
+export type TrackerCheckState = 'pass' | 'fail' | 'unknown' | 'na';
+
+export interface TrackerReadinessCheck {
+  id: string;
+  label: string;
+  state: TrackerCheckState;
+  detail?: string;
+  since?: number;
+}
+
+export interface TrackerReadinessGate {
+  closed: boolean;
+  since: number;
+  floor: 'pending' | 'known';
+}
+
+/** The backup and restore readiness report for the tracker (docs/tracker-s7.md, section 9). */
+export interface TrackerReadinessReport {
+  at: number;
+  overall: TrackerReadinessOverall;
+  gate: TrackerReadinessGate | null;
+  targets: { rpoMinutes: number; rtoHours: number; retentionDays: number };
+  checks: TrackerReadinessCheck[];
+}
+
+export type TrackerDrillKind = 'production' | 'local';
+export type TrackerDrillResult = string;
+
+/** An owner supplied restore drill record. The timestamp is emitted by the drill script. */
+export interface TrackerDrillRecord {
+  at: number | string;
+  kind: TrackerDrillKind;
+  schema: number;
+  restoreSeconds: number;
+  dataLossSeconds: number;
+  boxes: { id: string; result: TrackerDrillResult }[];
+  overall: 'pass' | 'fail';
+}
+
+/** An owner supplied cutover verification record. */
+export interface TrackerCutoverRecord {
+  importVerifiedAt: string;
+  lossReportAccepted: true;
+}
+
 /** What restoring one backup would do, before anything is downloaded. */
 export interface BackupPreview {
   name: string;
@@ -804,6 +850,10 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     adminBackups: () => call<BackupList>('GET', '/api/admin/backups', undefined, BACKUP_TIMEOUT_MS),
     adminBackup: (name: string) => call<BackupPreview>('GET', `/api/admin/backups/${seg(name)}`, undefined, BACKUP_TIMEOUT_MS),
     adminBackupBoards: (name: string) => call<BackupBoards>('GET', `/api/admin/backups/${seg(name)}/boards`, undefined, BACKUP_TIMEOUT_MS),
+    adminTrackerReadiness: () => call<TrackerReadinessReport>('GET', '/api/admin/tracker/readiness'),
+    adminTrackerKeyEpoch: () => call<void>('POST', '/api/admin/tracker/key-epoch', { confirm: 'JUMP' }),
+    adminTrackerDrillRecord: (record: TrackerDrillRecord) => call<void>('POST', '/api/admin/tracker/drill-record', record),
+    adminTrackerCutoverRecord: (record: TrackerCutoverRecord) => call<void>('POST', '/api/admin/tracker/cutover-record', record),
     restoreBackupBoard: (manifest: string, boardId: string) =>
       call<BoardCopy>('POST', '/api/admin/backups/restore-board', { manifest, boardId }, BACKUP_TIMEOUT_MS),
     restoreBackup: (manifest: string, confirm: string) =>

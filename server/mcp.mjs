@@ -9,7 +9,7 @@ import * as Y from 'yjs';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { clientIpOf } from './client-ip.mjs';
-import { createWindowLimiter } from './limiter.mjs';
+import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
@@ -38,7 +38,6 @@ const LATEST_VERSION = SUPPORTED_VERSIONS[0];
 const ASSUMED_VERSION = '2025-03-26';
 const CALLS_PER_WINDOW = 120;
 const WRITES_PER_WINDOW = 30;
-const TICKET_CREATES_PER_WINDOW = 10;
 const FAILURES_PER_WINDOW = 20;
 const TOUCH_MS = 60_000;
 const BEARER_RE = /^bearer +(\S+)$/i;

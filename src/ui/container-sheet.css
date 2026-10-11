@@ -101,7 +101,7 @@ div.ks-row-title { cursor: default; }
 .ks-move { position: fixed; inset: 0; z-index: 45; }
 .ks-scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--tray) 55%, transparent); }
 .ks-bsheet {
-  position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: 0; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;
+  position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: 0; max-height: 85vh; max-height: 85dvh; overflow-y: auto; display: flex; flex-direction: column;
   background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); font-family: var(--ui); border-radius: var(--radius-lg);
 }
 /* wider than a phone the sheet is a panel at the right, over the board, and Move to… rises inside it */
