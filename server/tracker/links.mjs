@@ -446,6 +446,7 @@ export function attachTicketToCard({ directory, actor, linkId, cardId, ticket: r
   ).get(reference.trim(), reference.trim()) ?? null;
   const access = { boardAccess: boardAccessForDirectory(directory) };
   requireTicketRead(actor, row, access);
+  // Assumes one tracker (the default one the link routes use); revisit when links carry a tracker id.
   const trackerId = db.prepare('SELECT id FROM trackers ORDER BY created_at, id LIMIT 1').get()?.id;
   if (!trackerId || row.tracker_id !== trackerId || row.workflow_id !== link.workflow_id) throw notFound();
   requireTicketWrite(actor, row, access);
