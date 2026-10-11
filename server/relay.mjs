@@ -438,6 +438,7 @@ if (buildApi) {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
+    snapshotBoard: (boardId, user, label) => history.actions.snapshotBefore(boardId, user, { label }),
     openTrackerRestoreWindow: (boardId, userId) => trackerGuard?.openRestoreWindow(boardId, userId, { roomAccess, baseUrl: config.baseUrl }),
     closeTrackerRestoreWindow: (boardId, userId) => trackerGuard?.closeRestoreWindow(boardId, userId),
   } });

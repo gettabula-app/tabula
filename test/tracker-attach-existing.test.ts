@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
+import zlib from 'node:zlib';
+import { Store } from '../src/store';
+import { applyRestore, openSnapshot, planRestore } from '../src/history';
 import { createHarness, until, type Account } from './mcp-harness';
 
 const objs = (doc: { getMap(name: string): unknown }): any => doc.getMap('objects');
@@ -77,7 +80,7 @@ beforeAll(async () => {
   editor = await h.joinTeam(owner.cookie, teamId);
   viewer = await h.joinTeam(owner.cookie, teamId);
   outsider = await h.joinTeam(owner.cookie, teamId);
-  const main = await linkedBoard({ 'card-1': 'First line\nKept line', 'card-2': 'Two', 'card-3': 'Three', 'card-4': 'Four', 'card-5': 'Five', 'card-6': 'Six' }, 'attach-link-main-123', 'kanban-main');
+  const main = await linkedBoard({ 'card-1': 'First line\nKept line', 'card-2': 'Two', 'card-3': 'Three', 'card-4': 'Four', 'card-5': 'Five', 'card-6': 'Six', 'card-7': 'Old line\nSecond line' }, 'attach-link-main-123', 'kanban-main');
   boardId = main.id; linkId = main.link; live = main.connection;
   const other = await linkedBoard({ 'other-1': 'Other card' }, 'attach-link-other-123', 'kanban-other');
   otherLinkId = other.link; otherLive = other.connection;
@@ -182,5 +185,43 @@ describe('POST /api/tracker/links/:id/cards/attach', () => {
       sql((db) => db.prepare("DELETE FROM settings WHERE key = 'tracker.restore_gate'").run());
     }
     expect(activeLinks(t.id)).toBe(0);
+  });
+});
+
+describe('board snapshot before an attach replaces card text', () => {
+  beforeAll(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); }); // the restore gate answer is cached for a second
+
+  it('keeps the old text in a labelled version first, and restoring it brings the text back', async () => {
+    const t = await newTicket('Snap title');
+    const versionsBefore = (await api(owner, 'GET', `/api/boards/${boardId}/versions`)).body.versions as { id: string; label: string | null }[];
+    expect(versionsBefore.some((v) => v.label === `Before attaching ${t.key}`)).toBe(false);
+    expect(objs(live.doc).get('card-7')?.get('text')).toBe('Old line\nSecond line');
+
+    expect((await attach(owner, linkId, { cardId: 'card-7', ticket: t.key })).status).toBe(201);
+    await until(() => objs(live.doc).get('card-7')?.get('text') === 'Snap title\nSecond line');
+
+    const versions = (await api(owner, 'GET', `/api/boards/${boardId}/versions`)).body.versions as { id: string; label: string | null; kind: string }[];
+    const kept = versions.filter((v) => v.label === `Before attaching ${t.key}`);
+    expect(kept).toHaveLength(1);
+    const bytes = zlib.gunzipSync(fs.readFileSync(path.join(h.dir, 'history', boardId, `${kept[0].id}.yjs.gz`)));
+    const snap = openSnapshot(bytes);
+    expect(snap.store.objects.get('card-7')?.get('text')).toBe('Old line\nSecond line');
+    expect(snap.store.objects.get('card-7')?.get('trackerId')).toBeUndefined();
+
+    // The same plan and apply the history panel runs, against the live client document.
+    const store = new Store(live.doc);
+    const plan = planRestore(store, snap.store, { isHidden: () => false });
+    expect(plan.change.some((c) => c.id === 'card-7')).toBe(true);
+    applyRestore(store, plan);
+    expect(objs(live.doc).get('card-7')?.get('text')).toBe('Old line\nSecond line');
+    snap.doc.destroy();
+  });
+
+  it('takes no snapshot for a refused or replayed attach', async () => {
+    const t = await newTicket('No snap');
+    const count = async () => ((await api(owner, 'GET', `/api/boards/${boardId}/versions`)).body.versions as { label: string | null }[])
+      .filter((v) => v.label === `Before attaching ${t.key}`).length;
+    expect((await attach(owner, linkId, { cardId: 'no-such-card', ticket: t.key })).status).toBe(400);
+    expect(await count()).toBe(0);
   });
 });

@@ -271,3 +271,7 @@ Taken when the spec was reviewed:
 6. The `.drift` menu hint "Full history" is reworded ("Board with its sync data"), since deleted content is not in the file. Add a Changed fragment in `changelog.d/` (see `changelog.d/README.md`).
 7. Restore is refused while a session runs.
 8. Room saves get a maximum wait of 30 seconds (`scheduleSave`), so continuous editing no longer defers saves and snapshots. Add a Changed fragment in `changelog.d/` (see `changelog.d/README.md`).
+
+## Kept before a server edit
+
+`history.actions.snapshotBefore(boardId, actor, { label })` keeps the board as it is now, as an automatic version with a label, before a server edit that replaces card text. The tracker's attach route uses it with `Before attaching <KEY>`. An automatic version follows the usual retention (all kept for a day). If the newest version has the same content it is labelled (when it has no label) instead of duplicated; a named or pre-restore version is left as it is.

@@ -138,6 +138,7 @@ export function createTrackerLinkRoutes({
     allowFields(body, new Set(['cardId', 'ticket']));
     const result = attachTicketToCard({
       directory, actor: actorFor(user), linkId: params.id, cardId: body.cardId, ticket: body.ticket, roomAccess, now: now(),
+      beforeAttach: ({ boardId, ticketKey }) => roomAccess?.snapshotBoard?.(boardId, user, `Before attaching ${ticketKey}`),
     });
     const link = directory.db.prepare('SELECT board_id FROM kanban_tracker_links WHERE id = ?').get(params.id);
     if (link) roomAccess?.invalidateTracker?.(link.board_id);
