@@ -27,11 +27,11 @@ Slice 5 adds the other direction and the guarantees around it.
 
 For board rooms in accounts mode with `TABULA_TRACKER=on`, `Room.onMessage` routes Yjs sync updates from a writer socket through `trackerGuard.run(room, actor, apply)`, shaped like `createCommentGuard`:
 
-1. Take a mirror-free snapshot of the linked cards of this room (see 3.2), apply the update, collect the changed object ids (the s4 `changedObjectIds` already does this), and keep only linked cards, linked containers' lanes and lane objects.
+1. Scan object `type` and `parent` fields through Y.Map `.get()` calls to find linked lanes and their cards. Copy full objects only for linked containers, linked lanes, linked cards, and cards in linked lanes that may be removed with a lane or container. Apply the update, collect changed object ids (the s4 `changedObjectIds` already does this), then classify only those objects.
 2. Classify each change (3.3), run the SQL commands, build corrections.
 3. Apply corrections in a second transaction with origin `tracker-guard`, enqueue projections, broadcast one merged update, then send the sender a notice (3.6).
 
-A room with no active links costs one cached boolean check per update. The "has links" cache is invalidated by link, unlink and card-create commands in the same process. A budget like comments: median under 1 ms per update in a 500-card room, enforced by a test.
+A room with no active links costs one cached boolean check per update. The "has links" cache is invalidated by link, unlink and card-create commands in the same process. The linked-board snapshot reads only `type` and `parent` for the room scan, then copies full objects only for tracker-relevant lanes, containers and cards.
 
 ### 3.2 What the guard knows
 
@@ -67,7 +67,7 @@ Concurrent drags of the same card from two editors: updates are processed in arr
 
 ### 3.5 Cards created or pasted into a linked kanban
 
-- **One auto-create rule**, for every writer (canvas, MCP, templates, AI runs, import): a card with no tracker fields in a mapped lane gets a ticket **once its first line is non-empty after trim** (the add-card flow may create the card empty and type afterwards; an empty card has no ticket yet and no notice). Key allocated in SQL, `source` `board` for the canvas and the writer's own source otherwise, title from the first line, state from the lane, creator the actor, idempotent per `(boardId, cardId)` through the existing `ticket_links` uniqueness. The explicit `POST /links/:id/cards` stays for scripts. At most 500 tickets per update; beyond that the rest stay plain with one notice `limit_exceeded`.
+- **One auto-create rule**, for every writer (canvas, MCP, templates, AI runs, import): a card with no tracker fields in a mapped lane gets a ticket **once its first line is non-empty after trim** (the add-card flow may create the card empty and type afterwards; an empty card has no ticket yet and no notice). Key allocated in SQL, `source` `board` for the canvas and the writer's own source otherwise, title from the first line, state from the lane, creator the actor, idempotent per `(boardId, cardId)` through the existing `ticket_links` uniqueness. The explicit `POST /links/:id/cards` stays for scripts. Auto-create is capped at 120 tickets per user per minute (MCP's own budget is 10) and 500 per update; further cards stay plain with one notice `limit_exceeded` per update.
 - **Delete then undo.** A card that arrives with an id whose `ticket_links` row has `removed_at` set, and whose `trackerId` and `extKey` still match that ticket, whose ticket is not archived and whose kanban is still linked, **re-activates that link** instead of creating a ticket. Anything else with copied tracker fields is a paste (below).
 - A card in an **unmapped** lane gets no ticket and keeps working as a plain card (no revert), shown with a "Map this lane" hint by the client.
 - A **copy or paste** of a linked card arrives with tracker fields (or a forged id). The guard strips them and treats it as a new card: new ticket, new key. It does not add `cloned_from` in v1 (OPEN: tech lead, say if you want it; it needs the relation already in slice 2).
@@ -81,8 +81,9 @@ A new relay message `MSG_TRACKER_NOTICE` (next free code beside `MSG_COMMENT_NOT
 
 ### 3.7 Limits, transactions and audit
 
-- **Budget counts updates, not commits**: about 240 guarded updates per minute per user and board. Over it, further linked changes are undone with `rate_limited`. An offline reconnect is one update, so it is never starved by the budget.
-- **Bulk threshold**: an update that touches more than 100 linked cards is **refused whole** with `bulk_change` (nothing applied, nothing partial). This is the safety under history restore, big pastes of linked cards and a client that forgot the restore window (section 7).
+- **Budget counts guard-relevant updates, not commits**: about 240 per minute per user and board. Over it, further linked changes are undone with `rate_limited`. An offline reconnect is one update, so it is never starved by the budget.
+- **Socket-entry cap**: each person may send, per board (not per socket, so a reconnect does not reset it), 1200 guarded board updates per minute. The relay checks this before taking a room snapshot; an excess update is not applied, the sender gets a `rate_limited` notice, and the socket closes with policy-violation code 1008. This leaves ordinary editing well below the cap.
+- **Bulk threshold**: an update with more than 100 guard-relevant linked-card changes is **refused whole** with `bulk_change` (nothing applied, nothing partial). Count lane moves, rank and text changes, `moveBase`, forged tracker fields, deletes, and ticket-creating card inserts. Ordinary edits such as recoloring a linked card do not count. This is the safety under history restore, big pastes of linked cards and a client that forgot the restore window (section 7).
 - **One SQL transaction per update**: all commands from one client update (transitions, titles, creates, unlinks) run in a single directory transaction, so a 500-card paste costs one fsync, not 500, and cannot stall other rooms. If it rolls back, every linked change of that update is undone.
 - Audit actions (same pattern as the s4 `test/admin.test.ts` additions): `tracker.card.move`, `tracker.card.title`, `tracker.card.create`, `tracker.card.unlink`, and `tracker.guard.reject` (actor, board, reasons, count; **never** ticket or card text). `tracker.guard.reject` is written at most once per user, board and minute.
 
@@ -130,7 +131,7 @@ Restore-window routes require board owner/editor access and tracker write. Hoste
 ## 7. History restore, board copy and the slice 7 hook
 
 - **One reconcile entry point**: `reconcileTrackerProjection({ directory, roomAccess, boardId, ... })` (s4) is the only function that restores consistency between SQL and a room. Slice 5 adds no second one. Its `mode: 'sql-wins'` also resets linked-card lane, rank and first-line title from SQL, and removes links whose card no longer exists.
-- **Same-board history restore** is a client-side Yjs apply (`src/history.ts`), indistinguishable from drags, and would otherwise transition tickets. The 15 second window is in memory in the guard/relay and is lost on restart. It is an optimisation, not the only safety: the bulk threshold (3.7) refuses any update touching more than 100 linked cards, with or without a window, so a skipped call, restart, or another tab cannot mass-transition tickets. The client first calls `POST /api/tracker/boards/:boardId/restore-window` (board owner or editor, tracker write). For that user's updates on the board, linked-card lane and first-line title changes are undone without ticket transitions; edits to later text lines and other non-tracker fields pass. A linked card deleted by the restore is unlinked and gets one `unlinked` ticket event, source `restore`, details `{ reason: 'restore' }`. The window closes on its timer or when the client calls `DELETE` after `applyRestore`; either close runs one `sql-wins` reconcile. `ticket_events.event_type` has no CHECK constraint, and `unlinked` is accepted by the event writer.
+- **Same-board history restore** is a client-side Yjs apply (`src/history.ts`), indistinguishable from drags, and would otherwise transition tickets. The 15 second window is in memory in the guard/relay and is lost on restart. It is an optimisation, not the only safety: the bulk threshold (3.7) refuses any update with more than 100 guard-relevant linked-card changes, with or without a window, so a skipped call, restart, or another tab cannot mass-transition tickets. The client first calls `POST /api/tracker/boards/:boardId/restore-window` (board owner or editor, tracker write). For that user's updates on the board, linked-card lane and first-line title changes are undone without ticket transitions; edits to later text lines and other non-tracker fields pass. A linked card deleted by the restore is unlinked and gets one `unlinked` ticket event, source `restore`, details `{ reason: 'restore' }`. The window closes on its timer or when the client calls `DELETE` after `applyRestore`; either close runs one `sql-wins` reconcile. `ticket_events.event_type` has no CHECK constraint, and `unlinked` is accepted by the event writer.
 - **`restoreBoardCopy`** creates a new board id, which has no link rows; room-load reconcile strips tracker fields from it, so the copy is a detached snapshot. The copy case is covered by a pure room-load reconcile test with a new board id: the copy has no tracker fields and the original's links stay active. "Copy linked tickets too" is deferred to slice 7.
 - **Slice 7 depends on this**: workspace restore restores `directory.sqlite` and the room files together and then calls the same reconcile for every board with links before writes are allowed. Slice 7 also owns the snapshot barrier use, the key floor and the restore drill. **Off-site storage** (architecture section 9) remains a cutover precondition, not a build dependency: devops' backup puller is built; what is still needed before Linear is cancelled is the configured S3-compatible bucket and `TABULA_BACKUP_*` credentials on the hosted volume, a successful off-site backup inside the RPO, and one passed restore drill with tickets. None of that blocks building slices 5 or 7.
 
@@ -148,10 +149,10 @@ Unit (pure guard against an in-memory doc and a real in-memory directory):
 - editor without tracker write, hosted read-only, and rate limit all undo;
 - archived ticket move is undone; two quick moves converge on the last valid state;
 - `sql-wins` mode resets lane, rank and first-line title and unlinks deleted cards;
-- the median guard cost on a 500-card room stays under 1 ms; a 500-card paste is one SQL transaction;
+- a one-card guard update in a 10,000-object room reports its snapshot median and stays under the loose 10 ms test bound; a 500-ticket paste is one SQL transaction and reports elapsed time;
 - permission, validity and rate on a title are checked on the first update (peer never sees a forbidden draft); multi-line text keeps lines 2+ untouched;
 - stale `moveBase` is undone with `conflict`; a missing `moveBase` is last-writer-wins;
-- an update touching more than 100 linked cards is refused whole (`bulk_change`), with and without a restore window;
+- an update with more than 100 guard-relevant linked-card changes is refused whole (`bulk_change`), with and without a restore window; non-tracker edits on 150 linked cards pass;
 - delete then undo re-activates the link; deleting the kanban container unlinks all; deleting a mapped lane is undone (`lane_mapped`);
 - an empty new card gets no ticket until its first line has text; MCP-, template- and import-created cards in a mapped lane get tickets; guests and share-link editors get `forbidden`;
 - every non-socket writer (MCP `move_kanban_card`, `move_kanban_cards`, `update_kanban_card`, REST board ops) refuses the field and leaves the room unchanged;
@@ -165,7 +166,7 @@ Relay-backed (real sockets, `test/start-relay.ts`):
 - restart after a committed move before the correction: reload converges;
 - restore window: a history restore with the window open changes no ticket, while deleted linked cards get an `unlinked` event;
 - a small history restore without a window is processed as ordinary move/title changes;
-- an update over 100 linked cards is refused whole with `bulk_change`, whether or not a restore window is open;
+- an update with over 100 guard-relevant linked-card changes is refused whole with `bulk_change`, whether or not a restore window is open;
 
 Pure room-load test: a copied room with a new board id has tracker fields stripped and leaves the original board links untouched.
 
@@ -190,6 +191,9 @@ Resolved: migration 12 has no `ticket_events.event_type` CHECK constraint, so un
 - Deleting a whole kanban **container together with its lanes and cards in one update** is an unlink and wins over the mapped-lane rule: no `lane_mapped` notice, all links and the `kanban_tracker_links` row go, tickets stay. Deleting a mapped lane on its own (with or without its cards) is undone as `lane_mapped`.
 - Deleting only the container object leaves its lanes and cards on the board as plain, unlinked objects: links are removed and the cards' tracker fields stripped.
 - An accepted bulk move arrives in one update; the projection drain then rewrites `tracker` and `updatedAt` on the same cards in a second update.
-- The guard allows 240 guarded updates a minute per user and board; the 241st and later are undone with `rate_limited`.
+- The guard allows 240 relevant guarded updates a minute per user and board; the 241st and later are undone with `rate_limited`. Each person and board also has a 1200-update-per-minute pre-snapshot cap.
 - Planner refusals from MCP name the MCP tools (`transition_ticket`, `update_ticket`) in the message; the REST routes are named in this document.
-
+- The first guarded update on a connection is the client's reply to the server's sync step 1, so it counts against the 1200: a socket that sends 1300 updates in a minute has about 1199 of them applied.
+- When a client sends many linked-card edits faster than the server's corrections reach it, later edits are overwritten by the server's earlier correction by ordinary CRDT conflict resolution, so they change nothing and produce no extra notice: the sender sees one notice, and the final state is the server's.
+- Guests and viewers get `403 forbidden` on the restore-window and card-detach routes (the slice 4 convention), not 404.
+- The `rate_limited` notice sent before a 1008 close carries one entry without a card id: `{ undone: [{ reason: 'rate_limited' }], reason: 'rate_limited' }`.

@@ -2,13 +2,38 @@
 // public client id so connectors behind one provider IP do not share a bucket.
 const WINDOW_MS = 60_000;
 const MAX_LIMITER_KEYS = 50_000;
+const IDLE_WINDOWS = 2;
+const PRUNE_AFTER_KEYS = 1000;
+const PRUNE_EVERY = 1000;
+
+/** MCP's budget for ticket creation by an agent, per token and window. */
+export const TICKET_CREATES_PER_WINDOW = 10;
 
 // Sliding window per key (modelled on the sign-in limiter in auth.mjs).
 export function createWindowLimiter(max, now = Date.now, windowMs = WINDOW_MS) {
   const hits = new Map();
+  let operations = 0;
   const recent = (key, t) => (hits.get(key) ?? []).filter((ts) => ts > t - windowMs);
   const retryAfter = (list, t) => Math.max(1, Math.ceil((list[0] + windowMs - t) / 1000));
+  // keys idle for more than two windows are forgotten, on a cheap amortized schedule, so the map follows the active users
+  function pruneIdle(t) {
+    let removed = 0;
+    for (const [key, list] of hits) {
+      const last = list[list.length - 1];
+      if (last === undefined || t < last || t - last > IDLE_WINDOWS * windowMs) {
+        hits.delete(key);
+        removed++;
+      }
+    }
+    return removed;
+  }
+  const tick = (t) => {
+    operations++;
+    if (hits.size > PRUNE_AFTER_KEYS && operations % PRUNE_EVERY === 0) pruneIdle(t);
+  };
   return {
+    pruneIdle() { return pruneIdle(now()); },
+    get size() { return hits.size; },
     wait(key) {
       const t = now();
       const list = recent(key, t);
@@ -22,9 +47,11 @@ export function createWindowLimiter(max, now = Date.now, windowMs = WINDOW_MS) {
       hits.delete(key);
       if (list.length >= max) {
         hits.set(key, list);
+        tick(t);
         return retryAfter(list, t);
       }
       hits.set(key, [...list, t]);
+      tick(t);
       if (hits.size > MAX_LIMITER_KEYS) hits.delete(hits.keys().next().value);
       return 0;
     },
