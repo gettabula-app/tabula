@@ -96,7 +96,7 @@ The summary's `counters` array is the evidence the restore uses in section 6: th
 
 1. Raise every `ticket_counters.next_number` to the floor of section 6.2.
 2. Delete `ticket_projection_outbox` rows that are applied (cheap) and **reset pending ones** (`attempts = 0`, `next_attempt_at = now`). The outbox is replayed by the reconcile of 5.4; a pending row that targets a card the restored boards no longer have is dropped by the existing remove path.
-3. Set the restore gate (section 5.5) `tracker.restore_gate = {since, reason: 'restore', floor: 'pending'|'known'}` in `settings` when the staged database has any tracker row.
+3. Set the restore gate (section 5.5) `tracker.restore_gate = {since, reason: 'restore', floor: 'pending'|'known'}` in `settings` when the staged database has any ticket row or any counter above its initial value (a database with neither sets no gate, as in 6.2).
 4. Drop `notifications.next_email_at` retry state for rows older than the backup's `createdAt` (so a restore does not mail again what was mailed after the snapshot): set `suppressed_at = now` for unmailed rows created before the snapshot, never delete.
 5. Restore does not append to ticket history; repairs are recorded in the audit log only, as counts (I5). The only ticket event a restore writes is the `unlinked` event with source `restore` that a reconcile writes for a card that no longer exists (built in slice 5).
 
@@ -154,7 +154,7 @@ An `unknown` floor keeps the gate closed (5.5) until the owner chooses the epoch
 
 The control plane keeps `workspace_key_floor(workspace_id, scope, prefix, floor, updated_at)` (tabula-cloud repo; the table is its own change). The instance uses the existing `post()` of `server/cloud.mjs` (same bearer token, 10 s timeout):
 
-- `POST /v1/workspaces/:id/key-floor` body `{ counters: [{ scope, prefix, floor }] }`: the control plane stores `max(stored, floor)` per row and answers `{ ok: true }`. Only ever raises.
+- `POST /v1/workspaces/:id/key-floor` body `{ counters: [{ scope, prefix, floor }] }`: the control plane stores `max(stored, floor)` per row and answers `{ ok: true }`. Only ever raises, and a single call may raise a row by at most 1,000,000 (a larger jump is refused with `400`), so a buggy instance cannot burn the number space.
 - `POST /v1/workspaces/:id/key-floor/read` body `{}`: answers `{ counters: [{ scope, prefix, floor }] }`. (POST because the instance only ever POSTs to the control plane.)
 
 When the instance reports: after a ticket-creating transaction when `next_number` has advanced by 25 or more since the last report, and once a day, and on shutdown (the final backup run). Reports are debounced like `scheduleUsagePush`, queued in memory and retried with the existing backoff; a failed report never fails a ticket create. The floor is a number per counter, no text, so it is safe to hold in the control plane. Because the report lags by up to 25 keys, the floor alone does not prove non-reuse inside the last 25; sources 1 and 2 cover that, and the restore adds a **safety jump** of 25 to the control-plane source (`controlPlaneFloor = reported + 25`). The jump is a gap, never a collision.
@@ -163,9 +163,9 @@ Self-hosted instances have no control plane: `createCloud()` is null, sources 1 
 
 ### 6.4 The epoch action (floor unknown)
 
-`POST /api/admin/tracker/key-epoch` (owner, `{ confirm: 'JUMP' }`): sets every counter to `max(current, maxNumber + 1) + 1000`, writes the audit row `tracker.key_epoch` (counter ids, the jump, never text), clears the floor gate. A jump of 1000 makes reuse possible only if more than 1000 keys were allocated after the last copy; with a 15 minute RPO that is not a realistic number. It keeps the `TAB-n` format.
+`POST /api/admin/tracker/key-epoch` (owner, `{ confirm: 'JUMP' }`): sets every counter to `max(current, maxNumber + 1) + 1000`, writes the audit row `tracker.key_epoch` (per counter: scope, prefix, the old `next` and the new `next`, numbers only, never text, so a later reader can see the gap), clears the floor gate. A jump of 1000 makes reuse possible only if more than 1000 keys were allocated after the last copy; with a 15 minute RPO that is not a realistic number. It keeps the `TAB-n` format.
 
-**Decision for the tech lead (D1):** `docs/tracker-architecture.md` question 21 says "new prefix epoch" (`TAB2-1`). This contract recommends the 1000-key jump instead: it keeps one key format, aliases and deep links stay simple and there is no second prefix to explain. If `TAB2` is preferred, only this action changes (it creates a new counter row and sets the tracker's active prefix); every other section stands.
+**Decided (D1, tech lead):** the 1000-key jump, not a new prefix epoch (`docs/tracker-architecture.md` question 21 said `TAB2-1`). One key format keeps aliases, deep links and the importer's `--numbering keep` simple.
 
 ## 7. Board copy and board history restore
 
@@ -180,7 +180,7 @@ Today the copy is the board's Yjs document as written, plus the new board row, a
 
 ### 7.2 Board history restore (a named version applied to the live board)
 
-The client applies the old state (`src/history.ts` `planRestore` and `applyRestore`) as ordinary Yjs updates, and `src/ui/history.ts` already wraps the apply in `withTrackerRestoreWindow` (the slice 5 restore window, `sql-wins` mode) when the board has linked kanbans. So the server side exists: tracker-owned fields cannot change, a restored card that no longer matches its ticket is corrected, a card the restore deletes is unlinked with the `restore` event, a restore of more than 100 linked cards is refused whole (`bulk_change`), and the window closing runs one reconcile. A card id the old snapshot has that is not linked now is stripped, never bound to a ticket it was not linked to. Slice 7 adds **tests only**, plus one server rule: the restore-window routes must refuse to open a window while the restore gate (5.5) is closed. Tests: restore of a version from before a link existed, from before a card was created, and from before a lane was mapped, each asserting the final state on a fresh client and in the saved file. Verify first that `withTrackerRestoreWindow` still covers every apply path of the history panel (including undo of a restore); a path that bypasses it is a client fix for the tech lead, named in the review.
+The client applies the old state (`src/history.ts` `planRestore` and `applyRestore`) as ordinary Yjs updates, and `src/ui/history.ts` already wraps the apply in `withTrackerRestoreWindow` (the slice 5 restore window, `sql-wins` mode) when the board has linked kanbans. So the server side exists: tracker-owned fields cannot change, a restored card that no longer matches its ticket is corrected, a card the restore deletes is unlinked with the `restore` event, a restore of more than 100 linked cards is refused whole (`bulk_change`), and the window closing runs one reconcile. A card id the old snapshot has that is not linked now is stripped, never bound to a ticket it was not linked to. Slice 7 adds **tests only**, plus one server rule: the restore-window routes must refuse to open a window while the restore gate (5.5) is closed, with the code `tracker_restoring` (a client treats a window failure as best-effort and proceeds, so it must not present this as a failure of the restore itself). Closing the window is delayed: the restored updates travel over the websocket and the window closes over HTTP, which are not ordered, so `withTrackerRestoreWindow` waits a 1500 ms grace period before the DELETE (tl c5f4d4e; y-websocket has no unsynced-changes signal). The 15 s window expiry is the backstop. Undo of a restore (Ctrl+Z) is the ordinary undo manager after the window has closed, so it runs through the normal guard, not `sql-wins`; that is acceptable: it re-creates deleted linked cards through the existing re-activation by `trackerId` and `extKey`, and lane or text edits are normal guarded edits. One extra relay test: a restore that deletes a linked card, then undo, then the link is active again with no duplicate ticket. Tests: restore of a version from before a link existed, from before a card was created, and from before a lane was mapped, each asserting the final state on a fresh client and in the saved file. Offline restore is already blocked (`historyOffline`).
 
 ## 8. The restore drill
 
@@ -253,7 +253,7 @@ Every `fail`/`unknown` detail is a number or a code ("newest backup 41 minutes o
 
 ### 9.5 Admin UI
 
-A "Tracker readiness" panel in the Backups tab of the admin dashboard (tech lead, `src/ui/backups.ts` area, sentences through `src/ui/backups-logic.ts`): the overall state as a label that is not colour alone, one row per check with its state and detail, the gate banner, the key-epoch action behind a typed confirmation, and the record forms. No new design system pieces; copy to be reviewed by the designer. Not part of the server work.
+A "Tracker readiness" panel in the Backups tab of the admin dashboard (tech lead, `src/ui/backups.ts` area, sentences through `src/ui/backups-logic.ts`): the overall state as a label that is not colour alone, one row per check with its state and detail, the gate banner, the key-epoch action behind a typed confirmation, and the record forms. The panel text says plainly that the drill and cutover rows are owner attestations the server cannot verify. No new design system pieces; copy to be reviewed by the designer. Not part of the server work.
 
 ## 10. The schedule the RPO needs
 
@@ -293,9 +293,9 @@ tabula-cloud (control plane): the `workspace_key_floor` table and the two calls 
 
 ## 15. Open points
 
-- **D1 (tech lead):** the 1000-key jump versus a new prefix epoch (section 6.4).
+- **D1:** closed: 1000-key jump (6.4).
 - **D2 (manager, devops):** the 15 minute default interval (section 10) and the request cost on the chosen provider; whether a stopped workspace's RPO is acceptable as described.
 - **D3 (manager):** who attests the production drill and the cutover record (owner is assumed to be Johan).
-- **D5 (tech lead):** the history panel's apply paths (7.2) must all go through `withTrackerRestoreWindow`; confirm.
+- **D5:** closed: one apply path, through the window (7.2); the closing grace is tl c5f4d4e.
 - **D4:** the tabula-cloud change (6.3) belongs to another repo and another session; this contract only fixes the calls.
 - Not verified: nothing here is built or run. The cost numbers in 10 come from `docs/backups.md`, not from a measurement; the check timings in 4.1 and the reconcile rate in 5.4 are targets the tests must print and confirm.
