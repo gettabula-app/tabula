@@ -1135,7 +1135,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         {
           ...directory.adminStats(),
           live: { rooms: live.rooms, connections: live.connections },
-          instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: VERSION },
+          instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: config.version ?? VERSION },
           ...(cloud ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
         },
       ];
