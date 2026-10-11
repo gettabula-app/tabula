@@ -355,14 +355,14 @@ Only when OAuth is on:
 
 Grants are listed **next to** personal tokens, not hidden elsewhere, in both places that list `tbl_` tokens:
 
-- **AI tool access** dialog (`src/ui/tokens.ts`, account menu): a second section "Connected apps" under the token list, rows: client name (text), redirect host, access level (*Read*, *Read and comment*, *Read and edit*), created, last used, "expires in N days" (refresh expiry), and a **Disconnect** button (armed confirmation like existing revoke buttons). The existing **Revoke all** also disconnects every app; its confirmation text says so, and the response is `{revoked, grants}`. "Sign out everywhere" also revokes every grant for that user.
-- **Admin → Access tokens** (`tokensAdminPanel`): one table, a "Type" column: *Personal token* (`tbl_…abcd` hint) or *Connector* (`tbo` and client name). Columns as for tokens plus the person. Admins can revoke any person's grant; acting on an owner's grant follows the same `guardOwner` rule as tokens. Add an admin **Revoke all grants** action with a confirmation and an audit record.
+- **AI tool access** dialog (`src/ui/tokens.ts`, account menu): when OAuth is on, a second section "Connected apps" appears under the token list. Rows show the client name as text, redirect host, access level (*Read*, *Read and comment*, *Read and edit*), board count or all boards, created, last used, connection expiry, and a **Disconnect** button (armed confirmation). The existing **Revoke all** also disconnects every app; its confirmation text says so, and the response is `{revoked, grants}`. `GET /api/me` reports `mcpOauth: boolean` so the client knows whether to show this section. "Sign out everywhere" also revokes every grant for that user.
+- **Admin → Access tokens** (`tokensAdminPanel`): one table combines personal tokens and connectors, with a "Type" column (*Personal token* or *Connector* plus the client name), person, access, boards, last used, expiry and revoke/disconnect actions. **Disconnect all apps** appears only when OAuth is on and active grants exist. Admins can disconnect any person's grant; acting on an owner's grant follows the same `guardOwner` rule as tokens.
 
-Grant views never contain a hash or token; the hint (last four characters of the current access token) is optional and shown only in the admin list. API:
+Grant views never contain board ids, hashes, tokens or resource URLs. Personal token hints (the last four characters) may still appear in the admin table. API:
 
 | Route | Rules |
 | --- | --- |
-| `GET /api/me/grants` | own active grants `{id, clientId, clientName, redirectHost, scope, createdAt, lastUsedAt, expiresAt}` |
+| `GET /api/me/grants` | own active grants `{id, clientId, clientName, redirectHost, scope, boardCount, createdAt, lastUsedAt, expiresAt}`; `boardCount: null` means all boards the person can open |
 | `DELETE /api/me/grants/:id` | own only (`404` otherwise); `readOnlyOk` |
 | `GET /api/admin/grants` | `requireAdmin`; adds `userId, userName, email, userRole` |
 | `DELETE /api/admin/grants/:id` | `requireAdmin`, `guardOwner`; `readOnlyOk` |

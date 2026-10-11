@@ -25,10 +25,10 @@ const SECOND = name(NOW - 90 * MIN);
 const LOST = name(NOW - 150 * MIN);
 const DAMAGED = name(NOW - 3 * DAY);
 
-const owner = (workspace?: Me['workspace']): Me => ({ user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], ...(workspace ? { workspace } : {}) });
+const owner = (workspace?: Me['workspace']): Me => ({ user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], mcpOauth: false, ...(workspace ? { workspace } : {}) });
 const trackerOwner = (): Me => ({ ...owner(), tracker: true });
 const hosted = (readOnly = false): Me['workspace'] => ({ readOnly, banner: null, seatLimit: 10, seatsUsed: 3 });
-const adminMe = (): Me => ({ user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [] });
+const adminMe = (): Me => ({ user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], mcpOauth: false });
 
 const listing = (patch: Partial<BackupList> = {}): BackupList => ({
   backups: [

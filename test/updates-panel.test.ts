@@ -4,8 +4,8 @@ import { renderAdmin } from '../src/ui/admin';
 import { FakeElement, FakeEvent, flush, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 const hosted = (): Me['workspace'] => ({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 1 });
-const owner: Me = { user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], workspace: hosted() };
-const admin: Me = { user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], workspace: hosted() };
+const owner: Me = { user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], workspace: hosted(), mcpOauth: false };
+const admin: Me = { user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], workspace: hosted(), mcpOauth: false };
 
 type Call = { method: string; path: string; body?: unknown };
 let calls: Call[];

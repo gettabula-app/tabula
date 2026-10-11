@@ -41,5 +41,12 @@ At the review-by date the owner extends it (one line in the register) or retires
 - **Unmerged task worktree with no activity for 24 hours:** commit WIP to its branch and remove the worktree, or say why it stays.
 - **Dev servers:** stop what you started (by PID) when you remove the worktree. The manager may stop any server older than 24 hours that is not in the prototype register.
 
+## Deploys: only what is pushed
+Johan's rule (2026-10-11): we only deploy when pushing. Production must never run code that exists only on one machine.
+- Deploy (fly deploy, vercel deploy, an image build that gets registered as a release) only from a clean checkout whose commit is already on `origin/main`: `git fetch`, `git status --short` empty, and `git merge-base --is-ancestor HEAD origin/main` succeeds. Never from a feature branch, a detached local commit, or a dirty tree.
+- A change that must ship is pushed (after review and its gates) before it is deployed. Push first, deploy second, never the other way round.
+- Every deploy still needs Johan's explicit go for that deploy. A go to push is not a go to deploy.
+- `tabula-cloud` deploys go through `scripts/deploy-guard.sh` (it refuses when the rules above do not hold). Image builds and site deploys follow the same checks by hand until they have a guard.
+
 ## Who audits
 The manager audits worktrees once a day: anything not in the prototype register and not in the queue gets a question to its owner, and the count goes to Johan. Only Johan decides a force-removal, or what to do with uncommitted work nobody claims.

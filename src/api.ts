@@ -37,6 +37,8 @@ export interface Me {
   workspace?: Workspace;
   /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
   mcp?: boolean;
+  /** Whether connected OAuth apps are available on this server. */
+  mcpOauth: boolean;
   /** Present (true) when this server stores images on boards (docs/images.md). */
   images?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
@@ -173,6 +175,27 @@ export interface CreatedAccessToken extends AccessToken {
 }
 
 export interface AdminAccessToken extends AccessToken {
+  userId: string;
+  userName: string;
+  email: string;
+  userRole: UserRole;
+}
+
+/** A connected OAuth app, without board ids, resource URLs, hashes or tokens. */
+export interface ConnectedGrant {
+  id: string;
+  clientId: string;
+  clientName: string;
+  redirectHost: string;
+  scope: AccessScope;
+  /** null means every board the person can open. */
+  boardCount: number | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number;
+}
+
+export interface AdminGrant extends ConnectedGrant {
   userId: string;
   userName: string;
   email: string;
@@ -831,9 +854,14 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     createAccessToken: (input: { name: string; scope: AccessScope; boardIds?: string[]; days?: number }) =>
       call<CreatedAccessToken>('POST', '/api/me/tokens', input),
     revokeAccessToken: (id: string) => call<void>('DELETE', `/api/me/tokens/${seg(id)}`),
-    revokeAllAccessTokens: () => call<{ revoked: number }>('POST', '/api/me/tokens/revoke-all'),
+    revokeAllAccessTokens: () => call<{ revoked: number; grants?: number }>('POST', '/api/me/tokens/revoke-all'),
     adminAccessTokens: () => call<AdminAccessToken[]>('GET', '/api/admin/tokens'),
     adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
+    myGrants: () => call<ConnectedGrant[]>('GET', '/api/me/grants'),
+    disconnectGrant: (id: string) => call<void>('DELETE', `/api/me/grants/${seg(id)}`),
+    adminGrants: () => call<AdminGrant[]>('GET', '/api/admin/grants'),
+    adminDisconnectGrant: (id: string) => call<void>('DELETE', `/api/admin/grants/${seg(id)}`),
+    adminRevokeAllGrants: () => call<{ revoked: number }>('POST', '/api/admin/grants/revoke-all'),
 
     aiConfig: () => call<AiConfig>('GET', '/api/ai/config'),
     saveMyAiKey: (input: { provider: string; apiKey: string; baseUrl?: string; model?: string }) =>
