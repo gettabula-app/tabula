@@ -56,7 +56,7 @@ function button(label: string, className: string, disabled: boolean, onClick: (e
   return el;
 }
 
-type TicketIcon = 'copy' | 'link' | 'more' | 'close' | 'calendar' | 'attach' | 'send';
+type TicketIcon = 'copy' | 'link' | 'more' | 'close' | 'calendar' | 'user' | 'attach' | 'send';
 
 function ticketIcon(name: TicketIcon): SVGSVGElement {
   const namespace = 'http://www.w3.org/2000/svg';
@@ -92,6 +92,9 @@ function ticketIcon(name: TicketIcon): SVGSVGElement {
     append('line', { x1: '5', y1: '2', x2: '5', y2: '5' });
     append('line', { x1: '11', y1: '2', x2: '11', y2: '5' });
     append('line', { x1: '3', y1: '6.5', x2: '13', y2: '6.5' });
+  } else if (name === 'user') {
+    append('circle', { cx: '8', cy: '5.75', r: '2.5' });
+    append('path', { d: 'M3.25 13.25c.5-2.6 2.3-3.9 4.75-3.9s4.25 1.3 4.75 3.9' });
   } else if (name === 'attach') append('path', { d: 'm6 8.5 4.7-4.7a2.1 2.1 0 0 1 3 3l-6.1 6.1a3.3 3.3 0 0 1-4.7-4.7l5.6-5.6' });
   else append('path', { d: 'M2.5 8h10M8.5 3.5 13 8l-4.5 4.5' });
   return svg;
@@ -1049,7 +1052,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     primary.appendChild(propertyRow('State', stateValue, 'property-state'));
     const assigneeValue = fieldButton(current.assignee?.name ?? 'Assign', 'assignee', (event) => { void openFieldPicker('assignee', event.currentTarget as HTMLElement); }, 'property-assignee');
     if (current.assignee) assigneeValue.prepend(avatar({ kind: 'person', name: current.assignee.name }));
-    else assigneeValue.classList.add('tk-property-value--empty');
+    else { assigneeValue.prepend(ticketIcon('user')); assigneeValue.classList.add('tk-property-value--empty'); }
     primary.appendChild(propertyRow('Assignee', assigneeValue, 'property-assignee'));
     const priorityValue = fieldButton(priorityLabel(current.priority), 'priority', (event) => { void openFieldPicker('priority', event.currentTarget as HTMLElement); }, 'property-priority');
     if (current.priority !== 'none') priorityValue.prepend(priorityGlyph(current.priority));

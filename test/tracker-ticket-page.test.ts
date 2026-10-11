@@ -537,8 +537,8 @@ describe('ticket page', () => {
       projects: [{ id: 'proj-1', name: 'Frames' }],
       milestones: [{ id: 'mile-1', name: 'Beta', due: '2026-11-01', projectId: 'proj-1' }],
     };
-    const { host } = await setup({ meta, issue: ticket({ assignee: { userId: 'user-me', name: 'Mara' }, due: '2026-10-12', priority: 'high' }) });
-    const names = ['State: To do', 'Assignee: Mara', 'Priority: High priority', 'Due: Oct 12'];
+    const { host } = await setup({ meta, issue: ticket({ assignee: { userId: 'user-me', name: 'Mara' }, due: '2031-10-12', priority: 'high' }) });
+    const names = ['State: To do', 'Assignee: Mara', 'Priority: High priority', 'Due: Oct 12, 2031'];
     for (const name of names) expect(host.querySelectorAll('.tk-primary-property [aria-label]').some((control) => control.getAttribute('aria-label') === name)).toBe(true);
     expect(host.querySelectorAll('.tk-primary-property .tk-property-name').every((nameNode) => nameNode.classList.contains('tk-sr-only'))).toBe(true);
     const more = host.querySelector('.tk-properties-more-toggle')!;

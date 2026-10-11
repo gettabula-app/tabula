@@ -537,7 +537,7 @@ The tracker uses the app's `--ui` (Switzer) sans family everywhere. `--display` 
 Priority is four ascending bars (filled = level; urgent is a filled square with an exclamation mark); none is a dash. All have text equivalents.
 
 **Chrome**
-- Tabs use normal-case 13 px text; the active tab uses weight 600 and ink text. Whitespace and type mark the active tab without an underline.
+- Tabs use normal-case 13 px text; the active tab uses weight 600 and ink text on a subtle filled pill (ink at 6%). There is no underline or stripe.
 - Primary buttons use the shared theme treatment above. Dialogs and popovers have a 1 px low-contrast border. Phone controls are at least 44 px; desktop controls remain compact.
 - Respect reduced motion. Keep tracker content free of paper collage motifs; at low zoom the snapshot retains only readable key information and subtle hairlines.
 
