@@ -527,25 +527,113 @@ export function dueDateStatus(due: string | null | undefined, today: string): 'n
 }
 
 export interface FilterContext { me?: { userId: string } | string | null; today: string }
-export function matchesFilters(ticket: TrackerTicket, filters: string | readonly string[] | ParsedTrackerFilter | undefined, ctx: FilterContext): boolean {
-  const parsed = typeof filters === 'object' && filters !== null && !Array.isArray(filters)
-    ? filters as ParsedTrackerFilter
-    : parseFilter(filters as string | readonly string[] | undefined);
-  if (parsed.invalid.length) return false;
-  const isArchiveQuery = parsed.archived === true;
-  if (isArchiveQuery ? ticket.archivedAt === null : ticket.archivedAt !== null) return false;
-  if (parsed.assignee) {
-    const wanted = parsed.assignee.toLocaleLowerCase();
-    const me = typeof ctx.me === 'string' ? ctx.me : ctx.me?.userId;
-    if (wanted === 'me') { if (!me || ticket.assignee?.userId !== me) return false; }
-    else if (!ticket.assignee || ![ticket.assignee.userId, ticket.assignee.name].some((v) => v.toLocaleLowerCase() === wanted)) return false;
+
+const PRIORITY_FILTER_NAMES = new Set<string>(PRIORITY_NAMES);
+const CATEGORY_FILTER_NAMES = new Set(['backlog', 'unstarted', 'started', 'completed', 'canceled']);
+
+function utcWeekRange(today: string): [string, string] | null {
+  if (!isValidDueDate(today)) return null;
+  const start = new Date(`${today}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  const first = start.toISOString().slice(0, 10);
+  start.setUTCDate(start.getUTCDate() + 6);
+  return [first, start.toISOString().slice(0, 10)];
+}
+
+/**
+ * Evaluates one server filter token against a row. Returns null when the client cannot decide (a field a slim row does not
+ * carry, a lookup only the server can make, or a token the server will reject): the caller then keeps the row and trusts
+ * the server, which has already filtered it.
+ */
+function evaluateFilterToken(ticket: TrackerTicket, token: string, ctx: FilterContext): boolean | null {
+  const negated = token.startsWith('-');
+  const body = negated ? token.slice(1) : token;
+  const colon = body.indexOf(':');
+  if (colon < 1) return null;
+  const field = body.slice(0, colon).toLowerCase();
+  const value = body.slice(colon + 1).trim();
+  if (!value) return null;
+  const values = value.split(',').map((item) => item.trim().toLocaleLowerCase());
+  if (values.some((item) => !item)) return null;
+  const done = (matched: boolean): boolean => (negated ? !matched : matched);
+  const same = (candidates: ReadonlyArray<string | null | undefined>) => candidates.some((candidate) => typeof candidate === 'string' && values.includes(candidate.toLocaleLowerCase()));
+  switch (field) {
+    case 'assignee': {
+      if (ticket.assignee === undefined) return null;
+      const me = typeof ctx.me === 'string' ? ctx.me : ctx.me?.userId;
+      const assignee = ticket.assignee;
+      let unknown = false;
+      let matched = false;
+      for (const item of values) {
+        if (item === 'none') { if (assignee === null) matched = true; }
+        else if (item === 'me') { if (!me) unknown = true; else if (assignee?.userId === me) matched = true; }
+        // A name could still be an email the row does not carry; only the server can say.
+        else if (assignee) { if (same([assignee.userId, assignee.name])) matched = true; else unknown = true; }
+      }
+      return matched ? done(true) : unknown ? null : done(false);
+    }
+    case 'state': {
+      const state = ticket.state;
+      if (!state) return null;
+      return done(same([state.key, state.name]));
+    }
+    case 'category': {
+      if (!ticket.state || values.some((item) => !CATEGORY_FILTER_NAMES.has(item))) return null;
+      return done(same([ticket.state.category]));
+    }
+    case 'label': {
+      if (!Array.isArray(ticket.labels)) return null;
+      return done(ticket.labels.some((label) => same([label?.name])));
+    }
+    case 'priority': {
+      if (typeof ticket.priority !== 'string' || values.some((item) => !PRIORITY_FILTER_NAMES.has(item))) return null;
+      return done(values.includes(ticket.priority));
+    }
+    case 'due': {
+      if (ticket.due === undefined || values.length !== 1) return null;
+      const due = ticket.due;
+      const item = values[0];
+      if (item === 'none') return done(due === null);
+      if (item === 'today') return done(due === ctx.today);
+      if (item === 'overdue') {
+        if (!ticket.state) return null;
+        return done(Boolean(due && isValidDueDate(ctx.today) && due < ctx.today && !ticket.archivedAt
+          && ticket.state.category !== 'completed' && ticket.state.category !== 'canceled'));
+      }
+      if (item === 'this-week') {
+        const week = utcWeekRange(ctx.today);
+        return week ? done(Boolean(due && due >= week[0] && due <= week[1])) : null;
+      }
+      if (item.startsWith('before-') && isValidDueDate(item.slice(7))) return done(Boolean(due && due < item.slice(7)));
+      if (item.startsWith('after-') && isValidDueDate(item.slice(6))) return done(Boolean(due && due >= item.slice(6)));
+      return null;
+    }
+    case 'is':
+      return values.length === 1 && values[0] === 'archived' ? done(Boolean(ticket.archivedAt)) : null;
+    default:
+      return null;
   }
-  if (parsed.state.length && !parsed.state.some((wanted) => [ticket.state.id, ticket.state.key, ticket.state.name, ticket.state.category].some((value) => value.toLocaleLowerCase() === wanted.toLocaleLowerCase()))) return false;
-  if (parsed.label.length && !parsed.label.every((wanted) => ticket.labels.some((label) => [label.id, label.name].some((value) => value.toLocaleLowerCase() === wanted.toLocaleLowerCase())))) return false;
-  if (parsed.due === 'overdue' && !isDueDateOverdue(ticket.due, ctx.today)) return false;
-  if (parsed.due === 'today' && ticket.due !== ctx.today) return false;
-  if (parsed.due === 'no-date' && ticket.due !== null) return false;
-  if (parsed.due?.startsWith('before-') && (!ticket.due || ticket.due >= parsed.due.slice(7))) return false;
+}
+
+/** Splits a query's filter into server tokens; the server and this matcher read the same grammar. */
+function filterTokens(filters: string | readonly string[] | ParsedTrackerFilter | undefined): string[] {
+  const list = typeof filters === 'object' && filters !== null && !Array.isArray(filters)
+    ? formatFilter(filters as ParsedTrackerFilter)
+    : formatFilter(filters as string | readonly string[] | undefined);
+  return list.map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * True when a locally edited row still belongs in a list. Rows from the server are slim (no state id, labels or creator), so
+ * a token the row cannot answer keeps the row rather than hiding it, and an invalid token never throws or empties the list.
+ */
+export function matchesFilters(ticket: TrackerTicket, filters: string | readonly string[] | ParsedTrackerFilter | undefined, ctx: FilterContext): boolean {
+  const tokens = filterTokens(filters);
+  const archiveQuery = tokens.some((token) => token.toLowerCase() === 'is:archived');
+  if (archiveQuery ? !ticket.archivedAt : Boolean(ticket.archivedAt)) return false;
+  for (const token of tokens) {
+    if (evaluateFilterToken(ticket, token, ctx) === false) return false;
+  }
   return true;
 }
 
