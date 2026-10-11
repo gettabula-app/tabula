@@ -228,7 +228,7 @@ describe('tracker key floors', () => {
 
   it('rejects a floor file under DATA_DIR or a relative floor file at config load', () => {
     expect(loadConfig({ DATA_DIR: '/srv/tabula/data', TABULA_TRACKER_KEY_FLOOR_FILE: '/srv/tabula/floors.json' }).trackerKeyFloorFile)
-      .toBe('/srv/tabula/floors.json');
+      .toBe(path.resolve('/srv/tabula/floors.json'));
     expect(() => loadConfig({ DATA_DIR: '/srv/tabula/data', TABULA_TRACKER_KEY_FLOOR_FILE: '/srv/tabula/data/floors.json' }))
       .toThrow('TABULA_TRACKER_KEY_FLOOR_FILE must be outside DATA_DIR');
     expect(() => loadConfig({ DATA_DIR: '/srv/tabula/data', TABULA_TRACKER_KEY_FLOOR_FILE: 'floors.json' }))
