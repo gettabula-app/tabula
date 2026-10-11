@@ -541,6 +541,8 @@ kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: var(--radius-xs
   position: fixed; left: 50%; bottom: calc(76px + var(--safe-bottom)); z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
   padding: 10px 16px; border-radius: var(--radius-md); border-left: 4px solid var(--signal); background: var(--tray); color: var(--tray-text);
   box-shadow: 0 0 0 1px var(--tray-line); font-weight: 500;
+  /* left: 50% would shrink the box to half the window: a long notice wrapped to four lines on a phone */
+  width: max-content; max-width: calc(100vw - 32px - var(--safe-left) - var(--safe-right));
   transition: opacity 160ms, transform 160ms;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
