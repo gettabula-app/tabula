@@ -1,5 +1,6 @@
 import type { TemplateContent, TemplateScope } from './custom-templates';
 import { isRestoringAnswer } from './restoring-answer';
+import { decisionBody, type OAuthDecisionInput, type OAuthScope } from './ui/oauth-consent-logic';
 
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';
@@ -47,6 +48,20 @@ export interface Me {
   /** Present only when the relay has one-board guest join codes enabled. */
   joinCodes?: true;
 }
+
+/** GET /api/oauth/requests: consent details verified against the signed request and current session. */
+export interface OAuthConsentRequest {
+  clientName: string;
+  clientNameIsClaim: boolean;
+  redirectHost: string;
+  redirectUri: string;
+  verified: boolean;
+  maxScope: OAuthScope;
+  nonce: string;
+  readOnly: boolean;
+}
+
+export interface OAuthDecisionResponse { redirect: string }
 
 export interface JoinCodeInfo {
   id: string;
@@ -724,11 +739,19 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     config: () => call<{ authEnabled: boolean; images?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
-    requestLogin: (email: string, invite?: string) =>
-      call<{ ok: true }>('POST', '/api/auth/request', { email, invite }),
+    requestLogin: (email: string, invite?: string, oauthRequest?: string) => {
+      const payload: { email: string; invite?: string; oauthRequest?: string } = { email };
+      if (invite !== undefined) payload.invite = invite;
+      if (oauthRequest !== undefined) payload.oauthRequest = oauthRequest;
+      return call<{ ok: true }>('POST', '/api/auth/request', payload);
+    },
     verifyLogin: (token: string) => call<{ user: ApiUser }>('POST', '/api/auth/verify', { token }),
     logout: () => call<void>('POST', '/api/auth/logout'),
     logoutAll: () => call<void>('POST', '/api/auth/logout-all'),
+    oauthRequest: (envelope: string) =>
+      call<OAuthConsentRequest>('GET', `/api/oauth/requests${qs({ request: envelope })}`),
+    oauthDecision: (input: OAuthDecisionInput) =>
+      call<OAuthDecisionResponse>('POST', '/api/oauth/requests/decision', decisionBody(input)),
 
     teams: () => call<Team[]>('GET', '/api/teams'),
     createTeam: (name: string) => call<Team>('POST', '/api/teams', { name }),

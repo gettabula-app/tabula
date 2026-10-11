@@ -34,8 +34,8 @@ function serve(routes: Record<string, Route>) {
   });
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
 function headersOf(call: Call): Record<string, string> {
@@ -117,6 +117,28 @@ describe('api client requests', () => {
     expect(JSON.parse(String(calls[0].init.body))).toEqual({ email: 'ana@example.com' });
   });
 
+  it('carries an OAuth return envelope through sign-in only when supplied', async () => {
+    const { fetchFn, calls } = recorder(() => json({ ok: true }));
+    const client = createApi(fetchFn);
+    await client.requestLogin('ana@example.com', undefined, 'opaque_123');
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ email: 'ana@example.com', oauthRequest: 'opaque_123' });
+  });
+
+  it('calls the consent endpoints and sends an exact decision body', async () => {
+    const { fetchFn, calls } = recorder(() => json({ redirect: 'https://app.example/callback' }));
+    const client = createApi(fetchFn);
+    await client.oauthRequest('opaque_123');
+    await client.oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
+    await client.oauthDecision({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+    expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
+      'GET /api/oauth/requests?request=opaque_123',
+      'POST /api/oauth/requests/decision',
+      'POST /api/oauth/requests/decision',
+    ]);
+    expect(JSON.parse(String(calls[1].init.body))).toEqual({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
+    expect(JSON.parse(String(calls[2].init.body))).toEqual({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+  });
+
   it('maps every endpoint to the documented method and path', async () => {
     const { fetchFn, calls } = recorder(() => json({}));
     const client = createApi(fetchFn);
@@ -127,6 +149,8 @@ describe('api client requests', () => {
     await client.verifyLogin('tok');
     await client.logout();
     await client.logoutAll();
+    await client.oauthRequest('opaque_123');
+    await client.oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'n' });
     await client.teams();
     await client.createTeam('Ops');
     await client.updateTeam('t1', { archived: true });
@@ -155,6 +179,8 @@ describe('api client requests', () => {
       'POST /api/auth/verify',
       'POST /api/auth/logout',
       'POST /api/auth/logout-all',
+      'GET /api/oauth/requests?request=opaque_123',
+      'POST /api/oauth/requests/decision',
       'GET /api/teams',
       'POST /api/teams',
       'PATCH /api/teams/t1',
@@ -212,6 +238,12 @@ describe('api client errors', () => {
       code: 'forbidden',
       message: 'Not your team',
     });
+  });
+
+  it('keeps Retry-After seconds on ApiError facts', async () => {
+    const { fetchFn } = recorder(() => json({ error: 'rate_limited', message: 'wait' }, 429, { 'retry-after': '17' }));
+    await expect(createApi(fetchFn).oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'n' }))
+      .rejects.toMatchObject({ status: 429, code: 'rate_limited', facts: { retryAfter: 17 } });
   });
 
   it('uses the code as the message when the body has none', async () => {

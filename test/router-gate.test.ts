@@ -9,7 +9,8 @@ const templates: Route = { name: 'templates' };
 const signin: Route = { name: 'signin' };
 const templateEdit = (id: string): Route => ({ name: 'template-edit', id });
 const board = (id: string): Route => ({ name: 'board', id });
-const verify = (token: string): Route => ({ name: 'verify', token });
+const verify = (token: string, oauthRequest?: string): Route => ({ name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}) });
+const oauthConsent = (request: string): Route => ({ name: 'oauth-consent', request });
 const invite = (token: string): Route => ({ name: 'invite', token });
 const join = (code = ''): Route => ({ name: 'join', code });
 const admin = (tab: AdminTab): Route => ({ name: 'admin', tab });
@@ -79,9 +80,17 @@ describe('parseRoute', () => {
     ['#/signin/verify?token=abc', verify('abc')],
     ['#/signin/verify?token=a%2Bb', verify('a+b')],
     ['#/signin/verify?x=1&token=abc_-9', verify('abc_-9')],
+    ['#/signin/verify?token=abc&oauthRequest=env_123-xy', verify('abc', 'env_123-xy')],
+    ['#/signin/verify?token=abc&oauthRequest=bad%21', verify('abc')],
+    ['#/signin/verify?token=abc&oauthRequest=one&oauthRequest=two', verify('abc')],
     ['#/signin/verify?token=', signin],
     ['#/signin/verify?other=1', signin],
     ['#/signin/verify', signin],
+    ['#/oauth/consent?request=env_123-xy', oauthConsent('env_123-xy')],
+    ['#/oauth/consent?request=bad%21', oauthConsent('')],
+    ['#/oauth/consent?request=one&request=two', oauthConsent('')],
+    ['#/oauth/consent', oauthConsent('')],
+    ['#/oauth/consent?request=' + 'a'.repeat(8193), oauthConsent('')],
     ['#/invite/tok_en-1', invite('tok_en-1')],
     ['#/join', join()],
     ['#/join?c=ABCD2345', join('ABCD2345')],
@@ -120,6 +129,7 @@ describe('resolveRoute', () => {
     ['signed-in', '#/admin/audit', admin('audit')],
     ['offline', '#/admin/members', admin('members')],
     ['signed-in', '#/signin/verify?token=abc', verify('abc')],
+    ['signed-out', '#/oauth/consent?request=env_123-xy', oauthConsent('env_123-xy')],
     ['signed-out', '#/invite/abc', invite('abc')],
     ['offline', '#/b/abc', board('abc')],
     ['signed-in', '#/t/inbox', home],
@@ -165,6 +175,7 @@ describe('needsSignIn', () => {
     ['tracker', { name: 'tracker', target: { kind: 'view', view: 'all' } }],
     ['signin', signin],
     ['verify', verify('abc')],
+    ['oauth-consent', oauthConsent('env_123-xy')],
     ['invite', invite('abc')],
     ['join', join('ABCD2345')],
     ['admin', admin('members')],
