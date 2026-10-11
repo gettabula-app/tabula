@@ -28,9 +28,9 @@ afterEach(async () => {
   await h?.close();
 });
 
-type Options = { backups?: boolean; cloud?: boolean; restoring?: () => boolean; engine?: Record<string, unknown> | ((h: Harness) => Record<string, unknown>) };
+type Options = { backups?: boolean; cloud?: boolean; tracker?: boolean; restoring?: () => boolean; engine?: Record<string, unknown> | ((h: Harness) => Record<string, unknown>) };
 
-async function setup({ backups = true, cloud: withCloud = false, restoring = () => false, engine = {} }: Options = {}) {
+async function setup({ backups = true, cloud: withCloud = false, tracker = false, restoring = () => false, engine = {} }: Options = {}) {
   h = await harness({ accounts: true });
   const world = seedA(h);
   const r: Rig = rig(h, typeof engine === 'function' ? engine(h) : engine);
@@ -42,7 +42,7 @@ async function setup({ backups = true, cloud: withCloud = false, restoring = () 
   const d = h.directory!;
   d.createUser({ email: 'admin@example.com', name: 'Admin', role: 'admin' });
   d.createUser({ email: 'guest@example.com', name: 'Guest', role: 'guest' });
-  const env = { PORT: '8787', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: h.dir, ...(withCloud ? { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.com', TABULA_CLOUD_WORKSPACE_ID: 'ws_restore' } : {}) };
+  const env = { PORT: '8787', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: h.dir, ...(tracker ? { TABULA_TRACKER: 'on' } : {}), ...(withCloud ? { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.com', TABULA_CLOUD_WORKSPACE_ID: 'ws_restore' } : {}) };
   const config = loadConfig(env);
   const events = new EventEmitter();
   const cloud = createCloud({ config: config.cloud, directory: d, events, log: () => {} });
@@ -313,7 +313,7 @@ describe('a hosted workspace that is read-only', () => {
 
 describe('tracker restore gate', () => {
   it('blocks tracker writes and restore-window opens while reads and window closes remain available', async () => {
-    const s = await setup();
+    const s = await setup({ tracker: true });
     const first = await s.call('POST', '/api/tracker/tickets', {
       body: { title: 'Visible before gate', idempotencyKey: 'before-gate-123' },
     });

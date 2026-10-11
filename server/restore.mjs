@@ -904,7 +904,7 @@ export function createRestore({
         try {
           const checked = checkTrackerData(db, { at: now() });
           if (checked.present) {
-            tracker = { summary: checked.summary, findings: checked.findings };
+            tracker = { present: true, summary: checked.summary, findings: checked.findings };
             const structural = checked.findings.filter((finding) =>
               ['duplicate_active_link', 'link_to_missing_ticket'].includes(finding.code) && finding.count > 0);
             if (structural.length) {
