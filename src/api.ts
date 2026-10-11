@@ -370,6 +370,7 @@ export interface BackupSummary {
 
 /** The backup engine's own status, as the owner sees it: times in ms since the epoch, null when not known yet. */
 export interface BackupEngineStatus {
+  target: 's3' | 'dir' | null;
   lastSuccessAt: number | null;
   lastFailureAt: number | null;
   lastFailureError: string | null;
@@ -747,6 +748,10 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     deleteVersion: (boardId: string, id: string) => call<void>('DELETE', `/api/boards/${seg(boardId)}/versions/${seg(id)}`),
     beginRestore: (boardId: string, id: string, by?: string) =>
       call<{ preRestore: Version | null }>('POST', `/api/boards/${seg(boardId)}/versions/${seg(id)}/begin-restore`, { by }),
+    beginTrackerRestoreWindow: (boardId: string) =>
+      call<{ expiresAt: number }>('POST', `/api/tracker/boards/${seg(boardId)}/restore-window`),
+    endTrackerRestoreWindow: (boardId: string) =>
+      call<void>('DELETE', `/api/tracker/boards/${seg(boardId)}/restore-window`),
     accessTokens: () => call<AccessToken[]>('GET', '/api/me/tokens'),
     createAccessToken: (input: { name: string; scope: AccessScope; boardIds?: string[]; days?: number }) =>
       call<CreatedAccessToken>('POST', '/api/me/tokens', input),

@@ -510,6 +510,8 @@ describe('ticket page', () => {
       ['ticket.unrelated', { relation: { kind: 'relates_to', key: 'TAB-2' } }, 'Mara removed the relation to a ticket that is related to TAB-2'],
       ['ticket.card_linked', {}, 'Mara linked a card to this ticket'],
       ['ticket.card_unlinked', {}, 'Mara unlinked a card from this ticket'],
+      ['unlinked', {}, 'Mara unlinked a card from this ticket'],
+      ['unlinked', { source: 'restore', details: { reason: 'restore' } }, 'Card removed from board by a restore'],
       ['link.pr_opened', { number: 12 }, 'Mara opened PR #12'],
       ['link.pr_ready', { number: 12 }, 'Mara marked PR #12 ready for review'],
       ['link.pr_merged', { number: 12 }, 'Mara merged PR #12'],

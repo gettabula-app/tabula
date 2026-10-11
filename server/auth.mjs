@@ -94,8 +94,12 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
   const ownerMayBootstrap = (email) =>
     config.ownerEmail !== null && email === config.ownerEmail && directory.countOwners() === 0;
 
-  function sendLoginMail(email, token) {
-    const link = `${config.baseUrl}/#/signin/verify?token=${encodeURIComponent(token)}`;
+  function sendLoginMail(email, token, oauthRequest = null) {
+    const verifyUrl = new URL(config.baseUrl);
+    const verifyParams = new URLSearchParams({ token });
+    if (oauthRequest) verifyParams.set('oauthRequest', oauthRequest);
+    verifyUrl.hash = `/signin/verify?${verifyParams}`;
+    const link = verifyUrl.href;
     const minutes = Math.round(config.loginTokenMs / 60000);
     const message = {
       to: email,
@@ -115,7 +119,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
   }
 
   async function requestLogin(request) {
-    const { email, invite, ip } = request;
+    const { email, invite, ip, oauthRequest: requestedOAuth } = request;
     const address = normaliseEmail(email);
     if (!address) return { ok: true };
     if (!allow(address, ip)) return { limited: true };
@@ -132,7 +136,15 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       ttlMs: config.loginTokenMs,
       now: t,
     });
-    sendLoginMail(address, token);
+    let oauthRequest = null;
+    if (config.mcp?.oauth && typeof requestedOAuth === 'string' && requestedOAuth.length <= 8192) {
+      try {
+        if (directory.readRequest(requestedOAuth, t)) oauthRequest = requestedOAuth;
+      } catch {
+        // A malformed or expired consent return behaves like an ordinary sign-in request.
+      }
+    }
+    sendLoginMail(address, token, oauthRequest);
     return { ok: true };
   }
 

@@ -6,6 +6,7 @@ import { normaliseEmail } from './config.mjs';
 import { describeSchema, migrate, readSchemaState } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
+import { OAUTH_MIGRATION, createOauthStore } from './oauth.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
@@ -422,6 +423,76 @@ export const MIGRATIONS = [
   CREATE INDEX notifications_email_due ON notifications(next_email_at)
     WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
   `,
+  // Tracker slice 4: SQL-owned kanban links and the durable SQL-to-Yjs projection outbox. These tables are additive and
+  // deliberately keep the minimum reader at 11 so hosted workspaces can still roll back to v5.0.1 while TABULA_TRACKER is off.
+  { sql: `
+  CREATE TABLE kanban_tracker_links (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL REFERENCES ticket_workflows(id),
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    removed_at INTEGER,
+    idempotency_key TEXT,
+    idempotency_result_json TEXT
+  );
+  CREATE UNIQUE INDEX kanban_tracker_links_active ON kanban_tracker_links(board_id, kanban_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX kanban_tracker_links_idempotency ON kanban_tracker_links(board_id, created_by, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE INDEX kanban_tracker_links_board ON kanban_tracker_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE kanban_state_mappings (
+    kanban_link_id TEXT NOT NULL REFERENCES kanban_tracker_links(id) ON DELETE CASCADE,
+    lane_id TEXT NOT NULL,
+    state_id TEXT NOT NULL REFERENCES ticket_states(id) ON DELETE RESTRICT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (kanban_link_id, lane_id)
+  );
+  CREATE UNIQUE INDEX kanban_state_mappings_state ON kanban_state_mappings(kanban_link_id, state_id);
+  CREATE INDEX kanban_state_mappings_by_state ON kanban_state_mappings(state_id);
+
+  CREATE TABLE ticket_links (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    removed_at INTEGER,
+    last_projection_seq INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE UNIQUE INDEX ticket_links_active_card ON ticket_links(board_id, kanban_id, card_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX ticket_links_active_ticket ON ticket_links(kanban_id, ticket_id)
+    WHERE removed_at IS NULL;
+  CREATE INDEX ticket_links_ticket ON ticket_links(ticket_id, removed_at);
+  CREATE INDEX ticket_links_board ON ticket_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE ticket_projection_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    event_seq INTEGER NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('upsert', 'remove')),
+    projection_json TEXT,
+    created_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    applied_at INTEGER,
+    last_error_code TEXT,
+    UNIQUE (board_id, kanban_id, card_id, event_seq)
+  );
+  CREATE INDEX ticket_projection_outbox_pending ON ticket_projection_outbox(applied_at, next_attempt_at, event_seq, id);
+  `, minReader: 11 },
+  // OAuth slice 1 adds tables only. Keep v5.0.1 (schema generation 11) as the rollback floor.
+  { sql: OAUTH_MIGRATION, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -483,8 +554,8 @@ export function ftsAvailable(db) {
   }
 }
 
-/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean }} [options] */
-export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null } = {}) {
+/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean, oauthSecret?: Buffer | null, oauthInternals?: boolean }} [options] */
+export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null, oauthSecret = null, oauthInternals = false } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
@@ -695,6 +766,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       if (sets.length) run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, ...params, id);
       if (patch.disabled) revokeUserSessions(id);
+      if (patch.disabled === true || patch.role === 'guest') oauthStore.revokeUserGrants(id, 'user_state');
     });
     return getUser(id);
   }
@@ -705,6 +777,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       run('DELETE FROM login_tokens WHERE email = ?', user.email);
       run("DELETE FROM board_shares WHERE principal_type = 'user' AND principal_id = ?", id);
+      oauthStore.revokeUserGrants(id, 'user_state');
       run('DELETE FROM users WHERE id = ?', id);
     });
   }
@@ -1275,6 +1348,9 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     return { entries, next: rows.length > n ? entries[entries.length - 1].id : null };
   }
 
+  const tokenStore = createTokenStore({ get, all, run, transaction });
+  const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret, exposeInternals: oauthInternals });
+
   return {
     close() {
       if (closed) return;
@@ -1349,7 +1425,13 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     listShares,
     getSetting,
     setSetting,
-    ...createTokenStore({ get, all, run, transaction }),
+    ...tokenStore,
+    ...oauthStore,
+    invalidateOauthAfterRestore(reason = 'restore', now = Date.now(), purgeClients = false) {
+      return oauthStore.invalidateAfterRestore(now, reason, purgeClients);
+    },
+    // The personal-token API keeps its established name; OAuth has its distinct lookup method.
+    findAccessToken: tokenStore.findAccessToken,
     ...createTemplateStore({ get, all, run }),
     ...createAiKeyStore({ get, run, transaction }),
     ...createAssetIndex({ get, all, run }),

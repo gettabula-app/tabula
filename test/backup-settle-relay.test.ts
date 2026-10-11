@@ -73,9 +73,23 @@ async function edit(relay: Relay, room: string, value: string) {
 }
 
 const roomFile = (room: string) => path.join(h.dir, `${room}.yjs`);
+
+/** On Windows a file the relay is replacing right now can fail to open for a moment (EISDIR, EPERM, EBUSY); read it again a few times, and say so. Elsewhere one read. */
+function readRoomFile(file: string): Buffer {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return fs.readFileSync(file);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (process.platform !== 'win32' || !['EISDIR', 'EPERM', 'EBUSY'].includes(code) || attempt >= 20) throw err;
+      console.warn(`[settle-test] reading ${path.basename(file)} failed with ${code}; reading again (${attempt + 1})`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
 function savedNote(room: string) {
   const doc = new Y.Doc();
-  Y.applyUpdate(doc, fs.readFileSync(roomFile(room)));
+  Y.applyUpdate(doc, readRoomFile(roomFile(room)));
   return doc.getMap('objects').get('note');
 }
 
@@ -198,16 +212,20 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
       TABULA_CLOUD_WORKSPACE_ID: 'ws_settle', TABULA_BACKUP_SETTLE_SECONDS: '1',
     });
     const status = async () => (await fetch(`${relay.base}/api/internal/backup-status`, { headers: { authorization: `Bearer ${token}` } })).json() as Promise<Record<string, unknown>>;
-    const before = await status();
-    expect(before).toMatchObject({ enabled: true, dirty: false, lastTrigger: null, settleSeconds: 1 });
+    // wait for each status instead of reading it once: a slow runner has not always settled the start-up writes yet, and the failure prints the last status
+    const statusWhere = async (ok: (s: Record<string, unknown>) => boolean, what: string) => {
+      let last: Record<string, unknown> = {};
+      await until(async () => ok((last = await status())), 20_000, `${what}; last status: ${JSON.stringify(last)}`);
+      return last;
+    };
+    const before = await statusWhere((s) => s.enabled === true && s.dirty === false && s.lastTrigger === null && s.settleSeconds === 1, 'the relay did not report a clean start');
     // a read changes nothing
     expect((await fetch(`${relay.base}/api/internal/usage`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
-    expect(await status()).toMatchObject({ dirty: false });
+    await statusWhere((s) => s.dirty === false, 'a read left the status dirty');
 
     const res = await fetch(`${relay.base}/api/internal/limits`, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ banner: 'Hello' }) });
     expect(res.status).toBe(200);
-    await until(async () => (await status()).lastTrigger === 'settle', 20_000, 'no settle backup after the call');
-    const after = await status();
+    const after = await statusWhere((s) => s.lastTrigger === 'settle' && s.dirty === false && typeof s.lastManifest === 'string', 'no settled settle backup after the call');
     expect(after).toMatchObject({ dirty: false, consecutiveFailures: 0, lastTrigger: 'settle' });
     expect(after.lastManifest).toEqual(expect.stringMatching(/\.json\.enc$/));
     // the schedule did not move

@@ -12,7 +12,7 @@ import {
 import { LOCAL, Store } from '../src/store';
 import type { BaseObj, Obj } from '../src/types';
 import { SCHEMA_VERSION } from '../src/types';
-import { restoreSuccessToast } from '../src/ui/history';
+import { restoreSuccessToast, withTrackerRestoreWindow } from '../src/ui/history';
 import { CSRF_HEADER, csrfOk } from '../server/auth.mjs';
 import { HistoryError, LIMITS, createHistory, pruneIds } from '../server/history.mjs';
 
@@ -24,6 +24,43 @@ describe('history restore toast', () => {
     ['Win32', 'Version restored. Press Ctrl+Z to undo.'],
   ])('formats the undo hint for %s', (platform, expected) => {
     expect(restoreSuccessToast(platform)).toBe(expected);
+  });
+});
+
+describe('tracker restore window', () => {
+  it('opens before applying and closes after the restore', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async (id: string) => { calls.push(`POST ${id}`); return { expiresAt: 10 }; },
+      endTrackerRestoreWindow: async (id: string) => { calls.push(`DELETE ${id}`); },
+    };
+    const result = await withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 'restored'; });
+    expect(result).toBe('restored');
+    expect(calls).toEqual(['POST board-1', 'apply', 'DELETE board-1']);
+  });
+
+  it('proceeds after a POST conflict or network failure and still tries cleanup', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async () => { calls.push('POST'); throw new Error('409 conflict'); },
+      endTrackerRestoreWindow: async () => { calls.push('DELETE'); throw new Error('network'); },
+    };
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 1; })).resolves.toBe(1);
+    expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+  });
+
+  it('closes in a finally when applying throws and skips both calls when disabled', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async () => { calls.push('POST'); return { expiresAt: 10 }; },
+      endTrackerRestoreWindow: async () => { calls.push('DELETE'); },
+    };
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); throw new Error('apply failed'); }))
+      .rejects.toThrow('apply failed');
+    expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+    calls.length = 0;
+    await withTrackerRestoreWindow('board-1', false, client, () => { calls.push('apply'); });
+    expect(calls).toEqual(['apply']);
   });
 });
 
@@ -376,12 +413,19 @@ describe('the API client', () => {
 
   it('lists, saves, names, deletes and begins a restore on the board’s version routes', async () => {
     const version = { id: 'v1', createdAt: 1, kind: 'named', label: 'x', by: null, byName: null, objects: 1, bytes: 1, from: null };
-    const { api, calls } = client((c) => (c.init.method === 'DELETE' ? new Response(null, { status: 204 }) : json(c.url.endsWith('versions') && c.init.method === 'GET' ? { versions: [version] } : c.url.endsWith('begin-restore') ? { preRestore: null } : version)));
+    const { api, calls } = client((c) => (c.init.method === 'DELETE' ? new Response(null, { status: 204 }) : json(
+      c.url.endsWith('versions') && c.init.method === 'GET' ? { versions: [version] }
+        : c.url.endsWith('begin-restore') ? { preRestore: null }
+          : c.url.endsWith('restore-window') ? { expiresAt: 100 }
+            : version,
+    )));
     expect((await api.versions('b 1')).versions).toHaveLength(1);
     await api.saveVersion('b1', 'Kick-off', 'Ana');
     await api.nameVersion('b1', 'v1', 'Final');
     await api.deleteVersion('b1', 'v1');
     expect(await api.beginRestore('b1', 'v1')).toEqual({ preRestore: null });
+    expect(await api.beginTrackerRestoreWindow('b1')).toEqual({ expiresAt: 100 });
+    await api.endTrackerRestoreWindow('b1');
 
     expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
       'GET /api/boards/b%201/versions',
@@ -389,6 +433,8 @@ describe('the API client', () => {
       'PATCH /api/boards/b1/versions/v1',
       'DELETE /api/boards/b1/versions/v1',
       'POST /api/boards/b1/versions/v1/begin-restore',
+      'POST /api/tracker/boards/b1/restore-window',
+      'DELETE /api/tracker/boards/b1/restore-window',
     ]);
     expect(JSON.parse(calls[1].init.body as string)).toEqual({ label: 'Kick-off', by: 'Ana' });
     // only the state-changing calls carry the CSRF header

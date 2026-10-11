@@ -1,5 +1,5 @@
 // MCP endpoint (docs/mcp.md): POST /mcp, stateless JSON-RPC 2.0 over Streamable HTTP, answered with application/json.
-// Bearer token only (a personal access token in accounts mode, one shared token in open mode); cookies are never read.
+// Bearer token only (personal/OAuth access tokens in accounts mode, one shared token in open mode); cookies are never read.
 // Every tool call is authorised when it runs. Tool handlers never touch a room: they get closures that check the board,
 // the token and the role first, and edits land on the relay's live room documents through `roomAccess`.
 // This file does not touch the file system: the relay's room facade does the loading and saving.
@@ -9,6 +9,7 @@ import * as Y from 'yjs';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { clientIpOf } from './client-ip.mjs';
+import { createWindowLimiter } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
@@ -17,7 +18,7 @@ import {
 } from '../shared/containers.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
-  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
+  addReply, addThread, aiAuthor, applyPlan, assertLinkedCardEdit, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
   listThreads, planAddKanbanLane, planCreate, planCreateKanban, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel, planDeleteKanbanLane,
   planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, planUseTemplate, resolveAnchor, summariseBoard,
   objectVisibility,
@@ -35,13 +36,11 @@ const SERVER_VERSION = '1.0.0';
 const SUPPORTED_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const LATEST_VERSION = SUPPORTED_VERSIONS[0];
 const ASSUMED_VERSION = '2025-03-26';
-const WINDOW_MS = 60_000;
 const CALLS_PER_WINDOW = 120;
 const WRITES_PER_WINDOW = 30;
 const TICKET_CREATES_PER_WINDOW = 10;
 const FAILURES_PER_WINDOW = 20;
 const TOUCH_MS = 60_000;
-const MAX_LIMITER_KEYS = 50_000;
 const BEARER_RE = /^bearer +(\S+)$/i;
 const RANK = { read: 1, comment: 2, write: 3 };
 const ROLE_RANK = { owner: 3, editor: 3, commenter: 2, viewer: 1 };
@@ -67,29 +66,6 @@ const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message, data) => ({ jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 const textResult = (text, isError = false) => ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) });
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest();
-
-// Sliding window per key, in memory (modelled on the sign-in limiter in auth.mjs).
-function createWindowLimiter(max, now) {
-  const hits = new Map();
-  const recent = (key, t) => (hits.get(key) ?? []).filter((ts) => ts > t - WINDOW_MS);
-  const retryAfter = (list, t) => Math.max(1, Math.ceil((list[0] + WINDOW_MS - t) / 1000));
-  return {
-    /** Counts one hit; returns the seconds to wait when the key was already at its limit (and then counts nothing). */
-    hit(key) {
-      const t = now();
-      const list = recent(key, t);
-      // a key in use goes to the back of the map, so the bound below forgets the key idle longest, never one that is busy
-      hits.delete(key);
-      if (list.length >= max) {
-        hits.set(key, list);
-        return retryAfter(list, t);
-      }
-      hits.set(key, [...list, t]);
-      if (hits.size > MAX_LIMITER_KEYS) hits.delete(hits.keys().next().value);
-      return 0;
-    },
-  };
-}
 
 // ---------------------------------------------------------------- tool schemas (JSON Schema, no board text in any description)
 
@@ -217,6 +193,22 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         boardIds: null, expiresAt: null, createdBy: 'mcp',
       };
     }
+    if (config.mcp.oauth && presented.startsWith('tbo_')) {
+      const found = directory.findOauthAccessToken(presented, now());
+      if (!found) return null;
+      const expectedResource = `${config.mcp.issuer}/mcp`;
+      if (found.resource !== expectedResource) {
+        directory.revokeGrant(found.grantId, 'user_state', now());
+        return null;
+      }
+      const wide = (found.user.role === 'owner' || found.user.role === 'admin') && found.scope !== 'read' && found.boardIds === null;
+      return {
+        mode: 'accounts', userId: found.userId, user: found.user, userName: found.user.name,
+        tokenId: found.tokenId, tokenName: found.clientName, scope: wide ? 'read' : found.scope,
+        boardIds: found.boardIds, tracker: null, expiresAt: found.expiresAt, createdBy: found.userId,
+        source: 'oauth', clientName: found.clientName, grantId: found.grantId, rateLimitId: found.grantId,
+      };
+    }
     const found = directory.findAccessToken(presented, now());
     if (!found) return null;
     // Owners and admins are the owner of every board, so a token that can write must name its boards. That is checked when
@@ -225,6 +217,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     return {
       mode: 'accounts', userId: found.userId, user: found.user, userName: found.user.name, tokenId: found.id, tokenName: found.name,
       scope: wide ? 'read' : found.scope, boardIds: found.boardIds, tracker: found.tracker ?? null, expiresAt: found.expiresAt, createdBy: found.userId,
+      rateLimitId: found.id,
     };
   }
 
@@ -232,11 +225,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   function touch(actor) {
     if (open) return;
     const t = now();
-    if (t - (lastTouch.get(actor.tokenId) ?? 0) < TOUCH_MS) return;
-    lastTouch.set(actor.tokenId, t);
+    const key = actor.source === 'oauth' ? actor.grantId : actor.tokenId;
+    if (t - (lastTouch.get(key) ?? 0) < TOUCH_MS) return;
+    lastTouch.set(key, t);
     if (lastTouch.size > 10_000) lastTouch.delete(lastTouch.keys().next().value);
     try {
-      directory.touchAccessToken(actor.tokenId, t);
+      if (actor.source === 'oauth') directory.touchGrant(actor.grantId, t);
+      else directory.touchAccessToken(actor.tokenId, t);
     } catch (err) {
       log('mcp: could not record the use of a token', err?.message);
     }
@@ -299,7 +294,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       },
       writeBoard(fn) {
         authorise(actor, boardId, 'write', 'board');
-        return roomAccess.write(boardId, origin, fn);
+        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp' });
       },
       writeComments(fn) {
         authorise(actor, boardId, 'comment', 'comments');
@@ -661,6 +656,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       throw new OpsError('conflict', 'The card is assigned to another agent', field('cardId'));
     }
     const lane = resolveCardLane(state, input, path);
+    if (lane.id !== oldLane.id) {
+      const key = input.laneId === undefined ? 'stage' : 'laneId';
+      assertLinkedCardEdit(card, key, field(key));
+    }
     if (lane.id === oldLane.id && input.afterCardId === undefined) {
       return { ops: [], result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [] } };
     }
@@ -733,6 +732,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           user: open ? null : { id: actor.userId, name: cleanForModel(actor.userName, 100).text },
           token: { name: cleanForModel(actor.tokenName, 100).text, scope: actor.scope, expiresAt: actor.expiresAt, boardIds: actor.boardIds },
           workspaceReadOnly: readOnlyNow(),
+          ...(actor.source === 'oauth' ? { connector: cleanForModel(actor.clientName, 100).text } : {}),
         });
       },
     },
@@ -1175,6 +1175,20 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           if (input.link === null) unsets.add('link');
           else if (input.link !== undefined) sets.link = input.link;
           const owner = ownerChanges(actor, card, input);
+          if (input.title !== undefined && input.title !== card.text) assertLinkedCardEdit(card, 'title', 'title');
+          if ((input.due === null && card.due !== undefined) || (input.due !== undefined && input.due !== null && input.due !== card.due)) {
+            assertLinkedCardEdit(card, 'due', 'due');
+          }
+          if (input.labels === null && card.labels !== undefined) assertLinkedCardEdit(card, 'labels', 'labels');
+          else if (input.labels !== undefined && input.labels !== null && JSON.stringify(input.labels) !== JSON.stringify(card.labels)) {
+            assertLinkedCardEdit(card, 'labels', 'labels');
+          }
+          const ownerChanged = Object.entries(owner.sets).some(([key, value]) => JSON.stringify(card[key]) !== JSON.stringify(value))
+            || owner.unsets.size > 0;
+          if (ownerChanged) {
+            const field = ['ownerId', 'ownerName', 'ownerKind'].find((key) => Object.hasOwn(input, key)) ?? 'ownerName';
+            assertLinkedCardEdit(card, field, field);
+          }
           Object.assign(sets, owner.sets);
           owner.unsets.forEach((key) => unsets.add(key));
           let changed = false;
@@ -2070,7 +2084,16 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         return { status: 200, body: rpcError(id, -32602, 'params.name must be a tool name') };
       }
       const tool = tools.find((t) => t.name === params.name && !(open && t.accountsOnly) && trackerVisible(actor, t));
-      const wait = tool?.mutating ? writes.hit(actor.tokenId) : 0;
+      if (actor.source === 'oauth' && tool && RANK[actor.scope] < RANK[tool.scope]) {
+        const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
+        return {
+          status: 403,
+          body: { error: 'insufficient_scope', message: 'The access token does not include the required scope.' },
+          headers: { 'www-authenticate': `Bearer error="insufficient_scope", scope="${tool.scope}", resource_metadata="${metadata}"` },
+        };
+      }
+      const limitKey = actor.rateLimitId ?? actor.tokenId;
+      const wait = tool?.mutating ? writes.hit(limitKey) : 0;
       if (wait) return limited(id, wait);
       if (tool?.name === 'create_ticket') {
         const args = params.arguments;
@@ -2078,7 +2101,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           directory, actor: trackerActor(actor), source: 'mcp', idempotencyKey: args.idempotencyKey,
         });
         if (!retry) {
-          const createWait = ticketCreates.hit(actor.tokenId);
+          const createWait = ticketCreates.hit(limitKey);
           if (createWait) return limited(id, createWait);
         }
       }
@@ -2155,7 +2178,14 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         send(res, 429, rpcError(null, -32000, 'Too many failed attempts. Try again later.', { error: 'rate_limited', retryAfterSec: wait }), { 'retry-after': String(wait) });
         return;
       }
-      res.setHeader('www-authenticate', 'Bearer');
+      if (config.mcp.mode === 'accounts' && config.mcp.oauth) {
+        const supplied = typeof req.headers.authorization === 'string' && req.headers.authorization.trim() !== '';
+        const error = supplied ? 'error="invalid_token", ' : '';
+        const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
+        res.setHeader('www-authenticate', `Bearer ${error}resource_metadata="${metadata}"`);
+      } else {
+        res.setHeader('www-authenticate', 'Bearer');
+      }
       throw new HttpFail(401, 'invalid_token', 'The token is unknown, expired or revoked.');
     }
     if (!/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] ?? ''))) {
@@ -2195,7 +2225,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       send(res, 202);
       return;
     }
-    const spent = calls.hit(actor.tokenId);
+    const spent = calls.hit(actor.rateLimitId ?? actor.tokenId);
     if (spent) {
       const out = limited(message.id, spent);
       send(res, out.status, out.body, out.headers);

@@ -43,6 +43,7 @@ import { watchCardHeights } from './card-height-heal';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 const isCardLinkTarget = (target: EventTarget | null) => {
@@ -1198,6 +1199,10 @@ export class BoardApp {
    * Delete key does) or with its cards. One undo step, or a message saying why not.
    */
   deleteLane(laneId: Id, withCards: boolean): boolean {
+    if (isMappedTrackerLane(this.store, laneId)) {
+      this.notify(LINKED_LANE_DELETE_MESSAGE);
+      return false;
+    }
     const r = laneDeleteIds(this.store, laneId, withCards);
     if ('refused' in r) {
       this.notify(r.refused);

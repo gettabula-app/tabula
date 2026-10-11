@@ -235,7 +235,7 @@ describe('the marker file', () => {
 describe('applyVolume', () => {
   function rig() {
     const d = tmpDir();
-    const directory = openDirectory(path.join(d, 'directory.sqlite'));
+    const directory = openDirectory(path.join(d, 'directory.sqlite'), { oauthInternals: true });
     handles.push(directory);
     const user = directory.createUser({ email: 'ana@example.com', name: 'Ana', role: 'owner' });
     const session = directory.createSession(user!.id, { ttlMs: 60_000 });
@@ -246,6 +246,12 @@ describe('applyVolume', () => {
   it('adopting ends every session and sign-in link, clears backup temporaries, writes the audit row and then the marker', () => {
     const { d, directory, session, link } = rig();
     const owner = directory.getUserByEmail('ana@example.com')!;
+    const oauthClient = directory.registerClient({ name: 'Connected app', redirectUris: ['https://claude.ai/callback'], maxScope: 'write', now: T0 }).client!;
+    const oauthGrant = directory.oauthInternals!.createGrant({ clientId: oauthClient.clientId, userId: owner.id, scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.oauthInternals!.issueTokens({ grantId: oauthGrant.id, scope: 'write', now: T0 });
+    directory.oauthInternals!.issueCode({ requestId: 'volume-request', grantId: oauthGrant.id, clientId: oauthClient.clientId, redirectUri: oauthClient.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run('volume-request', oauthClient.clientId, T0, T0 + 60_000);
+    directory.db.prepare("UPDATE oauth_tokens SET replay_ciphertext = 'encrypted-test-value', replay_until = ?, replay_count = 1 WHERE kind = 'refresh'").run(T0 + 20_000);
     const board = directory.createBoard({ id: 'guest-board', ownerId: owner.id })!;
     const code = directory.createJoinCode({
       boardId: board.id, createdBy: owner.id, codeHash: 'c'.repeat(64), role: 'commenter',
@@ -266,12 +272,36 @@ describe('applyVolume', () => {
     expect(directory.consumeLoginToken(link)).toBeNull();
     expect(directory.getGuestSession(guestTokenHash, T0)).toBeNull();
     expect(directory.getJoinCode(code.id)?.revokedAt).not.toBeNull();
+    expect(directory.getGrant(oauthGrant.id)?.revokedReason).toBe('adopt');
+    expect(directory.getClient(oauthClient.clientId, T0)).not.toBeNull();
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM oauth_requests').get()).toEqual({ n: 0 });
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM oauth_codes').get()).toEqual({ n: 0 });
+    expect(directory.db.prepare('SELECT replay_ciphertext, replay_until, replay_count FROM oauth_tokens').get())
+      .toEqual({ replay_ciphertext: null, replay_until: null, replay_count: 0 });
     expect(fs.existsSync(path.join(d, tmp))).toBe(false);
     expect(JSON.parse(String(directory.getSetting('backup.status')))).toEqual({ lastManifest: null, bytesStored: 7, running: false, nextRunAt: null });
     const rows = directory.listAudit(10).filter((r: any) => r.action === AUDIT_ACTION);
     expect(rows).toEqual([expect.objectContaining({ actorId: null, detail: { from: { workspaceId: 'ws_a', flyVolumeId: 'vol_1' }, to: { workspaceId: 'ws_a', flyVolumeId: 'vol_2' }, reason: 'restored-copy' } })]);
     expect(readMarker(d)).toMatchObject({ flyVolumeId: 'vol_2', adoptedAt: T0, history: [{ reason: 'restored-copy' }] });
     expect(lines).toEqual([expect.stringMatching(/^volume: adopted volume a{32} \(restored-copy\)/)]);
+  });
+
+  it('operator adoption purges OAuth clients in the same database transaction as grant invalidation', () => {
+    const { d, directory } = rig();
+    const owner = directory.getUserByEmail('ana@example.com')!;
+    const client = directory.registerClient({ name: 'Workspace transfer app', redirectUris: ['https://claude.ai/callback'], maxScope: 'read', now: T0 }).client!;
+    const grant = directory.oauthInternals!.createGrant({ clientId: client.clientId, userId: owner.id, scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.oauthInternals!.issueCode({ requestId: 'operator-request', grantId: grant.id, clientId: client.clientId, redirectUri: client.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run('operator-request', client.clientId, T0, T0 + 60_000);
+    writeMarker(d, marker());
+    const plan = planVolume({ dataDir: d, env: { TABULA_ADOPT_VOLUME: 'ws_b' }, workspaceId: 'ws_b', now: T0 + 1 });
+
+    expect(plan).toMatchObject({ action: 'adopt', reason: 'operator' });
+    expect(applyVolume({ dataDir: d, plan, directory })).toBe(true);
+    expect(directory.getGrant(grant.id)).toBeNull();
+    expect(directory.getClient(client.clientId)).toBeNull();
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM oauth_requests').get()).toEqual({ n: 0 });
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM oauth_codes').get()).toEqual({ n: 0 });
   });
 
   it('recording a Fly id the first time signs nobody out and writes no audit row', () => {

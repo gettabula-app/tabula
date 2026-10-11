@@ -18,12 +18,16 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createBackupExport } from './backup-export.mjs';
 import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
+import { createWindowLimiter } from './limiter.mjs';
+import { OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
 import { OpsError } from './tracker/shared.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
+import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -98,7 +102,61 @@ function idField(value, field) {
   return value;
 }
 
-function readJson(req, limit) {
+function duplicateJsonKeys(source) {
+  let index = 0;
+  const duplicates = [];
+  const skipSpace = () => { while (/\s/u.test(source[index] ?? '')) index++; };
+  const string = () => {
+    const start = index++;
+    while (index < source.length) {
+      if (source[index] === '\\') { index += 2; continue; }
+      if (source[index++] === '"') break;
+    }
+    return JSON.parse(source.slice(start, index));
+  };
+  const value = (path = []) => {
+    skipSpace();
+    if (source[index] === '{') {
+      index++;
+      skipSpace();
+      const seen = new Set();
+      if (source[index] === '}') { index++; return; }
+      while (index < source.length) {
+        skipSpace();
+        const key = string();
+        const child = [...path, key];
+        if (seen.has(key)) duplicates.push(child);
+        seen.add(key);
+        skipSpace();
+        index++;
+        value(child);
+        skipSpace();
+        if (source[index] === '}') { index++; return; }
+        index++;
+      }
+      return;
+    }
+    if (source[index] === '[') {
+      index++;
+      skipSpace();
+      if (source[index] === ']') { index++; return; }
+      let item = 0;
+      while (index < source.length) {
+        value([...path, String(item++)]);
+        skipSpace();
+        if (source[index] === ']') { index++; return; }
+        index++;
+      }
+      return;
+    }
+    if (source[index] === '"') { string(); return; }
+    while (index < source.length && !/[\s,}\]]/u.test(source[index])) index++;
+  };
+  value();
+  return duplicates;
+}
+
+function readJson(req, limit, { rejectDuplicateMappingKeys = false } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     let settled = false;
@@ -133,6 +191,13 @@ function readJson(req, limit) {
       if (typeof data !== 'object' || data === null || Array.isArray(data)) {
         return done(reject, badRequest('The request body must be a JSON object'));
       }
+      if (rejectDuplicateMappingKeys) {
+        const duplicate = duplicateJsonKeys(text).find((parts) => parts[0] === 'mapping');
+        if (duplicate) {
+          const path = duplicate.length > 1 ? `mapping.${String(duplicate[1]).slice(0, 64)}` : 'mapping';
+          return done(reject, new OpsError('invalid_input', 'Mapping keys must be unique', path));
+        }
+      }
       done(resolve, data);
     });
     req.on('error', (err) => done(reject, err));
@@ -152,7 +217,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -207,7 +272,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
 
   const trackerApiRoutes = config.authEnabled && config.tracker
-    ? createTrackerRoutes({ directory, compile, audit, cloud, now })
+    ? createTrackerRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
+    : [];
+  const trackerLinkRoutes = config.authEnabled && config.tracker
+    ? createTrackerLinkRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
     : [];
   const trackerMutationWindows = new Map();
   function requireTrackerMutationCapacity(user, res) {
@@ -231,6 +299,87 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   const clientIp = (req) => clientIpOf(req, config);
+  const oauthDecisionLimiter = createWindowLimiter(10, now);
+  const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
+  const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
+
+  function oauthRequestContext(envelope, user, sessionId) {
+    if (!config.mcp?.oauth || config.mcp.mode !== 'accounts' || typeof envelope !== 'string' || envelope.length > 8192
+      || !user || user.role === 'guest' || typeof sessionId !== 'string') return null;
+    let request;
+    try {
+      request = directory.readRequest(envelope, now());
+    } catch {
+      return null;
+    }
+    if (!request || request.resource !== `${config.mcp.issuer}/mcp`) return null;
+    const client = directory.getClient(request.clientId, now());
+    if (!client || !redirectUriRegistered(request.redirectUri, client.redirectUris)) return null;
+
+    const requestScopes = request.scope === null ? [client.maxScope] : request.scope.split(/\s+/u);
+    if (!requestScopes.length || requestScopes.some((scope) => !OAUTH_SCOPES.includes(scope))) return null;
+    const requestMax = requestScopes.reduce((max, scope) => oauthScopeRank(scope) > oauthScopeRank(max) ? scope : max, 'read');
+    let personMax = 'read';
+    if (user.role !== 'owner' && user.role !== 'admin') {
+      const boards = directory.listBoardsFor(user);
+      const boardMax = boards.reduce((max, board) => {
+        const value = board.role === 'editor' || board.role === 'owner' ? 'write'
+          : board.role === 'commenter' ? 'comment' : 'read';
+        return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
+      }, 'read');
+      const onSharedWorkspace = boards.some((board) => board.teamId !== null || board.ownerId !== user.id);
+      // Without a board picker, owner/admin grants and grants on shared workspaces stay read-only. A future picker can
+      // offer broader access while binding it to selected boards.
+      personMax = onSharedWorkspace ? 'read' : boardMax;
+    }
+    const maxScope = oauthLowerScope(oauthLowerScope(requestMax, client.maxScope), personMax);
+    let destination;
+    try {
+      destination = new URL(request.redirectUri);
+    } catch {
+      return null;
+    }
+    const loopback = destination.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(destination.hostname);
+    const redirectHost = `${destination.hostname || destination.protocol.slice(0, -1)}${loopback && destination.port ? `:${destination.port}` : ''}`;
+    const verified = destination.protocol === 'https:' && config.mcp.redirectHosts.includes(destination.hostname);
+    return {
+      request,
+      client,
+      sessionId,
+      nonce: directory.createOAuthNonce({ requestId: request.requestId, sessionId, expiresAt: request.expiresAt }),
+      clientName: client.name,
+      clientNameIsClaim: true,
+      redirectHost,
+      redirectUri: request.redirectUri,
+      verified,
+      maxScope,
+      readOnly: cloud?.limits().readOnly === true,
+    };
+  }
+
+  const oauthCallback = (request, values) => {
+    const target = new URL(request.redirectUri);
+    const params = target.searchParams;
+    for (const key of ['code', 'error', 'error_description', 'state', 'iss']) params.delete(key);
+    for (const [key, value] of Object.entries(values)) {
+      if (value !== null && value !== undefined) params.set(key, String(value));
+    }
+    if (request.state !== null) params.set('state', request.state);
+    params.set('iss', config.mcp.issuer);
+    target.search = params.toString();
+    return target.href;
+  };
+
+  function auditOauthRevocations(grants, by, actorId = null) {
+    for (const grant of grants) {
+      directory.audit(actorId, 'mcp.oauth.revoke', {
+        grantId: grant.id,
+        clientName: String(grant.clientName ?? '').slice(0, 60),
+        userId: grant.userId,
+        by,
+      });
+    }
+  }
 
   // Teams a caller cannot see do not exist for them (404); visible but not manageable is 403.
   function teamFor(user, id, { manage = false } = {}) {
@@ -297,7 +446,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
-  const OWNER_STATUS_FIELDS = ['lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
+  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
 
   function ownerBackupStatus() {
     const status = backupStatus() ?? {};
@@ -453,11 +602,22 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     : [];
 
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
+  const backupExport = backupConfig?.target === 'dir' && typeof backupConfig.pullTokenSha256 === 'string'
+    ? createBackupExport({ backupConfig, dataDir, now, log })
+    : null;
 
   // ------------------------------------------------------------ handlers
 
   const routes = [
     ...trackerApiRoutes,
+    ...trackerLinkRoutes,
+
+    ...(backupExport
+      ? [
+          compile('GET', 'backup-export/list', { exportToken: true, exportKind: 'list' }, (args) => backupExport.handle('list', args)),
+          compile('GET', 'backup-export/object', { exportToken: true, exportKind: 'object' }, (args) => backupExport.handle('object', args)),
+        ]
+      : []),
 
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
@@ -495,10 +655,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }),
 
     compile('POST', 'auth/request', { public: true, body: true, readOnlyOk: true }, async ({ req, res, body }) => {
-      const { email, invite } = body;
+      const { email, invite, oauthRequest } = body;
       if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
-      const result = await auth.requestLogin({ email, invite: invite ?? undefined, ip: clientIp(req) });
+      const result = await auth.requestLogin({ email, invite: invite ?? undefined, oauthRequest, ip: clientIp(req) });
       if (result.limited) {
         res.setHeader('retry-after', '3600');
         throw new HttpError(429, 'rate_limited', 'Too many sign-in requests. Try again later.');
@@ -527,8 +687,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return [204];
     }),
     compile('POST', 'auth/logout-all', { readOnlyOk: true }, ({ res, user }) => {
-      auth.logoutAll(user.id);
-      audit(user, 'auth.logout_all', {});
+      const grants = directory.listGrants(user.id);
+      directory.transaction(() => {
+        auth.logoutAll(user.id);
+        directory.revokeUserGrants(user.id, 'sign_out_everywhere', now());
+        auditOauthRevocations(grants, 'sign_out_everywhere', user.id);
+        audit(user, 'auth.logout_all', {});
+      });
       res.setHeader('set-cookie', auth.clearCookie());
       emit('session-revoked', { userId: user.id });
       return [204];
@@ -894,8 +1059,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         throw conflict('last_owner', 'The workspace needs at least one active owner');
       }
       if (cloud && addsSeat(target, patch) && !cloud.seatsAvailable()) throw seatLimited('this change would take another seat');
+      const oauthGrantsToRevoke = patch.disabled === true || patch.role === 'guest' ? directory.listGrants(target.id) : [];
       const updated = directory.transaction(() => {
         const next = directory.updateUser(target.id, patch);
+        auditOauthRevocations(oauthGrantsToRevoke, 'user_state');
         audit(user, 'member.update', { userId: target.id, ...patch });
         return next;
       });
@@ -912,7 +1079,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (user.role !== 'owner') throw forbidden('Only an owner can remove an owner');
         if (!hasOtherActiveOwner(target.id)) throw conflict('last_owner', 'The workspace needs at least one active owner');
       }
+      const oauthGrantsToRevoke = directory.listGrants(target.id);
       directory.transaction(() => {
+        auditOauthRevocations(oauthGrantsToRevoke, 'user_state');
         audit(user, 'member.remove', { userId: target.id, email: target.email });
         directory.removeUser(target.id);
       });
@@ -955,8 +1124,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const target = directory.getUser(params.id);
       if (!target) throw notFound('Member not found');
       guardOwner(user, target, 'sign out');
+      const oauthGrantsToRevoke = directory.listGrants(target.id);
       directory.transaction(() => {
         const count = directory.revokeUserSessions(target.id);
+        directory.revokeUserGrants(target.id, 'sign_out_everywhere', now());
+        auditOauthRevocations(oauthGrantsToRevoke, 'admin', user.id);
         audit(user, 'admin.sessions.revoke', { userId: target.id, count });
       });
       if (target.id === user.id) res.setHeader('set-cookie', auth.clearCookie());
@@ -1100,6 +1272,101 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ...(history ? history.routes({ compile, boardFor, audit, errors: { HttpError, forbidden } }) : []),
 
     // ---------------------------------------------------------- MCP access tokens (docs/mcp.md)
+
+    ...(config.mcp?.oauth && config.mcp.mode === 'accounts'
+      ? [
+          compile('GET', 'oauth/requests', {}, ({ query, user, sessionId }) => {
+            const values = query.getAll('request');
+            if (values.length !== 1) throw notFound('Authorization request not found');
+            const context = oauthRequestContext(values[0], user, sessionId);
+            if (!context) throw notFound('Authorization request not found');
+            return [200, {
+              clientName: context.clientName,
+              clientNameIsClaim: context.clientNameIsClaim,
+              redirectHost: context.redirectHost,
+              redirectUri: context.redirectUri,
+              verified: context.verified,
+              maxScope: context.maxScope,
+              nonce: context.nonce,
+              readOnly: context.readOnly,
+            }];
+          }),
+          compile('POST', 'oauth/requests/decision', { body: true, readOnlyOk: true }, ({ res, user, sessionId, body }) => {
+            const wait = oauthDecisionLimiter.hit(sessionId);
+            if (wait) {
+              res.setHeader('retry-after', String(wait));
+              throw new HttpError(429, 'rate_limited', 'Too many authorization decisions. Try again later.');
+            }
+            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce'].includes(key))) {
+              throw badRequest('The authorization decision is not valid');
+            }
+            if (typeof body.request !== 'string' || body.request.length > 8192 || typeof body.nonce !== 'string') {
+              throw notFound('Authorization request not found');
+            }
+            const decision = oneOf(body.decision, ['allow', 'deny'], 'decision');
+            const context = oauthRequestContext(body.request, user, sessionId);
+            if (!context || !directory.verifyOAuthNonce(body.nonce, {
+              requestId: context.request.requestId,
+              sessionId,
+              expiresAt: context.request.expiresAt,
+            })) throw notFound('Authorization request not found');
+
+            if (decision === 'deny') {
+              const denied = directory.transaction(() => {
+                const result = directory.decideRequest({ envelope: body.request, userId: user.id, decision: 'deny', now: now() });
+                if (!result) return null;
+                directory.audit(user.id, 'mcp.oauth.authorize', {
+                  clientId: result.client.clientId,
+                  clientName: result.client.name.slice(0, 60),
+                  scope: 'none',
+                  decision: 'deny',
+                });
+                return result;
+              });
+              if (!denied) throw notFound('Authorization request not found');
+              return [200, { redirect: oauthCallback(denied.request, { error: 'access_denied', error_description: 'The request was denied.' }) }];
+            }
+
+            const scope = body.scope === undefined ? 'read' : oneOf(body.scope, OAUTH_SCOPES, 'scope');
+            const current = oauthRequestContext(body.request, user, sessionId);
+            if (!current) throw notFound('Authorization request not found');
+            if (oauthScopeRank(scope) > oauthScopeRank(current.maxScope)) {
+              throw new HttpError(400, 'invalid_scope', 'The selected access level is not available.');
+            }
+            if (cloud?.limits().readOnly) {
+              throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
+            }
+
+            let allowed;
+            try {
+              allowed = directory.transaction(() => {
+                const result = directory.decideRequest({
+                  envelope: body.request,
+                  userId: user.id,
+                  decision: 'allow',
+                  scope,
+                  boardIds: null,
+                  now: now(),
+                });
+                if (!result) return null;
+                directory.audit(user.id, 'mcp.oauth.authorize', {
+                  clientId: result.client.clientId,
+                  clientName: result.client.name.slice(0, 60),
+                  scope,
+                  decision: 'allow',
+                  grantId: result.grant.id,
+                });
+                return result;
+              });
+            } catch (err) {
+              if (err?.code === 'grant_limit') throw conflict('grant_limit', 'You can have at most 20 active connected apps.');
+              throw err;
+            }
+            if (!allowed) throw notFound('Authorization request not found');
+            return [200, { redirect: oauthCallback(allowed.request, { code: allowed.code }) }];
+          }),
+        ]
+      : []),
 
     ...(config.mcp?.mode === 'accounts'
       ? [
@@ -1346,8 +1613,16 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw badRequest('Malformed URL');
     }
     const method = String(req.method).toUpperCase();
+    const exportRoute = routes.find((route) => route.exportToken && route.parts.length === segments.length && route.parts.every((part, index) => part === segments[index]));
+    if (exportRoute) {
+      await exportRoute.handler({ req, res, query, method });
+      return;
+    }
     const guest = auth.authenticateGuest?.(req.headers.cookie) ?? null;
-    if (guest && segments[0] === 'tracker') throw notFound('No such endpoint');
+    if (guest && segments[0] === 'tracker') {
+      if (segments[1] === 'links') throw forbidden('Guest sessions cannot use tracker links.');
+      throw notFound('No such endpoint');
+    }
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
 
@@ -1381,7 +1656,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
     if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res);
-    const body = route.body && BODY_METHODS.has(method) ? await readJson(req, route.maxBody ?? MAX_BODY) : {};
+    const body = route.body && BODY_METHODS.has(method)
+      ? await readJson(req, route.maxBody ?? MAX_BODY, { rejectDuplicateMappingKeys: route.trackerLink === true })
+      : {};
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) {
       session = signedIn();
