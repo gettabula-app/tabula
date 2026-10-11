@@ -57,6 +57,10 @@ export interface OAuthConsentRequest {
   redirectUri: string;
   verified: boolean;
   maxScope: OAuthScope;
+  /** Missing on older servers; only true enables the board picker. */
+  pickerAvailable?: boolean;
+  scopes?: { unrestricted: OAuthScope; boards: OAuthScope };
+  boards?: { id: string; name: string; role: string }[];
   nonce: string;
   readOnly: boolean;
 }
