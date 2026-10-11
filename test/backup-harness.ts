@@ -51,7 +51,7 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
   const fake = await startFakeS3({ creds: CREDS, clock: () => clock.now, pageSize });
   const logs: string[] = [];
   const engines: Engine[] = [];
-  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite'), { snapshotBarrier }) : null;
+  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite'), { snapshotBarrier, oauthInternals: true }) : null;
   if (directory) {
     directory.createUser({ email: 'owner@example.com', name: 'Owner', role: 'owner' });
     directory.createUser({ email: 'member@example.com', name: 'Member', role: 'member' });

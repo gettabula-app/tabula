@@ -6,6 +6,7 @@ import { normaliseEmail } from './config.mjs';
 import { describeSchema, migrate, readSchemaState } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
+import { OAUTH_MIGRATION, createOauthStore } from './oauth.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
@@ -490,6 +491,8 @@ export const MIGRATIONS = [
   );
   CREATE INDEX ticket_projection_outbox_pending ON ticket_projection_outbox(applied_at, next_attempt_at, event_seq, id);
   `, minReader: 11 },
+  // OAuth slice 1 adds tables only. Keep v5.0.1 (schema generation 11) as the rollback floor.
+  { sql: OAUTH_MIGRATION, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -551,8 +554,8 @@ export function ftsAvailable(db) {
   }
 }
 
-/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean }} [options] */
-export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null } = {}) {
+/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean, oauthSecret?: Buffer | null, oauthInternals?: boolean }} [options] */
+export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null, oauthSecret = null, oauthInternals = false } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
@@ -763,6 +766,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       if (sets.length) run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, ...params, id);
       if (patch.disabled) revokeUserSessions(id);
+      if (patch.disabled === true || patch.role === 'guest') oauthStore.revokeUserGrants(id, 'user_state');
     });
     return getUser(id);
   }
@@ -773,6 +777,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     transaction(() => {
       run('DELETE FROM login_tokens WHERE email = ?', user.email);
       run("DELETE FROM board_shares WHERE principal_type = 'user' AND principal_id = ?", id);
+      oauthStore.revokeUserGrants(id, 'user_state');
       run('DELETE FROM users WHERE id = ?', id);
     });
   }
@@ -1343,6 +1348,9 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     return { entries, next: rows.length > n ? entries[entries.length - 1].id : null };
   }
 
+  const tokenStore = createTokenStore({ get, all, run, transaction });
+  const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret, exposeInternals: oauthInternals });
+
   return {
     close() {
       if (closed) return;
@@ -1417,7 +1425,13 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     listShares,
     getSetting,
     setSetting,
-    ...createTokenStore({ get, all, run, transaction }),
+    ...tokenStore,
+    ...oauthStore,
+    invalidateOauthAfterRestore(reason = 'restore', now = Date.now(), purgeClients = false) {
+      return oauthStore.invalidateAfterRestore(now, reason, purgeClients);
+    },
+    // The personal-token API keeps its established name; OAuth has its distinct lookup method.
+    findAccessToken: tokenStore.findAccessToken,
     ...createTemplateStore({ get, all, run }),
     ...createAiKeyStore({ get, run, transaction }),
     ...createAssetIndex({ get, all, run }),

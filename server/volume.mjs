@@ -239,6 +239,8 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
         directory.revokeAllSessions();
         // Another workspace's volume brings its MCP tokens and invite links with it; a restored copy keeps its own.
         if (plan.reason === 'operator') directory.revokeAllGrants();
+        // OAuth credentials are instance-bound even when a restored copy keeps its personal tokens and clients.
+        directory.invalidateOauthAfterRestore('adopt', plan.marker.adoptedAt ?? Date.now(), plan.reason === 'operator');
         directory.audit(null, AUDIT_ACTION, { from: plan.from, to: plan.to, reason: plan.reason });
       });
     }
@@ -248,7 +250,7 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
   if (plan.action === 'create') log(`volume: marked this volume (${plan.marker.volumeId}) as workspace ${plan.marker.workspaceId ?? '(none)'}, Fly volume ${plan.marker.flyVolumeId ?? '(unknown)'}`);
   if (plan.action === 'adopt') {
     const show = (id) => `workspace ${id.workspaceId ?? '(none)'}, Fly volume ${id.flyVolumeId ?? '(unknown)'}`;
-    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every account and guest session was ended, and every join code revoked${plan.reason === 'operator' ? ', with every MCP access token and invite link revoked' : ''}`);
+    log(`volume: adopted volume ${plan.marker.volumeId} (${plan.reason}) from ${show(plan.from)} to ${show(plan.to)}; every account and guest session was ended, every join code revoked and every OAuth grant ended${plan.reason === 'operator' ? ', with every MCP access token and invite link revoked' : ''}`);
   }
   return plan.action === 'adopt';
 }

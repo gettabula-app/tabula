@@ -4,7 +4,7 @@ import { createTicket, updateTicket, transitionTicket } from './tickets.mjs';
 import { enqueueTicketProjection, enqueueTicketProjectionRemoval, reconcileTrackerProjection, SERVER_CARD_FIELDS } from './projection.mjs';
 import { appendTicketEvent } from './events.mjs';
 import { actorInfo, cleanTicketTitle, conflict, getDb, newId } from './shared.mjs';
-import { createWindowLimiter } from '../window-limiter.mjs';
+import { createWindowLimiter } from '../limiter.mjs';
 
 const TRACKER_ACCESS_CHECK = Object.freeze({ id: 'tracker-access-check' });
 const UPDATE_WINDOW_MS = 60_000;

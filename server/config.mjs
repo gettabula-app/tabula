@@ -30,10 +30,49 @@ const MCP_SCOPES = ['read', 'comment', 'write'];
 const MCP_TOKEN_MIN = 32;
 const mcpVar = (env, name) => (env[`TABULA_${name}`] ?? '').trim();
 
+function parseOAuthRedirectHosts(raw) {
+  const value = (raw ?? '').trim();
+  if (!value) return { hosts: [], wildcard: false };
+  const entries = value.split(',').map((entry) => entry.trim());
+  if (entries.some((entry) => !entry) || new Set(entries).size !== entries.length) {
+    throw new Error('TABULA_OAUTH_REDIRECT_HOSTS must be a comma-separated list of distinct hosts');
+  }
+  if (entries.includes('*')) {
+    if (entries.length !== 1) throw new Error('TABULA_OAUTH_REDIRECT_HOSTS=* must be the only entry');
+    return { hosts: [], wildcard: true };
+  }
+  const hosts = entries.map((host) => {
+    let url;
+    try {
+      url = new URL(`https://${host}`);
+    } catch {
+      throw new Error('TABULA_OAUTH_REDIRECT_HOSTS contains an invalid host');
+    }
+    if (url.hostname !== host || url.port || url.username || url.password || url.pathname !== '/' || url.search || url.hash || host.endsWith('.')) {
+      throw new Error('TABULA_OAUTH_REDIRECT_HOSTS entries must be exact hostnames without ports');
+    }
+    return host;
+  });
+  return { hosts, wildcard: false };
+}
+
+function parseOAuthRedirectSchemes(raw) {
+  const value = (raw ?? '').trim();
+  if (!value) return [];
+  const entries = value.split(',').map((entry) => entry.trim());
+  const pattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  if (entries.some((entry) => !pattern.test(entry)) || new Set(entries).size !== entries.length) {
+    throw new Error('TABULA_OAUTH_REDIRECT_SCHEMES must be a comma-separated list of distinct reverse-domain schemes');
+  }
+  return entries;
+}
+
 // null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
-function loadMcp(env, authEnabled, url) {
+function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const mode = mcpVar(env, 'MCP') || 'off';
   if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_MCP must be on or off (got "${mode.slice(0, 20)}")`);
+  const oauthMode = mcpVar(env, 'MCP_OAUTH') || 'off';
+  if (oauthMode !== 'on' && oauthMode !== 'off') throw new Error(`TABULA_MCP_OAUTH must be on or off (got "${oauthMode.slice(0, 20)}")`);
   if (mode === 'off') return null;
   if (url.protocol !== 'https:' && !LOCAL_HOSTS.has(url.hostname)) {
     throw new Error('TABULA_MCP=on needs an https:// base URL (http:// is only allowed for localhost), because access tokens must not cross the network in clear text');
@@ -41,13 +80,33 @@ function loadMcp(env, authEnabled, url) {
   const token = mcpVar(env, 'MCP_TOKEN');
   const scope = mcpVar(env, 'MCP_SCOPE');
   if (authEnabled) {
-    return { mode: 'accounts', ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean) };
+    let oauth = oauthMode === 'on';
+    let issuer = null;
+    let redirectHosts = [];
+    let redirectWildcard = false;
+    let redirectSchemes = [];
+    if (oauth) {
+      const invalidIssuer = url.pathname !== '/' || url.username || url.password || url.search || url.hash || baseUrl.includes('?') || baseUrl.includes('#');
+      if (invalidIssuer) {
+        warn('TABULA_MCP_OAUTH=on is disabled because TABULA_BASE_URL must be an origin without userinfo, a query, a fragment or a path');
+        oauth = false;
+      } else {
+        issuer = url.origin;
+        ({ hosts: redirectHosts, wildcard: redirectWildcard } = parseOAuthRedirectHosts(env.TABULA_OAUTH_REDIRECT_HOSTS));
+        redirectSchemes = parseOAuthRedirectSchemes(env.TABULA_OAUTH_REDIRECT_SCHEMES);
+      }
+    }
+    return {
+      mode: 'accounts', oauth, issuer, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted),
+      ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean),
+    };
   }
+  if (oauthMode === 'on') warn('TABULA_MCP_OAUTH=on is ignored: OAuth requires accounts mode (TABULA_AUTH=on)');
   if (token.length < MCP_TOKEN_MIN || /\s/.test(token)) {
     throw new Error(`TABULA_MCP_TOKEN must be set, at least ${MCP_TOKEN_MIN} characters without spaces, when TABULA_MCP=on in open mode`);
   }
   if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
-  return { mode: 'open', token, scope: scope || 'read', ignored: [] };
+  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, ignored: [] };
 }
 
 // Images on a board (docs/images.md). Sizes are bytes, with an optional K, M or G suffix (powers of 1024).
@@ -254,7 +313,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   }
 
   const cloud = loadCloud(env, authEnabled);
-  const mcp = loadMcp(env, authEnabled, url);
+  const mcp = loadMcp(env, authEnabled, url, baseUrl, Boolean(cloud), warn);
   const ai = loadAi(env, authEnabled, warn);
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);

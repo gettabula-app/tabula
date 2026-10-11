@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWindowLimiter } from '../server/window-limiter.mjs';
+import { createWindowLimiter } from '../server/limiter.mjs';
 
 describe('shared window limiter', () => {
   it('prunes keys idle for more than two windows on an amortized sweep', () => {
