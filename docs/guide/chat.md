@@ -94,6 +94,8 @@ Under **Chat notifications** in the board menu (or **Notifications** at the bott
 
 The email says who mentioned you, in which board, team or workspace, and the first words of the message, with a link. It is sent only if you have not had Tabula open for 10 minutes, and not for a message you have read, or that was deleted or edited so it no longer mentions you. You get at most one email per conversation every 10 minutes and 20 a day, and editing a message never sends it again.
 
+**Mail setup:** With the default `TABULA_MAIL=log`, mention emails are not delivered. The relay prints their contents to process output, including the first 140 characters of the message. If your deployment should deliver mention emails, configure `TABULA_MAIL=smtp` or `TABULA_MAIL=webhook` intentionally.
+
 ## Offline
 
 Chat keeps the last 50 messages of each board you opened on this device. Without a connection it shows them with **Offline, showing saved messages**.
