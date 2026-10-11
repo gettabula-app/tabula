@@ -183,3 +183,13 @@ Accepted and folded in above: server-side writers refuse (3.8); title checks are
 Answers: hold-then-correct is the primary path for moves and creates; keep the restore-window; paste makes a new ticket without `cloned_from`; hide the linked card's owner, due and labels controls and show the ticket's values read-only with an "Edit in tracker" link (no mirroring, because mirroring is a second writer); on unlink, projecting assignee, due and labels into the plain fields is deferred; 400 ms and 2 s are fine.
 
 Resolved: migration 12 has no `ticket_events.event_type` CHECK constraint, so unlink-by-restore writes `unlinked` with source `restore` and details `{ reason: 'restore' }` (3.3/7).
+
+## 11. Behaviour pinned by the black-box run (on ab1b617)
+
+- Inside a restore window the guard undoes lane and title changes **without** a `MSG_TRACKER_NOTICE`: the client that opened the window knows why cards snap back, so no reason code exists for it.
+- Deleting a whole kanban **container together with its lanes and cards in one update** is an unlink and wins over the mapped-lane rule: no `lane_mapped` notice, all links and the `kanban_tracker_links` row go, tickets stay. Deleting a mapped lane on its own (with or without its cards) is undone as `lane_mapped`.
+- Deleting only the container object leaves its lanes and cards on the board as plain, unlinked objects: links are removed and the cards' tracker fields stripped.
+- An accepted bulk move arrives in one update; the projection drain then rewrites `tracker` and `updatedAt` on the same cards in a second update.
+- The guard allows 240 guarded updates a minute per user and board; the 241st and later are undone with `rate_limited`.
+- Planner refusals from MCP name the MCP tools (`transition_ticket`, `update_ticket`) in the message; the REST routes are named in this document.
+
