@@ -20,7 +20,7 @@ Errors are JSON objects with `error` and `message`; core tracker validation erro
 
 | Status | Error code(s) | When it is returned |
 | --- | --- | --- |
-| 400 | `invalid_input`, `invalid_filter`, `bad_request` | Invalid fields, filters, cursors, query values, JSON, or inbox input |
+| 400 | `invalid_input`, `invalid_filter`, `bad_request`, `key_epoch_confirmation_mismatch`, `drill_record_invalid`, `cutover_record_invalid` | Invalid fields, filters, cursors, query values, JSON, inbox input, or tracker admin record |
 | 401 | `unauthenticated` | No valid session |
 | 402 | `read_only` | General API write rejected in hosted read-only mode, including inbox writes |
 | 403 | `csrf`, `forbidden`, `read_only` | CSRF failure, write access denied, or core tracker write in hosted read-only mode |
@@ -28,10 +28,24 @@ Errors are JSON objects with `error` and `message`; core tracker validation erro
 | 405 | `method_not_allowed` | A known route was called with an unsupported method; the response includes an `Allow` header |
 | 409 | `conflict` | Stale ticket update or a conflicting operation |
 | 413 | `limit_exceeded`, `payload_too_large` | A documented tracker limit or request-body size was exceeded |
-| 429 | `rate_limited` | Core tracker mutation window is full; the response includes `Retry-After` in seconds |
+| 429 | `rate_limited` | A tracker mutation or admin route limit is full; the response includes `Retry-After` in seconds |
+| 503 | `tracker_restoring` | Tracker writes are paused during restore; the response includes `floor: 'pending'` |
 | 500 | `internal` | Unexpected server error |
 
 JSON request bodies are limited to 64 KiB by default; inbox read and notification preference bodies are limited to 8 KiB. Core tracker mutations are limited to 60 per signed-in user in a fixed 60-second window. A bulk request counts as one mutation. The limiter covers routes marked as tracker mutations, including ticket, label, project, milestone, view, relation, comment, archive/restore, and subscription writes. It does not cover inbox reads, mark-read, or notification preference writes.
+
+## Tracker readiness and attestations
+
+These routes are registered only when account authentication and `TABULA_TRACKER=on` are both enabled. All four require the workspace owner; members and non-owner admins receive `403 forbidden`. Mutating routes require `x-tabula: 1` and remain available in hosted read-only mode.
+
+| Method and path | Request | Success response |
+| --- | --- | --- |
+| `GET /api/admin/tracker/readiness` | none | The frozen readiness shape in `docs/tracker-s7.md` section 9.1; cached for 30 seconds and limited to 60 requests per minute |
+| `POST /api/admin/tracker/key-epoch` | `{ confirm: 'JUMP' }` | `{ counters: [{ scope, prefix, oldNext, newNext }], gateCleared }`; limited to 5 requests per hour |
+| `POST /api/admin/tracker/drill-record` | A strict drill record with a closed list of box ids | The normalized record, with `at` in milliseconds |
+| `POST /api/admin/tracker/cutover-record` | `{ importVerifiedAt: 'YYYY-MM-DD', lossReportAccepted: true }` | The stored cutover record |
+
+The key-epoch route returns `400 key_epoch_confirmation_mismatch` unless `confirm` is exactly `JUMP`, or `503 tracker_restoring` with `floor: 'pending'` while a restore is running. Drill and cutover validation return `400 drill_record_invalid` and `400 cutover_record_invalid`. Readiness and key-epoch limits return `429 rate_limited` with `Retry-After`. Readiness details contain only short codes and numbers.
 
 ## Metadata
 

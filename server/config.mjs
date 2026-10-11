@@ -274,6 +274,18 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const authEnabled = env.TABULA_AUTH === 'on';
   const port = Number(env.PORT) || 8787;
   const dataDir = path.resolve(env.DATA_DIR || path.join(here, '..', 'data'));
+  const rawTrackerKeyFloorFile = (env.TABULA_TRACKER_KEY_FLOOR_FILE ?? '').trim();
+  let trackerKeyFloorFile = null;
+  if (rawTrackerKeyFloorFile) {
+    if (!path.isAbsolute(rawTrackerKeyFloorFile)) {
+      throw new Error('TABULA_TRACKER_KEY_FLOOR_FILE must be an absolute path outside DATA_DIR');
+    }
+    trackerKeyFloorFile = path.resolve(rawTrackerKeyFloorFile);
+    const relative = path.relative(dataDir, trackerKeyFloorFile);
+    if (relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) {
+      throw new Error('TABULA_TRACKER_KEY_FLOOR_FILE must be outside DATA_DIR');
+    }
+  }
 
   const ownerRaw = (env.TABULA_OWNER_EMAIL || '').trim();
   const ownerEmail = normaliseEmail(ownerRaw);
@@ -340,6 +352,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     sessionMs,
     loginTokenMs: 15 * 60 * 1000,
     dataDir,
+    ...(trackerKeyFloorFile ? { trackerKeyFloorFile } : {}),
     port,
     mail: { mode, webhookUrl, webhookToken, smtpUrl, from: env.TABULA_MAIL_FROM || 'Tabula <no-reply@localhost>' },
     ai,

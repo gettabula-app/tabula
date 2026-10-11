@@ -47,6 +47,7 @@ import { createSourceGate } from './source-policy.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
+import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
 import { OpsError } from './board-ops.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -185,6 +186,21 @@ function settleVolume(dir) {
 let maintenance = false;
 let roomsFrozen = false;
 
+async function closeKeyFloorReporter() {
+  if (!keyFloorReporter) return;
+  let timer = null;
+  try {
+    await Promise.race([
+      keyFloorReporter.flush(),
+      new Promise((resolve) => { timer = setTimeout(resolve, 4_000); }),
+    ]);
+  } catch { /* the floor report must not delay a restore or shutdown */ }
+  finally {
+    if (timer !== null) clearTimeout(timer);
+    keyFloorReporter.close();
+  }
+}
+
 // A room name is `<boardId>` or `<boardId>~comments` (the `~` cannot occur in a board id).
 function parseRoom(name) {
   const m = typeof name === 'string' ? ROOM_RE.exec(name) : null;
@@ -226,6 +242,7 @@ let directory = null;
 let auth = null;
 let api = null;
 let cloud = null;
+let keyFloorReporter = null;
 let buildApi = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
@@ -257,6 +274,16 @@ if (config.authEnabled) {
   }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
+  if (config.tracker) {
+    keyFloorReporter = createKeyFloorReporter({
+      directory,
+      events,
+      cloud,
+      floorFile: config.trackerKeyFloorFile ?? null,
+      log,
+    });
+    directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
+  }
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
@@ -400,7 +427,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -470,6 +497,7 @@ async function enterMaintenance() {
   // The live AI runs belong to rooms that are gone. A provider call still out finds its run dropped and changes nothing;
   // nothing else of the AI path survives, because the API answers 503 and the sockets are closed.
   aiLive.dropAll();
+  await closeKeyFloorReporter();
   cloud?.close();
   history.close();
 }
@@ -1487,6 +1515,7 @@ const pinger = setInterval(() => {
 const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
+  await closeKeyFloorReporter();
   cloud?.close();
   // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
   const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());

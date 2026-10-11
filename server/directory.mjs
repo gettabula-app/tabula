@@ -593,24 +593,44 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
 
   let closed = false;
   let depth = 0;
+  let keyFloorListener = null;
+  const afterCommitCallbacks = [];
+  function afterCommit(fn) {
+    if (typeof fn !== 'function') return;
+    if (depth > 0) {
+      afterCommitCallbacks.push(fn);
+      return;
+    }
+    try { fn(); } catch { /* notifications must not undo a committed write */ }
+  }
   function transaction(fn) {
     if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
       return snapshotBarrier.deferWrite(() => transaction(fn));
     }
     const nested = depth > 0;
+    const callbackMark = afterCommitCallbacks.length;
     const savepoint = `sp${depth}`;
     db.exec(nested ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');
     depth++;
+    let committed = false;
     try {
       const result = fn();
       db.exec(nested ? `RELEASE ${savepoint}` : 'COMMIT');
+      committed = true;
       return result;
     } catch (err) {
       if (nested) db.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
       else db.exec('ROLLBACK');
+      afterCommitCallbacks.length = callbackMark;
       throw err;
     } finally {
       depth--;
+      if (!nested && committed) {
+        const callbacks = afterCommitCallbacks.splice(0);
+        for (const callback of callbacks) {
+          try { callback(); } catch { /* notifications must not undo a committed write */ }
+        }
+      }
     }
   }
 
@@ -1362,6 +1382,9 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     schemaReport: () => describeSchema(db, MIGRATIONS),
     db,
     transaction,
+    afterCommit,
+    setKeyFloorListener: (fn) => { keyFloorListener = typeof fn === 'function' ? fn : null; },
+    keyFloorChanged: () => { try { keyFloorListener?.(); } catch { /* reporting cannot fail a write */ } },
     createUser,
     getUser,
     getUserByEmail,

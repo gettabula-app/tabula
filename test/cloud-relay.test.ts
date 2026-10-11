@@ -1,10 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import type { AddressInfo } from 'node:net';
 import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
@@ -13,6 +11,7 @@ import WebSocket from 'ws';
 import { MSG_WORKSPACE, onWorkspaceHint, resyncRooms } from '../src/sync';
 import { RELAY_START_MS } from './relay-timing';
 import { startRelayProcess } from './start-relay';
+import { createFakeCloudControlPlane } from './fake-cloud-control-plane';
 
 // docs/cloud.md. The relay runs as a child process exactly as `npm start` would, next to a fake control plane.
 
@@ -64,29 +63,13 @@ const stopRelay = (p: ChildProcess) =>
 
 // ---------------------------------------------------------------- the fake control plane
 
-type Seen = { method: string; url: string; authorization: string | undefined; body: string };
-const seen: Seen[] = [];
-let reply: { status: number; body: unknown } = { status: 200, body: { url: PORTAL } };
-let controlPlane: http.Server;
+const fakeCloud = createFakeCloudControlPlane(PORTAL);
+const seen = fakeCloud.seen;
 let controlUrl = '';
-// The instance also reports usage to the same fake, 30 seconds after members change.
-const portalCalls = () => seen.filter((s) => s.url.endsWith('/portal'));
 
 beforeAll(async () => {
-  controlPlane = http.createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      seen.push({ method: req.method ?? '', url: req.url ?? '', authorization: req.headers.authorization, body: Buffer.concat(chunks).toString() });
-      res.writeHead(reply.status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(reply.body));
-    });
-  });
-  await new Promise<void>((resolve) => controlPlane.listen(0, '127.0.0.1', resolve));
-  controlUrl = `http://127.0.0.1:${(controlPlane.address() as AddressInfo).port}`;
+  controlUrl = await fakeCloud.start();
 });
-
-afterAll(() => new Promise<void>((resolve) => controlPlane.close(() => resolve())));
 
 // ---------------------------------------------------------------- servers and clients
 
@@ -107,6 +90,7 @@ async function launch(env: Record<string, string> = {}, dir = fs.mkdtempSync(pat
 afterAll(async () => {
   await Promise.all(servers.map((s) => stopRelay(s.proc)));
   for (const dir of new Set(servers.map((s) => s.dir))) fs.rmSync(dir, { recursive: true, force: true });
+  await fakeCloud.close();
 });
 
 const sockets = new Set<WebSocket>();
@@ -116,8 +100,7 @@ afterEach(() => {
   sockets.clear();
   for (const p of providers) p.destroy();
   providers.clear();
-  seen.length = 0;
-  reply = { status: 200, body: { url: PORTAL } };
+  fakeCloud.reset();
 });
 
 let seq = 0;
@@ -669,17 +652,17 @@ describe('a hosted workspace', () => {
     it('asks the control plane for the owner and hands back the URL', async () => {
       const res = await c.api(owner.cookie, 'POST', '/api/billing/portal');
       expect(res).toMatchObject({ status: 200, body: { url: PORTAL } });
-      expect(portalCalls()).toHaveLength(1);
-      expect(portalCalls()[0]).toMatchObject({ method: 'POST', url: `/v1/workspaces/${WORKSPACE}/portal`, authorization: `Bearer ${TOKEN}` });
+      expect(fakeCloud.portalCalls()).toHaveLength(1);
+      expect(fakeCloud.portalCalls()[0]).toMatchObject({ method: 'POST', url: `/v1/workspaces/${WORKSPACE}/portal`, authorization: `Bearer ${TOKEN}` });
     });
 
     it('answers 409 no_billing, without asking the control plane, on a workspace provided free, and says so in /api/me (TAB-226)', async () => {
       await c.internal('PUT', '/api/internal/limits', { billing: false });
       try {
-        const before = portalCalls().length;
+        const before = fakeCloud.portalCalls().length;
         const res = await c.api(owner.cookie, 'POST', '/api/billing/portal');
         expect(res).toMatchObject({ status: 409, body: { error: 'no_billing' } });
-        expect(portalCalls()).toHaveLength(before);
+        expect(fakeCloud.portalCalls()).toHaveLength(before);
         expect((await c.api(owner.cookie, 'GET', '/api/me')).body.workspace).toMatchObject({ billing: false });
       } finally {
         await c.internal('PUT', '/api/internal/limits', { billing: true });
@@ -692,11 +675,11 @@ describe('a hosted workspace', () => {
       const member = await c.joinTeam(owner.cookie, team.id);
       expect((await c.api(member.cookie, 'POST', '/api/billing/portal')).status).toBe(403);
       expect((await c.api(undefined, 'POST', '/api/billing/portal')).status).toBe(401);
-      expect(portalCalls()).toEqual([]);
+      expect(fakeCloud.portalCalls()).toEqual([]);
 
-      reply = { status: 200, body: { url: 'http://billing.example.com/p' } };
+      fakeCloud.setReply({ status: 200, body: { url: 'http://billing.example.com/p' } });
       expect((await c.api(owner.cookie, 'POST', '/api/billing/portal')).status).toBe(502);
-      reply = { status: 500, body: { error: 'boom' } };
+      fakeCloud.setReply({ status: 500, body: { error: 'boom' } });
       const failed = await c.api(owner.cookie, 'POST', '/api/billing/portal');
       expect(failed).toMatchObject({ status: 502, body: { error: 'bad_gateway' } });
       expect(JSON.stringify(failed.body)).not.toContain(TOKEN);

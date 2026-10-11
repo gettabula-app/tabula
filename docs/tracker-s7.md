@@ -245,11 +245,14 @@ Every `fail`/`unknown` detail is a number or a code ("newest backup 41 minutes o
 
 ### 9.3 Drill record
 
-`POST /api/admin/tracker/drill-record` (owner): `{ at (a millisecond number or an ISO string), kind: 'production'|'local', schema, restoreSeconds, dataLossSeconds, boxes: [{id, result}] , overall }`, validated strictly (ids from the closed list of 8.1/8.2, numbers bounded), stored as `tracker.drill.last` (one record; a new one replaces it) with an audit row `tracker.drill_record`. The script of 8.1 prints the JSON the owner pastes; the production drill ends with the same JSON. An attestation, honestly labelled `kind`; `local` records never turn `restore_drill_recent` green for hosted production workspaces (`kind: 'production'` required when `createCloud()` is non-null).
+`POST /api/admin/tracker/drill-record` (owner): `{ at (a millisecond number or an ISO string), kind: 'production'|'local', schema, restoreSeconds, dataLossSeconds, boxes: [{id, result}] , overall }`, validated strictly (ids from this closed list, numbers bounded), stored as `tracker.drill.last` (one record; a new one replaces it) with an audit row `tracker.drill_record`. The script of 8.1 prints the JSON the owner pastes; the production drill ends with the same JSON. An attestation, honestly labelled `kind`; `local` records never turn `restore_drill_recent` green for hosted production workspaces (`kind: 'production'` required when `createCloud()` is non-null).
+
+Closed box ids: `seed`, `barrier_backup`, `restore_workspace`, `lost_keys_not_reissued`, `gate_cycle`, `reconcile_boards`, `search_rebuilt`, `hosted_floor_available`, `hosted_floor_unknown`, `board_copy_stripped`, `history_restore`, `key_rotation`, `damaged_search`, `missing_room_file`, `schema_too_new`, `no_text_in_logs`, `slice8_secrets_ciphertext`, `slice8_inbound_recovered`, `slice8_delivery_retry_safe`, `slice8_connection_health`. When slice 8 tables are absent, `slice8_connection_health` uses result `not_present`.
 
 ### 9.4 Cutover record
 
 `POST /api/admin/tracker/cutover-record` (owner): `{ importVerifiedAt: 'YYYY-MM-DD', lossReportAccepted: true }` (a calendar date string, not a millisecond timestamp), stored as `tracker.cutover.record`, audited. Both are the owner's explicit acts, not inferred.
+Invalid or future dates and any other body return `400 cutover_record_invalid`.
 
 ### 9.4a Wire shapes the client reads (frozen with the tech lead's tl/tracker-s7-ui a15ce7d)
 
