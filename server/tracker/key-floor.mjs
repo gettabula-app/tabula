@@ -65,10 +65,20 @@ export function computeKeyFloor({ restored = [], liveBefore, manifestMax, contro
   for (const row of controlRows) add(row.scope, row.prefix, Math.min(Number.MAX_SAFE_INTEGER, row.floor + REPORT_AFTER));
   for (const row of fileRows) add(row.scope, row.prefix, row.floor);
 
-  const hasOtherSource = [liveBefore, manifestMax, controlPlane, floorFile].some((source) => source !== undefined && source !== null);
-  const hasRestoredTickets = restoredHasTickets ?? (Array.isArray(restored) && restored.some((row) => nonNegativeSafe(row?.maxNumber) && row.maxNumber > 0));
+  // `known` needs evidence about every counter that has tickets: a row for its (scope, prefix) in an external source.
+  // An empty source, or one with other prefixes only, proves nothing, and a manifest counts only when it is newer
+  // than the restored counter (the restored manifest's own counter is the restored counter).
+  const restoredRows = (Array.isArray(restored) ? restored : []).filter((row) => row && validName(row.scope) && validName(row.prefix));
+  const restoredNext = new Map(restoredRows.map((row) => [counterKey(row), positiveSafe(row.next) ? row.next : 0]));
+  const evidence = new Set();
+  for (const row of [...liveRows, ...controlRows, ...fileRows]) evidence.add(counterKey(row));
+  for (const row of manifestRows) if (row.floor > (restoredNext.get(counterKey(row)) ?? 0)) evidence.add(counterKey(row));
+  const needsEvidence = restoredRows.filter((row) => nonNegativeSafe(row.maxNumber) && row.maxNumber > 0);
+  const hasRestoredTickets = restoredHasTickets ?? needsEvidence.length > 0;
+  const known = !hasRestoredTickets || (needsEvidence.every((row) => evidence.has(counterKey(row)))
+    && (needsEvidence.length > 0 || restoredHasTickets !== true));
   const counters = [...floors.values()].sort((a, b) => a.scope.localeCompare(b.scope) || a.prefix.localeCompare(b.prefix));
-  return { counters, known: hasOtherSource || !hasRestoredTickets };
+  return { counters, known };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { drainTicketProjection, reconcileTrackerProjection } from './projection.mjs';
 import { refreshTicketSearch } from './search.mjs';
+import { TICKET_SEARCH_DDL } from '../directory.mjs';
 import { maybeClearGate, readRestoreGate } from './gate.mjs';
 
 const BATCH_SIZE = 500;
@@ -38,14 +39,11 @@ function ftsCounts(directory) {
   return { active, rows, integrity: integrity && !countFailed };
 }
 
-function rebuildFts(directory, refreshSearch) {
+async function rebuildFts(directory, refreshSearch, sleep) {
   const db = directory.db;
   directory.transaction(() => {
     if (hasTable(db, 'ticket_search')) db.exec('DROP TABLE ticket_search');
-    db.exec(`CREATE VIRTUAL TABLE ticket_search USING fts5(
-      ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
-      tokenize = 'unicode61 remove_diacritics 2'
-    )`);
+    db.exec(TICKET_SEARCH_DDL);
   });
 
   let cursor = null;
@@ -59,6 +57,8 @@ function rebuildFts(directory, refreshSearch) {
       for (const id of ids) refreshSearch(db, id);
     });
     cursor = ids.at(-1);
+    // Let the relay serve sockets and health checks between batches: a big rebuild must not stall the event loop.
+    await sleep(0);
   }
   const result = ftsCounts(directory);
   if (!result.integrity || result.rows < result.active) throw new Error('fts_rebuild_failed');
@@ -117,7 +117,7 @@ export function createTrackerRestoreRecovery({
     try {
       const before = ftsCounts(directory);
       if (before.rows < before.active || !before.integrity) {
-        const after = rebuildFts(directory, refreshSearch);
+        const after = await rebuildFts(directory, refreshSearch, sleep);
         ftsRepaired = Math.max(1, before.active - before.rows);
         ftsReady = after.rows >= after.active && after.integrity;
       } else {
@@ -197,6 +197,8 @@ export function createTrackerRestoreRecovery({
     }, (action, detail) => directory.audit(null, action, detail));
 
     updateRestoreRecord(directory, { counts, ftsRepaired });
+    // One audit row with the count only, never board ids.
+    if (counts.boardsFailed > 0) directory.audit(null, 'tracker.restore_boards_failed', { count: counts.boardsFailed });
     return { ...counts, ftsReady, ftsRepaired, floor: currentGate?.floor ?? gate.floor, gateCleared };
   }
 

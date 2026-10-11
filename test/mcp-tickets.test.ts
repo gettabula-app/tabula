@@ -377,3 +377,65 @@ describe('read-only hosted tracker', () => {
     }
   });
 });
+
+describe('tracker restore gate over MCP', () => {
+  it('refuses every tracker write with tracker_restoring and its floor, keeps reads, and works again when the gate opens', async () => {
+    const gated = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' } });
+    const setGate = (value: string | null) => {
+      const db = new DatabaseSync(path.join(gated.dir, 'directory.sqlite'));
+      try {
+        db.exec('PRAGMA busy_timeout = 5000');
+        if (value === null) db.prepare("DELETE FROM settings WHERE key = 'tracker.restore_gate'").run();
+        else db.prepare("INSERT INTO settings (key, value) VALUES ('tracker.restore_gate', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(value);
+      } finally {
+        db.close();
+      }
+    };
+    // the relay caches the gate for about a second
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 1300));
+    try {
+      await gated.start();
+      const gatedOwner = await gated.signInOwner();
+      const writer = await gated.newToken(gatedOwner.cookie, { scope: 'read', tracker: 'write' });
+      const baseline = await gated.tool(writer.token, 'create_ticket', { title: 'Gate baseline', idempotencyKey: 'gate-baseline' });
+      expect(baseline.error).toBeUndefined();
+      const project = await gated.tool(writer.token, 'create_project', { name: 'Gate project' });
+      const milestone = await gated.tool(writer.token, 'create_milestone', { projectId: project.data.project.id, name: 'Gate milestone', due: '2099-01-01' });
+      const view = await gated.tool(writer.token, 'create_saved_view', { name: 'Gate view', filter: [] });
+      const key = baseline.data.ticket.key;
+      const before = ticketCounts(gated.dir);
+
+      setGate(JSON.stringify({ since: Date.now(), reason: 'restore', floor: 'pending' }));
+      await settle();
+      const attempts: [string, Record<string, unknown>][] = [
+        ['create_ticket', { title: 'must not persist' }],
+        ['update_ticket', { key, title: 'must not persist' }],
+        ['transition_ticket', { key, state: 'Done' }],
+        ['comment_ticket', { key, body: 'must not persist' }],
+        ['create_ticket_label', { name: 'must not persist' }],
+        ['relate_tickets', { key, relation: 'relates_to', otherKey: key }],
+        ['create_project', { name: 'must not persist' }],
+        ['update_project', { projectId: project.data.project.id, name: 'must not persist' }],
+        ['create_milestone', { projectId: project.data.project.id, name: 'must not persist', due: '2099-01-01' }],
+        ['update_milestone', { milestoneId: milestone.data.milestone.id, name: 'must not persist' }],
+        ['create_saved_view', { name: 'must not persist', filter: [] }],
+        ['update_saved_view', { viewId: view.data.view.id, name: 'must not persist' }],
+        ['delete_saved_view', { viewId: view.data.view.id }],
+      ];
+      for (const [name, args] of attempts) {
+        const result = await gated.tool(writer.token, name, args);
+        expect({ name, error: result.error, floor: result.data.floor }).toEqual({ name, error: 'tracker_restoring', floor: 'pending' });
+      }
+      expect((await gated.tool(writer.token, 'list_tickets')).error).toBeUndefined();
+      expect((await gated.tool(writer.token, 'get_ticket', { key })).error).toBeUndefined();
+      expect(ticketCounts(gated.dir)).toEqual(before);
+
+      setGate(null);
+      await settle();
+      const after = await gated.tool(writer.token, 'create_ticket', { title: 'Gate open again', idempotencyKey: 'gate-open-again' });
+      expect(after.error).toBeUndefined();
+    } finally {
+      await gated.cleanup();
+    }
+  });
+});

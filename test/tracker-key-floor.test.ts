@@ -96,7 +96,33 @@ describe('tracker key floors', () => {
   it('keeps a floor unknown only when ticket evidence exists and no external source was supplied', () => {
     expect(computeKeyFloor({ restored, restoredHasTickets: true })).toMatchObject({ known: false, counters: [{ next: 10 }] });
     expect(computeKeyFloor({ restored: [], restoredHasTickets: false })).toEqual({ counters: [], known: true });
-    expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [] }).known).toBe(true);
+  });
+
+  it('needs a row for every restored counter that has tickets: an empty source or another prefix is no evidence', () => {
+    const tab = { scope: 'trk_default', prefix: 'TAB' };
+    // disaster restore into an empty live directory, nothing else: pending
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: { counters: [] } }).known).toBe(false);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [], manifestMax: [], controlPlane: [], floorFile: null }).known).toBe(false);
+    // a source that covers only a different prefix: pending
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, controlPlane: [{ scope: 'trk_default', prefix: 'OTH', floor: 50 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [{ scope: 'other_scope', prefix: 'TAB', next: 50 }] }).known).toBe(false);
+    // a row covering the prefix: known (control plane, floor file, live counters of a healthy in-place restore)
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 5 }] }).known).toBe(true);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, floorFile: [{ ...tab, floor: 5 }] }).known).toBe(true);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [{ ...tab, next: 10 }] }).known).toBe(true);
+    // two counters, only one covered: pending
+    const two = [...restored, { scope: 'trk_default', prefix: 'TWO', next: 4, maxNumber: 3 }];
+    expect(computeKeyFloor({ restored: two, restoredHasTickets: true, liveBefore: [{ ...tab, next: 10 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored: two, restoredHasTickets: true, liveBefore: [{ ...tab, next: 10 }, { scope: 'trk_default', prefix: 'TWO', next: 4 }] }).known).toBe(true);
+    // a counter without tickets needs no evidence
+    expect(computeKeyFloor({ restored: [{ ...tab, next: 1, maxNumber: 0 }], restoredHasTickets: true, liveBefore: [] }).known).toBe(false);
+    expect(computeKeyFloor({ restored: [{ ...tab, next: 1, maxNumber: 0 }], restoredHasTickets: false }).known).toBe(true);
+  });
+
+  it('counts a kept manifest as evidence only when it is newer than the restored counter', () => {
+    // the restored manifest carries the restored counter itself: that proves nothing about later keys
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, manifestMax: [{ scope: 'trk_default', prefix: 'TAB', next: 10 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, manifestMax: [{ scope: 'trk_default', prefix: 'TAB', next: 11 }] }).known).toBe(true);
   });
 
   it('applies the 25-key safety jump to a reported control-plane floor', () => {

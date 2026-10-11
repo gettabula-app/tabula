@@ -27,6 +27,15 @@ const RANK_ROLE = { 4: 'owner', 3: 'editor', 2: 'commenter', 1: 'viewer' };
 // A share role the CASE does not know ranks 0, which grants nothing.
 const shareRank = (column) => `CASE ${column} WHEN 'editor' THEN 3 WHEN 'commenter' THEN 2 WHEN 'viewer' THEN 1 ELSE 0 END`;
 
+/**
+ * The ticket search table, one definition for the migration and for the rebuild after a restore (server/tracker/restore-recovery.mjs).
+ * The text is part of schema 12 and must stay byte for byte what a fresh database holds in sqlite_master.
+ */
+export const TICKET_SEARCH_DDL = `CREATE VIRTUAL TABLE ticket_search USING fts5(
+    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
+    tokenize = 'unicode61 remove_diacritics 2'
+  )`;
+
 export const MIGRATIONS = [
   `
   CREATE TABLE users (
@@ -314,10 +323,7 @@ export const MIGRATIONS = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (ticket_id, user_id)
   );
-  CREATE VIRTUAL TABLE ticket_search USING fts5(
-    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
-    tokenize = 'unicode61 remove_diacritics 2'
-  );
+  ${TICKET_SEARCH_DDL};
 
   CREATE INDEX tickets_state_updated ON tickets(state_id, updated_at DESC);
   CREATE INDEX tickets_assignee_state_updated ON tickets(assignee_user_id, state_id, updated_at DESC);

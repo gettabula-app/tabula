@@ -107,6 +107,9 @@ describe('post-restore tracker recovery', () => {
     expect(result).toMatchObject({ boardsFailed: 1, boardsReconciled: 0, gateCleared: true });
     expect(readRestoreGate(directory)).toBeNull();
     expect(JSON.parse(String(directory.getSetting('restore.status')))).toMatchObject({ tracker: { boardsFailed: 1, boardsReconciled: 0 } });
+    const rows = directory.listAudit(20).filter((row) => row.action === 'tracker.restore_boards_failed');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].detail).toEqual({ count: 1 });
   });
 
   it.skipIf(!fts5Available)('reconciles every linked board in sql-wins mode and counts what it changed', async () => {
@@ -140,5 +143,24 @@ describe('post-restore tracker recovery', () => {
     expect(result).toMatchObject({ ftsReady: true, ftsRepaired: 2, gateCleared: true });
     expect(Number(directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_search').get()!.n)).toBe(2);
     expect(searchTickets({ directory, actor, query: 'second recovery searchable', limit: 10 }).entries).toHaveLength(1);
+  });
+  it.skipIf(!fts5Available)('yields to the event loop between rebuild batches and rebuilds the table exactly as a fresh database defines it', async () => {
+    const directory = open();
+    const { actor } = seed(directory);
+    for (let i = 0; i < 1100; i++) createTicket({ directory, actor, title: `Bulk ticket ${i}`, now: 200 + i });
+    const fresh = String(open().db.prepare("SELECT sql FROM sqlite_master WHERE name = 'ticket_search'").get()!.sql);
+    directory.db.exec('DROP TABLE ticket_search');
+    expect(directory.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE name = 'ticket_search'").get()).toBeUndefined();
+    const sleeps: number[] = [];
+    const recovery = createTrackerRestoreRecovery({
+      directory, roomAccess: {}, now: () => 2100,
+      sleep: async (ms: number) => { sleeps.push(ms); },
+    });
+    const result = await recovery.run();
+    // 1101 tickets in batches of 500 is 3 batches, each followed by a yield
+    expect(sleeps.length).toBeGreaterThanOrEqual(Math.ceil(1101 / 500));
+    expect(result).toMatchObject({ ftsReady: true, gateCleared: true });
+    expect(Number(directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_search').get()!.n)).toBe(1101);
+    expect(String(directory.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'ticket_search'").get()!.sql)).toBe(fresh);
   });
 });

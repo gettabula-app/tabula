@@ -99,7 +99,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards', 'backup.tracker_findings',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
-  'tracker.gate_cleared', 'tracker.key_epoch', 'tracker.drill_record', 'tracker.cutover_record',
+  'tracker.gate_cleared', 'tracker.restore_boards_failed', 'tracker.key_epoch', 'tracker.drill_record', 'tracker.cutover_record',
   'volume.adopt',
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
   'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
@@ -539,6 +539,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'tracker.gate_cleared': {
       const seconds = number(d.closedSeconds ?? d.secondsClosed ?? d.durationSeconds ?? d.seconds);
       return `Tracker writes reopened after a restore${seconds === undefined ? '' : ` (${countLabel(seconds, 'second', 'seconds')} closed)`}`;
+    }
+    case 'tracker.restore_boards_failed': {
+      const count = number(d.count);
+      return `A restore could not reconcile ${count === undefined ? 'some boards' : countLabel(count, 'linked board', 'linked boards')}; they are corrected when opened`;
     }
     case 'tracker.key_epoch': {
       const changes = epochCounterChanges(d);
