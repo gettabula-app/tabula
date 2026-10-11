@@ -519,9 +519,9 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     const selectedScope = scope ?? (request.scope ? request.scope.split(' ')[0] : 'read');
     const requestMaxScope = request.scope
       ? request.scope.split(' ').reduce((max, item) => rankScope(item) > rankScope(max) ? item : max, 'read')
-      : client.maxScope;
+      : client.max_scope;
     if (!OAUTH_SCOPES.includes(selectedScope) || rankScope(selectedScope) > rankScope(requestMaxScope)
-      || rankScope(selectedScope) > rankScope(client.maxScope)) return null;
+      || rankScope(selectedScope) > rankScope(client.max_scope)) return null;
 
     return transaction(() => {
       const currentClient = getClientRow(request.clientId, now);

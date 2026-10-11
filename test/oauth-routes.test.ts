@@ -578,7 +578,7 @@ describe('OAuth metadata and registration routes', () => {
       client_id: client.client_id, redirect_uri: client.redirect_uris[0], code_verifier: memberFlow.verifier,
     });
     expect(memberTokens.status).toBe(200);
-    const demoted = await h.api(ownerAgain.cookie, 'PATCH', `/api/admin/members/${member.user.id}`, { role: 'guest' });
+    const demoted = await h.api(ownerAgain.cookie, 'PATCH', `/api/members/${member.user.id}`, { role: 'guest' });
     expect(demoted.status).toBe(200);
     expect((await h.call(memberTokens.body.access_token, 'ping')).status).toBe(401);
   });
