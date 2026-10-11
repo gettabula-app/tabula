@@ -173,7 +173,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   labelsButton.addEventListener('click', async () => {
     const value = await openPicker<string>(labelsButton, {
       label: 'Labels', multi: true, selected: draft.labels,
-      options: options.meta.labels.map((label) => ({ value: label.name, label: label.name })),
+      options: options.meta.labels.map((label) => ({ value: label.name, label: label.name, color: label.color })),
     });
     if (Array.isArray(value)) { draft.labels = value.filter((item): item is string => typeof item === 'string'); refreshProperties(); }
   });

@@ -4,6 +4,7 @@
   flex-direction: column;
   gap: 12px;
   container-type: inline-size;
+  padding-inline: 16px;
 }
 .trk .trk-inbox-gallery-host { padding-top: 20px; }
 .trk.trk-inbox-gallery[data-inbox-gallery-state='long-list'] .trk-inbox-list { max-height: none; overflow: visible; }

@@ -417,7 +417,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           recordUndo('Priority changed', () => options.store.updateTicket(ticket.key, { priority: ticket.priority }));
         }
       } else if (field === 'labels') {
-        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name })) });
+        const picked = await openPicker<string>(anchor, { label: 'Labels', multi: true, selected: ticket.labels.map((label) => label.name), options: info.labels.map((item) => ({ value: item.name, label: item.name, color: item.color })) });
         if (Array.isArray(picked)) {
           const labels = picked.filter((value): value is string => typeof value === 'string');
           await options.store.updateTicket(ticket.key, { labels });
@@ -495,7 +495,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (field === 'state') renderMenu(anchor, 'State', info.states.map((item) => ({ value: item.key, label: item.name })), '', (value) => void doBulk({ state: value }, anchor));
     else if (field === 'assignee') renderMenu(anchor, 'Assignee', [{ value: '__none', label: 'No one' }, ...info.members.map((item) => ({ value: item.name, label: item.name }))], '', (value) => void doBulk({ assignee: value === '__none' ? null : value }, anchor));
     else if (field === 'priority') renderMenu(anchor, 'Priority', ['urgent', 'high', 'medium', 'low', 'none'].map((value) => ({ value, label: priorityLabel(value as TrackerPriority) })), '', (value) => void doBulk({ priority: value as TrackerPriority }, anchor));
-    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name })), '', (value) => void doBulk({ labels: [value] }, anchor));
+    else if (field === 'labels') renderMenu(anchor, 'Labels', info.labels.map((item) => ({ value: item.name, label: item.name, color: item.color })), '', (value) => void doBulk({ labels: [value] }, anchor));
     else renderMenu(anchor, 'Due date', [{ value: '__none', label: 'No date' }, { value: new Date().toISOString().slice(0, 10), label: 'Today' }], '', (value) => void doBulk({ due: value === '__none' ? null : value }, anchor));
   };
 

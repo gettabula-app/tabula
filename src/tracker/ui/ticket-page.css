@@ -128,11 +128,14 @@
 .trk.tk-page .tk-inline-input, .trk.tk-page .tk-description-input, .trk.tk-page .tk-comment-input {
   min-width: 0;
   border: 1px solid var(--trk-rule);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: 6px;
   background: var(--trk-ground);
   color: var(--trk-text);
 }
-.trk.tk-page .tk-inline-input { min-height: 34px; padding: 5px 8px; }
+.trk.tk-page .tk-inline-input { min-height: 28px; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.trk.tk-page .tk-inline-input[type='date'] { width: 148px; flex: none; }
+.trk.tk-page .tk-inline-field .tk-button { min-height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; }
+.trk.tk-page .tk-inline-input:focus-visible { outline: 0; border-color: var(--trk-text); }
 .trk.tk-page .tk-description-input { width: 100%; min-height: 180px; padding: 12px; font-size: 14px; line-height: 1.55; resize: vertical; }
 .trk.tk-page .tk-description-body, .trk.tk-page .tk-description-preview { max-width: 720px; color: var(--trk-text); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .trk.tk-page .tk-description-body { min-height: 24px; cursor: text; }

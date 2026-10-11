@@ -551,7 +551,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     };
     if (field === 'assignee') return { label: 'Assignee', emptyLabel: 'No one', value: current.assignee?.userId ?? null, options: data.members.map((member) => ({ value: member.userId, label: member.name })) };
     if (field === 'priority') return { label: 'Priority', value: current.priority, options: PRIORITIES.map((priority) => ({ value: priority, label: priorityLabel(priority) })) };
-    if (field === 'labels') return { label: 'Labels', multi: true, emptyLabel: 'None', selected: current.labels.map((label) => label.id), options: data.labels.map((label) => ({ value: label.id, label: label.name })) };
+    if (field === 'labels') return { label: 'Labels', multi: true, emptyLabel: 'None', selected: current.labels.map((label) => label.id), options: data.labels.map((label) => ({ value: label.id, label: label.name, color: label.color })) };
     if (field === 'project' && data.projects) return { label: 'Project', value: current.project?.id ?? null, options: data.projects.filter((project) => !project.archivedAt).map((project) => ({ value: project.id, label: project.name })) };
     if (field === 'milestone' && data.milestones) {
       return { label: 'Milestone', value: current.milestone?.id ?? null, options: data.milestones.filter((milestone) => !current.project || !milestone.projectId || milestone.projectId === current.project.id).map((milestone) => ({ value: milestone.id, label: milestone.name })) };
@@ -1059,13 +1059,14 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     primary.appendChild(propertyRow('Priority', priorityValue, 'property-priority'));
     if (!dueEditing) {
       const dueLabel = current.due ? formatTrackerDate(current.due, Date.now(), { relative: true }) : 'Set due date';
-      const dueValue = fieldButton(dueLabel, 'due', () => { dueEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]')?.focus(); }, 'property-due');
+      const dueValue = fieldButton(dueLabel, 'due', () => { dueEditing = true; render(); const dueInput = root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]'); dueInput?.focus(); try { dueInput?.showPicker?.(); } catch { /* the picker needs a user gesture and a writable field */ } }, 'property-due');
       dueValue.prepend(ticketIcon('calendar'));
       if (!current.due) dueValue.classList.add('tk-property-value--empty');
       primary.appendChild(propertyRow('Due', dueValue, 'property-due'));
     } else {
       const control = h('div', { class: 'tk-inline-field' });
       const input = describeDisabled(h('input', { type: 'date', class: 'tk-inline-input', value: current.due ?? '', 'aria-label': 'Due date, YYYY-MM-DD', 'data-focus-id': 'due-input', disabled: !writeable }), !writeable);
+      input.addEventListener('click', () => { try { input.showPicker?.(); } catch { /* unsupported or blocked: the field stays typeable */ } });
       input.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Escape') { event.preventDefault(); if (failedUpdate?.field === 'due') failedUpdate = null; localError = ''; dueEditing = false; render(); }
       });
