@@ -18,6 +18,7 @@ const ALLOWED_PROPS: { file: string; snippet: string }[] = [
   { file: 'src/ui/tokens.ts', snippet: 'title: opts.title' },
   { file: 'src/ui/admin.ts', snippet: 'title: opts.title' },
   { file: 'src/ui/admin.ts', snippet: 'title: lock.reason' },
+  { file: 'src/ui/kanban-menus.ts', snippet: 'title: o.disabled ? o.title : undefined' },
 ];
 
 // Assignments to an element's title: disabled explanations, the workspace banner's cut-off text, and the full nested group path.
