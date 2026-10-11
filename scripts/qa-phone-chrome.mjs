@@ -109,7 +109,7 @@ async function signIn(email, invite) {
 
 
 const THEMES = ['default', 'ayu', 'kanagawa', 'matrix', 'evergreen'];
-const PHONES = [[360, 780], [390, 844], [412, 915]];
+const PHONES = [[360, 780], [375, 812], [390, 844], [412, 915]];
 const LONG_TITLE = 'Quarterly planning workshop for the platform and infrastructure teams, second session';
 const NAMES = ['Ana Member', 'Bartholomew Montgomery-Featherstonehaugh', 'Cat Coder'];
 
@@ -196,7 +196,8 @@ async function chromeStage() {
         for (const c of companions.splice(0)) await c.context.close();
         for (let i = 0; i < count - 1; i++) companions.push(await open(others[i], 390, 800));
         const O = await open(olive, w, h);
-        await sleep(1500);
+        await O.page.evaluate((t) => window.__board.store.setMeta({ name: t }), LONG_TITLE);
+        await sleep(2000);
         const m = await measure(O.page);
         metrics[tag] = m;
         await shot(O.page, `phone-${w}-${count}`);
@@ -239,6 +240,56 @@ async function chromeStage() {
           const stillClear = !after.chromeRailOverlap && !after.leftRightOverlap && after.small.length === 0;
           check(`${tag}: the chrome is still clean with the badge showing`, stillClear, badge);
           await shot(O.page, `phone-${w}-unread`);
+
+          if (!process.env.NO_CHAT) {
+          // chat: below 380 px it lives in the board menu, with a dot on the menu button when there is unread
+          const narrow = w < 380;
+          const chatToggle = await O.page.evaluate(() => { const b = document.querySelector('.top-right > .chat-toggle'); return b ? { display: getComputedStyle(b).display, w: Math.round(b.getBoundingClientRect().width) } : null; });
+          check(`${tag}: ${narrow ? 'the Chat toggle has left the top bar' : 'the Chat toggle is still in the top bar'}`, narrow ? (!chatToggle || chatToggle.display === 'none' || chatToggle.w === 0) : Boolean(chatToggle && chatToggle.display !== 'none' && chatToggle.w > 0), JSON.stringify(chatToggle));
+          const boardChat = `/api/chat/board/${boardId}/messages`;
+          const posted = await call(others[0], 'POST', boardChat, { clientId: `qa-chrome-${w}-1`, text: 'Hello from Ana' });
+          check(`${tag}: a message is posted in the board chat`, posted.status < 300, `status ${posted.status}`);
+          await sleep(2500);
+          const dot = await O.page.evaluate(() => { const b = document.querySelector('.top-right > button[aria-label="Menu"]'); if (!b) return null; const a = getComputedStyle(b, '::after'); return { content: a.content, w: a.width, h: a.height, bg: a.backgroundColor, countShown: Boolean(document.querySelector('.chat-count.show')) }; });
+          const hasDot = Boolean(dot && dot.content !== 'none' && dot.content !== 'normal' && parseFloat(dot.w) >= 6);
+          check(`${tag}: ${narrow ? 'an unread chat shows a dot on the menu button' : 'no menu dot at 380+ (the Chat toggle carries the unread count)'}`, narrow ? hasDot : (!hasDot && dot?.countShown !== false), JSON.stringify(dot));
+          await shot(O.page, `phone-${w}-chat-unread`);
+          await O.page.getByRole('button', { name: 'Menu', exact: true }).tap().catch(() => O.page.getByRole('button', { name: 'Menu', exact: true }).click());
+          await sleep(400);
+          const itemInfo = await O.page.evaluate(() => { const i = document.querySelector('.menu-chat-narrow'); if (!i) return null; const b = i.getBoundingClientRect(); const pop = i.closest('.popover')?.getBoundingClientRect(); const first = i.closest('.popover')?.querySelector('.menu-item, button'); return { display: getComputedStyle(i).display, h: Math.round(b.height), w: Math.round(b.width), top: Math.round(b.top), popTop: pop ? Math.round(pop.top) : null, firstIsChat: first === i, inView: b.bottom <= innerHeight && b.top >= 0 }; });
+          if (narrow) {
+            check(`${tag}: the board menu has a Chat item right at the top (after User guide), at least 44 px tall`, Boolean(itemInfo) && itemInfo.display !== 'none' && itemInfo.h >= 44 && itemInfo.top - itemInfo.popTop <= 64 && itemInfo.inView, JSON.stringify(itemInfo));
+            await shot(O.page, `phone-${w}-menu-chat`);
+            await O.page.evaluate(() => document.querySelector('.menu-chat-narrow').click());
+            await sleep(1500);
+            const tray = await O.page.evaluate(() => { const t = document.querySelector('.side-tray, [aria-label=Chat]'); const msgs = [...document.querySelectorAll('.chat-msg, .chat-message, [class*=chat-msg]')].map((e) => (e.textContent || '').trim().slice(0, 40)); return { open: Boolean(document.querySelector('.chat-panel, .chat-list, .chat-composer, textarea[aria-label*=hat], [aria-label="Chat messages"]')), msgs, tab: [...document.querySelectorAll('[role=tab][aria-selected=true]')].map((e) => e.textContent.trim()), t: Boolean(t) }; });
+            check(`${tag}: the Chat item opens chat (the same tray tab)`, tray.open || tray.tab.some((x) => /Chat/.test(x)), JSON.stringify(tray));
+            await shot(O.page, `phone-${w}-chat-open`);
+            await sleep(2000);
+            const cleared = await O.page.evaluate(() => { const b = document.querySelector('.top-right > button[aria-label="Menu"]'); const a = getComputedStyle(b, '::after'); return { content: a.content, w: a.width, countShown: Boolean(document.querySelector('.chat-count.show')) }; });
+            check(`${tag}: the unread dot clears once chat is read`, cleared.content === 'none' || cleared.content === 'normal' || !cleared.countShown, JSON.stringify(cleared));
+            await O.page.keyboard.press('Escape').catch(() => {});
+          } else {
+            check(`${tag}: the menu has no Chat item at 380+ (hidden)`, !itemInfo || itemInfo.display === 'none' || itemInfo.h === 0, JSON.stringify(itemInfo));
+            await O.page.keyboard.press('Escape').catch(() => {});
+          }
+          await sleep(300);
+          // short board title ("Sprint retro") with everyone present
+          await O.page.evaluate(() => window.__board.store.setMeta({ name: 'Sprint retro' }));
+          await sleep(800);
+          const sm = await measure(O.page);
+          check(`${tag}: "Sprint retro" with 4 people: chrome clean, targets 44 px`, !sm.chromeRailOverlap && !sm.leftRightOverlap && sm.small.length === 0 && !sm.overflowX, JSON.stringify({ small: sm.small, left: sm.left }));
+          const titleText = await O.page.evaluate(() => { const l = document.querySelector('.top-left'); return { text: (l?.innerText || '').replace(/\s+/g, ' ').trim(), w: Math.round(l?.getBoundingClientRect().width || 0) }; });
+          console.log(`INFO  ${tag}: left tray text "${titleText.text}" (${titleText.w} px)`);
+          await shot(O.page, `phone-${w}-sprint-retro`);
+          const chip2 = O.page.locator('.phone-people').first();
+          await chip2.tap().catch(() => chip2.click({ force: true }));
+          await sleep(400);
+          const list2 = await O.page.evaluate(() => document.querySelectorAll('.phone-people-list .phone-person-name').length);
+          check(`${tag}: the people chip still opens its list`, list2 === 4, `${list2} names`);
+          await O.page.keyboard.press('Escape');
+          await sleep(300);
+          }
           // themes
           for (const theme of THEMES) {
             await O.page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
