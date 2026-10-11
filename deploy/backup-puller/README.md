@@ -44,6 +44,8 @@ Only a workspace whose control-plane state is exactly `deleted` starts the `dele
 
 For immediate operator erasure, run `node pull.mjs --config /etc/tabula-backup/puller.json --purge <slug> --yes`. The command works even if the slug is no longer listed. `--purge` refuses a listed live workspace unless `--force` is also given; a listed `deleted` workspace can be purged directly. Without `--yes`, it prints the paths it would remove and exits with status 2. A successful purge does not read the pull master or contact the workspace.
 
+On a backup pull host, automatic workspace purges stop while `workspaces.json` is stale. An operator purge (`--purge <slug> --yes`) requires `--force` when the list is stale, unreadable or invalid, or lists the workspace as live. If the file is absent, the purge is allowed without `--force`. Freshness currently uses the file's mtime, which measures when the list was copied, not when the control plane wrote it. Planned follow-up: the control plane will write `generatedAt`, and the puller will check that value with mtime as the fallback.
+
 Prometheus exposes `tabula_backup_pending_purge{workspace}` while a workspace is in its grace period, `tabula_backup_purged_total` as a persisted count, and `tabula_backup_orphan_workspaces` as the number of unlisted store directories. Purged workspaces have no per-workspace metric series. Fly volume snapshots of the instance side are separate from this pull host's copy and are not erased by these puller operations.
 
 ## Retention
