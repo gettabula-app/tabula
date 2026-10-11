@@ -213,7 +213,7 @@ The drill and the checks look for the slice 8 tables by name (`integration_conne
 
 ### 9.1 Route
 
-`GET /api/admin/tracker/readiness` (owner and workspace admin, read-only, 60 requests a minute, never any ticket text). Hosted and self-hosted. Shape:
+`GET /api/admin/tracker/readiness` (owner only, like every other backup route: a workspace admin who is not the owner gets 403; read-only, 60 requests a minute, never any ticket text). Hosted and self-hosted. Shape:
 
 ```
 { at, overall: 'go' | 'no_go' | 'unknown',
@@ -245,11 +245,18 @@ Every `fail`/`unknown` detail is a number or a code ("newest backup 41 minutes o
 
 ### 9.3 Drill record
 
-`POST /api/admin/tracker/drill-record` (owner): `{ at, kind: 'production'|'local', schema, restoreSeconds, dataLossSeconds, boxes: [{id, result}] , overall }`, validated strictly (ids from the closed list of 8.1/8.2, numbers bounded), stored as `tracker.drill.last` (one record; a new one replaces it) with an audit row `tracker.drill_record`. The script of 8.1 prints the JSON the owner pastes; the production drill ends with the same JSON. An attestation, honestly labelled `kind`; `local` records never turn `restore_drill_recent` green for hosted production workspaces (`kind: 'production'` required when `createCloud()` is non-null).
+`POST /api/admin/tracker/drill-record` (owner): `{ at (a millisecond number or an ISO string), kind: 'production'|'local', schema, restoreSeconds, dataLossSeconds, boxes: [{id, result}] , overall }`, validated strictly (ids from the closed list of 8.1/8.2, numbers bounded), stored as `tracker.drill.last` (one record; a new one replaces it) with an audit row `tracker.drill_record`. The script of 8.1 prints the JSON the owner pastes; the production drill ends with the same JSON. An attestation, honestly labelled `kind`; `local` records never turn `restore_drill_recent` green for hosted production workspaces (`kind: 'production'` required when `createCloud()` is non-null).
 
 ### 9.4 Cutover record
 
-`POST /api/admin/tracker/cutover-record` (owner): `{ importVerifiedAt, lossReportAccepted: true }`, stored as `tracker.cutover.record`, audited. Both are the owner's explicit acts, not inferred.
+`POST /api/admin/tracker/cutover-record` (owner): `{ importVerifiedAt: 'YYYY-MM-DD', lossReportAccepted: true }` (a calendar date string, not a millisecond timestamp), stored as `tracker.cutover.record`, audited. Both are the owner's explicit acts, not inferred.
+
+### 9.4a Wire shapes the client reads (frozen with the tech lead's tl/tracker-s7-ui a15ce7d)
+
+- Readiness: exactly 9.1. The client has its own wording for the 12 check ids and falls back to `label` for an unknown id.
+- `POST /api/admin/tracker/key-epoch` body `{ confirm: 'JUMP' }`: 200 with any JSON; errors `key_epoch_confirmation_mismatch`, `tracker_restoring`, `rate_limited`.
+- `POST /api/admin/tracker/drill-record`: the record as the drill script prints it; the client checks shape only (box id a lowercase token, result a short string); the server owns the closed list of box ids; error `drill_record_invalid`. `overall` is `'pass'` or `'fail'`.
+- Audit detail shapes (emit exactly these): `tracker.key_epoch` `{ counters: [{ scope, prefix, oldNext, newNext }] }`; `tracker.gate_cleared` `{ closedSeconds }`; `backup.tracker_findings` `{ findings: [{ code, count }] }`; `tracker.drill_record` `{ kind }`; `restore.done` may carry `{ tracker: { tickets, repaired } }`; `tracker.cutover_record` `{ importVerifiedAt }` (the date string only).
 
 ### 9.5 Admin UI
 
