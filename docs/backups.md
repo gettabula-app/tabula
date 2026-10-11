@@ -310,6 +310,19 @@ and a comment, a board with a picture, a named version and a chat message) and t
 - 8.1, local analogue: a copy of the data directory started with a new `TABULA_FLY_VOLUME_ID` is adopted as a restored
   copy (see Volumes and restores).
 
+The tracker restore drill runs as a second checklist section. Its slice 7 box ids, in order, are `seed`,
+`barrier_backup`, `restore_workspace`, `lost_keys_not_reissued`, `gate_cycle`, `reconcile_boards`, `search_rebuilt`,
+`hosted_floor_available`, `hosted_floor_unknown`, `board_copy_stripped`, `history_restore`, `key_rotation`,
+`damaged_search`, `missing_room_file`, `schema_too_new` and `no_text_in_logs`. The four slice 8 boxes print
+“not present (slice 8)” until those tables exist.
+
+After the human-readable record, the script prints a JSON object for POST /api/admin/tracker/drill-record. It uses
+the current migration count, measured tracker restore and data-age durations (or zero when unavailable), each box id with
+`pass`, `fail` or `not_present`, and an overall result. Missing or skipped slice 7 boxes make the overall result `fail`;
+slice 8 `not_present` results do not. Copy that object to the owner-only route to retain the local rehearsal record.
+Its kind is local: a local record never makes restore_drill_recent green for a hosted production workspace; that
+requires a kind=production record from the production drill.
+
 What it does not cover: Fly volume snapshots and mounts, the real bucket provider, Stripe and the control plane's own
 side, real recovery times and data loss (the times in the record are local only and not representative), the daily deep
 verify (it cannot be started early without a new hook), the Restoring… screen in a browser, and a swap that is cut off

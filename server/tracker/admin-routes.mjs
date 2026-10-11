@@ -4,7 +4,7 @@ import { epochJump, KEY_FLOOR_CHANGED_EVENT } from './key-floor.mjs';
 import { markGateFloorKnown, maybeClearGate, TRACKER_RESTORE_GATE_KEY } from './gate.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
-const DRILL_BOX_IDS = new Set([
+export const DRILL_BOX_IDS = new Set([
   'seed', 'barrier_backup', 'restore_workspace', 'lost_keys_not_reissued', 'gate_cycle', 'reconcile_boards',
   'search_rebuilt', 'hosted_floor_available', 'hosted_floor_unknown', 'board_copy_stripped', 'history_restore',
   'key_rotation', 'damaged_search', 'missing_room_file', 'schema_too_new', 'no_text_in_logs',
@@ -32,7 +32,8 @@ function normalizeDrillAt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function validateDrill(body, nowMs) {
+/** Exported for the local drill's test: the record it prints must be one this validator accepts. */
+export function validateDrill(body, nowMs) {
   const fields = ['at', 'kind', 'schema', 'restoreSeconds', 'dataLossSeconds', 'boxes', 'overall'];
   if (!matchesFields(body, fields) || Object.keys(body).length !== fields.length) return null;
   const at = normalizeDrillAt(body.at);
