@@ -1,16 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { contrast, THEMES } from '../src/themes';
 
 const css = readFileSync(new URL('../src/tracker/ui/tracker.css', import.meta.url), 'utf8');
 const ticketCss = readFileSync(new URL('../src/tracker/ui/ticket-page.css', import.meta.url), 'utf8');
-const adjacentCss = [
-  readFileSync(new URL('../src/tracker/ui/inbox.css', import.meta.url), 'utf8'),
-  readFileSync(new URL('../src/tracker/ui/link-dialog.css', import.meta.url), 'utf8'),
-  readFileSync(new URL('../src/tracker/ui/unlink-confirm.css', import.meta.url), 'utf8'),
-];
+const trackerUiCss = readdirSync(new URL('../src/tracker/ui/', import.meta.url))
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => readFileSync(new URL(`../src/tracker/ui/${file}`, import.meta.url), 'utf8'));
 const appCss = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-const trackerStyles = [css, ticketCss, ...adjacentCss];
+const trackerStyles = trackerUiCss;
 
 function declarations(source: string, selector: string): string {
   const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -42,9 +40,9 @@ function lineWidthViolations(source: string): string[] {
       const property = declaration.slice(0, split).trim().toLocaleLowerCase();
       const value = declaration.slice(split + 1).trim();
       if (/^border(?:-(?:top|right|bottom|left))?$/.test(property) || property === 'border-width' || /^border-(?:top|right|bottom|left)-width$/.test(property) || property === 'outline' || property === 'outline-width') {
-        const width = Number.parseFloat(value.match(/-?(?:\d+\.?\d*|\.\d+)px/)?.[0] ?? '0');
-        // The shared 2px focus ring is the sole intentional exception. Decorative rules stay at 1px.
-        if (width > 1 && !(property.startsWith('outline') && width === 2 && selector.includes(':focus-visible'))) {
+        const width = Number.parseFloat(value.match(/-?(?:\d+\.?\d*|\.\d+)px/)?.[0] ?? '0') ||
+          (/\b(?:medium|thick)\b/i.test(value) || (property === 'outline' && /\bauto\b/i.test(value)) ? 3 : 0);
+        if (width > 1) {
           violations.push(`${selector}: ${property} ${value}`);
         }
       }
@@ -71,8 +69,8 @@ function highWeightViolations(source: string): string[] {
       const property = declaration.slice(0, split).trim().toLocaleLowerCase();
       const value = declaration.slice(split + 1).trim();
       const weight = property === 'font-weight'
-        ? Number(value)
-        : property === 'font' ? Number(value.match(/(?:^|\s)(\d{3})(?=\s)/)?.[1] ?? 0) : 0;
+        ? Number(value) || (/\b(?:bold|bolder)\b/i.test(value) ? 700 : 0)
+        : property === 'font' ? Number(value.match(/(?:^|\s)(\d{3})(?=\s)/)?.[1] ?? 0) || (/\b(?:bold|bolder)\b/i.test(value) ? 700 : 0) : 0;
       if (weight > 600) violations.push(`${selector}: ${property} ${value}`);
     }
   }
@@ -110,17 +108,31 @@ describe('tracker UI styles', () => {
     expect(css).toContain('var(--radius-sm, 8px)');
     expect(css).toContain('var(--radius-md, 12px)');
     expect(css).toContain('var(--radius-lg, 14px)');
-    expect(css).toContain('outline: 2px solid var(--trk-focus)');
+    expect(css).toContain('outline: 1px solid var(--trk-focus)');
     expect(css).toContain('outline-offset: 2px');
     expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--trk-focus); }");
     expect(css).toContain('(pointer: coarse), (max-width: 860px)');
+    expect(css).toContain("grid-template-areas: 'select state key title priority' 'select state key title assignee'");
     expect(css).toMatch(/\.trk input, \.trk select, \.trk \.trk-picker-search,[\s\S]*?\.trk-filter-input \{ min-height: 44px; \}/);
     expect(css).toMatch(/\.trk \.trk-filter-button,[\s\S]*?\.trk-gallery-picker-button \{ min-height: 44px; \}/);
     expect(css).toContain('width: 280px; min-width: 280px');
     expect(css).toContain('.trk-board-lanes.is-phone-lane .trk-board-lane');
+    expect(css).toContain('.trk .trk-col-state .trk-state-value > span:last-child { display: none; }');
+    expect(css).toContain('.trk-narrow-frame .trk-tab.active .trk-tab-name-full { display: none; }');
+    expect(css).toContain('.trk-narrow-frame .trk-tab.active .trk-tab-name-short { display: inline; }');
     expect(css).toContain('min-height: 48px');
     expect(css).toContain('prefers-reduced-motion: reduce');
     expect(css).toContain('forced-colors: active');
+  });
+
+  it('uses quiet text tabs, ghost tools, tracker surfaces, and one board action menu', () => {
+    expect(declarations(css, '.trk-tab.active')).toMatch(/background:\s*color-mix\(in srgb, var\(--ink\) 6%, transparent\)/);
+    expect(declarations(css, '.trk .trk-filter-button, .trk .trk-selection-toggle, .trk .trk-small-button, .trk .trk-command-item-button')).toMatch(/border:\s*0/);
+    expect(declarations(css, '.trk.trk-pop')).toMatch(/--trk-ground:\s*var\(--paper-hi,\s*var\(--paper\)\)/);
+    expect(css).not.toContain('.trk-board-move');
+    expect(css).toContain('.trk-board-menu-button');
+    expect(css).toContain('.trk-bulk-actions-sheet .trk-bulk-action');
+    for (const source of trackerStyles) expect(source).not.toContain('var(--tray)');
   });
 
   it('keeps muted text at 4.5:1 and focus at 3:1 on all five tracker themes', () => {
@@ -131,10 +143,10 @@ describe('tracker UI styles', () => {
     expect(declarations(ticketCss, '.trk.tk-page')).toMatch(/background:\s*var\(--paper-hi,\s*var\(--paper\)\)/);
     expect(declarations(appCss, '.tray')).toMatch(/background:\s*var\(--tray\)/);
 
-    const trayErrors = declarations(css, '.trk-inline-error, .trk-create-reason');
-    expect(trayErrors).toMatch(/color:\s*var\(--tray-text\)/);
-    expect(trayErrors).toMatch(/border-radius:\s*var\(--radius-xs\)/);
-    expect(trayErrors).toMatch(/color-mix\(in srgb, var\(--danger\) 80%, var\(--tray-text\)\)/);
+    const errors = declarations(css, '.trk-inline-error, .trk-create-reason');
+    expect(errors).toMatch(/color:\s*var\(--danger\)/);
+    expect(errors).toMatch(/border-radius:\s*var\(--radius-xs\)/);
+    expect(errors).not.toMatch(/border:\s*1px/);
     expect(declarations(css, '.trk-inline-error::before, .trk-create-reason::before')).toMatch(/content:\s*'!'/);
     const pending = declarations(ticketCss, '.trk.tk-page .tk-comment-row.pending');
     expect(pending).not.toMatch(/opacity\s*:/);
@@ -146,16 +158,9 @@ describe('tracker UI styles', () => {
       const cursorGround = mixHex(theme.vars['--canvas'], theme.vars['--paper'], 0.16);
       expect(contrast(theme.vars['--graphite'], cursorGround), `${theme.id} muted on cursor`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(theme.vars['--ink'], cursorGround), `${theme.id} focus on cursor`).toBeGreaterThanOrEqual(3);
-      expect(contrast(theme.vars['--tray-muted'], theme.vars['--tray']), `${theme.id} muted on tray`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(theme.vars['--tray-text'], theme.vars['--tray']), `${theme.id} focus on tray`).toBeGreaterThanOrEqual(3);
-      const trayCursor = mixHex(theme.vars['--tray-text'], theme.vars['--tray'], 0.01);
-      expect(contrast(theme.vars['--tray-muted'], trayCursor), `${theme.id} muted on tray cursor`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(theme.vars['--tray-text'], trayCursor), `${theme.id} focus on tray cursor`).toBeGreaterThanOrEqual(3);
-      for (const label of ['inline error', 'offline create reason']) {
-        expect(contrast(theme.vars['--tray-text'], theme.vars['--tray']), `${theme.id} ${label} on tray`).toBeGreaterThanOrEqual(4.5);
-      }
-      const dangerMarker = mixHex(theme.vars['--danger'], theme.vars['--tray-text'], 0.8);
-      expect(contrast(dangerMarker, theme.vars['--tray']), `${theme.id} danger marker on tray`).toBeGreaterThanOrEqual(3);
+      expect(contrast(theme.vars['--graphite'], theme.vars['--paper']), `${theme.id} muted on tracker surface`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(theme.vars['--ink'], theme.vars['--paper']), `${theme.id} focus on tracker surface`).toBeGreaterThanOrEqual(3);
+      expect(contrast(theme.vars['--danger'], theme.vars['--paper']), `${theme.id} tracker error on surface`).toBeGreaterThanOrEqual(3);
     }
   });
 });

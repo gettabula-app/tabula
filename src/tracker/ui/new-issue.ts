@@ -5,6 +5,7 @@ import { TrackerError, type TrackerMeta, type TrackerPriority } from '../../trac
 import type { TrackerStore } from '../../tracker-data';
 import { openPicker } from './picker';
 import { trackerErrorField } from './error-path';
+import { priorityGlyph, stateGlyph } from './glyphs';
 
 export interface MarkdownInlineToken { type: 'text' | 'link' | 'code' | 'strong' | 'em'; text: string; href?: string }
 
@@ -83,6 +84,28 @@ interface Draft {
 const drafts = new Map<string, Draft>();
 const PRIORITIES: TrackerPriority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 
+function propertyGlyph(kind: 'assignee' | 'labels' | 'due'): SVGSVGElement | HTMLElement {
+  if (kind === 'labels') return h('span', { class: 'trk-new-property-dot', 'aria-hidden': 'true' });
+  const namespace = 'http://www.w3.org/2000/svg';
+  const svgChild = (tag: 'circle' | 'path' | 'rect', attributes: Record<string, string>): SVGElement => {
+    const element = document.createElementNS(namespace, tag);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+    return element;
+  };
+  const paths = kind === 'assignee'
+    ? [svgChild('circle', { cx: '8', cy: '5', r: '2.5' }), svgChild('path', { d: 'M3.5 14c.4-2.5 2-3.8 4.5-3.8s4.1 1.3 4.5 3.8' })]
+    : [svgChild('rect', { x: '2.5', y: '3.5', width: '11', height: '10', rx: '1.5' }), svgChild('path', { d: 'M5.5 2v3M10.5 2v3M2.5 7h11' })];
+  const svg = document.createElementNS(namespace, 'svg');
+  svg.setAttribute('class', 'trk-glyph trk-new-property-glyph');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.5');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.append(...paths);
+  return svg;
+}
+
 export interface NewIssueDialogOptions {
   store: TrackerStore;
   meta: TrackerMeta;
@@ -113,17 +136,24 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   let previewOn = false;
   const previewButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-pressed': 'false' }, 'Preview');
   const propertyBar = h('div', { class: 'trk-new-properties', role: 'group', 'aria-label': 'Issue properties' });
-  const stateButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const assigneeButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const priorityButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const labelsButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const dueButton = h('button', { class: 'trk-small-button', type: 'button' });
+  const stateButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'State' });
+  const assigneeButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Assignee' });
+  const priorityButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Priority' });
+  const labelsButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Labels' });
+  const dueButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Due date' });
+  const setProperty = (button: HTMLButtonElement, glyph: Node, label: string) => {
+    button.replaceChildren(glyph, h('span', { class: 'trk-new-property-value' }, label));
+    button.setAttribute('aria-label', label);
+  };
   const refreshProperties = () => {
-    stateButton.textContent = states.find((state) => state.key === draft.state)?.name ?? 'To do';
-    assigneeButton.textContent = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
-    priorityButton.textContent = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
-    labelsButton.textContent = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
-    dueButton.textContent = draft.due ?? 'Due date';
+    const state = states.find((item) => item.key === draft.state) ?? states[0];
+    const assignee = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
+    const priority = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
+    setProperty(stateButton, state ? stateGlyph(state.category, state.key) : propertyGlyph('labels'), state?.name ?? 'To do');
+    setProperty(assigneeButton, propertyGlyph('assignee'), assignee);
+    setProperty(priorityButton, priorityGlyph(draft.priority), priority);
+    setProperty(labelsButton, propertyGlyph('labels'), draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels');
+    setProperty(dueButton, propertyGlyph('due'), draft.due ?? 'Due date');
   };
   propertyBar.append(stateButton, assigneeButton, priorityButton, labelsButton, dueButton);
   refreshProperties();
@@ -172,6 +202,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const createReason = h('span', { class: 'trk-create-reason', hidden: !options.offline }, 'Needs a connection to get a ticket number.');
   const createButton = h('button', {
     class: 'trk-primary-button', type: 'button', disabled: options.offline || !options.meta.me.canWrite,
+    'aria-keyshortcuts': 'Meta+Enter Control+Enter', 'data-tip': 'Create issue · ⌘ Enter / Ctrl Enter',
     'aria-description': options.offline ? 'Needs a connection to get a ticket number.' : undefined,
   }, 'Create issue');
   const anotherButton = h('button', {
@@ -243,7 +274,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
       void create(event.shiftKey);
     }
   });
-  const modal = dialog('New issue', body, [], { className: 'trk trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
+  const modal = dialog('New issue', body, [], { className: 'trk trk-modal trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
   closeDialog = modal.close;
   return modal;
 }

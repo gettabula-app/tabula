@@ -54,7 +54,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
   const id = ++dialogSequence;
   const titleId = `trk-link-title-${id}`;
   const opener = document.activeElement as HTMLElement | null;
-  const backdrop = h('div', { class: 'modal-back trk trk-link-back' });
+  const backdrop = h('div', { class: 'modal-back trk trk-modal trk-link-back' });
   const closeButton = h('button', {
     class: 'icon-btn trk-link-close', type: 'button', 'aria-label': 'Close', 'data-focus-id': 'close',
     onclick: () => close(),
@@ -64,7 +64,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
   const header = h('div', { class: 'modal-head trk-link-head' }, h('div', { class: 'trk-link-heading' }, heading, subtitle), closeButton);
   const body = h('div', { class: 'modal-body trk-link-body' });
   const box = h('section', {
-    class: 'modal tray trk-link-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1',
+    class: 'modal trk-modal trk-link-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1',
   }, header, body);
   backdrop.appendChild(box);
   if (host.parentNode !== document.body) document.body.appendChild(host);

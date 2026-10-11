@@ -201,9 +201,10 @@ describe('tracker shell slice', () => {
     const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'empty-my-viewer', trackerId: 'tracker-demo', initialTab: 'my' });
     await flush(40);
     expect(shell.el.querySelector('.trk-empty-state')?.textContent).toContain('Nothing assigned to you.');
-    expect(shell.el.querySelector('.trk-empty-state .trk-primary-button')?.textContent).toContain('New issue');
+    expect(shell.el.querySelector('.trk-empty-state .trk-small-button')?.textContent).toContain('New issue');
     shell.el.querySelector<HTMLButtonElement>('.trk-tab[aria-label="Projects"]')!.click();
-    expect(shell.el.querySelector('.trk-projects-empty')?.textContent).toBe('Projects are coming next.');
+    expect(shell.el.querySelector('.trk-projects-empty')?.textContent).toContain('Group tickets into projects with milestones.');
+    expect(shell.el.querySelector('.trk-projects-empty .trk-small-button')?.textContent).toBe('New project');
     expect(shell.el.textContent).not.toContain('Not available yet.');
     shell.destroy();
     store.destroy();
@@ -221,6 +222,7 @@ describe('tracker shell slice', () => {
     expect(Object.values(store.snapshot().lists).some((cache) => cache.error?.code === 'invalid_filter')).toBe(true);
     expect(Object.values(store.snapshot().lists).map((cache) => cache.error?.message)).toContain('project filters are not available yet');
     expect(Array.from(shell.el.querySelectorAll('.trk-filter-error')).map((error) => error.textContent)).toEqual(['project filters are not available yet']);
+    expect(shell.el.querySelector('.trk-filter-error')?.getAttribute('aria-live')).toBe('polite');
     shell.destroy();
     store.destroy();
   });
@@ -262,7 +264,8 @@ describe('tracker shell slice', () => {
     expect(shell.el.querySelectorAll('.trk-board-card').length).toBe(10);
     expect(shell.el.querySelector('.trk-board-card-title')?.textContent).toContain('Keep selection');
     const card = Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-card')).find((item) => item.getAttribute('data-key') === 'TAB-101')!;
-    card.querySelector<HTMLButtonElement>('.trk-board-move')!.click();
+    expect(card.querySelector('.trk-board-move')).toBeNull();
+    card.querySelector<HTMLButtonElement>('.trk-board-menu-button')!.click();
     await flush();
     Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'In progress')!.click();
     await flush(60);
@@ -326,7 +329,7 @@ describe('tracker shell slice', () => {
     const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'board-error-viewer', trackerId: 'tracker-demo', initialTab: 'board' });
     await flush(50);
     const card = Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-card')).find((item) => item.getAttribute('data-key') === 'TAB-101')!;
-    card.querySelector<HTMLButtonElement>('.trk-board-move')!.click();
+    card.querySelector<HTMLButtonElement>('.trk-board-menu-button')!.click();
     await flush();
     Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'In progress')!.click();
     await flush(50);
@@ -375,7 +378,7 @@ describe('tracker shell slice', () => {
     const labels = buildListModel({ pages: [[multiLabelTicket as unknown as TrackerRow]], group: 'label' });
     expect(labels.groups.find((group) => group.label === 'Extra')?.rows.map((row) => row.key)).toContain(multiLabelTicket.key);
     expect(selectAll(labels).selectedKeys).toEqual([multiLabelTicket.key]);
-    expect(visibleColumns(700, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toEqual(['priority', 'key', 'state', 'title', 'assignee']);
+    expect(visibleColumns(700, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toEqual(['state', 'key', 'title', 'priority', 'assignee']);
     expect(visibleColumns(1440, new Set(['priority', 'key', 'state', 'title', 'assignee', 'project', 'due', 'updated']))).toHaveLength(8);
     expect(setGroupCollapsed(model, model.groups[0].id, true).visibleRows.length).toBeLessThan(model.visibleRows.length);
   });
@@ -458,6 +461,30 @@ describe('tracker shell slice', () => {
     shell.destroy();
     store.destroy();
   });
+
+  it('puts every bulk action in the phone Actions sheet', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, {
+      store, api, viewerId: 'phone-bulk-viewer', trackerId: 'tracker-demo', initialTab: 'all', layoutWidth: 390,
+    });
+    await flush(40);
+    shell.el.querySelector<HTMLButtonElement>('.trk-row-select')!.click();
+    const selection = shell.el.querySelector('.trk-selection-bar')!;
+    expect(selection.textContent).toContain('1 selected');
+    const actions = selection.querySelector<HTMLButtonElement>('.trk-bulk-actions-trigger');
+    expect(actions?.textContent).toBe('Actions');
+    actions!.click();
+    const sheet = browser.document.querySelector('.trk-bulk-actions-sheet');
+    expect(sheet).not.toBeNull();
+    expect(Array.from(sheet!.querySelectorAll('button')).map((button) => button.textContent)).toEqual([
+      'State', 'Assignee', 'Priority', 'Labels', 'Due date', 'Archive', 'Clear selection',
+    ]);
+    shell.destroy();
+    store.destroy();
+  });
 });
 
 describe('new issue dialog', () => {
@@ -468,7 +495,11 @@ describe('new issue dialog', () => {
     const options = { store, meta: seed.meta!, viewerId: 'draft-viewer', trackerId: 'draft-tracker', offline: true };
     const first = openNewIssueDialog(options);
     const box = first.box as unknown as FakeElement;
+    expect(browser.document.querySelector('.trk-modal')).not.toBeNull();
+    expect(first.box.classList.contains('tray')).toBe(false);
+    expect(first.box.closest('.tray')).toBeNull();
     const title = box.querySelector<FakeElement>('.trk-new-title')!;
+    expect(title.getAttribute('placeholder')).toBe('Issue title');
     title.value = 'Keep my offline draft';
     title.dispatchEvent(new FakeEvent('input'));
     expect(first.box.querySelector<HTMLButtonElement>('.trk-primary-button')!.disabled).toBe(true);

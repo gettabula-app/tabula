@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -995,7 +995,30 @@ async function assertTrackerLayout(page) {
     if (overflow > 0) failures.push(`horizontal overflow ${overflow}px`);
     const shell = document.querySelector('.trk-shell');
     if (!shell) failures.push('tracker shell is missing');
+    for (const element of document.querySelectorAll('.trk, .trk *')) {
+      if (!element.getClientRects().length) continue;
+      const style = getComputedStyle(element);
+      for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+        const width = Number.parseFloat(style[`border${side}Width`]);
+        if (width > 1) failures.push(`${element.className || element.tagName} has a ${width}px border`);
+      }
+      const outline = Number.parseFloat(style.outlineWidth);
+      if (style.outlineStyle !== 'none' && outline > 1) failures.push(`${element.className || element.tagName} has a ${outline}px outline`);
+    }
+    for (const overlay of document.querySelectorAll('.trk-pop, .trk-modal .modal, .trk-link-modal, .trk-filter-suggestions:not([hidden])')) {
+      if (overlay.classList.contains('tray') || overlay.closest('.tray')) failures.push(`${overlay.className || overlay.tagName} is inside a tray frame`);
+      const background = getComputedStyle(overlay).backgroundColor;
+      if (background === 'rgba(0, 0, 0, 0)' || background === 'transparent') failures.push(`${overlay.className || overlay.tagName} has no tracker surface background`);
+    }
     if (innerWidth <= 500) {
+      const tabs = [...document.querySelectorAll('.trk-shell .trk-tab')].filter((tab) => tab.getClientRects().length);
+      if (tabs.length !== 5) failures.push(`phone tab count ${tabs.length}, expected 5`);
+      for (const tab of tabs) {
+        const full = tab.querySelector('.trk-tab-name-full');
+        const short = tab.querySelector('.trk-tab-name-short');
+        if (!short || getComputedStyle(short).display === 'none' || !short.textContent.trim()) failures.push('phone tab is missing its short label');
+        if (full && getComputedStyle(full).display !== 'none') failures.push(`phone tab exposes its long label: ${full.textContent.trim()}`);
+      }
       const small = [...document.querySelectorAll('.trk button')].filter((button) => button.getClientRects().length).find((button) => {
         const box = button.getBoundingClientRect();
         return box.width < 44 || box.height < 44;
@@ -1023,7 +1046,7 @@ async function assertTrackerLayout(page) {
       }
       return color(getComputedStyle(document.documentElement).backgroundColor) ?? [255, 255, 255, 1];
     };
-    const textElements = [...document.querySelectorAll('.trk .trk-tabs [role="tab"], .trk .trk-header-actions button, .trk .trk-view-bar button, .trk .trk-list-header, .trk .trk-list-row, .trk .trk-group-heading, .trk .trk-filter-chip, .trk .trk-label-chip, .trk .trk-key-chip, .trk .trk-selection-bar, .trk .trk-new-issue-back .modal button')];
+    const textElements = [...document.querySelectorAll('.trk .trk-tabs [role="tab"], .trk .trk-header-actions button, .trk .trk-view-bar button, .trk .trk-list-header, .trk .trk-list-row, .trk .trk-group-heading, .trk .trk-filter-chip, .trk .trk-label-chip, .trk .trk-key-chip, .trk .trk-selection-bar, .trk .trk-filter-error, .trk .trk-inline-error, .trk .trk-pop button, .trk .trk-modal .modal button, .trk .trk-link-modal button')];
     for (const element of textElements) {
       if (!element.getClientRects().length || !element.textContent.trim()) continue;
       const foreground = color(getComputedStyle(element).color);
@@ -1316,6 +1339,20 @@ const STATES = {
       return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
     });
     if (sheet.left > 8 || sheet.width < width - 16 || sheet.bottom < page.viewportSize().height - 90) throw new Error(`tracker-phone: suggestions are not a bottom sheet ${JSON.stringify(sheet)}`);
+    await assertTrackerLayout(page);
+    return { noPark: true };
+  },
+  async 'tracker-phone-bulk'({ page, base, width }) {
+    if (width > 500) throw new Error('tracker-phone-bulk is only valid at phone widths');
+    await openTrackerMockShell(page, base);
+    await page.locator('.trk-row-select').first().click();
+    const selection = page.locator('.trk-selection-bar:not([hidden])');
+    await selection.getByRole('button', { name: 'Actions' }).click();
+    const sheet = page.locator('.trk-bulk-actions-sheet');
+    await sheet.waitFor();
+    const labels = await sheet.locator('button').allTextContents();
+    const expected = ['State', 'Assignee', 'Priority', 'Labels', 'Due date', 'Archive', 'Clear selection'];
+    if (JSON.stringify(labels) !== JSON.stringify(expected)) throw new Error(`tracker-phone-bulk: sheet actions are ${JSON.stringify(labels)}`);
     await assertTrackerLayout(page);
     return { noPark: true };
   },
@@ -4328,7 +4365,7 @@ const STATES = {
 const FULL_PAGE = new Set(['tracker-foundation', 'tracker-inbox-long-list', 'tracker-notification-prefs', 'backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm']);
 const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 'backups-confirm', 'backups-restoring', 'backups-off'];
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
-const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
+const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
