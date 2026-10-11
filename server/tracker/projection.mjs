@@ -44,7 +44,7 @@ function mapFor(db, linkId) {
   ).all(linkId).map((row) => [row.lane_id, row.state_key]));
 }
 
-const SERVER_CARD_FIELDS = ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+export const SERVER_CARD_FIELDS = Object.freeze(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 const TABULA_CARD_FIELDS = ['trackerId', 'tracker', 'trackerUnmappedState'];
 
 function jsonValue(value) {
@@ -239,9 +239,13 @@ export function enqueueTicketProjection({ db: dbArg, ticketId, eventSeq, now = D
       WHERE l.ticket_id = ? AND l.removed_at IS NULL ORDER BY l.board_id, l.kanban_id, l.card_id`,
   ).all(ticketId);
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO ticket_projection_outbox
+    `INSERT INTO ticket_projection_outbox
       (ticket_id, board_id, kanban_id, card_id, event_seq, operation, projection_json, created_at, next_attempt_at)
-     VALUES (?, ?, ?, ?, ?, 'upsert', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'upsert', ?, ?, ?)
+     ON CONFLICT (board_id, kanban_id, card_id, event_seq) DO UPDATE SET
+       ticket_id = excluded.ticket_id, operation = 'upsert', projection_json = excluded.projection_json, created_at = excluded.created_at,
+       attempts = 0, next_attempt_at = excluded.next_attempt_at, applied_at = NULL, last_error_code = NULL
+     WHERE ticket_projection_outbox.operation = 'remove'`,
   );
   for (const link of links) {
     const map = mapFor(db, link.kanban_link_id);

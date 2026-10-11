@@ -53,6 +53,7 @@ export function createTrackerLinkRoutes({
       createTickets: Object.hasOwn(body, 'createTickets') ? body.createTickets : false, project: body.project, labels: body.labels,
       idempotencyKey: body.idempotencyKey, roomAccess, now: now(),
     });
+    roomAccess?.invalidateTracker?.(created.link.boardId);
     if (created.replayed) return [201, withoutReplay(created)];
 
     const linkId = created.link.id;
@@ -81,6 +82,7 @@ export function createTrackerLinkRoutes({
     trackerLink: true, trackerMutation: true,
   }, ({ user, params }) => {
     const removed = unlinkKanban({ directory, actor: actorFor(user), linkId: params.id, now: now() });
+    roomAccess?.invalidateTracker?.(removed.link.boardId);
     let projectionPending = false;
     try {
       writeTrackerContainerUnlink({ roomAccess, boardId: removed.link.boardId, kanbanId: removed.link.kanbanId, now: now() });
@@ -103,6 +105,8 @@ export function createTrackerLinkRoutes({
       directory, actor, linkId: params.id, cardId: body.cardId,
       idempotencyKey: body.idempotencyKey, roomAccess, now: now(),
     });
+    const link = directory.db.prepare('SELECT board_id FROM kanban_tracker_links WHERE id = ?').get(params.id);
+    if (link) roomAccess?.invalidateTracker?.(link.board_id);
     const boardId = result.ticket.links?.find((link) => link.kind === 'card' && link.cardId === result.cardId)?.boardId;
     const drained = drainTicketProjection({ directory, roomAccess, ...(boardId ? { boardId } : {}), ticketId: result.ticket.id, baseUrl, now: now() });
     if (!result.replayed) audit(user, 'tracker.link.card', { ticketId: result.ticket.id, cardId: result.cardId });

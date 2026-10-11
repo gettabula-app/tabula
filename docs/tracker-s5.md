@@ -1,6 +1,6 @@
 # Tracker slice 5: bidirectional sync (contract)
 
-Status: contract for review, written before any code. It extends `docs/tracker-architecture.md` section 3 and `docs/tracker-s4-api.md`, and follows the conventions of `docs/tracker-api.md` (session cookie, `x-tabula: 1` on mutations, error shape `{ error, message, path? }`, `409` carries `ticket`, hosted read-only `403 read_only`, guests `404`). Everything stays behind `TABULA_TRACKER=on`. **No migration**: the columns slice 5 needs already exist in migration 15 (`ticket_links.last_projection_seq`, the outbox, `ticket_field_versions`), and every command is naturally idempotent (see Replays). A reviewer who finds a case that needs a column should say so, because then this becomes an M slice under the `minReader 11` rule.
+Status: binding contract. Part A in this tree implements the synchronous guard, relay notice, title coalescing, non-socket planner refusals, and room-writer auto-create path. Part B remains the card-delete route, restore window and `sql-wins` reconcile mode, client lane-delete refusal and audit sentences, and its relay black-box coverage. The contract extends `docs/tracker-architecture.md` section 3 and `docs/tracker-s4-api.md`, and follows the conventions of `docs/tracker-api.md` (session cookie, `x-tabula: 1` on mutations, error shape `{ error, message, path? }`, `409` carries `ticket`, hosted read-only `403 read_only`, guests `404`). Everything stays behind `TABULA_TRACKER=on`. **No migration**: the columns slice 5 needs already exist in migration 15 (`ticket_links.last_projection_seq`, the outbox, `ticket_field_versions`), and every command is naturally idempotent (see Replays). A reviewer who finds a case that needs a column should say so, because then this becomes an M slice under the `minReader 11` rule.
 
 ## 1. What slice 4 already gives us (do not rebuild)
 
@@ -25,7 +25,7 @@ Slice 5 adds the other direction and the guarantees around it.
 
 ### 3.1 Where it runs
 
-For board rooms in accounts mode with `TABULA_TRACKER=on`, `Room.onMessage` routes Yjs sync updates from a writer socket through `trackerGuard.run(actor, apply)`, shaped like `createCommentGuard`:
+For board rooms in accounts mode with `TABULA_TRACKER=on`, `Room.onMessage` routes Yjs sync updates from a writer socket through `trackerGuard.run(room, actor, apply)`, shaped like `createCommentGuard`:
 
 1. Take a mirror-free snapshot of the linked cards of this room (see 3.2), apply the update, collect the changed object ids (the s4 `changedObjectIds` already does this), and keep only linked cards, linked containers' lanes and lane objects.
 2. Classify each change (3.3), run the SQL commands, build corrections.
@@ -63,6 +63,7 @@ Concurrent drags of the same card from two editors: updates are processed in arr
 - **What the title is.** A card's `text` may have several lines. The ticket title is the **first line**, trimmed. The guard validates and stores only that line, using the same title validator and stripper as REST and MCP (`cleanText`-based, in `server/tracker/tickets.mjs`: no second implementation). The rest of the card text is ordinary card text: never sent to SQL, never changed by the guard. When the projection writes a title it replaces only the first line and keeps the remaining lines.
 - **Checks are synchronous and on the first update.** Permission (tracker write), validity (empty after trim, over-limit, hidden or control characters) and the rate budget are checked when the update arrives; a failure is undone at once, inside the held broadcast, so peers never see a draft a forbidden actor typed.
 - **Only the SQL commit is coalesced**, and only for permitted actors: 400 ms of quiet, never later than 2 s after the first pending change, one `updateTicket {title}` for the last value. Until the commit the permitted editor's draft stands in the room and peers see it (it is what that editor is typing; if the commit later fails, `text` is restored and the sender gets the notice). A title typed offline arrives as one update and is committed once.
+- While that draft is pending, the s4 debounced reconcile skips its card so it cannot project the old SQL title over the draft; the ticket outbox projects the committed title afterward.
 
 ### 3.5 Cards created or pasted into a linked kanban
 
@@ -165,9 +166,9 @@ Migration: none, so no new `schema-matrix` entry. The rollback floor test from s
 
 ## 9. Work split and size
 
-- Server (Codex, me gating): `server/tracker/guard.mjs` (classifier, title timer, commands), relay hook, notices, `DELETE` card route, restore window, `planDeleteKanbanLane` refusal, audit, docs. About 5 to 6 days.
-- Client (tech lead): notice toast, hide linked-card owner/due/labels controls, call `restore-window` around `applyRestore`, block deleting mapped lanes, offline field outbox in the tracker frame. About 3 days.
-- Black-box (haiku subagents, me): the cases in section 8 against a real relay. About 1 day.
+- Part A implemented here: `server/tracker/guard.mjs`, the relay hook and notice, linked-card planner refusals, title coalescing, audit, and room-writer auto-create. The focused guard and planner tests run without a relay; the relay-backed test is present but not run in this sandbox.
+- Part B remains: `DELETE` card route, restore window and `sql-wins` reconcile, `planDeleteKanbanLane` refusal, and client work for lane deletion and audit sentences.
+- The remaining black-box coverage for restore, copy, and restart follows with Part B.
 
 ## 10. Review outcome (tech lead, on 92cdeeb)
 

@@ -45,6 +45,8 @@ import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
+import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
+import { OpsError } from './board-ops.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -81,6 +83,8 @@ const MSG_WORKSPACE = 4;
 // Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
 // (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
 const MSG_COMMENT_NOTICE = 5;
+// Relay to the writer of a guarded linked-card update; the payload names exactly the cards to undo locally.
+const MSG_TRACKER_NOTICE = 7;
 // Relay to client only, on a board room: the board's live AI runs (docs/ai.md, "Live runs"). Payload: JSON
 // { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
 const MSG_AI_RUNS = 6;
@@ -185,27 +189,6 @@ function parseRoom(name) {
   return m ? { boardId: m[1], kind: m[2] ? 'comments' : 'board' } : null;
 }
 
-function changedObjectIds(transaction, doc) {
-  const objects = doc.getMap('objects');
-  const ids = new Set();
-  for (const [type, keys] of transaction?.changed ?? []) {
-    if (type === objects) {
-      for (const key of keys) if (key !== null && key !== undefined) ids.add(String(key));
-      continue;
-    }
-    let current = type;
-    while (current && current !== objects) {
-      if (current.parent === objects) {
-        const id = current._item?.parentSub;
-        if (typeof id === 'string') ids.add(id);
-        break;
-      }
-      current = current.parent;
-    }
-  }
-  return ids;
-}
-
 // Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
 // while a hosted workspace is read-only, or to a deleted board (workspace admins may still open one, to look before
 // restoring it).
@@ -249,6 +232,7 @@ let chatStore = null;
 let chatRetention = null;
 let chatNotifier = null;
 let trackerNotifier = null;
+let trackerGuard = null;
 let joinCodeService = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
@@ -310,6 +294,7 @@ if (config.authEnabled) {
     chatRetention.start();
   }
   if (config.tracker) {
+    trackerGuard = createTrackerGuard({ directory, config: { readOnly: () => cloud?.limits().readOnly === true }, log });
     const { createTrackerNotifier, trackerTickMsFromTestEnv } = await import('./tracker/outbox.mjs');
     const { boardAccessForDirectory } = await import('./tracker/access.mjs');
     trackerNotifier = createTrackerNotifier({
@@ -408,7 +393,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, dataDir: DATA_DIR, log, roomAccess: { read: (name, fn) => roomAccess.read(name, fn), write: (name, origin, fn) => roomAccess.write(name, origin, fn) } });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, dataDir: DATA_DIR, log, roomAccess: { read: (name, fn) => roomAccess.read(name, fn), write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context), invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId) } });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -454,8 +439,11 @@ async function enterMaintenance() {
   for (const room of rooms.values()) {
     clearTimeout(room.saveTimer);
     clearTimeout(room.unloadTimer);
+    clearTimeout(room.trackerGuardTimer);
+    if (room.kind === 'board') trackerGuard?.clearTitles(room.name);
     room.saveTimer = null;
     room.unloadTimer = null;
+    room.trackerGuardTimer = null;
     room.doc.destroy();
   }
   rooms.clear();
@@ -567,6 +555,19 @@ class Room {
     }
   }
 
+  /** Applies a board-room update and its tracker correction before releasing the held broadcast. */
+  trackerGuarded(ws, apply) {
+    const user = ws.guest
+      ? { id: ws.userId, role: 'guest', workspaceRole: 'guest' }
+      : directory.getUser(ws.userId) ?? { id: ws.userId, role: null };
+    const actor = {
+      type: 'user', userId: ws.userId, user,
+      notify: (undone) => sendTrackerNotice(ws, undone),
+    };
+    const result = trackerGuard.run(this, actor, apply);
+    sendTrackerNotice(ws, result.undone);
+  }
+
   // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
   scheduleSave() {
     clearTimeout(this.saveTimer);
@@ -585,6 +586,12 @@ class Room {
       // Not a failure: the snapshot barrier holds writes for a moment and the save runs again when it is released.
       this.pendingBarrierSave = true;
       return true;
+    }
+    if (this.kind === 'board' && trackerGuard) {
+      try { trackerGuard.flushTitles(this.name); }
+      catch (err) { log(`room ${this.name}: tracker titles could not flush`, err?.code ?? 'error'); }
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
     this.pendingBarrierSave = false;
     const tmp = `${this.file}.tmp`;
@@ -659,6 +666,9 @@ class Room {
           this.releaseIfIdle();
           return;
         }
+        clearTimeout(this.trackerGuardTimer);
+        this.trackerGuardTimer = null;
+        if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);
@@ -689,8 +699,18 @@ class Room {
     if (this.trackerGuardTimer) return;
     this.trackerGuardTimer = setTimeout(() => {
       this.trackerGuardTimer = null;
-      const ids = [...this.trackerGuardObjects];
+      const queued = [...this.trackerGuardObjects];
+      const pendingTitles = queued.filter((id) => trackerGuard?.hasPendingTitle(this.name, id));
+      const ids = queued.filter((id) => !pendingTitles.includes(id));
       this.trackerGuardObjects.clear();
+      if (pendingTitles.length) {
+        this.trackerGuardTimer = setTimeout(() => {
+          this.trackerGuardTimer = null;
+          this.scheduleTrackerGuard(pendingTitles);
+        }, 500);
+        this.trackerGuardTimer.unref?.();
+      }
+      if (!ids.length) return;
       try {
         reconcileTrackerProjection({
           directory, roomAccess, boardId: this.name, baseUrl: config.baseUrl, objectIds: ids, origin: 'remote-client',
@@ -727,7 +747,10 @@ class Room {
         encoding.writeVarUint(enc, MSG_SYNC);
         const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
         // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
-        if (this.guard && ws.userId && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
+        const syncType = decoding.peekVarUint(dec);
+        if (this.kind === 'board' && trackerGuard && config.tracker && directory && ws.userId
+          && syncType !== syncProtocol.messageYjsSyncStep1) this.trackerGuarded(ws, apply);
+        else if (this.guard && ws.userId && syncType !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
         else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
@@ -798,17 +821,28 @@ const roomAccess = {
       doc.destroy();
     }
   },
-  write(name, origin, fn) {
+  write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
     try {
       let result;
-      room.doc.transact(() => {
+      const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
       }, origin);
+      if (room.kind === 'board' && trackerGuard && trackerContext?.actor) {
+        const guarded = trackerGuard.run(room, trackerContext.actor, apply, { source: trackerContext.source ?? 'board' });
+        const refused = guarded.undone.find((entry) => entry.reason !== 'limit_exceeded');
+        if (refused) {
+          const code = ['forbidden', 'read_only', 'rate_limited', 'limit_exceeded'].includes(refused.reason) ? refused.reason : 'invalid_input';
+          throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
+        }
+      } else apply();
       return result;
     } finally {
       room.releaseIfIdle();
     }
+  },
+  invalidateTracker(boardId) {
+    trackerGuard?.invalidate(boardId);
   },
 };
 
@@ -857,6 +891,14 @@ function send(ws, msg) {
   ws.send(msg, (err) => {
     if (err) ws.close();
   });
+}
+
+function sendTrackerNotice(ws, undone) {
+  if (!undone?.length) return;
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
+  encoding.writeVarString(enc, JSON.stringify({ undone }));
+  send(ws, encoding.toUint8Array(enc));
 }
 
 // ---------------------------------------------------------------- http

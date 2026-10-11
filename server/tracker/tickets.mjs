@@ -5,7 +5,7 @@ import { enqueueTicketProjection } from './projection.mjs';
 import { allocateTicket } from './ids.mjs';
 import { listTickets, refreshTicketSearch, searchTickets } from './search.mjs';
 import {
-  actorInfo, cleanText, codePointLength, conflict, forbidden, getDb, inTransaction, invalid, limitExceeded,
+  actorInfo, cleanText, cleanTicketTitle, codePointLength, conflict, forbidden, getDb, inTransaction, invalid, limitExceeded,
   newId, notFound, requireWritable, validCalendarDate,
 } from './shared.mjs';
 
@@ -327,7 +327,7 @@ export function createTicket({
     requireTicketRead(actor, prior);
     return ticketJson(db, ticketRow(db, prior.id), actor, directory);
   }
-  const cleanTitle = cleanText(title, { path: 'title', min: 1, max: 200, singleLine: true });
+  const cleanTitle = cleanTicketTitle(title);
   const cleanDescription = cleanText(description, { path: 'description', max: 20_000, trim: false });
   const priorityInt = priorityValue(priority);
   const assigneeUserId = resolveAssignee(db, actor, assignee, 'assignee');
@@ -531,7 +531,7 @@ export function updateTicket({
       if (milestoneId !== row.milestone_id) set('milestone', 'milestone_id', milestoneId);
     }
 
-    if (patch.title !== undefined) set('title', 'title', cleanText(patch.title, { path: 'patch.title', min: 1, max: 200, singleLine: true }));
+    if (patch.title !== undefined) set('title', 'title', cleanTicketTitle(patch.title, 'patch.title'));
     if (patch.description !== undefined) set('description', 'description', cleanText(patch.description, { path: 'patch.description', max: 20_000, trim: false }));
     if (patch.priority !== undefined) {
       const nextPriority = priorityValue(patch.priority, 'patch.priority');

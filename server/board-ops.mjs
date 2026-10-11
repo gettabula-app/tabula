@@ -1172,6 +1172,17 @@ const CREATE_KEYS = {
 
 const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 
+/** Board planners cannot make linked ticket changes; the tracker transition and patch routes own those fields. */
+export function assertLinkedCardEdit(card, field, path = field) {
+  if (card?.extProvider !== 'tabula' || typeof card.trackerId !== 'string' || !card.trackerId
+    || typeof card.extKey !== 'string' || !card.extKey) return;
+  if (field === 'text' || field === 'title' || field === 'laneId' || field === 'stage'
+    || field === 'owner' || field === 'ownerId' || field === 'ownerName' || field === 'ownerKind'
+    || field === 'due' || field === 'labels') {
+    throw invalid(path, 'Linked card: use transition_ticket / update_ticket');
+  }
+}
+
 /**
  * Validates a whole create batch against the document and returns what to write. Throws OpsError; writes nothing.
  * @param {{ createdBy: string, now?: number }} who
@@ -1783,6 +1794,10 @@ export function planTrackerProjection(doc, {
     tracker: fields,
   };
   output.trackerUnmappedState = targetLaneId === null || targetLaneId === undefined;
+  const text = typeof card.text === 'string' ? card.text : '';
+  const lineBreak = text.search(/\r\n|\n|\r/u);
+  const projectedText = `${fields.title}${lineBreak < 0 ? '' : text.slice(lineBreak)}`;
+  if (projectedText !== text) addSet(ops, card, 'text', projectedText);
 
   if (targetLaneId !== null && targetLaneId !== undefined) {
     const targetId = idString(targetLaneId, 'targetLaneId');
