@@ -254,7 +254,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const sideTray = mountSideTray(chrome);
   const comments = mountComments(app, chrome, sideTray);
   const chatDock = currentChatDock();
-  const chat = !scratch && !demo && chatAvailable() && app.role !== null && chatDock ? mountChat(app, chatDock) : null;
+  const chat = !scratch && !demo && chatAvailable() && app.role !== null && chatDock ? mountChat(app, chatDock, sideTray) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch || demo ? null : people,
     scratch || demo ? null : phonePeople,
@@ -393,8 +393,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       comments.button.focus();
       return true;
     }
-    // the chat dock closes on Esc as the chat tray did: the first Esc leaves the message box, the next closes the dock
-    if (chat && chatDock && (chatDock.mode() === 'open' || chatDock.mode() === 'compact')) {
+    // the chat dock closes on Esc as the chat tray did: the first Esc leaves the message box, the next closes the dock;
+    // on the Chat button itself Esc does nothing, because the button is a toggle
+    if (chat && chatDock && (chatDock.mode() === 'open' || chatDock.mode() === 'compact') && document.activeElement !== chat.button) {
       chatDock.dispatch('close');
       chat.button.focus();
       return true;

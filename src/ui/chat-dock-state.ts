@@ -80,3 +80,18 @@ export function nextDock(prefs: DockPrefs, event: DockEvent): DockPrefs {
     case 'toggle': return shown ? { ...prefs, mode: 'closed' } : { ...prefs, mode: prefs.size };
   }
 }
+
+/** Under this width the dock overlays the board (the phone sheet takes over there); above it the board's chrome makes room. */
+export const DOCK_OVERLAY_BELOW = 900;
+const DOCK_GAP = 12;
+export const DOCK_WIDTH: Record<DockSize, number> = { open: 360, compact: 300 };
+
+/**
+ * How far the dock reaches in from the right edge, in px: the chrome that sits at the right or centred (zoom tray, quickbar,
+ * session bar, poll card, AI bar, notices) leaves this much room, and "zoom to fit" fits the board into what is left.
+ * Nothing when the dock is closed or a bubble, and nothing under 900 px where it overlays.
+ */
+export function dockInset(mode: DockMode, viewportWidth: number): number {
+  if ((mode !== 'open' && mode !== 'compact') || viewportWidth < DOCK_OVERLAY_BELOW) return 0;
+  return DOCK_WIDTH[mode] + DOCK_GAP;
+}

@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -1773,12 +1773,23 @@ const STATES = {
       { name: 'Layers', open: () => page.getByRole('button', { name: 'Layers', exact: true }).click(), focus: '.rail [data-drawer="layers"]' },
       { name: 'Comments', open: () => page.locator('.comment-toggle').click(), focus: '.comment-toggle' },
     ];
+    // a session an earlier state left running would take Esc first
+    await page.evaluate(() => { const f = window.__board.flow; if (f.state().steps.length) f.end(); });
     if (!(await page.locator('.chat-toggle').count())) throw new Error('esc-trays: Chat button is missing in accounts mode');
     trays.push({ name: 'Chat', open: () => page.locator('.chat-toggle').click(), focus: '.chat-toggle' });
     for (const tray of trays) {
+      // the dock remembers being open from an earlier state: start from closed
+      if (tray.name === 'Chat' && (await page.locator('.chat-dock:not([hidden])').count())) await page.locator('.chat-toggle').click();
       await tray.open();
       await page.locator(tray.name === 'Comments' ? '.side-tray.show' : tray.name === 'Chat' ? '.chat-dock:not([hidden])' : '.drawer.show').waitFor();
-      await page.keyboard.press('Escape');
+      if (tray.name === 'Chat') {
+        // on the Chat button itself Esc does nothing (it is a toggle); from inside the dock the first Esc leaves the message box, the next closes it
+        await page.keyboard.press('Escape');
+        if (!(await page.locator('.chat-dock:not([hidden])').count())) throw new Error('esc-trays: Esc on the Chat button closed the dock');
+        await page.locator('.chat-dock .chat-input').focus();
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Escape');
+      } else await page.keyboard.press('Escape');
       const result = await page.evaluate((focusSelector) => {
         const open = document.querySelector('.drawer.show, .side-tray.show, .chat-dock:not([hidden])');
         const focus = document.querySelector(focusSelector);
@@ -2842,6 +2853,38 @@ const STATES = {
       window.__board.flow.quickPoll({ question: 'Which day should we ship the next release of the mobile app to everyone?', options: ['Monday', 'Wednesday', 'Friday'], multiple: false, anonymous: true });
     });
     await env.page.locator('.flowbar.show').waitFor();
+  },
+  // The chat dock open beside the board's chrome (docs/chat.md, Dock): the zoom tray, the session bar, the poll card and the
+  // quickbar all stay clear of it, and "zoom to fit" leaves its room too. Under 900 px the dock overlays instead.
+  async 'chat-dock-chrome'(env) {
+    await STATES['flow-poll'](env);
+    const { page } = env;
+    await page.evaluate(() => {
+      const app = window.__board;
+      const note = [...app.store.cache.values()].find((o) => o.type === 'sticky');
+      if (note) app.setSelection([note.id]);
+    });
+    await page.locator('.chat-toggle').click();
+    await page.locator('.chat-dock:not([hidden])').waitFor();
+    await page.waitForTimeout(400);
+    const result = await page.evaluate(() => {
+      const dock = document.querySelector('.chat-dock:not([hidden])').getBoundingClientRect();
+      const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock-inset')) || 0;
+      const failures = [];
+      for (const selector of ['.zoom-tray', '.flowbar.show', '.poll-card:not([hidden])', '.quickbar.show, .quickbar[style*="transform"]']) {
+        const el = document.querySelector(selector);
+        if (!el || getComputedStyle(el).display === 'none') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width && r.right > dock.left + 0.5 && r.left < dock.right && r.bottom > dock.top && r.top < dock.bottom) failures.push(`${selector} runs under the dock (${Math.round(r.right)} > ${Math.round(dock.left)})`);
+      }
+      const app = window.__board;
+      app.zoomToFit();
+      return { failures, inset, innerWidth, dockLeft: dock.left, fitInset: app.r.dockInset };
+    });
+    console.log(`chat-dock-chrome ${JSON.stringify({ ...result, failures: undefined })}`);
+    if (result.innerWidth >= 900 && result.inset < 300) throw new Error(`chat-dock-chrome: --dock-inset is ${result.inset}px with the dock open`);
+    if (result.innerWidth >= 900 && result.fitInset !== result.inset) throw new Error(`chat-dock-chrome: the camera inset is ${result.fitInset}px, not ${result.inset}px`);
+    if (result.innerWidth >= 900 && result.failures.length) throw new Error(`chat-dock-chrome: ${result.failures.join('; ')}`);
   },
   async 'flow-steps'(env) {
     await openSeedBoard(env);

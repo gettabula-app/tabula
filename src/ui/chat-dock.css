@@ -9,8 +9,8 @@
 }
 .chat-dock-host[data-mode='compact'] .chat-dock { top: auto; width: min(300px, calc(100vw - 24px)); height: min(440px, calc(100dvh - 96px)); }
 .chat-dock-head { display: flex; flex: none; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--tray-line); }
-.chat-dock-title { margin: 0; font-size: 15px; font-weight: 700; }
-.chat-dock-spacer { flex: 1 1 auto; }
+.chat-dock-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.chat-dock-head .chat-dock-btn { flex: none; width: 32px; height: 32px; }
 .chat-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .chat-bubble {
   right: calc(12px + var(--safe-right)); bottom: calc(76px + var(--safe-bottom)); display: grid; place-items: center;
@@ -18,3 +18,5 @@
 }
 .chat-dock-context { display: none; font-weight: 400; color: var(--tray-muted); }
 .chat-dock-host[data-mode='compact'] .chat-dock-context { display: inline; }
+/* the composer's rule is a hairline here, not the heavy rule of the old tray */
+.chat-dock .chat-composer { border-top: 1px solid var(--tray-line); }

@@ -7,13 +7,14 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { mountConversation, type Conversation, type ObjectRefs } from './chat';
 import type { ChatDock } from './chat-dock';
+import type { SideTray } from './side-tray';
 
 /**
  * Board chat: the Chat button with its unread badge in the top bar, and the board's conversation in the chat dock (docs/chat.md,
  * Dock). The dock is the app's, in the overlay layer; this offers it the board's chat while the board is open and takes it
  * back when the board closes. Messages are plain text; every node is built with textContent.
  */
-export function mountChat(app: BoardApp, dock: ChatDock): { button: HTMLButtonElement } {
+export function mountChat(app: BoardApp, dock: ChatDock, tray: SideTray | null = null): { button: HTMLButtonElement } {
   const boardId = app.conn.id;
   const signal = app.lifetime.signal;
   const auth = authState();
@@ -95,8 +96,27 @@ export function mountChat(app: BoardApp, dock: ChatDock): { button: HTMLButtonEl
     button.classList.toggle('on', shown());
     button.setAttribute('aria-pressed', String(shown()));
   };
-  const offMode = dock.onChange(paintButton);
+  // The dock and the Comments tray share the right edge: showing one puts the other away (the dock goes to a bubble, so it is one click back).
+  const offMode = dock.onChange((mode) => {
+    paintButton();
+    if (mode === 'open' || mode === 'compact') tray?.hide();
+  });
   signal.addEventListener('abort', offMode, { once: true });
+  const offTray = tray?.onChange((tab) => {
+    if (tab !== null && shown()) dock.dispatch('minimise');
+  });
+  if (offTray) signal.addEventListener('abort', offTray, { once: true });
+  // the chrome leaves room for the dock, and the camera's fit does too
+  const applyInset = (inset: number) => {
+    app.r.dockInset = inset;
+    app.r.setCamera({});
+  };
+  const offInset = dock.onInset(applyInset);
+  signal.addEventListener('abort', () => {
+    offInset();
+    app.r.dockInset = 0;
+  }, { once: true });
+  app.r.dockInset = dock.inset();
   paintButton();
 
   // the button leaves focus where it is; the M key is for typing, so it also puts the cursor in the message box

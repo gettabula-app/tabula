@@ -1,7 +1,7 @@
 import './chat-dock.css';
 import { h, icon } from './dom';
 import type { Conversation } from './chat';
-import { loadDock, nextDock, saveDock, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
+import { dockInset, loadDock, nextDock, saveDock, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
 
 /** What a page offers the dock to show: today the board that is open. */
 export interface DockBoard {
@@ -29,6 +29,9 @@ export interface ChatDock {
   onChange(fn: (mode: DockMode) => void): () => void;
   /** A board page offers its chat; the dock shows it while open. The returned function takes it back (the board closed). */
   attachBoard(board: DockBoard): () => void;
+  /** Called with the dock's inset in px whenever it changes (the board refits its camera insets). */
+  onInset(fn: (inset: number) => void): () => void;
+  inset(): number;
   /** Focuses the message box of what is shown, once the dock is. */
   focusComposer(): void;
   destroy(): void;
@@ -58,8 +61,7 @@ export function mountChatDock(overlay: HTMLElement, opts: { userId: string; stor
   const title = h('h2', { class: 'chat-dock-title' }, 'Chat', context);
   const expand = button('Full size', 'expand', 'expand');
   const compact = button('Compact', 'collapse', 'compact');
-  const head = h('header', { class: 'chat-dock-head' }, title, h('span', { class: 'chat-dock-spacer' }),
-    expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
+  const head = h('header', { class: 'chat-dock-head' }, title, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
   const panel = h('section', { class: 'chat-dock tray', 'aria-label': 'Chat', role: 'complementary' }, head, body);
   const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22));
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
@@ -85,7 +87,18 @@ export function mountChatDock(overlay: HTMLElement, opts: { userId: string; stor
     board.conv?.setOpen(isShown());
   }
 
+  /** The room the dock takes from the board, published as --dock-inset on the page for the chrome to read. */
+  const publishInset = () => {
+    const inset = dockInset(prefs.mode, window.innerWidth);
+    document.documentElement.style.setProperty('--dock-inset', `${inset}px`);
+    document.documentElement.dataset.dockInset = String(inset);
+    insetListeners.forEach((fn) => fn(inset));
+  };
+  const insetListeners = new Set<(inset: number) => void>();
+  window.addEventListener('resize', publishInset);
+
   function paint() {
+    publishInset();
     context.textContent = board ? ` · ${board.ctx.label}` : '';
     el.dataset.mode = prefs.mode;
     panel.hidden = prefs.mode !== 'open' && prefs.mode !== 'compact';
@@ -121,6 +134,11 @@ export function mountChatDock(overlay: HTMLElement, opts: { userId: string; stor
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+    onInset(fn) {
+      insetListeners.add(fn);
+      return () => insetListeners.delete(fn);
+    },
+    inset: () => dockInset(prefs.mode, window.innerWidth),
     attachBoard(ctx) {
       board?.abort?.abort();
       body.replaceChildren();
@@ -140,6 +158,9 @@ export function mountChatDock(overlay: HTMLElement, opts: { userId: string; stor
       board?.conv?.focusComposer();
     },
     destroy() {
+      window.removeEventListener('resize', publishInset);
+      document.documentElement.style.removeProperty('--dock-inset');
+      delete document.documentElement.dataset.dockInset;
       board?.abort?.abort();
       board = null;
       listeners.clear();

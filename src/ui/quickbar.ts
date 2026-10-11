@@ -68,7 +68,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     // Below the top bars, and above the properties panel when a phone docks it to the bottom edge.
     const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
-    const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
+    // the chat dock takes the right edge: the bar is placed in the room that is left
+    const dockInset = parseFloat(getComputedStyle(bar).getPropertyValue('--dock-inset')) || 0;
+    const view = { w: window.innerWidth - dockInset, h: dock ?? window.innerHeight };
     const selectedGroup = sel.length === 1 && sel[0].type === 'group';
     const gap = selectedGroup ? GROUP_BAR_GAP : undefined;
     // on a phone the bar starts right of the rail, so it is placed (and checked against the chip) from there

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
-import { DEFAULT_DOCK, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
+import { DEFAULT_DOCK, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
 
 // docs/chat.md, Dock: the state machine and what is remembered (pure), then the host in the overlay layer.
 
@@ -36,6 +36,17 @@ describe('the dock state machine', () => {
   it('a minimise of a dock that is not shown changes nothing', () => {
     expect(nextDock(prefs('closed'), 'minimise')).toEqual(prefs('closed'));
     expect(nextDock(prefs('bubble'), 'minimise')).toEqual(prefs('bubble'));
+  });
+});
+
+describe('how far the dock reaches in', () => {
+  it('is the dock and its gap when shown, and nothing otherwise or under 900 px', () => {
+    expect(dockInset('open', 1280)).toBe(372);
+    expect(dockInset('compact', 1280)).toBe(312);
+    expect(dockInset('bubble', 1280)).toBe(0);
+    expect(dockInset('closed', 1280)).toBe(0);
+    expect(dockInset('open', 899)).toBe(0);
+    expect(dockInset('open', 900)).toBe(372);
   });
 });
 

@@ -45,10 +45,18 @@ async function setup() {
   const memory = new Map<string, string>();
   const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', storage: { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => void memory.set(k, v) } });
   const life = new AbortController();
-  const app = { conn: { id: 'b1' }, lifetime: life, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null as null | (() => void) };
+  const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, lifetime: life, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null as null | (() => void) };
   (app as { lifetime: unknown }).lifetime = { signal: life.signal };
-  const { button } = mountChat(app as never, dock);
-  return { dock, button: button as unknown as FakeElement, app, life, overlay: overlay as unknown as FakeElement };
+  const trayListeners = new Set<(tab: string | null) => void>();
+  let trayTab: string | null = null;
+  const tray = {
+    hide: vi.fn<() => void>(() => { trayTab = null; trayListeners.forEach((fn) => fn(null)); }),
+    show: (tab: string) => { trayTab = tab; trayListeners.forEach((fn) => fn(tab)); },
+    current: () => trayTab,
+    onChange: (fn: (tab: string | null) => void) => { trayListeners.add(fn); return () => trayListeners.delete(fn); },
+  };
+  const { button } = mountChat(app as never, dock, tray as never);
+  return { dock, button: button as unknown as FakeElement, app, life, overlay: overlay as unknown as FakeElement, tray };
 }
 
 describe('board chat in the dock', () => {
@@ -90,7 +98,7 @@ describe('board chat in the dock', () => {
     const { mountChat } = await import('../src/ui/board-chat');
     const storage = { getItem: () => JSON.stringify({ mode: 'open', size: 'open', channel: null }), setItem: () => undefined };
     const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', storage });
-    const app = { conn: { id: 'b1' }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
+    const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
     mountChat(app as never, dock);
     expect(mocks.mounts).toHaveLength(1);
     expect(mocks.mounts[0].conv.setOpen).toHaveBeenLastCalledWith(true);
@@ -145,10 +153,37 @@ describe('board chat in the dock', () => {
     button.click();
     const first = mocks.mounts[0];
     const { mountChat } = await import('../src/ui/board-chat');
-    const app2 = { conn: { id: 'b2' }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
+    const app2 = { conn: { id: 'b2' }, r: { dockInset: 0, setCamera() {} }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
     mountChat(app2 as never, dock);
     expect(first.signal.aborted).toBe(true);
     expect(mocks.mounts).toHaveLength(2);
     expect(mocks.mounts[1].conv.setOpen).toHaveBeenLastCalledWith(true);
+  });
+
+  it('makes room for the dock: the camera and the page know how far it reaches, and it is nothing when closed or under 900 px', async () => {
+    const { dock, app, button } = await setup();
+    const root = browser!.document.documentElement as unknown as FakeElement;
+    expect(app.r.dockInset).toBe(0);
+    button.click();
+    expect(app.r.dockInset).toBe(372);
+    expect(root.style.getPropertyValue('--dock-inset')).toBe('372px');
+    dock.dispatch('compact');
+    expect(app.r.dockInset).toBe(312);
+    dock.dispatch('minimise');
+    expect(app.r.dockInset).toBe(0);
+    expect(root.style.getPropertyValue('--dock-inset')).toBe('0px');
+    (window as unknown as { innerWidth: number }).innerWidth = 800;
+    dock.dispatch('open');
+    expect(app.r.dockInset).toBe(0); // overlays on a narrow window
+  });
+
+  it('shares the right edge with Comments: opening one puts the other away', async () => {
+    const { dock, tray, button } = await setup();
+    tray.show('comments');
+    button.click();
+    expect(dock.mode()).toBe('open');
+    expect(tray.hide).toHaveBeenCalled();
+    tray.show('comments');
+    expect(dock.mode()).toBe('bubble');
   });
 });
