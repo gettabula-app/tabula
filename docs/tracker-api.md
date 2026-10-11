@@ -10,7 +10,7 @@ This reference describes the session REST API mounted at `/api/tracker/`. It is 
 - Send the Tabula session cookie. A bearer MCP token by itself does not authenticate these REST routes. Missing or expired sessions return `401 unauthenticated`.
 - Safe methods (`GET`, `HEAD`, `OPTIONS`) do not need a CSRF header. State-changing requests need `x-tabula: 1`; the legacy `x-mira: 1` header is also accepted. If an `Origin` header is present, its host must match the request `Host`. A failed check returns `403 csrf`.
 - Core tracker routes are available to workspace owners, admins, members, and viewers. Viewers may read but cannot write. Guest-link requests to tracker paths are hidden as `404`; core routes do not use linked-board access as a substitute for workspace tracker access. `GET /api/me` includes `tracker: true` only when the signed-in user can access the enabled core tracker; otherwise the key is omitted. Inbox rows are personal and are filtered against the caller's current ticket access, including linked-board access where applicable.
-- Hosted read-only mode leaves core reads available and rejects core tracker mutations with `403 read_only`. Inbox read, mark-read, and preference routes do not use the tracker mutation limiter; inbox writes follow the general API path and return `402 read_only` in hosted read-only mode.
+- Hosted read-only mode leaves core reads available and rejects core tracker mutations with `403 read_only`. Inbox reads remain outside the tracker mutation limiter. Mark-read and notification preference writes use the gate and limiter while retaining their general API `402 read_only` response in hosted read-only mode.
 
 For examples, set `TABULA_URL` to the server origin and `TABULA_COOKIE` to the session cookie value. Include the CSRF header on every mutation.
 
@@ -29,10 +29,11 @@ Errors are JSON objects with `error` and `message`; core tracker validation erro
 | 409 | `conflict` | Stale ticket update or a conflicting operation |
 | 413 | `limit_exceeded`, `payload_too_large` | A documented tracker limit or request-body size was exceeded |
 | 429 | `rate_limited` | A tracker mutation or admin route limit is full; the response includes `Retry-After` in seconds |
-| 503 | `tracker_restoring` | Tracker writes are paused during restore; the response includes `floor: 'pending'` |
+| 503 | `tracker_restoring` | Tracker writes are paused during restore; the response includes `floor: 'pending'` or `'known'` |
+| 422 | `tracker_data_invalid` | A workspace restore was refused because staged tracker data has duplicate active links or an active link to a missing ticket |
 | 500 | `internal` | Unexpected server error |
 
-JSON request bodies are limited to 64 KiB by default; inbox read and notification preference bodies are limited to 8 KiB. Core tracker mutations are limited to 60 per signed-in user in a fixed 60-second window. A bulk request counts as one mutation. The limiter covers routes marked as tracker mutations, including ticket, label, project, milestone, view, relation, comment, archive/restore, and subscription writes. It does not cover inbox reads, mark-read, or notification preference writes.
+JSON request bodies are limited to 64 KiB by default; inbox read and notification preference bodies are limited to 8 KiB. Tracker mutations are limited to 60 per signed-in user in a fixed 60-second window. A bulk request counts as one mutation. The limiter covers ticket, label, project, milestone, view, relation, comment, archive/restore, subscription, restore-window, mark-read, notification preference, and drill/cutover record writes. It does not cover reads.
 
 ## Tracker readiness and attestations
 
@@ -46,6 +47,8 @@ These routes are registered only when account authentication and `TABULA_TRACKER
 | `POST /api/admin/tracker/cutover-record` | `{ importVerifiedAt: 'YYYY-MM-DD', lossReportAccepted: true }` | The stored cutover record |
 
 The key-epoch route returns `400 key_epoch_confirmation_mismatch` unless `confirm` is exactly `JUMP`, or `503 tracker_restoring` with `floor: 'pending'` while a restore is running. Drill and cutover validation return `400 drill_record_invalid` and `400 cutover_record_invalid`. Readiness and key-epoch limits return `429 rate_limited` with `Retry-After`. Readiness details contain only short codes and numbers.
+
+While `tracker.restore_gate` is set, tracker write routes return `503 { error: 'tracker_restoring', message, floor }`; tracker reads remain available. The restore-window `POST` also returns this response while gated, while its `DELETE` remains available to close a window. The owner-only key-epoch and readiness routes remain available. The workspace restore route returns `422 tracker_data_invalid` only for `duplicate_active_link` or `link_to_missing_ticket` findings in its staged database; other findings are repaired or recorded by the restore.
 
 ## Metadata
 
