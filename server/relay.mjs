@@ -625,6 +625,9 @@ class Room {
     const bytes = Y.encodeStateAsUpdate(this.doc);
     try {
       fs.writeFileSync(tmp, bytes);
+      // The room file is only ever replaced by the complete regular file just written: if something else took the temporary
+      // name meanwhile (a directory on Windows can win a rename over a file), the save fails and is retried.
+      if (!fs.lstatSync(tmp).isFile()) throw Object.assign(new Error('the temporary save path is not a file'), { code: 'ENOTFILE' });
       renameSyncRetry(tmp, this.file);
     } catch (err) {
       // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
