@@ -102,7 +102,7 @@ describe('tracker shell slice', () => {
     const api = createMockTrackerApi(createTrackerVisualSeed());
     const store = createTrackerStore(api, { isVisible: () => false });
     const listeners = captureDocumentKeydown();
-    const onFullscreenChange = vi.fn();
+    const onFullscreenChange = vi.fn<(fullScreen: boolean) => void>();
     const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'key-escape-modal', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, onFullscreenChange });
     await store.loadMeta();
     await flush(20);
