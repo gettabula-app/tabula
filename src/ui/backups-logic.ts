@@ -374,12 +374,12 @@ export function lastRestoreSentence(last: RestoreRecord | null | undefined): str
   return `Restoring ${what} from ${from} failed${at}: ${errorReason(last.error)}.`;
 }
 
-/** A line about boards whose tracker links could not be reconciled after the last whole restore, or null when none failed. */
+/** A line about boards whose tracker links could not be synced after the last whole restore, or null when none failed. */
 export function boardsFailedSentence(last: RestoreRecord | null | undefined): string | null {
   const count = last?.result === 'done' ? last.tracker?.boardsFailed : undefined;
   if (typeof count !== 'number' || !Number.isFinite(count) || count < 1) return null;
   const boards = count === 1 ? '1 board' : `${count} boards`;
-  return `${boards} could not be reconciled with the tracker after the restore. ${count === 1 ? 'Its' : 'Their'} cards may not match the tickets they link to.`;
+  return `${boards} could not be synced with the tracker after the restore. ${count === 1 ? 'Its' : 'Their'} cards may not match the tickets they link to.`;
 }
 
 // ---------------------------------------------------------------- the screens

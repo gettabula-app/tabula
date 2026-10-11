@@ -729,7 +729,7 @@ describe('who sees the tab', () => {
   });
 });
 
-describe('the line about boards that could not be reconciled', () => {
+describe('the line about boards that could not be synced', () => {
   const done = { kind: 'workspace', result: 'done', at: NOW, manifest: NAME } as const;
   it('is null when nothing failed or there is no record', () => {
     expect(boardsFailedSentence(null)).toBeNull();
@@ -738,7 +738,7 @@ describe('the line about boards that could not be reconciled', () => {
     expect(boardsFailedSentence({ ...done, result: 'failed', tracker: { boardsFailed: 2 } })).toBeNull();
   });
   it('counts the boards', () => {
-    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 1 } })).toBe('1 board could not be reconciled with the tracker after the restore. Its cards may not match the tickets they link to.');
-    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 3 } })).toContain('3 boards could not be reconciled');
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 1 } })).toBe('1 board could not be synced with the tracker after the restore. Its cards may not match the tickets they link to.');
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 3 } })).toContain('3 boards could not be synced');
   });
 });
