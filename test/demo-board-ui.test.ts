@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { startVote } from '../src/ui/flowbar';
 import { control, installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
 
 const mocks = vi.hoisted(() => ({
@@ -138,7 +139,14 @@ describe('demo board UI', () => {
       expect(row).not.toBeNull();
       expect(textOf(row)).toContain('Available in a workspace');
     }
-    const layerButton = menu!.querySelectorAll('button').find((button) => textOf(button).startsWith('Layers'));
+    const voteItem = menu!.querySelectorAll('button').find((button) => textOf(button).startsWith('Try dot voting'));
+    expect(voteItem).toBeDefined();
+    expect(startVote).not.toHaveBeenCalled(); // the demo opens without a session; the visitor starts one
+    voteItem!.click();
+    expect(startVote).toHaveBeenCalledWith(app, { kind: 'stickies' });
+    menuButton.click();
+    const reopened = browser.document.body.querySelector('.menu') as FakeElement | null;
+    const layerButton = reopened!.querySelectorAll('button').find((button) => textOf(button).startsWith('Layers'));
     expect(layerButton).toBeDefined();
     layerButton!.click();
 

@@ -323,6 +323,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
     ),
   );
+  // The phone demo keeps six tools (see .demo-board in styles.css).
+  for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
   if (railTools) trackMoreY(railTools);
@@ -450,7 +453,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const safeTop = typeof getComputedStyle === 'function'
       ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-top')) || 0
       : 0;
-    const minimumTop = (chrome.closest('.demo-board') ? 100 : 64) + safeTop;
+    // the phone demo hides the board-name chip, so the menu pill rises to the banner's edge
+    const demoTop = topLeft.getBoundingClientRect().height === 0 ? 46 : 100;
+    const minimumTop = (chrome.closest('.demo-board') ? demoTop : 64) + safeTop;
     topRight.style.top = `${Math.ceil(Math.max(minimumTop, leftBottom + 8))}px`;
     updatePanelTop();
   };
@@ -785,6 +790,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
+    // The demo opens as a plain board; voting is something the visitor starts.
+    demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     demo ? [
       h('div', { class: 'list-label' }, 'Workspace features'),

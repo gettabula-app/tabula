@@ -19,7 +19,7 @@ describe('demo disclosure', () => {
     const shortCopy = banner.querySelector('.demo-banner-short-copy');
     expect(banner.getAttribute('role')).toBe('note');
     expect(wideCopy?.textContent).toBe('Demo: nothing is saved unless you export it. Reload and it resets.');
-    expect(shortCopy?.textContent).toBe('Demo: nothing is saved unless you export it.');
+    expect(shortCopy?.textContent).toBe('Demo: nothing is saved.');
     expect(banner.querySelectorAll('a')).toHaveLength(1);
     expect(link?.textContent).toBe('Make it yours →');
     expect(link?.getAttribute('href')).toBe('/#pricing');
