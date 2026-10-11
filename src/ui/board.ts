@@ -66,7 +66,7 @@ import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
 import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
-import { trackMoreY } from './scroll-cue';
+import { mountRailScrollCue, trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -368,7 +368,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
-  if (railTools) trackMoreY(railTools);
+  if (railTools) {
+    trackMoreY(railTools);
+    // and a chevron and a thin track say so out loud, while the tools overflow (docs/design: the rail in a short window)
+    const chevron = h('button', { class: 'rail-more', type: 'button', hidden: true, 'data-dir': 'down', 'aria-label': 'Scroll tools down', 'data-tip': 'Scroll tools down' }, icon('chevron', 16));
+    const thumb = h('span', { class: 'rail-track-thumb' });
+    const track = h('div', { class: 'rail-track', hidden: true, 'aria-hidden': 'true' }, thumb);
+    rail.insertBefore(chevron, rail.querySelector('.rail-end'));
+    rail.append(track);
+    mountRailScrollCue(rail, railTools, chevron, track, thumb);
+  }
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
