@@ -5,7 +5,7 @@ import { visibleAdminTabs } from '../src/ui/admin-logic';
 import {
   ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, ERROR_CODES, POLL_CAP_MS, POLL_FACTOR, POLL_GIVE_UP_MS, POLL_START_MS, RELOAD_GUARD_MS,
   checkStateSentence, classifyHealth, confirmMatches, errorReason, errorSentence, gateBannerSentence,
-  formatSize, formatUtc, formatUtcDate, intervalLabel, lastRestoreSentence, manifestTime, mayReload, nextPollDelay, nextScreen, noteOf,
+  boardsFailedSentence, formatSize, formatUtc, formatUtcDate, intervalLabel, lastRestoreSentence, manifestTime, mayReload, nextPollDelay, nextScreen, noteOf,
   pollDelays, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome, trackerCheckLabel, validateDrillRecord, waitLabel, watchServer, type Screen, type WatchDeps,
 } from '../src/ui/backups-logic';
 
@@ -726,5 +726,19 @@ describe('who sees the tab', () => {
   it('lists it for an owner whether or not backups are on, and whether or not AI tool access is', () => {
     expect(visibleAdminTabs(ADMIN_TABS, false, 'owner')).toContain('backups');
     expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toContain('backups');
+  });
+});
+
+describe('the line about boards that could not be reconciled', () => {
+  const done = { kind: 'workspace', result: 'done', at: NOW, manifest: NAME } as const;
+  it('is null when nothing failed or there is no record', () => {
+    expect(boardsFailedSentence(null)).toBeNull();
+    expect(boardsFailedSentence(done)).toBeNull();
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 0 } })).toBeNull();
+    expect(boardsFailedSentence({ ...done, result: 'failed', tracker: { boardsFailed: 2 } })).toBeNull();
+  });
+  it('counts the boards', () => {
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 1 } })).toBe('1 board could not be reconciled with the tracker after the restore. Its cards may not match the tickets they link to.');
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 3 } })).toContain('3 boards could not be reconciled');
   });
 });

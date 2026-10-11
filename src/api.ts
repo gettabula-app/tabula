@@ -409,6 +409,8 @@ export interface RestoreRecord {
   bytes?: number;
   boards?: number;
   keepOldFor?: string;
+  /** Tracker recovery counts after a whole restore (server/tracker/restore-recovery.mjs). */
+  tracker?: { boardsFailed?: number };
 }
 
 export interface RestoreStatus {
