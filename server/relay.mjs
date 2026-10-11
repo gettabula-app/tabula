@@ -48,6 +48,8 @@ import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTracker
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
+import { trackerGateState } from './tracker/gate.mjs';
+import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
 import { OpsError } from './board-ops.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -328,7 +330,9 @@ if (config.authEnabled) {
     chatRetention.start();
   }
   if (config.tracker) {
-    trackerGuard = createTrackerGuard({ directory, config: { readOnly: () => cloud?.limits().readOnly === true }, log });
+    trackerGuard = createTrackerGuard({ directory, config: {
+      readOnly: () => cloud?.limits().readOnly === true || trackerGateState(directory).closed,
+    }, log });
     const { createTrackerNotifier, trackerTickMsFromTestEnv } = await import('./tracker/outbox.mjs');
     const { boardAccessForDirectory } = await import('./tracker/access.mjs');
     trackerNotifier = createTrackerNotifier({
@@ -337,6 +341,7 @@ if (config.authEnabled) {
       baseUrl: config.baseUrl,
       log,
       boardAccess: boardAccessForDirectory(directory),
+      paused: () => trackerGateState(directory).closed,
       intervalMs: trackerTickMsFromTestEnv(env),
     });
     trackerNotifier.start();
@@ -377,6 +382,8 @@ function testDisk(value) {
 const restore = createRestore({
   backup,
   directory,
+  cloud,
+  keyFloorFile: config.trackerKeyFloorFile ?? null,
   config: backupConfig,
   dataDir: DATA_DIR,
   log,
@@ -913,6 +920,11 @@ const trackerProjectionWorker = config.tracker && directory
   ? createTrackerProjectionWorker({ directory, roomAccess, baseUrl: config.baseUrl, log })
   : null;
 trackerProjectionWorker?.start();
+
+const trackerRestoreRecovery = config.tracker && directory
+  ? createTrackerRestoreRecovery({ directory, roomAccess, baseUrl: config.baseUrl, log })
+  : null;
+void trackerRestoreRecovery?.start();
 
 // AI features in open mode (docs/ai.md): the operator's key, counted per client address. Accounts mode has the route in api.mjs.
 const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), live: aiLive, log });

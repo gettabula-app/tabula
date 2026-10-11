@@ -24,7 +24,8 @@ import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
 import { OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
-import { OpsError } from './tracker/shared.mjs';
+import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
+import { trackerGateState } from './tracker/gate.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
 import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
@@ -280,7 +281,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? createTrackerLinkRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
     : [];
   const trackerMutationWindows = new Map();
-  function requireTrackerMutationCapacity(user, res) {
+  function requireTrackerMutationCapacity(user, res, { gateExempt = false, ownerOnly = false } = {}) {
+    const gate = trackerGateState(directory);
+    if (gate.closed && !gateExempt) {
+      if (ownerOnly) requireOwner(user);
+      throw new TrackerRestoringError(gate.floor);
+    }
     const current = now();
     let window = trackerMutationWindows.get(user.id);
     if (!window || current - window.startedAt >= 60_000 || current < window.startedAt) {
@@ -1677,10 +1683,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       }
     }
     if (cloud && !route.readOnlyOk && !READ_METHODS.has(method) && cloud.limits().readOnly) {
-      if (route.trackerMutation) throw new HttpError(403, 'read_only', 'This workspace is read-only.');
+      if (route.trackerMutation && !route.trackerMutationGenericReadOnly) throw new HttpError(403, 'read_only', 'This workspace is read-only.');
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
-    if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res);
+    if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res, {
+      gateExempt: route.trackerGateExempt === true,
+      ownerOnly: route.trackerMutationOwnerOnly === true,
+    });
     const body = route.body && BODY_METHODS.has(method)
       ? await readJson(req, route.maxBody ?? MAX_BODY, { rejectDuplicateMappingKeys: route.trackerLink === true })
       : {};
@@ -1765,6 +1774,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           conflict: 409,
           read_only: 403,
           limit_exceeded: 413,
+          tracker_restoring: 503,
         };
         const status = statuses[err.code] ?? 400;
         if (status === 413) res.setHeader('connection', 'close');
@@ -1773,6 +1783,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           message: err.message,
           ...(err.path ? { path: err.path } : {}),
           ...(err.ticket ? { ticket: err.ticket } : {}),
+          ...(err instanceof TrackerRestoringError ? { floor: err.floor } : {}),
         });
       } else {
         console.error('api: unexpected error:', describeError(err));

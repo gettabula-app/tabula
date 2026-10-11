@@ -48,7 +48,7 @@ export function createTrackerLinkRoutes({
   }));
 
   routes.push(compile('DELETE', 'tracker/boards/:boardId/restore-window', {
-    trackerLink: true, trackerMutation: true,
+    trackerLink: true, trackerMutation: true, trackerGateExempt: true,
   }, ({ user, params }) => {
     const actor = actorFor(user);
     const { boardId } = requireTrackerBoardWrite({ directory, actor, boardId: params.boardId });

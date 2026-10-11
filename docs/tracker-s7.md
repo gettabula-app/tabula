@@ -100,6 +100,8 @@ The summary's `counters` array is the evidence the restore uses in section 6: th
 4. Drop `notifications.next_email_at` retry state for rows older than the backup's `createdAt` (so a restore does not mail again what was mailed after the snapshot): set `suppressed_at = now` for unmailed rows created before the snapshot, never delete.
 5. Restore does not append to ticket history; repairs are recorded in the audit log only, as counts (I5). The only ticket event a restore writes is the `unlinked` event with source `restore` that a reconcile writes for a card that no longer exists (built in slice 5).
 
+**Restore decision:** `tracker.drill.last` and `tracker.cutover.record` keep the values from the backup; neither setting is carried forward from the live database. A restore to a point before the cutover record therefore makes `import_verified` red until the owner records the verification and accepted loss report again.
+
 ### 5.3 FTS
 
 `ticket_search` is rebuilt, not trusted: after the swap, at start, if `fts_missing` or the integrity check of the FTS table fails, run `INSERT INTO ticket_search(ticket_search) VALUES('rebuild')` style repopulation inside the gate (a bounded job, tens of ms per 1000 tickets; the timing test prints it). Search answers `503 tracker_restoring` until it is done.
@@ -111,13 +113,13 @@ At the first start after a workspace restore (`recoverOnStart` has finished, roo
 1. For every board with an active `kanban_tracker_links` row, open the room and run `reconcileTrackerProjection` in `sql-wins` mode. Only that mode unlinks a card that no longer exists on its board (with a `restore` event) and resets `parent` and `rank` to the SQL lane; on a coherent barrier snapshot the layout part is a no-op, and the unlinking covers a room file that was missing from the manifest (8.1 step 9).
 2. Drain the projection outbox.
 3. Boards are processed one at a time, at most 50 boards per second; the report counts `boardsReconciled`, `cardsStripped`, `cardsRepaired`, `unlinked`.
-4. A board that fails to open is counted `boardsFailed` and keeps the gate closed for tracker writes **on that board only** (its linked cards are read-only through the existing `read_only` guard notice). The rest open.
+4. A board that fails to open is counted `boardsFailed` and keeps the workspace gate closed. Recovery logs a numeric failure count and continues with the remaining boards; the next start retries the active links.
 
 ### 5.5 The restore gate
 
 While `tracker.restore_gate` is set:
 
-- tracker mutating routes (`/api/tracker/*` writes, MCP tracker tools that write) answer `503 tracker_restoring` with `{ error, message, floor: 'pending'|'known' }`; reads work. The guard treats linked cards as read-only (`read_only` notice), non-linked boards are unaffected, and the outbound slice 8 deliveries are paused.
+- tracker mutating routes (`/api/tracker/*` writes, MCP tracker tools that write) answer `503 tracker_restoring` with `{ error, message, floor: 'pending'|'known' }`; reads work. The guard treats linked cards as read-only (`read_only` notice), non-linked boards are unaffected, and tracker notification delivery is paused.
 - it is cleared automatically when the floor is known (section 6.2), the reconcile of 5.4 has finished, and the FTS is ready. Clearing writes the audit row `tracker.gate_cleared` (counts, how long it was closed).
 - the two completion signals are settings rows written by the restore code: `tracker.reconcile_done` and `tracker.fts_ready`, value `'1'` (absent means not done; the gate-setting step of 5.2 deletes both). `key-epoch` marks the floor known but clears the gate only when both are `'1'`; it never opens the gate ahead of the reconcile or the search rebuild.
 - the owner can read its state at `GET /api/admin/tracker/readiness` (section 9). Nobody can clear it by hand except through the epoch action of 6.4.

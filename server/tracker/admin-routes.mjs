@@ -136,7 +136,7 @@ export function createTrackerAdminRoutes({
       readiness.invalidate();
       return [200, { counters, gateCleared }];
     }),
-    compile('POST', 'admin/tracker/drill-record', { body: true, readOnlyOk: true }, ({ user, res, body }) => {
+    compile('POST', 'admin/tracker/drill-record', { body: true, readOnlyOk: true, trackerMutation: true, trackerMutationOwnerOnly: true }, ({ user, res, body }) => {
       requireOwner(user);
       limited(recordLimiter, user, res, 'Tracker records are limited to 30 per hour.');
       const record = validateDrill(body, now());
@@ -148,7 +148,7 @@ export function createTrackerAdminRoutes({
       readiness.invalidate();
       return [200, record];
     }),
-    compile('POST', 'admin/tracker/cutover-record', { body: true, readOnlyOk: true }, ({ user, res, body }) => {
+    compile('POST', 'admin/tracker/cutover-record', { body: true, readOnlyOk: true, trackerMutation: true, trackerMutationOwnerOnly: true }, ({ user, res, body }) => {
       requireOwner(user);
       limited(recordLimiter, user, res, 'Tracker records are limited to 30 per hour.');
       if (!matchesFields(body, ['importVerifiedAt', 'lossReportAccepted']) || Object.keys(body).length !== 2
