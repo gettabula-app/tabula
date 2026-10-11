@@ -570,6 +570,21 @@ describe('the kanban header, the lane ⋯ and the add-lane +', () => {
 });
 
 describe('lane and kanban menu actions', () => {
+  it('refuses deleting a mapped lane through BoardApp, but allows an unmapped lane on the linked kanban', () => {
+    const { app, store, container, lanes, notify } = harness();
+    store.doc.transact(() => store.objects.get(container)!.set('ext', {
+      provider: 'tabula', tracker: 'tracker-1', map: { [lanes[0]]: 'todo' },
+    }), 'tracker-projection');
+
+    expect(app.deleteLane(lanes[0], false)).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('Unlink the kanban from the tracker before deleting this lane');
+    expect(app.deleteLane(lanes[0], true)).toBe(false);
+    expect(store.get(lanes[0])).toBeDefined();
+
+    expect(app.deleteLane(lanes[1], true)).toBe(true);
+    expect(store.get(lanes[1])).toBeUndefined();
+  });
+
   it('each is one undo step; a refusal is a toast and writes nothing', () => {
     const { app, store, container, lanes, notify } = harness();
     const steps = () => (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;
