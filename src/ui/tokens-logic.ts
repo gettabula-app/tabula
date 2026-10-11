@@ -1,4 +1,4 @@
-import type { AccessScope, AccessToken, UserRole } from '../api';
+import type { AccessScope, AccessToken, AdminAccessToken, AdminGrant, UserRole } from '../api';
 
 /** Pure rules and text for AI tool access (docs/mcp.md): no DOM, so they can be unit tested. */
 
@@ -88,6 +88,59 @@ export function expiryLabel(expiresAt: number, now: number): string {
 
 export function lastUsedLabel(token: Pick<AccessToken, 'lastUsedAt'>, ago: (t: number) => string): string {
   return token.lastUsedAt === null ? 'Never used' : `Used ${ago(token.lastUsedAt)}`;
+}
+
+export const CONNECTED_APP_TEXT = {
+  section: 'Connected apps',
+  empty: 'No apps are connected. Apps you connect with Claude or another AI tool appear here.',
+  disconnect: 'Disconnect',
+  confirmDisconnect: 'Click again to disconnect',
+  revokeAllWithApps: 'Click again to revoke all tokens and disconnect connected apps',
+  created: 'Connected',
+  revokeAllApps: 'Disconnect all apps',
+  confirmRevokeAllApps: 'Click again to disconnect all apps',
+  adminDoneOne: 'Disconnected connected app',
+  adminDoneAll: 'Disconnected all connected apps',
+  doneOne: 'Connected app disconnected',
+  revokeAllDone: (tokens: string, apps: number) => `${tokens}; ${apps} connected app${apps === 1 ? '' : 's'} disconnected`,
+  noAccess: 'No active access tokens or connected apps.',
+  tokenType: 'Personal token',
+  connectorType: 'Connector',
+  personColumn: 'Person',
+  typeColumn: 'Type',
+  accessColumn: 'Access',
+  boardsColumn: 'Boards',
+  lastUsedColumn: 'Last used',
+  expiryColumn: 'Expiry',
+  actionColumn: '',
+} as const;
+
+export function grantScopeLabel(scope: AccessScope): string {
+  return ({ read: 'Read', comment: 'Read and comment', write: 'Read and edit' } as const)[scope];
+}
+
+export function grantBoardsText(boardCount: number | null): string {
+  if (boardCount === null) return 'All boards you can open';
+  return `${boardCount} ${boardCount === 1 ? 'board' : 'boards'}`;
+}
+
+export function grantExpiryText(expiresAt: number, now: number): string {
+  const left = expiresAt - now;
+  if (left <= DAY_MS) return 'Ends today';
+  const days = Math.ceil(left / DAY_MS);
+  return `Ends in ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+export type AdminAccessRow =
+  | { kind: 'token'; typeLabel: typeof CONNECTED_APP_TEXT.tokenType; createdAt: number; userId: string; userRole: UserRole; token: AdminAccessToken }
+  | { kind: 'grant'; typeLabel: typeof CONNECTED_APP_TEXT.connectorType; createdAt: number; userId: string; userRole: UserRole; grant: AdminGrant };
+
+/** One newest-first list for the admin Access tokens table. */
+export function mergeAdminAccessRows(tokens: AdminAccessToken[], grants: AdminGrant[]): AdminAccessRow[] {
+  return [
+    ...tokens.map((token): AdminAccessRow => ({ kind: 'token', typeLabel: CONNECTED_APP_TEXT.tokenType, createdAt: token.createdAt, userId: token.userId, userRole: token.userRole, token })),
+    ...grants.map((grant): AdminAccessRow => ({ kind: 'grant', typeLabel: CONNECTED_APP_TEXT.connectorType, createdAt: grant.createdAt, userId: grant.userId, userRole: grant.userRole, grant })),
+  ].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** What to paste into a tool. The token is only ever in these two strings while its dialog is open. */

@@ -8,6 +8,7 @@ const ENVELOPE = 'opaque_123-xy';
 const signedIn: Me = {
   user: { id: 'u1', email: 'ana@example.test', name: 'Ana', role: 'member' },
   teams: [],
+  mcpOauth: true,
 };
 const consentRequest = (patch: Partial<OAuthConsentRequest> = {}): OAuthConsentRequest => ({
   clientName: 'Claude', clientNameIsClaim: true, redirectHost: 'claude.ai',

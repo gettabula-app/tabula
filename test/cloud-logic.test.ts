@@ -27,6 +27,7 @@ const workspace = (patch: Partial<Workspace> = {}): Workspace => ({ readOnly: fa
 const meWith = (role: Me['user']['role'], ws?: Workspace): Me => ({
   user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role },
   teams: [],
+  mcpOauth: false,
   ...(ws ? { workspace: ws } : {}),
 });
 
