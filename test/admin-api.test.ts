@@ -345,6 +345,14 @@ describe('admin overview, members and sessions', () => {
     expect(overview.instance).toEqual({ authEnabled: true, baseUrl: srv.base, mail: 'file', version: pkg.version });
   });
 
+  it('shows the release label as the instance version when the image has one', async () => {
+    const labelled = await launch({ TABULA_VERSION: 'v5.3' });
+    const lc = client(labelled);
+    const lowner = await lc.signIn(OWNER);
+    const overview = (await lc.api(lowner.cookie, 'GET', '/api/admin/overview')).body;
+    expect(overview.instance.version).toBe('v5.3');
+  });
+
   it('counts sign-ins of the last seven days', async () => {
     const read = async () => (await c.api(owner.cookie, 'GET', '/api/admin/overview')).body.signIns7d as number;
     const before = await read();
