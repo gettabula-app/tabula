@@ -125,7 +125,7 @@ Any member can select **Leave team**. You lose access to the team's boards. Boar
 2. Pick **Expires after**: 1, 7, 14 or 30 days.
 3. Select **Create invite link**, then **Copy**.
 
-Anyone with the link who confirms their email can join the team. The invite page shows the team name and a **Join team** button. If your workspace has a seat limit and all seats are used, the invite is refused until a seat is free.
+Anyone with the link who confirms their email can join the team. The invite page shows the team name and a **Join team** button. If your workspace has a limit on how many members it can hold and it is full, the invite is refused until someone is removed or disabled. Guests do not count towards this limit.
 
 ### Workspace members
 
