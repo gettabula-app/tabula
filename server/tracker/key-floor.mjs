@@ -66,12 +66,16 @@ export function computeKeyFloor({ restored = [], liveBefore, manifestMax, contro
   for (const row of fileRows) add(row.scope, row.prefix, row.floor);
 
   // `known` needs evidence about every counter that has tickets: a row for its (scope, prefix) in an external source.
-  // An empty source, or one with other prefixes only, proves nothing, and a manifest counts only when it is newer
-  // than the restored counter (the restored manifest's own counter is the restored counter).
+  // An empty source, or one with other prefixes only, proves nothing; a row below the restored counter proves nothing
+  // (control plane rows get the reporting margin); a manifest counts only when it is newer than the restored counter
+  // (the restored manifest's own counter is the restored counter).
   const restoredRows = (Array.isArray(restored) ? restored : []).filter((row) => row && validName(row.scope) && validName(row.prefix));
   const restoredNext = new Map(restoredRows.map((row) => [counterKey(row), positiveSafe(row.next) ? row.next : 0]));
   const evidence = new Set();
-  for (const row of [...liveRows, ...controlRows, ...fileRows]) evidence.add(counterKey(row));
+  // A row proves something only if its value reaches the restored counter: a seeded row with next 1 proves nothing.
+  const reaches = (row, value) => value >= (restoredNext.get(counterKey(row)) ?? 0);
+  for (const row of [...liveRows, ...fileRows]) if (reaches(row, row.floor)) evidence.add(counterKey(row));
+  for (const row of controlRows) if (reaches(row, row.floor + REPORT_AFTER)) evidence.add(counterKey(row));
   for (const row of manifestRows) if (row.floor > (restoredNext.get(counterKey(row)) ?? 0)) evidence.add(counterKey(row));
   const needsEvidence = restoredRows.filter((row) => nonNegativeSafe(row.maxNumber) && row.maxNumber > 0);
   const hasRestoredTickets = restoredHasTickets ?? needsEvidence.length > 0;

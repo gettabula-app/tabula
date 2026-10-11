@@ -108,7 +108,7 @@ describe('tracker key floors', () => {
     expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [{ scope: 'other_scope', prefix: 'TAB', next: 50 }] }).known).toBe(false);
     // a row covering the prefix: known (control plane, floor file, live counters of a healthy in-place restore)
     expect(computeKeyFloor({ restored, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 5 }] }).known).toBe(true);
-    expect(computeKeyFloor({ restored, restoredHasTickets: true, floorFile: [{ ...tab, floor: 5 }] }).known).toBe(true);
+    expect(computeKeyFloor({ restored, restoredHasTickets: true, floorFile: [{ ...tab, floor: 10 }] }).known).toBe(true);
     expect(computeKeyFloor({ restored, restoredHasTickets: true, liveBefore: [{ ...tab, next: 10 }] }).known).toBe(true);
     // two counters, only one covered: pending
     const two = [...restored, { scope: 'trk_default', prefix: 'TWO', next: 4, maxNumber: 3 }];
@@ -117,6 +117,25 @@ describe('tracker key floors', () => {
     // a counter without tickets needs no evidence
     expect(computeKeyFloor({ restored: [{ ...tab, next: 1, maxNumber: 0 }], restoredHasTickets: true, liveBefore: [] }).known).toBe(false);
     expect(computeKeyFloor({ restored: [{ ...tab, next: 1, maxNumber: 0 }], restoredHasTickets: false }).known).toBe(true);
+  });
+
+  it('counts an external row only when its value reaches the restored counter', () => {
+    const tab = { scope: 'trk_default', prefix: 'TAB' };
+    const big = [{ ...tab, next: 500, maxNumber: 499 }];
+    // a seeded live row with next 1 (a new or empty workspace) proves nothing
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, liveBefore: [{ ...tab, next: 1 }] })).toMatchObject({ known: false, counters: [{ next: 500 }] });
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, liveBefore: [{ ...tab, next: 499 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, liveBefore: [{ ...tab, next: 500 }] }).known).toBe(true);
+    // the control plane's reported floor gets the 25-key margin: 474 + 25 < 500, 475 + 25 >= 500
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 474 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 475 }] }).known).toBe(true);
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 400 }] }).known).toBe(false);
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, controlPlane: [{ ...tab, floor: 480 }] }).known).toBe(true);
+    // a floor file below the restored next proves nothing
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, floorFile: { counters: [{ ...tab, floor: 499 }], at: 1 } }).known).toBe(false);
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, floorFile: { counters: [{ ...tab, floor: 500 }], at: 1 } }).known).toBe(true);
+    // a weak source beside a strong one: the strong one decides
+    expect(computeKeyFloor({ restored: big, restoredHasTickets: true, liveBefore: [{ ...tab, next: 1 }], floorFile: { counters: [{ ...tab, floor: 600 }], at: 1 } })).toMatchObject({ known: true, counters: [{ next: 600 }] });
   });
 
   it('counts a kept manifest as evidence only when it is newer than the restored counter', () => {
