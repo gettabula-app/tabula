@@ -119,6 +119,7 @@ export function createBackupExport({ backupConfig, dataDir, now = Date.now, log 
   const requestWindow = createWindow({ max: MAX_REQUESTS, windowMs: MINUTE_MS }, now);
   const byteWindow = createByteWindow(now);
   const allowedMethods = { list: ['GET'], object: ['GET', 'HEAD'] };
+  let lastPullSuccessAt = null;
 
   function logCall(kind, status, bytes) {
     try {
@@ -267,7 +268,10 @@ export function createBackupExport({ backupConfig, dataDir, now = Date.now, log 
           if (!res.writableEnded) res.end();
           done();
         });
-        res.once('finish', done);
+        res.once('finish', () => {
+          lastPullSuccessAt = now();
+          done();
+        });
         res.once('close', () => {
           if (!res.writableFinished) stream.destroy();
           done();
@@ -294,5 +298,5 @@ export function createBackupExport({ backupConfig, dataDir, now = Date.now, log 
     }
   }
 
-  return { handle };
+  return { handle, status: () => ({ pullLastSuccessAt: lastPullSuccessAt }) };
 }

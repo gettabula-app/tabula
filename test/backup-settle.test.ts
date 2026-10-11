@@ -716,6 +716,12 @@ describe('the settings', () => {
     expect(JSON.parse(JSON.stringify(load(base())))).toMatchObject({ settleSeconds: 120, shutdownSeconds: 4, snapshotMaxHoldSeconds: 5 });
   });
 
+  it('defaults the interval to 15 minutes only for the passed tracker-enabled environment, unless explicitly set', () => {
+    expect(load(base({ TABULA_TRACKER: 'on' }))).toMatchObject({ intervalMinutes: 15 });
+    expect(load(base({ TABULA_TRACKER: 'off' }))).toMatchObject({ intervalMinutes: 60 });
+    expect(load(base({ TABULA_TRACKER: 'on', TABULA_BACKUP_INTERVAL_MINUTES: '45' }))).toMatchObject({ intervalMinutes: 45 });
+  });
+
   it.each([
     { name: 'TABULA_BACKUP_SETTLE_SECONDS', field: 'settleSeconds', fallback: 120, max: 3600, good: ['0', '1', '45', '3600'], bad: ['-1', '3601', '10000', '1.5', ' 7 x', 'soon', '1e3', '0x10', '1000000'] },
     { name: 'TABULA_BACKUP_SHUTDOWN_SECONDS', field: 'shutdownSeconds', fallback: 4, max: 25, good: ['0', '1', '4', '25'], bad: ['-1', '26', '99', '2.5', 'quick', '1e1', '0x4', '1000000'] },

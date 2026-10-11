@@ -23,11 +23,14 @@ import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
-import { OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
-import { OpsError } from './tracker/shared.mjs';
+import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
+import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
+import { trackerGateState } from './tracker/gate.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
 import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
+import { createTrackerAdminRoutes } from './tracker/admin-routes.mjs';
+import { checkTrackerData as checkTrackerDataReal } from './tracker/backup-check.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -217,7 +220,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -278,7 +281,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? createTrackerLinkRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
     : [];
   const trackerMutationWindows = new Map();
-  function requireTrackerMutationCapacity(user, res) {
+  function requireTrackerMutationCapacity(user, res, { gateExempt = false, ownerOnly = false } = {}) {
+    const gate = trackerGateState(directory);
+    if (gate.closed && !gateExempt) {
+      if (ownerOnly) requireOwner(user);
+      throw new TrackerRestoringError(gate.floor);
+    }
     const current = now();
     let window = trackerMutationWindows.get(user.id);
     if (!window || current - window.startedAt >= 60_000 || current < window.startedAt) {
@@ -302,6 +310,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const oauthDecisionLimiter = createWindowLimiter(10, now);
   const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
   const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
+  // What a role on a board allows a connected app to do there: editors and owners write, commenters comment, the rest read.
+  const oauthRoleScope = (role) => (role === 'editor' || role === 'owner' ? 'write' : role === 'commenter' ? 'comment' : 'read');
+  const oauthBoardsMax = (boards) => boards.reduce((max, board) => {
+    const value = oauthRoleScope(board.role);
+    return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
+  }, 'read');
 
   function oauthRequestContext(envelope, user, sessionId) {
     if (!config.mcp?.oauth || config.mcp.mode !== 'accounts' || typeof envelope !== 'string' || envelope.length > 8192
@@ -319,20 +333,16 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     const requestScopes = request.scope === null ? [client.maxScope] : request.scope.split(/\s+/u);
     if (!requestScopes.length || requestScopes.some((scope) => !OAUTH_SCOPES.includes(scope))) return null;
     const requestMax = requestScopes.reduce((max, scope) => oauthScopeRank(scope) > oauthScopeRank(max) ? scope : max, 'read');
+    const boards = directory.listBoardsFor(user);
     let personMax = 'read';
     if (user.role !== 'owner' && user.role !== 'admin') {
-      const boards = directory.listBoardsFor(user);
-      const boardMax = boards.reduce((max, board) => {
-        const value = board.role === 'editor' || board.role === 'owner' ? 'write'
-          : board.role === 'commenter' ? 'comment' : 'read';
-        return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
-      }, 'read');
       const onSharedWorkspace = boards.some((board) => board.teamId !== null || board.ownerId !== user.id);
-      // Without a board picker, owner/admin grants and grants on shared workspaces stay read-only. A future picker can
-      // offer broader access while binding it to selected boards.
-      personMax = onSharedWorkspace ? 'read' : boardMax;
+      // An unrestricted grant (no boards chosen) on owner/admin accounts and on shared workspaces stays read-only.
+      // Choosing boards is the way to a wider grant: it is bound to those boards and capped by the person's role on them.
+      personMax = onSharedWorkspace ? 'read' : oauthBoardsMax(boards);
     }
-    const maxScope = oauthLowerScope(oauthLowerScope(requestMax, client.maxScope), personMax);
+    const requestCeiling = oauthLowerScope(requestMax, client.maxScope);
+    const maxScope = oauthLowerScope(requestCeiling, personMax);
     let destination;
     try {
       destination = new URL(request.redirectUri);
@@ -353,6 +363,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       redirectUri: request.redirectUri,
       verified,
       maxScope,
+      requestCeiling,
+      boards,
       readOnly: cloud?.limits().readOnly === true,
     };
   }
@@ -446,7 +458,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
-  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
+  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered', 'tracker'];
 
   function ownerBackupStatus() {
     const status = backupStatus() ?? {};
@@ -589,7 +601,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
-    })
+      })
     : [];
 
   const trackerRoutes = config.tracker
@@ -606,11 +618,34 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
 
+  const trackerBackupCheck = checkTrackerData ?? checkTrackerDataReal;
+  const readinessBackupStatus = () => ({ ...backupStatus(), ...backupExport?.status?.() });
+  const trackerAdminRoutes = config.authEnabled && config.tracker
+    ? createTrackerAdminRoutes({
+        directory,
+        compile,
+        audit,
+        requireOwner,
+        errors: { HttpError },
+        backupStatus: readinessBackupStatus,
+        backupConfig,
+        cloud,
+        reporter: keyFloorReporter,
+        restore,
+        floorFilePath: config.trackerKeyFloorFile ?? null,
+        checkTrackerData: trackerBackupCheck,
+        now,
+        emit,
+        log,
+      })
+    : [];
+
   // ------------------------------------------------------------ handlers
 
   const routes = [
     ...trackerApiRoutes,
     ...trackerLinkRoutes,
+    ...trackerAdminRoutes,
 
     ...(backupExport
       ? [
@@ -1287,6 +1322,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               redirectUri: context.redirectUri,
               verified: context.verified,
               maxScope: context.maxScope,
+              pickerAvailable: true,
+              scopes: {
+                unrestricted: context.maxScope,
+                boards: oauthLowerScope(context.requestCeiling, oauthBoardsMax(context.boards)),
+              },
+              boards: context.boards.map((board) => ({ id: board.id, name: board.title, role: board.role })),
               nonce: context.nonce,
               readOnly: context.readOnly,
             }];
@@ -1297,7 +1338,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               res.setHeader('retry-after', String(wait));
               throw new HttpError(429, 'rate_limited', 'Too many authorization decisions. Try again later.');
             }
-            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce'].includes(key))) {
+            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce', 'boardIds'].includes(key))) {
               throw badRequest('The authorization decision is not valid');
             }
             if (typeof body.request !== 'string' || body.request.length > 8192 || typeof body.nonce !== 'string') {
@@ -1330,7 +1371,25 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             const scope = body.scope === undefined ? 'read' : oneOf(body.scope, OAUTH_SCOPES, 'scope');
             const current = oauthRequestContext(body.request, user, sessionId);
             if (!current) throw notFound('Authorization request not found');
-            if (oauthScopeRank(scope) > oauthScopeRank(current.maxScope)) {
+            // Boards chosen: they are re-read now, every one must be open to this person at this moment, and the access level
+            // is capped by the person's role on just those boards. Without boards the grant is unrestricted, as before.
+            let boardIds = null;
+            let ceiling = current.maxScope;
+            if (body.boardIds !== undefined && body.boardIds !== null) {
+              const ids = body.boardIds;
+              if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_OAUTH_BOARD_IDS
+                || ids.some((id) => typeof id !== 'string' || !TOKEN_BOARD_ID_RE.test(id)) || new Set(ids).size !== ids.length) {
+                throw new HttpError(400, 'invalid_boards', `Choose 1 to ${MAX_OAUTH_BOARD_IDS} different boards you can open.`);
+              }
+              const open = new Map(current.boards.map((board) => [board.id, board]));
+              const chosen = ids.map((id) => open.get(id));
+              if (chosen.some((board) => board === undefined)) {
+                throw new HttpError(400, 'invalid_boards', 'One of the chosen boards is not available to you.');
+              }
+              boardIds = ids;
+              ceiling = oauthLowerScope(current.requestCeiling, oauthBoardsMax(chosen));
+            }
+            if (oauthScopeRank(scope) > oauthScopeRank(ceiling)) {
               throw new HttpError(400, 'invalid_scope', 'The selected access level is not available.');
             }
             if (cloud?.limits().readOnly) {
@@ -1345,7 +1404,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   userId: user.id,
                   decision: 'allow',
                   scope,
-                  boardIds: null,
+                  boardIds,
                   now: now(),
                 });
                 if (!result) return null;
@@ -1355,6 +1414,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   scope,
                   decision: 'allow',
                   grantId: result.grant.id,
+                  ...(boardIds ? { boardCount: boardIds.length } : {}),
                 });
                 return result;
               });
@@ -1652,10 +1712,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       }
     }
     if (cloud && !route.readOnlyOk && !READ_METHODS.has(method) && cloud.limits().readOnly) {
-      if (route.trackerMutation) throw new HttpError(403, 'read_only', 'This workspace is read-only.');
+      if (route.trackerMutation && !route.trackerMutationGenericReadOnly) throw new HttpError(403, 'read_only', 'This workspace is read-only.');
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
-    if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res);
+    if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res, {
+      gateExempt: route.trackerGateExempt === true,
+      ownerOnly: route.trackerMutationOwnerOnly === true,
+    });
     const body = route.body && BODY_METHODS.has(method)
       ? await readJson(req, route.maxBody ?? MAX_BODY, { rejectDuplicateMappingKeys: route.trackerLink === true })
       : {};
@@ -1702,13 +1765,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
-    if (maintenance() && !(pathname === '/api/internal/backup-status' && String(req.method).toUpperCase() === 'GET')) {
+    const method = String(req.method).toUpperCase();
+    if (maintenance() && !(pathname === '/api/internal/backup-status' && method === 'GET')) {
       res.setHeader('retry-after', '30');
-      send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      // Same disclosure as the generic reply, with the code the tracker client reads. No auth, no directory read, no route.
+      if (method === 'POST' && pathname === '/api/admin/tracker/key-epoch') {
+        send(res, 503, { error: 'tracker_restoring', message: 'Ticket writes are paused while the workspace is being restored.', floor: 'pending' });
+      } else {
+        send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      }
       return true;
     }
     try {
-      const method = String(req.method).toUpperCase();
       // Whole-workspace restore takes its safety backup from inside this handler; that backup must be allowed to acquire
       // the same barrier. Maintenance mode takes over the writers immediately after the safety copy succeeds.
       // A streaming AI run lasts minutes and writes boards through the room, not the directory, so it must not hold a lease that would stall every other writer.
@@ -1735,6 +1803,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           conflict: 409,
           read_only: 403,
           limit_exceeded: 413,
+          tracker_restoring: 503,
         };
         const status = statuses[err.code] ?? 400;
         if (status === 413) res.setHeader('connection', 'close');
@@ -1743,6 +1812,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           message: err.message,
           ...(err.path ? { path: err.path } : {}),
           ...(err.ticket ? { ticket: err.ticket } : {}),
+          ...(err instanceof TrackerRestoringError ? { floor: err.floor } : {}),
         });
       } else {
         console.error('api: unexpected error:', describeError(err));

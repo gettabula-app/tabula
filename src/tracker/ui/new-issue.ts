@@ -119,11 +119,21 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const labelsButton = h('button', { class: 'trk-small-button', type: 'button' });
   const dueButton = h('button', { class: 'trk-small-button', type: 'button' });
   const refreshProperties = () => {
-    stateButton.textContent = states.find((state) => state.key === draft.state)?.name ?? 'To do';
-    assigneeButton.textContent = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
-    priorityButton.textContent = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
+    const stateName = states.find((state) => state.key === draft.state)?.name ?? 'To do';
+    const assigneeName = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
+    const priorityName = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
+    const labelsName = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'No labels';
+    const dueName = draft.due ?? 'No due date';
+    stateButton.textContent = stateName;
+    stateButton.setAttribute('aria-label', `State: ${stateName}`);
+    assigneeButton.textContent = assigneeName;
+    assigneeButton.setAttribute('aria-label', `Assignee: ${assigneeName}`);
+    priorityButton.textContent = priorityName;
+    priorityButton.setAttribute('aria-label', `Priority: ${priorityName}`);
     labelsButton.textContent = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
+    labelsButton.setAttribute('aria-label', `Labels: ${labelsName}`);
     dueButton.textContent = draft.due ?? 'Due date';
+    dueButton.setAttribute('aria-label', `Due date: ${dueName}`);
   };
   propertyBar.append(stateButton, assigneeButton, priorityButton, labelsButton, dueButton);
   refreshProperties();

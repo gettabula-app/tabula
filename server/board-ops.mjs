@@ -1174,7 +1174,7 @@ const CREATE_KEYS = {
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
 };
 
-const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
+export const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 
 /** Board planners cannot make linked ticket changes; the tracker transition and patch routes own those fields. */
 export function assertLinkedCardEdit(card, field, path = field) {

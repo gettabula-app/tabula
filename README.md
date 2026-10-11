@@ -91,7 +91,7 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `TABULA_AUTH` | `off` | `on` turns accounts mode on |
 | `TABULA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `TABULA_AUTH=on` |
 | `TABULA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
-| `TABULA_MAIL` | `log` | `log` prints each email to the console, `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL` |
+| `TABULA_MAIL` | `log` | `log` prints each email to the console instead of delivering it; a chat mention email includes its message text (up to 140 characters) in that output. `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), and `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL`. Choose `smtp` or `webhook` when email should be delivered |
 | `TABULA_MAIL_WEBHOOK_URL` | none | Target for `TABULA_MAIL=webhook` |
 | `TABULA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
 | `TABULA_MAIL_FROM` | `Tabula <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
@@ -268,7 +268,9 @@ Screenshots show demo data.
 
 ### Not built yet (from the spec)
 
-End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; editable data tables outside kanban boards; PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; peer-to-peer WebRTC sync; and a public desktop release with signing, an updater and supported Windows and Linux builds.
+End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; editable data tables outside kanban boards; PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
+
+Native and desktop development (Mac, Windows, Linux, iPhone, Android) is frozen since 2026-10-11 while we focus on the web app; the shell on main still builds and stays for reference, but is not maintained and gets no new features until we revisit this.
 
 ## Fonts and icons
 

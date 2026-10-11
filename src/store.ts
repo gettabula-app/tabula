@@ -119,11 +119,13 @@ export class Store {
 
     this.objects.forEach((m, id) => {
       this.undoObjectTypeIds.set(m, id);
-      this.cache.set(id, this.cachedObject(m.toJSON() as Obj));
+      const object = this.cachedObject(m.toJSON() as Obj);
+      this.cache.set(id, object);
+      if (isConnector(object)) this.indexConnector(object);
+      this.indexChild(object);
+      if (object.type === 'container') this.containerIds.add(object.id);
     });
-    this.rebuildBoundIndex();
-    this.rebuildChildIndex();
-    this.refreshOrphans();
+    if (this.containerIds.size) this.refreshOrphans();
 
     this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
@@ -740,20 +742,6 @@ export class Store {
         else this.flow.set(k, v);
       }
     }, 'flow');
-  }
-
-  private rebuildBoundIndex() {
-    this.boundIndex.clear();
-    for (const o of this.cache.values()) if (isConnector(o)) this.indexConnector(o);
-  }
-
-  private rebuildChildIndex() {
-    this.childIndex.clear();
-    this.containerIds.clear();
-    for (const o of this.cache.values()) {
-      this.indexChild(o);
-      if (o.type === 'container') this.containerIds.add(o.id);
-    }
   }
 
   private cachedObject(o: Obj): Obj {

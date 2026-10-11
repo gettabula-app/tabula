@@ -30,7 +30,7 @@ export function createTrackerInboxRoutes({ directory, boardAccess = null, compil
       { unread: unreadCount(directory, user, { boardAccess }) },
     ]),
 
-    compile('POST', 'tracker/inbox/read', { body: true, maxBody: INBOX_BODY_LIMIT }, ({ user, body }) => {
+    compile('POST', 'tracker/inbox/read', { body: true, maxBody: INBOX_BODY_LIMIT, trackerMutation: true, trackerMutationGenericReadOnly: true }, ({ user, body }) => {
       const all = body.all === true;
       const ids = body.ids;
       if (all) {
@@ -47,7 +47,7 @@ export function createTrackerInboxRoutes({ directory, boardAccess = null, compil
       { kinds: NOTIFICATION_KINDS, prefs: getNotifyPrefs(directory, user.id) },
     ]),
 
-    compile('PUT', 'tracker/notification-prefs', { body: true, maxBody: INBOX_BODY_LIMIT }, ({ user, body }) => {
+    compile('PUT', 'tracker/notification-prefs', { body: true, maxBody: INBOX_BODY_LIMIT, trackerMutation: true, trackerMutationGenericReadOnly: true }, ({ user, body }) => {
       try {
         setNotifyPrefs(directory, user.id, body.prefs);
       } catch (error) {

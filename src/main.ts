@@ -16,6 +16,7 @@ import { mountMentionNotices } from './ui/mention-notice';
 import { mountTitleBadge } from './ui/title-badge';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
+import { renderOAuthConsent } from './ui/oauth-consent';
 import { onceForLocation } from './nav-dedupe';
 import { renderJoin } from './ui/join';
 import { renderAdmin } from './ui/admin';
@@ -30,7 +31,7 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
-import { ApiError, api, onRestoring, type ServerBoard } from './api';
+import { ApiError, api, onRestoring, type Me, type ServerBoard } from './api';
 import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { applyConnectionAccess, denialForGuestSession, GUEST_ENDED_BANNER, guestAccessEnded, watchGuestAccess } from './guest-access';
@@ -427,11 +428,17 @@ async function route() {
     const view = document.createElement('div');
     view.style.display = 'contents';
     root.replaceChildren(view);
-    const finish = () => {
-      if (seq === routeSeq) finishSignIn();
+    const finish = (me: Me, oauthRequest?: string) => {
+      if (seq !== routeSeq || !me) return;
+      if (oauthRequest) {
+        location.replace(`#/oauth/consent?request=${encodeURIComponent(oauthRequest)}`);
+        return;
+      }
+      finishSignIn();
     };
     if (r.name === 'signin') renderSignIn(view);
-    else if (r.name === 'verify') renderVerify(view, r.token, finish);
+    else if (r.name === 'verify') renderVerify(view, r.token, finish, r.oauthRequest);
+    else if (r.name === 'oauth-consent') renderOAuthConsent(view, r.request);
     else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
     else if (r.name === 'join') renderJoin(view, r.code, (guest) => {
       history.replaceState(null, '', `/#/b/${encodeURIComponent(guest.boardId)}`);

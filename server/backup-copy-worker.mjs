@@ -32,7 +32,7 @@ export async function copyDatabase(source, tmp, statusKey) {
     copy.exec('PRAGMA journal_mode = DELETE');
     if (has('settings')) copy.prepare('DELETE FROM settings WHERE key = ?').run(statusKey);
     if (has('audit')) {
-      copy.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed')");
+      copy.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed', 'backup.tracker_findings')");
       if (has('sqlite_sequence')) copy.exec("UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(id), 0) FROM audit) WHERE name = 'audit'");
     }
     copy.exec('VACUUM');

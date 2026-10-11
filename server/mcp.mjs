@@ -11,6 +11,7 @@ import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
+import { requireTrackerGateOpen } from './tracker/shared.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
   codePointLength, isDueDate, isLaneStage, isSafeHttpUrl, isWipLimit, LABEL_COLORS,
@@ -488,6 +489,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   };
   const requireTrackerWritable = () => {
     if (readOnlyNow()) throw new OpsError('read_only', READ_ONLY_MESSAGE);
+    requireTrackerGateOpen(directory);
   };
   function trackerFenced(payload, initiallyTruncated = false) {
     const flags = { cleaned: false, truncated: initiallyTruncated };
@@ -2047,7 +2049,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       return { result: textResult(out.text) };
     } catch (err) {
       if (err instanceof OpsError) {
-        return { result: textResult(JSON.stringify({ error: err.code, message: err.message, ...(err.path ? { path: err.path } : {}) }), true) };
+        return { result: textResult(JSON.stringify({ error: err.code, message: err.message, ...(err.path ? { path: err.path } : {}), ...(err.floor ? { floor: err.floor } : {}) }), true) };
       }
       log('mcp: tool failed', tool.name, err?.message);
       return { result: textResult(JSON.stringify({ error: 'internal', message: 'Something went wrong.' }), true) };

@@ -230,7 +230,7 @@ function safeLog(log, error) {
 }
 
 /** A durable, bounded notification tick. Timers are disabled in unit tests. */
-/** @param {{ directory: any, mailer: { send: Function }, baseUrl: string, log?: Function, now?: number | (() => number), boardAccess?: ((ticketId: string, userId: string) => string | null) | null, intervalMs?: number, timers?: boolean }} options */
+/** @param {{ directory: any, mailer: { send: Function }, baseUrl: string, log?: Function, now?: number | (() => number), boardAccess?: ((ticketId: string, userId: string) => string | null) | null, paused?: () => boolean, intervalMs?: number, timers?: boolean }} options */
 export function createTrackerNotifier({
   directory,
   mailer,
@@ -238,6 +238,7 @@ export function createTrackerNotifier({
   log = () => {},
   now = Date.now,
   boardAccess = null,
+  paused = () => false,
   intervalMs = DEFAULT_INTERVAL_MS,
   timers = true,
 }) {
@@ -249,6 +250,10 @@ export function createTrackerNotifier({
     ticking = true;
     const result = { created: 0, sent: 0, failed: 0, skipped: 0 };
     try {
+      if (paused()) {
+        result.skipped++;
+        return result;
+      }
       try {
         result.created = scanDueSoon({ directory, now: timeValue(now), boardAccess });
       } catch (error) {

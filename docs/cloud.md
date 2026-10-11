@@ -228,7 +228,11 @@ The instance calls `POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/portal` and retur
 ```
 POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests, autoUpgrade? }
 POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/settings   { autoUpgrade }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/key-floor   { counters: [{ scope, prefix, floor }] }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/key-floor/read   {}
 ```
+
+The ticket-key floor calls are specified by `docs/tracker-s7.md` section 6.3. The control plane stores only monotonic counter numbers and applies its own per-call jump limit. Its `workspace_key_floor` table and handlers are a separate change in the `tabula-cloud` repository.
 
 Sent 30 seconds after the last change to the people in the workspace (an account created through an invite, a role change, disable or enable, a removal). A burst of changes is one report, with the counts read when it is sent, and a report that would repeat the last successful one is skipped. A failure is logged (without the token or the answer) and never reaches the request that caused the change; the control plane also pulls `GET /api/internal/usage` now and then. Reports that are still waiting when the process stops are not sent.
 

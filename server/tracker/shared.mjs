@@ -1,7 +1,15 @@
 import crypto from 'node:crypto';
 import { OpsError, stripInvisible } from '../board-ops.mjs';
+import { trackerGateState } from './gate.mjs';
 
 export { OpsError, stripInvisible };
+
+export class TrackerRestoringError extends OpsError {
+  constructor(floor) {
+    super('tracker_restoring', 'Ticket writes are paused while the workspace is being restored.');
+    this.floor = floor === 'known' ? 'known' : 'pending';
+  }
+}
 
 export const invalid = (path, message) => new OpsError('invalid_input', message, path);
 export const notFound = (message = 'Ticket not found', path) => new OpsError('not_found', message, path);
@@ -35,6 +43,11 @@ export function requireWritable(readOnly = () => false) {
   if ((typeof readOnly === 'function' ? readOnly() : readOnly) === true) {
     throw new OpsError('read_only', 'This workspace is read-only.');
   }
+}
+
+export function requireTrackerGateOpen(directory) {
+  const gate = trackerGateState(directory);
+  if (gate.closed) throw new TrackerRestoringError(gate.floor);
 }
 
 export function actorInfo(actor) {

@@ -5,7 +5,7 @@ import { visibleAdminTabs } from '../src/ui/admin-logic';
 import {
   ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, ERROR_CODES, POLL_CAP_MS, POLL_FACTOR, POLL_GIVE_UP_MS, POLL_START_MS, RELOAD_GUARD_MS,
   checkStateSentence, classifyHealth, confirmMatches, errorReason, errorSentence, gateBannerSentence,
-  formatSize, formatUtc, formatUtcDate, intervalLabel, lastRestoreSentence, manifestTime, mayReload, nextPollDelay, nextScreen, noteOf,
+  boardsFailedSentence, formatSize, formatUtc, formatUtcDate, intervalLabel, lastRestoreSentence, manifestTime, mayReload, nextPollDelay, nextScreen, noteOf,
   pollDelays, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome, trackerCheckLabel, validateDrillRecord, waitLabel, watchServer, type Screen, type WatchDeps,
 } from '../src/ui/backups-logic';
 
@@ -111,7 +111,7 @@ describe('the error table', () => {
     'bad_request', 'confirmation_mismatch', 'read_only', 'forbidden', 'manifest_not_found', 'board_not_in_backup', 'backups_off', 'restore_in_progress', 'rate_limited',
     'unknown_key', 'tamper', 'content_mismatch', 'invalid_manifest', 'invalid_path', 'unexpected_file', 'duplicate_path', 'size_mismatch', 'backup_incomplete', 'no_directory',
     'invalid_backup', 'schema_too_new', 'integrity_check_failed', 'no_active_owner', 's3', 'network', 'timeout', 'safety_backup_failed', 'not_enough_space', 'space_unknown',
-    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated', 'tracker_restoring', 'key_epoch_confirmation_mismatch', 'drill_record_invalid',
+    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated', 'tracker_restoring', 'key_epoch_confirmation_mismatch', 'drill_record_invalid', 'cutover_record_invalid',
   ];
 
   it('has a sentence for every code of the brief and every code the server answers', () => {
@@ -726,5 +726,19 @@ describe('who sees the tab', () => {
   it('lists it for an owner whether or not backups are on, and whether or not AI tool access is', () => {
     expect(visibleAdminTabs(ADMIN_TABS, false, 'owner')).toContain('backups');
     expect(visibleAdminTabs(ADMIN_TABS, true, 'owner')).toContain('backups');
+  });
+});
+
+describe('the line about boards that could not be synced', () => {
+  const done = { kind: 'workspace', result: 'done', at: NOW, manifest: NAME } as const;
+  it('is null when nothing failed or there is no record', () => {
+    expect(boardsFailedSentence(null)).toBeNull();
+    expect(boardsFailedSentence(done)).toBeNull();
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 0 } })).toBeNull();
+    expect(boardsFailedSentence({ ...done, result: 'failed', tracker: { boardsFailed: 2 } })).toBeNull();
+  });
+  it('counts the boards', () => {
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 1 } })).toBe('1 board could not be synced with the tracker after the restore. Its cards may not match the tickets they link to.');
+    expect(boardsFailedSentence({ ...done, tracker: { boardsFailed: 3 } })).toContain('3 boards could not be synced');
   });
 });

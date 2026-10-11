@@ -1,5 +1,7 @@
 # Desktop app (Tauri 2)
 
+Frozen since 2026-10-11: native and desktop development (Mac, Windows, Linux, iPhone, Android) is paused while we focus on the web app. The shell on main still builds and stays for reference. It is not maintained and gets no new features until we revisit this.
+
 A desktop build of Tabula: the existing web app in a native window, with `.drift` files opening in it. No rewrite: the shell loads the output of `npm run build`. The web code stays one code base; what only the desktop needs lives in `src/desktop*.ts` and is loaded only there.
 
 Status: Phase 1, the local-first desktop MVP (TAB-100), is built and was checked on macOS. Windows and Linux were not built or run: what this page says about them is read from sources or documentation. Signing, auto-update, a release pipeline, accounts mode and a real app icon do not exist yet (see "Phased plan" for what is done and what is not).

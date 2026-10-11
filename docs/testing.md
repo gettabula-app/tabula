@@ -27,8 +27,24 @@ A test should prove a **behaviour**, not a **speed**. If a test would still be c
 - Build paths from `fileURLToPath(import.meta.url)` (and `path.join`), never from `new URL(...).pathname`: on Windows that gives `/D:/a/...`, which broke the AI bar availability test.
 - Signals do not exist on Windows: `kill('SIGKILL')` ends the process with exit code 1 and a null signal. Assert that a process ended (and its output), not which signal ended it; accept `SIGKILL` on POSIX and a number on Windows if the reason matters.
 - File modes do not exist on Windows (everything reports `0o666`): assert them only where `!isWindows` (`test/platform.ts`).
+- Compare Windows filesystem paths after normalizing separators and case; for a missing path, canonicalize its existing parent and append the basename.
 - Child processes, file locks and renames are slower and stricter on Windows. Poll, do not sleep, and close handles before removing a directory.
 - Run `npm run test:repeat -- <files> --times 15 --platform win32` before you report. It runs the Windows branches of your test 15 times in a row; it does not simulate Windows itself, so CI (and the nightly run on Windows) remains the proof.
+
+## Auditing Git worktrees
+
+Run the read-only inventory from the repository:
+
+    node scripts/worktree-audit.mjs
+    node scripts/worktree-audit.mjs --json --root /path/to/project --main origin/main --no-size
+
+The project root contains the tabula Git repository and may contain sibling wt and proto directories. The report lists every worktree registered with Git. Paths below wt are task worktrees; paths below proto are prototypes matched to the register by directory name; other paths are flagged for review. The primary tabula checkout is kept as the main worktree.
+
+The JSON report contains generatedAt, root, main, and a worktrees array. Each worktree includes its path, kind, branch or detached state, existence and prunable flags, merged state, ahead commit count, staged/modified/deleted/untracked/renamed status counts, last commit and file modification ages in hours, size in MB, stale state, verdict, and warnings. Unknown data is null. A missing, prunable worktree keeps its metrics unavailable instead of appearing clean. If the main ref cannot be resolved, merged and ahead remain unknown.
+
+Verdicts are recommendations for a person to review. REMOVE identifies a missing prunable worktree or a clean task worktree already merged into the main ref. STALE identifies a clean, unmerged task worktree with no commit or file activity for at least 24 hours. ASK-OWNER means the report cannot safely recommend cleanup, including for dirty, locked, unregistered prototype, or incomplete worktrees. KEEP covers the main checkout, active tasks, and prototypes still within their review date. OVERDUE means a registered prototype's review date has passed. MISPLACED flags paths outside wt and proto (except the main checkout), and DETACHED calls out worktrees without a branch. The command never removes or prunes worktrees, checks out refs, or changes files.
+
+The size scan skips .git, node_modules, and symbolic links. Use --no-size to skip it; sizeMb is then null. File-age and size scans do not follow symlinks. The tests build temporary Git repositories and inject a fixed epoch-millisecond clock so age boundaries do not depend on test runtime.
 
 ## Real HTTP requests in tests
 

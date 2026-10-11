@@ -62,6 +62,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
         preferences = { ...preferences!, prefs: { ...preferences!.prefs, [kind]: previous } };
         rowErrors.set(kind, { choice, previous });
         render();
+        if (focus) root.querySelector<HTMLElement>(`.trk-prefs-radio[data-kind="${kind}"][data-choice="${previous}"]`)?.focus();
       })
       .finally(() => controllers.delete(controller));
   };
@@ -86,7 +87,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
       tabindex: current === choice ? '0' : '-1',
       'data-kind': kind,
       'data-choice': choice,
-      onclick: () => setChoice(kind, choice),
+      onclick: () => setChoice(kind, choice, true),
     }, choiceLabel(choice))));
     const rowError = rowErrors.get(kind);
     return h('div', { class: 'trk-prefs-row' },

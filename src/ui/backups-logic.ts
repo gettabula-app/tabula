@@ -129,6 +129,7 @@ const ENTRIES: Record<string, Entry> = {
   tracker_restoring: text('tracker writes are paused for a restore', 'Tracker writes are paused while a restore is being checked. Try again when it is complete.'),
   key_epoch_confirmation_mismatch: text('the confirmation did not match', `The confirmation did not match. Type ${EPOCH_CONFIRM_WORD} exactly, in capital letters.`),
   drill_record_invalid: text('the drill record was not valid', 'The restore drill record was not valid. Check its JSON and measured values, then try again.'),
+  cutover_record_invalid: text('the cutover record was not valid', 'The cutover record was not valid. Use a date that is not in the future and tick the box, then try again.'),
   restore_in_progress: text('another restore was running', 'A restore is already running. Wait until it is done, then try again.'),
   board_not_in_backup: text('the board is not in the backup', 'That board is not in this backup, or it has no saved content there.'),
   read_only: text('the workspace is read-only', 'This workspace is read-only, so a copy cannot be added right now. Check billing to make it writable again.'),
@@ -371,6 +372,14 @@ export function lastRestoreSentence(last: RestoreRecord | null | undefined): str
     return last.kind === 'board' ? `A board was restored as a copy from ${from}${at}.` : `The whole workspace was restored from ${from}${at}.`;
   }
   return `Restoring ${what} from ${from} failed${at}: ${errorReason(last.error)}.`;
+}
+
+/** A line about boards whose tracker links could not be synced after the last whole restore, or null when none failed. */
+export function boardsFailedSentence(last: RestoreRecord | null | undefined): string | null {
+  const count = last?.result === 'done' ? last.tracker?.boardsFailed : undefined;
+  if (typeof count !== 'number' || !Number.isFinite(count) || count < 1) return null;
+  const boards = count === 1 ? '1 board' : `${count} boards`;
+  return `${boards} could not be synced with the tracker after the restore. ${count === 1 ? 'Its' : 'Their'} cards may not match the tickets they link to.`;
 }
 
 // ---------------------------------------------------------------- the screens

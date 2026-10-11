@@ -27,6 +27,15 @@ const RANK_ROLE = { 4: 'owner', 3: 'editor', 2: 'commenter', 1: 'viewer' };
 // A share role the CASE does not know ranks 0, which grants nothing.
 const shareRank = (column) => `CASE ${column} WHEN 'editor' THEN 3 WHEN 'commenter' THEN 2 WHEN 'viewer' THEN 1 ELSE 0 END`;
 
+/**
+ * The ticket search table, one definition for the migration and for the rebuild after a restore (server/tracker/restore-recovery.mjs).
+ * The text is part of schema 12 and must stay byte for byte what a fresh database holds in sqlite_master.
+ */
+export const TICKET_SEARCH_DDL = `CREATE VIRTUAL TABLE ticket_search USING fts5(
+    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
+    tokenize = 'unicode61 remove_diacritics 2'
+  )`;
+
 export const MIGRATIONS = [
   `
   CREATE TABLE users (
@@ -314,10 +323,7 @@ export const MIGRATIONS = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (ticket_id, user_id)
   );
-  CREATE VIRTUAL TABLE ticket_search USING fts5(
-    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
-    tokenize = 'unicode61 remove_diacritics 2'
-  );
+  ${TICKET_SEARCH_DDL};
 
   CREATE INDEX tickets_state_updated ON tickets(state_id, updated_at DESC);
   CREATE INDEX tickets_assignee_state_updated ON tickets(assignee_user_id, state_id, updated_at DESC);
@@ -593,24 +599,44 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
 
   let closed = false;
   let depth = 0;
+  let keyFloorListener = null;
+  const afterCommitCallbacks = [];
+  function afterCommit(fn) {
+    if (typeof fn !== 'function') return;
+    if (depth > 0) {
+      afterCommitCallbacks.push(fn);
+      return;
+    }
+    try { fn(); } catch { /* notifications must not undo a committed write */ }
+  }
   function transaction(fn) {
     if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
       return snapshotBarrier.deferWrite(() => transaction(fn));
     }
     const nested = depth > 0;
+    const callbackMark = afterCommitCallbacks.length;
     const savepoint = `sp${depth}`;
     db.exec(nested ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');
     depth++;
+    let committed = false;
     try {
       const result = fn();
       db.exec(nested ? `RELEASE ${savepoint}` : 'COMMIT');
+      committed = true;
       return result;
     } catch (err) {
       if (nested) db.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
       else db.exec('ROLLBACK');
+      afterCommitCallbacks.length = callbackMark;
       throw err;
     } finally {
       depth--;
+      if (!nested && committed) {
+        const callbacks = afterCommitCallbacks.splice(0);
+        for (const callback of callbacks) {
+          try { callback(); } catch { /* notifications must not undo a committed write */ }
+        }
+      }
     }
   }
 
@@ -1362,6 +1388,9 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     schemaReport: () => describeSchema(db, MIGRATIONS),
     db,
     transaction,
+    afterCommit,
+    setKeyFloorListener: (fn) => { keyFloorListener = typeof fn === 'function' ? fn : null; },
+    keyFloorChanged: () => { try { keyFloorListener?.(); } catch { /* reporting cannot fail a write */ } },
     createUser,
     getUser,
     getUserByEmail,

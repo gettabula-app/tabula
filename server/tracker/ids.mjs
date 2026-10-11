@@ -2,6 +2,7 @@ import { appendTicketEvent } from './events.mjs';
 import { fanOut } from './notify.mjs';
 import { actorInfo, getDb, inTransaction, newId, requireWritable } from './shared.mjs';
 import { refreshTicketSearch } from './search.mjs';
+import { KEY_FLOOR_CHANGED_EVENT } from './key-floor.mjs';
 
 /** Allocate and create a ticket atomically. A rolled back call leaves the counter unchanged. */
 /** @param {any} options */
@@ -14,11 +15,13 @@ export function allocateTicket({
   idempotencyKey = null,
   readOnly = () => false,
   now = Date.now(),
+  onCounterAdvanced = () => {},
 } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
   const info = actorInfo(actor);
-  return inTransaction({ directory, db }, () => {
+  let advancedCounter = null;
+  const result = inTransaction({ directory, db }, () => {
     if (idempotencyKey !== null) {
       const prior = db.prepare(
         `SELECT ticket_id FROM ticket_events
@@ -43,6 +46,7 @@ export function allocateTicket({
     const key = `${tracker.prefix}-${number}`;
     db.prepare('UPDATE ticket_counters SET next_number = ?, updated_at = ? WHERE scope = ? AND prefix = ?')
       .run(number + 1, now, tracker.id, tracker.prefix);
+    advancedCounter = { scope: tracker.id, prefix: tracker.prefix, next: number + 1 };
 
     const ticketId = newId();
     db.prepare(
@@ -96,4 +100,16 @@ export function allocateTicket({
     refreshTicketSearch(db, ticketId);
     return { ticketId, key, updatedSeq: eventSeq, duplicate: false };
   });
+  if (advancedCounter) {
+    const notify = () => {
+      try {
+        const notified = onCounterAdvanced({ event: KEY_FLOOR_CHANGED_EVENT, ...advancedCounter });
+        if (notified && typeof notified.then === 'function') void notified.catch(() => {});
+        directory?.keyFloorChanged?.();
+      } catch { /* key-floor reporting cannot fail ticket creation */ }
+    };
+    if (typeof directory?.afterCommit === 'function') directory.afterCommit(notify);
+    else notify();
+  }
+  return result;
 }
