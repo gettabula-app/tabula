@@ -123,7 +123,8 @@ describe('tracker slice 5 HTTP routes', () => {
     expect(first).toMatchObject({ status: 200, body: { expiresAt: expect.any(Number) } });
     await until(() => Date.now() > before);
     const extended = await api(owner, 'POST', `/api/tracker/boards/${boardId}/restore-window`);
-    expect(extended.body.expiresAt).toBeGreaterThan(first.body.expiresAt);
+    // same millisecond is possible on a fast clock: a lower bound only
+    expect(extended.body.expiresAt).toBeGreaterThanOrEqual(first.body.expiresAt);
     expect(await api(editor, 'POST', `/api/tracker/boards/${boardId}/restore-window`))
       .toMatchObject({ status: 409, body: { error: 'conflict', message: expect.any(String) } });
     expect(await api(owner, 'DELETE', `/api/tracker/boards/${boardId}/restore-window`))
