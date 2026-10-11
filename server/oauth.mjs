@@ -86,7 +86,7 @@ export const OAUTH_TOKEN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const OAUTH_GRANT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_OAUTH_CLIENTS = 500;
 export const MAX_ACTIVE_OAUTH_GRANTS = 20;
-export const MAX_OAUTH_BOARD_IDS = 20;
+export const MAX_OAUTH_BOARD_IDS = 50;
 
 const SCOPE_RANK = { read: 1, comment: 2, write: 3 };
 const ENVELOPE_VERSION = 1;
