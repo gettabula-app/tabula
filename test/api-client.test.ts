@@ -47,6 +47,7 @@ const networkDown = () => Promise.reject(new TypeError('Failed to fetch'));
 const me: Me = {
   user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role: 'member' },
   teams: [{ id: 't1', name: 'Design', role: 'admin' }],
+  mcpOauth: false,
 };
 
 function board(id: string, updatedAt: number): ServerBoard {
@@ -137,6 +138,27 @@ describe('api client requests', () => {
     ]);
     expect(JSON.parse(String(calls[1].init.body))).toEqual({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
     expect(JSON.parse(String(calls[2].init.body))).toEqual({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+  });
+
+  it('maps connected app list and revocation methods to their API routes', async () => {
+    const { fetchFn, calls } = recorder(({ url, init }) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      if (url.endsWith('/revoke-all')) return json({ revoked: 2 });
+      return json([]);
+    });
+    const client = createApi(fetchFn);
+    await client.myGrants();
+    await client.disconnectGrant('g1');
+    await client.adminGrants();
+    await client.adminDisconnectGrant('g2');
+    await client.adminRevokeAllGrants();
+    expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
+      'GET /api/me/grants',
+      'DELETE /api/me/grants/g1',
+      'GET /api/admin/grants',
+      'DELETE /api/admin/grants/g2',
+      'POST /api/admin/grants/revoke-all',
+    ]);
   });
 
   it('maps every endpoint to the documented method and path', async () => {

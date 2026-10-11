@@ -229,7 +229,7 @@ describe('guest expiry and relay refusal', () => {
   });
 
   it('keeps signed-in board access unchanged when the relay refuses a connection', async () => {
-    await setSignedIn({ user: { id: 'u1', email: 'u@example.test', name: 'User', role: 'member' }, teams: [] });
+    await setSignedIn({ user: { id: 'u1', email: 'u@example.test', name: 'User', role: 'member' }, teams: [], mcpOauth: false });
     const access = applyConnectionAccess(
       { store: new Store(new Y.Doc()), comments: new Comments(new Y.Doc()) },
       boardAccess('editor', null), authState(), 'access_removed', NOW,

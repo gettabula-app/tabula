@@ -18,7 +18,7 @@ const template = (id: string, extra: Partial<CustomTemplate> = {}): CustomTempla
   content: { objects: [sticky('o1')], steps: [], bounds: { x: 0, y: 0, w: 100, h: 80 } }, ...extra,
 });
 const me = (role: Me['user']['role'], teams: Me['teams'] = [{ id: 't1', name: 'Design', role: 'member' }]): Me => ({
-  user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role }, teams,
+  user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role }, teams, mcpOauth: false,
 });
 
 describe('sharing choices', () => {

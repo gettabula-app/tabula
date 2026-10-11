@@ -418,7 +418,7 @@ describe('the IndexedDB cache', () => {
 
 describe('the seam between the browser and the server', () => {
   const me = (role: 'owner' | 'admin' | 'member' | 'guest' = 'member') => ({
-    user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role }, teams: [{ id: 'team1', name: 'Design', role: 'member' as const }],
+    user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role }, teams: [{ id: 'team1', name: 'Design', role: 'member' as const }], mcpOauth: false,
   });
   const storage = new Map<string, string>();
   const storageStub = {

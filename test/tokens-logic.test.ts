@@ -3,7 +3,7 @@ import { MCP_SERVER_NAME } from '../server/mcp.mjs';
 import { ADMIN_TABS } from '../src/route';
 import {
   DEFAULT_DAYS, EXPIRY_DAYS, aiToolsAvailable, MAX_BOARDS, NAME_MAX, SCOPE_OPTIONS, SERVER_NAME, boardsLabel, boardsSummary, clientSnippets, draftProblem,
-  emptyDraft, expiryLabel, lastUsedLabel, needsBoardPick, scopeLabel, toRequest, type Draft,
+  emptyDraft, expiryLabel, grantBoardsText, grantExpiryText, grantScopeLabel, lastUsedLabel, mergeAdminAccessRows, needsBoardPick, scopeLabel, toRequest, type Draft,
 } from '../src/ui/tokens-logic';
 
 const draft = (extra: Partial<Draft> = {}): Draft => ({ ...emptyDraft(), name: 'Claude Code', ...extra });
@@ -100,6 +100,37 @@ describe('labels', () => {
     expect(expiryLabel(now + 29.5 * day, now)).toBe('Expires in 30 days');
     expect(lastUsedLabel({ lastUsedAt: null }, () => 'never called')).toBe('Never used');
     expect(lastUsedLabel({ lastUsedAt: now }, (t) => `at ${t}`)).toBe(`Used at ${now}`);
+  });
+
+  it('labels connected app scope, board reach and expiry', () => {
+    const now = 1_800_000_000_000;
+    const day = 24 * 60 * 60 * 1000;
+    expect(grantScopeLabel('read')).toBe('Read');
+    expect(grantScopeLabel('comment')).toBe('Read and comment');
+    expect(grantScopeLabel('write')).toBe('Read and edit');
+    expect(grantBoardsText(null)).toBe('All boards you can open');
+    expect(grantBoardsText(1)).toBe('1 board');
+    expect(grantBoardsText(7)).toBe('7 boards');
+    expect(grantExpiryText(now + 1, now)).toBe('Connection ends today');
+    expect(grantExpiryText(now + day, now)).toBe('Connection ends today');
+    expect(grantExpiryText(now + 2.5 * day, now)).toBe('Connection ends in 3 days');
+  });
+
+  it('merges tokens and connected apps into newest-first admin rows with type labels', () => {
+    const token = {
+      id: 't1', userId: 'u1', userName: 'Ana', email: 'ana@example.test', userRole: 'member' as const,
+      name: 'Laptop', scope: 'read' as const, boardIds: null, hint: 'abcd', createdAt: 10,
+      expiresAt: 100, lastUsedAt: null,
+    };
+    const grant = {
+      id: 'g1', clientId: 'c1', clientName: 'Claude', redirectHost: 'claude.ai', scope: 'comment' as const,
+      boardCount: 2, createdAt: 20, lastUsedAt: null, expiresAt: 200,
+      userId: 'u2', userName: 'Bo', email: 'bo@example.test', userRole: 'admin' as const,
+    };
+    expect(mergeAdminAccessRows([token], [grant])).toEqual([
+      { kind: 'grant', typeLabel: 'Connector', createdAt: 20, userId: 'u2', userRole: 'admin', grant },
+      { kind: 'token', typeLabel: 'Personal token', createdAt: 10, userId: 'u1', userRole: 'member', token },
+    ]);
   });
 });
 

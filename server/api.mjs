@@ -524,6 +524,19 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     lastUsedAt: t.lastUsedAt,
   });
 
+  // OAuth grant responses deliberately omit board ids, the resource URL and token-table data.
+  const grantView = (grant) => ({
+    id: grant.id,
+    clientId: grant.clientId,
+    clientName: grant.clientName,
+    redirectHost: grant.redirectHost,
+    scope: grant.scope,
+    boardCount: grant.boardIds === null ? null : grant.boardIds.length,
+    createdAt: grant.createdAt,
+    lastUsedAt: grant.lastUsedAt,
+    expiresAt: grant.expiresAt,
+  });
+
   // Hosted workspaces (docs/cloud.md): the message names the limit so an admin knows what to do about it.
   const seatLimited = (problem) =>
     conflict('seat_limit', `All ${cloud.limits().seatLimit} seats are in use, so ${problem}. Remove or disable someone, or ask the workspace owner to add seats under billing.`);
@@ -672,6 +685,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           },
         } : {}),
         ...(config.mcp ? { mcp: true } : {}),
+        mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
@@ -1470,12 +1484,19 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             return [201, { ...tokenView(stored), token: created.token, url: `${config.baseUrl}/mcp` }];
           }),
           compile('POST', 'me/tokens/revoke-all', { readOnlyOk: true }, ({ user }) => {
-            const revoked = directory.transaction(() => {
+            const result = directory.transaction(() => {
               const count = directory.revokeUserAccessTokens(user.id);
-              audit(user, 'mcp.token.revoke_all', { count });
-              return count;
+              if (!config.mcp?.oauth) {
+                audit(user, 'mcp.token.revoke_all', { count });
+                return { count };
+              }
+              const grants = directory.listGrants(user.id);
+              const grantCount = directory.revokeUserGrants(user.id, 'self');
+              audit(user, 'mcp.token.revoke_all', { count, grants: grantCount });
+              auditOauthRevocations(grants, 'self', user.id);
+              return { count, grants: grantCount };
             });
-            return [200, { revoked }];
+            return [200, { revoked: result.count, ...(Object.hasOwn(result, 'grants') ? { grants: result.grants } : {}) }];
           }),
           compile('DELETE', 'me/tokens/:id', { readOnlyOk: true }, ({ user, params }) => {
             const token = directory.getAccessToken(params.id);
@@ -1502,6 +1523,45 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             });
             return [204];
           }),
+          ...(config.mcp?.oauth
+            ? [
+                compile('GET', 'me/grants', {}, ({ user }) => [200, directory.listGrants(user.id).map(grantView)]),
+                compile('DELETE', 'me/grants/:id', { readOnlyOk: true }, ({ user, params }) => {
+                  directory.transaction(() => {
+                    const grant = directory.getGrant(params.id);
+                    if (!grant || grant.userId !== user.id || grant.revokedAt !== null || grant.expiresAt <= now()) throw notFound('Grant not found');
+                    if (!directory.revokeGrant(grant.id, 'self')) throw notFound('Grant not found');
+                    auditOauthRevocations([grant], 'self', user.id);
+                  });
+                  return [204];
+                }),
+                compile('GET', 'admin/grants', {}, ({ user }) => {
+                  requireAdmin(user);
+                  return [200, directory.listGrantsAdmin().map((grant) => ({ ...grantView(grant), userId: grant.userId, userName: grant.userName, email: grant.email, userRole: grant.userRole }))];
+                }),
+                compile('POST', 'admin/grants/revoke-all', { readOnlyOk: true }, ({ user }) => {
+                  requireAdmin(user);
+                  const revoked = directory.transaction(() => {
+                    const count = directory.revokeAllGrantsInstance('admin');
+                    audit(user, 'mcp.oauth.revoke_all', { grants: count });
+                    return count;
+                  });
+                  return [200, { revoked }];
+                }),
+                compile('DELETE', 'admin/grants/:id', { readOnlyOk: true }, ({ user, params }) => {
+                  requireAdmin(user);
+                  directory.transaction(() => {
+                    const grant = directory.getGrant(params.id);
+                    const owner = grant ? directory.getUser(grant.userId) : null;
+                    if (!grant || !owner || grant.revokedAt !== null || grant.expiresAt <= now()) throw notFound('Grant not found');
+                    guardOwner(user, owner, 'disconnect the app of');
+                    if (!directory.revokeGrant(grant.id, 'admin')) throw notFound('Grant not found');
+                    auditOauthRevocations([grant], grant.userId === user.id ? 'self' : 'admin', user.id);
+                  });
+                  return [204];
+                }),
+              ]
+            : []),
         ]
       : []),
 
