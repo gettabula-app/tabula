@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function fakeApp(userId = 'demo-visitor', viewport = { w: 1280, h: 800 }): BoardApp {
   const bounds = viewport.w <= 500
-    ? { x: 40, y: 25, w: 530, h: 650 }
+    ? { x: 40, y: 25, w: 300, h: 330 }
     : { x: 40, y: 25, w: 1110, h: 525 };
   return {
     store: new Store(new Y.Doc()),
@@ -66,7 +66,7 @@ function flowFor(app: BoardApp): Flow {
 }
 
 describe('demo board seed', () => {
-  it('creates a complete, laid out board in one store transaction with a live vote and comments', () => {
+  it('creates a complete, laid out board in one store transaction as a plain board with comments', () => {
     withAnimationFrame();
     const app = fakeApp();
     const transact = vi.spyOn(app.store, 'transact');
@@ -127,34 +127,14 @@ describe('demo board seed', () => {
       expect(groupDepth(member, (id) => app.store.get(id))).toBe(1);
     }
 
-    const voteStep = app.store.getFlow().steps[0];
-    expect(voteStep).toMatchObject({ id: 'demo-vote-step', mode: 'vote', votesPerPerson: 3, voteScope: 'selection' });
-    expect(app.store.getFlow()).toMatchObject({ active: 0, reveal: false });
+    // a plain board: no session, no vote, no poll
+    expect(app.store.getFlow()).toMatchObject({ steps: [], active: -1, reveal: false });
     const flow = flowFor(app);
-    expect(flow.isVoting()).toBe(true);
-    expect(flow.myVotesLeft()).toBe(3);
-    expect([...app.store.votes.values()].map((v) => v.userId).sort()).toEqual(['demo-jonas', 'demo-marta']);
-    const seededVotes = [...app.store.votes.values()].sort((a, b) => a.userId.localeCompare(b.userId));
-    expect(seededVotes.map(({ userId, itemId }) => [userId, itemId])).toEqual([
-      ['demo-jonas', 'demo-well-3'], ['demo-marta', 'demo-well-2'],
-    ]);
-    expect(Object.fromEntries(seededVotes.map((vote) => {
-      const item = app.store.get(vote.itemId);
-      return [vote.itemId, item && 'text' in item ? item.text : undefined];
-    }))).toEqual({ 'demo-well-2': 'Try it', 'demo-well-3': 'Calm' });
-    for (const vote of seededVotes) {
-      const item = app.store.get(vote.itemId);
-      expect(item).toMatchObject({ type: 'sticky', parent: 'demo-well-frame' });
-      const text = item && 'text' in item ? item.text : undefined;
-      expect(text?.length ?? Infinity).toBeLessThanOrEqual(6);
-    }
-    expect([...flow.summary(voteStep.id).values()].every((v) => v.total === null)).toBe(true);
-
-    const poll = app.store.polls.get('demo-next-poll')!;
-    expect(poll.options).toHaveLength(3);
-    expect(poll.question).toBe('Which feature should we show next?');
-    expect([...app.store.pollAnswers.values()].every((answer) => answer.userId !== app.user.id)).toBe(true);
-    expect(app.store.pollAnswers.size).toBeGreaterThanOrEqual(2);
+    expect(flow.isVoting()).toBe(false);
+    expect(flow.pollOpen()).toBe(false);
+    expect(app.store.votes.size).toBe(0);
+    expect(app.store.polls.size).toBe(0);
+    expect(app.store.pollAnswers.size).toBe(0);
 
     const threads = app.comments.list();
     expect(threads).toHaveLength(3);
@@ -191,33 +171,49 @@ describe('demo board seed', () => {
     }
   });
 
-  it('stacks the intro frames and flowchart on phones so they all fit above the vote bar', () => {
+  it('opens a phone on one small group of four notes, with the rest below the first screen', () => {
     withAnimationFrame();
     const app = fakeApp('demo-visitor', { w: 390, h: 844 });
     seedDemo(app);
 
-    expect(app.store.get('demo-well-frame')).toMatchObject({ x: 40, y: 145, w: 530, h: 185 });
-    expect(app.store.get('demo-improve-frame')).toMatchObject({ x: 40, y: 390, w: 530, h: 170 });
-    expect(app.store.get('demo-flow-frame')).toMatchObject({ x: 40, y: 590, w: 530, h: 130 });
-    expect(app.r.contentBounds).toHaveBeenCalledWith([
-      'demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame', 'demo-flow-frame',
-    ]);
+    expect(app.store.get('demo-instructions')).toMatchObject({ text: 'Tap a note to edit it. Drag to move it.', fontSize: 15 });
+    const well = app.store.get('demo-well-frame')!;
+    expect(well).toMatchObject({ x: 40, w: 300 });
+    const notes = app.store.childrenOf(well.id);
+    expect(notes).toHaveLength(4);
+    expect(notes.every((n) => n.type === 'sticky' && n.w === 130 && n.h === 80 && n.fontSize === 16)).toBe(true);
+    expect(new Set(notes.map((n) => n.x)).size).toBe(2); // 2 columns
+    expect(new Set(notes.map((n) => n.y)).size).toBe(2); // 2 rows
+    for (const n of notes) {
+      const r = app.store.geometry(n), f = app.store.geometry(well);
+      expect(r.x).toBeGreaterThanOrEqual(f.x);
+      expect(r.x + r.w).toBeLessThanOrEqual(f.x + f.w);
+      expect(r.y + r.h).toBeLessThanOrEqual(f.y + f.h);
+    }
+    // everything else sits far below the first screen
+    const wellRect = app.store.geometry(well);
+    const firstScreenBottom = wellRect.y + wellRect.h;
+    for (const id of ['demo-improve-frame', 'demo-flow-frame', 'demo-toolkit-frame']) expect(app.store.get(id)!.y).toBeGreaterThan(firstScreenBottom + 500);
+    expect(app.r.contentBounds).toHaveBeenCalledWith(['demo-title', 'demo-instructions', 'demo-well-frame']);
     const camera = vi.mocked(app.r.setCamera).mock.calls[0][0];
-    expect(camera.zoom).toBeGreaterThanOrEqual(0.5);
+    expect(camera.zoom).toBeGreaterThanOrEqual(0.8);
+    expect(16 * (camera.zoom ?? 0)).toBeGreaterThanOrEqual(13);
+    // one thread, below the first screen
+    const threads = app.comments.list();
+    expect(threads).toHaveLength(1);
+    expect(threads[0].anchor.obj).toBe('demo-improve-frame');
+    expect(flowFor(app).isVoting()).toBe(false);
   });
 
-  it('can answer the seeded poll after moving to its step', () => {
+  it('lets the visitor start a dot vote after the plain board opens', () => {
     withAnimationFrame();
     const app = fakeApp();
     seedDemo(app);
     const flow = flowFor(app);
-    const poll = app.store.polls.get('demo-next-poll')!;
 
-    expect(flow.pollOpen()).toBe(false);
-    flow.goto(1);
-    expect(flow.pollOpen()).toBe(true);
-    flow.polls.choose(poll.id, poll.options[1].id);
-    expect(app.store.pollAnswers.get(`${poll.id}:${app.user.id}`)?.optionIds).toEqual([poll.options[1].id]);
+    expect(flow.isVoting()).toBe(false);
+    flow.quickVote(0, { kind: 'stickies' });
+    expect(flow.isVoting()).toBe(true);
   });
 
   it('is idempotent and produces the same JSON every time', () => {

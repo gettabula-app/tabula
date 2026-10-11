@@ -172,6 +172,14 @@ describe('tracker link dialog', () => {
     expect(textOf(need(host, '[role="alert"]'))).toContain(guidance);
   });
 
+  it('closes when the backdrop is tapped, like the other dialogs', () => {
+    browser = installTrackerUiBrowser();
+    const { host } = fixture();
+    const backdrop = need(host, '.trk-link-back');
+    backdrop.dispatchEvent(uiEvent('pointerdown'));
+    expect(host.querySelector('.trk-link-back')).toBeNull();
+  });
+
   it('closes on Escape, traps focus, and treats hostile lane names as text', () => {
     browser = installTrackerUiBrowser();
     const opener = browser.document.createElement('button');

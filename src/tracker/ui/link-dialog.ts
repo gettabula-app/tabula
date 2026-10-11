@@ -294,9 +294,9 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
       trapTab(event, box);
     }
   };
-  const onBackdrop = (event: MouseEvent) => { if (event.target === backdrop) close(); };
+  const onBackdrop = (event: Event) => { if (event.target === backdrop) close(); };
 
-  backdrop.addEventListener('click', onBackdrop);
+  backdrop.addEventListener('pointerdown', onBackdrop);
   window.addEventListener('keydown', onKey);
   releasePage = inertPage(host);
   unsubscribe = model.subscribe(render);
