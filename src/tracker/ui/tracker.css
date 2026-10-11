@@ -234,7 +234,7 @@
 .trk-my-subtab { min-height: 42px; padding: 0 12px; border: 0; background: transparent; color: var(--graphite); font-weight: 400; }
 .trk-my-subtab.active { color: var(--ink); font-weight: 600; }
 .trk-view-bar > * { flex: none; }
-.trk-view-name { border: 0; font-weight: 500; white-space: nowrap; }
+.trk-view-name { display: inline-flex; align-items: center; border: 0; font-weight: 500; white-space: nowrap; }
 .trk-results-count { margin-left: auto; color: var(--graphite); font-size: 12px; white-space: nowrap; }
 .trk-selection-bar { overflow-x: auto; background: color-mix(in srgb, var(--signal) 6%, var(--paper)); }
 .trk-selection-bar strong { padding: 0 5px; white-space: nowrap; }
@@ -244,7 +244,7 @@
 .trk-filter-host .trk-filter-chip { min-height: 28px; }
 .trk-list-host { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .trk-list-grid { min-width: 0; font-size: 13px; }
-.trk-grid-header, .trk .trk-list-row { display: grid; align-items: center; min-width: 0; column-gap: 8px; padding: 0 12px; }
+.trk-grid-header, .trk .trk-list-row { display: grid; align-items: center; min-width: 0; column-gap: 8px; padding: 0 12px 0 32px; }
 .trk-grid-header { position: sticky; z-index: 1; top: 0; min-height: 34px; border-bottom: 1px solid var(--trk-rule); background: var(--paper-hi, var(--paper)); color: var(--graphite); font-size: 13px; font-weight: 500; }
 .trk .trk-list-row { position: relative; min-height: 36px; border-bottom: 1px solid var(--trk-rule); cursor: default; }
 .trk-density-compact .trk-list-row { min-height: 36px; }
@@ -267,11 +267,10 @@
 .trk-glyph-button { min-width: 30px; justify-content: center; }
 .trk-avatar-button { justify-content: center; width: 28px; min-width: 28px; height: 28px; border: 0; border-radius: 50%; font-size: 12px; font-weight: 500; }
 .trk-avatar-mark { display: inline-grid; width: 22px; height: 22px; place-items: center; overflow: hidden; border-radius: 50%; background: color-mix(in srgb, var(--ink) 8%, var(--trk-ground)); color: var(--trk-text); font-size: 10px; font-weight: 500; }
-.trk .trk-row-select { position: absolute; z-index: 2; left: 1px; top: 50%; display: grid; width: 22px; height: 22px; min-height: 22px; place-items: center; padding: 0; transform: translateY(-50%); border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--ink); font-size: 0; opacity: 0; }
+.trk .trk-row-select { position: absolute; z-index: 2; left: 6px; top: 50%; display: grid; width: 22px; height: 22px; min-height: 22px; place-items: center; padding: 0; transform: translateY(-50%); border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--ink); font-size: 0; opacity: 0; }
 .trk-row-select::before { content: ''; display: block; width: 16px; height: 16px; border: 1px solid var(--graphite); border-radius: var(--radius-xs, 4px); background: var(--paper); }
 .trk-row-select[aria-pressed='true']::before { content: '✓'; display: grid; place-items: center; border-color: var(--signal); background: var(--signal); font-size: 12px; font-weight: 500; }
 .trk-list-row:hover .trk-row-select, .trk-list-row:focus-within .trk-row-select, .trk-list-row.is-selected .trk-row-select { opacity: 1; }
-.trk-list-row:has(.trk-row-select) .trk-col-priority { padding-left: 10px; }
 .trk-group-row { position: sticky; z-index: 1; top: 34px; border-bottom: 0; background: var(--paper-hi, var(--paper)); }
 .trk-group-heading { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 7px; padding: 0 14px; border: 0; background: transparent; color: var(--graphite); font-size: 13px; font-weight: 500; text-align: left; }
 .trk-group-heading .trk-muted { margin-left: auto; }
@@ -402,7 +401,7 @@
   .trk-tab-name-short { display: inline; }
   .trk-content { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   .trk-view-bar { min-height: 44px; gap: 5px; overflow-x: auto; }
-  .trk-view-bar .trk-view-button { min-height: 44px; padding-inline: 8px; white-space: nowrap; }
+  .trk-view-bar .trk-view-button, .trk-view-bar .trk-view-name { min-height: 44px; padding-inline: 8px; white-space: nowrap; }
   .trk-results-count { padding-inline: 4px; }
   .trk-filter-host { min-height: 44px; }
   .trk-filter-host .trk-filter-input { width: 100%; min-height: 44px; }
