@@ -133,18 +133,48 @@ function readPrototypeRegister(projectRoot) {
   return entries;
 }
 
-function relativeInside(parent, child) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child));
-  return relative !== '' && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+function pathApiFor(options = {}) {
+  const platform = options.platform ?? process.platform;
+  return options.pathApi ?? (platform === 'win32' ? path.win32 : path);
 }
 
-function classify(worktreePath, projectRoot, prototypes) {
-  const absolutePath = path.resolve(worktreePath);
-  const taskRoot = path.join(projectRoot, 'wt');
-  const prototypeRoot = path.join(projectRoot, 'proto');
-  if (relativeInside(taskRoot, absolutePath)) return { kind: 'task', prototype: null };
-  if (relativeInside(prototypeRoot, absolutePath)) {
-    const name = path.relative(prototypeRoot, absolutePath).split(path.sep)[0];
+/**
+ * Resolve path aliases through the native filesystem implementation when possible.
+ * Missing worktrees still get a stable path by resolving their existing parent.
+ * @param {string} value
+ * @param {{platform?: string, pathApi?: typeof path, realpath?: (value: string) => string}} options
+ */
+export function normalizePath(value, options = {}) {
+  const pathApi = pathApiFor(options);
+  const absolutePath = pathApi.resolve(String(value));
+  const realpath = options.realpath ?? ((candidate) => fs.realpathSync.native(candidate));
+  try {
+    return pathApi.normalize(realpath(absolutePath));
+  } catch {
+    try {
+      const resolvedParent = realpath(pathApi.dirname(absolutePath));
+      return pathApi.normalize(pathApi.join(resolvedParent, pathApi.basename(absolutePath)));
+    } catch {
+      return pathApi.normalize(absolutePath);
+    }
+  }
+}
+
+function relativeInside(parent, child, pathOptions = {}) {
+  const pathApi = pathApiFor(pathOptions);
+  const relative = pathApi.relative(normalizePath(parent, pathOptions), normalizePath(child, pathOptions));
+  return relative !== '' && relative !== '..' && !relative.startsWith('..' + pathApi.sep) && !pathApi.isAbsolute(relative);
+}
+
+export function classify(worktreePath, projectRoot, prototypes, pathOptions = {}) {
+  const pathApi = pathApiFor(pathOptions);
+  const absolutePath = normalizePath(worktreePath, pathOptions);
+  const canonicalProjectRoot = normalizePath(projectRoot, pathOptions);
+  const taskRoot = pathApi.join(canonicalProjectRoot, 'wt');
+  const prototypeRoot = pathApi.join(canonicalProjectRoot, 'proto');
+  if (relativeInside(taskRoot, absolutePath, pathOptions)) return { kind: 'task', prototype: null };
+  if (relativeInside(prototypeRoot, absolutePath, pathOptions)) {
+    const name = pathApi.relative(normalizePath(prototypeRoot, pathOptions), absolutePath).split(pathApi.sep)[0];
     return { kind: 'prototype', prototype: prototypes.get(name) ?? null };
   }
   return { kind: 'other', prototype: null };
@@ -291,7 +321,7 @@ export function verdictFor(worktree, isPrimary, registeredPrototype) {
  */
 export function auditWorktrees({ root, main = DEFAULT_MAIN, includeSize = true, now = () => Date.now() }) {
   const projectRoot = path.resolve(root);
-  const canonicalProjectRoot = fs.realpathSync(projectRoot);
+  const canonicalProjectRoot = normalizePath(projectRoot);
   const repoRoot = findRepoRoot(canonicalProjectRoot);
   const nowMs = now();
   if (!Number.isFinite(nowMs)) throw new Error('now must return epoch milliseconds');
@@ -366,7 +396,7 @@ export function auditWorktrees({ root, main = DEFAULT_MAIN, includeSize = true, 
       verdict: null,
       warnings,
     };
-    worktree.verdict = verdictFor(worktree, path.resolve(worktreePath) === path.resolve(repoRoot), prototype);
+    worktree.verdict = verdictFor(worktree, normalizePath(worktreePath) === normalizePath(repoRoot), prototype);
     if (kind === 'prototype') {
       worktree.reviewBy = prototype?.reviewBy ?? null;
       worktree.reviewOverdue = reviewOverdue;

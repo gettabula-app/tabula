@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { auditWorktrees, verdictFor } from '../scripts/worktree-audit.mjs';
+import { auditWorktrees, classify, normalizePath, verdictFor } from '../scripts/worktree-audit.mjs';
 
 const script = fileURLToPath(new URL('../scripts/worktree-audit.mjs', import.meta.url));
 const hourMs = 60 * 60 * 1000;
@@ -61,7 +61,7 @@ function setTreeTime(root: string, timestamp: number): void {
 }
 
 function makeFixture(): Fixture {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula worktree audit '));
+  const scratch = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'tabula worktree audit '));
   scratchPath = scratch;
   const root = path.join(scratch, 'workspace with spaces');
   const repo = path.join(root, 'tabula');
@@ -161,10 +161,10 @@ function normalizedPath(value: string, platform = process.platform): string {
   const pathApi = platform === 'win32' ? path.win32 : path;
   let normalized: string;
   try {
-    normalized = pathApi.normalize(fs.realpathSync(value));
+    normalized = pathApi.normalize(fs.realpathSync.native(value));
   } catch {
     try {
-      normalized = pathApi.join(pathApi.normalize(fs.realpathSync(pathApi.dirname(value))), pathApi.basename(value));
+      normalized = pathApi.join(pathApi.normalize(fs.realpathSync.native(pathApi.dirname(value))), pathApi.basename(value));
     } catch {
       normalized = pathApi.resolve(value);
     }
@@ -173,7 +173,16 @@ function normalizedPath(value: string, platform = process.platform): string {
 }
 
 function byPath<T extends { path: string }>(report: { worktrees: T[] }, target: string): T | undefined {
-  return report.worktrees.find((worktree) => normalizedPath(worktree.path) === normalizedPath(target));
+  const targetPath = normalizedPath(target);
+  const match = report.worktrees.find((worktree) => normalizedPath(worktree.path) === targetPath);
+  if (match) return match;
+  const reportPaths = report.worktrees.map((worktree) => `  ${worktree.path} (normalized: ${normalizedPath(worktree.path)})`);
+  throw new Error([
+    `No worktree matched target path: ${target}`,
+    `Normalized target path: ${targetPath}`,
+    'Reported worktree paths:',
+    ...reportPaths,
+  ].join('\n'));
 }
 
 function runCli(...args: string[]) {
@@ -196,6 +205,29 @@ describe('worktree audit inventory', () => {
   it('normalizes Windows path separators and case when comparing worktree paths', () => {
     expect(normalizedPath('C:/Users/Runner/worktree', 'win32'))
       .toBe(normalizedPath('c:\\users\\runner\\WORKTREE', 'win32'));
+  });
+
+  it('canonicalizes Windows short and long path spellings before classifying worktrees', () => {
+    const shortPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tabula\\wt\\task';
+    const longPath = 'C:\\Users\\Runner Name\\AppData\\Local\\Temp\\tabula\\wt\\task';
+    const projectRoot = 'C:\\Users\\Runner Name\\AppData\\Local\\Temp\\tabula';
+    const canonicalPaths = new Map([
+      [path.win32.resolve(shortPath).toLowerCase(), longPath],
+      [path.win32.resolve(longPath).toLowerCase(), longPath],
+      [path.win32.resolve(projectRoot).toLowerCase(), projectRoot],
+    ]);
+    const pathOptions = {
+      platform: 'win32',
+      pathApi: path.win32,
+      realpath: (value: string) => {
+        const canonical = canonicalPaths.get(path.win32.resolve(value).toLowerCase());
+        if (!canonical) throw new Error('ENOENT');
+        return canonical;
+      },
+    };
+
+    expect(normalizePath(shortPath, pathOptions)).toBe(normalizePath(longPath, pathOptions));
+    expect(classify(shortPath, projectRoot, new Map(), pathOptions)).toEqual({ kind: 'task', prototype: null });
   });
 
   it('classifies task, prototype, and other paths and keeps directory registration separate from branch names', async () => {
