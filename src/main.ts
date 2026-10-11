@@ -565,12 +565,12 @@ async function route() {
   if (custom) {
     const fonts = custom.content.fonts;
     conn.store.setMeta({ name: custom.name, ...(fonts ? { headingFont: fonts.heading, bodyFont: fonts.body } : {}) });
-    requestAnimationFrame(() => insertCustomTemplate(app, custom));
+    requestAnimationFrame(() => insertCustomTemplate(app, custom, { start: true }));
   } else if (job?.template) {
     const t = TEMPLATES.find((x) => x.id === job.template);
     if (t) {
       conn.store.setMeta({ name: t.name });
-      requestAnimationFrame(() => insertTemplate(app, t));
+      requestAnimationFrame(() => insertTemplate(app, t, { start: true }));
     }
   }
   if (job?.imported) {

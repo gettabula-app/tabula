@@ -638,11 +638,13 @@ function templateOrigin(app: BoardApp) {
 }
 
 /** Create the objects in one undo step, replace the flow when `steps` is given, and fly to them. */
-function place(app: BoardApp, objs: Obj[], steps: Step[] | null, labels: readonly TemplateLabel[] = []) {
+function place(app: BoardApp, objs: Obj[], steps: Step[] | null, labels: readonly TemplateLabel[] = [], start = false) {
   const zs = app.store.topZs(objs.length);
   objs.forEach((o, i) => (o.z = zs[i]));
   app.store.undo.stopCapturing();
-  app.store.transact(() => {
+  // A template that starts a new board is its starting content: Undo must not empty the board.
+  const write = start ? (fn: () => void) => app.store.seed(fn) : (fn: () => void) => app.store.transact(fn);
+  write(() => {
     // the template's labels join the board's by name, and its cards take the board's ids (docs/kanban.md, Templates)
     const cards = objs.filter((o): o is BaseObj => o.type === 'card' && !!(o as BaseObj).labels?.length);
     if (cards.length) {
@@ -670,20 +672,20 @@ function place(app: BoardApp, objs: Obj[], steps: Step[] | null, labels: readonl
 }
 
 /** Add a template to the board, to the right of existing content. */
-export function insertTemplate(app: BoardApp, def: TemplateDef) {
+export function insertTemplate(app: BoardApp, def: TemplateDef, opts: { start?: boolean } = {}) {
   const o = templateOrigin(app);
   const b = new Builder(app, o.x, o.y);
   def.build(b);
   // a template without steps leaves the board's session as it is, as a saved one does
-  place(app, b.objs, b.steps.length ? b.steps : null, b.labels);
+  place(app, b.objs, b.steps.length ? b.steps : null, b.labels, opts.start);
   return b;
 }
 
 /** Add a saved template to the board like a built-in one; the board's flow is replaced only when the template has steps. */
-export function insertCustomTemplate(app: BoardApp, t: CustomTemplate) {
+export function insertCustomTemplate(app: BoardApp, t: CustomTemplate, opts: { start?: boolean } = {}) {
   const { objects, steps } = instantiate(t.content, templateOrigin(app), app.user.id);
   const now = Date.now();
   for (const o of objects) o.updatedAt = now;
-  place(app, objects, steps.length ? steps : null, t.content.labels);
+  place(app, objects, steps.length ? steps : null, t.content.labels, opts.start);
   return objects;
 }

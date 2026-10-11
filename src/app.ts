@@ -297,7 +297,7 @@ export class BoardApp {
     // Start centred on existing content.
     requestAnimationFrame(() => {
       const b = this.r.contentBounds();
-      if (b) this.r.fit(b, 120, 1);
+      if (b) this.r.fitFirst(b);
       else this.r.setCamera({ x: -this.r.size().w / 2, y: -this.r.size().h / 2, zoom: 1 });
     });
     this.refreshPins();
@@ -2434,7 +2434,7 @@ export class BoardApp {
   }
   zoomToFit() {
     const b = this.r.contentBounds();
-    if (b) this.r.flyTo(b, 80, 2);
+    if (b) this.r.flyToFit(b);
   }
   /**
    * Takes the view to one object and selects it, for a chat message that points at it. Does nothing for an object that is
