@@ -64,7 +64,8 @@ export function validateConfig(config) {
     'concurrency', 'keepDaily', 'keepWeekly', 'objectGraceDays', 'metricsFile', 'requestTimeoutSeconds',
   ];
   const keys = Object.keys(config);
-  if (keys.some((key) => ![...required, 'deletedGraceDays'].includes(key)) || required.some((key) => !Object.hasOwn(config, key))) fail('invalid_config_fields');
+  const optional = ['deletedGraceDays', 'workspacesMaxAgeHours'];
+  if (keys.some((key) => ![...required, ...optional].includes(key)) || required.some((key) => !Object.hasOwn(config, key))) fail('invalid_config_fields');
   for (const key of ['storeDir', 'stateDir', 'pullMasterFile', 'workspacesFile', 'metricsFile']) {
     if (typeof config[key] !== 'string' || !path.isAbsolute(config[key]) || path.resolve(config[key]) === path.parse(config[key]).root) fail(`invalid_${key}`);
   }
@@ -84,9 +85,11 @@ export function validateConfig(config) {
   integer('keepWeekly', 0, 520);
   integer('objectGraceDays', 1, 36500);
   const deletedGraceDays = Object.hasOwn(config, 'deletedGraceDays') ? config.deletedGraceDays : 30;
-  if (!Number.isSafeInteger(deletedGraceDays) || deletedGraceDays < 0 || deletedGraceDays > 3650) fail('invalid_deleted_grace_days');
+  if (!Number.isSafeInteger(deletedGraceDays) || deletedGraceDays < 1 || deletedGraceDays > 3650) fail('invalid_deleted_grace_days');
+  const workspacesMaxAgeHours = Object.hasOwn(config, 'workspacesMaxAgeHours') ? config.workspacesMaxAgeHours : 48;
+  if (!Number.isSafeInteger(workspacesMaxAgeHours) || workspacesMaxAgeHours < 1 || workspacesMaxAgeHours > 8760) fail('invalid_workspaces_max_age_hours');
   integer('requestTimeoutSeconds', 1, 3600);
-  return { ...config, deletedGraceDays };
+  return { ...config, deletedGraceDays, workspacesMaxAgeHours };
 }
 
 function validatePrefix(prefix) {
@@ -481,24 +484,76 @@ async function inspectPurgeTree(directory, root = true) {
 
 async function removePurgeTree(directory, root = true) {
   const stat = await safeLstat(directory);
-  if (!stat) return false;
+  if (!stat) return { removed: false, rootSymlink: false };
   if (stat.isSymbolicLink()) {
-    if (root) fail('unsafe_path');
     await fs.promises.unlink(directory);
-    return true;
+    return { removed: true, rootSymlink: root };
   }
   if (stat.isFile()) {
     await fs.promises.unlink(directory);
-    return true;
+    return { removed: true, rootSymlink: false };
   }
   if (!stat.isDirectory()) fail('unsafe_path');
   const entries = await fs.promises.readdir(directory);
   for (const name of entries) await removePurgeTree(path.join(directory, name), false);
   await fs.promises.rmdir(directory);
-  return true;
+  return { removed: true, rootSymlink: false };
 }
 
-async function purgeWorkspaceFiles(config, slug) {
+async function removeTombstoneTree(directory) {
+  let stat = await safeLstat(directory);
+  if (!stat) return { removed: false, symlinkRemoved: false };
+  if (stat.isSymbolicLink()) {
+    await fs.promises.unlink(directory);
+    return { removed: true, symlinkRemoved: true };
+  }
+  if (!stat.isDirectory()) fail('unsafe_path');
+  try {
+    await inspectPurgeTree(directory);
+  } catch (error) {
+    stat = await safeLstat(directory);
+    if (!stat?.isSymbolicLink()) throw error;
+    await fs.promises.unlink(directory);
+    return { removed: true, symlinkRemoved: true };
+  }
+  stat = await safeLstat(directory);
+  if (!stat) return { removed: false, symlinkRemoved: false };
+  if (stat.isSymbolicLink()) {
+    await fs.promises.unlink(directory);
+    return { removed: true, symlinkRemoved: true };
+  }
+  if (!stat.isDirectory()) fail('unsafe_path');
+  const result = await removePurgeTree(directory);
+  return { removed: result.removed, symlinkRemoved: result.rootSymlink };
+}
+
+async function cleanPurgeLeftovers(storeDir, { dryRun = false, log = () => {} } = {}) {
+  const root = path.resolve(storeDir);
+  if (!(await inspectDirectoryTree(root))) return { count: 0, failed: false };
+  let entries;
+  try {
+    entries = await fs.promises.readdir(root);
+  } catch {
+    throw new PullerError('filesystem_error');
+  }
+  const leftovers = entries.filter((name) => name.startsWith('.purging-')).sort();
+  let failed = false;
+  for (const name of leftovers) {
+    emit(log, `purge leftover ${name}`);
+    if (dryRun) continue;
+    const directory = path.join(root, name);
+    try {
+      const result = await removeTombstoneTree(directory);
+      if (result.symlinkRemoved) emit(log, `purge leftover symlink removed ${name}; target untouched`);
+    } catch (error) {
+      failed = true;
+      emit(log, `purge leftover cleanup failed ${name} ${safeFailureCode(error)}`);
+    }
+  }
+  return { count: leftovers.length, failed };
+}
+
+async function purgeWorkspaceFiles(config, slug, hooks = {}) {
   const paths = workspacePaths(config, slug);
   const storeExists = await inspectDirectoryTree(paths.storeRoot);
   const stateExists = await inspectDirectoryTree(paths.stateRoot);
@@ -519,13 +574,42 @@ async function purgeWorkspaceFiles(config, slug) {
     stateStats.push(null, null);
   }
   let removed = false;
-  if (storeStat) removed = await removePurgeTree(paths.storeTarget) || removed;
+  let symlinkRemoved = false;
+  if (storeStat) {
+    const tombstone = path.join(paths.storeRoot, `.purging-${slug}-${crypto.randomBytes(8).toString('hex')}`);
+    await fs.promises.rename(paths.storeTarget, tombstone);
+    await hooks.afterTombstoneRename?.({ tombstone, storeTarget: paths.storeTarget });
+    const result = await removeTombstoneTree(tombstone);
+    removed = result.removed || removed;
+    symlinkRemoved = result.symlinkRemoved;
+  }
   for (const [index, file] of [paths.stateFile, paths.seenFile].entries()) {
     if (!stateStats[index]) continue;
     await fs.promises.unlink(file);
     removed = true;
   }
-  return { ...paths, removed };
+  return { ...paths, removed, symlinkRemoved };
+}
+
+async function workspaceListAgeSeconds(file, nowMs) {
+  try {
+    const stat = await fs.promises.stat(file);
+    if (!stat.isFile()) return null;
+    return Math.max(0, (nowMs - stat.mtimeMs) / 1000);
+  } catch {
+    return null;
+  }
+}
+
+async function readOptionalWorkspaceList(file) {
+  try {
+    const workspaces = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!Array.isArray(workspaces)) return null;
+    for (const workspace of workspaces) validateWorkspace(workspace);
+    return workspaces;
+  } catch {
+    return null;
+  }
 }
 
 async function readPurgedState(stateDir) {
@@ -552,7 +636,7 @@ async function scanOrphanWorkspaces(storeDir, listedSlugs) {
   }
   const orphans = [];
   for (const slug of entries) {
-    if (!SLUG_RE.test(slug) || listedSlugs.has(slug)) continue;
+    if (slug.startsWith('.purging-') || !SLUG_RE.test(slug) || listedSlugs.has(slug)) continue;
     const stat = await safeLstat(path.join(root, slug));
     if (stat?.isDirectory() && !stat.isSymbolicLink()) orphans.push(slug);
   }
@@ -842,6 +926,8 @@ export async function writeMetrics({
   purgedTotal = 0,
   orphanWorkspaceCount = 0,
   configuredWorkspaceCount = workspaces.length,
+  workspaceListAge = 1e12,
+  purgeLeftovers = 0,
 }) {
   const nowMs = asMs(now);
   const lastRunSeconds = Math.floor(asMs(lastRunAt) / 1000);
@@ -879,6 +965,12 @@ export async function writeMetrics({
     '# HELP tabula_backup_purged_total Number of workspace copies purged by this pull host.',
     '# TYPE tabula_backup_purged_total counter',
     `tabula_backup_purged_total ${Number.isSafeInteger(purgedTotal) && purgedTotal >= 0 ? purgedTotal : 0}`,
+    '# HELP tabula_backup_workspace_list_age_seconds Age of the workspace list file in seconds.',
+    '# TYPE tabula_backup_workspace_list_age_seconds gauge',
+    `tabula_backup_workspace_list_age_seconds ${Number.isFinite(workspaceListAge) && workspaceListAge >= 0 ? workspaceListAge : 1e12}`,
+    '# HELP tabula_backup_purge_leftovers Number of interrupted purge tombstones found at run start.',
+    '# TYPE tabula_backup_purge_leftovers gauge',
+    `tabula_backup_purge_leftovers ${Number.isSafeInteger(purgeLeftovers) && purgeLeftovers >= 0 ? purgeLeftovers : 0}`,
     '# HELP tabula_backup_orphan_workspaces Number of store directories missing from workspaces.json.',
     '# TYPE tabula_backup_orphan_workspaces gauge',
     `tabula_backup_orphan_workspaces ${Number.isSafeInteger(orphanWorkspaceCount) && orphanWorkspaceCount >= 0 ? orphanWorkspaceCount : 0}`,
@@ -893,7 +985,7 @@ export async function writeMetrics({
   return `${lines.join('\n')}\n`;
 }
 
-async function updatePurgedMetric(metricsFile, purgedTotal) {
+async function updateGlobalMetrics(metricsFile, values) {
   const parent = path.dirname(metricsFile);
   let current = '';
   if (await inspectDirectoryTree(parent)) {
@@ -904,15 +996,18 @@ async function updatePurgedMetric(metricsFile, purgedTotal) {
       if (!isMissing(error)) throw new PullerError('filesystem_error');
     }
   }
-  const name = 'tabula_backup_purged_total';
-  const lines = current.split('\n').filter((line) => !line.startsWith(`# HELP ${name} `)
-    && !line.startsWith(`# TYPE ${name} `) && !line.startsWith(`${name} `) && !line.startsWith(`${name}{`));
+  const definitions = {
+    tabula_backup_purged_total: ['Number of workspace copies purged by this pull host.', 'counter'],
+    tabula_backup_workspace_list_age_seconds: ['Age of the workspace list file in seconds.', 'gauge'],
+    tabula_backup_purge_leftovers: ['Number of interrupted purge tombstones found at run start.', 'gauge'],
+  };
+  const lines = current.split('\n').filter((line) => !Object.keys(values).some((name) => line.startsWith(`# HELP ${name} `)
+    || line.startsWith(`# TYPE ${name} `) || line.startsWith(`${name} `) || line.startsWith(`${name}{`)));
   while (lines.length && lines.at(-1) === '') lines.pop();
-  lines.push(
-    `# HELP ${name} Number of workspace copies purged by this pull host.`,
-    `# TYPE ${name} counter`,
-    `${name} ${purgedTotal}`,
-  );
+  for (const [name, value] of Object.entries(values)) {
+    const [help, type] = definitions[name] ?? fail('invalid_metric');
+    lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} ${type}`, `${name} ${value}`);
+  }
   await atomicWriteFile(metricsFile, `${lines.join('\n')}\n`);
 }
 
@@ -938,18 +1033,19 @@ async function readMasterFile(file) {
 }
 
 function parseArguments(argv) {
-  const args = { config: null, only: null, dryRun: false, purge: null, yes: false };
+  const args = { config: null, only: null, dryRun: false, purge: null, yes: false, force: false };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--config' && argv[index + 1]) args.config = argv[++index];
     else if (arg === '--only' && argv[index + 1]) args.only = argv[++index];
     else if (arg === '--purge' && argv[index + 1]) args.purge = argv[++index];
     else if (arg === '--yes') args.yes = true;
+    else if (arg === '--force') args.force = true;
     else if (arg === '--dry-run') args.dryRun = true;
     else fail('invalid_arguments');
   }
   if (!args.config || (args.only !== null && !SLUG_RE.test(args.only)) || (args.purge !== null && !SLUG_RE.test(args.purge))
-    || (args.yes && args.purge === null) || (args.purge !== null && (args.only !== null || args.dryRun))) fail('invalid_arguments');
+    || (args.yes && args.purge === null) || (args.force && args.purge === null) || (args.purge !== null && (args.only !== null || args.dryRun))) fail('invalid_arguments');
   return args;
 }
 
@@ -971,13 +1067,19 @@ async function runPool(items, concurrency, task) {
   return results;
 }
 
-export async function main({ argv = [], env = process.env, fetch: fetcher = globalThis.fetch, now = Date.now, log = (line) => process.stdout.write(`${line}\n`) } = {}) {
+export async function main({ argv = [], env = process.env, fetch: fetcher = globalThis.fetch, now = Date.now, log = (line) => process.stdout.write(`${line}\n`), purgeHooks = {} } = {}) {
   void env;
   let args;
   let config;
   let master;
   let workspaces;
   let purgedState;
+  let runAt;
+  let workspaceListAge = 1e12;
+  let workspaceListAgeKnown = false;
+  let workspaceListStale = false;
+  let purgeLeftovers = 0;
+  let recoveryFailed = false;
   try {
     args = parseArguments(argv);
     let raw;
@@ -987,6 +1089,24 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
       throw new PullerError('invalid_config_file');
     }
     config = validateConfig(raw);
+    runAt = asIso(now);
+    const readOnly = args.dryRun || (args.purge !== null && !args.yes);
+    const leftovers = await cleanPurgeLeftovers(config.storeDir, { dryRun: readOnly, log });
+    purgeLeftovers = leftovers.count;
+    recoveryFailed = leftovers.failed;
+    const listAge = await workspaceListAgeSeconds(config.workspacesFile, Date.parse(runAt));
+    workspaceListAgeKnown = listAge !== null;
+    workspaceListAge = listAge ?? 1e12;
+    if (!readOnly) {
+      try {
+        await updateGlobalMetrics(config.metricsFile, {
+          tabula_backup_workspace_list_age_seconds: workspaceListAge,
+          tabula_backup_purge_leftovers: purgeLeftovers,
+        });
+      } catch {
+        emit(log, 'metrics write failed');
+      }
+    }
     if (args.purge !== null) {
       const paths = workspacePaths(config, args.purge);
       if (!args.yes) {
@@ -996,18 +1116,54 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         return 2;
       }
       purgedState = await readPurgedState(config.stateDir);
+      const operatorWorkspaces = await readOptionalWorkspaceList(config.workspacesFile);
+      if (operatorWorkspaces) {
+        workspaceListStale = !workspaceListAgeKnown || workspaceListAge > config.workspacesMaxAgeHours * 60 * 60;
+        if (workspaceListStale) {
+          emit(log, 'purge skipped stale list');
+          try {
+            await updateGlobalMetrics(config.metricsFile, {
+              tabula_backup_purged_total: purgedState.count,
+              tabula_backup_workspace_list_age_seconds: workspaceListAge,
+              tabula_backup_purge_leftovers: purgeLeftovers,
+            });
+          } catch {
+            emit(log, 'metrics write failed');
+          }
+          return 1;
+        }
+        const listed = operatorWorkspaces.find((workspace) => workspace.slug === args.purge);
+        if (listed && listed.state !== 'deleted' && !args.force) {
+          emit(log, `purge refused ${args.purge}: listed workspace state is ${listed.state}; pass --force to purge`);
+          try {
+            await updateGlobalMetrics(config.metricsFile, {
+              tabula_backup_purged_total: purgedState.count,
+              tabula_backup_workspace_list_age_seconds: workspaceListAge,
+              tabula_backup_purge_leftovers: purgeLeftovers,
+            });
+          } catch {
+            emit(log, 'metrics write failed');
+          }
+          return 2;
+        }
+      }
       try {
-        const result = await purgeWorkspaceFiles(config, args.purge);
+        const result = await purgeWorkspaceFiles(config, args.purge, purgeHooks);
         const purgedSlugs = new Set(purgedState.slugs);
         purgedSlugs.add(args.purge);
         const nextPurgedTotal = purgedState.count + (result.removed ? 1 : 0);
         await writePurgedState(config.stateDir, { count: nextPurgedTotal, slugs: [...purgedSlugs] });
+        if (result.symlinkRemoved) emit(log, `purge symlink removed for ${args.purge}; target untouched`);
+        try {
+          await updateGlobalMetrics(config.metricsFile, {
+            tabula_backup_purged_total: nextPurgedTotal,
+            tabula_backup_workspace_list_age_seconds: workspaceListAge,
+            tabula_backup_purge_leftovers: purgeLeftovers,
+          });
+        } catch {
+          emit(log, 'metrics write failed');
+        }
         if (result.removed) {
-          try {
-            await updatePurgedMetric(config.metricsFile, nextPurgedTotal);
-          } catch {
-            emit(log, 'metrics write failed');
-          }
           emit(log, `purged ${args.purge} (operator request)`);
         } else {
           emit(log, `nothing to remove for ${args.purge}`);
@@ -1032,6 +1188,7 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
       slugs.add(workspace.slug);
       ids.add(workspace.id);
     }
+    workspaceListStale = !workspaceListAgeKnown || workspaceListAge > config.workspacesMaxAgeHours * 60 * 60;
     purgedState = await readPurgedState(config.stateDir);
     master = await readMasterFile(config.pullMasterFile);
   } catch (error) {
@@ -1042,7 +1199,6 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
     emit(log, 'configuration error invalid_fetch');
     return 2;
   }
-  const runAt = asIso(now);
   const runAtMs = Date.parse(runAt);
   const states = {};
   const results = {};
@@ -1050,7 +1206,8 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
   const purgedSlugs = new Set();
   const previouslyPurgedSlugs = new Set(purgedState.slugs);
   let purgedTotal = purgedState.count;
-  let hadFailure = false;
+  let hadFailure = workspaceListStale || recoveryFailed;
+  if (workspaceListStale) emit(log, 'purge skipped stale list');
   let orphanSlugs;
   try {
     orphanSlugs = await scanOrphanWorkspaces(config.storeDir, new Set(workspaces.map((item) => item.slug)));
@@ -1068,7 +1225,7 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         continue;
       }
       if (workspace.state !== 'deleted' && previouslyPurgedSlugs.delete(workspace.slug)) {
-        await writePurgedState(config.stateDir, { count: purgedTotal, slugs: [...previouslyPurgedSlugs] });
+        if (!args.dryRun) await writePurgedState(config.stateDir, { count: purgedTotal, slugs: [...previouslyPurgedSlugs] });
       }
       const state = await readWorkspaceState(config.stateDir, workspace);
       if (workspace.state === 'deleted') {
@@ -1096,11 +1253,17 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
           await atomicWriteFile(path.join(config.stateDir, `${workspace.slug}.json`), `${JSON.stringify(state, null, 2)}\n`);
         }
         if (elapsedMs >= config.deletedGraceDays * 24 * 60 * 60 * 1000) {
-          const purged = await purgeWorkspaceFiles(config, workspace.slug);
+          if (workspaceListStale) {
+            states[workspace.slug] = state;
+            results[workspace.slug] = { ok: true, skipped: true, state };
+            continue;
+          }
+          const purged = await purgeWorkspaceFiles(config, workspace.slug, purgeHooks);
           if (purged.removed) purgedTotal++;
           previouslyPurgedSlugs.add(workspace.slug);
           await writePurgedState(config.stateDir, { count: purgedTotal, slugs: [...previouslyPurgedSlugs] });
           purgedSlugs.add(workspace.slug);
+          if (purged.symlinkRemoved) emit(log, `purge symlink removed for ${workspace.slug}; target untouched`);
           emit(log, `purged ${workspace.slug} (deleted ${deletedDays} days ago)`);
           continue;
         }
@@ -1179,6 +1342,8 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         purgedTotal,
         orphanWorkspaceCount: orphanSlugs.length,
         configuredWorkspaceCount: workspaces.length,
+        workspaceListAge,
+        purgeLeftovers,
       });
     } catch {
       emit(log, 'metrics write failed');

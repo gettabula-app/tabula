@@ -70,7 +70,7 @@ fi
 
 # 4 --------------------------------------------------------------------------------------------------------------------
 CONF="$HOME_DIR/etc/puller.json"
-if ask "4. Write the puller config $CONF (paths under $HOME_DIR, 7 daily + 4 weekly retention, objects kept 35 days after the source drops them, deleted workspaces purged after 30 days; edit the file later to change this)"; then
+if ask "4. Write the puller config $CONF (paths under $HOME_DIR, workspace list refreshed within 48 hours, 7 daily + 4 weekly retention, objects kept 35 days after the source drops them, deleted workspaces purged after 30 days; edit the file later to change this)"; then
   if [[ -f "$CONF" && $DRY -eq 0 ]]; then
     say "   $CONF exists: kept as it is."
   else
@@ -88,6 +88,7 @@ if ask "4. Write the puller config $CONF (paths under $HOME_DIR, 7 daily + 4 wee
   "keepWeekly": 4,
   "objectGraceDays": 35,
   "deletedGraceDays": 30,
+  "workspacesMaxAgeHours": 48,
   "metricsFile": "$HOME_DIR/state/tabula_backup.prom",
   "requestTimeoutSeconds": 120
 }
