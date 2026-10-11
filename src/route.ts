@@ -5,6 +5,7 @@ import {
   parseTrackerPath,
   type TrackerPathRoute,
 } from './tracker-route';
+import { isOAuthEnvelope } from './ui/oauth-consent-logic';
 
 export const ADMIN_TABS = ['overview', 'members', 'teams', 'boards', 'sessions', 'tokens', 'ai', 'chat', 'backups', 'settings', 'audit'] as const;
 export type AdminTab = (typeof ADMIN_TABS)[number];
@@ -16,7 +17,8 @@ export type Route =
   | { name: 'board'; id: string; trackerPosition?: { trackerId: string; key?: string } }
   | { name: 'tracker'; target: Exclude<TrackerPathRoute, { kind: 'board-position' }> }
   | { name: 'signin' }
-  | { name: 'verify'; token: string }
+  | { name: 'verify'; token: string; oauthRequest?: string }
+  | { name: 'oauth-consent'; request: string }
   | { name: 'invite'; token: string }
   | { name: 'join'; code: string }
   | { name: 'admin'; tab: AdminTab }
@@ -29,9 +31,9 @@ function adminTab(segment: string | undefined): AdminTab {
   return ADMIN_TABS.find((t) => t === segment) ?? 'overview';
 }
 
-/** Sign-in, emailed-link and invite screens: reachable without a session. */
+/** Sign-in, emailed-link, invite and consent screens: reachable without a session. */
 function isAuthRoute(route: Route): boolean {
-  return route.name === 'signin' || route.name === 'verify' || route.name === 'invite' || route.name === 'join';
+  return route.name === 'signin' || route.name === 'verify' || route.name === 'invite' || route.name === 'join' || route.name === 'oauth-consent';
 }
 
 /** Maps a location hash to a route. Anything unrecognised is the home screen, as it always was. */
@@ -52,8 +54,18 @@ export function parseRoute(hash: string): Route {
   if (chat) return chat[1] ? { name: 'chat', kind: chat[1] as 'board' | 'team' | 'workspace', ref: chat[2] } : { name: 'chat' };
   const verify = hash.match(/^#\/signin\/verify(?:\?(.*))?$/);
   if (verify) {
-    const token = new URLSearchParams(verify[1] ?? '').get('token');
-    return token ? { name: 'verify', token } : { name: 'signin' };
+    const params = new URLSearchParams(verify[1] ?? '');
+    const token = params.get('token');
+    if (!token) return { name: 'signin' };
+    const oauthRequests = params.getAll('oauthRequest');
+    const oauthRequest = oauthRequests.length === 1 && isOAuthEnvelope(oauthRequests[0]) ? oauthRequests[0] : undefined;
+    return { name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}) };
+  }
+  const oauthConsent = hash.match(/^#\/oauth\/consent(?:\?(.*))?$/);
+  if (oauthConsent) {
+    const requests = new URLSearchParams(oauthConsent[1] ?? '').getAll('request');
+    const request = requests.length === 1 && isOAuthEnvelope(requests[0]) ? requests[0] : '';
+    return { name: 'oauth-consent', request };
   }
   return HOME;
 }
