@@ -524,7 +524,7 @@ async function route() {
   // The relay undid one of this person's changes to the comments: say so, once per notice.
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   const untrackerNotice = conn.onTrackerNotice(({ undone }) => {
-    conn.store.dropUndoFor(undone.map(({ cardId }) => cardId));
+    conn.store.dropUndoFor(undone.flatMap(({ cardId }) => (cardId === undefined ? [] : [cardId])));
     const text = noticeText(undone.map(({ reason }) => reason));
     if (text) toast(text, 6000);
   });
