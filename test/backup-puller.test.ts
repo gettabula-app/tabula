@@ -625,7 +625,9 @@ describe('deleted workspace purge', () => {
     expect(logs).toContain('purge skipped stale list');
     expect(fake.calls.length).toBeGreaterThan(0);
     expect(await fs.promises.readFile(path.join(oldStore, 'keep'), 'utf8')).toBe('ciphertext');
-    expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_workspace_list_age_seconds 176400');
+    const metrics = await fs.promises.readFile(config.metricsFile, 'utf8');
+    expect(metrics).toContain('tabula_backup_workspace_list_age_seconds 176400');
+    expect(metrics).toContain('tabula_backup_pending_purge{workspace="old"} 1');
   });
 
   it('treats the configured workspace list age boundary as fresh for purge', async () => {
@@ -789,7 +791,7 @@ describe('deleted workspace purge', () => {
     expect(logs.join('\n')).not.toContain(master);
   });
 
-  it('purges an unlisted slug immediately without reading the master or contacting the network', async () => {
+  it('allows operator purge of an unlisted slug when the workspace list is absent', async () => {
     const { config, configFile } = await writeMainInputs([workspace]);
     const slug = 'retired';
     const store = path.join(config.storeDir, slug);
@@ -798,7 +800,7 @@ describe('deleted workspace purge', () => {
     await fs.promises.writeFile(path.join(config.stateDir, `${slug}.json`), JSON.stringify({ deletedSince: null }));
     await fs.promises.writeFile(path.join(config.stateDir, `${slug}.seen.json`), JSON.stringify({ lastSeen: {} }));
     await fs.promises.rm(config.pullMasterFile);
-    await fs.promises.writeFile(config.workspacesFile, 'not json');
+    await fs.promises.rm(config.workspacesFile);
     const logs: string[] = [];
     expect(await runMain({ argv: ['--config', configFile, '--purge', slug, '--yes'], now, fetch: async () => { throw new Error('network'); }, log: (line: string) => logs.push(line) })).toBe(0);
     expect(logs).toContain('purged retired (operator request)');
@@ -809,6 +811,52 @@ describe('deleted workspace purge', () => {
     expect(await fs.promises.readFile(config.metricsFile, 'utf8')).toContain('tabula_backup_purged_total 1');
     expect(logs.join('\n')).not.toContain(master);
     expect(logs.join('\n')).not.toContain(pullToken(master, workspace.id));
+  });
+
+  it.each([
+    ['corrupt', 'not json'],
+    ['empty', ''],
+    ['an empty array', '[]'],
+    ['invalid workspace data', JSON.stringify([{ id: 'workspace-2', slug: 'bad slug', state: 'running' }])],
+  ])('requires --force when the existing workspace list is %s', async (_name, contents) => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const store = path.join(config.storeDir, 'retired');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'sealed'), 'ciphertext');
+    await fs.promises.writeFile(config.workspacesFile, contents);
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'retired', '--yes'], now, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain('purge refused retired: workspace list is invalid or unreadable; pass --force to purge');
+    expect(await fs.promises.readFile(path.join(store, 'sealed'), 'utf8')).toBe('ciphertext');
+  });
+
+  it('allows --force to operator-purge with a corrupt workspace list', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const store = path.join(config.storeDir, 'retired');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'sealed'), 'ciphertext');
+    await fs.promises.writeFile(config.workspacesFile, 'not json');
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'retired', '--yes', '--force'], now, log: () => {} })).toBe(0);
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('requires --force to operator-purge with a stale workspace list', async () => {
+    const { config, configFile } = await writeMainInputs([workspace]);
+    const store = path.join(config.storeDir, 'studio');
+    await fs.promises.mkdir(store, { recursive: true });
+    await fs.promises.writeFile(path.join(store, 'keep'), 'ciphertext');
+    const staleAt = NOW - 49 * 60 * 60 * 1000;
+    await fs.promises.utimes(config.workspacesFile, new Date(staleAt), new Date(staleAt));
+    const logs: string[] = [];
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes'], now, log: (line: string) => logs.push(line) })).toBe(2);
+    expect(logs).toContain('purge refused studio: workspace list is stale; pass --force to purge');
+    expect(await fs.promises.readFile(path.join(store, 'keep'), 'utf8')).toBe('ciphertext');
+
+    expect(await runMain({ argv: ['--config', configFile, '--purge', 'studio', '--yes', '--force'], now, log: () => {} })).toBe(0);
+    await expect(fs.promises.stat(store)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('refuses a listed live workspace unless --force is supplied', async () => {

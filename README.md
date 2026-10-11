@@ -193,6 +193,8 @@ Tabula can back up `DATA_DIR` on a schedule, encrypted on the instance first. Th
 | `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep one backup per hour for this long (`0`: none) |
 | `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep one backup per day for this long (`0`: none) |
 
+On a backup pull host, automatic workspace purges stop while `workspaces.json` is stale. An operator purge (`--purge <slug> --yes`) requires `--force` when the list is stale, unreadable or invalid, or lists the workspace as live. If the file is absent, the purge is allowed without `--force`. Freshness currently uses the file's mtime, which measures when the list was copied, not when the control plane wrote it. Planned follow-up: the control plane will write `generatedAt`, and the puller will check that value with mtime as the fallback.
+
 ### AI features (bring your own key)
 
 AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic and OpenAI-compatible providers are supported. The AI bar can generate stickies from a prompt, summarise a board, frame or selection with action items, and cluster selected stickies into themes. Each run returns a proposal for review before it is applied. The bar appears for editors when AI is enabled and a usable workspace or personal key, or hosted plan credits, are available (see [docs/ai.md](docs/ai.md) and [docs/ai-toolbar.md](docs/ai-toolbar.md)).
