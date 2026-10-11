@@ -38,6 +38,40 @@
 
 .backups-actions { margin: 24px 0 16px; gap: 8px; }
 
+/* The tracker readiness report stays readable as a narrow stack on a phone. */
+.backups-readiness { min-width: 0; margin-top: 32px; padding-top: 24px; border-top: 2px solid var(--ink); }
+.backups-readiness-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.backups-readiness-heading .admin-sub { margin: 0; }
+.backups-readiness button { min-height: 44px; }
+.backups-readiness button:focus-visible,
+.backups-readiness input:focus-visible,
+.backups-readiness textarea:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.backups-readiness-overall { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.backups-readiness-overall .admin-badge { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.backups-readiness-overall p { margin: 0; }
+.backups-readiness-gate { overflow-wrap: anywhere; }
+.backups-readiness-checks { border-top: 1px solid var(--rule); }
+.backups-readiness-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 4px 16px;
+  min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--rule);
+}
+.backups-readiness-row > * { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.backups-readiness-name { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.backups-readiness-name strong { font-weight: 600; }
+.backups-readiness-name .admin-badge { flex: none; margin: 0; }
+.backups-readiness-sentence { color: var(--graphite); }
+.backups-readiness-detail { grid-column: 1 / -1; }
+.backups-readiness-form { max-width: 640px; min-width: 0; margin-top: 28px; }
+.backups-readiness-form .admin-kicker { margin: 0 0 8px; }
+.backups-readiness-form .muted { max-width: 640px; }
+.backups-readiness-form .input { box-sizing: border-box; width: 100%; min-height: 44px; }
+.admin .backups-readiness-form .backups-readiness-json { min-height: 160px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.admin .backups-readiness-form .backups-label { display: block; margin: 12px 0 8px; }
+.backups-readiness-checkbox { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; line-height: 1.5; }
+.backups-readiness-checkbox input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--signal); }
+.backups-readiness-form-error:empty { display: none; }
+.backups-readiness-form-error .admin-error { margin-top: 12px; }
+
 /* What a whole restore does: numbered lines between hairlines, under the heavy rule. */
 .backups-steps {
   margin: 0 0 32px; padding: 0; list-style: none; max-width: 720px;
@@ -103,4 +137,15 @@
 @media (max-width: 720px) {
   .restoring-inner { padding: 48px 16px 40px; }
   .admin .backups-pick-row { padding-left: 8px; }
+  .backups-readiness-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .backups-readiness-detail { grid-column: auto; }
+  .backups-readiness-name { justify-content: flex-start; flex-wrap: wrap; }
 }
+
+/* the owner forms wait behind one disclosure: the report is what the panel is for */
+.backups-readiness-owner { margin-top: 24px; border-top: 1px solid var(--rule); }
+.backups-readiness-owner > summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; font-weight: 600; list-style: none; }
+.backups-readiness-owner > summary::-webkit-details-marker { display: none; }
+.backups-readiness-owner > summary::after { content: '+'; margin-left: auto; font-weight: 400; }
+.backups-readiness-owner[open] > summary::after { content: '\2212'; }
+.backups-readiness-owner > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }

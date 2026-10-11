@@ -3,9 +3,10 @@ import { ApiError, createApi, type BackupEngineStatus, type BackupSummary } from
 import { ADMIN_TABS } from '../src/route';
 import { visibleAdminTabs } from '../src/ui/admin-logic';
 import {
-  CONFIRM_WORD, ERROR_CODES, POLL_CAP_MS, POLL_FACTOR, POLL_GIVE_UP_MS, POLL_START_MS, RELOAD_GUARD_MS, classifyHealth, confirmMatches, errorReason, errorSentence,
+  ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, ERROR_CODES, POLL_CAP_MS, POLL_FACTOR, POLL_GIVE_UP_MS, POLL_START_MS, RELOAD_GUARD_MS,
+  checkStateSentence, classifyHealth, confirmMatches, errorReason, errorSentence, gateBannerSentence,
   formatSize, formatUtc, formatUtcDate, intervalLabel, lastRestoreSentence, manifestTime, mayReload, nextPollDelay, nextScreen, noteOf,
-  pollDelays, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome, waitLabel, watchServer, type Screen, type WatchDeps,
+  pollDelays, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome, trackerCheckLabel, validateDrillRecord, waitLabel, watchServer, type Screen, type WatchDeps,
 } from '../src/ui/backups-logic';
 
 // docs/backups.md, "In the app": the rules and the text of the Backups tab, and the restoring screen's polling.
@@ -110,7 +111,7 @@ describe('the error table', () => {
     'bad_request', 'confirmation_mismatch', 'read_only', 'forbidden', 'manifest_not_found', 'board_not_in_backup', 'backups_off', 'restore_in_progress', 'rate_limited',
     'unknown_key', 'tamper', 'content_mismatch', 'invalid_manifest', 'invalid_path', 'unexpected_file', 'duplicate_path', 'size_mismatch', 'backup_incomplete', 'no_directory',
     'invalid_backup', 'schema_too_new', 'integrity_check_failed', 'no_active_owner', 's3', 'network', 'timeout', 'safety_backup_failed', 'not_enough_space', 'space_unknown',
-    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated',
+    'restore_failed', 'bad_format', 'too_large', 'restoring', 'unauthenticated', 'tracker_restoring', 'key_epoch_confirmation_mismatch', 'drill_record_invalid',
   ];
 
   it('has a sentence for every code of the brief and every code the server answers', () => {
@@ -149,6 +150,72 @@ describe('the error table', () => {
 
   it('has its own sentence for a lost connection', () => {
     expect(errorSentence('network')).toBe('Could not reach the server. Check your connection and try again.');
+  });
+});
+
+describe('tracker readiness copy and validation', () => {
+  it('labels the twelve readiness checks and leaves an unknown id visible', () => {
+    const ids = [
+      'offsite_enabled', 'latest_backup_fresh', 'schedule_meets_rpo', 'backup_decrypts', 'tracker_data_clean', 'counters_floor_ok',
+      'links_consistent', 'search_ok', 'slice8_secrets', 'restore_drill_recent', 'retention_30d', 'import_verified',
+    ];
+    expect(ids.map((id) => trackerCheckLabel(id))).toEqual([
+      'Offsite backup', 'Latest backup freshness', 'Backup schedule', 'Backup decryption', 'Tracker data checks', 'Counter floor',
+      'Tracker links', 'Ticket search index', 'Integration secrets', 'Recent restore drill', '30-day retention', 'Import verification',
+    ]);
+    expect(trackerCheckLabel('future_check')).toBe('future_check');
+    expect(trackerCheckLabel('future_check', 'A future check')).toBe('A future check');
+    expect(trackerCheckLabel('offsite_enabled', 'Server label')).not.toBe('Server label');
+  });
+
+  it('writes overall and check states as words and sentences', () => {
+    expect(readinessOverallLabel('go')).toBe('Ready');
+    expect(readinessOverallLabel('no_go')).toBe('Not ready');
+    expect(readinessOverallLabel('unknown')).toBe('Not known yet');
+    expect(checkStateSentence('pass')).toBe('This check passed.');
+    expect(checkStateSentence('fail')).toBe('This check failed.');
+    expect(checkStateSentence('unknown')).toBe('The server could not determine this check.');
+    expect(checkStateSentence('na')).toBe('This check does not apply.');
+  });
+
+  it('says when the gate closed and flags a close longer than ten minutes', () => {
+    const since = NOW - 20 * MIN;
+    expect(gateBannerSentence({ closed: true, since, floor: 'pending' }, since + 10 * MIN)).toBe(
+      'Tracker writes have been closed since 2026-01-15 09:40 UTC. The counter floor is pending.',
+    );
+    expect(gateBannerSentence({ closed: true, since, floor: 'known' }, since + 10 * MIN + 1)).toBe(
+      'Tracker writes have been closed since 2026-01-15 09:40 UTC. The counter floor is known. The gate has been closed for more than 10 minutes.',
+    );
+    expect(gateBannerSentence({ closed: false, since, floor: 'known' }, NOW)).toBe('Tracker writes are open. The counter floor is known.');
+  });
+
+  it('has the epoch word, warning and owner-attestation disclaimer', () => {
+    expect(EPOCH_CONFIRM_WORD).toBe('JUMP');
+    expect(EPOCH_WARNING_COPY).toContain('1,000');
+    expect(ATTESTATION_DISCLAIMER).toBe('These records are statements by the owner; the server cannot verify them.');
+  });
+
+  it('validates the pasted drill JSON shape and returns a record for the API', () => {
+    const record = {
+      at: '2026-01-15T10:00:00.000Z', kind: 'production', schema: 17, restoreSeconds: 600, dataLossSeconds: 90,
+      boxes: [{ id: 'restore', result: 'pass' }], overall: 'pass',
+    };
+    expect(validateDrillRecord(JSON.stringify(record))).toEqual({ record });
+    expect(validateDrillRecord('{broken json')).toEqual({ reason: 'Paste valid JSON.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, kind: 'test' }))).toEqual({ reason: 'The drill kind must be production or local.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, boxes: [{ id: 'Not A Box!', result: 'pass' }] }))).toEqual({ reason: 'A drill box id is not valid or is repeated.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, boxes: [{ id: 'restore', result: 'pass' }, { id: 'restore', result: 'pass' }] }))).toEqual({ reason: 'A drill box id is not valid or is repeated.' });
+  });
+
+  it('rejects invalid times and unbounded measurements in the drill JSON', () => {
+    const record = {
+      at: '2026-01-15T10:00:00.000Z', kind: 'local', schema: 17, restoreSeconds: 600, dataLossSeconds: 90,
+      boxes: [{ id: 'seed', result: 'pass' }], overall: 'pass',
+    };
+    expect(validateDrillRecord(JSON.stringify({ ...record, at: 'yesterday' }))).toEqual({ reason: 'The record needs a valid at time.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, schema: 1.5 }))).toEqual({ reason: 'The schema must be a bounded non-negative integer.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, restoreSeconds: -1 }))).toEqual({ reason: 'Restore and data-loss seconds must be bounded non-negative numbers.' });
+    expect(validateDrillRecord(JSON.stringify({ ...record, dataLossSeconds: 31_536_001 }))).toEqual({ reason: 'Restore and data-loss seconds must be bounded non-negative numbers.' });
   });
 });
 
