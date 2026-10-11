@@ -1106,6 +1106,31 @@ describe('kanban labels and lanes', () => {
     expect(small.d.getMap('objects').has(small.lanes[0].id)).toBe(false);
   });
 
+  it('refuses deleting a lane mapped by an active Tabula tracker link', () => {
+    const { d, lanes } = fixture();
+    const container = d.getMap('objects').get('kb') as Y.Map<unknown>;
+    container.set('ext', { provider: 'tabula', tracker: 'trk_default', map: { [lanes[0].id]: 'todo' } });
+    const before = bytes(d);
+    const refused = failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id));
+    expect(refused.code).toBe('invalid_input');
+    expect(refused.path).toBe('laneId');
+    expect(refused.message).toBe("Map this lane's tickets elsewhere or unlink the kanban first");
+    expect(bytes(d)).toBe(before);
+  });
+
+  it('keeps a foreign provider extension when removing tracker projection fields', () => {
+    const { d, lanes } = fixture();
+    const foreignExt = { provider: 'linear', key: 'LIN-4' };
+    seed(d, card('card-1', lanes[0].id, 'a0@lane-1'));
+    const linkedCard = d.getMap('objects').get('card-1') as Y.Map<unknown>;
+    linkedCard.set('trackerId', 'stale-tracker-id');
+    linkedCard.set('ext', foreignExt);
+    const remove = planRemoveTrackerProjection(d, { containerId: 'kb', cardIds: ['card-1'], now: 60 });
+    d.transact(() => applyPlan(d, remove), 'tracker:unlink');
+    expect((new Store(d).get('card-1') as any).ext).toEqual(foreignExt);
+    expect((new Store(d).get('card-1') as any).trackerId).toBeUndefined();
+  });
+
   it('adds, reorders and updates lanes, allows shared stages, and warns when WIP is lowered below the count', () => {
     const { d, lanes } = fixture();
     const hiddenLane = boardObject('hidden-middle', 'lane', {
@@ -1430,10 +1455,11 @@ describe('server-side linked kanban projection plans', () => {
       ext: { provider: 'tabula', tracker: 'tracker-1', map: { 'lane-todo': 'todo', 'lane-done': 'done' } },
     });
 
+    (d.getMap('objects').get('card-1') as Y.Map<unknown>).set('ext', { provider: 'tabula', tracker: 'tracker-1' });
     const remove = planRemoveTrackerProjection(d, { containerId: 'kanban-1', cardIds: ['card-1'], now: 60 });
     d.transact(() => applyPlan(d, remove), 'tracker:unlink');
     expect(new Store(d).get('card-1')).toMatchObject({ parent: 'lane-done', text: 'Canonical ticket title\nBody line two\nBody line three' });
-    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']) {
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']) {
       expect(new Store(d).get('card-1')).not.toHaveProperty(field);
     }
     expect(new Store(d).get('kanban-1')).not.toHaveProperty('ext');

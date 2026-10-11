@@ -214,9 +214,22 @@ describe('auditSentence', () => {
       'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
       'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
       'tracker.link.create', 'tracker.link.delete', 'tracker.link.card',
+      'tracker.card.move', 'tracker.card.title', 'tracker.card.create', 'tracker.card.unlink', 'tracker.guard.reject',
       'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
+  });
+
+  it.each([
+    ['tracker.card.move', 'moved a linked card'],
+    ['tracker.card.title', 'changed a linked card title'],
+    ['tracker.card.create', 'created a ticket from a linked card'],
+    ['tracker.card.unlink', 'unlinked a card from its ticket'],
+    ['tracker.guard.reject', 'had a linked-card change rejected'],
+  ])('summarises %s without exposing detail text', (action, sentence) => {
+    const result = auditSentence(entry(action, { cardText: 'private card text', ticketTitle: 'private ticket title', count: 1 }));
+    expect(result).toBe(`ana@example.com ${sentence}`);
+    expect(result).not.toContain('private');
   });
 
   it('knows every audit action written by name anywhere in the server (TAB-199)', () => {

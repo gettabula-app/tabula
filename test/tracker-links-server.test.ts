@@ -177,6 +177,35 @@ describe('tracker projection guard', () => {
     expect(objs(fx.doc).get('kanban-1')?.get('ext')).toEqual(containerExt);
   });
 
+  it('strips tracker fields from a room-loaded copy with a new board id and keeps original links', () => {
+    const fx = fixture(1);
+    makeLink(fx);
+    drainTicketProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 100 });
+    const copiedDoc = new Y.Doc();
+    Y.applyUpdate(copiedDoc, Y.encodeStateAsUpdate(fx.doc));
+    documents.push(copiedDoc);
+    fx.directory.createBoard({ id: 'board-copy', title: 'Copy', ownerId: 'owner-u' });
+    const copyAccess = {
+      read: (_boardId: string, fn: (value: Y.Doc) => unknown) => fn(copiedDoc),
+      write: (_boardId: string, _origin: string, fn: (value: Y.Doc) => unknown) => {
+        let result: unknown;
+        copiedDoc.transact(() => { result = fn(copiedDoc); }, 'tracker-copy-test');
+        return result;
+      },
+    };
+
+    expect(reconcileTrackerProjection({
+      directory: fx.directory, roomAccess: copyAccess, boardId: 'board-copy', now: 200,
+    })).toMatchObject({ skipped: false, stripped: 2, repaired: 0 });
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']) {
+      expect(objs(copiedDoc).get('card-1')?.toJSON()).not.toHaveProperty(field);
+    }
+    expect(objs(copiedDoc).get('kanban-1')?.toJSON()).not.toHaveProperty('ext');
+    expect(fx.directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_links WHERE board_id = ? AND removed_at IS NULL').get('board-1'))
+      .toEqual({ n: 1 });
+    expect(objs(fx.doc).get('card-1')?.get('trackerId')).toBe('trk_default');
+  });
+
   it('is idempotent and ignores its own and projection origins', () => {
     const fx = fixture(1);
     const card = objs(fx.doc).get('card-1');

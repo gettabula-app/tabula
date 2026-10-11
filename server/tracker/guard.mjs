@@ -1,8 +1,9 @@
 import * as Y from 'yjs';
 import { requireTicketWrite, ticketAccess } from './access.mjs';
 import { createTicket, updateTicket, transitionTicket } from './tickets.mjs';
-import { enqueueTicketProjection, enqueueTicketProjectionRemoval, SERVER_CARD_FIELDS } from './projection.mjs';
-import { actorInfo, cleanTicketTitle, getDb, newId } from './shared.mjs';
+import { enqueueTicketProjection, enqueueTicketProjectionRemoval, reconcileTrackerProjection, SERVER_CARD_FIELDS } from './projection.mjs';
+import { appendTicketEvent } from './events.mjs';
+import { actorInfo, cleanTicketTitle, conflict, getDb, newId } from './shared.mjs';
 
 const TRACKER_ACCESS_CHECK = Object.freeze({ id: 'tracker-access-check' });
 const UPDATE_WINDOW_MS = 60_000;
@@ -11,6 +12,7 @@ const MAX_LINKED_CARDS_PER_UPDATE = 100;
 const MAX_TICKETS_PER_UPDATE = 500;
 const TITLE_QUIET_MS = 400;
 const TITLE_MAX_WAIT_MS = 2000;
+const RESTORE_WINDOW_MS = 15_000;
 
 /** Ids changed in a Yjs transaction, including nested maps under `objects`. */
 export function changedObjectIds(transaction, doc) {
@@ -41,6 +43,12 @@ function plainObject(value, id) {
 
 function firstLine(value) {
   return (typeof value === 'string' ? value : '').split(/\r\n|\n|\r/u, 1)[0];
+}
+
+function withFirstLine(value, title) {
+  const text = typeof value === 'string' ? value : '';
+  const lineBreak = text.search(/\r\n|\n|\r/u);
+  return `${title}${lineBreak < 0 ? '' : text.slice(lineBreak)}`;
 }
 
 function linkCache(directory, boardId) {
@@ -202,6 +210,7 @@ export function createTrackerGuard({
   const rateWindows = new Map();
   const rejectAudits = new Map();
   const pendingTitles = new Map();
+  const restoreWindows = new Map();
   const readOnly = () => typeof config.readOnly === 'function'
     ? config.readOnly() === true
     : config.readOnly === true;
@@ -381,6 +390,67 @@ export function createTrackerGuard({
     if (typeof boardId === 'string') caches.delete(boardId);
   }
 
+  function finishRestoreWindow(boardId, expected = null) {
+    const entry = restoreWindows.get(boardId);
+    if (!entry || (expected && expected !== entry)) return { closed: false, projectionPending: false };
+    if (entry.timer) clearTimeoutFn(entry.timer);
+    restoreWindows.delete(boardId);
+    let projectionPending = false;
+    try {
+      reconcileTrackerProjection({
+        directory, roomAccess: entry.roomAccess, boardId, baseUrl: entry.baseUrl, now: now(), mode: 'sql-wins',
+      });
+    } catch (error) {
+      projectionPending = true;
+      try { log('tracker restore reconcile failed', boardId, safeReason(error)); } catch { /* do not log board text */ }
+    }
+    caches.delete(boardId);
+    return { closed: true, projectionPending };
+  }
+
+  /** @param {string} boardId @param {string} userId @param {{ roomAccess: any, baseUrl?: string }} [options] */
+  function openRestoreWindow(boardId, userId, { roomAccess, baseUrl = 'http://localhost' } = {}) {
+    if (typeof boardId !== 'string' || !boardId || typeof userId !== 'string' || !userId) throw new TypeError('restore windows require a board and user id');
+    const previous = restoreWindows.get(boardId);
+    if (previous && previous.expiresAt <= now()) finishRestoreWindow(boardId, previous);
+    const current = restoreWindows.get(boardId);
+    if (current && current.userId !== userId) throw conflict('A restore window is already open for another user.');
+    if (current?.timer) clearTimeoutFn(current.timer);
+    const entry = { userId, expiresAt: now() + RESTORE_WINDOW_MS, roomAccess, baseUrl, timer: null };
+    entry.timer = setTimeoutFn(() => finishRestoreWindow(boardId, entry), RESTORE_WINDOW_MS);
+    entry.timer?.unref?.();
+    restoreWindows.set(boardId, entry);
+    return { expiresAt: entry.expiresAt };
+  }
+
+  /** @param {string} boardId @param {string} userId */
+  function closeRestoreWindow(boardId, userId) {
+    const entry = restoreWindows.get(boardId);
+    if (!entry) return { closed: false, projectionPending: false };
+    if (entry.userId !== userId) throw conflict('The restore window belongs to another user.');
+    return finishRestoreWindow(boardId, entry);
+  }
+
+  function restoreModeFor(boardId, actor) {
+    const entry = restoreWindows.get(boardId);
+    if (!entry) return false;
+    if (entry.expiresAt <= now()) {
+      finishRestoreWindow(boardId, entry);
+      return false;
+    }
+    try { return actorInfo(actor).userId === entry.userId; } catch { return false; }
+  }
+
+  /** @param {string | null} [boardId] */
+  function clearRestoreWindows(boardId = null) {
+    const entries = boardId ? [[boardId, restoreWindows.get(boardId)]] : [...restoreWindows.entries()];
+    for (const [id, entry] of entries) {
+      if (!entry) continue;
+      if (entry.timer) clearTimeoutFn(entry.timer);
+      restoreWindows.delete(id);
+    }
+  }
+
   function restoreTrackedChanges(doc, cache, before, ids, notices, reason, { full = false, canonical = new Map() } = {}) {
     const corrections = [];
     for (const cardId of ids) {
@@ -481,6 +551,7 @@ export function createTrackerGuard({
       apply();
       return { undone: [] };
     }
+    const restoreMode = restoreModeFor(boardId, actor);
 
     const before = roomSnapshot(doc, cache);
     const changed = new Set();
@@ -704,11 +775,36 @@ export function createTrackerGuard({
               if (!row) continue;
               db.prepare('UPDATE ticket_links SET removed_at = ? WHERE id = ? AND removed_at IS NULL').run(instant, row.id);
               titleCancellations.add(cardId);
+              if (restoreMode) {
+                const eventSeq = appendTicketEvent({
+                  db, ticketId: row.ticket_id, eventType: 'unlinked', actor, source: 'restore',
+                  createdAt: instant, details: { reason: 'restore' },
+                });
+                db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(instant, eventSeq, row.ticket_id);
+              }
               actions.push({ action: 'tracker.card.unlink', cardIds: [cardId] });
               continue;
             }
             const moved = current.parent !== prior.parent;
             const textChanged = current.text !== prior.text;
+            if (restoreMode) {
+              const oldTitle = firstLine(prior.text);
+              const restoredText = withFirstLine(current.text, oldTitle);
+              if (moved || current.rank !== prior.rank || restoredText !== current.text || current.moveBase !== undefined) {
+                corrections.push(() => {
+                  const card = doc.getMap('objects').get(cardId);
+                  if (!(card instanceof Y.Map)) return;
+                  if (moved) card.set('parent', prior.parent);
+                  if (current.rank !== prior.rank) {
+                    if (Object.hasOwn(prior, 'rank')) card.set('rank', prior.rank);
+                    else card.delete('rank');
+                  }
+                  if (restoredText !== current.text) card.set('text', restoredText);
+                  card.delete('moveBase');
+                });
+              }
+              continue;
+            }
             if (moved) {
               const row = activeLinkRow(db, boardId, cardId);
               if (!row) {
@@ -780,6 +876,7 @@ export function createTrackerGuard({
                 corrections.push(() => doc.getMap('objects').get(cardId)?.delete?.(field));
               }
             }
+            if (restoreMode) continue;
             let title;
             try { title = cleanTicketTitle(firstLine(card.text)); }
             catch {
@@ -867,6 +964,9 @@ export function createTrackerGuard({
   return {
     run: guardRun,
     invalidate,
+    openRestoreWindow,
+    closeRestoreWindow,
+    clearRestoreWindows,
     flushTitles(boardId) {
       if (typeof boardId === 'string') return flushTitles(boardId);
       let committed = 0;

@@ -1,6 +1,6 @@
 # Tracker slice 5: bidirectional sync (contract)
 
-Status: binding contract. Part A in this tree implements the synchronous guard, relay notice, title coalescing, non-socket planner refusals, and room-writer auto-create path. Part B remains the card-delete route, restore window and `sql-wins` reconcile mode, client lane-delete refusal and audit sentences, and its relay black-box coverage. The contract extends `docs/tracker-architecture.md` section 3 and `docs/tracker-s4-api.md`, and follows the conventions of `docs/tracker-api.md` (session cookie, `x-tabula: 1` on mutations, error shape `{ error, message, path? }`, `409` carries `ticket`, hosted read-only `403 read_only`, guests `404`). Everything stays behind `TABULA_TRACKER=on`. **No migration**: the columns slice 5 needs already exist in migration 15 (`ticket_links.last_projection_seq`, the outbox, `ticket_field_versions`), and every command is naturally idempotent (see Replays). A reviewer who finds a case that needs a column should say so, because then this becomes an M slice under the `minReader 11` rule.
+Status: binding contract. Parts A and B implement the synchronous guard, relay notice, title coalescing, non-socket planner refusals, room-writer auto-create path, card detach route, restore window and `sql-wins` reconcile mode, mapped-lane delete refusal, audit sentences, and server-side coverage. The client-side lane-delete affordance remains with the tech lead. The contract extends `docs/tracker-architecture.md` section 3 and `docs/tracker-s4-api.md`, and follows the conventions of `docs/tracker-api.md` (session cookie, `x-tabula: 1` on mutations, error shape `{ error, message, path? }`, `409` carries `ticket`, hosted read-only `403 read_only`, guests `404`). Everything stays behind `TABULA_TRACKER=on`. **No migration**: the columns slice 5 needs already exist in migration 15 (`ticket_links.last_projection_seq`, the outbox, `ticket_field_versions`), and every command is naturally idempotent (see Replays).
 
 ## 1. What slice 4 already gives us (do not rebuild)
 
@@ -48,7 +48,7 @@ From SQL per board: active `kanban_tracker_links`, their lane to state map, and 
 | `text` changed | Checked at once (3.4): permission, the shared title validator, rate. Only the SQL commit is coalesced. | `text` restored at once; notice `title_invalid`, `forbidden`, `read_only` or `rate_limited` |
 | `tracker`, `extProvider`, `extKey`, `extUrl`, `trackerId`, `ext`, `trackerUnmappedState` | none (already handled by s4) | stripped or repaired as in s4 |
 | `desc`, `owner`, `due`, `labels`, colour, size, position | none; ordinary card fields | n/a |
-| Card object deleted | Set `removed_at` on that `ticket_links` row (no outbox `remove`, the card is gone). Ticket, comments, events and other boards' cards stay. No transition. If the card comes back with its id (undo, Ctrl+Z), see 3.5 "Delete then undo". | n/a |
+| Card object deleted | Outside a restore window, set `removed_at` on that `ticket_links` row (no outbox `remove`, the card is gone). Ticket, comments, events and other boards' cards stay. No transition. During the same user's restore window, also write an `unlinked` ticket event with source `restore` and details `{ reason: 'restore' }`. If the card comes back with its id (undo, Ctrl+Z), see 3.5 "Delete then undo". | n/a |
 | Whole kanban container deleted | All its `ticket_links` rows get `removed_at` and the `kanban_tracker_links` row (and its mappings) is removed, as an unlink, in one transaction. Tickets stay. | n/a |
 | Mapped lane deleted (alone, or as part of a bigger update) | Undone whole, notice `lane_mapped`. Old clients can still send it, and deleting a lane deletes every card in it. Unmapped lanes of a linked kanban delete as today (their cards were never linked). | the lane and its cards restored |
 | New card object created in a linked kanban's mapped lane | see 3.5 | see 3.5 |
@@ -92,13 +92,17 @@ MCP (`move_kanban_card`, `move_kanban_cards`, `update_kanban_card`), REST board 
 
 ## 4. REST additions
 
-Only one new route is needed.
+The card detach route and restore-window routes are available.
 
 | Method and path | Request | Success response |
 | --- | --- | --- |
 | `DELETE /api/tracker/links/:id/cards/:cardId` | none | `200 { ticket, cardId, projectionPending }`: detaches one card from its ticket |
+| `POST /api/tracker/boards/:boardId/restore-window` | none | `200 { expiresAt }`: opens or extends the caller's 15 second restore window |
+| `DELETE /api/tracker/boards/:boardId/restore-window` | none | `200 { closed, projectionPending }`: closes the caller's window early and reconciles once |
 
-Behaviour: the `ticket_links` row gets `removed_at`; the card stays on the board as a plain card, its text set to the latest ticket title, tracker fields stripped; the ticket is untouched. Errors: `404 not_found` (link, or card not linked), `403 forbidden` / `read_only`, `429 rate_limited`. A second `DELETE` is `404`. Audit `tracker.card.unlink`.
+Card detach sets `ticket_links.removed_at` and queues a durable `remove` projection. The card stays on the board as a plain card, with its first text line set to the latest ticket title and later lines preserved; the ticket is untouched. Errors: `404 not_found` (unknown link or card not linked), `403 forbidden` / `read_only`, `429 rate_limited`. A second `DELETE` is `404`. Audit `tracker.card.unlink`; audit details contain ids and counts, never card or ticket text.
+
+Restore-window routes require board owner/editor access and tracker write. Hosted read-only workspaces return `403 read_only`; viewers are forbidden and unknown boards return `404 not_found`. A window is keyed by board and user; opening again as that user extends it, while a different user gets `409 conflict`. Closing without a current window returns `{ closed: false, projectionPending: false }`.
 
 `GET /api/tracker/links` gains nothing; `pendingProjections` keeps counting outbox rows. Ticket responses are unchanged.
 
@@ -120,14 +124,14 @@ Behaviour: the `ticket_links` row gets `removed_at`; the card stays on the board
 | Relay stops between SQL commit and Yjs correction | The client's change may be in the saved room file; on load, s4's `reconcileTrackerProjection` plus the outbox drain converge it to SQL. |
 | Two relays or a restart race | Not supported: one relay per workspace (unchanged). |
 | Ticket archived while its card is moved | Transition refused (`archived`), card restored, notice `conflict`. Archived tickets keep a marker (s4). |
-| Lane deleted that a mapping uses | Refused at the board path today only for unlinked kanbans; slice 5 adds the refusal for mapped lanes in `planDeleteKanbanLane` and the client store: the lane cannot be deleted until the kanban is unlinked or the lane is unmapped. OPEN: mapping edit (PATCH) is still not in this slice, so in practice "unlink first". |
+| Lane deleted that a mapping uses | The server planner refuses the delete for mapped lanes; the client-side store block remains with the tech lead. The lane cannot be deleted until the kanban is unlinked or the lane is unmapped. OPEN: mapping edit (PATCH) is still not in this slice, so in practice "unlink first". |
 | Tracker state archived while mapped | Already refused by the tracker (architecture 3); unchanged. |
 
 ## 7. History restore, board copy and the slice 7 hook
 
-- **One reconcile entry point**: `reconcileTrackerProjection({ directory, roomAccess, boardId, ... })` (s4) is the only function that restores consistency between SQL and a room. Slice 5 adds no second one. It gains a `mode: 'sql-wins'` flag that also resets `parent` and `rank` of linked cards to the SQL lane, and removes links whose card no longer exists (card deleted by a restore).
-- **Same-board history restore** is a client-side Yjs apply (`src/history.ts`), indistinguishable from drags, and would otherwise transition tickets. The window is an optimisation, not the only safety: the bulk threshold (3.7) refuses an unannounced restore whole, so a skipped call, a window lost on relay restart, or another tab restoring cannot mass-transition tickets. The client first calls `POST /api/tracker/boards/:boardId/restore-window` (board owner or editor, tracker write): it opens a window of 15 s for that board and user in which the guard runs in `sql-wins` mode (linked-card lane and title changes are undone, not committed; a card that the restore deletes is unlinked **and a ticket event is written** (type `unlinked`, source `restore`, so the ticket history shows why it left the board; confirm the event type against the `ticket_events` CHECK, else use `updated` with details); non-tracker fields restore normally). The window closes on its own and runs one `reconcile` on close; the client calls `DELETE` on the same path after `applyRestore` finishes. Response `{ expiresAt }`. Errors as above plus `409 conflict` if a window is already open for another user. A restore that skips the call is refused as `bulk_change` when it touches more than 100 linked cards; a small one is processed as ordinary moves.
-- **`restoreBoardCopy`** creates a new board id, which has no link rows; s4's room-load reconcile already strips tracker fields from it, so the copy is a detached snapshot. Slice 5 adds the test only (copy has no tracker fields; the original's links are untouched). "Copy linked tickets too" is deferred to slice 7.
+- **One reconcile entry point**: `reconcileTrackerProjection({ directory, roomAccess, boardId, ... })` (s4) is the only function that restores consistency between SQL and a room. Slice 5 adds no second one. Its `mode: 'sql-wins'` also resets linked-card lane, rank and first-line title from SQL, and removes links whose card no longer exists.
+- **Same-board history restore** is a client-side Yjs apply (`src/history.ts`), indistinguishable from drags, and would otherwise transition tickets. The 15 second window is in memory in the guard/relay and is lost on restart. It is an optimisation, not the only safety: the bulk threshold (3.7) refuses any update touching more than 100 linked cards, with or without a window, so a skipped call, restart, or another tab cannot mass-transition tickets. The client first calls `POST /api/tracker/boards/:boardId/restore-window` (board owner or editor, tracker write). For that user's updates on the board, linked-card lane and first-line title changes are undone without ticket transitions; edits to later text lines and other non-tracker fields pass. A linked card deleted by the restore is unlinked and gets one `unlinked` ticket event, source `restore`, details `{ reason: 'restore' }`. The window closes on its timer or when the client calls `DELETE` after `applyRestore`; either close runs one `sql-wins` reconcile. `ticket_events.event_type` has no CHECK constraint, and `unlinked` is accepted by the event writer.
+- **`restoreBoardCopy`** creates a new board id, which has no link rows; room-load reconcile strips tracker fields from it, so the copy is a detached snapshot. The copy case is covered by a pure room-load reconcile test with a new board id: the copy has no tracker fields and the original's links stay active. "Copy linked tickets too" is deferred to slice 7.
 - **Slice 7 depends on this**: workspace restore restores `directory.sqlite` and the room files together and then calls the same reconcile for every board with links before writes are allowed. Slice 7 also owns the snapshot barrier use, the key floor and the restore drill. **Off-site storage** (architecture section 9) remains a cutover precondition, not a build dependency: devops' backup puller is built; what is still needed before Linear is cancelled is the configured S3-compatible bucket and `TABULA_BACKUP_*` credentials on the hosted volume, a successful off-site backup inside the RPO, and one passed restore drill with tickets. None of that blocks building slices 5 or 7.
 
 ## 8. Tests (every guard test first proves the forbidden or changed write reached an observer)
@@ -143,7 +147,7 @@ Unit (pure guard against an in-memory doc and a real in-memory directory):
 - new card in a mapped lane makes exactly one ticket; the same card seen twice (re-sync) makes one; a paste with a copied `extKey` makes a new ticket and strips the copied fields; unmapped lane makes none;
 - editor without tracker write, hosted read-only, and rate limit all undo;
 - archived ticket move is undone; two quick moves converge on the last valid state;
-- `sql-wins` mode resets lane and title and unlinks deleted cards;
+- `sql-wins` mode resets lane, rank and first-line title and unlinks deleted cards;
 - the median guard cost on a 500-card room stays under 1 ms; a 500-card paste is one SQL transaction;
 - permission, validity and rate on a title are checked on the first update (peer never sees a forbidden draft); multi-line text keeps lines 2+ untouched;
 - stale `moveBase` is undone with `conflict`; a missing `moveBase` is last-writer-wins;
@@ -159,16 +163,18 @@ Relay-backed (real sockets, `test/start-relay.ts`):
 - editor without tracker write drags: observer first sees nothing change (held), sender gets `forbidden`;
 - offline batch (moves and a title in one update) is processed in order;
 - restart after a committed move before the correction: reload converges;
-- restore window: a history restore with the window open changes no ticket; without the window, it does (documents why the call is required);
-- `restoreBoardCopy` copy carries no tracker fields.
+- restore window: a history restore with the window open changes no ticket, while deleted linked cards get an `unlinked` event;
+- a small history restore without a window is processed as ordinary move/title changes;
+- an update over 100 linked cards is refused whole with `bulk_change`, whether or not a restore window is open;
+
+Pure room-load test: a copied room with a new board id has tracker fields stripped and leaves the original board links untouched.
 
 Migration: none, so no new `schema-matrix` entry. The rollback floor test from s4 still passes untouched.
 
 ## 9. Work split and size
 
-- Part A implemented here: `server/tracker/guard.mjs`, the relay hook and notice, linked-card planner refusals, title coalescing, audit, and room-writer auto-create. The focused guard and planner tests run without a relay; the relay-backed test is present but not run in this sandbox.
-- Part B remains: `DELETE` card route, restore window and `sql-wins` reconcile, `planDeleteKanbanLane` refusal, and client work for lane deletion and audit sentences.
-- The remaining black-box coverage for restore, copy, and restart follows with Part B.
+- Parts A and B implement the server guard, relay hook and notice, planner refusals, title coalescing, audit, room-writer auto-create, card detach route, restore window and `sql-wins` reconcile.
+- The tech lead owns the client-side lane-delete affordance. The copied-board case uses a pure room-load reconcile test with a new board id; relay-backed restore and restart tests require the relay harness.
 
 ## 10. Review outcome (tech lead, on 92cdeeb)
 
@@ -176,4 +182,4 @@ Accepted and folded in above: server-side writers refuse (3.8); title checks are
 
 Answers: hold-then-correct is the primary path for moves and creates; keep the restore-window; paste makes a new ticket without `cloned_from`; hide the linked card's owner, due and labels controls and show the ticket's values read-only with an "Edit in tracker" link (no mirroring, because mirroring is a second writer); on unlink, projecting assignee, due and labels into the plain fields is deferred; 400 ms and 2 s are fine.
 
-Remaining open: the exact `ticket_events` type for an unlink-by-restore (3.3/7).
+Resolved: migration 12 has no `ticket_events.event_type` CHECK constraint, so unlink-by-restore writes `unlinked` with source `restore` and details `{ reason: 'restore' }` (3.3/7).

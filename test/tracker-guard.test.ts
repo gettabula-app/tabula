@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import * as Y from 'yjs';
 import { openDirectory } from '../server/directory.mjs';
-import { createTicket } from '../server/tracker/tickets.mjs';
+import { createTicket, updateTicket } from '../server/tracker/tickets.mjs';
 import { createTrackerGuard } from '../server/tracker/guard.mjs';
+import { reconcileTrackerProjection } from '../server/tracker/projection.mjs';
 
 const folders: string[] = [];
 const closeFixtures: (() => void)[] = [];
@@ -99,6 +100,14 @@ function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = 
   }
 
   const room = { name: boardId, doc, held: null as Uint8Array[] | null, sent: [] as Uint8Array[], broadcastUpdate(update: Uint8Array) { this.sent.push(update); } };
+  const roomAccess = {
+    read: (_boardId: string, fn: (value: Y.Doc) => unknown) => fn(doc),
+    write: (_boardId: string, _origin: string, fn: (value: Y.Doc) => unknown) => {
+      let result: unknown;
+      doc.transact(() => { result = fn(doc); }, 'tracker-test');
+      return result;
+    },
+  };
   let guard = createTrackerGuard({
     directory,
     config: { readOnly },
@@ -114,11 +123,12 @@ function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = 
     if (closed) return;
     closed = true;
     currentGuard.flushTitles(boardId);
+    currentGuard.clearRestoreWindows(boardId);
     directory.close();
     doc.destroy();
   };
   closeFixtures.push(close);
-  const result = { folder, directory, actor, user, boardId, kanbanId, doc, objects, room, guard, run, put, tickets, count, clock, close };
+  const result = { folder, directory, actor, user, boardId, kanbanId, doc, objects, room, roomAccess, guard, run, put, tickets, count, clock, close };
   Object.defineProperty(result, 'guard', { get: () => currentGuard, set: (value: typeof guard) => { currentGuard = guard = value; } });
   Object.defineProperty(result, 'run', { get: () => run, set: (value: typeof run) => { run = value; } });
   return result;
@@ -344,6 +354,87 @@ describe('tracker linked-card guard', () => {
     expect(result.undone.every((entry) => entry.reason === 'bulk_change')).toBe(true);
     expect([...Array(101)].every((_, index) => (f.objects.get(`card-${index}`) as Y.Map<unknown>).get('parent') === 'lane-todo')).toBe(true);
     expect(f.count('SELECT COUNT(*) AS n FROM ticket_events')).toBe(before);
+    f.close();
+  });
+
+  it('keeps the bulk refusal active while a restore window is open', () => {
+    const f = fixture({ linked: 101 });
+    f.guard.openRestoreWindow(f.boardId, f.user.id, { roomAccess: f.roomAccess });
+    const before = f.count('SELECT COUNT(*) AS n FROM ticket_events');
+    const result = f.run(() => {
+      for (let index = 0; index < 101; index++) (f.objects.get(`card-${index}`) as Y.Map<unknown>).set('parent', 'lane-doing');
+    });
+    expect(result.undone).toHaveLength(101);
+    expect(result.undone.every((entry) => entry.reason === 'bulk_change')).toBe(true);
+    expect([...Array(101)].every((_, index) => (f.objects.get(`card-${index}`) as Y.Map<unknown>).get('parent') === 'lane-todo')).toBe(true);
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_events')).toBe(before);
+    f.close();
+  });
+
+  it('holds lane and title edits during the same user’s restore window and extends it', () => {
+    const clock = manualClock();
+    const f = fixture({ clock });
+    const ticket = f.tickets.get('card-0');
+    const first = f.guard.openRestoreWindow(f.boardId, f.user.id, { roomAccess: f.roomAccess });
+    expect(first.expiresAt).toBe(15_000);
+    clock.advance(1000);
+    const extended = f.guard.openRestoreWindow(f.boardId, f.user.id, { roomAccess: f.roomAccess });
+    expect(extended.expiresAt).toBe(16_000);
+    expect(() => f.guard.openRestoreWindow(f.boardId, 'another-user', { roomAccess: f.roomAccess })).toThrow(/another user/u);
+
+    const before = f.count('SELECT COUNT(*) AS n FROM ticket_events WHERE ticket_id = ?', ticket.id);
+    expect(f.run(() => {
+      card(f).set('parent', 'lane-doing');
+      card(f).set('rank', 'restore-rank');
+      card(f).set('text', 'Draft title\nRestored body');
+      card(f).set('desc', 'A non-tracker field passes');
+    }).undone).toEqual([]);
+    expect(card(f).get('parent')).toBe('lane-todo');
+    expect(card(f).get('rank')).toBe('a0@todo');
+    expect(card(f).get('text')).toBe('Ticket 0\nRestored body');
+    expect(card(f).get('desc')).toBe('A non-tracker field passes');
+    expect(ticketState(f)).toBe('todo');
+    expect(f.directory.db.prepare('SELECT title FROM tickets WHERE id = ?').get(ticket.id)?.title).toBe('Ticket 0');
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_events WHERE ticket_id = ?', ticket.id)).toBe(before);
+
+    expect(f.guard.closeRestoreWindow(f.boardId, f.user.id)).toMatchObject({ closed: true, projectionPending: false });
+    f.close();
+  });
+
+  it('records a restore unlink when its update deletes a linked card', () => {
+    const f = fixture();
+    const ticket = f.tickets.get('card-0');
+    const before = f.count('SELECT COUNT(*) AS n FROM ticket_events WHERE ticket_id = ?', ticket.id);
+    f.guard.openRestoreWindow(f.boardId, f.user.id, { roomAccess: f.roomAccess });
+    expect(f.run(() => f.objects.delete('card-0')).undone).toEqual([]);
+    expect(f.objects.has('card-0')).toBe(false);
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_links WHERE ticket_id = ? AND removed_at IS NULL', ticket.id)).toBe(0);
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_events WHERE ticket_id = ?', ticket.id)).toBe(before + 1);
+    expect(f.directory.db.prepare('SELECT event_type, source, details_json FROM ticket_events WHERE ticket_id = ? ORDER BY id DESC LIMIT 1').get(ticket.id))
+      .toMatchObject({ event_type: 'unlinked', source: 'restore', details_json: '{"reason":"restore"}' });
+    f.guard.closeRestoreWindow(f.boardId, f.user.id);
+    f.close();
+  });
+
+  it('reconciles linked lane, rank, and title from SQL and retires a missing card link', () => {
+    const f = fixture({ linked: 2 });
+    const firstTicket = f.tickets.get('card-0');
+    const missingTicket = f.tickets.get('card-1');
+    updateTicket({ directory: f.directory, actor: f.actor, key: firstTicket.id, patch: { title: 'SQL title' }, source: 'test', now: 200 });
+    card(f).set('parent', 'lane-doing');
+    card(f).set('rank', 'restore-rank');
+    card(f).set('text', 'Restored title\nBody line');
+    f.objects.delete('card-1');
+
+    expect(reconcileTrackerProjection({
+      directory: f.directory, roomAccess: f.roomAccess, boardId: f.boardId, now: 300, mode: 'sql-wins',
+    })).toMatchObject({ skipped: false, changed: 2, repaired: 2 });
+    expect(card(f).get('parent')).toBe('lane-todo');
+    expect(card(f).get('rank')).not.toBe('restore-rank');
+    expect(card(f).get('text')).toBe('SQL title\nBody line');
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_links WHERE ticket_id = ? AND removed_at IS NULL', missingTicket.id)).toBe(0);
+    expect(f.directory.db.prepare('SELECT event_type, source FROM ticket_events WHERE ticket_id = ? ORDER BY id DESC LIMIT 1').get(missingTicket.id))
+      .toMatchObject({ event_type: 'unlinked', source: 'restore' });
     f.close();
   });
 

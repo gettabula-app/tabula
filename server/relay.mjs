@@ -393,7 +393,13 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, dataDir: DATA_DIR, log, roomAccess: { read: (name, fn) => roomAccess.read(name, fn), write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context), invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId) } });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, dataDir: DATA_DIR, log, roomAccess: {
+    read: (name, fn) => roomAccess.read(name, fn),
+    write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
+    invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
+    openTrackerRestoreWindow: (boardId, userId) => trackerGuard?.openRestoreWindow(boardId, userId, { roomAccess, baseUrl: config.baseUrl }),
+    closeTrackerRestoreWindow: (boardId, userId) => trackerGuard?.closeRestoreWindow(boardId, userId),
+  } });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -434,6 +440,7 @@ async function enterMaintenance() {
   chatNotifier?.stop();
   trackerNotifier?.stop();
   trackerProjectionWorker?.stop();
+  trackerGuard?.clearRestoreWindows();
   closeChat();
   roomsFrozen = true;
   for (const room of rooms.values()) {

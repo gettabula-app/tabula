@@ -104,6 +104,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
   'tracker.link.create', 'tracker.link.delete', 'tracker.link.card',
+  'tracker.card.move', 'tracker.card.title', 'tracker.card.create', 'tracker.card.unlink', 'tracker.guard.reject',
   'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
 ] as const;
 
@@ -300,6 +301,16 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} unlinked a kanban from the tracker`;
     case 'tracker.link.card':
       return `${who} created a ticket from a kanban card`;
+    case 'tracker.card.move':
+      return `${who} moved a linked card`;
+    case 'tracker.card.title':
+      return `${who} changed a linked card title`;
+    case 'tracker.card.create':
+      return `${who} created a ticket from a linked card`;
+    case 'tracker.card.unlink':
+      return `${who} unlinked a card from its ticket`;
+    case 'tracker.guard.reject':
+      return `${who} had a linked-card change rejected`;
     case 'tracker.label.create':
       return `${who} created a ticket label`;
     case 'tracker.milestone.create':
