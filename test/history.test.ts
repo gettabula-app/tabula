@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,7 +34,7 @@ describe('tracker restore window', () => {
       beginTrackerRestoreWindow: async (id: string) => { calls.push(`POST ${id}`); return { expiresAt: 10 }; },
       endTrackerRestoreWindow: async (id: string) => { calls.push(`DELETE ${id}`); },
     };
-    const result = await withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 'restored'; });
+    const result = await withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 'restored'; }, 0);
     expect(result).toBe('restored');
     expect(calls).toEqual(['POST board-1', 'apply', 'DELETE board-1']);
   });
@@ -45,7 +45,7 @@ describe('tracker restore window', () => {
       beginTrackerRestoreWindow: async () => { calls.push('POST'); throw new Error('409 conflict'); },
       endTrackerRestoreWindow: async () => { calls.push('DELETE'); throw new Error('network'); },
     };
-    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 1; })).resolves.toBe(1);
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 1; }, 0)).resolves.toBe(1);
     expect(calls).toEqual(['POST', 'apply', 'DELETE']);
   });
 
@@ -55,11 +55,11 @@ describe('tracker restore window', () => {
       beginTrackerRestoreWindow: async () => { calls.push('POST'); return { expiresAt: 10 }; },
       endTrackerRestoreWindow: async () => { calls.push('DELETE'); },
     };
-    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); throw new Error('apply failed'); }))
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); throw new Error('apply failed'); }, 0))
       .rejects.toThrow('apply failed');
     expect(calls).toEqual(['POST', 'apply', 'DELETE']);
     calls.length = 0;
-    await withTrackerRestoreWindow('board-1', false, client, () => { calls.push('apply'); });
+    await withTrackerRestoreWindow('board-1', false, client, () => { calls.push('apply'); }, 0);
     expect(calls).toEqual(['apply']);
   });
 });
@@ -991,5 +991,24 @@ describe('retention', () => {
     fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ v: 1, versions: [good, { id: '../../x', createdAt: 1, kind: 'auto', hash: 'h' }, { id: 'A'.repeat(16), createdAt: 'x', kind: 'auto', hash: 'h' }, null, { ...good, id: 'B'.repeat(16), kind: 'weird' }] }));
     const after = createHistory({ dataDir: s.dir, boardState: () => null, now: () => s.clock.now, log: () => {}, sweepMs: 0 });
     expect(after.actions.list('board1').versions.map((v: Version) => v.id)).toEqual([good.id]);
+  });
+
+  it('waits a grace period after applying before it closes the window', async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const client = {
+        beginTrackerRestoreWindow: async () => { calls.push('POST'); return { expiresAt: 10 }; },
+        endTrackerRestoreWindow: async () => { calls.push('DELETE'); },
+      };
+      const done = withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); }, 1500);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toEqual(['POST', 'apply']);
+      await vi.advanceTimersByTimeAsync(600);
+      await done;
+      expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

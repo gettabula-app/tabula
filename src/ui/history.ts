@@ -42,6 +42,8 @@ export function restoreSuccessToast(platform: string): string {
   return `Version restored. Press ${formatShortcutLabel('Ctrl/Cmd+Z', platform)} to undo.`;
 }
 
+const TRACKER_WINDOW_GRACE_MS = 1500;
+
 type TrackerRestoreWindowApi = Pick<typeof api, 'beginTrackerRestoreWindow' | 'endTrackerRestoreWindow'>;
 
 /** Best-effort tracker window; the server's bulk threshold still protects a restore when either request fails. */
@@ -50,6 +52,7 @@ export async function withTrackerRestoreWindow<T>(
   enabled: boolean,
   client: TrackerRestoreWindowApi,
   apply: () => T | Promise<T>,
+  graceMs = TRACKER_WINDOW_GRACE_MS,
 ): Promise<T> {
   if (!enabled) return await apply();
   try {
@@ -60,6 +63,8 @@ export async function withTrackerRestoreWindow<T>(
   try {
     return await apply();
   } finally {
+    // The restore reaches the relay over the socket and the window closes over HTTP: two channels, so give the updates a moment to land first.
+    if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));
     try {
       await client.endTrackerRestoreWindow(boardId);
     } catch {
