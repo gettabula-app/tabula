@@ -694,7 +694,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             : (readOnly ? '—' : rowButton('—', 'Assign issue', () => void editOne(ticket, 'assignee', document.activeElement as HTMLElement), 'trk-avatar-button')),
           ));
           else if (column === 'due') cells.push(h('div', { class: 'trk-cell trk-col-due', role: 'gridcell' },
-            readOnly ? dueChip(ticket.due, now) : rowButton(ticket.due ? formatTrackerDate(ticket.due) : '—', ticket.due ? `Due ${ticket.due}` : 'Set due date', () => void editOne(ticket, 'due', document.activeElement as HTMLElement)),
+            readOnly ? dueChip(ticket.due, now, ticket.state.category === 'completed' || ticket.state.category === 'canceled') : rowButton(ticket.due ? formatTrackerDate(ticket.due) : '—', ticket.due ? `Due ${ticket.due}` : 'Set due date', () => void editOne(ticket, 'due', document.activeElement as HTMLElement)),
           ));
           else cells.push(h('div', { class: 'trk-cell trk-col-updated', role: 'gridcell' }, relativeTime(now, new Date(ticket.updatedAt).toISOString())));
         }
@@ -1035,7 +1035,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           h('div', { class: 'trk-board-card-meta' },
             h('span', { class: 'trk-board-priority', 'aria-label': priorityLabel(ticket.priority) }, priorityGlyph(ticket.priority)),
             ticket.assignee ? avatar({ kind: 'person', name: ticket.assignee.name }) : null,
-            dueChip(ticket.due, Date.now()),
+            dueChip(ticket.due, Date.now(), ticket.state.category === 'completed' || ticket.state.category === 'canceled'),
           ),
           labels.length ? h('div', { class: 'trk-board-labels' }, ...labels) : null,
         );

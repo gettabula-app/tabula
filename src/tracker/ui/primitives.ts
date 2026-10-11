@@ -118,12 +118,13 @@ export function relativeTime(now: number, iso: string): HTMLTimeElement {
   );
 }
 
-export function dueChip(due: string | null, now: number): HTMLElement | null {
+/** A finished ticket (completed or canceled) is never overdue: it only shows its date. */
+export function dueChip(due: string | null, now: number, finished = false): HTMLElement | null {
   if (!due) return null;
   const parsed = parseTrackerDate(due);
   if (!parsed || !/^\d{4}-\d{2}-\d{2}$/u.test(due)) return h('span', { class: 'trk-due-chip' }, `Due ${formatTrackerDate(due, now)}`);
   const today = new Date(now).toISOString().slice(0, 10);
-  const overdue = due < today;
+  const overdue = due < today && !finished;
   const relative = formatTrackerDate(due, now, { relative: true });
   const shortDate = formatTrackerDate(due, now);
   const text = due === today ? 'Due today' : due > today && relative === 'Tomorrow' ? 'Due tomorrow' : overdue ? `Overdue · ${relative === 'Yesterday' ? relative : shortDate}` : `Due ${shortDate}`;

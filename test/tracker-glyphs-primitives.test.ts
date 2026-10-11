@@ -121,6 +121,19 @@ describe('tracker primitive chips and times', () => {
     expect(dueChip('2026-02-30', now)?.textContent).toBe('Due Unknown date');
     expect(dueChip(null, now)).toBeNull();
   });
+
+  it('never marks a finished ticket overdue, and draws low priority as a readable bar', () => {
+    browser = installTrackerUiBrowser();
+    const now = Date.UTC(2026, 9, 10, 12);
+    const finished = dueChip('2026-10-01', now, true)!;
+    expect(finished.textContent).toBe('Due Oct 1');
+    expect(finished.className).not.toContain('trk-overdue');
+    expect(finished.getAttribute('aria-label')).not.toMatch(/Overdue/);
+    expect(dueChip('2026-10-01', now, false)?.className).toContain('trk-overdue');
+    const low = priorityGlyph('low').querySelector('path')!;
+    expect(low.getAttribute('d')).toBe('M3 13v-5');
+    expect(low.getAttribute('stroke-width')).toBe('2');
+  });
 });
 
 describe('ticket key helpers', () => {
