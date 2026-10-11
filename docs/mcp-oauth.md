@@ -513,6 +513,14 @@ Lookups: `findOauthAccessToken(token)` = `oauth_tokens t JOIN oauth_grants g JOI
 | Enumeration of clients/requests | `client_id` and request id are 128-bit random; envelope tampering and expiry fail verification without creating a row. |
 | Downgrade by turning OAuth off | Off means `404` and `tbo_` refused at once (fail closed). |
 
+### 13.1 Residual risks accepted in slice 1 (security review)
+
+- **Refresh replay window.** For 20 seconds anyone holding the just-rotated refresh token and the `client_id` gets the same replacement pair back once. A stolen old token used inside the window is not detected at that moment; it is detected when the second holder rotates after the window, or on a third presentation (family revoked). This is the usual RFC 9700-style grace window; keep it at 20 seconds.
+- **Spoofed connector names.** Dynamic registration lets anyone choose the displayed client name. The consent API returns `clientNameIsClaim` and the redirect host; the consent UI (slice 2) must show the host, and an "unverified" marker where the name is, for every host not on the exact allowlist, loopback and custom-scheme clients included.
+- **Registration is unauthenticated by design.** A client that never receives a grant lives one hour; repeating its registration does not extend that; when the 500-client cap is reached the oldest never-granted client is dropped, so the cap cannot be held. The per-IP (10 per hour) and instance (100 per hour) limits remain, and a distributed flood can still use up the instance limit for an hour: a real connector then gets 429 and retries later.
+- **`max_scope` of a client** is self-asserted at registration and kept as first registered; the real caps are applied at consent and at each call.
+- **`directory.oauthInternals`** (test only, `openDirectory(file, { oauthInternals: true })`) holds the store functions that skip consent, PKCE and user-state checks; nothing in the server passes that option.
+
 ## 14. Test plan
 
 New files: `test/oauth-store.test.ts` (SQL, pure), `test/oauth-routes.test.ts` (HTTP against the spawned relay with the existing `mcp-harness.ts`), `test/oauth-gating.test.ts`, UI logic in `test/tokens-logic.test.ts` / `test/tokens-admin-panel.test.ts`, `test/admin.test.ts` for audit sentences, and one browser e2e (slice 5). The protocol smoke test with `@modelcontextprotocol/sdk` (devDependency) gains an OAuth run using its `OAuthClientProvider` against the relay.
