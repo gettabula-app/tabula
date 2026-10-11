@@ -633,15 +633,16 @@ export function createRestore({
     };
   }
 
+  /** The stored record, null when there is none, undefined when the database cannot be read (after a restore has closed it). */
   function readLast() {
     try {
       return cleanRecord(JSON.parse(directory.getSetting(STATUS_KEY) ?? 'null'));
     } catch {
-      return null;
+      return undefined;
     }
   }
 
-  let last = readLast();
+  let last = readLast() ?? null;
 
   function setLast(record) {
     last = record;
@@ -1217,14 +1218,15 @@ export function createRestore({
           if (trackerCount > 0 || countersAboveInitial) {
             upsert.run(TRACKER_RESTORE_GATE_KEY, restoreGateValue({ since: nowMs, reason: 'restore', floor: floorResult.known ? 'known' : 'pending' }));
             db.prepare('DELETE FROM settings WHERE key = ? OR key = ?').run(RECONCILE_DONE_KEY, FTS_READY_KEY);
+            // A workspace that never used the tracker keeps the restore record it always had.
+            trackerRecord = {
+              summary: info.trackerCheck.summary,
+              findings: info.trackerCheck.findings,
+              repaired,
+            };
           } else {
             db.prepare('DELETE FROM settings WHERE key = ?').run(TRACKER_RESTORE_GATE_KEY);
           }
-          trackerRecord = {
-            summary: info.trackerCheck.summary,
-            findings: info.trackerCheck.findings,
-            repaired,
-          };
         } else {
           db.prepare('DELETE FROM settings WHERE key = ?').run(TRACKER_RESTORE_GATE_KEY);
         }
@@ -1897,7 +1899,9 @@ export function createRestore({
 
   function status() {
     const nowMs = now();
-    last = readLast();
+    // The recovery after a restart updates the stored record; a closed database keeps the one held in memory.
+    const stored = readLast();
+    if (stored !== undefined) last = stored;
     return {
       inProgress: busy,
       maintenance,
