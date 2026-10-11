@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MIGRATIONS } from '../server/directory.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vitestBin = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
@@ -34,7 +35,30 @@ export const BOXES = [
   { id: '8.1.adopt-copy', label: '8.1 local analogue: a copied data directory on a new Fly volume id is adopted' },
 ];
 
-const TITLE_ID = /^\[([0-9.]+\.[a-z-]+|setup\.[a-z-]+)\]/;
+export const TRACKER_BOXES = [
+  { id: 'seed', label: 'Seed tracker data and two linked boards' },
+  { id: 'barrier_backup', label: 'Barrier backup has matching counts and no findings' },
+  { id: 'restore_workspace', label: 'Restore the earlier whole-workspace snapshot' },
+  { id: 'lost_keys_not_reissued', label: 'Lost ticket keys are not issued again' },
+  { id: 'gate_cycle', label: 'Restore gate clears after recovery' },
+  { id: 'reconcile_boards', label: 'Both linked boards reconcile from SQL' },
+  { id: 'search_rebuilt', label: 'Search works after restore' },
+  { id: 'hosted_floor_available', label: 'Hosted key floor is available on a new machine' },
+  { id: 'hosted_floor_unknown', label: 'Unknown floor stays gated until the owner jumps the epoch' },
+  { id: 'board_copy_stripped', label: 'Board copy contains no tracker identity' },
+  { id: 'history_restore', label: 'History restore removes a card without a duplicate ticket' },
+  { id: 'key_rotation', label: 'Previous key restores; missing key is refused' },
+  { id: 'damaged_search', label: 'Damaged search index is rebuilt during recovery' },
+  { id: 'missing_room_file', label: 'Missing room file is reconciled after restore' },
+  { id: 'schema_too_new', label: 'Newer directory schema is refused without changes' },
+  { id: 'no_text_in_logs', label: 'Ticket and comment text stay out of logs and reports' },
+  { id: 'slice8_secrets_ciphertext', label: 'Slice 8 secret ciphertext', note: 'not present (slice 8)' },
+  { id: 'slice8_inbound_recovered', label: 'Slice 8 inbound event recovery', note: 'not present (slice 8)' },
+  { id: 'slice8_delivery_retry_safe', label: 'Slice 8 delivery retry safety', note: 'not present (slice 8)' },
+  { id: 'slice8_connection_health', label: 'Slice 8 connection health', note: 'not present (slice 8)' },
+];
+
+const TITLE_ID = /^\[(tracker\.[a-z0-9_]+|[0-9.]+\.[a-z-]+|setup\.[a-z-]+)\]/;
 
 /**
  * The checklist rows from a vitest JSON report: per box the tests whose title starts with its id, passed only when all
@@ -51,7 +75,7 @@ export function checklist(report) {
     byId.get(m[1]).push(t);
   }
   const setups = [...byId.keys()].filter((id) => id.startsWith('setup.')).map((id) => ({ id, label: 'Seed the workspace' }));
-  return [...setups, ...BOXES].map((box) => {
+  const rows = [...setups, ...BOXES].map((box) => {
     const own = byId.get(box.id) ?? [];
     if (!own.length) return { ...box, status: box.note ? 'noted' : 'missing', ms: 0, problems: [] };
     const failed = own.filter((t) => t.status === 'failed');
@@ -63,18 +87,42 @@ export function checklist(report) {
       problems: failed.map((t) => `${t.title}: ${(t.failureMessages?.[0] ?? '').split('\n')[0]}`),
     };
   });
+  return [
+    ...rows,
+    ...TRACKER_BOXES.map((box) => {
+      const id = 'tracker.' + box.id;
+      const own = byId.get(id) ?? [];
+      if (!own.length) return { ...box, id, status: box.note ? 'noted' : 'missing', ms: 0, problems: [], ran: false };
+      const failed = own.filter((t) => t.status === 'failed');
+      const skipped = own.some((t) => t.status === 'skipped' || t.status === 'pending' || t.status === 'todo');
+      return {
+        ...box,
+        id,
+        status: failed.length ? 'failed' : skipped ? 'skipped' : 'passed',
+        ms: own.reduce((n, t) => n + (t.duration ?? 0), 0),
+        problems: failed.map((t) => t.title + ': ' + (t.failureMessages?.[0] ?? '').split('\n')[0]),
+        ran: own.some((t) => !['skipped', 'pending', 'todo'].includes(t.status)),
+      };
+    }),
+  ];
 }
 
 const mark = { passed: '[x]', failed: '[!]', skipped: '[-]', noted: '[-]', missing: '[!]' };
 
 export function render(rows, measured, { date = new Date() } = {}) {
   const lines = ['', 'Restore drill, local rehearsal (runbook section 8)', ''];
+  let trackerSection = false;
   for (const r of rows) {
+    if (r.id.startsWith('tracker.') && !trackerSection) {
+      trackerSection = true;
+      lines.push('', 'Tracker restore drill', '');
+    }
     const what = r.status === 'noted' ? r.note : r.status === 'missing' ? 'failed: no test ran for this box' : `${r.status} in ${(r.ms / 1000).toFixed(1)} s`;
     lines.push(`${mark[r.status]} ${r.id.padEnd(22)} ${r.label}`);
     lines.push(`    ${what}`);
   }
-  const failed = rows.filter((r) => r.status === 'failed' || r.status === 'missing');
+  const failed = rows.filter((r) => r.status === 'failed' || r.status === 'missing'
+    || (r.id.startsWith('tracker.') && r.status === 'skipped'));
   const differed = rows.filter((r) => r.status === 'noted' || r.status === 'skipped').map((r) => `${r.id}: ${r.note ?? 'skipped'}`);
   const fmt = (v, unit) => (v === undefined ? 'not measured' : `${v} ${unit}`);
   lines.push(
@@ -96,6 +144,26 @@ export function render(rows, measured, { date = new Date() } = {}) {
     '',
   );
   return lines.join('\n');
+}
+
+/** The local-only record pasted to POST /api/admin/tracker/drill-record. */
+export function buildTrackerDrillRecord(rows, measured = {}, { at = Date.now() } = {}) {
+  const trackerRows = new Map(rows.filter((row) => row.id.startsWith('tracker.')).map((row) => [row.id, row]));
+  if (![...trackerRows.values()].some((row) => row.ran)) return null;
+  const boxes = TRACKER_BOXES.map((box) => {
+    if (box.note) return { id: box.id, result: 'not_present' };
+    const row = trackerRows.get('tracker.' + box.id);
+    return { id: box.id, result: row?.status === 'passed' ? 'pass' : 'fail' };
+  });
+  return {
+    at,
+    kind: 'local',
+    schema: MIGRATIONS.length,
+    restoreSeconds: measured.trackerRestoreSeconds ?? 0,
+    dataLossSeconds: measured.trackerDataAgeAtRestoreSeconds ?? 0,
+    boxes,
+    overall: boxes.every((box) => box.result === 'pass' || box.result === 'not_present') ? 'pass' : 'fail',
+  };
 }
 
 async function main() {
@@ -128,8 +196,11 @@ async function main() {
   fs.rmSync(tmp, { recursive: true, force: true });
   const rows = checklist(report);
   console.log(render(rows, measured));
+  const trackerRecord = buildTrackerDrillRecord(rows, measured);
+  if (trackerRecord) console.log(JSON.stringify(trackerRecord, null, 2));
   console.log(`Total drill time: ${((Date.now() - started) / 1000).toFixed(1)} s`);
-  const bad = rows.some((r) => r.status === 'failed' || r.status === 'missing') || code !== 0;
+  const bad = rows.some((r) => r.status === 'failed' || r.status === 'missing'
+    || (r.id.startsWith('tracker.') && r.status === 'skipped')) || code !== 0;
   process.exit(bad ? 1 : 0);
 }
 
