@@ -526,7 +526,7 @@ async function route() {
   const untrackerNotice = conn.onTrackerNotice(({ undone }) => {
     conn.store.dropUndoFor(undone.map(({ cardId }) => cardId));
     const text = noticeText(undone.map(({ reason }) => reason));
-    if (text) toast(text);
+    if (text) toast(text, 6000);
   });
   releaseWorkspace = () => {
     unwatchFeatures();

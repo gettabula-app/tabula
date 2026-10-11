@@ -216,7 +216,10 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
         priority?: string;
       } }).tracker;
       const assignee = typeof tracker?.assignee?.name === 'string' ? tracker.assignee.name : '';
-      const dueDate = typeof tracker?.due === 'string' ? tracker.due : '';
+      const dueRaw = typeof tracker?.due === 'string' ? new Date(`${tracker.due.slice(0, 10)}T12:00:00`) : null;
+      const dueDate = dueRaw && !Number.isNaN(dueRaw.getTime())
+        ? dueRaw.toLocaleDateString(undefined, dueRaw.getFullYear() === new Date().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
       const ticketLabels = Array.isArray(tracker?.labels)
         ? tracker.labels.map((label) => typeof label?.name === 'string' ? label.name : '').filter(Boolean).join(', ')
         : '';

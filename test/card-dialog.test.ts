@@ -121,7 +121,7 @@ describe('the card dialog, for an editor', () => {
     expect(button('Bug')).toBeUndefined();
     expect(textOf(dialogBox)).toContain('A <img src=x onerror=run()>');
     expect(textOf(dialogBox)).toContain('Security <script>run()</script>');
-    expect(textOf(dialogBox)).toContain('2026-11-09');
+    expect(textOf(dialogBox)).toContain(new Date('2026-11-09T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
     expect(textOf(dialogBox)).toContain('High');
     expect(dialogBox.querySelectorAll('img, script')).toHaveLength(0);
     const edit = dialogBox.querySelector('a.k-open-tracker') as FakeElement;
