@@ -126,8 +126,9 @@ export function grantBoardsText(boardCount: number | null): string {
 
 export function grantExpiryText(expiresAt: number, now: number): string {
   const left = expiresAt - now;
-  if (left <= DAY_MS) return 'Connection ends today';
-  return `Connection ends in ${Math.ceil(left / DAY_MS)} days`;
+  if (left <= DAY_MS) return 'Ends today';
+  const days = Math.ceil(left / DAY_MS);
+  return `Ends in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 export type AdminAccessRow =

@@ -15,7 +15,7 @@
 .tokens-hint { margin-top: -8px; font-size: 13px; }
 .tokens-problem { min-height: 24px; font-size: 13px; }
 .tokens-problem:empty { min-height: 0; }
-.tokens-section-title { margin: 0 0 12px; padding-top: 16px; border-top: 2px solid var(--tray-text); font: 700 18px/1.25 var(--display); letter-spacing: -0.02em; }
+.tokens-section-title { margin: 0 0 12px; padding-top: 16px; border-top: 1px solid var(--tray-line); font: 700 18px/1.25 var(--display); letter-spacing: -0.02em; }
 .tokens-connected { display: grid; gap: 12px; min-width: 0; }
 
 /* Label style: 11px uppercase meta. */
@@ -85,7 +85,10 @@
 .tokens-dialog .btn.armed { border-color: var(--danger); color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); }
 .tokens-dialog .btn.armed:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
 
-.admin-token-actions { display: flex; flex-wrap: wrap; margin: 0 0 16px; }
+.admin-token-actions { display: contents; }
+.tokens-section-title:focus-visible, .admin-box:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.admin-token-panel .admin-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.tokens-meta + .tokens-meta { margin-top: 2px; }
 .admin-token-panel .btn { min-height: 44px; height: auto; }
 .admin-token-panel .admin-wrap { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
 

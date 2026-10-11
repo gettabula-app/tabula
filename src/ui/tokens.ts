@@ -110,6 +110,7 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
         for (const b of mine) titles.set(b.id, b.title || 'Untitled board');
         showList();
         toTop();
+        restoreGrantFocus();
       },
       (e: unknown) => {
         if (alive()) showError(e, load);
@@ -138,10 +139,22 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
     }
   };
 
+  // After the list re-renders, keyboard focus goes to the Disconnect button now at the same place (or the last one), or to the section heading.
+  let focusGrantAt: number | null = null;
+  const restoreGrantFocus = () => {
+    if (focusGrantAt === null) return;
+    const at = focusGrantAt;
+    focusGrantAt = null;
+    const buttons = body.querySelectorAll<HTMLElement>('.tokens-grant-row button');
+    const target = buttons[Math.min(at, buttons.length - 1)] ?? body.querySelector<HTMLElement>('.tokens-section-title');
+    target?.focus();
+  };
+
   const disconnect = async (grant: ConnectedGrant) => {
     try {
       await api.disconnectGrant(grant.id);
       toast(CONNECTED_APP_TEXT.doneOne);
+      focusGrantAt = Math.max(0, grants.findIndex((g) => g.id === grant.id));
       load();
     } catch (e) {
       toast(describe(e));
@@ -177,14 +190,13 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
 
   function connectedApps(): HTMLElement {
     return h('section', { class: 'tokens-connected' },
-      h('h3', { class: 'tokens-section-title' }, CONNECTED_APP_TEXT.section),
+      h('h3', { class: 'tokens-section-title', tabindex: '-1' }, CONNECTED_APP_TEXT.section),
       grants.length
         ? h('div', { class: 'tokens-list' }, grants.map((grant) => h('div', { class: 'tokens-row tokens-grant-row' },
             h('div', { class: 'tokens-who' },
               h('div', null, h('span', { class: 'tokens-name' }, grant.clientName), h('span', { class: 'tokens-badge' }, grantScopeLabel(grant.scope))),
+              h('div', { class: 'tokens-meta' }, [grant.redirectHost, grantBoardsText(grant.boardCount)].join(' · ')),
               h('div', { class: 'tokens-meta' }, [
-                grant.redirectHost,
-                grantBoardsText(grant.boardCount),
                 `${CONNECTED_APP_TEXT.created} ${fmtAgo(grant.createdAt)}`,
                 lastUsedLabel(grant, fmtAgo),
                 grantExpiryText(grant.expiresAt, Date.now()),
@@ -327,7 +339,7 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let tokens: AdminAccessToken[] = [];
   let grants: AdminGrant[] = [];
   let reload: () => void = () => {};
-  const box = h('div', { class: 'admin-box', style: '--cols: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto' });
+  const box = h('div', { class: 'admin-box', tabindex: '-1', style: '--cols: minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto' });
   const appActions = h('div', { class: 'admin-token-actions' });
   const actor = { id: me.user.id, role: me.user.role };
 
@@ -352,17 +364,27 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     );
   };
 
+  // After a row goes, focus the neighbour row's button (or the last one), or the table itself when it was the only row.
+  const focusRowAt = (at: number) => {
+    const buttons = box.querySelectorAll<HTMLElement>('.admin-row button');
+    (buttons[Math.min(at, buttons.length - 1)] ?? box).focus();
+  };
+
   const revoke = async (t: AdminAccessToken) => {
+    const at = mergeAdminAccessRows(tokens, grants).findIndex((r) => r.kind === 'token' && r.token.id === t.id);
     if (await kit.change(() => api.adminRevokeAccessToken(t.id), `Revoked ${t.name}`)) {
       tokens = tokens.filter((x) => x.id !== t.id);
       paint();
+      focusRowAt(Math.max(0, at));
     }
   };
 
   const disconnect = async (grant: AdminGrant) => {
+    const at = mergeAdminAccessRows(tokens, grants).findIndex((r) => r.kind === 'grant' && r.grant.id === grant.id);
     if (await kit.change(() => api.adminDisconnectGrant(grant.id), CONNECTED_APP_TEXT.adminDoneOne)) {
       grants = grants.filter((x) => x.id !== grant.id);
       paint();
+      focusRowAt(Math.max(0, at));
     }
   };
 
@@ -415,7 +437,6 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   return h('div', { class: 'admin-token-panel' },
     h('div', { class: 'admin-token-create' },
       h('p', { class: 'muted admin-note' }, 'Connect AI tools like Claude Code to this workspace over MCP.'),
-      create),
-    appActions,
+      h('div', { class: 'btn-row' }, create, appActions)),
     box);
 }

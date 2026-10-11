@@ -111,9 +111,9 @@ describe('labels', () => {
     expect(grantBoardsText(null)).toBe('All boards you can open');
     expect(grantBoardsText(1)).toBe('1 board');
     expect(grantBoardsText(7)).toBe('7 boards');
-    expect(grantExpiryText(now + 1, now)).toBe('Connection ends today');
-    expect(grantExpiryText(now + day, now)).toBe('Connection ends today');
-    expect(grantExpiryText(now + 2.5 * day, now)).toBe('Connection ends in 3 days');
+    expect(grantExpiryText(now + 1, now)).toBe('Ends today');
+    expect(grantExpiryText(now + day, now)).toBe('Ends today');
+    expect(grantExpiryText(now + 2.5 * day, now)).toBe('Ends in 3 days');
   });
 
   it('merges tokens and connected apps into newest-first admin rows with type labels', () => {
