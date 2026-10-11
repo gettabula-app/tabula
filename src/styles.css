@@ -652,7 +652,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .flowbar.poll-compact > .poll-chip { flex: 1 0 100%; padding: 4px 8px; }
   /* one row, never wrapped: the bars below are placed for a 36px banner; the link keeps a 44px tap target without growing it */
   .demo-banner { flex-wrap: nowrap; justify-content: space-between; gap: 8px; padding: 0 16px; height: 36px; font-size: 13px; }
-  .demo-banner a { padding: 12px 8px; margin: -12px -8px; }
+  .demo-banner a { display: inline-flex; align-items: center; height: 44px; padding: 0 8px; margin: -4px -8px; }
   /* The phone demo is a calm board: no board-name chip, no comments pill (the menu stays), six tools, and a zoom pill of - / % / + */
   .demo-board > .chrome .top-left, .demo-board > .chrome .comment-toggle { display: none; }
   .demo-board > .chrome > .top-right { top: calc(46px + var(--safe-top)); }
