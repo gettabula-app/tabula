@@ -654,15 +654,22 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
-  it('caps socket guard entries before work and resets the window with an injected clock', () => {
+  it('caps guard entries per user and board before work, across reconnects, and resets with an injected clock', () => {
     let time = 0;
     const budget = createTrackerSocketBudget({ now: () => time, max: 2 });
-    const socket = {};
-    expect(budget.allow(socket)).toBe(true);
-    expect(budget.allow(socket)).toBe(true);
-    expect(budget.allow(socket)).toBe(false);
+    const key = 'user-1\u0000board-1';
+    expect(budget.allow(key)).toBe(true);
+    expect(budget.allow(key)).toBe(true);
+    expect(budget.allow(key)).toBe(false);
+    // another board or another person has its own budget
+    expect(budget.allow('user-1\u0000board-2')).toBe(true);
+    expect(budget.allow('user-2\u0000board-1')).toBe(true);
     time = 60_000;
-    expect(budget.allow(socket)).toBe(true);
+    expect(budget.allow(key)).toBe(true);
+    for (let i = 0; i < 1100; i++) budget.allow(`idle-${i}\u0000b`);
+    time = 200_000;
+    budget.allow('fresh\u0000b');
+    expect(budget.size).toBeLessThan(5);
   });
 
   it('fails closed on a thrown directory transaction and logs no card text', () => {

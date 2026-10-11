@@ -346,20 +346,24 @@ describe('tracker linked-card relay guard', () => {
 
     await until(() => closed !== null && notices.some((notice) => notice.reason === 'rate_limited'));
     expect(closed).toEqual({ code: 1008, reason: 'rate_limited' });
-    expect(notices).toContainEqual({ undone: [], reason: 'rate_limited' });
+    // a notice entry without a card id: the client shows the toast and undoes nothing locally
+    expect(notices).toContainEqual({ undone: [{ reason: 'rate_limited' }], reason: 'rate_limited' });
 
-    const fresh = h.connect(setup.boardId, owner.cookie);
-    await fresh.synced();
-    const accepted = card(fresh.doc, cardId)?.get('desc');
-    expect(accepted).not.toBe('socket-budget-1200');
+    // the budget belongs to the person and the board, not the socket: a reconnect inside the minute is cut again
+    const again = h.connect(setup.boardId, owner.cookie);
+    let againClosed: number | null = null;
+    again.provider.on('connection-close', (event: { code?: number } | null) => { if (event && againClosed === null) againClosed = event.code ?? -1; });
+    again.doc.transact(() => card(again.doc, cardId)?.set('desc', 'after-reconnect'), 'again');
+    await until(() => againClosed === 1008);
+    again.provider.destroy();
+
+    let accepted: unknown;
     await until(() => {
       const saved = h.savedDoc(setup.boardId);
-      try { return card(saved, cardId)?.get('desc') === accepted; }
+      try { accepted = card(saved, cardId)?.get('desc'); return typeof accepted === 'string' && accepted.startsWith('socket-budget-'); }
       finally { saved.destroy(); }
     });
-    const saved = h.savedDoc(setup.boardId);
-    try { expect(card(saved, cardId)?.get('desc')).toBe(accepted); }
-    finally { saved.destroy(); }
-    fresh.provider.destroy();
+    expect(accepted).not.toBe('socket-budget-1200');
+    expect(accepted).not.toBe('after-reconnect');
   });
 });

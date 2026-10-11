@@ -578,7 +578,7 @@ class Room {
   /** Applies a board-room update and its tracker correction before releasing the held broadcast. */
   trackerGuarded(ws, apply) {
     if (ws.trackerGuardRejected) return;
-    if (!trackerSocketBudget.allow(ws)) {
+    if (!trackerSocketBudget.allow(`${ws.userId ?? 'anonymous'}\u0000${this.name}`)) {
       ws.trackerGuardRejected = true;
       sendTrackerRateLimitedNotice(ws);
       ws.close(1008, 'rate_limited');
@@ -947,7 +947,7 @@ function sendTrackerNotice(ws, undone) {
 function sendTrackerRateLimitedNotice(ws) {
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
-  encoding.writeVarString(enc, JSON.stringify({ undone: [], reason: 'rate_limited' }));
+  encoding.writeVarString(enc, JSON.stringify({ undone: [{ reason: 'rate_limited' }], reason: 'rate_limited' }));
   send(ws, encoding.toUint8Array(enc));
 }
 
