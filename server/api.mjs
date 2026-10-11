@@ -1801,6 +1801,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           not_found: 404,
           forbidden: 403,
           conflict: 409,
+          state_not_mapped: 422,
           read_only: 403,
           limit_exceeded: 413,
           tracker_restoring: 503,

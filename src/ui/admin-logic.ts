@@ -105,7 +105,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
-  'tracker.link.create', 'tracker.link.delete', 'tracker.link.card',
+  'tracker.link.create', 'tracker.link.delete', 'tracker.link.card', 'tracker.link.attach',
   'tracker.card.move', 'tracker.card.title', 'tracker.card.create', 'tracker.card.unlink', 'tracker.guard.reject',
   'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
 ] as const;
@@ -406,6 +406,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} unlinked a kanban from the tracker`;
     case 'tracker.link.card':
       return `${who} created a ticket from a kanban card`;
+    case 'tracker.link.attach':
+      return `${who} attached an existing ticket to a kanban card`;
     case 'tracker.card.move':
       return `${who} moved a linked card`;
     case 'tracker.card.title':

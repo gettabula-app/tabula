@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import { cleanCardTitle, cleanLaneName, sortedChildren } from '../../shared/containers.mjs';
-import { ticketAccess } from './access.mjs';
+import { boardAccessForDirectory, requireTicketRead, requireTicketWrite, ticketAccess } from './access.mjs';
 import { createTicket, getTicket } from './tickets.mjs';
 import {
-  actorInfo, conflict, forbidden, getDb, invalid, limitExceeded, newId, notFound, stripInvisible,
+  OpsError, actorInfo, conflict, forbidden, getDb, invalid, limitExceeded, newId, notFound, stripInvisible,
 } from './shared.mjs';
 import { enqueueTicketProjection, enqueueTicketProjectionRemoval } from './projection.mjs';
 
@@ -423,6 +423,58 @@ export function unlinkTrackerCard({ directory, actor, linkId, cardId, now = Date
       actorId: info.userId,
     };
   });
+}
+
+/**
+ * Attach an existing ticket to a card of a linked kanban. The ticket's state and title win: projection moves the card
+ * to the lane mapped to the ticket's state and replaces the card's first line. Checks run in a fixed order so a caller
+ * cannot probe card ids or the state mapping for a ticket they cannot see.
+ * @param {any} [input]
+ */
+export function attachTicketToCard({ directory, actor, linkId, cardId, ticket: reference, roomAccess, now = Date.now() } = {}) {
+  const link = activeLink(directory, id(linkId, 'linkId'));
+  const { info } = boardFor(directory, actor, link.board_id, { write: true });
+  const cardKey = id(cardId, 'cardId');
+  if (typeof reference !== 'string' || !reference.trim() || Array.from(reference).length > 128) {
+    throw invalid('ticket', 'Must be a ticket key or id');
+  }
+  const db = directory.db;
+  const row = db.prepare(
+    `SELECT t.id, t.key, t.tracker_id, t.state_id, t.archived_at, t.updated_seq, s.workflow_id
+       FROM tickets t JOIN ticket_states s ON s.id = t.state_id
+      WHERE t.key = ? COLLATE NOCASE OR t.id = ? LIMIT 1`,
+  ).get(reference.trim(), reference.trim()) ?? null;
+  const access = { boardAccess: boardAccessForDirectory(directory) };
+  requireTicketRead(actor, row, access);
+  const trackerId = db.prepare('SELECT id FROM trackers ORDER BY created_at, id LIMIT 1').get()?.id;
+  if (!trackerId || row.tracker_id !== trackerId || row.workflow_id !== link.workflow_id) throw notFound();
+  requireTicketWrite(actor, row, access);
+  const existing = db.prepare(
+    'SELECT ticket_id FROM ticket_links WHERE board_id = ? AND kanban_id = ? AND card_id = ? AND removed_at IS NULL',
+  ).get(link.board_id, link.kanban_id, cardKey);
+  if (existing?.ticket_id === row.id) return { ticket: getTicket({ directory, actor, key: row.key }), cardId: cardKey, replayed: true };
+  const snapshot = boardSnapshot(roomAccess, link.board_id, link.kanban_id);
+  if (!snapshot.cards.some((card) => card.id === cardKey)) throw invalid('cardId', 'Must identify a card in this linked kanban');
+  if (existing) throw conflict('This card already has a ticket', 'cardId');
+  if (row.archived_at != null) throw conflict('An archived ticket cannot be attached', 'ticket');
+  const mapped = db.prepare('SELECT 1 FROM kanban_state_mappings WHERE kanban_link_id = ? AND state_id = ?').get(link.id, row.state_id);
+  const onKanban = db.prepare(
+    'SELECT 1 FROM ticket_links WHERE kanban_id = ? AND ticket_id = ? AND removed_at IS NULL',
+  ).get(link.kanban_id, row.id);
+  if (onKanban) throw conflict('This ticket is already on a card in this kanban', 'ticket');
+  if (!mapped) throw new OpsError('state_not_mapped', "The ticket's state has no lane in this kanban", 'ticket');
+  const attached = directory.transaction(() => {
+    const fresh = activeLink(directory, link.id);
+    if (cardAlreadyLinked(db, fresh.board_id, fresh.kanban_id, cardKey)) throw conflict('This card already has a ticket', 'cardId');
+    db.prepare(
+      `INSERT INTO ticket_links
+        (id, ticket_id, board_id, kanban_id, card_id, created_at, created_by_type, created_by_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(newId(), row.id, fresh.board_id, fresh.kanban_id, cardKey, now, info.type, info.id);
+    enqueueTicketProjection({ db, ticketId: row.id, eventSeq: row.updated_seq, now });
+    return getTicket({ directory, actor, key: row.key });
+  });
+  return { ticket: attached, cardId: cardKey, replayed: false };
 }
 
 /**
