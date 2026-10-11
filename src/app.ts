@@ -2287,7 +2287,7 @@ export class BoardApp {
           overlayOpen: !!document.querySelector('.popover, .modal-back'),
           dragging: !!this.drag || !!this.longPress,
           groupOpen: !!this.scope,
-          drawerOpen: document.querySelector<HTMLElement>('.drawer.show, .side-tray.show')?.dataset.tab ?? null,
+          drawerOpen: document.querySelector<HTMLElement>('.drawer.show, .side-tray.show')?.dataset.tab ?? (document.querySelector('.chat-dock:not([hidden])') ? 'chat' : null),
         });
         if (action === 'overlay' || action === 'none') return;
         if (action === 'drag') {

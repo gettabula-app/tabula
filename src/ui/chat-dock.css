@@ -16,3 +16,5 @@
   right: calc(12px + var(--safe-right)); bottom: calc(76px + var(--safe-bottom)); display: grid; place-items: center;
   width: 52px; height: 52px; padding: 0; border: 0; border-radius: 50%; color: var(--tray-text);
 }
+.chat-dock-context { display: none; font-weight: 400; color: var(--tray-muted); }
+.chat-dock-host[data-mode='compact'] .chat-dock-context { display: inline; }

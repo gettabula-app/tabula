@@ -402,7 +402,7 @@ async function openSeedChat(env) {
   await resetChatMarker(env);
   await openSeedBoard(env);
   await page.locator('.chat-toggle').click();
-  await page.waitForFunction((n) => document.querySelectorAll('.side-tray.show .chat-msg').length >= n, chat.count);
+  await page.waitForFunction((n) => document.querySelectorAll('.chat-dock:not([hidden]) .chat-msg').length >= n, chat.count);
   await page.locator('.chat-new').waitFor();
 }
 
@@ -1777,10 +1777,10 @@ const STATES = {
     trays.push({ name: 'Chat', open: () => page.locator('.chat-toggle').click(), focus: '.chat-toggle' });
     for (const tray of trays) {
       await tray.open();
-      await page.locator(tray.name === 'Comments' || tray.name === 'Chat' ? '.side-tray.show' : '.drawer.show').waitFor();
+      await page.locator(tray.name === 'Comments' ? '.side-tray.show' : tray.name === 'Chat' ? '.chat-dock:not([hidden])' : '.drawer.show').waitFor();
       await page.keyboard.press('Escape');
       const result = await page.evaluate((focusSelector) => {
-        const open = document.querySelector('.drawer.show, .side-tray.show');
+        const open = document.querySelector('.drawer.show, .side-tray.show, .chat-dock:not([hidden])');
         const focus = document.querySelector(focusSelector);
         return { open: open?.getAttribute('aria-label') ?? open?.dataset.tab ?? null, focusReturned: document.activeElement === focus };
       }, tray.focus);
@@ -3573,9 +3573,9 @@ const STATES = {
     await resetChatMarker(env);
     await STATES['flow-poll'](env);
     await env.page.locator('.chat-toggle').click();
-    await env.page.locator('.side-tray.show .chat-composer').waitFor();
+    await env.page.locator('.chat-dock:not([hidden]) .chat-composer').waitFor();
     const result = await env.page.evaluate(() => {
-      const tray = document.querySelector('.side-tray.show');
+      const tray = document.querySelector('.chat-dock:not([hidden])');
       const composer = tray?.querySelector('.chat-composer');
       const surfaces = [...document.querySelectorAll('.poll-card:not([hidden]), .flowbar.show')];
       if (!tray || !composer) return { failures: ['Chat tray or composer is missing'] };

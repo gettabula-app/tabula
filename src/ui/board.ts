@@ -30,7 +30,8 @@ import { mountFlowBar, openVoteSetup, startVote } from './flowbar';
 import { mountFocus, mutedCount, openMuted } from './focus';
 import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
-import { mountChat } from './chat';
+import { mountChat } from './board-chat';
+import { currentChatDock } from './chat-dock';
 import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
@@ -252,7 +253,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // Comments and, where the server has chat (docs/chat.md), Chat share one right-hand tray
   const sideTray = mountSideTray(chrome);
   const comments = mountComments(app, chrome, sideTray);
-  const chat = !scratch && !demo && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
+  const chatDock = currentChatDock();
+  const chat = !scratch && !demo && chatAvailable() && app.role !== null && chatDock ? mountChat(app, chatDock) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch || demo ? null : people,
     scratch || demo ? null : phonePeople,
@@ -386,10 +388,18 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       return true;
     }
     const sideTab = sideTray.current();
-    if (!sideTab) return false;
-    sideTray.hide();
-    (sideTab === 'comments' ? comments.button : chat?.button)?.focus();
-    return true;
+    if (sideTab) {
+      sideTray.hide();
+      comments.button.focus();
+      return true;
+    }
+    // the chat dock closes on Esc as the chat tray did: the first Esc leaves the message box, the next closes the dock
+    if (chat && chatDock && (chatDock.mode() === 'open' || chatDock.mode() === 'compact')) {
+      chatDock.dispatch('close');
+      chat.button.focus();
+      return true;
+    }
+    return false;
   };
   app.lifetime.signal.addEventListener('abort', () => { app.closeEscapeDrawer = null; }, { once: true });
   const syncShapesBtn = () => {
