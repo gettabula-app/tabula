@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -2809,30 +2809,92 @@ const STATES = {
     const result = await env.page.evaluate(() => {
       const left = document.querySelector('.top-left');
       const right = document.querySelector('.top-right');
-      const avatar = right?.querySelector('.people .avatar');
-      const share = right?.querySelector('.btn.primary');
+      const avatar = right?.querySelector('.phone-people');
+      const share = right?.querySelector('.share-btn');
       const failures = [];
-      if (!left || !right || !avatar || !share) return { failures: ['board bars, first avatar or Share button is missing'] };
+      if (!left || !right || !avatar || !share) return { failures: ['board bars, phone people chip or Share button is missing'] };
       const box = (el) => el.getBoundingClientRect();
       const l = box(left), r = box(right);
       if (l.left < 0 || l.right > innerWidth || l.top < 0 || l.bottom > innerHeight) failures.push(`left bar is outside the viewport: ${JSON.stringify(l.toJSON())}`);
       if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) failures.push(`right bar is outside the viewport: ${JSON.stringify(r.toJSON())}`);
       if (l.left < r.right && l.right > r.left && l.top < r.bottom && l.bottom > r.top) failures.push('top-left and top-right bars intersect');
+      if (Math.abs(l.top - r.top) > 1) failures.push(`the bars are on separate rows (${l.top.toFixed(1)}px and ${r.top.toFixed(1)}px)`);
+      if (l.height > 52 || r.height > 52) failures.push(`a top tray is taller than 52px (${l.height.toFixed(1)}px, ${r.height.toFixed(1)}px)`);
       const rail = document.querySelector('.rail');
       if (rail) {
         const k = box(rail);
+        if (k.top < Math.max(l.bottom, r.bottom)) failures.push(`tool rail starts at ${k.top.toFixed(1)}px before the bar ends at ${Math.max(l.bottom, r.bottom).toFixed(1)}px`);
         if (r.left < k.right && r.right > k.left && r.top < k.bottom && r.bottom > k.top) failures.push(`the tool rail (${Math.round(k.left)}-${Math.round(k.right)}) covers the right bar (${Math.round(r.left)}-${Math.round(r.right)})`);
       }
-      for (const [name, target] of [['first avatar', avatar], ['Share', share]]) {
+      const targets = [
+        ...left.querySelectorAll('button, input'),
+        ...right.querySelectorAll('button'),
+      ].filter((target) => target.getClientRects().length > 0);
+      for (const target of targets) {
+        const name = target.getAttribute('aria-label') ?? target.className ?? target.tagName;
         const rect = box(target);
         const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
         if (rect.width < 44 || rect.height < 44) failures.push(`${name} target is ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
         if (hit !== target && !target.contains(hit)) failures.push(`${name} centre hits ${hit?.getAttribute('aria-label') ?? hit?.tagName ?? 'nothing'}`);
       }
-      return { failures, viewport: `${innerWidth}x${innerHeight}`, left: l.toJSON(), right: r.toJSON() };
+      return { failures, viewport: `${innerWidth}x${innerHeight}`, left: l.toJSON(), right: r.toJSON(), railTop: rail ? box(rail).top : null, targets: targets.length };
     });
     console.log(`top-bars-320 ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
+  async 'phone-top-chrome'(env) {
+    await openSeedBoard(env);
+    const setupError = await env.page.evaluate(() => {
+      const app = window.__board;
+      const self = app?.participants().find((person) => person.isMe);
+      if (!app || !self) return 'the current user is missing';
+      const people = [
+        self,
+        { clientId: 71001, user: { id: 'phone-person-nia', name: 'Nia', color: '#D64545' }, isMe: false },
+        { clientId: 71002, user: { id: 'phone-person-guest', name: 'Guest', color: '#4977D1', guest: true }, isMe: false },
+      ];
+      app.participants = () => people;
+      app.__phoneFollowCalls = [];
+      app.followUser = (clientId) => app.__phoneFollowCalls.push(clientId);
+      app.emit('presence');
+      return null;
+    });
+    if (setupError) throw new Error(`phone-top-chrome: ${setupError}`);
+    await env.page.locator('.phone-people').waitFor();
+    const chip = await env.page.evaluate(() => {
+      const phone = document.querySelector('.phone-people');
+      return {
+        label: phone?.getAttribute('aria-label'),
+        display: phone ? getComputedStyle(phone).display : 'missing',
+        avatarCount: phone?.querySelectorAll('.phone-avatar').length ?? 0,
+        total: phone?.querySelector('.phone-people-count')?.textContent ?? null,
+        desktopDisplay: document.querySelector('.people') ? getComputedStyle(document.querySelector('.people')).display : 'missing',
+      };
+    });
+    const failures = [];
+    if (chip.display === 'missing' || chip.display === 'none') failures.push('the phone people chip is hidden');
+    if (chip.desktopDisplay !== 'none') failures.push('the desktop avatar stack is also exposed on the phone');
+    if (chip.avatarCount !== 2 || chip.total !== '3') failures.push(`the chip shows ${chip.avatarCount} avatars and count ${chip.total ?? 'missing'} instead of two avatars and total 3`);
+    if (chip.label !== 'People on this board: 3 people') failures.push(`the chip has an unexpected accessible name: ${chip.label}`);
+    await env.page.locator('.phone-people').click();
+    await env.page.locator('.phone-people-pop').waitFor();
+    const menu = await env.page.evaluate(() => {
+      const pop = document.querySelector('.phone-people-pop');
+      return {
+        rows: [...(pop?.querySelectorAll('.phone-person-option') ?? [])].map((row) => row.textContent?.trim() ?? ''),
+        ariaExpanded: document.querySelector('.phone-people')?.getAttribute('aria-expanded'),
+      };
+    });
+    if (menu.rows.length !== 3 || !menu.rows[0].includes('You') || !menu.rows.some((row) => row.includes('Nia')) || !menu.rows.some((row) => row.includes('Guest'))) {
+      failures.push(`the people popover is missing a name or You/Guest mark: ${JSON.stringify(menu.rows)}`);
+    }
+    if (menu.ariaExpanded !== 'true') failures.push('the people chip did not announce its expanded menu');
+    await env.page.locator('.phone-people-pop .phone-person-option').filter({ hasText: 'Nia' }).click();
+    const followed = await env.page.evaluate(() => window.__board.__phoneFollowCalls);
+    if (followed[0] !== 71001) failures.push(`choosing Nia called followUser with ${followed[0] ?? 'no client id'}`);
+    if (failures.length) throw new Error(`phone-top-chrome: ${JSON.stringify(failures)}`);
+    const viewport = await env.page.evaluate(() => `${innerWidth}x${innerHeight}`);
+    console.log(`phone-top-chrome ${JSON.stringify({ viewport, chip, menu, followed })}`);
   },
   // CDX-21: six people should never push the presence cluster beneath the left tool rail on a phone.
   async 'presence-avatars-many'(env) {
