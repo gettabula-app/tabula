@@ -180,7 +180,7 @@ async function auditPage(page, { state, width, engine }) {
         const style = getComputedStyle(active);
         const width = parseFloat(style.outlineWidth);
         const ring = rgb(style.outlineColor);
-        if (width < 2 || style.outlineStyle === 'none' || !ring || contrast(ring, background(active.parentElement || active)) < 3) {
+        if (width < 1 || style.outlineStyle === 'none' || !ring || contrast(ring, background(active.parentElement || active)) < 3) {
           failures.push(`focus ring is not visible on “${short(active)}”`);
         }
       }
@@ -249,7 +249,7 @@ try {
         const allowedThemes = enginePlan.fullThemes ? themes : ['default'];
         const selectedThemes = themeFilter ? allowedThemes.filter((theme) => themeFilter.includes(theme)) : allowedThemes;
         for (const theme of selectedThemes) {
-          const allowedWidths = theme === 'default' ? baseWidths : [390, 1280];
+          const allowedWidths = baseWidths;
           const widths = widthFilter ? allowedWidths.filter((width) => widthFilter.includes(width)) : allowedWidths;
           for (const width of widths) {
             summaries.push(await runConfiguration(browser, enginePlan.name, testCase, theme, width));

@@ -32,8 +32,8 @@ describe('tracker inbox styles', () => {
     expect(css).toContain('min-height: 44px');
     expect(css).toContain('white-space: nowrap');
     expect(css).toContain("@media (forced-colors: active)");
-    expect(css).toContain('outline: 2px solid Highlight');
-    expect(foundation).toContain('outline: 2px solid var(--signal)');
+    expect(css).toContain('outline: 1px solid Highlight');
+    expect(foundation).toContain('outline: 1px solid var(--trk-focus)');
     expect(foundation).toContain('outline-offset: 2px');
     expect(css).not.toMatch(/animation\s*:/i);
   });

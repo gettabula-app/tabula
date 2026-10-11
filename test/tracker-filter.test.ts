@@ -13,7 +13,11 @@ describe('tracker filter token bridge', () => {
     const tokens = [
       'assignee:me', 'assignee:none', 'assignee:Maya Chen', 'state:in_review', 'state:Done,in_progress',
       '-state:Done,in_progress', 'label:Accessibility,Bug', 'due:overdue', 'due:today', 'due:this-week', 'due:before-2026-12-31',
-      'has:link', 'is:archived', 'created:after-2026-01-10', 'design system debt',
+      'due:after-2026-01-10', 'has:relation', 'is:blocking',
+      'creator:me,agent,integration,import,system', 'priority:urgent,high', 'category:started,completed',
+      'project:none,Roadmap', 'milestone:V1,none', 'created:after-2026-01-10', 'created:before-2026-01-10',
+      'updated:after-2026-01-10', 'updated:before-2026-01-10', 'parent:TAB-123', '-blocks:TAB-42',
+      'blocked-by:TAB-42', 'relates:TAB-42', 'duplicates:TAB-42', 'duplicated-by:TAB-42', 'design system debt',
     ];
     const chips = parse(tokens);
     expect(build(chips)).toEqual(tokens);
@@ -23,9 +27,9 @@ describe('tracker filter token bridge', () => {
 
   it('rejects fields and values the tracker data layer and server do not support', () => {
     for (const token of [
-      'unknown:value', 'state:', 'due:before-2026-02-30', 'due:Overdue', 'created:after-2026-1-01', 'has:comment', 'has:Link', 'is:open', 'is:Archived',
-      'state:is-not:done', 'creator:Maya', 'priority:high', 'category:completed', 'project:Roadmap', 'milestone:V1',
-      'relation:blocked', 'assignee:', 'state:done,',
+      'unknown:value', 'state:', 'due:before-2026-02-30', 'created:after-2026-1-01', 'updated:before-2026-02-30',
+      'has:comment', 'is:open', 'priority:urgent,other', 'category:planned', 'parent:tab-abc', 'blocks:',
+      'assignee:', 'state:done,', 'state:one,two,three,four,five,six,seven,eight,nine,ten,eleven,twelve,thirteen,fourteen,fifteen,sixteen,seventeen,eighteen,nineteen,twenty,twenty-one',
     ]) {
       let caught: unknown;
       try { parse([token]); } catch (error) { caught = error; }
@@ -83,6 +87,29 @@ describe('tracker one-row filter bar', () => {
     expect(searches).toEqual(['', '', '', '', '', '']);
   });
 
+  it('suggests negated fields and comma any-of values for the expanded server grammar', () => {
+    browser = installTrackerUiBrowser();
+    const bar = createFilterBar({ meta: {
+      ...createTrackerVisualSeed().meta!,
+      projects: [{ id: 'project-roadmap', name: 'Roadmap' }],
+      milestones: [{ id: 'milestone-v1', projectId: 'project-roadmap', name: 'V1', due: null }],
+    } });
+    browser.mount().appendChild(bar.el as unknown as FakeElement);
+    const input = bar.el.querySelector('.trk-filter-input') as unknown as FakeElement;
+    input.value = '-pri';
+    input.dispatchEvent(uiEvent('input'));
+    expect(Array.from(bar.el.querySelectorAll('[role="option"]')).map((item) => item.textContent)).toContain('not priority:');
+    input.value = '-priority:urgent,hi';
+    input.dispatchEvent(uiEvent('input'));
+    expect(Array.from(bar.el.querySelectorAll('[role="option"]')).map((item) => item.textContent)).toContain('not priority: High');
+    input.value = 'project:';
+    input.dispatchEvent(uiEvent('input'));
+    expect(Array.from(bar.el.querySelectorAll('[role="option"]')).map((item) => item.textContent)).toContain('project: Roadmap');
+    input.value = 'milestone:';
+    input.dispatchEvent(uiEvent('input'));
+    expect(Array.from(bar.el.querySelectorAll('[role="option"]')).map((item) => item.textContent)).toContain('milestone: V1');
+  });
+
   it('locks view filters, removes the last editable chip with Backspace, and displays invalid_filter inline', () => {
     browser = installTrackerUiBrowser();
     const bar = createFilterBar({ initial: [
@@ -94,12 +121,13 @@ describe('tracker one-row filter bar', () => {
     expect(bar.getChips().map((chip) => chip.value)).toEqual(['me', 'in_progress']);
     expect(bar.el.querySelectorAll('.trk-filter-chip button')).toHaveLength(1);
 
-    input.value = 'priority:high';
+    input.value = 'priority:urgent,other';
     input.dispatchEvent(uiEvent('keydown', { key: 'Enter' }));
     expect(bar.getChips()).toHaveLength(2);
-    expect(bar.el.querySelector('[role="alert"]')?.textContent).toBe('Invalid filter: priority:high');
+    expect(bar.el.querySelector('[aria-live="polite"]')?.textContent).toBe('Invalid filter: priority:urgent,other');
     bar.setError('Unsupported filter priority:high.');
-    expect(bar.el.querySelector('[role="alert"]')?.textContent).toBe('Unsupported filter priority:high.');
+    expect(bar.el.querySelector('[aria-live="polite"]')?.textContent).toBe('Unsupported filter priority:high.');
+    expect(bar.el.querySelector('.trk-filter-error')?.getAttribute('aria-live')).toBe('polite');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     input.dispatchEvent(uiEvent('keydown', { key: 'Escape' }));
     expect(bar.suggestionsOpen()).toBe(false);

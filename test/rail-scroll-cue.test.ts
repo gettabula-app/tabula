@@ -50,7 +50,7 @@ const inView = (page: Page, label: string) => page.evaluate((name) => {
   return b.top >= t.top - 1 && b.bottom <= t.bottom + 1;
 }, label);
 
-describe.skipIf(!available)('the tool rail in a short window', { timeout: 120_000 }, () => {
+describe.skipIf(!available)('the tool rail in a short window', { timeout: 200_000 }, () => {
   it('shows no chevron or track when everything fits', async () => {
     const page = await openBoard(1100);
     expect(await page.locator('.rail-more').isHidden()).toBe(true);

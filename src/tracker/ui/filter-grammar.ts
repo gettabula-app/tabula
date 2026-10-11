@@ -1,10 +1,18 @@
 import { TrackerError } from '../../tracker-types';
 
 // The server filter grammar as the UI models it (chips). Owned by the tracker UI so the data layer stays untouched.
-export type TrackerFilterField = 'assignee' | 'state' | 'label' | 'due' | 'has' | 'is' | 'created';
+export type TrackerFilterField =
+  | 'assignee' | 'state' | 'label' | 'creator' | 'priority' | 'category' | 'project' | 'milestone'
+  | 'due' | 'created' | 'updated' | 'has' | 'is' | 'parent' | 'blocks' | 'blocked-by' | 'relates' | 'duplicates' | 'duplicated-by';
 export interface TrackerFilterToken { field: TrackerFilterField; value: string; not: boolean }
 
-const TRACKER_FILTER_FIELDS = new Set<TrackerFilterField>(['assignee', 'state', 'label', 'due', 'has', 'is', 'created']);
+const TRACKER_FILTER_FIELDS = new Set<TrackerFilterField>([
+  'assignee', 'state', 'label', 'creator', 'priority', 'category', 'project', 'milestone',
+  'due', 'created', 'updated', 'has', 'is', 'parent', 'blocks', 'blocked-by', 'relates', 'duplicates', 'duplicated-by',
+]);
+const LIST_FILTER_FIELDS = new Set<TrackerFilterField>(['assignee', 'state', 'label', 'creator', 'priority', 'category', 'project', 'milestone']);
+const PRIORITIES = new Set(['none', 'urgent', 'high', 'medium', 'low']);
+const CATEGORIES = new Set(['backlog', 'unstarted', 'started', 'completed', 'canceled']);
 
 function isValidDate(value: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -21,18 +29,27 @@ export function parseFilterToken(source: string): TrackerFilterToken {
   const separator = body.indexOf(':');
   const field = separator > 0 ? body.slice(0, separator).toLowerCase() : '';
   const value = separator > 0 ? body.slice(separator + 1).trim() : '';
-  const values = value.split(',').map((item) => item.trim());
+  const values = LIST_FILTER_FIELDS.has(field as TrackerFilterField) ? value.split(',').map((item) => item.trim()) : [value];
   const invalid = (): never => { throw new TrackerError('invalid_filter', `Invalid filter: ${source}`, { path: source }); };
-  if (separator < 1 || !TRACKER_FILTER_FIELDS.has(field as TrackerFilterField) || !value || value.includes(':') || values.some((item) => !item)) invalid();
+  if (separator < 1 || !TRACKER_FILTER_FIELDS.has(field as TrackerFilterField) || !value || values.length > 20 || values.some((item) => !item)) invalid();
   const f = field as TrackerFilterField;
   if (f === 'due') {
     for (const item of values) {
-      if (item === 'overdue' || item === 'today' || item === 'this-week') continue;
-      if (!item.startsWith('before-') || !isValidDate(item.slice(7))) invalid();
+      const normalized = item.toLowerCase();
+      if (['none', 'overdue', 'today', 'this-week'].includes(normalized)) continue;
+      if (normalized.startsWith('before-') && isValidDate(item.slice(7))) continue;
+      if (normalized.startsWith('after-') && isValidDate(item.slice(6))) continue;
+      invalid();
     }
-  } else if (f === 'has' && values.some((item) => item !== 'link')) invalid();
-  else if (f === 'is' && values.some((item) => item !== 'archived')) invalid();
-  else if (f === 'created' && values.some((item) => !item.startsWith('after-') || !isValidDate(item.slice(6)))) invalid();
+  } else if ((f === 'created' || f === 'updated') && values.some((item) => {
+    const normalized = item.toLowerCase();
+    return !(normalized.startsWith('after-') || normalized.startsWith('before-')) || !isValidDate(item.slice(item.indexOf('-') + 1));
+  })) invalid();
+  else if (f === 'priority' && values.some((item) => !PRIORITIES.has(item.toLowerCase()))) invalid();
+  else if (f === 'category' && values.some((item) => !CATEGORIES.has(item.toLowerCase()))) invalid();
+  else if (f === 'has' && values.some((item) => !['link', 'relation', 'parent', 'sub'].includes(item.toLowerCase()))) invalid();
+  else if (f === 'is' && values.some((item) => !['archived', 'blocked', 'blocking'].includes(item.toLowerCase()))) invalid();
+  else if (['parent', 'blocks', 'blocked-by', 'relates', 'duplicates', 'duplicated-by'].includes(f) && !/^[a-z]{2,5}-\d+$/i.test(value)) invalid();
   return { field: f, value, not };
 }
 

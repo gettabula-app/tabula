@@ -47,7 +47,7 @@ describe('UI chrome radii', () => {
     expect(root).toMatch(/--radius-xs:\s*4px\s*;/);
     expect(root).toMatch(/--radius-sm:\s*8px\s*;/);
     expect(root).toMatch(/--radius-md:\s*12px\s*;/);
-    expect(root).toMatch(/--radius-lg:\s*14px\s*;/);
+    expect(root).toMatch(/--radius-lg:\s*12px\s*;/);
     expect(root).toMatch(/--radius:\s*var\(--radius-md\)\s*;/);
   });
 

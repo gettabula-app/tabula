@@ -46,12 +46,16 @@ describe('tracker REST route handlers', () => {
     expect(meta.me).toEqual({ userId: owner.id, canWrite: true, canCreate: true });
     expect(meta.members.every((row: any) => !Object.hasOwn(row, 'email'))).toBe(true);
 
+    const [, projectPayload] = call('POST', 'tracker/projects', owner, {
+      name: 'Route project', description: 'Project from the issue composer',
+    }) as [number, any];
     const [createdStatus, createdPayload] = call('POST', 'tracker/tickets', owner, {
-      title: 'Route handler ticket', assigneeId: member.id, idempotencyKey: 'route-handler-create-1',
+      title: 'Route handler ticket', assigneeId: member.id, project: 'Route project', idempotencyKey: 'route-handler-create-1',
     }) as [number, any];
     expect(createdStatus).toBe(201);
     const ticket = createdPayload.ticket;
     expect(ticket.assignee).toEqual({ userId: member.id, name: member.name });
+    expect(ticket.project).toEqual({ id: projectPayload.project.id, name: 'Route project' });
 
     const [listStatus, listed] = call('GET', 'tracker/tickets', owner, {}, new URLSearchParams('filter=state%3Atodo')) as [number, any];
     expect(listStatus).toBe(200);

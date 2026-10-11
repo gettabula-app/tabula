@@ -98,6 +98,16 @@ function all(root: FakeElement): FakeElement[] {
 }
 
 describe('the card dialog, for an editor', () => {
+  it('uses quiet owner and label chips with a text-only Edit labels action', () => {
+    const { app, card } = setup();
+    open(app, card);
+    expect(box()!.querySelector('.k-label-head .k-label-edit')).not.toBeNull();
+    const css = readFileSync(new URL('../src/ui/card-dialog.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.k-owner-kind-btn\.on\s*\{[^}]*border-color:\s*transparent[^}]*background:\s*color-mix\(in srgb, var\(--tray-text\) 8%, transparent\)/);
+    expect(css).toMatch(/\.k-chip\.on\s*\{[^}]*border-color:\s*transparent[^}]*background:\s*color-mix\(in srgb, var\(--tray-text\) 8%, transparent\)/);
+    expect(css).toMatch(/\.modal \.k-label-head \.k-label-edit\s*\{[^}]*color:\s*var\(--tray-muted\)/);
+  });
+
   it('shows linked ticket fields read only and leaves the owner, due and label controls out', () => {
     const { store, app, card } = setup();
     store.doc.transact(() => {

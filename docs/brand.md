@@ -16,7 +16,7 @@ The idea is the headline: **paste your thinking together.** The collage is what 
 
 ## App UI
 
-The app keeps its Swiss grid, hairline borders and calm surfaces, with gently rounded UI chrome. Its shared radii are 4 px for chips and small marks, 8 px for controls and menu rows, 12 px for toolbars, trays, menus and popovers, and 14 px for dialogs and sheets. The radius tokens are theme independent. Board content keeps its own geometry: stickies, shapes, frames, text, images, connectors, kanban cards and lanes, cursors and selection handles do not inherit the chrome radii. The text editor overlay matches the board object it edits.
+The app keeps its Swiss grid, hairline borders and calm surfaces, with gently rounded UI chrome. Its shared radii are 4 px for chips and small marks, 8 px for controls, menus, popovers and menu rows, and 12 px for dialogs, sheets, toolbars and trays (decided with the tracker restyle, 2026-10-11). The radius tokens are theme independent. Board content keeps its own geometry: stickies, shapes, frames, text, images, connectors, kanban cards and lanes, cursors and selection handles do not inherit the chrome radii. The text editor overlay matches the board object it edits.
 
 ## Logo and wordmark
 
