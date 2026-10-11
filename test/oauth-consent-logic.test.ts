@@ -10,6 +10,7 @@ import {
   roleScope,
   scopeOptions,
   titleText,
+  verifiedBadge,
 } from '../src/ui/oauth-consent-logic';
 
 describe('OAuth consent view model', () => {
@@ -61,7 +62,13 @@ describe('OAuth consent view model', () => {
     expect(hostPresentation('[::1]:6000', 'http://[::1]:6000/callback', false).label)
       .toBe('an app on this computer (127.0.0.1:6000)');
     expect(hostPresentation('localhost', 'http://localhost:45678/callback', false).label)
-      .toBe('an app on this computer (127.0.0.1:45678)');
+      .toBe('an app on this computer (localhost:45678)');
+  });
+
+  it('labels verified providers and hosts without changing unverified destinations', () => {
+    expect(verifiedBadge('Claude', true)).toBe('Verified: Claude');
+    expect(verifiedBadge(null, true)).toBe('Verified host');
+    expect(verifiedBadge(null, false)).toBeNull();
   });
 
   it('builds a safe title from plain text fields', () => {

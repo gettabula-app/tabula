@@ -3,6 +3,7 @@ import net from 'node:net';
 import { clientIpOf } from './client-ip.mjs';
 import { createClientAwareLimiter, createWindowLimiter } from './limiter.mjs';
 import { MAX_OAUTH_CLIENTS, OAUTH_SCOPES, oauthClientFingerprint, redirectUriRegistered } from './oauth.mjs';
+import { KNOWN_LOCALHOST_PATHS, knownRedirect, TOLERATED_PRIVATE_URIS } from './oauth-known-clients.mjs';
 
 const BODY_LIMIT = 8 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
@@ -111,15 +112,23 @@ function redirectKind(value, oauthConfig) {
   if (url.protocol === 'https:') {
     const hostname = url.hostname;
     if (!hostname || privateOrLinkLocalIp(hostname)) return null;
+    const known = oauthConfig.redirectKnown === true ? knownRedirect(value) : null;
     const exact = oauthConfig.redirectHosts?.includes(hostname) ?? false;
     const wildcard = oauthConfig.redirectWildcard && !oauthConfig.hosted;
+    if (known) return { kind: 'web', host: hostname, verified: true, label: known.label };
     if (!exact && !wildcard) return null;
     return { kind: 'web', host: hostname, verified: exact };
   }
   if (url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname)) {
     return { kind: 'loopback', host: url.hostname, verified: false };
   }
-  if (url.protocol === 'http:' && url.hostname === 'localhost') return null;
+  if (url.protocol === 'http:' && url.hostname === 'localhost'
+    && oauthConfig.redirectKnown === true && KNOWN_LOCALHOST_PATHS.includes(url.pathname)) {
+    return { kind: 'loopback', host: url.hostname, verified: false };
+  }
+  if (oauthConfig.redirectKnown === true && TOLERATED_PRIVATE_URIS.includes(value)) {
+    return { kind: 'custom', host: url.protocol.slice(0, -1), verified: false };
+  }
   if (validCustomScheme(url, oauthConfig.redirectSchemes ?? [])) return { kind: 'custom', host: url.protocol.slice(0, -1), verified: false };
   return null;
 }
@@ -148,7 +157,9 @@ function validateRegistration(body, oauthConfig) {
   const requestedScope = parseRequestedScope(body.scope);
   if (!requestedScope) return { error: 'invalid_client_metadata' };
 
-  if (oauthConfig.hosted && (!oauthConfig.redirectHosts?.length || oauthConfig.redirectWildcard)) return { error: 'invalid_redirect_uri' };
+  if (oauthConfig.hosted && ((!oauthConfig.redirectKnown && !oauthConfig.redirectHosts?.length) || oauthConfig.redirectWildcard)) {
+    return { error: 'invalid_redirect_uri' };
+  }
   const redirectUris = [...body.redirect_uris].sort();
   const redirects = redirectUris.map((uri) => redirectKind(uri, oauthConfig));
   if (redirects.some((result) => result === null)) return { error: 'invalid_redirect_uri' };

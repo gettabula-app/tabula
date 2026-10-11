@@ -73,6 +73,11 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_MCP must be on or off (got "${mode.slice(0, 20)}")`);
   const oauthMode = mcpVar(env, 'MCP_OAUTH') || 'off';
   if (oauthMode !== 'on' && oauthMode !== 'off') throw new Error(`TABULA_MCP_OAUTH must be on or off (got "${oauthMode.slice(0, 20)}")`);
+  const redirectMode = mcpVar(env, 'OAUTH_REDIRECTS');
+  if (redirectMode && redirectMode !== 'known' && redirectMode !== 'none') {
+    throw new Error('TABULA_OAUTH_REDIRECTS must be known or none');
+  }
+  const redirectKnown = redirectMode !== 'none';
   if (mode === 'off') return null;
   if (url.protocol !== 'https:' && !LOCAL_HOSTS.has(url.hostname)) {
     throw new Error('TABULA_MCP=on needs an https:// base URL (http:// is only allowed for localhost), because access tokens must not cross the network in clear text');
@@ -97,7 +102,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
       }
     }
     return {
-      mode: 'accounts', oauth, issuer, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted),
+      mode: 'accounts', oauth, issuer, redirectKnown, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted),
       ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean),
     };
   }
@@ -106,7 +111,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
     throw new Error(`TABULA_MCP_TOKEN must be set, at least ${MCP_TOKEN_MIN} characters without spaces, when TABULA_MCP=on in open mode`);
   }
   if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
-  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, ignored: [] };
+  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectKnown, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, ignored: [] };
 }
 
 // Images on a board (docs/images.md). Sizes are bytes, with an optional K, M or G suffix (powers of 1024).

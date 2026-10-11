@@ -360,6 +360,11 @@ describe('OAuth consent panel', () => {
     expect(textOf(page())).not.toContain('Verified host');
   });
 
+  it('shows the provider name in the verified badge', async () => {
+    await open({ requests: [consentRequest({ provider: 'Claude' })] });
+    expect(need(page(), '.oauth-consent-badge').textContent).toBe('Verified: Claude');
+  });
+
   it('renders hostile board names as text', async () => {
     const hostile = '<img src=x onerror=1>';
     await open({ requests: [boardConsentRequest({ boards: [{ id: 'board-x', name: hostile, role: 'editor' }] })] });

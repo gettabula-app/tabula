@@ -53,6 +53,7 @@ export interface Me {
 export interface OAuthConsentRequest {
   clientName: string;
   clientNameIsClaim: boolean;
+  provider?: string | null;
   redirectHost: string;
   redirectUri: string;
   verified: boolean;

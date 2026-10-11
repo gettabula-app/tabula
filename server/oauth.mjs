@@ -282,7 +282,7 @@ const toGrant = (row) => ({
 function loopbackRedirectParts(uri) {
   try {
     const url = new URL(uri);
-    if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(url.hostname)) return null;
+    if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)) return null;
     return { protocol: url.protocol, hostname: url.hostname, pathname: url.pathname, search: url.search };
   } catch {
     return null;

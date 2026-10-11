@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
+import { KNOWN_REDIRECTS, TOLERATED_PRIVATE_URIS } from '../server/oauth-known-clients.mjs';
 import { createHarness, type Harness } from './mcp-harness';
 
 const instances: Harness[] = [];
@@ -12,6 +13,22 @@ function oauthHarness(extraSettings: Record<string, string> = {}) {
       MCP: 'on',
       MCP_OAUTH: 'on',
       OAUTH_REDIRECT_HOSTS: 'claude.ai,claude.com',
+      ...extraSettings,
+    },
+  });
+  instances.push(h);
+  return h;
+}
+
+function hostedOauthHarness(extraSettings: Record<string, string> = {}) {
+  const h = createHarness({
+    accounts: true,
+    settings: {
+      MCP: 'on',
+      MCP_OAUTH: 'on',
+      CLOUD_TOKEN: 'c'.repeat(32),
+      CLOUD_URL: 'https://control.example',
+      CLOUD_WORKSPACE_ID: 'oauth-test',
       ...extraSettings,
     },
   });
@@ -222,7 +239,7 @@ describe('OAuth metadata and registration routes', () => {
       'https://127.0.0.1/callback',
       'https://claude.ai*/callback',
       'javascript:alert(1)',
-      'http://localhost:1234/callback',
+      'http://localhost:1234/not-a-callback',
     ];
     for (const uri of invalid) {
       const res = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: [uri] });
@@ -235,6 +252,127 @@ describe('OAuth metadata and registration routes', () => {
     }
   });
 
+  it('registers and verifies each built-in provider callback on hosted workspaces without host configuration', async () => {
+    const h = hostedOauthHarness();
+    await h.start();
+    const owner = await h.signInOwner();
+
+    for (const provider of KNOWN_REDIRECTS) {
+      const registered = await h.api(undefined, 'POST', '/oauth/register', {
+        client_name: `${provider.label} test`, redirect_uris: [provider.uri], scope: 'read comment write',
+      });
+      expect(registered.status).toBe(201);
+      const started = await beginAuthorization(h, registered.body.client_id, { redirectUri: provider.uri });
+      expect(started.status).toBe(302);
+      const request = await consent(h, owner.cookie, started.envelope!);
+      expect(request.status).toBe(200);
+      expect(request.body).toMatchObject({ verified: true, provider: provider.label, redirectUri: provider.uri });
+    }
+  });
+
+  it('refuses lookalikes of built-in redirects by exact URI match', async () => {
+    const h = hostedOauthHarness();
+    await h.start();
+    const lookalikes = [
+      'https://claude.ai/another/path',
+      'https://claude.ai/api/mcp/auth_callback/',
+      'http://claude.ai/api/mcp/auth_callback',
+      'https://CLAUDE.AI/api/mcp/auth_callback',
+      'https://claude.ai/api/mcp/auth_callback?extra=1',
+      'https://claude.ai.evil.example/api/mcp/auth_callback',
+      'https://claude.ai@evil.example/api/mcp/auth_callback',
+    ];
+    for (const uri of lookalikes) {
+      const result = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: [uri] });
+      expect(result.status).toBe(400);
+      expect(result.body.error).toBe('invalid_redirect_uri');
+    }
+  });
+
+  it('accepts only the built-in localhost paths, keeps IP loopback broad, and ignores localhost ports at authorize time', async () => {
+    const h = oauthHarness();
+    await h.start();
+    for (const path of ['/callback', '/oauth/callback', '/oauth_callback']) {
+      for (const uri of [`http://localhost${path}`, `http://localhost:43829${path}`]) {
+        const result = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: [uri] });
+        expect(result.status).toBe(201);
+      }
+    }
+    const otherPath = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: ['http://localhost:3118/not-a-callback'] });
+    expect(otherPath.status).toBe(400);
+    const ipLoopback = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: ['http://127.0.0.1:43829/any/path'] });
+    expect(ipLoopback.status).toBe(201);
+
+    const registered = await h.api(undefined, 'POST', '/oauth/register', {
+      client_name: 'Local client', redirect_uris: ['http://localhost:3118/callback'],
+    });
+    expect(registered.status).toBe(201);
+    const started = await beginAuthorization(h, registered.body.client_id, { redirectUri: 'http://localhost:49222/callback' });
+    expect(started.status).toBe(302);
+    const owner = await h.signInOwner();
+    const request = await consent(h, owner.cookie, started.envelope!);
+    expect(request.status).toBe(200);
+    expect(request.body).toMatchObject({ redirectHost: 'localhost:49222', verified: false, provider: null });
+  });
+
+  it('disables built-in localhost and hosted redirects with none, while exact host policy remains available', async () => {
+    const local = oauthHarness({ OAUTH_REDIRECTS: 'none' });
+    await local.start();
+    for (const uri of ['http://localhost/callback', 'cursor://anysphere.cursor-mcp/oauth/callback']) {
+      const result = await local.api(undefined, 'POST', '/oauth/register', { redirect_uris: [uri] });
+      expect(result.status).toBe(400);
+    }
+
+    const noHostedPolicy = hostedOauthHarness({ OAUTH_REDIRECTS: 'none' });
+    await noHostedPolicy.start();
+    const refused = await noHostedPolicy.api(undefined, 'POST', '/oauth/register', {
+      redirect_uris: ['https://claude.ai/api/mcp/auth_callback'],
+    });
+    expect(refused.status).toBe(400);
+
+    const exactHost = hostedOauthHarness({ OAUTH_REDIRECTS: 'none', OAUTH_REDIRECT_HOSTS: 'connector.example' });
+    await exactHost.start();
+    const accepted = await exactHost.api(undefined, 'POST', '/oauth/register', { redirect_uris: ['https://connector.example/callback'] });
+    expect(accepted.status).toBe(201);
+    for (const uri of ['https://claude.ai/api/mcp/auth_callback', 'https://other.example/callback']) {
+      const rejected = await exactHost.api(undefined, 'POST', '/oauth/register', { redirect_uris: [uri] });
+      expect(rejected.status).toBe(400);
+    }
+  });
+
+  it('tolerates Cursor’s non-compliant private URI only alongside allowed registration policy and never verifies it', async () => {
+    const h = oauthHarness();
+    await h.start();
+    const compliant = 'https://www.cursor.com/agents/mcp/oauth/callback';
+    const registered = await h.api(undefined, 'POST', '/oauth/register', {
+      client_name: 'Cursor desktop', redirect_uris: [compliant, TOLERATED_PRIVATE_URIS[0]],
+    });
+    expect(registered.status).toBe(201);
+    const owner = await h.signInOwner();
+    const started = await beginAuthorization(h, registered.body.client_id, { redirectUri: TOLERATED_PRIVATE_URIS[0] });
+    expect(started.status).toBe(302);
+    const request = await consent(h, owner.cookie, started.envelope!);
+    expect(request.status).toBe(200);
+    expect(request.body).toMatchObject({ verified: false, provider: null });
+
+    const otherPrivateUri = await h.api(undefined, 'POST', '/oauth/register', {
+      redirect_uris: ['cursor://anysphere.cursor-mcp/another-path'],
+    });
+    expect(otherPrivateUri.status).toBe(400);
+  });
+
+  it('returns a null provider for an allowlisted host outside the built-in exact URI table', async () => {
+    const h = oauthHarness();
+    await h.start();
+    const owner = await h.signInOwner();
+    const registered = await h.api(undefined, 'POST', '/oauth/register', { redirect_uris: ['https://claude.ai/custom-callback'] });
+    expect(registered.status).toBe(201);
+    const started = await beginAuthorization(h, registered.body.client_id, { redirectUri: 'https://claude.ai/custom-callback' });
+    expect(started.status).toBe(302);
+    const request = await consent(h, owner.cookie, started.envelope!);
+    expect(request.body).toMatchObject({ verified: true, provider: null });
+  });
+
   it('allows only configured reverse-domain schemes and refuses registration without a hosted exact allowlist', async () => {
     const custom = oauthHarness({ OAUTH_REDIRECT_SCHEMES: 'com.example.app' });
     await custom.start();
@@ -244,6 +382,7 @@ describe('OAuth metadata and registration routes', () => {
       const hostedSettings = {
         MCP: 'on',
         MCP_OAUTH: 'on',
+        OAUTH_REDIRECTS: 'none',
         CLOUD_TOKEN: 'c'.repeat(32),
         CLOUD_URL: 'https://control.example',
         CLOUD_WORKSPACE_ID: 'oauth-test',
