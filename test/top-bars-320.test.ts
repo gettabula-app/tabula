@@ -20,7 +20,7 @@ describe('phone top chrome', () => {
     expect(css).toMatch(/\.top-right \.comment-count \{ top: 0; right: 0; \}/);
     expect(css).toContain('.demo-board > .chrome .top-left { top: calc(100px + var(--safe-top)); }');
     expect(css).toContain('.demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }');
-    expect(css).toContain('.chrome > .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }');
+    expect(css).toContain('.chrome > .rail { top: max(var(--panel-top), calc(72px + var(--safe-top))); max-height: calc(100% - max(var(--panel-top), calc(72px + var(--safe-top))) - 24px - var(--safe-bottom)); }');
     expect(css).toContain('.demo-board > .chrome .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }');
   });
 });

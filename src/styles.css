@@ -599,7 +599,8 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     .top-right .comment-count { right: 0; }
   }
   .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
-  .chrome > .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }
+  /* max(): a notch or a rotation moves the bars by the safe inset without resizing them, so the measured --panel-top can lag; the rail never starts above the inset floor */
+  .chrome > .rail { top: max(var(--panel-top), calc(72px + var(--safe-top))); max-height: calc(100% - max(var(--panel-top), calc(72px + var(--safe-top))) - 24px - var(--safe-bottom)); }
   .demo-board > .chrome .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }
   .board-name { width: 14ch; }
   .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
