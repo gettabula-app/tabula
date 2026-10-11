@@ -84,6 +84,10 @@ HEAD /api/backup-export/object?key=<key>
 
 The route returns only the sealed AES-256-GCM objects and manifests, whose names are keyed hashes or manifest names. The puller cannot decrypt them without the backup key. The route is public to the instance (bearer only, no browser session) so a request can wake a stopped hosted machine; keep the token in the control plane and rotate it by changing the digest and token together.
 
+### Off-site copy: deleted workspaces
+
+The separate backup pull host starts its configurable 30-day grace period only when `workspaces.json` says a workspace is exactly `deleted`; a return to another state resets the timer. A slug missing from the list is reported as an orphan for alerting and is never purged from absence alone. Operators can erase a pull-host copy immediately with `node pull.mjs --config <file> --purge <slug> --yes`. This affects only the pull host: Fly volume snapshots of the instance side are separate and remain governed by their own retention.
+
 ## When it runs
 
 A backup starts for one of four reasons, which the status calls the **trigger** (`lastTrigger`): `interval`, `settle`, `shutdown`, or `manual` (a restore takes a safety backup first).

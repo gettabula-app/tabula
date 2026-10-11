@@ -9,6 +9,7 @@
   "keepDaily": 7,
   "keepWeekly": 4,
   "objectGraceDays": 35,
+  "deletedGraceDays": 30,
   "metricsFile": "/home/tabula-backup/state/tabula_backup.prom",
   "requestTimeoutSeconds": 120
 }

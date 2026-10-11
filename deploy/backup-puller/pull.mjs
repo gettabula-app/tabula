@@ -64,7 +64,7 @@ export function validateConfig(config) {
     'concurrency', 'keepDaily', 'keepWeekly', 'objectGraceDays', 'metricsFile', 'requestTimeoutSeconds',
   ];
   const keys = Object.keys(config);
-  if (keys.some((key) => !required.includes(key)) || required.some((key) => !Object.hasOwn(config, key))) fail('invalid_config_fields');
+  if (keys.some((key) => ![...required, 'deletedGraceDays'].includes(key)) || required.some((key) => !Object.hasOwn(config, key))) fail('invalid_config_fields');
   for (const key of ['storeDir', 'stateDir', 'pullMasterFile', 'workspacesFile', 'metricsFile']) {
     if (typeof config[key] !== 'string' || !path.isAbsolute(config[key]) || path.resolve(config[key]) === path.parse(config[key]).root) fail(`invalid_${key}`);
   }
@@ -83,8 +83,10 @@ export function validateConfig(config) {
   integer('keepDaily', 0, 3650);
   integer('keepWeekly', 0, 520);
   integer('objectGraceDays', 1, 36500);
+  const deletedGraceDays = Object.hasOwn(config, 'deletedGraceDays') ? config.deletedGraceDays : 30;
+  if (!Number.isSafeInteger(deletedGraceDays) || deletedGraceDays < 0 || deletedGraceDays > 3650) fail('invalid_deleted_grace_days');
   integer('requestTimeoutSeconds', 1, 3600);
-  return { ...config };
+  return { ...config, deletedGraceDays };
 }
 
 function validatePrefix(prefix) {
@@ -442,6 +444,121 @@ async function removeKey(workspaceDir, key) {
   return true;
 }
 
+function isStrictlyInside(root, target) {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function workspacePaths(config, slug) {
+  if (typeof slug !== 'string' || !SLUG_RE.test(slug)) fail('invalid_workspace_slug');
+  const storeRoot = path.resolve(config.storeDir);
+  const stateRoot = path.resolve(config.stateDir);
+  const storeTarget = path.resolve(storeRoot, slug);
+  const stateFile = path.resolve(stateRoot, `${slug}.json`);
+  const seenFile = path.resolve(stateRoot, `${slug}.seen.json`);
+  if (!isStrictlyInside(storeRoot, storeTarget) || !isStrictlyInside(stateRoot, stateFile) || !isStrictlyInside(stateRoot, seenFile)) fail('unsafe_path');
+  if (storeTarget === stateRoot || isStrictlyInside(storeTarget, stateRoot)) fail('unsafe_path');
+  return { storeRoot, stateRoot, storeTarget, stateFile, seenFile };
+}
+
+async function inspectPurgeTree(directory, root = true) {
+  const stat = await safeLstat(directory);
+  if (!stat) return;
+  if (stat.isSymbolicLink()) {
+    if (root) fail('unsafe_path');
+    return;
+  }
+  if (stat.isFile()) return;
+  if (!stat.isDirectory()) fail('unsafe_path');
+  let entries;
+  try {
+    entries = await fs.promises.readdir(directory);
+  } catch {
+    throw new PullerError('filesystem_error');
+  }
+  for (const name of entries) await inspectPurgeTree(path.join(directory, name), false);
+}
+
+async function removePurgeTree(directory, root = true) {
+  const stat = await safeLstat(directory);
+  if (!stat) return false;
+  if (stat.isSymbolicLink()) {
+    if (root) fail('unsafe_path');
+    await fs.promises.unlink(directory);
+    return true;
+  }
+  if (stat.isFile()) {
+    await fs.promises.unlink(directory);
+    return true;
+  }
+  if (!stat.isDirectory()) fail('unsafe_path');
+  const entries = await fs.promises.readdir(directory);
+  for (const name of entries) await removePurgeTree(path.join(directory, name), false);
+  await fs.promises.rmdir(directory);
+  return true;
+}
+
+async function purgeWorkspaceFiles(config, slug) {
+  const paths = workspacePaths(config, slug);
+  const storeExists = await inspectDirectoryTree(paths.storeRoot);
+  const stateExists = await inspectDirectoryTree(paths.stateRoot);
+  let storeStat = null;
+  if (storeExists) {
+    storeStat = await safeLstat(paths.storeTarget);
+    if (storeStat && (storeStat.isSymbolicLink() || !storeStat.isDirectory())) fail('unsafe_path');
+    if (storeStat) await inspectPurgeTree(paths.storeTarget);
+  }
+  const stateStats = [];
+  if (stateExists) {
+    for (const file of [paths.stateFile, paths.seenFile]) {
+      const stat = await safeLstat(file);
+      if (stat && (stat.isSymbolicLink() || !stat.isFile())) fail('unsafe_path');
+      stateStats.push(stat);
+    }
+  } else {
+    stateStats.push(null, null);
+  }
+  let removed = false;
+  if (storeStat) removed = await removePurgeTree(paths.storeTarget) || removed;
+  for (const [index, file] of [paths.stateFile, paths.seenFile].entries()) {
+    if (!stateStats[index]) continue;
+    await fs.promises.unlink(file);
+    removed = true;
+  }
+  return { ...paths, removed };
+}
+
+async function readPurgedState(stateDir) {
+  const saved = await readJsonSafe(path.join(stateDir, 'purged.json'), { count: 0 });
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved) || !Number.isSafeInteger(saved.count) || saved.count < 0) fail('invalid_purged_file');
+  const slugs = saved.slugs ?? [];
+  if (!Array.isArray(slugs) || slugs.some((slug) => typeof slug !== 'string' || !SLUG_RE.test(slug))) fail('invalid_purged_file');
+  return { count: saved.count, slugs: [...new Set(slugs)].sort() };
+}
+
+async function writePurgedState(stateDir, { count, slugs }) {
+  if (!Number.isSafeInteger(count) || count < 0 || !Array.isArray(slugs) || slugs.some((slug) => !SLUG_RE.test(slug))) fail('invalid_purged_file');
+  await atomicWriteFile(path.join(stateDir, 'purged.json'), `${JSON.stringify({ count, slugs: [...new Set(slugs)].sort() }, null, 2)}\n`);
+}
+
+async function scanOrphanWorkspaces(storeDir, listedSlugs) {
+  const root = path.resolve(storeDir);
+  if (!(await inspectDirectoryTree(root))) return [];
+  let entries;
+  try {
+    entries = await fs.promises.readdir(root);
+  } catch {
+    throw new PullerError('filesystem_error');
+  }
+  const orphans = [];
+  for (const slug of entries) {
+    if (!SLUG_RE.test(slug) || listedSlugs.has(slug)) continue;
+    const stat = await safeLstat(path.join(root, slug));
+    if (stat?.isDirectory() && !stat.isSymbolicLink()) orphans.push(slug);
+  }
+  return orphans.sort();
+}
+
 export async function retention({
   workspaceDir,
   stateDir,
@@ -514,6 +631,7 @@ async function listStoredFiles(workspaceDir, prefix) {
 function initialState(workspace) {
   return {
     workspaceId: workspace.id,
+    deletedSince: null,
     lastAttemptAt: null,
     lastSuccessAt: null,
     lastError: null,
@@ -525,6 +643,19 @@ function initialState(workspace) {
   };
 }
 
+function normalizeWorkspaceState(workspace, value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('invalid_state_file');
+  const state = { ...initialState(workspace), ...value, workspaceId: workspace.id };
+  if (state.deletedSince === undefined || state.deletedSince === null) state.deletedSince = null;
+  else if (typeof state.deletedSince !== 'string' || !Number.isFinite(Date.parse(state.deletedSince))) fail('invalid_state_file');
+  return state;
+}
+
+async function readWorkspaceState(stateDir, workspace) {
+  const saved = await readJsonSafe(path.join(stateDir, `${workspace.slug}.json`), initialState(workspace));
+  return normalizeWorkspaceState(workspace, saved);
+}
+
 export async function pullWorkspace({ workspace, baseUrl, token, storeDir, stateDir, fetch: fetcher = globalThis.fetch, now = Date.now, log = () => {}, limits = {} }) {
   validateWorkspace(workspace);
   if (typeof baseUrl !== 'string' || typeof token !== 'string' || !token || typeof fetcher !== 'function') fail('invalid_pull_options');
@@ -534,7 +665,8 @@ export async function pullWorkspace({ workspace, baseUrl, token, storeDir, state
   const workspaceDir = path.join(root, workspace.slug);
   const stateFile = stateRoot ? path.join(stateRoot, `${workspace.slug}.json`) : null;
   const existing = stateFile ? await readJsonSafe(stateFile, initialState(workspace)) : initialState(workspace);
-  const state = { ...initialState(workspace), ...existing, workspaceId: workspace.id };
+  const state = normalizeWorkspaceState(workspace, existing);
+  state.deletedSince = null;
   const attemptedAt = asIso(now);
   state.lastAttemptAt = attemptedAt;
   state.lastError = null;
@@ -699,7 +831,18 @@ function escapeLabel(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
 
-export async function writeMetrics({ metricsFile, workspaces, states = {}, results = {}, now = Date.now, lastRunAt = now }) {
+export async function writeMetrics({
+  metricsFile,
+  workspaces,
+  states = {},
+  results = {},
+  now = Date.now,
+  lastRunAt = now,
+  pendingPurgeSlugs = [],
+  purgedTotal = 0,
+  orphanWorkspaceCount = 0,
+  configuredWorkspaceCount = workspaces.length,
+}) {
   const nowMs = asMs(now);
   const lastRunSeconds = Math.floor(asMs(lastRunAt) / 1000);
   const metricDefs = [
@@ -710,6 +853,7 @@ export async function writeMetrics({ metricsFile, workspaces, states = {}, resul
     ['tabula_backup_files', 'Files stored locally for the workspace.', 'gauge'],
     ['tabula_backup_has_manifest', 'Whether a manifest has been pulled for the workspace.', 'gauge'],
     ['tabula_backup_last_run_ok', 'Whether the last backup pull run succeeded or was intentionally skipped.', 'gauge'],
+    ['tabula_backup_pending_purge', 'Whether a deleted workspace is still inside its purge grace period.', 'gauge'],
   ];
   const lines = [];
   for (const [name, help, type] of metricDefs) lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} ${type}`);
@@ -728,16 +872,48 @@ export async function writeMetrics({ metricsFile, workspaces, states = {}, resul
     lines.push(`tabula_backup_has_manifest{${label}} ${state.lastManifest ? 1 : 0}`);
     lines.push(`tabula_backup_last_run_ok{${label}} ${ok}`);
   }
+  for (const slug of [...new Set(pendingPurgeSlugs)].sort()) {
+    lines.push(`tabula_backup_pending_purge{workspace="${escapeLabel(slug)}"} 1`);
+  }
   lines.push(
+    '# HELP tabula_backup_purged_total Number of workspace copies purged by this pull host.',
+    '# TYPE tabula_backup_purged_total counter',
+    `tabula_backup_purged_total ${Number.isSafeInteger(purgedTotal) && purgedTotal >= 0 ? purgedTotal : 0}`,
+    '# HELP tabula_backup_orphan_workspaces Number of store directories missing from workspaces.json.',
+    '# TYPE tabula_backup_orphan_workspaces gauge',
+    `tabula_backup_orphan_workspaces ${Number.isSafeInteger(orphanWorkspaceCount) && orphanWorkspaceCount >= 0 ? orphanWorkspaceCount : 0}`,
     '# HELP tabula_backup_puller_last_run_timestamp_seconds Unix timestamp of the last puller run.',
     '# TYPE tabula_backup_puller_last_run_timestamp_seconds gauge',
     `tabula_backup_puller_last_run_timestamp_seconds ${lastRunSeconds}`,
     '# HELP tabula_backup_workspaces_total Number of configured workspaces.',
     '# TYPE tabula_backup_workspaces_total gauge',
-    `tabula_backup_workspaces_total ${workspaces.length}`,
+    `tabula_backup_workspaces_total ${Number.isSafeInteger(configuredWorkspaceCount) && configuredWorkspaceCount >= 0 ? configuredWorkspaceCount : workspaces.length}`,
   );
   await atomicWriteFile(metricsFile, `${lines.join('\n')}\n`);
   return `${lines.join('\n')}\n`;
+}
+
+async function updatePurgedMetric(metricsFile, purgedTotal) {
+  const parent = path.dirname(metricsFile);
+  let current = '';
+  if (await inspectDirectoryTree(parent)) {
+    await safeExistingFile(metricsFile);
+    try {
+      current = await fs.promises.readFile(metricsFile, 'utf8');
+    } catch (error) {
+      if (!isMissing(error)) throw new PullerError('filesystem_error');
+    }
+  }
+  const name = 'tabula_backup_purged_total';
+  const lines = current.split('\n').filter((line) => !line.startsWith(`# HELP ${name} `)
+    && !line.startsWith(`# TYPE ${name} `) && !line.startsWith(`${name} `) && !line.startsWith(`${name}{`));
+  while (lines.length && lines.at(-1) === '') lines.pop();
+  lines.push(
+    `# HELP ${name} Number of workspace copies purged by this pull host.`,
+    `# TYPE ${name} counter`,
+    `${name} ${purgedTotal}`,
+  );
+  await atomicWriteFile(metricsFile, `${lines.join('\n')}\n`);
 }
 
 async function readMasterFile(file) {
@@ -762,15 +938,18 @@ async function readMasterFile(file) {
 }
 
 function parseArguments(argv) {
-  const args = { config: null, only: null, dryRun: false };
+  const args = { config: null, only: null, dryRun: false, purge: null, yes: false };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--config' && argv[index + 1]) args.config = argv[++index];
     else if (arg === '--only' && argv[index + 1]) args.only = argv[++index];
+    else if (arg === '--purge' && argv[index + 1]) args.purge = argv[++index];
+    else if (arg === '--yes') args.yes = true;
     else if (arg === '--dry-run') args.dryRun = true;
     else fail('invalid_arguments');
   }
-  if (!args.config || (args.only !== null && !SLUG_RE.test(args.only))) fail('invalid_arguments');
+  if (!args.config || (args.only !== null && !SLUG_RE.test(args.only)) || (args.purge !== null && !SLUG_RE.test(args.purge))
+    || (args.yes && args.purge === null) || (args.purge !== null && (args.only !== null || args.dryRun))) fail('invalid_arguments');
   return args;
 }
 
@@ -798,6 +977,7 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
   let config;
   let master;
   let workspaces;
+  let purgedState;
   try {
     args = parseArguments(argv);
     let raw;
@@ -807,13 +987,43 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
       throw new PullerError('invalid_config_file');
     }
     config = validateConfig(raw);
-    master = await readMasterFile(config.pullMasterFile);
+    if (args.purge !== null) {
+      const paths = workspacePaths(config, args.purge);
+      if (!args.yes) {
+        emit(log, `would remove ${paths.storeTarget}`);
+        emit(log, `would remove ${paths.stateFile}`);
+        emit(log, `would remove ${paths.seenFile}`);
+        return 2;
+      }
+      purgedState = await readPurgedState(config.stateDir);
+      try {
+        const result = await purgeWorkspaceFiles(config, args.purge);
+        const purgedSlugs = new Set(purgedState.slugs);
+        purgedSlugs.add(args.purge);
+        const nextPurgedTotal = purgedState.count + (result.removed ? 1 : 0);
+        await writePurgedState(config.stateDir, { count: nextPurgedTotal, slugs: [...purgedSlugs] });
+        if (result.removed) {
+          try {
+            await updatePurgedMetric(config.metricsFile, nextPurgedTotal);
+          } catch {
+            emit(log, 'metrics write failed');
+          }
+          emit(log, `purged ${args.purge} (operator request)`);
+        } else {
+          emit(log, `nothing to remove for ${args.purge}`);
+        }
+        return 0;
+      } catch (error) {
+        emit(log, `purge failed ${args.purge} ${safeFailureCode(error)}`);
+        return 1;
+      }
+    }
     try {
       workspaces = JSON.parse(await fs.promises.readFile(config.workspacesFile, 'utf8'));
     } catch {
       throw new PullerError('invalid_workspaces_file');
     }
-    if (!Array.isArray(workspaces)) throw new PullerError('invalid_workspaces_file');
+    if (!Array.isArray(workspaces) || workspaces.length === 0) throw new PullerError('invalid_workspaces_file');
     const slugs = new Set();
     const ids = new Set();
     for (const workspace of workspaces) {
@@ -822,7 +1032,8 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
       slugs.add(workspace.slug);
       ids.add(workspace.id);
     }
-    if (args.only) workspaces = workspaces.filter((workspace) => workspace.slug === args.only);
+    purgedState = await readPurgedState(config.stateDir);
+    master = await readMasterFile(config.pullMasterFile);
   } catch (error) {
     emit(log, `configuration error ${safeFailureCode(error)}`);
     return 2;
@@ -831,24 +1042,100 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
     emit(log, 'configuration error invalid_fetch');
     return 2;
   }
+  const runAt = asIso(now);
+  const runAtMs = Date.parse(runAt);
   const states = {};
   const results = {};
-  const runAt = asIso(now);
-  const completed = await runPool(workspaces, config.concurrency, async (workspace) => {
-    if (SKIP_STATES.has(workspace.state)) {
-      const state = await readJsonSafe(path.join(config.stateDir, `${workspace.slug}.json`), initialState(workspace));
-      states[workspace.slug] = { ...initialState(workspace), ...state, workspaceId: workspace.id };
-      if (!args.dryRun) {
-        await atomicWriteFile(path.join(config.stateDir, `${workspace.slug}.json`), `${JSON.stringify(states[workspace.slug], null, 2)}\n`);
+  const pendingPurgeSlugs = [];
+  const purgedSlugs = new Set();
+  const previouslyPurgedSlugs = new Set(purgedState.slugs);
+  let purgedTotal = purgedState.count;
+  let hadFailure = false;
+  let orphanSlugs;
+  try {
+    orphanSlugs = await scanOrphanWorkspaces(config.storeDir, new Set(workspaces.map((item) => item.slug)));
+  } catch (error) {
+    emit(log, `configuration error ${safeFailureCode(error)}`);
+    return 2;
+  }
+  for (const slug of orphanSlugs) emit(log, `orphan ${slug}`);
+
+  const pullWorkspaces = [];
+  for (const workspace of workspaces) {
+    try {
+      if (workspace.state === 'deleted' && previouslyPurgedSlugs.has(workspace.slug)) {
+        purgedSlugs.add(workspace.slug);
+        continue;
       }
-      const result = { ok: true, skipped: true, state: states[workspace.slug] };
-      results[workspace.slug] = result;
-      emit(log, `skipped ${workspace.slug} ${workspace.state}`);
-      return result;
+      if (workspace.state !== 'deleted' && previouslyPurgedSlugs.delete(workspace.slug)) {
+        await writePurgedState(config.stateDir, { count: purgedTotal, slugs: [...previouslyPurgedSlugs] });
+      }
+      const state = await readWorkspaceState(config.stateDir, workspace);
+      if (workspace.state === 'deleted') {
+        const deletedSince = state.deletedSince ?? runAt;
+        const deletedSinceMs = Date.parse(deletedSince);
+        const elapsedMs = Math.max(0, runAtMs - deletedSinceMs);
+        const deletedDays = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
+        if (args.dryRun) {
+          if (elapsedMs >= config.deletedGraceDays * 24 * 60 * 60 * 1000) {
+            emit(log, `would purge ${workspace.slug} (deleted ${deletedDays} days ago)`);
+          } else if (state.deletedSince === null) {
+            emit(log, `would start deleted grace for ${workspace.slug}`);
+            pendingPurgeSlugs.push(workspace.slug);
+            states[workspace.slug] = { ...state, deletedSince: runAt };
+          } else {
+            emit(log, `skipped ${workspace.slug} deleted`);
+            pendingPurgeSlugs.push(workspace.slug);
+            states[workspace.slug] = state;
+          }
+          results[workspace.slug] = { ok: true, skipped: true, state: states[workspace.slug] ?? state };
+          continue;
+        }
+        if (state.deletedSince === null) {
+          state.deletedSince = runAt;
+          await atomicWriteFile(path.join(config.stateDir, `${workspace.slug}.json`), `${JSON.stringify(state, null, 2)}\n`);
+        }
+        if (elapsedMs >= config.deletedGraceDays * 24 * 60 * 60 * 1000) {
+          const purged = await purgeWorkspaceFiles(config, workspace.slug);
+          if (purged.removed) purgedTotal++;
+          previouslyPurgedSlugs.add(workspace.slug);
+          await writePurgedState(config.stateDir, { count: purgedTotal, slugs: [...previouslyPurgedSlugs] });
+          purgedSlugs.add(workspace.slug);
+          emit(log, `purged ${workspace.slug} (deleted ${deletedDays} days ago)`);
+          continue;
+        }
+        pendingPurgeSlugs.push(workspace.slug);
+        states[workspace.slug] = state;
+        results[workspace.slug] = { ok: true, skipped: true, state };
+        emit(log, `skipped ${workspace.slug} deleted`);
+        continue;
+      }
+
+      if (state.deletedSince !== null) {
+        state.deletedSince = null;
+        if (!args.dryRun) await atomicWriteFile(path.join(config.stateDir, `${workspace.slug}.json`), `${JSON.stringify(state, null, 2)}\n`);
+      }
+      states[workspace.slug] = state;
+      if (SKIP_STATES.has(workspace.state)) {
+        if (!args.dryRun) await atomicWriteFile(path.join(config.stateDir, `${workspace.slug}.json`), `${JSON.stringify(state, null, 2)}\n`);
+        results[workspace.slug] = { ok: true, skipped: true, state };
+        emit(log, `skipped ${workspace.slug} ${workspace.state}`);
+      } else if (!args.only || workspace.slug === args.only) {
+        pullWorkspaces.push(workspace);
+      }
+    } catch (error) {
+      const code = safeFailureCode(error);
+      hadFailure = true;
+      states[workspace.slug] = initialState(workspace);
+      results[workspace.slug] = { ok: false, skipped: false, error: code, state: states[workspace.slug] };
+      emit(log, `failed ${workspace.slug} ${code}`);
     }
+  }
+
+  const completed = await runPool(pullWorkspaces, config.concurrency, async (workspace) => {
     const baseUrl = config.baseUrlTemplate.replace('{slug}', workspace.slug);
     const token = pullToken(master, workspace.id);
-    const result = await pullWorkspace({
+    return pullWorkspace({
       workspace,
       baseUrl,
       token,
@@ -866,26 +1153,38 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         dryRun: args.dryRun,
       },
     });
-    states[workspace.slug] = result.state;
-    results[workspace.slug] = result;
-    return result;
   });
-  for (let index = 0; index < workspaces.length; index++) {
-    const workspace = workspaces[index];
-    if (results[workspace.slug]) continue;
+  for (let index = 0; index < pullWorkspaces.length; index++) {
+    const workspace = pullWorkspaces[index];
     const result = completed[index];
     states[workspace.slug] = result.state;
     results[workspace.slug] = result;
-    emit(log, `failed ${workspace.slug} ${result.error}`);
+    if (!result.ok) {
+      hadFailure = true;
+      emit(log, `failed ${workspace.slug} ${result.error}`);
+    }
   }
+
+  const metricWorkspaces = workspaces.filter((workspace) => !purgedSlugs.has(workspace.slug));
   if (!args.dryRun) {
     try {
-      await writeMetrics({ metricsFile: config.metricsFile, workspaces, states, results, now, lastRunAt: runAt });
+      await writeMetrics({
+        metricsFile: config.metricsFile,
+        workspaces: metricWorkspaces,
+        states,
+        results,
+        now,
+        lastRunAt: runAt,
+        pendingPurgeSlugs,
+        purgedTotal,
+        orphanWorkspaceCount: orphanSlugs.length,
+        configuredWorkspaceCount: workspaces.length,
+      });
     } catch {
       emit(log, 'metrics write failed');
     }
   }
-  return completed.every((result) => result.ok) ? 0 : 1;
+  return hadFailure ? 1 : 0;
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
