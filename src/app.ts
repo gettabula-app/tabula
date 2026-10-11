@@ -1,3 +1,4 @@
+import { watchFirstFit } from './first-fit';
 import { planStep } from './z-order';
 import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
@@ -294,12 +295,10 @@ export class BoardApp {
       this.on('comments', () => this.refreshPins()),
     );
 
-    // Start centred on existing content.
-    requestAnimationFrame(() => {
-      const b = this.r.contentBounds();
-      if (b) this.r.fitFirst(b);
-      else this.r.setCamera({ x: -this.r.size().w / 2, y: -this.r.size().h / 2, zoom: 1 });
-    });
+    // Start centred on existing content; a board that is still empty (a relay still syncing) is fitted once its content arrives.
+    const firstFit = watchFirstFit(this.store, this.r);
+    this.disposers.push(() => firstFit.dispose());
+    requestAnimationFrame(() => firstFit.start());
     this.refreshPins();
   }
 
