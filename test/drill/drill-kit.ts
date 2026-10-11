@@ -36,7 +36,18 @@ export function createRelayKit(cloudToken: string) {
    * Starts a relay on `dir`. `clean` drops TABULA_* and MIRA_* settings inherited from the shell first, so only `env`
    * decides how it runs (the drill); the restore tests keep what they always had.
    */
-  async function launch(dir: string, env: Record<string, string>, { waitForStart = true, clean = false } = {}): Promise<Relay> {
+  async function launch(dir: string, env: Record<string, string>, options: { waitForStart?: boolean; clean?: boolean } = {}): Promise<Relay> {
+    // A port taken between the probe and the relay's bind (another test process) is retried on a fresh one; only a start we wait for can tell.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await launchOnce(dir, env, options);
+      } catch (error) {
+        if (options.waitForStart === false || attempt >= 3 || !/EADDRINUSE/.test(String((error as Error)?.message ?? error))) throw error;
+      }
+    }
+  }
+
+  async function launchOnce(dir: string, env: Record<string, string>, { waitForStart = true, clean = false } = {}): Promise<Relay> {
     const port = await freePort();
     const inherited = { ...(process.env as Record<string, string>) };
     if (clean) for (const k of Object.keys(inherited)) if (/^(TABULA|MIRA)_|^QUIET$/.test(k)) delete inherited[k];

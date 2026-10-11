@@ -73,7 +73,25 @@ export function createHarness(options: HarnessOptions = {}) {
   const unique = (tag: string) => `${tag}${++seq}x${Math.random().toString(36).slice(2, 7)}`;
   const nextIp = () => `10.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}.9`;
 
+  // The relay's first start takes its port from the system. Between that probe and the relay's bind another test process can take it
+  // (EADDRINUSE on a busy CI machine), so a first start whose port was taken retries on a fresh one. A restart keeps its port, and a
+  // port the test chose itself is never replaced.
+  let startedOnce = false;
   const start = async (extra: Record<string, string> = {}) => {
+    const mayChoose = options.port === undefined && !startedOnce;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await launch(extra);
+        startedOnce = true;
+        return;
+      } catch (error) {
+        if (!mayChoose || attempt >= 3 || !/EADDRINUSE/.test(output)) throw error;
+        port = 0;
+      }
+    }
+  };
+
+  const launch = async (extra: Record<string, string> = {}) => {
     if (!port) port = await freePort();
     base = `http://127.0.0.1:${port}`;
     return new Promise<void>((resolve, reject) => {
