@@ -2,6 +2,7 @@
    Rows wrap: at phone width the role select and Remove sit on their own line under the name. */
 
 .share-people { display: grid; gap: 12px; min-width: 0; margin-bottom: 16px; }
+.share-btn .share-label { color: inherit; }
 .share-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-muted); }
 .share-status { min-height: 18px; }
 

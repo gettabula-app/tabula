@@ -7,6 +7,7 @@ export interface PickerOption<T> {
   label: string;
   group?: string;
   disabled?: boolean;
+  color?: string | null;
 }
 
 export interface PickerOptions<T> {
@@ -15,6 +16,7 @@ export interface PickerOptions<T> {
   value?: T | null;
   selected?: readonly (T | null)[];
   multi?: boolean;
+  includeEmpty?: boolean;
   emptyLabel?: 'No one' | 'None';
 }
 
@@ -27,7 +29,7 @@ export function openPicker<T>(anchor: HTMLElement, options: PickerOptions<T>): P
   const id = `trk-picker-${++pickerId}`;
   const items = [...options.options];
   const emptyLabel = options.emptyLabel ?? (options.label.toLocaleLowerCase().includes('assignee') ? 'No one' : 'None');
-  if (!items.some((item) => item.value === null)) items.unshift({ value: null, label: emptyLabel });
+  if (options.includeEmpty !== false && !items.some((item) => item.value === null)) items.unshift({ value: null, label: emptyLabel });
   const search = h('input', {
     class: 'trk-picker-search', type: 'search', 'aria-label': `Search ${options.label.toLowerCase()}`,
     placeholder: 'Search', autocomplete: 'off', spellcheck: 'false',
@@ -93,6 +95,10 @@ export function openPicker<T>(anchor: HTMLElement, options: PickerOptions<T>): P
         id: `${id}-option-${index}`, class: 'trk-picker-option', role: 'option',
         'aria-selected': String(selected.has(item.value)), 'aria-disabled': String(Boolean(item.disabled)),
       }, item.label);
+      if (item.color && /^#[\da-f]{3,8}$/i.test(item.color)) {
+        row.classList.add('trk-picker-colored');
+        row.style.setProperty('--trk-label-color', item.color);
+      }
       row.addEventListener('pointerenter', () => {
         if (!item.disabled) syncActive(index);
       });

@@ -13,7 +13,8 @@ let openPop: { el: HTMLElement; close: () => void } | null = null;
 export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
-  const el = h('div', { class: `popover tray ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
+  const trackerSurface = opts.className?.split(/\s+/u).includes('trk-pop') === true;
+  const el = h('div', { class: `popover${trackerSurface ? '' : ' tray'} ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
   const opener = anchor.tagName === 'BUTTON' ? anchor : null;
   if (opener) {
     if (!opener.hasAttribute('aria-haspopup')) opener.setAttribute('aria-haspopup', 'dialog');
@@ -139,9 +140,10 @@ export function dialog(
   opts: { className?: string; onClose?: () => void } = {},
 ) {
   const back = h('div', { class: `modal-back${opts.className ? ` ${opts.className}` : ''}` });
+  const trackerSurface = opts.className?.split(/\s+/u).includes('trk-modal') === true;
   const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close() }, icon('close', 18));
   const titleId = `dialog-title-${++dialogSeq}`;
-  const box = h('div', { class: 'modal tray', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
+  const box = h('div', { class: `modal${trackerSurface ? '' : ' tray'}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
     h('div', { class: 'modal-head' }, h('h2', { id: titleId }, title), closeBtn),
     h('div', { class: 'modal-body' }, body),
     actions.length ? h('div', { class: 'modal-actions' }, ...actions.map((a) =>

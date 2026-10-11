@@ -557,7 +557,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
   }));
 
   routes.push(compile('POST', 'tracker/tickets', { tracker: true, trackerMutation: true, body: true }, ({ user, body }) => {
-    allowFields(body, new Set(['title', 'description', 'state', 'priority', 'assignee', 'assigneeId', 'labels', 'due', 'parent', 'idempotencyKey']));
+    allowFields(body, new Set(['title', 'description', 'state', 'priority', 'assignee', 'assigneeId', 'labels', 'project', 'due', 'parent', 'idempotencyKey']));
     if (typeof body.idempotencyKey !== 'string' || Array.from(body.idempotencyKey).length < 8 || Array.from(body.idempotencyKey).length > 64) {
       throw new OpsError('invalid_input', 'Must be 8 to 64 characters', 'idempotencyKey');
     }

@@ -54,6 +54,9 @@ describe('tracker command palette', () => {
     ]);
     const onSelect = vi.fn<(item: CommandItem) => void>();
     const box = openCommandBox(anchor, { items: candidates, searchTickets: onSearch, onSelect, debounceMs: 25 });
+    expect(box.el.classList.contains('trk-pop')).toBe(true);
+    expect(box.el.classList.contains('tray')).toBe(false);
+    expect(box.el.closest('.tray')).toBeNull();
     expect(box.input.getAttribute('role')).toBe('combobox');
     expect(box.input.getAttribute('aria-expanded')).toBe('true');
     expect(box.list.getAttribute('role')).toBe('listbox');

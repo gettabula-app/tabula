@@ -5,6 +5,7 @@ import { TrackerError, type TrackerMeta, type TrackerPriority } from '../../trac
 import type { TrackerStore } from '../../tracker-data';
 import { openPicker } from './picker';
 import { trackerErrorField } from './error-path';
+import { priorityGlyph, stateGlyph } from './glyphs';
 
 export interface MarkdownInlineToken { type: 'text' | 'link' | 'code' | 'strong' | 'em'; text: string; href?: string }
 
@@ -77,11 +78,36 @@ interface Draft {
   assignee: string | null;
   priority: TrackerPriority;
   labels: string[];
+  project: string | null;
   due: string | null;
 }
 
 const drafts = new Map<string, Draft>();
 const PRIORITIES: TrackerPriority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+
+function propertyGlyph(kind: 'assignee' | 'labels' | 'due' | 'project'): SVGSVGElement | HTMLElement {
+  if (kind === 'labels') return h('span', { class: 'trk-new-property-dot', 'aria-hidden': 'true' });
+  const namespace = 'http://www.w3.org/2000/svg';
+  const svgChild = (tag: 'circle' | 'path' | 'rect', attributes: Record<string, string>): SVGElement => {
+    const element = document.createElementNS(namespace, tag);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+    return element;
+  };
+  const paths = kind === 'assignee'
+    ? [svgChild('circle', { cx: '8', cy: '5', r: '2.5' }), svgChild('path', { d: 'M3.5 14c.4-2.5 2-3.8 4.5-3.8s4.1 1.3 4.5 3.8' })]
+    : kind === 'due'
+      ? [svgChild('rect', { x: '2.5', y: '3.5', width: '11', height: '10', rx: '1.5' }), svgChild('path', { d: 'M5.5 2v3M10.5 2v3M2.5 7h11' })]
+      : [svgChild('rect', { x: '2.5', y: '2.5', width: '11', height: '11', rx: '1.5' }), svgChild('path', { d: 'M2.5 6h11M6 6v7' })];
+  const svg = document.createElementNS(namespace, 'svg');
+  svg.setAttribute('class', 'trk-glyph trk-new-property-glyph');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.5');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.append(...paths);
+  return svg;
+}
 
 export interface NewIssueDialogOptions {
   store: TrackerStore;
@@ -100,7 +126,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     states.find((state) => state.id === reference || state.key === reference || state.name === reference)?.key ?? reference ?? '';
   const defaultState = stateKey(options.defaultState) || states.find((state) => state.key === 'todo')?.key || states[0]?.key || '';
   const draft = drafts.get(draftKey) ?? {
-    issueTitle: '', description: '', state: defaultState, assignee: null, priority: 'none' as TrackerPriority, labels: [], due: null,
+    issueTitle: '', description: '', state: defaultState, assignee: null, priority: 'none' as TrackerPriority, labels: [], project: null, due: null,
   };
   draft.state = stateKey(draft.state) || defaultState;
   draft.assignee = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? draft.assignee;
@@ -113,29 +139,35 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   let previewOn = false;
   const previewButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-pressed': 'false' }, 'Preview');
   const propertyBar = h('div', { class: 'trk-new-properties', role: 'group', 'aria-label': 'Issue properties' });
-  const stateButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const assigneeButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const priorityButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const labelsButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const dueButton = h('button', { class: 'trk-small-button', type: 'button' });
-  const refreshProperties = () => {
-    const stateName = states.find((state) => state.key === draft.state)?.name ?? 'To do';
-    const assigneeName = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
-    const priorityName = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
-    const labelsName = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'No labels';
-    const dueName = draft.due ?? 'No due date';
-    stateButton.textContent = stateName;
-    stateButton.setAttribute('aria-label', `State: ${stateName}`);
-    assigneeButton.textContent = assigneeName;
-    assigneeButton.setAttribute('aria-label', `Assignee: ${assigneeName}`);
-    priorityButton.textContent = priorityName;
-    priorityButton.setAttribute('aria-label', `Priority: ${priorityName}`);
-    labelsButton.textContent = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
-    labelsButton.setAttribute('aria-label', `Labels: ${labelsName}`);
-    dueButton.textContent = draft.due ?? 'Due date';
-    dueButton.setAttribute('aria-label', `Due date: ${dueName}`);
+  const stateButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'State' });
+  const priorityButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Priority' });
+  const assigneeButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Assignee' });
+  const labelsButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Labels' });
+  const projectButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Project' });
+  const dueButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Due date' });
+  const setProperty = (button: HTMLButtonElement, glyph: Node, label: string, accessibleLabel = label) => {
+    button.replaceChildren(glyph, h('span', { class: 'trk-new-property-value' }, label));
+    button.setAttribute('aria-label', accessibleLabel);
   };
-  propertyBar.append(stateButton, assigneeButton, priorityButton, labelsButton, dueButton);
+  const refreshProperties = () => {
+    const state = states.find((item) => item.key === draft.state) ?? states[0];
+    const stateName = state?.name ?? 'To do';
+    const assignee = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
+    const priority = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
+    const project = options.meta.projects?.find((item) => item.name.toLocaleLowerCase() === draft.project?.toLocaleLowerCase())?.name ?? draft.project;
+    const labels = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
+    const labelsName = draft.labels.length ? labels : 'No labels';
+    const due = draft.due ?? 'Due date';
+    const dueName = draft.due ?? 'No due date';
+    const projectName = project ?? 'Project';
+    setProperty(stateButton, state ? stateGlyph(state.category, state.key) : propertyGlyph('labels'), stateName, `State: ${stateName}`);
+    setProperty(priorityButton, priorityGlyph(draft.priority), priority, `Priority: ${priority}`);
+    setProperty(assigneeButton, propertyGlyph('assignee'), assignee, `Assignee: ${assignee}`);
+    setProperty(labelsButton, propertyGlyph('labels'), labels, `Labels: ${labelsName}`);
+    setProperty(projectButton, propertyGlyph('project'), projectName, `Project: ${project ?? 'No project'}`);
+    setProperty(dueButton, propertyGlyph('due'), due, `Due date: ${dueName}`);
+  };
+  propertyBar.append(stateButton, priorityButton, assigneeButton, labelsButton, projectButton, dueButton);
   refreshProperties();
 
   stateButton.addEventListener('click', async () => {
@@ -153,9 +185,16 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   labelsButton.addEventListener('click', async () => {
     const value = await openPicker<string>(labelsButton, {
       label: 'Labels', multi: true, selected: draft.labels,
-      options: options.meta.labels.map((label) => ({ value: label.name, label: label.name })),
+      options: options.meta.labels.map((label) => ({ value: label.name, label: label.name, color: label.color })),
     });
     if (Array.isArray(value)) { draft.labels = value.filter((item): item is string => typeof item === 'string'); refreshProperties(); }
+  });
+  projectButton.addEventListener('click', async () => {
+    const value = await openPicker<string>(projectButton, {
+      label: 'Project', value: draft.project,
+      options: [{ value: null, label: 'No project' }, ...(options.meta.projects ?? []).filter((project) => project.archivedAt == null).map((project) => ({ value: project.name, label: project.name }))],
+    });
+    if (value === null || typeof value === 'string') { draft.project = value; refreshProperties(); }
   });
   dueButton.addEventListener('click', async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -182,6 +221,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const createReason = h('span', { class: 'trk-create-reason', hidden: !options.offline }, 'Needs a connection to get a ticket number.');
   const createButton = h('button', {
     class: 'trk-primary-button', type: 'button', disabled: options.offline || !options.meta.me.canWrite,
+    'aria-keyshortcuts': 'Meta+Enter Control+Enter', 'data-tip': 'Create issue · ⌘ Enter / Ctrl Enter',
     'aria-description': options.offline ? 'Needs a connection to get a ticket number.' : undefined,
   }, 'Create issue');
   const anotherButton = h('button', {
@@ -200,16 +240,16 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     busy = true;
     createButton.disabled = anotherButton.disabled = true;
     error.hidden = true;
-    for (const control of [title, description, stateButton, assigneeButton, priorityButton, labelsButton, dueButton]) control.removeAttribute('aria-invalid');
+    for (const control of [title, description, stateButton, assigneeButton, priorityButton, labelsButton, projectButton, dueButton]) control.removeAttribute('aria-invalid');
     try {
       const ticket = await options.store.createTicket({
         title: cleanTitle, description: description.value, state: draft.state || undefined, priority: draft.priority,
-        assignee: draft.assignee, labels: [...draft.labels], due: draft.due,
+        assignee: draft.assignee, labels: [...draft.labels], project: draft.project, due: draft.due,
       });
       options.onCreated?.(ticket.key);
       toast(`${ticket.key} created`);
       if (another) {
-        Object.assign(draft, { issueTitle: '', description: '', assignee: null, priority: 'none', labels: [], due: null });
+        Object.assign(draft, { issueTitle: '', description: '', assignee: null, priority: 'none', labels: [], project: null, due: null });
         title.value = '';
         description.value = '';
         refreshProperties();
@@ -223,7 +263,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
       error.hidden = false;
       const field = caught instanceof TrackerError ? trackerErrorField(caught.path) : null;
       const fieldControl: Record<string, HTMLElement> = {
-        title, description, state: stateButton, assignee: assigneeButton, priority: priorityButton, labels: labelsButton, due: dueButton,
+        title, description, state: stateButton, assignee: assigneeButton, priority: priorityButton, labels: labelsButton, project: projectButton, due: dueButton,
       };
       const invalidControl = field ? fieldControl[field] : undefined;
       invalidControl?.setAttribute('aria-invalid', 'true');
@@ -242,7 +282,11 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     propertyBar,
     createReason,
     error,
-    h('div', { class: 'trk-new-actions' }, anotherButton, createButton),
+    h('div', { class: 'trk-new-actions' },
+      h('span', { class: 'trk-create-hint', 'aria-hidden': 'true' }, '⌘↵'),
+      h('button', { class: 'trk-small-button', type: 'button', onclick: () => closeDialog() }, 'Cancel'),
+      anotherButton, createButton,
+    ),
   );
   body.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key.toLowerCase() === 'p' && event.shiftKey && (event.metaKey || event.ctrlKey)) {
@@ -253,7 +297,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
       void create(event.shiftKey);
     }
   });
-  const modal = dialog('New issue', body, [], { className: 'trk trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
+  const modal = dialog('New issue', body, [], { className: 'trk trk-modal trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
   closeDialog = modal.close;
   return modal;
 }
