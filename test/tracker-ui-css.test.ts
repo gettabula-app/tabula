@@ -162,7 +162,7 @@ describe('tracker UI styles', () => {
 
     const errors = declarations(css, '.trk-inline-error, .trk-create-reason');
     expect(errors).toMatch(/color:\s*var\(--danger\)/);
-    expect(errors).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+    expect(errors).toMatch(/border-radius:\s*var\(--radius-sm(?:,\s*8px)?\)/);
     expect(errors).not.toMatch(/border:\s*1px/);
     expect(declarations(css, '.trk-inline-error::before, .trk-create-reason::before')).toMatch(/content:\s*'!'/);
     const pending = declarations(ticketCss, '.trk.tk-page .tk-comment-row.pending');
