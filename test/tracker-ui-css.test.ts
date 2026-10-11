@@ -50,6 +50,7 @@ describe('tracker UI styles', () => {
   it('keeps tracker link, status, error, and pending timestamp text at AA contrast in every theme', () => {
     const inkOnPaper = [
       [ticketCss, '.trk.tk-page .tk-external-link'],
+      [ticketCss, '.trk.tk-page .tk-ticket-chip'],
       [ticketCss, '.trk.tk-page .tk-new-comments'],
       [css, '.trk .trk-relative-time'],
     ] as const;
@@ -65,6 +66,8 @@ describe('tracker UI styles', () => {
     const pending = declarations(ticketCss, '.trk.tk-page .tk-comment-row.pending');
     expect(pending).not.toMatch(/opacity\s*:/);
     expect(pending).toMatch(/border-inline-start:\s*1px dashed var\(--ink\)/);
+    expect(ticketCss).toMatch(/\.trk\.tk-page \.tk-icon-button \{ min-width: 44px; min-height: 44px; \}/);
+    expect(ticketCss).toMatch(/\.trk\.tk-page \.tk-property-row \.tk-field-button, \.trk\.tk-page \.tk-tab-button, \.trk\.tk-page \.tk-menu-item,[\s\S]*?\.tk-remove-relation \{ min-height: 44px; \}/);
 
     for (const theme of THEMES) {
       for (const [, selector] of inkOnPaper) {

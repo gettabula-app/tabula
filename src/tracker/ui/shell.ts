@@ -223,6 +223,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   let boardLaneKey: string | null = null;
   const boardCaches = new Map<string, { state: TrackerState; query: TrackerListQuery; cache: ReturnType<TrackerStore['list']> }>();
   let listRenderHost: HTMLElement | null = null;
+  let listLoadMore: HTMLButtonElement | null = null;
   let resultsHost: HTMLElement | null = null;
   let errorHost: HTMLElement | null = null;
   let skeletonHost: HTMLElement | null = null;
@@ -329,13 +330,34 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (resultsHost) resultsHost.textContent = 'Issues unavailable';
   };
 
+  const updateListLoadMore = (cache: typeof currentCache, visible = true) => {
+    if (!listLoadMore) return;
+    listLoadMore.hidden = !visible || !cache.nextCursor;
+    listLoadMore.disabled = cache.loadingMore;
+    listLoadMore.textContent = cache.loadingMore ? 'Loading…' : 'Load more';
+  };
+
   const renderTabs = () => {
+    const restoreTabFocus = tabs.contains(document.activeElement);
     tabs.replaceChildren(...TABS.map((tab) => h('button', {
       class: `trk-tab${state.tab === tab.id ? ' active' : ''}`, type: 'button', role: 'tab',
+      'data-tab-id': tab.id,
       'aria-selected': String(state.tab === tab.id), 'aria-label': tab.id === 'inbox' ? `${tab.label}, ${unreadCount} unread` : tab.label,
+      tabindex: state.tab === tab.id ? '0' : '-1',
+      onkeydown: (event: KeyboardEvent) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        const currentIndex = TABS.findIndex((candidate) => candidate.id === tab.id);
+        const direction = event.key === 'ArrowRight' ? 1 : -1;
+        const next = TABS[(currentIndex + direction + TABS.length) % TABS.length];
+        event.preventDefault();
+        event.stopPropagation();
+        switchTab(next.id);
+        tabs.querySelector<HTMLButtonElement>(`[data-tab-id="${next.id}"]`)?.focus();
+      },
       onclick: () => switchTab(tab.id),
     }, h('span', { class: 'trk-tab-glyph', 'aria-hidden': 'true' }, tab.glyph), h('span', { class: 'trk-tab-name' }, tab.label),
     tab.id === 'inbox' ? h('span', { class: 'trk-unread-count', 'aria-label': `${unreadCount} unread` }, String(unreadCount)) : null)));
+    if (restoreTabFocus) tabs.querySelector<HTMLButtonElement>(`[data-tab-id="${state.tab}"]`)?.focus();
     root.dataset.width = String(layoutWidth);
     root.classList.toggle('trk-narrow-frame', layoutWidth < 720);
   };
@@ -519,6 +541,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const renderRows = (cache: typeof currentCache) => {
     if (!listRenderHost || !resultsHost || !skeletonHost || !errorHost) return;
     if (!meta) {
+      updateListLoadMore(cache, false);
       skeletonHost.hidden = false;
       listRenderHost.replaceChildren();
       resultsHost.textContent = '';
@@ -532,6 +555,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       : { field: primarySort, direction: state.sort.direction };
     filterController?.setError(cache.error?.code === 'invalid_filter' ? cache.error.message : null);
     if (cache.error) {
+      updateListLoadMore(cache, false);
       showListError(cache.error.message || 'Could not load issues.');
       const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
       if (searchInput) {
@@ -553,6 +577,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const searchInput = filterController?.el.querySelector<HTMLInputElement>('.trk-filter-input');
     searchInput?.removeAttribute('aria-invalid');
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
+    const columns = visibleColumns(layoutWidth, state.columns);
     if (!cache.loading && tickets.length === 0) {
       const myEmpty = state.tab === 'my' && !filterActive && !cache.nextCursor;
       const emptyMessage = state.tab === 'my' && !filterActive && cache.nextCursor
@@ -560,17 +585,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         : myEmpty
           ? state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.'
         : filterActive ? 'No issues match.' : 'No issues yet.';
-      listRenderHost.replaceChildren(h('div', { class: 'trk-empty-state' },
-        h('h2', null, emptyMessage),
-        cache.nextCursor ? h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
-        filterActive
-          ? h('button', { class: 'trk-small-button', type: 'button', onclick: () => { state.filter = []; state.queryText = ''; filterController?.setChips(lockedFilterChips()); if (filterController) filterController.focusSearch(); watchQuery(); } }, 'Clear filters')
-          : (!readOnly ? h('button', { class: 'trk-primary-button', type: 'button', onclick: () => openCreate() }, '+ New issue') : null),
+      listRenderHost.replaceChildren(h('div', { class: 'trk-empty-grid-row', role: 'row' },
+        h('div', { class: 'trk-empty-grid-cell', role: 'gridcell', 'aria-colspan': String(columns.length) },
+          h('div', { class: 'trk-empty-state' },
+            h('h2', null, emptyMessage),
+            filterActive
+              ? h('button', { class: 'trk-small-button', type: 'button', onclick: () => { state.filter = []; state.queryText = ''; filterController?.setChips(lockedFilterChips()); if (filterController) filterController.focusSearch(); watchQuery(); } }, 'Clear filters')
+              : (!readOnly ? h('button', { class: 'trk-primary-button', type: 'button', onclick: () => openCreate() }, '+ New issue') : null),
+          ),
+        ),
       ));
+      updateListLoadMore(cache);
       resultsHost.textContent = '0 issues';
       return;
     }
-    const columns = visibleColumns(layoutWidth, state.columns);
     const model = listModel;
     const selected = state.selectedKeys.length;
     const header = h('div', { class: 'trk-grid-header', role: 'row', style: { gridTemplateColumns: columns.map((column) => `var(--trk-${column}-width)`).join(' ') } },
@@ -592,19 +620,33 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           },
         }, groupTicket && state.group === 'state' ? stateGlyph(groupTicket.state.category, groupTicket.state.key) : null,
         h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count)));
-        rows.push(h('div', { class: 'trk-group-row', role: 'rowheader' }, headerButton));
+        rows.push(h('div', { class: 'trk-group-row', role: 'row' },
+          h('div', { class: 'trk-cell trk-group-cell', role: 'gridcell', 'aria-colspan': String(columns.length) }, headerButton),
+        ));
       }
       if (group.collapsed) continue;
       for (const raw of group.rows) {
         const ticket = ticketFromListRow(raw, meta, options.trackerId);
         const selectedHere = state.selectedKeys.includes(ticket.key);
         const cursor = state.cursorKey === ticket.key;
+        const selectionButton = !readOnly ? h('button', {
+          class: 'trk-row-select', type: 'button', 'aria-label': `${selectedHere ? 'Deselect' : 'Select'} ${ticket.key}`,
+          'aria-pressed': String(selectedHere),
+          onclick: (event: Event) => {
+            event.stopPropagation();
+            state.selectedKeys = toggleSelection(model, ticket.key).selectedKeys;
+            state.anchorKey = ticket.key;
+            announce(`${state.selectedKeys.length} selected`);
+            updateSelectionBar();
+            drawRows(cache);
+          },
+        }, selectedHere ? '✓' : '') : null;
         const cells: Node[] = [];
         for (const column of columns) {
           if (column === 'priority') cells.push(h('div', { class: 'trk-cell trk-col-priority', role: 'gridcell' },
             readOnly ? priorityGlyph(ticket.priority) : h('button', { class: 'trk-glyph-button', type: 'button', 'aria-label': `${priorityLabel(ticket.priority)} for ${ticket.key}`, onclick: (event: Event) => { event.stopPropagation(); void editOne(ticket, 'priority', event.currentTarget as HTMLElement); } }, priorityGlyph(ticket.priority)),
           ));
-          else if (column === 'key') cells.push(h('div', { class: 'trk-cell trk-col-key', role: 'gridcell' }, keyChip(ticket.key)));
+          else if (column === 'key') cells.push(h('div', { class: 'trk-cell trk-col-key', role: 'gridcell' }, selectionButton, keyChip(ticket.key)));
           else if (column === 'state') cells.push(h('div', { class: 'trk-cell trk-col-state', role: 'gridcell' },
             readOnly ? h('span', { class: 'trk-state-value' }, stateGlyph(ticket.state.category, ticket.state.key), h('span', null, ticket.state.name))
               : h('button', { class: 'trk-cell-button trk-state-value', type: 'button', 'aria-label': `State: ${ticket.state.name}`, onclick: (event: Event) => { event.stopPropagation(); void editOne(ticket, 'state', event.currentTarget as HTMLElement); } }, stateGlyph(ticket.state.category, ticket.state.key), h('span', null, ticket.state.name)),
@@ -632,16 +674,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           onclick: () => { state.cursorKey = ticket.key; openTicket(ticket.key); },
           onfocus: () => { state.cursorKey = ticket.key; },
         }, ...cells);
-        if (!readOnly) {
-          const select = h('button', { class: 'trk-row-select', type: 'button', 'aria-label': `${selectedHere ? 'Deselect' : 'Select'} ${ticket.key}`, 'aria-pressed': String(selectedHere), onclick: (event: Event) => { event.stopPropagation(); state.selectedKeys = toggleSelection(model, ticket.key).selectedKeys; state.anchorKey = ticket.key; announce(`${state.selectedKeys.length} selected`); updateSelectionBar(); drawRows(cache); } }, selectedHere ? '✓' : '');
-          row.prepend(select);
-        }
         rows.push(row);
       }
     }
     listRenderHost.replaceChildren(...rows);
     listRenderHost.setAttribute('aria-rowcount', String(model.visibleRows.length));
-    if (cache.nextCursor) listRenderHost.appendChild(h('button', { class: 'trk-load-more', type: 'button', disabled: cache.loadingMore, onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')) }, cache.loadingMore ? 'Loading…' : 'Load more'));
+    updateListLoadMore(cache);
     const facets = facetsForIssues(cache, tickets)?.[state.group];
     const total = state.tab === 'my' ? tickets.length : facets?.reduce((sum, facet) => sum + facet.count, 0) ?? tickets.length;
     resultsHost.textContent = cache.nextCursor ? `${total}+ issues` : `${total} ${total === 1 ? 'issue' : 'issues'}`;
@@ -699,10 +737,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     filterController.el.classList.add('trk-filter-host');
     const search = filterController.el.querySelector<HTMLInputElement>('.trk-filter-input');
     if (search) search.value = state.queryText;
-    const table = h('div', { class: `trk-list-grid trk-density-${state.density}`, role: 'grid', 'aria-label': state.tab === 'my' ? 'My issues' : 'All issues' });
+    const table = h('div', {
+      class: `trk-list-grid trk-density-${state.density}`, role: 'grid',
+      'aria-label': state.tab === 'my' ? 'My issues' : 'All issues',
+      'aria-multiselectable': readOnly ? undefined : 'true',
+    });
     const skeleton = h('div', { class: 'trk-skeleton-list', hidden: true, 'aria-hidden': 'true' }, ...Array.from({ length: 8 }, () => h('div', { class: 'trk-skeleton-row' }, h('i'), h('i'), h('i'), h('i'))));
     const error = h('div', { class: 'trk-list-error', role: 'alert', hidden: true });
-    const host = h('div', { class: 'trk-list-host' }, error, skeleton, table);
+    listLoadMore = h('button', {
+      class: 'trk-load-more', type: 'button', hidden: true,
+      onclick: () => void options.store.loadMore(stableQuery(state)).catch((error: unknown) => showListError(error instanceof Error ? error.message : 'Could not load more issues.')),
+    }, 'Load more');
+    const host = h('div', { class: 'trk-list-host' }, error, skeleton, table, listLoadMore);
     listRenderHost = table;
     resultsHost = count;
     skeletonHost = skeleton;
@@ -973,6 +1019,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }
     stopList?.();
     listRenderHost = null;
+    listLoadMore = null;
     filterController = null;
     if (state.tab === 'inbox') {
       const host = h('div', { class: 'trk-inbox-host' });
