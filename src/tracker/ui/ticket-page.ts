@@ -324,7 +324,6 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const propertyName = PROPERTY_NAMES[name] ?? name;
     el.setAttribute('aria-label', `${propertyName}: ${label}`);
     el.setAttribute('data-tip', `${propertyName}: ${label}`);
-    el.title = `${propertyName}: ${label}`;
     if (!enabled) el.setAttribute('aria-description', disabledReason());
     if (!enabled) el.setAttribute('aria-describedby', readonlyId);
     el.dataset.field = name;
