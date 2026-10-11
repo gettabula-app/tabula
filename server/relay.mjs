@@ -996,7 +996,11 @@ function sendFile(res, file, status, cache) {
     'referrer-policy': 'no-referrer',
     'cache-control': cache,
   };
-  if (ext === '.html') headers['content-security-policy'] = CSP;
+  if (ext === '.html') {
+    headers['content-security-policy'] = CSP;
+    // Older browsers ignore frame-ancestors; the consent screen must never be frameable (docs/mcp-oauth.md 7.5).
+    if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
+  }
   res.writeHead(status, headers);
   fs.createReadStream(file).pipe(res);
 }
@@ -1099,7 +1103,10 @@ function serveStatic(req, res, url) {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
   };
-  if (ext === '.html') headers['content-security-policy'] = CSP;
+  if (ext === '.html') {
+    headers['content-security-policy'] = CSP;
+    if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
+  }
   headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);

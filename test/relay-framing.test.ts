@@ -96,7 +96,7 @@ describe('relay: framing', () => {
     const relay = await startRelay('default');
     const headers = await headersOf(relay.port, '/');
     expect(directives(headers['content-security-policy'])).toContain("frame-ancestors 'none'");
-    expect(headers['x-frame-options']).toBeUndefined();
+    expect(headers['x-frame-options']).toBe('DENY');
     expect(relay.stderr()).not.toContain('TABULA_DEV_ALLOW_FRAMING');
     expect(openFetchSources(directives(headers['content-security-policy']))).toEqual([]);
   });
