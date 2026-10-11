@@ -234,3 +234,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .save-tpl { grid-template-columns: minmax(0, 1fr); }
   .save-tpl-preview { order: -1; }
 }
+
+/* the name opens the account menu when there is something in it */
+.topbar-me-btn { border: 0; background: transparent; font: inherit; cursor: pointer; text-align: inherit; }
+.topbar-me-btn:hover { text-decoration: underline; }

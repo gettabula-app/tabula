@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-menu-open, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -1130,6 +1130,21 @@ const STATES = {
     await page.locator('.trk-list-row').first().waitFor();
     if (!(await page.locator('.trk-fullscreen-strip').isVisible())) throw new Error('tracker-fullscreen: full-screen board strip is missing');
     await assertTrackerLayout(page);
+  },
+  // The "..." menu of the full-screen tracker (docs: tracker entry points): theme switch, workspace links, name and Sign out.
+  async 'tracker-menu-open'({ page, base, width }) {
+    await openTrackerMockShell(page, base);
+    const button = page.getByRole('button', { name: 'Menu', exact: true });
+    await button.click();
+    await page.locator('.trk-account-menu').waitFor();
+    if ((await button.getAttribute('aria-expanded')) !== 'true') throw new Error('tracker-menu-open: the Menu button does not say it is expanded');
+    const fit = await page.evaluate(() => {
+      const r = document.querySelector('.trk-account-pop').getBoundingClientRect();
+      const strip = document.querySelector('.trk-fullscreen-strip').getBoundingClientRect();
+      return { left: r.left, right: r.right, bottom: r.bottom, stripHeight: strip.height, w: innerWidth, h: innerHeight };
+    });
+    if (fit.left < 0 || fit.right > fit.w || fit.bottom > fit.h) throw new Error(`tracker-menu-open: the menu leaves the ${width}px window (${JSON.stringify(fit)})`);
+    if (fit.stripHeight > 60) throw new Error(`tracker-menu-open: the strip is ${fit.stripHeight}px high, not one row`);
   },
   async 'tracker-all-issues'({ page, base }) {
     await openTrackerMockShell(page, base);

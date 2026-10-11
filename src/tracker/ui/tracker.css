@@ -187,6 +187,13 @@
   font-size: 12px;
 }
 .trk-board-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trk-strip-spacer { flex: 1 1 auto; }
+.trk-fullscreen-strip { gap: 12px; justify-content: flex-start; }
+.trk-menu-button { flex: none; width: 44px; height: 44px; margin-right: -12px; border: 0; background: transparent; color: var(--ink); font-size: 20px; line-height: 1; border-radius: var(--radius-sm); }
+.trk-menu-button:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.trk-menu-button[aria-expanded='true'] { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.trk-account-pop .menu { min-width: 240px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 72px); overflow-y: auto; }
+.trk-menu-name { padding: 6px 10px 2px; font-weight: 400; overflow-wrap: anywhere; }
 .trk-header { display: flex; min-height: 54px; align-items: stretch; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rule); }
 .trk-tabs { display: flex; min-width: 0; align-items: stretch; gap: 2px; padding-left: 10px; }
 .trk-tab { display: inline-flex; min-width: 68px; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--graphite); font-weight: 600; white-space: nowrap; }
