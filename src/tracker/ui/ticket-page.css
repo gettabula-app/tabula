@@ -30,6 +30,7 @@
   align-items: center;
   gap: 8px;
   margin: 0 0 24px;
+  position: relative;
 }
 .trk.tk-page .tk-header-key, .trk.tk-page .tk-subscribe-button, .trk.tk-page .tk-icon-button {
   display: inline-flex;
@@ -67,7 +68,7 @@
   gap: 2px;
   padding: 5px;
   border: 1px solid var(--trk-rule);
-  border-radius: var(--radius-md, 12px);
+  border-radius: 8px;
   background: var(--trk-ground);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--trk-text) 12%, transparent);
 }
