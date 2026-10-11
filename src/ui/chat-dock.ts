@@ -1,7 +1,7 @@
 import './chat-dock.css';
 import { h, icon } from './dom';
 import type { ChatChannelEntry } from '../api';
-import { channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, watchChat, type BoardChat } from '../chat';
+import { channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, totalUnread, watchChat, type BoardChat } from '../chat';
 import { mountConversation, type Conversation, type ConversationOptions } from './chat';
 import { badgeText, type ChannelKind } from './chat-logic';
 import { channelKey, dockChannels, hereLine, pickChannel, splitChips, type DockChannel } from './chat-dock-channels';
@@ -29,6 +29,8 @@ export interface DockDeps {
   fetchChannels(): Promise<ChatChannelEntry[]>;
   openChat(kind: ChannelKind, ref: string, signal: AbortSignal): BoardChat;
   unread(kind: ChannelKind, ref: string): { unread: number; mentions: number };
+  /** The sum over every channel, for the bubble. */
+  totalUnread(): { unread: number; mentions: number };
   onBadge(fn: () => void): () => void;
   hasUnlisted(listed: ReadonlySet<string>): boolean;
   watch(signal: AbortSignal): void;
@@ -36,7 +38,7 @@ export interface DockDeps {
 }
 
 const realDeps = (): DockDeps => ({
-  fetchChannels, openChat, unread: channelUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation,
+  fetchChannels, openChat, unread: channelUnread, totalUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation,
 });
 
 /** A channel list that has not been refetched for this long is not asked for again on a badge change. */
@@ -105,7 +107,8 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const compact = button('Compact', 'collapse', 'compact');
   const head = h('header', { class: 'chat-dock-head' }, title, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
   const panel = h('section', { class: 'chat-dock tray', 'aria-label': 'Chat', role: 'complementary' }, head, body);
-  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22));
+  const bubbleCount = h('u', { class: 'chat-bubble-count', 'aria-hidden': 'true', hidden: true });
+  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22), bubbleCount);
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
   panel.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
@@ -174,7 +177,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     here.hidden = !(now?.attached && people.length);
     if (here.hidden) return;
     const avatars = people.slice(0, 4).map((p) => {
-      const a = h('span', { class: 'chat-here-avatar live', 'aria-hidden': 'true', style: `background:${p.color}` });
+      const a = h('span', { class: 'avatar chat-here-avatar live', 'aria-hidden': 'true', style: `--c:${p.color}` });
       a.textContent = p.name.split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
       return a;
     });
@@ -212,7 +215,9 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   }
 
   // ---------------------------------------------------------------- loading
+  let loading = false;
   async function load() {
+    loading = true;
     lastFetch = Date.now();
     try {
       entries = await deps.fetchChannels();
@@ -221,6 +226,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       failed = true;
     }
     loaded = true;
+    loading = false;
     render();
   }
 
@@ -230,18 +236,29 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     syncConversation();
   }
 
-  /** Keeps the chat socket up and the channel list fresh while the dock is on screen. */
+  /** The bubble says how much is unread in all, and that someone mentioned you. */
+  function paintBubble() {
+    const t = deps.totalUnread();
+    bubbleCount.textContent = badgeText(t.unread);
+    bubbleCount.hidden = t.unread === 0;
+    bubbleCount.classList.toggle('mention', t.mentions > 0);
+    bubble.setAttribute('aria-label', t.unread ? `Chat, ${t.unread} unread${t.mentions ? `, ${t.mentions} mentioning you` : ''}` : 'Chat');
+  }
+
+  /** Keeps the chat socket up while the dock is a panel or a bubble (the bubble counts), and the channel list loaded while it is a panel. */
   function syncWatch() {
-    if (isShown() && !watchLife) {
+    const watching = prefs.mode !== 'closed';
+    if (watching && !watchLife) {
       watchLife = new AbortController();
       deps.watch(watchLife.signal);
-      if (!loaded) void load();
-    } else if (!isShown() && watchLife) {
+    } else if (!watching && watchLife) {
       watchLife.abort();
       watchLife = null;
     }
+    if (isShown() && !loaded && !loading) void load();
   }
   const offBadge = deps.onBadge(() => {
+    if (prefs.mode === 'bubble') paintBubble();
     if (!isShown()) return;
     paintChips();
     // a count for a channel that is not listed (a board that just had its first message): ask for the list again, not too often
@@ -269,6 +286,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     bubble.hidden = prefs.mode !== 'bubble';
     expand.hidden = prefs.mode !== 'compact';
     compact.hidden = prefs.mode !== 'open';
+    paintBubble();
   }
 
   function dispatch(event: DockEvent): DockMode {

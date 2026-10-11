@@ -16,6 +16,7 @@ export function stubDeps(entries: ChatChannelEntry[] = []) {
     fetchChannels: vi.fn<() => Promise<ChatChannelEntry[]>>(async () => listed),
     openChat: vi.fn<(kind: string, ref: string, signal: AbortSignal) => never>((kind, ref, signal) => { opened.push({ kind, ref, signal }); return {} as never; }),
     unread: (kind: string, ref: string) => unread.get(`${kind}/${ref}`) ?? { unread: 0, mentions: 0 },
+    totalUnread: () => [...unread.values()].reduce((t, v) => ({ unread: t.unread + v.unread, mentions: t.mentions + v.mentions }), { unread: 0, mentions: 0 }),
     onBadge: (fn: () => void) => { badgeListeners.add(fn); return () => badgeListeners.delete(fn); },
     hasUnlisted: () => unlisted,
     watch: (signal: AbortSignal) => { watches.push(signal); },

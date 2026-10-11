@@ -197,7 +197,41 @@ describe('the dock with channels', () => {
     expect(stub.deps.fetchChannels).toHaveBeenCalledTimes(2);
     stub.setUnlisted(false);
     dock.dispatch('minimise');
-    expect(stub.watches[0].aborted).toBe(true);
     expect(stub.mounts[0].conv.setOpen).toHaveBeenLastCalledWith(false);
+    expect(stub.watches[0].aborted).toBe(false); // the bubble still counts, so the socket stays up
+    dock.dispatch('close');
+    expect(stub.watches[0].aborted).toBe(true);
+  });
+
+  it('the bubble shows the unread total, mentions included, and follows the counts', async () => {
+    const { dock, stub, host, flush } = await setup();
+    dock.dispatch('open');
+    await flush();
+    stub.setUnread('team', 't1', { unread: 2, mentions: 1 });
+    stub.setUnread('workspace', 'main', { unread: 3, mentions: 0 });
+    dock.dispatch('minimise');
+    const bubble = host.querySelector('.chat-bubble') as FakeElement;
+    const count = bubble.querySelector('.chat-bubble-count') as FakeElement;
+    expect(bubble.hidden).toBe(false);
+    expect(count.hidden).toBe(false);
+    expect(textOf(count)).toBe('5');
+    expect(bubble.getAttribute('aria-label')).toBe('Chat, 5 unread, 1 mentioning you');
+    expect(count.classList.contains('mention')).toBe(true);
+    stub.setUnread('team', 't1', { unread: 120, mentions: 0 });
+    expect(textOf(count)).toBe('99+');
+    expect(count.classList.contains('mention')).toBe(false);
+    stub.setUnread('team', 't1', { unread: 0, mentions: 0 });
+    stub.setUnread('workspace', 'main', { unread: 0, mentions: 0 });
+    expect(count.hidden).toBe(true);
+    expect(bubble.getAttribute('aria-label')).toBe('Chat');
+  });
+
+  it('keeps counting for the bubble while minimised and not before the first time it is shown', async () => {
+    const { dock, stub } = await setup();
+    dock.dispatch('minimise');
+    expect(stub.watches).toHaveLength(0); // minimising something that was never shown changes nothing
+    dock.dispatch('open');
+    dock.dispatch('minimise');
+    expect(stub.watches).toHaveLength(1);
   });
 });
