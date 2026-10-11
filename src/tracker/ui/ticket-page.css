@@ -72,7 +72,7 @@
   background: var(--trk-ground);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--trk-text) 12%, transparent);
 }
-.trk.tk-page .tk-menu-item { min-height: 32px; padding: 5px 8px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; text-align: left; cursor: pointer; }
+.trk.tk-page .tk-menu-item { min-height: 32px; padding: 5px 8px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; text-align: left; cursor: pointer; }
 .trk.tk-page .tk-menu-item:hover { background: color-mix(in srgb, var(--trk-text) 5%, var(--trk-ground)); }
 .trk.tk-page .tk-layout { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 260px; column-gap: clamp(28px, 5vw, 64px); row-gap: 0; align-content: start; }
 .trk.tk-page--peek .tk-layout { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
@@ -106,7 +106,7 @@
   gap: 8px;
   padding: 4px 6px;
   border: 0;
-  border-radius: var(--radius-xs, 4px);
+  border-radius: var(--radius-sm, 8px);
   background: transparent;
   color: var(--trk-text);
   font-size: 13px;
@@ -124,20 +124,20 @@
 .trk.tk-page .tk-label-property { min-width: 0; }
 .trk.tk-page .tk-label-property .tk-field-button { flex-wrap: wrap; }
 .trk.tk-page .tk-label-property .trk-label-chip { min-height: 22px; font-size: 12px; }
-.trk.tk-page .tk-properties-more-toggle { display: none; min-height: 32px; padding: 4px 6px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
+.trk.tk-page .tk-properties-more-toggle { display: none; min-height: 32px; padding: 4px 6px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
 .trk.tk-page .tk-properties-more-toggle:hover { background: color-mix(in srgb, var(--trk-text) 5%, var(--trk-ground)); }
 .trk.tk-page .tk-properties-more { min-width: 0; }
 .trk.tk-page .tk-inline-field { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px; }
 .trk.tk-page .tk-inline-input, .trk.tk-page .tk-description-input, .trk.tk-page .tk-comment-input {
   min-width: 0;
   border: 1px solid var(--trk-rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 8px);
   background: var(--trk-ground);
   color: var(--trk-text);
 }
-.trk.tk-page .tk-inline-input { min-height: 28px; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.trk.tk-page .tk-inline-input { min-height: 28px; padding: 2px 8px; border-radius: var(--radius-sm, 8px); font-size: 13px; }
 .trk.tk-page .tk-inline-input[type='date'] { width: 148px; flex: none; }
-.trk.tk-page .tk-inline-field .tk-button { min-height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; }
+.trk.tk-page .tk-inline-field .tk-button { min-height: 28px; padding: 0 10px; border-radius: var(--radius-sm, 8px); font-size: 13px; }
 .trk.tk-page .tk-inline-input:focus-visible { outline: 0; border-color: var(--trk-text); }
 .trk.tk-page .tk-description-input { width: 100%; min-height: 180px; padding: 12px; font-size: 14px; line-height: 1.55; resize: vertical; }
 .trk.tk-page .tk-description-body, .trk.tk-page .tk-description-preview { max-width: 720px; color: var(--trk-text); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
@@ -151,7 +151,7 @@
 .trk.tk-page .tk-ticket-chip { display: inline; color: var(--ink); text-decoration: underline; text-decoration-color: var(--signal); text-underline-offset: 2px; }
 .trk.tk-page .tk-description-editor { display: grid; gap: 8px; }
 .trk.tk-page .tk-editor-tabs, .trk.tk-page .tk-activity-filters { display: flex; align-items: center; gap: 4px; }
-.trk.tk-page .tk-tab-button { min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 400; cursor: pointer; }
+.trk.tk-page .tk-tab-button { min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 400; cursor: pointer; }
 .trk.tk-page .tk-tab-button.active { color: var(--trk-text); font-weight: 600; }
 .trk.tk-page .tk-description-editor > .tk-button { justify-self: start; }
 .trk.tk-page .tk-button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-text); font-size: 13px; font-weight: 500; cursor: pointer; }
@@ -163,10 +163,10 @@
 .trk.tk-page .tk-button--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 90%, var(--trk-ground)); color: var(--paper); }
 .trk.tk-page .tk-button:disabled, .trk.tk-page .tk-field-button:disabled { opacity: .62; cursor: not-allowed; }
 .trk.tk-page .tk-section-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
-.trk.tk-page .tk-ghost-add { min-height: 30px; padding: 3px 0; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 400; text-align: left; cursor: pointer; opacity: 0; }
+.trk.tk-page .tk-ghost-add { min-height: 30px; padding: 3px 0; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 400; text-align: left; cursor: pointer; opacity: 0; }
 .trk.tk-page .tk-section:hover .tk-ghost-add, .trk.tk-page .tk-section:focus-within .tk-ghost-add, .trk.tk-page .tk-ghost-add:focus-visible { color: var(--trk-text); opacity: 1; }
 .trk.tk-page .tk-subissue-progress { color: var(--trk-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.trk.tk-page .tk-subissue-row, .trk.tk-page .tk-ticket-link, .trk.tk-page .tk-relation-row { display: flex; min-width: 0; min-height: 34px; align-items: center; gap: 8px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-text); text-align: left; }
+.trk.tk-page .tk-subissue-row, .trk.tk-page .tk-ticket-link, .trk.tk-page .tk-relation-row { display: flex; min-width: 0; min-height: 34px; align-items: center; gap: 8px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-text); text-align: left; }
 .trk.tk-page .tk-subissue-row { width: 100%; padding: 4px 6px; cursor: pointer; }
 .trk.tk-page .tk-subissue-row:hover, .trk.tk-page .tk-ticket-link:hover { background: color-mix(in srgb, var(--trk-text) 5%, var(--trk-ground)); }
 .trk.tk-page .tk-subissue-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -174,9 +174,9 @@
 .trk.tk-page .tk-relations-section .tk-section-head { justify-content: flex-start; }
 .trk.tk-page .tk-relation-row { justify-content: space-between; }
 .trk.tk-page .tk-ticket-link { min-height: 32px; flex: 1; padding: 4px 6px; }
-.trk.tk-page .tk-remove-relation { min-width: 28px; min-height: 28px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-muted); cursor: pointer; }
+.trk.tk-page .tk-remove-relation { min-width: 28px; min-height: 28px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); cursor: pointer; }
 .trk.tk-page .tk-relation-search { display: grid; gap: 6px; margin-top: 8px; }
-.trk.tk-page .tk-relation-result { min-height: 36px; padding: 6px 8px; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-text); text-align: left; cursor: pointer; }
+.trk.tk-page .tk-relation-result { min-height: 36px; padding: 6px 8px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-text); text-align: left; cursor: pointer; }
 .trk.tk-page .tk-link-row, .trk.tk-page .tk-card-link-row { display: flex; min-width: 0; min-height: 32px; align-items: center; gap: 8px; margin: 4px 0; color: var(--trk-text); font-size: 13px; }
 .trk.tk-page .tk-link-reference { color: var(--trk-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .trk.tk-page .tk-link-glyph { color: var(--trk-muted); }

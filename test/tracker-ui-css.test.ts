@@ -119,7 +119,6 @@ describe('tracker UI styles', () => {
     expect(css).toContain('var(--radius-xs, 4px)');
     expect(css).toContain('var(--radius-sm, 8px)');
     expect(css).toContain('var(--radius-md, 12px)');
-    expect(css).toContain('var(--radius-lg, 14px)');
     expect(css).toContain('outline: 1px solid var(--trk-focus)');
     expect(css).toContain('outline-offset: 2px');
     expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--trk-focus); }");
@@ -163,7 +162,7 @@ describe('tracker UI styles', () => {
 
     const errors = declarations(css, '.trk-inline-error, .trk-create-reason');
     expect(errors).toMatch(/color:\s*var\(--danger\)/);
-    expect(errors).toMatch(/border-radius:\s*var\(--radius-xs\)/);
+    expect(errors).toMatch(/border-radius:\s*var\(--radius-sm\)/);
     expect(errors).not.toMatch(/border:\s*1px/);
     expect(declarations(css, '.trk-inline-error::before, .trk-create-reason::before')).toMatch(/content:\s*'!'/);
     const pending = declarations(ticketCss, '.trk.tk-page .tk-comment-row.pending');

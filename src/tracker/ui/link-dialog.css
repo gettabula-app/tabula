@@ -47,7 +47,7 @@
   flex: none;
   place-items: center;
   border: 1px solid var(--trk-rule);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm, 8px);
   color: var(--trk-text);
   font-size: 12px;
   font-variant-numeric: tabular-nums;

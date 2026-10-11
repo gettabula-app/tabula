@@ -34,7 +34,7 @@
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 14px;
+  --radius-lg: 12px;
   --radius: var(--radius-md);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -455,7 +455,7 @@ select.input {
 }
 
 /* popovers, menus, dialogs, toast */
-.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
+.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-sm); }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
 .popover.tray, :root:not([data-theme='default']) .popover.tray {
   border-radius: var(--radius-md); box-shadow: 0 0 0 1px var(--tray-line);
@@ -464,7 +464,7 @@ select.input {
 .steps-pop { padding: 0 14px 14px; }
 .steps-pop .pop-head { padding: 16px 0 4px; }
 .steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
-.menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; border-radius: var(--radius-md); }
+.menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; border-radius: var(--radius-sm); }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
