@@ -52,7 +52,12 @@ let controlUrl = '';
 const measured: Record<string, unknown> = {};
 function note(key: string, value: unknown) {
   measured[key] = value;
-  if (process.env.DRILL_REPORT_FILE) fs.writeFileSync(process.env.DRILL_REPORT_FILE, JSON.stringify(measured, null, 2));
+  const file = process.env.DRILL_REPORT_FILE;
+  if (!file) return;
+  // both drill files report into one file: merge what the other one wrote
+  let other: Record<string, unknown> = {};
+  try { other = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* nothing yet */ }
+  fs.writeFileSync(file, JSON.stringify({ ...other, ...measured }, null, 2));
 }
 
 beforeAll(async () => {

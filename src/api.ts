@@ -57,6 +57,10 @@ export interface OAuthConsentRequest {
   redirectUri: string;
   verified: boolean;
   maxScope: OAuthScope;
+  /** Missing on older servers; only true enables the board picker. */
+  pickerAvailable?: boolean;
+  scopes?: { unrestricted: OAuthScope; boards: OAuthScope };
+  boards?: { id: string; name: string; role: string }[];
   nonce: string;
   readOnly: boolean;
 }
@@ -409,6 +413,8 @@ export interface RestoreRecord {
   bytes?: number;
   boards?: number;
   keepOldFor?: string;
+  /** Tracker recovery counts after a whole restore (server/tracker/restore-recovery.mjs). */
+  tracker?: { boardsFailed?: number };
 }
 
 export interface RestoreStatus {

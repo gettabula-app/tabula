@@ -85,6 +85,22 @@ function inputByLabel(host: FakeElement, label: string): FakeElement | undefined
 }
 
 describe('ticket page', () => {
+  it('keeps the visible ticket title as the heading name and exposes property focus ids', async () => {
+    const { host } = await setup();
+    const title = host.querySelector('h1.tk-title')!;
+    expect(title.textContent).toBe('Original title');
+    expect(title.hasAttribute('aria-label')).toBe(false);
+    for (const property of ['state', 'assignee', 'priority', 'labels', 'due', 'parent']) {
+      const control = host.querySelectorAll(`[data-field="${property}"]`).find((field) => field.getAttribute('data-focus-id') === `property-${property}`);
+      expect(control).toBeDefined();
+    }
+    const moreActions = host.querySelectorAll('.tk-icon-button').find((control) => control.getAttribute('aria-label') === 'More ticket actions');
+    expect(moreActions).toBeDefined();
+    moreActions?.click();
+    expect(host.querySelector('.tk-more-menu')?.getAttribute('role')).toBe('group');
+    expect(host.querySelector('[role="menu"]')).toBeNull();
+  });
+
   it('survives a slim ticket row (no creator, labels or relations) in the cache and asks for the full ticket', async () => {
     browser = installTrackerUiBrowser();
     const issue = ticket();

@@ -168,6 +168,9 @@ describe('tracker UI styles', () => {
     expect(declarations(css, '.trk-inline-error::before, .trk-create-reason::before')).toMatch(/content:\s*'!'/);
     const pending = declarations(ticketCss, '.trk.tk-page .tk-comment-row.pending');
     expect(pending).not.toMatch(/opacity\s*:/);
+    expect(pending).toMatch(/border-style:\s*dashed/);
+    expect(ticketCss).toMatch(/\.trk\.tk-page \.tk-icon-button \{ min-width: 44px; min-height: 44px; \}/);
+    expect(ticketCss).toMatch(/\.trk\.tk-page \.tk-property-row \.tk-field-button, \.trk\.tk-page \.tk-tab-button, \.trk\.tk-page \.tk-menu-item,[\s\S]*?\.tk-remove-relation \{ min-height: 44px; \}/);
 
     for (const theme of THEMES) {
       expect(contrast(theme.vars['--graphite'], theme.vars['--paper']), `${theme.id} muted on paper`).toBeGreaterThanOrEqual(4.5);
@@ -180,5 +183,12 @@ describe('tracker UI styles', () => {
       expect(contrast(theme.vars['--ink'], theme.vars['--paper']), `${theme.id} focus on tracker surface`).toBeGreaterThanOrEqual(3);
       expect(contrast(theme.vars['--danger'], theme.vars['--paper']), `${theme.id} tracker error on surface`).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it('keeps ticket and tracker text at AA contrast across restyled surfaces', () => {
+    expect(declarations(ticketCss, '.trk.tk-page .tk-external-link')).toMatch(/color:\s*var\(--trk-muted\)/);
+    expect(declarations(ticketCss, '.trk.tk-page .tk-ticket-chip')).toMatch(/color:\s*var\(--ink\)/);
+    expect(declarations(ticketCss, '.trk.tk-page .tk-new-comments')).toMatch(/color:\s*var\(--trk-text\)/);
+    expect(declarations(css, '.trk .trk-relative-time')).toMatch(/color:\s*var\(--trk-muted\)/);
   });
 });

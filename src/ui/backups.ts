@@ -5,7 +5,7 @@ import { freeWorkspaceNote, portalTarget } from '../cloud-logic';
 import { countLabel, matchesQuery } from './admin-logic';
 import {
   ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, LIST_CAP, checkStateSentence, errorSentence, formatSize, formatUtc, gateBannerSentence,
-  confirmMatches, lastRestoreSentence, manifestTime, nextScreen, noteOf, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome,
+  confirmMatches, boardsFailedSentence, lastRestoreSentence, manifestTime, nextScreen, noteOf, readinessOverallLabel, relativeTime, restoreGate, selectable, shortKey, statusRows, submitOutcome,
   trackerCheckLabel, validateDrillRecord, type Screen, type ScreenEvent, type StatusRow,
 } from './backups-logic';
 import { h, icon } from './dom';
@@ -449,11 +449,13 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     const now = Date.now();
     const busy = data.restore.inProgress !== null || data.restore.maintenance;
     const last = lastRestoreSentence(data.restore.last);
+    const failedBoards = boardsFailedSentence(data.restore.last);
     return nodes(
       busy ? h('p', { class: 'backups-notice', role: 'status' }, 'A restore is running right now. Nothing else can be restored until it is done.') : null,
       h('h3', { class: 'admin-sub' }, 'Status'),
       statusList(statusRows(data.status, now)),
       last ? h('p', { class: 'backups-last' }, last) : null,
+      failedBoards ? h('p', { class: 'backups-notice', role: 'status' }, failedBoards) : null,
       h('h3', { class: 'admin-sub' }, countLabel(data.backups.length, 'backup', 'backups')),
       table(data, now),
       data.truncated ? h('p', { class: 'muted small backups-more', role: 'status' }, `Showing the newest ${LIST_CAP} backups. Older ones are not listed.`) : null,

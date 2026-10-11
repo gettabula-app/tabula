@@ -8,6 +8,7 @@ export function createFakeCloudControlPlane(portalUrl = 'https://billing.example
   const seen: ControlPlaneSeen[] = [];
   const floors = new Map<string, { scope: string; prefix: string; floor: number }>();
   let reply: { status: number; body: unknown } = { status: 200, body: { url: portalUrl } };
+  let keyFloorReadStatus = 200;
   let server: http.Server | null = null;
   let url = '';
 
@@ -23,7 +24,10 @@ export function createFakeCloudControlPlane(portalUrl = 'https://billing.example
         try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
         let response = reply;
         if ((req.url ?? '').endsWith('/key-floor/read')) {
-          response = { status: 200, body: { counters: [...floors.values()] } };
+          response = {
+            status: keyFloorReadStatus,
+            body: keyFloorReadStatus === 200 ? { counters: [...floors.values()] } : { error: 'unavailable' },
+          };
         } else if ((req.url ?? '').endsWith('/key-floor')) {
           for (const counter of Array.isArray(body?.counters) ? body.counters : []) {
             if (!counter || typeof counter.scope !== 'string' || typeof counter.prefix !== 'string' || !Number.isSafeInteger(counter.floor) || counter.floor <= 0) continue;
@@ -55,10 +59,12 @@ export function createFakeCloudControlPlane(portalUrl = 'https://billing.example
     close,
     get url() { return url; },
     setReply(value: { status: number; body: unknown }) { reply = value; },
+    setKeyFloorReadStatus(status: number) { keyFloorReadStatus = status; },
     reset() {
       seen.length = 0;
       floors.clear();
       reply = { status: 200, body: { url: portalUrl } };
+      keyFloorReadStatus = 200;
     },
     portalCalls() { return seen.filter((call) => call.url.endsWith('/portal')); },
   };

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  boardsCeiling,
   decisionBody,
   errorSentence,
   hostPresentation,
   isOAuthEnvelope,
+  MAX_OAUTH_BOARD_IDS,
   OAUTH_REQUEST_INVALID,
+  roleScope,
   scopeOptions,
   titleText,
 } from '../src/ui/oauth-consent-logic';
@@ -28,6 +31,23 @@ describe('OAuth consent view model', () => {
     expect(scopeOptions('write').map(({ value, label }) => [value, label])).toEqual([
       ['read', 'Read'], ['comment', 'Read and comment'], ['write', 'Read and edit'],
     ]);
+  });
+
+  it('caps chosen-board access by the strongest selected role and the server ceiling', () => {
+    expect(MAX_OAUTH_BOARD_IDS).toBe(50);
+    expect(roleScope('editor')).toBe('write');
+    expect(roleScope('owner')).toBe('write');
+    expect(roleScope('commenter')).toBe('comment');
+    expect(roleScope('viewer')).toBe('read');
+    expect(roleScope('admin')).toBe('read');
+    expect(boardsCeiling('write', ['viewer', 'commenter'])).toBe('comment');
+    expect(boardsCeiling('comment', ['editor'])).toBe('comment');
+    expect(boardsCeiling('write', [])).toBe('read');
+
+    // Owners and admins see read for every board together, but can get write on explicitly chosen owner boards.
+    const ownerScopes = { unrestricted: 'read' as const, boards: 'write' as const };
+    expect(ownerScopes.unrestricted).toBe('read');
+    expect(boardsCeiling(ownerScopes.boards, ['owner'])).toBe('write');
   });
 
   it('labels normal and loopback destinations and exposes verified state', () => {
@@ -57,12 +77,18 @@ describe('OAuth consent view model', () => {
     expect(errorSentence(402, 'read_only')).toBe('This workspace is read-only. Ask the workspace owner to check billing.');
     expect(errorSentence(409, 'grant_limit')).toBe('You can have at most 20 connected apps. Disconnect one first.');
     expect(errorSentence(400, 'invalid_scope')).toBe('The available access level changed. Review the updated request.');
+    expect(errorSentence(400, 'invalid_boards')).toBe('A chosen board is no longer available. Review the updated list.');
   });
 
-  it('constructs exact Allow and Deny bodies, omitting scope from Deny', () => {
+  it('constructs exact Allow and Deny bodies, including boards only for a non-empty Allow selection', () => {
     expect(decisionBody({ request: 'opaque', decision: 'allow', scope: 'write', nonce: 'n' })).toEqual({
       request: 'opaque', decision: 'allow', scope: 'write', nonce: 'n',
     });
+    expect(decisionBody({ request: 'opaque', decision: 'allow', scope: 'comment', nonce: 'n', boardIds: ['b1', 'b2'] })).toEqual({
+      request: 'opaque', decision: 'allow', scope: 'comment', nonce: 'n', boardIds: ['b1', 'b2'],
+    });
+    expect(Object.keys(decisionBody({ request: 'opaque', decision: 'allow', scope: 'read', nonce: 'n', boardIds: [] })).sort())
+      .toEqual(['decision', 'nonce', 'request', 'scope']);
     expect(decisionBody({ request: 'opaque', decision: 'deny', scope: 'write', nonce: 'n' })).toEqual({
       request: 'opaque', decision: 'deny', nonce: 'n',
     });

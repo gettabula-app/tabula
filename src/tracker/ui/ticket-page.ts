@@ -821,7 +821,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     moreButton.setAttribute('aria-expanded', String(menuOpen));
     tools.append(moreButton);
     if (menuOpen) {
-      const menu = h('div', { class: 'tk-more-menu', role: 'group', 'aria-label': 'More ticket actions' });
+      const menu = h('div', { class: 'tk-more-menu', role: 'group', 'aria-label': 'Ticket actions' });
       menu.append(button('Copy link', 'tk-menu-item', false, () => copyLink()));
       menu.append(button('Copy key', 'tk-menu-item', false, () => copyText(current.key)));
       if (!current.archivedAt) menu.append(describeDisabled(button('Archive', 'tk-menu-item', !canRestore(), () => archive(true)), !canRestore(), permissionReason()));

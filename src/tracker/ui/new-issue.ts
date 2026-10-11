@@ -145,21 +145,27 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const labelsButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Labels' });
   const projectButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Project' });
   const dueButton = h('button', { class: 'trk-small-button', type: 'button', 'aria-label': 'Due date' });
-  const setProperty = (button: HTMLButtonElement, glyph: Node, label: string) => {
+  const setProperty = (button: HTMLButtonElement, glyph: Node, label: string, accessibleLabel = label) => {
     button.replaceChildren(glyph, h('span', { class: 'trk-new-property-value' }, label));
-    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-label', accessibleLabel);
   };
   const refreshProperties = () => {
     const state = states.find((item) => item.key === draft.state) ?? states[0];
+    const stateName = state?.name ?? 'To do';
     const assignee = options.meta.members.find((member) => member.userId === draft.assignee || member.name === draft.assignee)?.name ?? 'No one';
     const priority = draft.priority === 'none' ? 'No priority' : `${draft.priority[0].toUpperCase()}${draft.priority.slice(1)}`;
     const project = options.meta.projects?.find((item) => item.name.toLocaleLowerCase() === draft.project?.toLocaleLowerCase())?.name ?? draft.project;
-    setProperty(stateButton, state ? stateGlyph(state.category, state.key) : propertyGlyph('labels'), state?.name ?? 'To do');
-    setProperty(priorityButton, priorityGlyph(draft.priority), priority);
-    setProperty(assigneeButton, propertyGlyph('assignee'), assignee);
-    setProperty(labelsButton, propertyGlyph('labels'), draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels');
-    setProperty(projectButton, propertyGlyph('project'), project ?? 'Project');
-    setProperty(dueButton, propertyGlyph('due'), draft.due ?? 'Due date');
+    const labels = draft.labels.length ? `${draft.labels.length} label${draft.labels.length === 1 ? '' : 's'}` : 'Labels';
+    const labelsName = draft.labels.length ? labels : 'No labels';
+    const due = draft.due ?? 'Due date';
+    const dueName = draft.due ?? 'No due date';
+    const projectName = project ?? 'Project';
+    setProperty(stateButton, state ? stateGlyph(state.category, state.key) : propertyGlyph('labels'), stateName, `State: ${stateName}`);
+    setProperty(priorityButton, priorityGlyph(draft.priority), priority, `Priority: ${priority}`);
+    setProperty(assigneeButton, propertyGlyph('assignee'), assignee, `Assignee: ${assignee}`);
+    setProperty(labelsButton, propertyGlyph('labels'), labels, `Labels: ${labelsName}`);
+    setProperty(projectButton, propertyGlyph('project'), projectName, `Project: ${project ?? 'No project'}`);
+    setProperty(dueButton, propertyGlyph('due'), due, `Due date: ${dueName}`);
   };
   propertyBar.append(stateButton, priorityButton, assigneeButton, labelsButton, projectButton, dueButton);
   refreshProperties();

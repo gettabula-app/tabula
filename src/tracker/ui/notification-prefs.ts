@@ -72,6 +72,7 @@ export function mountNotificationPrefs(host: HTMLElement, deps: NotificationPref
         preferences = { ...preferences!, prefs: { ...preferences!.prefs, [kind]: previous } };
         rowErrors.set(kind, { choice, previous });
         render();
+        if (focus) root.querySelector<HTMLElement>(`.trk-prefs-select[data-kind="${kind}"]`)?.focus();
       })
       .finally(() => controllers.delete(controller));
   };

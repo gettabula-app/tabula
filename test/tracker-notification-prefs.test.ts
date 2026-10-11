@@ -53,6 +53,22 @@ describe('tracker notification preferences UI', () => {
     expect(announced).toEqual(['Assigned to me: In Tabula only']);
   });
 
+  it('keeps focus on a preference picker after choosing a value rerenders its row', async () => {
+    browser = installTrackerUiBrowser();
+    const { host } = mount();
+    await flush();
+    const assigned = need(host, '.trk-prefs-select[data-kind="assigned"]');
+    assigned.focus();
+    assigned.click();
+    browser.document.querySelectorAll('[role="option"]')
+      .find((option) => textOf(option) === 'In Tabula only')!
+      .click();
+    await flush();
+    const active = browser.document.activeElement as unknown as FakeElement;
+    expect(active.classList.contains('trk-prefs-select')).toBe(true);
+    expect(active.getAttribute('data-kind')).toBe('assigned');
+  });
+
   it('uses the picker listbox keyboard controls and leaves Tab to move between settings', async () => {
     browser = installTrackerUiBrowser();
     const { host } = mount();
