@@ -51,7 +51,7 @@ A searchable list of everyone with an account: name, email, role, last activity,
 - **Sign out everywhere** ends all of their sessions without disabling them. You can use it on yourself.
 - **Remove** deletes the account, signs the person out and removes their access.
 
-The role names are explained in [Sharing, roles and teams](sharing.md#roles). On a hosted workspace with a seat limit, enabling a person or promoting a guest can be refused when all seats are in use.
+The role names are explained in [Sharing, roles and teams](sharing.md#roles). On a hosted workspace with a seat limit, enabling a person or promoting a guest can be refused when the workspace has reached its member limit.
 
 ## Teams
 

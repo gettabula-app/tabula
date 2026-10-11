@@ -15,7 +15,7 @@ const READ_ONLY_BANNER = 'This workspace is read-only.';
 export const FREE_WORKSPACE_TEXT = "This workspace is provided free (education or internal). There's nothing to bill.";
 
 const ERROR_TEXT = new Map([
-  ['seat_limit', 'All seats are in use. Remove or disable someone, or ask the workspace owner to add seats.'],
+  ['seat_limit', 'This workspace has reached its member limit. Remove or disable a member to make room.'],
   ['read_only', 'This workspace is read-only right now. Ask the workspace owner to check billing.'],
   ['no_billing', FREE_WORKSPACE_TEXT],
 ]);
