@@ -77,7 +77,7 @@ describe('OAuth consent view model', () => {
     expect(errorSentence(402, 'read_only')).toBe('This workspace is read-only. Ask the workspace owner to check billing.');
     expect(errorSentence(409, 'grant_limit')).toBe('You can have at most 20 connected apps. Disconnect one first.');
     expect(errorSentence(400, 'invalid_scope')).toBe('The available access level changed. Review the updated request.');
-    expect(errorSentence(400, 'invalid_boards')).toBe('One of the chosen boards is no longer available. Review the updated list.');
+    expect(errorSentence(400, 'invalid_boards')).toBe('A chosen board is no longer available. Review the updated list.');
   });
 
   it('constructs exact Allow and Deny bodies, including boards only for a non-empty Allow selection', () => {

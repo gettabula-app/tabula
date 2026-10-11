@@ -189,7 +189,7 @@ describe('OAuth consent panel', () => {
     expect(checkboxes).toHaveLength(51);
     expect(checkboxes[49].disabled).toBe(false);
     expect(checkboxes[50].disabled).toBe(true);
-    expect(need(page(), '.oauth-consent-board-count').textContent).toBe('50 boards chosen');
+    expect(need(page(), '.oauth-consent-board-count').textContent).toBe('50 boards chosen, the most allowed.');
   });
 
   it('snaps the selected scope to Read when the chosen-board ceiling is lower', async () => {
@@ -303,7 +303,7 @@ describe('OAuth consent panel', () => {
     checkBoard('board-a');
     button('Allow').click();
     await flush();
-    expect(textOf(page())).toContain('One of the chosen boards is no longer available. Review the updated list.');
+    expect(textOf(page())).toContain('A chosen board is no longer available. Review the updated list.');
     expect(apiCalls('GET', '/api/oauth/requests?')).toHaveLength(2);
     expect(page().querySelectorAll('input[type="checkbox"]')[0].checked).toBe(true);
     expect(page().querySelectorAll('input[type="checkbox"]')[1].value).toBe('board-c');

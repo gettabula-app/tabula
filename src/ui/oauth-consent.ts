@@ -125,7 +125,9 @@ function consentPage(
 
   function syncControls(): void {
     const chosenCount = selected.size;
-    boardCount.textContent = `${chosenCount} board${chosenCount === 1 ? '' : 's'} chosen`;
+    boardCount.textContent = chosenCount === 0 ? 'Choose at least one board.'
+      : chosenCount >= MAX_OAUTH_BOARD_IDS ? `${chosenCount} boards chosen, the most allowed.`
+      : `${chosenCount} board${chosenCount === 1 ? '' : 's'} chosen`;
     boardSelection.hidden = mode !== 'boards';
     pickerRadios.forEach((radio) => { radio.disabled = busy; });
     scopeRadios.forEach((radio) => { radio.disabled = busy; });
@@ -179,7 +181,7 @@ function consentPage(
         h('span', { class: 'oauth-consent-board-name' }, board.name),
         h('span', { class: 'oauth-consent-board-role' }, roleLabel(board.role))));
     }
-    boardCount.textContent = '0 boards chosen';
+    boardCount.textContent = 'Choose at least one board.';
     const picker = h('fieldset', { class: 'oauth-consent-picker' },
       h('legend', null, 'Which boards'),
       h('label', { class: 'oauth-consent-mode' }, allBoardsRadio, 'All boards I can open'),

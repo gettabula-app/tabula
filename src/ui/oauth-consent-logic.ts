@@ -101,7 +101,7 @@ export function errorSentence(status: number, code: string, retryAfter?: number)
   if (status === 402 && code === 'read_only') return 'This workspace is read-only. Ask the workspace owner to check billing.';
   if (status === 409 && code === 'grant_limit') return 'You can have at most 20 connected apps. Disconnect one first.';
   if (status === 400 && code === 'invalid_scope') return 'The available access level changed. Review the updated request.';
-  if (status === 400 && code === 'invalid_boards') return 'One of the chosen boards is no longer available. Review the updated list.';
+  if (status === 400 && code === 'invalid_boards') return 'A chosen board is no longer available. Review the updated list.';
   return 'Could not complete this connection request. Try again.';
 }
 
