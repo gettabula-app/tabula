@@ -95,6 +95,9 @@ describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout
     const box = (await button.boundingBox())!;
     expect(Math.round(box.width)).toBe(44);
     expect(Math.round(box.height)).toBe(44);
+    // the same dots icon as the board menu, not text
+    expect(await button.locator('svg').count()).toBe(1);
+    expect((await button.textContent())?.trim()).toBe('');
     await page.close();
 
     const bare = await openShell({ account: false });
@@ -193,6 +196,7 @@ describe.skipIf(!available)('the account menu of the Boards top bar in a browser
     expect(await page.locator('#entry-bar .topbar-end button', { hasText: /^Sign out$/ }).count()).toBe(0);
     const name = page.locator('#entry-bar .topbar-me-btn');
     expect(await name.getAttribute('aria-haspopup')).toBe('menu');
+    expect(Math.round((await name.boundingBox())!.height)).toBeGreaterThanOrEqual(44); // a 44 px target with a caret
     await name.click();
     const rows = (await page.locator('.account-menu .menu-item').allTextContents()).map((t) => t.trim());
     expect(rows).toEqual(['Your name and colour', 'AI tool access', 'Sign out']);

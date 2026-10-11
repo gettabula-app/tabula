@@ -2,7 +2,7 @@ import type { Me } from '../../api';
 import { openTrackerMenu } from './account-menu';
 import './tracker.css';
 import { closePopover, dialog, popover, toast } from '../../ui/common';
-import { h } from '../../ui/dom';
+import { h, icon } from '../../ui/dom';
 import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMeta, type TrackerPriority, type TrackerSortField, type TrackerState, type TrackerTicket, type TrackerView } from '../../tracker-types';
 import type { TrackerApi, TrackerStore } from '../../tracker-data';
 import { build, parse, type FilterChip } from './filter';
@@ -246,7 +246,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const routeMode = options.routeMode === true;
   const menuButton = h('button', {
     class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-  }, '…');
+  }, icon('dots', 18));
   menuButton.hidden = !options.account;
   menuButton.addEventListener('click', () => {
     if (options.account) openTrackerMenu(menuButton, { me: options.account, onBoards: () => options.onBoards?.() });
