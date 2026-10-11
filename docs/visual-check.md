@@ -162,3 +162,8 @@ The relay answers with `Content-Security-Policy: ... frame-ancestors 'none'`, so
 - `npm run build`, then `TABULA_DEV_ALLOW_FRAMING=1 npm start` serves the built app on port 8787 so it can be framed. `TABULA_DEV_ALLOW_FRAMING=1 npm run dev` does the same for the relay behind the dev server.
 - The Vite dev server (`npm run dev`, port 5173) sends neither `X-Frame-Options` nor a `frame-ancestors` policy, so it can be framed as it is.
 - `npm run visual -- --frameable` starts the throwaway relay with the flag. The screenshots do not depend on it, because the window width is set directly; it only matters if something else embeds that relay's pages during the run.
+
+## Seeding without an undo step
+
+A seed written through `__board.store.create` inside `store.transact` is an ordinary edit, so Undo removes it. Seed through `__board.store.seed(() => { ... })` instead: the writes are the board's starting content and are not an undo step. (A board started from a template or an imported file is written that way by the app.)
+

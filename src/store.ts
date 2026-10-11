@@ -10,6 +10,8 @@ import { customStickyColors } from './palette';
 
 /** Transaction origin for edits made on this device; only these are undoable. */
 export const LOCAL = 'local';
+/** Origin of the board's starting content (a seed, a template that starts a board): written, but never an undo step. */
+export const SEED = 'seed';
 
 export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => void;
 
@@ -318,6 +320,11 @@ export class Store {
   /** Every local write goes through transact or transactAs, so a read-only store cannot write. */
   transact(fn: () => void) {
     this.transactAs(fn, LOCAL);
+  }
+
+  /** Writes the board's starting content. Unlike transact it is not an undo step, so Undo cannot empty a board that was only just filled. */
+  seed(fn: () => void) {
+    this.transactAs(fn, SEED);
   }
 
   transactAs(fn: () => void, origin: string) {
