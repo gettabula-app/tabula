@@ -241,7 +241,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     }
   }
 
-  const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', 60, 5, 10_080);
+  const trackerEnabled = (env.TABULA_TRACKER ?? '').trim() === 'on';
+  const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', trackerEnabled ? 15 : 60, 5, 10_080);
   const settleSeconds = wholeNumber(env, 'SETTLE_SECONDS', DEFAULT_SETTLE_SECONDS, 0, 3_600);
   const shutdownSeconds = wholeNumber(env, 'SHUTDOWN_SECONDS', DEFAULT_SHUTDOWN_SECONDS, 0, 25);
   const snapshotMaxHoldSeconds = wholeNumber(env, 'SNAPSHOT_MAX_HOLD_SECONDS', DEFAULT_SNAPSHOT_MAX_HOLD_SECONDS, 1, 60);
@@ -891,6 +892,7 @@ function parseManifest(bytes, keys, name) {
 
 const EMPTY_STATUS = Object.freeze({
   lastSuccessAt: null,
+  snapshotEndedAt: null,
   lastRunAt: null,
   lastError: null,
   lastFailureAt: null,
@@ -930,6 +932,7 @@ function readStatus(directory, scrub) {
     const stored = JSON.parse(directory?.getSetting(STATUS_KEY) ?? 'null');
     if (!isObject(stored)) return status;
     status.lastSuccessAt = timeOrNull(stored.lastSuccessAt);
+    status.snapshotEndedAt = timeOrNull(stored.snapshotEndedAt);
     status.lastRunAt = timeOrNull(stored.lastRunAt);
     status.lastFailureAt = timeOrNull(stored.lastFailureAt);
     status.lastError = typeof stored.lastError === 'string' ? scrub(stored.lastError).slice(0, ERROR_MAX) : null;
@@ -1593,6 +1596,7 @@ export function createBackup({
         objects: unique,
         changed: !unchanged,
         manifestName,
+        snapshotEndedAt: Number.isFinite(manifest?.snapshotBarrier?.endedAt) ? manifest.snapshotBarrier.endedAt : null,
         files: manifest.files.length,
         uploaded: uploaded.size,
         repaired,
@@ -1732,6 +1736,7 @@ export function createBackup({
       ...state,
       lastRunAt: startedAt,
       lastSuccessAt: finishedAt,
+      snapshotEndedAt: timeOrNull(summary.snapshotEndedAt),
       lastError: null,
       consecutiveFailures: 0,
       lastManifest: summary.manifestName,

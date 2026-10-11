@@ -26,6 +26,8 @@ const NOTIFY_FIELDS = ['template', 'date'];
 const NOTIFY_DATE_MAX = 40;
 const NOTIFY_DATE_RE = /^\d{1,2} [A-Z][a-z]{2} \d{4}$/;
 const ADDRESS_RE = /\S+@\S+/g;
+const KEY_FLOOR_NAME_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const KEY_FLOOR_MAX_COUNTERS = 100;
 
 // What the control plane may ask the instance to mail the owners. `setting` remembers the last date notified, so a
 // retried job never mails twice. `text` is for the log, file and smtp mail modes; a hosted relay renders its own
@@ -356,6 +358,46 @@ export function createCloud({
     return url;
   }
 
+  /** Report monotonic ticket-counter floors to the workspace control plane (docs/tracker-s7.md, 6.3). */
+  async function reportKeyFloor(counters) {
+    if (!Array.isArray(counters) || counters.length > KEY_FLOOR_MAX_COUNTERS || counters.some((row) =>
+      !row || typeof row.scope !== 'string' || typeof row.prefix !== 'string'
+      || !KEY_FLOOR_NAME_RE.test(row.scope) || !KEY_FLOOR_NAME_RE.test(row.prefix)
+      || !Number.isSafeInteger(row.floor) || row.floor <= 0)) {
+      throw new TypeError('Invalid key floor counters');
+    }
+    const reply = await post('key-floor', { counters });
+    if (!reply.ok || reply.text.length > MAX_RESPONSE_CHARS) throw new Error('key floor report was not accepted');
+    let data;
+    try { data = JSON.parse(reply.text); } catch { throw new Error('invalid key floor reply'); }
+    if (data?.ok !== true) throw new Error('invalid key floor reply');
+    return { ok: true };
+  }
+
+  /** Read the control plane's monotonic ticket-counter floors, or null if its answer is unusable. */
+  async function readKeyFloor() {
+    try {
+      const reply = await post('key-floor/read', {});
+      if (!reply.ok || reply.text.length > MAX_RESPONSE_CHARS) return null;
+      const data = JSON.parse(reply.text);
+      if (!Array.isArray(data?.counters) || data.counters.length > KEY_FLOOR_MAX_COUNTERS) return null;
+      const counters = [];
+      const seen = new Set();
+      for (const row of data.counters) {
+        if (!row || typeof row.scope !== 'string' || typeof row.prefix !== 'string'
+          || !KEY_FLOOR_NAME_RE.test(row.scope) || !KEY_FLOOR_NAME_RE.test(row.prefix)
+          || !Number.isSafeInteger(row.floor) || row.floor <= 0) return null;
+        const key = JSON.stringify([row.scope, row.prefix]);
+        if (seen.has(key)) return null;
+        seen.add(key);
+        counters.push({ scope: row.scope, prefix: row.prefix, floor: row.floor });
+      }
+      return { counters };
+    } catch {
+      return null;
+    }
+  }
+
   const notifying = new Set();
 
   /**
@@ -439,6 +481,8 @@ export function createCloud({
     updates,
     setAutoUpgrade,
     portalUrl,
+    reportKeyFloor,
+    readKeyFloor,
     notify,
     scheduleUsagePush,
     close() {

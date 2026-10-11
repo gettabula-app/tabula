@@ -28,6 +28,7 @@ import { OpsError } from './tracker/shared.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
 import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
+import { createTrackerAdminRoutes } from './tracker/admin-routes.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -217,7 +218,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -589,7 +590,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
-    })
+      })
     : [];
 
   const trackerRoutes = config.tracker
@@ -606,11 +607,35 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
 
+  // Part A wiring point: supply checkTrackerData here when server/tracker/backup-check.mjs lands.
+  const trackerBackupCheck = checkTrackerData;
+  const readinessBackupStatus = () => ({ ...backupStatus(), ...backupExport?.status?.() });
+  const trackerAdminRoutes = config.authEnabled && config.tracker
+    ? createTrackerAdminRoutes({
+        directory,
+        compile,
+        audit,
+        requireOwner,
+        errors: { HttpError },
+        backupStatus: readinessBackupStatus,
+        backupConfig,
+        cloud,
+        reporter: keyFloorReporter,
+        restore,
+        floorFilePath: config.trackerKeyFloorFile ?? null,
+        checkTrackerData: trackerBackupCheck,
+        now,
+        emit,
+        log,
+      })
+    : [];
+
   // ------------------------------------------------------------ handlers
 
   const routes = [
     ...trackerApiRoutes,
     ...trackerLinkRoutes,
+    ...trackerAdminRoutes,
 
     ...(backupExport
       ? [
@@ -1702,13 +1727,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     res.setHeader('cache-control', 'no-store');
     res.setHeader('x-content-type-options', 'nosniff');
-    if (maintenance() && !(pathname === '/api/internal/backup-status' && String(req.method).toUpperCase() === 'GET')) {
+    const method = String(req.method).toUpperCase();
+    if (maintenance() && !(pathname === '/api/internal/backup-status' && method === 'GET')) {
       res.setHeader('retry-after', '30');
-      send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      // Same disclosure as the generic reply, with the code the tracker client reads. No auth, no directory read, no route.
+      if (method === 'POST' && pathname === '/api/admin/tracker/key-epoch') {
+        send(res, 503, { error: 'tracker_restoring', message: 'Ticket writes are paused while the workspace is being restored.', floor: 'pending' });
+      } else {
+        send(res, 503, { error: 'restoring', message: 'The workspace is being restored from a backup. Try again in a minute.' });
+      }
       return true;
     }
     try {
-      const method = String(req.method).toUpperCase();
       // Whole-workspace restore takes its safety backup from inside this handler; that backup must be allowed to acquire
       // the same barrier. Maintenance mode takes over the writers immediately after the safety copy succeeds.
       // A streaming AI run lasts minutes and writes boards through the room, not the directory, so it must not hold a lease that would stall every other writer.

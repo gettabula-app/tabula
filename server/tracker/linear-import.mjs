@@ -3,6 +3,7 @@ import path from 'node:path';
 import { appendTicketEvent } from './events.mjs';
 import { requireTicketWrite } from './access.mjs';
 import { allocateTicket } from './ids.mjs';
+import { KEY_FLOOR_CHANGED_EVENT } from './key-floor.mjs';
 import { refreshTicketSearch } from './search.mjs';
 import { actorInfo, getDb, inTransaction, newId, requireWritable, validCalendarDate } from './shared.mjs';
 
@@ -968,6 +969,21 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
   const results = [];
   let projectStats = null;
   let relationStats = null;
+  const initialNext = Number(db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?')
+    .get(planned.numbering.trackerId, planned.numbering.prefix)?.next_number ?? 1);
+  let observedNext = initialNext;
+  let counterChanged = false;
+  let counterEventSent = false;
+  const notifyCounterChange = () => {
+    if (!counterChanged || counterEventSent) return;
+    counterEventSent = true;
+    try {
+      const result = options.events?.emit
+        ? options.events.emit(KEY_FLOOR_CHANGED_EVENT)
+        : options.onCounterAdvanced?.({ event: KEY_FLOOR_CHANGED_EVENT });
+      if (result && typeof result.then === 'function') void result.catch(() => {});
+    } catch { /* reporting cannot fail an import */ }
+  };
   const allIssues = planned.numbering.strategy === 'allocate'
     ? [...snapshot.issues].sort((a, b) => millis(a.createdAt) - millis(b.createdAt) || a.number - b.number || a.id.localeCompare(b.id))
     : [...snapshot.issues];
@@ -1010,11 +1026,15 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
         }
         return batchResults;
       });
+      const currentNext = Number(db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?').get('trk_default', 'TAB')?.next_number ?? observedNext);
+      if (currentNext > observedNext) counterChanged = true;
+      observedNext = Math.max(observedNext, currentNext);
       created += batchStats.created;
       updated += batchStats.updated;
       conflicts.push(...batchStats.conflicts);
       results.push(...made);
     } catch {
+      notifyCounterChange();
       try {
         preserved = mergePreserved(db, priorPreserved, preservedRows(db, snapshot));
         writePreserved(options.out, preserved);
@@ -1040,6 +1060,7 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
       }
     });
   } catch {
+    notifyCounterChange();
     try {
       preserved = mergePreserved(db, priorPreserved, preservedRows(db, snapshot));
       writePreserved(options.out, preserved);
@@ -1047,8 +1068,10 @@ export function applyImport({ db: dbArg, snapshot: rawSnapshot, actor, options =
     return { ok: false, errorCode: 'backfill_failed', created, updated, conflicts, batches, report: planned.report };
   }
   try { writePreserved(options.out, preserved); } catch {
+    notifyCounterChange();
     return { ok: false, errorCode: 'preserved_write_failed', created, updated, conflicts, batches, report: planned.report };
   }
+  notifyCounterChange();
   return { ok: true, created, updated, conflicts, batches, results, projects: projectStats, relations: relationStats, report: planned.report };
 }
 

@@ -1657,6 +1657,7 @@ export function createRestore({
     restoreWorkspace,
     recoverOnStart: () => recoverOnStart({ dataDir, log: say, step }),
     status,
+    isRunning: () => busy !== null || maintenance,
     start,
     stop,
     sweepOldData,

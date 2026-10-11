@@ -45,7 +45,7 @@ The default `s3` target is on when its five required variables are set. The `dir
 | `TABULA_BACKUP_PREFIX` | `tabula` | Everything is stored under this key prefix. Letters, digits, `. - _` and `/` between them |
 | `TABULA_BACKUP_REGION` | `auto` | For target `s3`, the signing region. `auto` is right for Tigris and R2; AWS needs the bucket's region |
 | `TABULA_BACKUP_PATH_STYLE` | `on` | For target `s3`, `on`: `https://endpoint/bucket/key`. `off`: `https://bucket.endpoint/key` (needs a DNS name, not an IP address) |
-| `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between runs, 5 to 10080 |
+| `TABULA_BACKUP_INTERVAL_MINUTES` | `60` (`15` when `TABULA_TRACKER=on`) | Time between runs, 5 to 10080. An explicit value wins |
 | `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Quiet time after the last change before a backup is taken, 1 to 3600. `0`: no settle backups (see [When it runs](#when-it-runs)) |
 | `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | How long a graceful shutdown may spend on a final backup, 1 to 25. `0`: no final backup. Keep it under the time the platform waits before it kills the process (5 seconds on Fly) |
 | `TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS` | `5` | Maximum time to hold writers while local snapshot copies are made, 1 to 60 |
@@ -53,10 +53,15 @@ The default `s3` target is on when its five required variables are set. The `dir
 | `TABULA_BACKUP_VERIFY_MAX_MB` | `64` | The most sealed (encrypted) megabytes one deep verify reads, 1 to 4096. An object larger than this is never read by it |
 | `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep the newest backup of every hour for this long. `0`: no hourly points |
 | `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep the newest backup of every day (UTC) for this long. `0`: no daily points |
+| `TABULA_TRACKER_KEY_FLOOR_FILE` | unset | Optional self-hosted ticket-key floor file. Must be an absolute path outside `DATA_DIR` |
 
 The old `MIRA_BACKUP_*` spelling works with the usual deprecation warning. Two examples of retention: an hourly backup with 48 hours of hourly points and 30 days of daily points is the default; a once-a-day backup that keeps a week is `TABULA_BACKUP_INTERVAL_MINUTES=1440 TABULA_BACKUP_KEEP_HOURLY_HOURS=0 TABULA_BACKUP_KEEP_DAILY_DAYS=7`. The newest backup is always kept, whatever these say.
 
 For target `s3`, give the credentials the least they need on that bucket (or prefix): put, get, head, delete and list. The key and the secret key are never written to the log, the status, the audit log or an error message.
+
+When `TABULA_TRACKER=on`, the default backup interval is 15 minutes so an active workspace can meet the tracker RPO; an explicit `TABULA_BACKUP_INTERVAL_MINUTES` still wins. The owner can review the 30-second-cached, owner-only readiness report at `GET /api/admin/tracker/readiness`.
+
+Hosted tracker workspaces report ticket-counter floors to the control plane after a counter advances by 25, once a day, and during shutdown. These reports are queued and retried outside ticket creation, so a reporting failure does not delay or fail a ticket. A self-hosted server can also set `TABULA_TRACKER_KEY_FLOOR_FILE` to an absolute path outside `DATA_DIR`; the server atomically replaces that file with the latest counter floors and timestamp. Keep that file on a separate disk if it is intended to survive loss of the data volume.
 
 ## Writing to a directory (target dir)
 

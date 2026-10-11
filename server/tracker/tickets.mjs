@@ -317,6 +317,7 @@ export function createTicket({
   source = 'app',
   readOnly = () => false,
   now = Date.now(),
+  onCounterAdvanced = () => {},
 } = {}) {
   requireWritable(readOnly);
   requireTrackerWrite(actor);
@@ -366,6 +367,7 @@ export function createTicket({
     idempotencyKey,
     readOnly,
     now,
+    onCounterAdvanced,
     fields: {
       title: cleanTitle,
       description: cleanDescription,
