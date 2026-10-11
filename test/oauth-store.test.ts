@@ -52,6 +52,30 @@ afterEach(() => {
   for (const dir of temporary.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
+describe('OAuth grants bound to boards', () => {
+  it('stores up to 50 board ids, refuses 51, and reads a stored list back exactly', () => {
+    const d = directory();
+    const person = d.createUser({ email: 'picker@example.com', role: 'member' })!;
+    const registered = client(d);
+    const create = (boardIds: string[]) => d.oauthInternals!.createGrant({
+      clientId: registered.clientId, userId: person.id, scope: 'read', boardIds, resource: 'https://tabula.example/mcp', now: T0,
+    });
+    const ids = Array.from({ length: 50 }, (_, i) => `board${String(i).padStart(3, '0')}`);
+    const made = create(ids);
+    const pair = d.oauthInternals!.issueTokens({ grantId: made.id, scope: 'read', now: T0 });
+    expect(d.findOauthAccessToken(pair.accessToken, T0 + 1)!.boardIds).toEqual(ids);
+    expect(() => create([...ids, 'board050'])).toThrow('invalid grant boards');
+  });
+
+  it('fails closed to no boards when the stored list is damaged', () => {
+    const d = directory();
+    const fixture = grant(d, { scope: 'read' });
+    const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'read', now: T0 });
+    d.db.prepare('UPDATE oauth_grants SET board_ids = ? WHERE id = ?').run('{"not":"a list"}', fixture.value.id);
+    expect(d.findOauthAccessToken(pair.accessToken, T0 + 1)!.boardIds).toEqual([]);
+  });
+});
+
 describe('OAuth store migration and persistence', () => {
   it('applies migration 16 with cascading user foreign keys and unique token digests', () => {
     const d = directory();

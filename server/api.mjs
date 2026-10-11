@@ -23,7 +23,7 @@ import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
-import { OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
+import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
 import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
 import { ticketAccess } from './tracker/access.mjs';
@@ -310,6 +310,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const oauthDecisionLimiter = createWindowLimiter(10, now);
   const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
   const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
+  // What a role on a board allows a connected app to do there: editors and owners write, commenters comment, the rest read.
+  const oauthRoleScope = (role) => (role === 'editor' || role === 'owner' ? 'write' : role === 'commenter' ? 'comment' : 'read');
+  const oauthBoardsMax = (boards) => boards.reduce((max, board) => {
+    const value = oauthRoleScope(board.role);
+    return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
+  }, 'read');
 
   function oauthRequestContext(envelope, user, sessionId) {
     if (!config.mcp?.oauth || config.mcp.mode !== 'accounts' || typeof envelope !== 'string' || envelope.length > 8192
@@ -327,20 +333,16 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     const requestScopes = request.scope === null ? [client.maxScope] : request.scope.split(/\s+/u);
     if (!requestScopes.length || requestScopes.some((scope) => !OAUTH_SCOPES.includes(scope))) return null;
     const requestMax = requestScopes.reduce((max, scope) => oauthScopeRank(scope) > oauthScopeRank(max) ? scope : max, 'read');
+    const boards = directory.listBoardsFor(user);
     let personMax = 'read';
     if (user.role !== 'owner' && user.role !== 'admin') {
-      const boards = directory.listBoardsFor(user);
-      const boardMax = boards.reduce((max, board) => {
-        const value = board.role === 'editor' || board.role === 'owner' ? 'write'
-          : board.role === 'commenter' ? 'comment' : 'read';
-        return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
-      }, 'read');
       const onSharedWorkspace = boards.some((board) => board.teamId !== null || board.ownerId !== user.id);
-      // Without a board picker, owner/admin grants and grants on shared workspaces stay read-only. A future picker can
-      // offer broader access while binding it to selected boards.
-      personMax = onSharedWorkspace ? 'read' : boardMax;
+      // An unrestricted grant (no boards chosen) on owner/admin accounts and on shared workspaces stays read-only.
+      // Choosing boards is the way to a wider grant: it is bound to those boards and capped by the person's role on them.
+      personMax = onSharedWorkspace ? 'read' : oauthBoardsMax(boards);
     }
-    const maxScope = oauthLowerScope(oauthLowerScope(requestMax, client.maxScope), personMax);
+    const requestCeiling = oauthLowerScope(requestMax, client.maxScope);
+    const maxScope = oauthLowerScope(requestCeiling, personMax);
     let destination;
     try {
       destination = new URL(request.redirectUri);
@@ -361,6 +363,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       redirectUri: request.redirectUri,
       verified,
       maxScope,
+      requestCeiling,
+      boards,
       readOnly: cloud?.limits().readOnly === true,
     };
   }
@@ -1318,6 +1322,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               redirectUri: context.redirectUri,
               verified: context.verified,
               maxScope: context.maxScope,
+              pickerAvailable: true,
+              scopes: {
+                unrestricted: context.maxScope,
+                boards: oauthLowerScope(context.requestCeiling, oauthBoardsMax(context.boards)),
+              },
+              boards: context.boards.map((board) => ({ id: board.id, name: board.title, role: board.role })),
               nonce: context.nonce,
               readOnly: context.readOnly,
             }];
@@ -1328,7 +1338,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               res.setHeader('retry-after', String(wait));
               throw new HttpError(429, 'rate_limited', 'Too many authorization decisions. Try again later.');
             }
-            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce'].includes(key))) {
+            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce', 'boardIds'].includes(key))) {
               throw badRequest('The authorization decision is not valid');
             }
             if (typeof body.request !== 'string' || body.request.length > 8192 || typeof body.nonce !== 'string') {
@@ -1361,7 +1371,25 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             const scope = body.scope === undefined ? 'read' : oneOf(body.scope, OAUTH_SCOPES, 'scope');
             const current = oauthRequestContext(body.request, user, sessionId);
             if (!current) throw notFound('Authorization request not found');
-            if (oauthScopeRank(scope) > oauthScopeRank(current.maxScope)) {
+            // Boards chosen: they are re-read now, every one must be open to this person at this moment, and the access level
+            // is capped by the person's role on just those boards. Without boards the grant is unrestricted, as before.
+            let boardIds = null;
+            let ceiling = current.maxScope;
+            if (body.boardIds !== undefined && body.boardIds !== null) {
+              const ids = body.boardIds;
+              if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_OAUTH_BOARD_IDS
+                || ids.some((id) => typeof id !== 'string' || !TOKEN_BOARD_ID_RE.test(id)) || new Set(ids).size !== ids.length) {
+                throw new HttpError(400, 'invalid_boards', `Choose 1 to ${MAX_OAUTH_BOARD_IDS} different boards you can open.`);
+              }
+              const open = new Map(current.boards.map((board) => [board.id, board]));
+              const chosen = ids.map((id) => open.get(id));
+              if (chosen.some((board) => board === undefined)) {
+                throw new HttpError(400, 'invalid_boards', 'One of the chosen boards is not available to you.');
+              }
+              boardIds = ids;
+              ceiling = oauthLowerScope(current.requestCeiling, oauthBoardsMax(chosen));
+            }
+            if (oauthScopeRank(scope) > oauthScopeRank(ceiling)) {
               throw new HttpError(400, 'invalid_scope', 'The selected access level is not available.');
             }
             if (cloud?.limits().readOnly) {
@@ -1376,7 +1404,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   userId: user.id,
                   decision: 'allow',
                   scope,
-                  boardIds: null,
+                  boardIds,
                   now: now(),
                 });
                 if (!result) return null;
@@ -1386,6 +1414,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   scope,
                   decision: 'allow',
                   grantId: result.grant.id,
+                  ...(boardIds ? { boardCount: boardIds.length } : {}),
                 });
                 return result;
               });

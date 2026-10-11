@@ -571,6 +571,129 @@ describe('OAuth metadata and registration routes', () => {
     expect(privateAllow.status).toBe(200);
   });
 
+  describe('board picker', () => {
+    async function pickerSetup() {
+      const h = oauthHarness();
+      await h.start();
+      const owner = await h.signInOwner();
+      const team = await h.newTeam(owner.cookie);
+      const commenter = await h.joinTeam(owner.cookie, team.id);
+      const stranger = await h.joinTeam(owner.cookie, team.id);
+      const shared = await h.newBoard(owner.cookie);
+      const other = await h.newBoard(owner.cookie);
+      const strangerBoard = await h.newBoard(stranger.cookie);
+      await h.share(owner.cookie, shared, commenter.user.id, 'commenter');
+      const client = await register(h);
+      const begin = async (cookie: string) => {
+        const started = await beginAuthorization(h, client.client_id);
+        const context = await consent(h, cookie, started.envelope!);
+        return { started, context };
+      };
+      const decideWith = (cookie: string, started: { envelope: string | null }, nonce: string, extra: Record<string, unknown>) =>
+        h.api(cookie, 'POST', '/api/oauth/requests/decision', { request: started.envelope, decision: 'allow', nonce, ...extra });
+      return { h, owner, commenter, stranger, shared, other, strangerBoard, client, begin, decideWith };
+    }
+
+    it('lists the boards with their roles and the access level each mode allows', async () => {
+      const { owner, commenter, shared, other, begin } = await pickerSetup();
+      const asCommenter = (await begin(commenter.cookie)).context;
+      expect(asCommenter.status).toBe(200);
+      expect(asCommenter.body.pickerAvailable).toBe(true);
+      expect(asCommenter.body.boards).toEqual([{ id: shared, name: expect.any(String), role: 'commenter' }]);
+      expect(asCommenter.body.maxScope).toBe('read');
+      expect(asCommenter.body.scopes).toEqual({ unrestricted: 'read', boards: 'comment' });
+      const asOwner = (await begin(owner.cookie)).context;
+      expect(asOwner.body.boards.map((b: { id: string }) => b.id)).toEqual(expect.arrayContaining([shared, other]));
+      expect(asOwner.body.boards.every((b: { role: string }) => b.role === 'owner')).toBe(true);
+      expect(asOwner.body.scopes).toEqual({ unrestricted: 'read', boards: 'write' });
+    });
+
+    it('refuses a board the person cannot open, an access level above the boards maximum, bad shapes and unknown keys', async () => {
+      const { commenter, shared, strangerBoard, begin, decideWith } = await pickerSetup();
+      const { started, context } = await begin(commenter.cookie);
+      const nonce = context.body.nonce;
+      const foreign = await decideWith(commenter.cookie, started, nonce, { scope: 'read', boardIds: [strangerBoard] });
+      expect(foreign.status).toBe(400);
+      expect(foreign.body).toMatchObject({ error: 'invalid_boards' });
+      const mixed = await decideWith(commenter.cookie, started, nonce, { scope: 'read', boardIds: [shared, strangerBoard] });
+      expect(mixed.body).toMatchObject({ error: 'invalid_boards' });
+      for (const boardIds of [[], 'x', [shared, shared], [1], Array.from({ length: 51 }, (_, i) => `b${i}`)]) {
+        const bad = await decideWith(commenter.cookie, started, nonce, { scope: 'read', boardIds });
+        expect({ boardIds, status: bad.status }).toEqual({ boardIds, status: 400 });
+        expect(bad.body).toMatchObject({ error: 'invalid_boards' });
+      }
+      const tooWide = await decideWith(commenter.cookie, started, nonce, { scope: 'write', boardIds: [shared] });
+      expect(tooWide.status).toBe(400);
+      expect(tooWide.body).toMatchObject({ error: 'invalid_scope' });
+      const extra = await decideWith(commenter.cookie, started, nonce, { scope: 'read', boardIds: [shared], extra: true });
+      expect(extra.status).toBe(400);
+      // none of the refusals used the request: the same request is still allowed
+      const ok = await decideWith(commenter.cookie, started, nonce, { scope: 'comment', boardIds: [shared] });
+      expect(ok.status).toBe(200);
+      expect(callbackParams(ok.body.redirect).get('code')).toMatch(/^tbc_/);
+    });
+
+    it('lets deny ignore boardIds, even invalid ones', async () => {
+      const { commenter, begin, h } = await pickerSetup();
+      const { started, context } = await begin(commenter.cookie);
+      const denied = await h.api(commenter.cookie, 'POST', '/api/oauth/requests/decision', {
+        request: started.envelope, decision: 'deny', nonce: context.body.nonce, boardIds: 'nonsense',
+      });
+      expect(denied.status).toBe(200);
+      expect(callbackParams(denied.body.redirect).get('error')).toBe('access_denied');
+    });
+
+    it('binds a write grant of an owner to the chosen board, audits only the count, and drops a deleted board silently', async () => {
+      const { h, owner, shared, other, client, begin, decideWith } = await pickerSetup();
+      const { started, context } = await begin(owner.cookie);
+      // unrestricted stays read-only for an owner; with a board chosen the same person can grant write
+      expect((await decideWith(owner.cookie, started, context.body.nonce, { scope: 'write' })).status).toBe(400);
+      const allowed = await decideWith(owner.cookie, started, context.body.nonce, { scope: 'write', boardIds: [shared] });
+      expect(allowed.status).toBe(200);
+      const code = callbackParams(allowed.body.redirect).get('code');
+      const exchanged = await tokenRequest(h, {
+        grant_type: 'authorization_code', code, client_id: client.client_id,
+        redirect_uri: client.redirect_uris[0], code_verifier: started.verifier,
+      });
+      expect(exchanged.status).toBe(200);
+      expect(exchanged.body.scope).toBe('write');
+      const token = exchanged.body.access_token as string;
+
+      const listed = await h.tool(token, 'list_boards');
+      expect(listed.data.boards.map((b: { id: string }) => b.id)).toEqual([shared]);
+      expect((await h.tool(token, 'get_board', { boardId: shared })).error).toBeUndefined();
+      expect((await h.tool(token, 'get_board', { boardId: other })).error).toBe('not_found');
+
+      const audit = (await h.api(owner.cookie, 'GET', '/api/admin/audit?limit=50&action=mcp.oauth.authorize')).body.entries as { detail: any }[];
+      const row = audit.find((entry) => entry.detail.decision === 'allow' && entry.detail.boardCount !== undefined);
+      expect(row?.detail.boardCount).toBe(1);
+      expect(JSON.stringify(audit)).not.toContain(shared);
+
+      // deleting the board leaves an empty set, which is no boards and never all of them
+      expect((await h.api(owner.cookie, 'DELETE', `/api/boards/${shared}`)).status).toBeLessThan(300);
+      expect((await h.tool(token, 'list_boards')).data.boards).toEqual([]);
+      expect((await h.tool(token, 'get_board', { boardId: shared })).error).toBe('not_found');
+      expect((await h.tool(token, 'get_board', { boardId: other })).error).toBe('not_found');
+    });
+
+    it('keeps a board-restricted write grant at write after the person is promoted to admin', async () => {
+      const { h, owner, client, begin, decideWith } = await pickerSetup();
+      const memberB = await h.joinTeam(owner.cookie, (await h.api(owner.cookie, 'GET', '/api/teams')).body[0].id);
+      const ownBoard = await h.newBoard(memberB.cookie);
+      const { started, context } = await begin(memberB.cookie);
+      const allowed = await decideWith(memberB.cookie, started, context.body.nonce, { scope: 'write', boardIds: [ownBoard] });
+      expect(allowed.status).toBe(200);
+      const exchanged = await tokenRequest(h, {
+        grant_type: 'authorization_code', code: callbackParams(allowed.body.redirect).get('code'), client_id: client.client_id,
+        redirect_uri: client.redirect_uris[0], code_verifier: started.verifier,
+      });
+      const token = exchanged.body.access_token as string;
+      expect((await h.tool(token, 'whoami')).data.token).toMatchObject({ scope: 'write' });
+      expect((await h.api(owner.cookie, 'PATCH', `/api/members/${memberB.user.id}`, { role: 'admin' })).status).toBe(200);
+      expect((await h.tool(token, 'whoami')).data.token).toMatchObject({ scope: 'write', boardIds: [ownBoard] });
+    });
+  });
+
   it('revokes OAuth grants on sign-out everywhere and demotion to guest', async () => {
     const h = oauthHarness();
     await h.start();
