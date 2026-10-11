@@ -19,6 +19,9 @@ export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'tex
 const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
 const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
 const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']);
+const UNDO_OBJECT_IDS = Symbol('undo-object-ids');
+
+interface UndoObjectIds { ids: Set<Id>; onlyObjects: boolean }
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -80,6 +83,8 @@ export class Store {
   private readOnlyListeners = new Set<(v: boolean) => void>();
   /** Object ids touched by the current undo/redo transaction; consumed by the app's stack-item handler. */
   private undoChangedIds = new Set<Id>();
+  /** Shared object maps let undo stack items retain the ids they can later change. */
+  private undoObjectTypeIds = new WeakMap<object, Id>();
   /** Cleanup work is keyed to object transactions so ordinary edits do not scan the board. */
   private emptyGroupCleanupHints = new WeakMap<Y.Transaction, { scan: boolean; groups: Set<Id> }>();
   /** Local structural writes clean up in their undoable transaction; don't repeat the scan after it closes. */
@@ -112,7 +117,10 @@ export class Store {
     this.pollState = doc.getMap('pollState');
     this.labels = doc.getMap('labels');
 
-    this.objects.forEach((m, id) => this.cache.set(id, this.cachedObject(m.toJSON() as Obj)));
+    this.objects.forEach((m, id) => {
+      this.undoObjectTypeIds.set(m, id);
+      this.cache.set(id, this.cachedObject(m.toJSON() as Obj));
+    });
     this.rebuildBoundIndex();
     this.rebuildChildIndex();
     this.refreshOrphans();
@@ -135,11 +143,16 @@ export class Store {
             noteFields(id, ['*']);
             if (change.action === 'delete') scanForEmptyGroups = true;
             if (change.action === 'add' || change.action === 'update') {
-              if (this.objects.get(id)?.get('type') === 'group') createdGroups.add(id);
+              const object = this.objects.get(id);
+              if (object) this.undoObjectTypeIds.set(object, id);
+              if (object?.get('type') === 'group') createdGroups.add(id);
             }
           }
         } else if (e.path.length > 0) {
           const id = String(e.path[0]);
+          const object = this.objects.get(id);
+          if (object) this.undoObjectTypeIds.set(object, id);
+          this.undoObjectTypeIds.set(e.target as object, id);
           changed.add(id);
           noteFields(id, [...e.changes.keys.keys()].map(String));
           if (transaction.changed.get(e.target)?.has('parent')) scanForEmptyGroups = true;
@@ -216,6 +229,30 @@ export class Store {
       trackedOrigins: new Set([LOCAL]),
       captureTimeout: 350,
     });
+    const rememberUndoObjects = <T extends {
+      stackItem: { meta: Map<any, any> };
+      changedParentTypes: Iterable<readonly [object, Iterable<unknown>]>;
+    }>(event: T) => {
+      const current = event.stackItem.meta.get(UNDO_OBJECT_IDS) as UndoObjectIds | undefined;
+      const item: UndoObjectIds = current ?? { ids: new Set(), onlyObjects: true };
+      for (const [type, changes] of event.changedParentTypes) {
+        for (const change of changes) {
+          const event = change as { target?: object; changes?: { keys?: Map<unknown, unknown> } };
+          const id = event.target ? this.undoObjectTypeIds.get(event.target) : undefined;
+          if (id) {
+            item.ids.add(id);
+          } else if (type === this.objects && event.target === this.objects) {
+            // Object creation and deletion only report the root map, whose changed keys are object ids.
+            for (const key of event.changes?.keys?.keys() ?? []) if (typeof key === 'string') item.ids.add(key);
+          } else {
+            item.onlyObjects = false;
+          }
+        }
+      }
+      event.stackItem.meta.set(UNDO_OBJECT_IDS, item);
+    };
+    this.undo.on('stack-item-added', (event) => rememberUndoObjects(event));
+    this.undo.on('stack-item-updated', (event) => rememberUndoObjects(event));
     // Also clear on an undo/redo transaction with no object observer events (for example meta-only and labels-only).
     this.doc.on('beforeTransaction', (transaction) => {
       if (transaction.origin === this.undo) this.undoChangedIds.clear();
@@ -227,6 +264,31 @@ export class Store {
     const changed = new Set(this.undoChangedIds);
     this.undoChangedIds.clear();
     return changed;
+  }
+
+  /**
+   * Drops undo or redo items that change only corrected objects. A Yjs stack item cannot safely be split, so an item
+   * that also changes any other object or board-wide data is kept intact rather than discarding unrelated work.
+   */
+  dropUndoFor(cardIds: Iterable<Id>): void {
+    const corrected = new Set(cardIds);
+    if (!corrected.size) return;
+    const keepUnrelated = (stack: typeof this.undo.undoStack) => {
+      let write = 0;
+      for (let read = 0; read < stack.length; read++) {
+        const stackItem = stack[read];
+        const item = stackItem.meta.get(UNDO_OBJECT_IDS) as UndoObjectIds | undefined;
+        const onlyCorrectedObjects = !!item && item.onlyObjects && item.ids.size > 0
+          && [...item.ids].every((id) => corrected.has(id));
+        if (!onlyCorrectedObjects) stack[write++] = stackItem;
+      }
+      const changed = write !== stack.length;
+      stack.length = write;
+      return changed;
+    };
+    const undoChanged = keepUnrelated(this.undo.undoStack);
+    const redoChanged = keepUnrelated(this.undo.redoStack);
+    if (undoChanged || redoChanged) this.undo.stopCapturing();
   }
 
   onChange(l: ChangeListener) {

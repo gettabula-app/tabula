@@ -28,6 +28,7 @@ import type { CustomTemplate } from './custom-templates';
 import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
+import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
 import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
@@ -522,12 +523,18 @@ async function route() {
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
   // The relay undid one of this person's changes to the comments: say so, once per notice.
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
+  const untrackerNotice = conn.onTrackerNotice(({ undone }) => {
+    conn.store.dropUndoFor(undone.map(({ cardId }) => cardId));
+    const text = noticeText(undone.map(({ reason }) => reason));
+    if (text) toast(text);
+  });
   releaseWorkspace = () => {
     unwatchFeatures();
     unwatchGuestAccess();
     releaseNewer();
     unhint();
     unnotice();
+    untrackerNotice();
     banner.dispose();
     bannerSize.disconnect();
   };

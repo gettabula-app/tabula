@@ -42,6 +42,32 @@ export function restoreSuccessToast(platform: string): string {
   return `Version restored. Press ${formatShortcutLabel('Ctrl/Cmd+Z', platform)} to undo.`;
 }
 
+type TrackerRestoreWindowApi = Pick<typeof api, 'beginTrackerRestoreWindow' | 'endTrackerRestoreWindow'>;
+
+/** Best-effort tracker window; the server's bulk threshold still protects a restore when either request fails. */
+export async function withTrackerRestoreWindow<T>(
+  boardId: string,
+  enabled: boolean,
+  client: TrackerRestoreWindowApi,
+  apply: () => T | Promise<T>,
+): Promise<T> {
+  if (!enabled) return await apply();
+  try {
+    await client.beginTrackerRestoreWindow(boardId);
+  } catch {
+    // A 409 means someone else holds the window; a network failure is covered by the guard's bulk threshold too.
+  }
+  try {
+    return await apply();
+  } finally {
+    try {
+      await client.endTrackerRestoreWindow(boardId);
+    } catch {
+      /* the window expires by itself if cleanup cannot reach the server */
+    }
+  }
+}
+
 /** Version history: a panel with the saved versions and a read-only preview of one (docs/history.md). */
 export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => void } {
   const boardId = app.conn.id;
@@ -484,7 +510,10 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
     busy = false;
     if (preview !== p) return;
     // Rebuilt against the board as it is by now, so edits made while the dialog was open are neither lost nor duplicated.
-    applyRestore(app.store, planNow(p));
+    const auth = authState();
+    const trackerEnabled = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+    const linkedKanbans = [...app.store.cache.values()].some((o) => o.type === 'container' && o.ext?.provider === 'tabula');
+    await withTrackerRestoreWindow(boardId, trackerEnabled && linkedKanbans, api, () => applyRestore(app.store, planNow(p)));
     closePreview();
     (document.activeElement as HTMLElement | null)?.blur();
     toast(restoreSuccessToast(typeof navigator === 'undefined' ? '' : navigator.platform));

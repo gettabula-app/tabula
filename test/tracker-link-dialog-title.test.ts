@@ -58,7 +58,7 @@ describe('linked card dialog title', () => {
     expect((store.get(cardId) as BaseObj).text).toBe('Canvas title');
 
     const ticketLink = browser.document.body.querySelector('a.k-open-tracker') as FakeElement;
-    expect(textOf(ticketLink)).toBe('Open TAB-123');
+    expect(textOf(ticketLink)).toBe('Edit in tracker');
     expect(ticketLink.href).toBe('/t/TAB-123');
     ticketLink.click();
     expect(pushState).toHaveBeenCalledWith(null, '', '/t/TAB-123');

@@ -160,6 +160,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const clearLink = h('button', { class: 'btn ghost k-clear', type: 'button', onclick: () => { dirty.link = false; link.value = ''; clearLinkError(); save({ link: null }); } }, 'Clear');
 
   const labels = h('div', { class: 'k-labels', role: 'group', 'aria-label': 'Labels' });
+  const trackerValues = h('div', { class: 'k-stack', role: 'group', 'aria-label': 'Tracker fields' });
   const manage = editable
     ? h('button', { class: 'btn ghost', type: 'button', onclick: () => app.openLabels?.() }, 'Edit labels')
     : null;
@@ -175,8 +176,10 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     ? h('a', {
       class: 'k-open-tracker', href: buildTrackerPath({ kind: 'ticket', key: card0.extKey }),
       onclick: (event: Event) => { event.preventDefault(); navigateTrackerPath({ kind: 'ticket', key: card0.extKey! }); },
-    }, `Open ${card0.extKey}`)
+    }, 'Edit in tracker')
     : null;
+
+  const trackerField = (label: string, value: string) => field(label, h('span', { class: 'k-link-readonly' }, value || 'None'));
 
   const note = editable ? null : h('p', { class: 'k-note' }, card0.locked && !app.readOnly ? 'This card is locked. Unlock it to change it.' : canComment ? 'You can comment on this card. Only editors can change it.' : 'Only editors can change this card.');
   const body = h('div', { class: 'k-card-form' },
@@ -184,13 +187,13 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     openTrackerTicket,
     field('Title', title),
     field('Description', desc),
-    h('div', { class: 'k-row2' },
+    linked ? trackerValues : h('div', { class: 'k-row2' },
       field('Owner', h('div', { class: 'k-stack' }, owner, ownerName, ownerKinds)),
       field('Due', h('div', { class: 'k-due' }, due, editable ? clearDue : null)),
     ),
     field('Link', h('div', { class: 'k-link-wrap' },
       h('div', { class: 'k-link-field' }, link, editable ? clearLink : null), openLink, readOnlyLink, linkError)),
-    h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
+    linked ? null : h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
     actions,
   );
   keepKeys(body);
@@ -205,6 +208,27 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     // a text field keeps what is being typed into it; otherwise it shows the card
     if (!(dirty.head && document.activeElement === title)) title.value = linked ? projectedTitle(card) : card.text ?? '';
     if (!(dirty.desc && document.activeElement === desc)) desc.value = card.desc ?? '';
+    if (linked) {
+      const tracker = (card as BaseObj & { tracker?: {
+        assignee?: { name?: string } | null;
+        due?: string | null;
+        labels?: { name?: string }[];
+        priority?: string;
+      } }).tracker;
+      const assignee = typeof tracker?.assignee?.name === 'string' ? tracker.assignee.name : '';
+      const dueDate = typeof tracker?.due === 'string' ? tracker.due : '';
+      const ticketLabels = Array.isArray(tracker?.labels)
+        ? tracker.labels.map((label) => typeof label?.name === 'string' ? label.name : '').filter(Boolean).join(', ')
+        : '';
+      trackerValues.replaceChildren(
+        trackerField('Assignee', assignee),
+        trackerField('Due', dueDate),
+        trackerField('Labels', ticketLabels),
+        ...(typeof tracker?.priority === 'string'
+          ? [trackerField('Priority', tracker.priority === 'none' ? '' : `${tracker.priority[0]?.toUpperCase() ?? ''}${tracker.priority.slice(1)}`)]
+          : []),
+      );
+    }
     // the owner picker: me, who is here and who is already named on this board (docs/kanban.md, Owners)
     const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name }));
     const assigned = [...app.store.cache.values()].filter((o) => o.type === 'card') as BaseObj[];
@@ -327,7 +351,9 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const start = { title, owner, due, link, labels } as const;
   if (focus && focus !== 'title') {
     requestAnimationFrame(() => {
-      const el = focus === 'labels' ? (labels.querySelector('button') as HTMLElement | null) ?? manage : start[focus];
+      const el = linked && (focus === 'owner' || focus === 'due' || focus === 'labels')
+        ? openTrackerTicket
+        : focus === 'labels' ? (labels.querySelector('button') as HTMLElement | null) ?? manage : start[focus];
       el?.focus();
     });
   }

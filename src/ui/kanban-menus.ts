@@ -12,6 +12,7 @@ import { h, icon } from './dom';
 import { DUE_BUCKETS, STAGES, laneMoveIndex, matchText, parseWip, type DueBucket, type KanbanFilter } from './kanban-logic';
 import { authState } from '../auth';
 import { canShowTrackerLinkAction, canShowTrackerUnlinkAction, hasRegisteredLinkDialog, hasRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
+import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from '../tracker/linked-lane';
 
 // The kanban menus (docs/kanban.md, slice 4): a lane's ⋯ (rename, colour, stage, WIP limit, move, delete), the kanban's
 // ⋯ (rename, add lane, labels, lock, delete) and the Filter popover. Chrome, so tray tokens as the other menus. The menus
@@ -54,7 +55,7 @@ export function item(label: string, onPick: () => void, o: ItemOpts = {}): HTMLB
   return h('button', {
     class: `menu-item${o.danger ? ' danger' : ''}`, type: 'button', role: o.checked === undefined ? 'menuitem' : 'menuitemradio',
     'aria-checked': o.checked === undefined ? undefined : String(o.checked), 'aria-haspopup': o.sub ? 'true' : undefined,
-    disabled: o.disabled, 'data-tip': o.title, onclick: onPick,
+    disabled: o.disabled, title: o.disabled ? o.title : undefined, 'data-tip': o.title, onclick: onPick,
   },
   sw, h('span', { class: 'k-mi-label' }, label),
   o.checked ? h('span', { class: 'menu-hint k-mi-check', 'aria-hidden': 'true' }, icon('check', 14)) : null,
@@ -120,6 +121,7 @@ export function openLaneMenu(app: BoardApp, laneId: Id, at: Rect) {
     const l = lane();
     const layout = l.parent ? app.store.containerLayout(l.parent) : null;
     const lanes = layout?.lanes ?? [];
+    const trackerMapped = isMappedTrackerLane(app.store, laneId);
     const stage = STAGES.find((s) => s.key === l.stage)?.label ?? 'None';
     const wip = l.wip ? `${l.wip}${l.wipMode === 'block' ? ' · block' : ''}` : 'None';
     show(
@@ -132,8 +134,12 @@ export function openLaneMenu(app: BoardApp, laneId: Id, at: Rect) {
       item('Move left', pick(() => app.moveLaneFromMenu(laneId, 'left')), { disabled: laneMoveIndex(lanes, laneId, 'left') === null }),
       item('Move right', pick(() => app.moveLaneFromMenu(laneId, 'right')), { disabled: laneMoveIndex(lanes, laneId, 'right') === null }),
       sep(),
-      item('Delete lane', pick(() => app.deleteLane(laneId, false)), { danger: true, title: lanes.length > 1 ? 'Its cards move to the next lane' : 'Its cards go with it' }),
-      item('Delete lane and its cards', pick(() => app.deleteLane(laneId, true)), { danger: true }),
+      item('Delete lane', pick(() => app.deleteLane(laneId, false)), {
+        danger: true, disabled: trackerMapped, title: trackerMapped ? LINKED_LANE_DELETE_MESSAGE : lanes.length > 1 ? 'Its cards move to the next lane' : 'Its cards go with it',
+      }),
+      item('Delete lane and its cards', pick(() => app.deleteLane(laneId, true)), {
+        danger: true, disabled: trackerMapped, title: trackerMapped ? LINKED_LANE_DELETE_MESSAGE : undefined,
+      }),
     );
   };
 
