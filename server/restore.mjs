@@ -976,6 +976,10 @@ export function createRestore({
         if (has('guest_sessions')) db.exec('DELETE FROM guest_sessions');
         if (has('join_codes')) db.prepare('UPDATE join_codes SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
         if (has('access_tokens')) db.prepare('UPDATE access_tokens SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
+        if (has('oauth_grants')) db.prepare("UPDATE oauth_grants SET revoked_at = ?, revoked_reason = 'restore' WHERE revoked_at IS NULL").run(nowMs);
+        if (has('oauth_requests')) db.exec('DELETE FROM oauth_requests');
+        if (has('oauth_codes')) db.exec('DELETE FROM oauth_codes');
+        if (has('oauth_tokens')) db.exec('UPDATE oauth_tokens SET replay_ciphertext = NULL, replay_until = NULL, replay_count = 0');
         if (has('invites')) db.exec('UPDATE invites SET revoked = 1 WHERE revoked = 0');
         db.exec("DELETE FROM settings WHERE key = 'backup.status' OR key LIKE 'cloud.%'");
         db.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed')");

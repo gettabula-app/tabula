@@ -101,6 +101,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'volume.adopt',
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
   'tracker.link.create', 'tracker.link.delete', 'tracker.link.card',
@@ -281,6 +282,36 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const scope = ({ read: ' (read only)', comment: ' (read and comment)', write: ' (read and edit)' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
       return `${who} created an AI tool access token${name ? ` ${quote(clip(name, 60))}` : ''}${scope}`;
     }
+    case 'mcp.oauth.client_registered': {
+      const name = text(d.clientName);
+      return `An app registered itself${name ? ` as ${quote(clip(name, 60))}` : ''}`;
+    }
+    case 'mcp.oauth.authorize': {
+      const name = text(d.clientName);
+      const app = name ? quote(clip(name, 60)) : 'an app';
+      if (d.decision === 'deny') return `${who} declined to connect ${app}`;
+      const scope = ({ read: ' with read only access', comment: ' with read and comment access', write: ' with read and edit access', none: ' with no access' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
+      return `${who} connected ${app}${scope}`;
+    }
+    case 'mcp.oauth.revoke': {
+      const name = text(d.clientName);
+      const app = name ? ` ${quote(clip(name, 60))}` : '';
+      if (d.by === 'client') return `An app${app} disconnected itself from ${member}`;
+      if (d.by === 'self') return `${who} disconnected app${app}`;
+      if (d.by === 'admin') return `${who} disconnected app${app} from ${member}`;
+      if (d.by === 'sign_out_everywhere') return `System disconnected app${app} from ${member} when they signed out everywhere`;
+      return `System revoked app${app} for ${member} after an account state change`;
+    }
+    case 'mcp.oauth.revoke_all': {
+      const count = typeof d.grants === 'number' ? d.grants : null;
+      return `${who} revoked all connected apps${count === null ? '' : ` (${count})`}`;
+    }
+    case 'mcp.oauth.reuse_detected': {
+      const kind = d.kind === 'code' ? 'sign-in code' : 'refresh token';
+      const name = text(d.clientName);
+      const app = name ? quote(clip(name, 60)) : 'a connected app';
+      return `A used ${kind} was presented again; ${app} was disconnected from ${member}`;
+    }
     // Tracker (docs/tracker-api.md): ids only in the row, never ticket text
     case 'tracker.ticket.create':
       return `${who} created a ticket`;
@@ -337,7 +368,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     }
     case 'mcp.token.revoke_all': {
       const count = typeof d.count === 'number' ? d.count : null;
-      return `${who} revoked all of their AI tool access tokens${count === null ? '' : ` (${count})`}`;
+      const grants = typeof d.grants === 'number' ? d.grants : 0;
+      return `${who} revoked all of their AI tool access tokens${count === null ? '' : ` (${count})`}${grants > 0 ? ` and ${grants} connected app${grants === 1 ? '' : 's'}` : ''}`;
     }
     case 'asset.upload':
       return `${who} added an image to ${boardLabel}`;
@@ -419,13 +451,13 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const to = idsOf(d.to);
       if (d.reason === 'operator') {
         const ws = from.workspaceId ? ` of workspace ${from.workspaceId}` : '';
-        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out, and every AI tool access token and invite link was revoked`;
+        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out, every connected app and AI tool access token was revoked, and every invite link was revoked`;
       }
       if (d.reason === 'restored-copy') {
         const vols = from.flyVolumeId && to.flyVolumeId ? ` (Fly volume ${from.flyVolumeId} → ${to.flyVolumeId})` : '';
-        return `The server adopted a restored copy of its data volume${vols}; everyone was signed out`;
+        return `The server adopted a restored copy of its data volume${vols}; everyone was signed out and every connected app was disconnected`;
       }
-      return 'The server adopted its data volume; everyone was signed out';
+      return 'The server adopted its data volume; everyone was signed out and every connected app was disconnected';
     }
     default:
       return entry.action;
