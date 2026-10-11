@@ -188,6 +188,17 @@ describe('tracker inbox UI', () => {
     expect(unread).toEqual([2, 3]);
   });
 
+  it('does not move focus into the list when refreshing while a toolbar control is focused', async () => {
+    uiBrowser = installTrackerUiBrowser();
+    const now = Date.UTC(2026, 9, 10, 12);
+    const { host, controller } = inboxFixture([inboxNotice('notice-1', 'TAB-1', now - 1000)], now);
+    await flush();
+    const showRead = need(host, '.trk-inbox-show-read');
+    showRead.focus();
+    await controller.refresh();
+    expect(uiBrowser.document.activeElement).toBe(showRead);
+  });
+
   it('loads more with the button and when keyboard focus reaches the final loaded notice', async () => {
     uiBrowser = installTrackerUiBrowser();
     const now = Date.UTC(2026, 9, 10, 12);

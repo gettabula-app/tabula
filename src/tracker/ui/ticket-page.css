@@ -74,7 +74,7 @@
 .trk.tk-page .tk-markdown p:last-child { margin-bottom: 0; }
 .trk.tk-page .tk-markdown ul, .trk.tk-page .tk-markdown ol { margin: 0 0 10px; padding-left: 22px; }
 .trk.tk-page .tk-markdown code { padding: 1px 3px; border: 1px solid var(--rule); background: var(--canvas, transparent); font: 500 .92em/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; }
-.trk.tk-page .tk-ticket-chip { display: inline; color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+.trk.tk-page .tk-ticket-chip { display: inline; color: var(--ink); text-decoration: underline; text-decoration-color: var(--signal); text-underline-offset: 2px; }
 .trk.tk-page .tk-ticket-chip .trk-glyph, .trk.tk-page .tk-ticket-chip .tk-chip-title { margin-inline: 3px; vertical-align: middle; }
 .trk.tk-page .tk-chip-title { color: var(--graphite); font-size: .92em; }
 .trk.tk-page .tk-description-editor { display: grid; gap: 8px; }
@@ -140,6 +140,9 @@
   .trk.tk-page .tk-title, .trk.tk-page .tk-title-input { font-size: 22px; }
   .trk.tk-page .tk-property-row { grid-template-columns: minmax(82px, .7fr) minmax(0, 1.3fr); }
   .trk.tk-page button, .trk.tk-page input, .trk.tk-page select, .trk.tk-page textarea, .trk.tk-page a { min-height: 44px; }
+  .trk.tk-page .tk-icon-button { min-width: 44px; min-height: 44px; }
+  .trk.tk-page .tk-property-row .tk-field-button, .trk.tk-page .tk-tab-button, .trk.tk-page .tk-menu-item,
+  .trk.tk-page .tk-title-edit, .trk.tk-page .tk-remove-relation { min-height: 44px; }
   .trk.tk-page a { display: inline-flex; align-items: center; }
   .trk.tk-page .tk-alias-link { min-height: 44px; }
   .trk.tk-page .tk-description-input, .trk.tk-page .tk-comment-input { min-height: 132px; }

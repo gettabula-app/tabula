@@ -47,6 +47,17 @@ describe('tracker notification preferences UI', () => {
     expect(announced).toEqual(['Assigned to me: In Tabula only']);
   });
 
+  it('keeps keyboard focus on a preference radio after a click rerenders its group', async () => {
+    browser = installTrackerUiBrowser();
+    const { host } = mount();
+    await flush();
+    host.querySelector('[data-kind="assigned"][data-choice="off"]')!.focus();
+    host.querySelector('[data-kind="assigned"][data-choice="app"]')!.click();
+    expect((browser.document.activeElement as unknown as FakeElement).getAttribute('data-choice')).toBe('app');
+    await flush();
+    expect((browser.document.activeElement as unknown as FakeElement).getAttribute('data-choice')).toBe('app');
+  });
+
   it('supports arrow selection within one radiogroup and leaves Tab to move between groups', async () => {
     browser = installTrackerUiBrowser();
     const { host } = mount();

@@ -74,6 +74,8 @@ export function mountInbox(host: HTMLElement, deps: InboxDependencies): InboxCon
   let marking = false;
   let markFailure: { ids: string[]; all: boolean } | null = null;
   let selection: InboxSelectionModel = createInboxSelection();
+  let pendingFocusId: string | null = null;
+  let preserveListFocus = false;
   let destroyed = false;
   let firstController: AbortController | null = null;
   let moreController: AbortController | null = null;
@@ -128,7 +130,12 @@ export function mountInbox(host: HTMLElement, deps: InboxDependencies): InboxCon
 
   function renderList(restoreFocus = false): void {
     if (destroyed) return;
-    const priorId = (document.activeElement as HTMLElement | null)?.dataset?.inboxId;
+    const active = document.activeElement as HTMLElement | null;
+    const focusWasInside = Boolean(active && list.contains(active));
+    if (focusWasInside) {
+      preserveListFocus = true;
+      pendingFocusId = active?.dataset?.inboxId ?? active?.closest<HTMLElement>('[data-inbox-id]')?.dataset.inboxId ?? selection.cursor;
+    }
     const rows = visibleItems();
     selection = reconcileInboxSelection(selection, rows.map((item) => item.id));
     const waiting = loading || loadingMore;
@@ -166,7 +173,19 @@ export function mountInbox(host: HTMLElement, deps: InboxDependencies): InboxCon
     showReadButton.setAttribute('aria-label', showRead ? 'Hide read notices' : 'Show read notices');
     offlineLine.hidden = isOnline();
     markAll.disabled = marking || unreadCount === 0;
-    if (restoreFocus && (priorId || selection.cursor)) focusCursor();
+    const shouldRestoreFocus = preserveListFocus || (restoreFocus && focusWasInside);
+    if (shouldRestoreFocus) {
+      if (restoreFocus) focusCursor();
+      else {
+        const row = pendingFocusId
+          ? Array.from(list.querySelectorAll<HTMLElement>('[role="option"]')).find((option) => option.dataset.inboxId === pendingFocusId)
+          : undefined;
+        if (row) row.focus();
+        else focusCursor();
+      }
+      pendingFocusId = null;
+      preserveListFocus = false;
+    }
   }
 
   function announce(text: string): void { live.textContent = text; }

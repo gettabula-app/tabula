@@ -711,7 +711,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     moreButton.setAttribute('aria-expanded', String(menuOpen));
     tools.append(moreButton);
     if (menuOpen) {
-      const menu = h('div', { class: 'tk-more-menu', role: 'menu', 'aria-label': 'Ticket actions' });
+      const menu = h('div', { class: 'tk-more-menu', role: 'group', 'aria-label': 'Ticket actions' });
       menu.append(button('Copy link', 'tk-menu-item', false, () => copyLink()));
       menu.append(button('Copy key', 'tk-menu-item', false, () => copyText(current.key)));
       if (!current.archivedAt) menu.append(describeDisabled(button('Archive', 'tk-menu-item', !canRestore(), () => archive(true)), !canRestore(), permissionReason()));
@@ -747,7 +747,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       });
       titleHeading.append(input, button('Save title', 'tk-button tk-button--secondary', false, () => commitTitle()), button('Cancel title edit', 'tk-button tk-button--quiet', false, () => cancelTitle()));
     } else {
-      const title = h('h1', { class: 'tk-title', tabindex: writeable ? '0' : '-1', 'data-focus-id': 'ticket-title', 'aria-label': writeable ? 'Title, press Enter to edit' : 'Title' }, current.title);
+      const title = h('h1', { class: 'tk-title', tabindex: writeable ? '0' : '-1', 'data-focus-id': 'ticket-title' }, current.title);
       title.addEventListener('click', () => { if (writeable) editTitle(); });
       title.addEventListener('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter' && writeable) { event.preventDefault(); editTitle(); }
@@ -882,12 +882,12 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const propertyRow = (name: string, value: HTMLElement) => h('div', { class: 'tk-property-row' }, h('dt', { class: 'tk-property-label' }, name), h('dd', null, value));
     const assigneeLabel = current.assignee?.name ?? 'Unassigned';
     propertyList.append(
-      propertyRow('State', fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); })),
-      propertyRow('Assignee', fieldButton(assigneeLabel, 'assignee', (event) => { void openFieldPicker('assignee', event.currentTarget as HTMLElement); })),
-      propertyRow('Priority', fieldButton(priorityLabel(current.priority), 'priority', (event) => { void openFieldPicker('priority', event.currentTarget as HTMLElement); })),
+      propertyRow('State', fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); }, 'property-state')),
+      propertyRow('Assignee', fieldButton(assigneeLabel, 'assignee', (event) => { void openFieldPicker('assignee', event.currentTarget as HTMLElement); }, 'property-assignee')),
+      propertyRow('Priority', fieldButton(priorityLabel(current.priority), 'priority', (event) => { void openFieldPicker('priority', event.currentTarget as HTMLElement); }, 'property-priority')),
       propertyRow('Labels', (() => {
         const control = h('div', { class: 'tk-label-property' });
-        const value = fieldButton(current.labels.map((label) => label.name).join(', ') || 'No labels', 'labels', (event) => { void openFieldPicker('labels', event.currentTarget as HTMLElement); });
+        const value = fieldButton(current.labels.map((label) => label.name).join(', ') || 'No labels', 'labels', (event) => { void openFieldPicker('labels', event.currentTarget as HTMLElement); }, 'property-labels');
         value.replaceChildren(...current.labels.map((label) => labelChip(label.name, label.color)));
         if (!current.labels.length) value.textContent = 'No labels';
         control.appendChild(value);
@@ -920,7 +920,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
         return control;
       })()),
       propertyRow('Due', (() => {
-        if (!dueEditing) return fieldButton(current.due ?? 'No due date', 'due', () => { dueEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]')?.focus(); });
+        if (!dueEditing) return fieldButton(current.due ?? 'No due date', 'due', () => { dueEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="due-input"]')?.focus(); }, 'property-due');
         const control = h('div', { class: 'tk-inline-field' });
         const input = describeDisabled(h('input', { type: 'date', class: 'tk-inline-input', value: current.due ?? '', 'aria-label': 'Due date, YYYY-MM-DD', 'data-focus-id': 'due-input', disabled: !writeable }), !writeable);
         input.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -938,7 +938,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
         return control;
       })()),
       propertyRow('Parent', (() => {
-        if (!parentEditing) return fieldButton(current.parent ?? 'No parent', 'parent', () => { parentEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="parent-input"]')?.focus(); });
+        if (!parentEditing) return fieldButton(current.parent ?? 'No parent', 'parent', () => { parentEditing = true; render(); root.querySelector<HTMLInputElement>('[data-focus-id="parent-input"]')?.focus(); }, 'property-parent');
         const control = h('div', { class: 'tk-inline-field' });
         const input = describeDisabled(h('input', { class: 'tk-inline-input', type: 'text', value: current.parent ?? '', placeholder: 'TAB-123', 'aria-label': 'Parent ticket key', 'data-focus-id': 'parent-input', disabled: !writeable }), !writeable);
         input.addEventListener('input', () => {
@@ -954,10 +954,10 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       })()),
     );
     if (data?.projects) {
-      propertyList.appendChild(propertyRow('Project', fieldButton(current.project?.name ?? 'No project', 'project', (event) => { void openFieldPicker('project', event.currentTarget as HTMLElement); })));
+      propertyList.appendChild(propertyRow('Project', fieldButton(current.project?.name ?? 'No project', 'project', (event) => { void openFieldPicker('project', event.currentTarget as HTMLElement); }, 'property-project')));
     } else propertyList.appendChild(propertyRow('Project', h('span', { class: 'tk-readonly-value' }, current.project?.name ?? 'No project')));
     if (data?.milestones) {
-      propertyList.appendChild(propertyRow('Milestone', fieldButton(current.milestone?.name ?? 'No milestone', 'milestone', (event) => { void openFieldPicker('milestone', event.currentTarget as HTMLElement); })));
+      propertyList.appendChild(propertyRow('Milestone', fieldButton(current.milestone?.name ?? 'No milestone', 'milestone', (event) => { void openFieldPicker('milestone', event.currentTarget as HTMLElement); }, 'property-milestone')));
     } else propertyList.appendChild(propertyRow('Milestone', h('span', { class: 'tk-readonly-value' }, current.milestone?.name ?? 'No milestone')));
     propertyList.appendChild(propertyRow('Created', h('span', { class: 'tk-readonly-value' }, new Date(current.createdAt).toLocaleDateString())));
     if (current.due) propertyList.appendChild(propertyRow('Due status', dueChip(current.due, Date.now()) ?? h('span', { class: 'tk-readonly-value' }, 'No due date')));
