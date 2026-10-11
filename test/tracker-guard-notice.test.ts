@@ -42,11 +42,19 @@ describe('tracker guard notices', () => {
     ] }]);
   });
 
+  it('keeps a notice that names no card, such as rate_limited for the whole socket', () => {
+    const provider = fakeProvider();
+    const seen: TrackerNoticeMessage[] = [];
+    onTrackerNotice(provider, (message) => seen.push(message));
+    receive(provider, JSON.stringify({ undone: [{ reason: 'rate_limited' }, { cardId: 4, reason: 'forbidden' }] }));
+    expect(seen).toEqual([{ undone: [{ reason: 'rate_limited' }] }]);
+  });
+
   it('ignores malformed payloads and notices without valid entries', () => {
     const provider = fakeProvider();
     let calls = 0;
     onTrackerNotice(provider, () => calls++);
-    for (const payload of ['not json', 'null', '{}', JSON.stringify({ undone: 'x' }), JSON.stringify({ undone: [{ reason: 'forbidden' }] })]) {
+    for (const payload of ['not json', 'null', '{}', JSON.stringify({ undone: 'x' }), JSON.stringify({ undone: [{ reason: 'nonsense', cardId: 1 }] })]) {
       expect(() => receive(provider, payload)).not.toThrow();
     }
     expect(calls).toBe(0);
