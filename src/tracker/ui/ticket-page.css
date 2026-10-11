@@ -51,6 +51,8 @@
 .trk.tk-page .tk-header-key .trk-key-chip { font-size: 13px; font-weight: 500; }
 .trk.tk-page .tk-header-key .tk-icon { color: var(--trk-muted); }
 .trk.tk-page .tk-subscribe-button { margin-left: auto; color: var(--trk-muted); }
+.trk.tk-page .tk-subscribe-button[aria-pressed='true'] { color: var(--trk-text); }
+.trk.tk-page .tk-subscribe-button[aria-pressed='true'] svg { color: var(--signal); fill: color-mix(in srgb, var(--signal) 22%, transparent); }
 .trk.tk-page .tk-subscribe-button:hover, .trk.tk-page .tk-icon-button:hover, .trk.tk-page .tk-header-key:hover { background: color-mix(in srgb, var(--trk-text) 5%, var(--trk-ground)); }
 .trk.tk-page .tk-header-tools { position: relative; display: flex; align-items: center; gap: 2px; }
 .trk.tk-page .tk-icon-button { width: 32px; padding: 0; color: var(--trk-muted); }
