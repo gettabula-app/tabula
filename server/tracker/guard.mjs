@@ -4,6 +4,7 @@ import { createTicket, updateTicket, transitionTicket } from './tickets.mjs';
 import { enqueueTicketProjection, enqueueTicketProjectionRemoval, reconcileTrackerProjection, SERVER_CARD_FIELDS } from './projection.mjs';
 import { appendTicketEvent } from './events.mjs';
 import { actorInfo, cleanTicketTitle, conflict, getDb, newId } from './shared.mjs';
+import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from '../window-limiter.mjs';
 
 const TRACKER_ACCESS_CHECK = Object.freeze({ id: 'tracker-access-check' });
 const UPDATE_WINDOW_MS = 60_000;
@@ -13,6 +14,8 @@ const MAX_TICKETS_PER_UPDATE = 500;
 const TITLE_QUIET_MS = 400;
 const TITLE_MAX_WAIT_MS = 2000;
 const RESTORE_WINDOW_MS = 15_000;
+const STATE_PRUNE_AFTER_KEYS = 1000;
+const STATE_PRUNE_EVERY = 128;
 
 /** Ids changed in a Yjs transaction, including nested maps under `objects`. */
 export function changedObjectIds(transaction, doc) {
@@ -39,6 +42,11 @@ export function changedObjectIds(transaction, doc) {
 function plainObject(value, id) {
   if (value instanceof Y.Map) return { ...value.toJSON(), id };
   return value && typeof value === 'object' && !Array.isArray(value) ? { ...value, id } : null;
+}
+
+function objectField(value, field) {
+  if (value instanceof Y.Map) return value.get(field);
+  return value && typeof value === 'object' ? value[field] : undefined;
 }
 
 function firstLine(value) {
@@ -102,28 +110,34 @@ function roomSnapshot(doc, cache) {
   const objects = doc.getMap('objects');
   const snapshots = new Map();
   const laneIdsByKanban = new Map(cache.kanbans.map((row) => [row.kanban_id, new Set()]));
-  for (const [id, value] of objects) {
-    const object = plainObject(value, String(id));
-    if (object?.type === 'lane' && laneIdsByKanban.has(object.parent)) {
-      laneIdsByKanban.get(object.parent).add(object.id);
-      snapshots.set(object.id, object);
+  const linkedLaneIds = new Set();
+  const cards = [];
+  for (const [rawId, value] of objects) {
+    const type = objectField(value, 'type');
+    if (type === 'lane') {
+      const parent = objectField(value, 'parent');
+      const lanes = laneIdsByKanban.get(parent);
+      if (lanes) {
+        const id = String(rawId);
+        lanes.add(id);
+        linkedLaneIds.add(id);
+        snapshots.set(id, plainObject(value, id));
+      }
+    } else if (type === 'card') {
+      cards.push({ id: String(rawId), value, parent: objectField(value, 'parent') });
     }
   }
   for (const row of cache.kanbans) {
-    const container = plainObject(objects.get(row.kanban_id), row.kanban_id);
-    if (container) snapshots.set(row.kanban_id, container);
+    const value = objects.get(row.kanban_id);
+    if (value) snapshots.set(row.kanban_id, plainObject(value, row.kanban_id));
   }
   for (const cardId of cache.rowsByCard.keys()) {
-    const card = plainObject(objects.get(cardId), cardId);
-    if (card) snapshots.set(cardId, card);
+    const value = objects.get(cardId);
+    if (value) snapshots.set(cardId, plainObject(value, cardId));
   }
   // Container deletion can cascade through every lane; mapped-lane deletion also includes plain cards.
-  const linkedLaneIds = new Set([...laneIdsByKanban.values()].flatMap((ids) => [...ids]));
-  if (linkedLaneIds.size) {
-    for (const [id, value] of objects) {
-      const card = plainObject(value, String(id));
-      if (card?.type === 'card' && linkedLaneIds.has(card.parent)) snapshots.set(card.id, card);
-    }
+  for (const { id, value, parent } of cards) {
+    if (linkedLaneIds.has(parent) && !snapshots.has(id)) snapshots.set(id, plainObject(value, id));
   }
   return { snapshots, laneIdsByKanban };
 }
@@ -200,17 +214,22 @@ function setNotice(notices, cardId, reason) {
 
 /** Synchronous bidirectional guard for linked tracker cards.
  * @param {{ directory?: any, config?: { tracker?: boolean, readOnly?: boolean | (() => boolean) }, now?: () => number,
+ *   ticketCreateLimit?: number, maxLinkedCardsPerUpdate?: number,
  *   log?: (...args: any[]) => void, setTimeoutFn?: typeof setTimeout, clearTimeoutFn?: typeof clearTimeout }} options
  */
 export function createTrackerGuard({
   directory, config = {}, now = Date.now, log = () => {},
   setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
+  ticketCreateLimit = TICKET_CREATES_PER_WINDOW, maxLinkedCardsPerUpdate = MAX_LINKED_CARDS_PER_UPDATE,
 } = {}) {
   const caches = new Map();
   const rateWindows = new Map();
   const rejectAudits = new Map();
+  const ticketCreates = createWindowLimiter(ticketCreateLimit, now);
   const pendingTitles = new Map();
   const restoreWindows = new Map();
+  let guardOperations = 0;
+  let idlePruningActive = false;
   const readOnly = () => typeof config.readOnly === 'function'
     ? config.readOnly() === true
     : config.readOnly === true;
@@ -220,8 +239,40 @@ export function createTrackerGuard({
     if (!entry) {
       entry = linkCache(directory, boardId);
       caches.set(boardId, entry);
+      if (caches.size > STATE_PRUNE_AFTER_KEYS) caches.delete(caches.keys().next().value);
     }
     return entry;
+  }
+
+  function pruneIdleState(instant = now()) {
+    let rateWindowsRemoved = 0;
+    let rejectAuditsRemoved = 0;
+    for (const [key, stamps] of rateWindows) {
+      const latest = stamps.at(-1);
+      if (latest === undefined || instant - latest > 2 * UPDATE_WINDOW_MS) {
+        rateWindows.delete(key);
+        rateWindowsRemoved++;
+      }
+    }
+    for (const [key, entry] of rejectAudits) {
+      if (instant - entry.lastSeen > 2 * UPDATE_WINDOW_MS) {
+        rejectAudits.delete(key);
+        rejectAuditsRemoved++;
+      }
+    }
+    idlePruningActive = rateWindows.size > STATE_PRUNE_AFTER_KEYS || rejectAudits.size > STATE_PRUNE_AFTER_KEYS;
+    return { rateWindows: rateWindowsRemoved, rejectAudits: rejectAuditsRemoved };
+  }
+
+  function maybePruneIdleState(instant) {
+    guardOperations++;
+    const overThreshold = rateWindows.size > STATE_PRUNE_AFTER_KEYS || rejectAudits.size > STATE_PRUNE_AFTER_KEYS;
+    if (!overThreshold) {
+      idlePruningActive = false;
+      return;
+    }
+    if (!idlePruningActive || guardOperations % STATE_PRUNE_EVERY === 0) pruneIdleState(instant);
+    idlePruningActive = true;
   }
 
   function audit(actor, boardId, action, detail = {}) {
@@ -251,13 +302,20 @@ export function createTrackerGuard({
     if (!notices.length) return;
     const info = actorInfo(actor);
     const userId = info.userId ?? info.id ?? 'unknown';
-    const minute = Math.floor(now() / UPDATE_WINDOW_MS);
+    const instant = now();
+    const minute = Math.floor(instant / UPDATE_WINDOW_MS);
     const key = `${userId}\u0000${boardId}`;
-    if (rejectAudits.get(key) === minute) return;
+    const previous = rejectAudits.get(key);
+    if (previous?.minute === minute) {
+      rejectAudits.set(key, { minute, lastSeen: instant });
+      maybePruneIdleState(instant);
+      return;
+    }
     audit(actor, boardId, 'tracker.guard.reject', {
       reasons: [...new Set(notices.map((entry) => entry.reason))].sort(), count: notices.length,
     });
-    rejectAudits.set(key, minute);
+    rejectAudits.set(key, { minute, lastSeen: instant });
+    maybePruneIdleState(instant);
   }
 
   function rateLimited(actor, boardId) {
@@ -267,10 +325,12 @@ export function createTrackerGuard({
     const live = (rateWindows.get(key) ?? []).filter((stamp) => instant - stamp < UPDATE_WINDOW_MS);
     if (live.length >= MAX_UPDATES_PER_WINDOW) {
       rateWindows.set(key, live);
+      maybePruneIdleState(instant);
       return true;
     }
     live.push(instant);
     rateWindows.set(key, live);
+    maybePruneIdleState(instant);
     return false;
   }
 
@@ -586,14 +646,12 @@ export function createTrackerGuard({
     const titleCancellations = new Set();
     const affected = new Set();
     const linkedAffected = new Set();
-    const activeCardIds = new Set();
     const currentObjects = doc.getMap('objects');
     const currentById = new Map([...changed].map((id) => [id, plainObject(currentObjects.get(id), id)]));
     for (const id of changed) {
       const prior = before.snapshots.get(id);
       const current = currentById.get(id);
       if (cache.activeByCard.has(id)) {
-        activeCardIds.add(id);
         if (!prior || !current) {
           affected.add(id);
           linkedAffected.add(id);
@@ -634,7 +692,10 @@ export function createTrackerGuard({
         continue;
       }
       if (cache.activeByCard.has(id)) continue;
-      if (!prior || prior.parent !== current.parent || prior.text !== current.text) candidateCards.set(id, { card: current, prior, context, mapping });
+      if (!prior || prior.parent !== current.parent || prior.text !== current.text) {
+        candidateCards.set(id, { card: current, prior, context, mapping });
+        linkedAffected.add(id);
+      }
     }
     for (const { card } of candidateCards.values()) {
       if (!firstLine(card.text).trim()) continue;
@@ -660,8 +721,8 @@ export function createTrackerGuard({
       }
     }
 
-    const trackedLinked = [...activeCardIds];
-    const relevant = affected.size > 0 || trackedLinked.length > MAX_LINKED_CARDS_PER_UPDATE
+    const trackedLinked = [...linkedAffected];
+    const relevant = affected.size > 0 || linkedAffected.size > maxLinkedCardsPerUpdate
       || deletedContainers.length > 0 || deletedLanes.length > 0 || Boolean(applyError);
     if (!relevant && !applyError) {
       if (corrections.length) {
@@ -699,16 +760,10 @@ export function createTrackerGuard({
     let rejectionAudited = false;
     if (applyError) {
       wholeReason = 'conflict';
-      rejection('conflict', [...new Set([...trackedLinked, ...allTrackedIds])], { full: true });
-    } else if (Math.max(trackedLinked.length, linkedAffected.size) > MAX_LINKED_CARDS_PER_UPDATE) {
+      rejection('conflict', [...new Set([...trackedLinked, ...allTrackedIds, ...candidateCards.keys()])], { full: true });
+    } else if (linkedAffected.size > maxLinkedCardsPerUpdate) {
       wholeReason = 'bulk_change';
-      rejection('bulk_change', [...new Set([...trackedLinked, ...linkedAffected])], { full: true });
-      for (const cardId of candidateCards.keys()) {
-        if (!linkedAffected.has(cardId)) {
-          corrections.push(() => restoredMap(doc, cardId, before.snapshots.get(cardId) ?? null));
-          setNotice(notices, cardId, 'bulk_change');
-        }
-      }
+      rejection('bulk_change', linkedAffected, { full: true });
     } else if (readOnly()) {
       wholeReason = 'read_only';
       rejection('read_only', allTrackedIds, { full: true });
@@ -720,6 +775,8 @@ export function createTrackerGuard({
       rejection('forbidden', allTrackedIds, { full: true });
     } else {
       const instant = now();
+      const actorIdentity = actorInfo(actor);
+      const ticketCreateKey = actorIdentity.userId ?? actorIdentity.id ?? 'unknown';
       const laneDenied = new Set();
       for (const mapping of deletedLanes) {
         const cardIds = [];
@@ -903,6 +960,10 @@ export function createTrackerGuard({
             if (active) continue;
             const state = mappedState(db, cache.kanbanById.get(context.kanbanId).id, context.lane.id) ?? mapping;
             if (!state) continue;
+            if (ticketCreates.hit(ticketCreateKey)) {
+              if (!notices.some((entry) => entry.reason === 'limit_exceeded')) setNotice(notices, cardId, 'limit_exceeded');
+              continue;
+            }
             createTicketLink(db, { actor, source, boardId, kanbanId: context.kanbanId, card, stateKey: state.state_key, now: instant });
             created++;
             actions.push({ action: 'tracker.card.create', cardIds: [cardId] });
@@ -964,9 +1025,11 @@ export function createTrackerGuard({
   return {
     run: guardRun,
     invalidate,
+    invalidateAll() { caches.clear(); },
     openRestoreWindow,
     closeRestoreWindow,
     clearRestoreWindows,
+    pruneIdleState,
     flushTitles(boardId) {
       if (typeof boardId === 'string') return flushTitles(boardId);
       let committed = 0;

@@ -322,4 +322,44 @@ describe('tracker linked-card relay guard', () => {
     expect(ticketEventCount(ticketIds)).toBe(beforeEvents);
     await assertFreshAndSaved(setup.boardId, Object.fromEntries(cardIds.map((id) => [id, { parent: 'relay-todo', text: `Relay ticket ${cardIds.indexOf(id)}` }])));
   });
+
+  it('closes a socket before applying an update beyond the pre-snapshot budget', async () => {
+    const setup = await linkedBoard();
+    const sender = h.connect(setup.boardId, owner.cookie);
+    await sender.synced();
+    const cardId = setup.cards[0].cardId;
+    const notices: { undone?: unknown[]; reason?: string }[] = [];
+    (sender.provider as any).messageHandlers[7] = (_encoder: unknown, decoder: ReturnType<typeof decoding.createDecoder>) => {
+      notices.push(JSON.parse(decoding.readVarString(decoder)));
+    };
+    const socket = (sender.provider as any).ws;
+    let closed: { code: number; reason: string } | null = null;
+    socket.once('close', (code: number, reason: Buffer) => {
+      closed = { code, reason: reason.toString() };
+      sender.provider.destroy();
+    });
+    const current = () => card(sender.doc, cardId)!;
+    for (let index = 0; index <= 1200; index++) {
+      sender.doc.transact(() => current().set('desc', `socket-budget-${index}`), 'socket-budget-burst');
+    }
+    expect(current().get('desc')).toBe('socket-budget-1200');
+
+    await until(() => closed !== null && notices.some((notice) => notice.reason === 'rate_limited'));
+    expect(closed).toEqual({ code: 1008, reason: 'rate_limited' });
+    expect(notices).toContainEqual({ undone: [], reason: 'rate_limited' });
+
+    const fresh = h.connect(setup.boardId, owner.cookie);
+    await fresh.synced();
+    const accepted = card(fresh.doc, cardId)?.get('desc');
+    expect(accepted).not.toBe('socket-budget-1200');
+    await until(() => {
+      const saved = h.savedDoc(setup.boardId);
+      try { return card(saved, cardId)?.get('desc') === accepted; }
+      finally { saved.destroy(); }
+    });
+    const saved = h.savedDoc(setup.boardId);
+    try { expect(card(saved, cardId)?.get('desc')).toBe(accepted); }
+    finally { saved.destroy(); }
+    fresh.provider.destroy();
+  });
 });

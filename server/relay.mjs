@@ -46,6 +46,7 @@ import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
+import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { OpsError } from './board-ops.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -89,6 +90,7 @@ const MSG_TRACKER_NOTICE = 7;
 // { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
+const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -440,6 +442,12 @@ async function enterMaintenance() {
   chatNotifier?.stop();
   trackerNotifier?.stop();
   trackerProjectionWorker?.stop();
+  for (const room of rooms.values()) {
+    if (room.kind !== 'board') continue;
+    try { trackerGuard?.flushTitles(room.name); }
+    catch (error) { log(`room ${room.name}: tracker title flush failed`, error?.code ?? 'error'); }
+  }
+  trackerGuard?.invalidateAll();
   trackerGuard?.clearRestoreWindows();
   closeChat();
   roomsFrozen = true;
@@ -564,6 +572,13 @@ class Room {
 
   /** Applies a board-room update and its tracker correction before releasing the held broadcast. */
   trackerGuarded(ws, apply) {
+    if (ws.trackerGuardRejected) return;
+    if (!trackerSocketBudget.allow(ws)) {
+      ws.trackerGuardRejected = true;
+      sendTrackerRateLimitedNotice(ws);
+      ws.close(1008, 'rate_limited');
+      return;
+    }
     const user = ws.guest
       ? { id: ws.userId, role: 'guest', workspaceRole: 'guest' }
       : directory.getUser(ws.userId) ?? { id: ws.userId, role: null };
@@ -905,6 +920,13 @@ function sendTrackerNotice(ws, undone) {
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
   encoding.writeVarString(enc, JSON.stringify({ undone }));
+  send(ws, encoding.toUint8Array(enc));
+}
+
+function sendTrackerRateLimitedNotice(ws) {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
+  encoding.writeVarString(enc, JSON.stringify({ undone: [], reason: 'rate_limited' }));
   send(ws, encoding.toUint8Array(enc));
 }
 

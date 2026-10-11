@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { openDirectory } from '../server/directory.mjs';
 import { createTicket, updateTicket } from '../server/tracker/tickets.mjs';
 import { createTrackerGuard } from '../server/tracker/guard.mjs';
+import { createTrackerSocketBudget } from '../server/tracker/socket-budget.mjs';
 import { reconcileTrackerProjection } from '../server/tracker/projection.mjs';
 
 const folders: string[] = [];
@@ -42,7 +43,10 @@ function manualClock() {
   };
 }
 
-function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = false }: { linked?: number; active?: boolean; clock?: ReturnType<typeof manualClock>; readOnly?: boolean } = {}) {
+function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = false, ticketCreateLimit = 10, maxLinkedCardsPerUpdate = 100 }: {
+  linked?: number; active?: boolean; clock?: ReturnType<typeof manualClock>; readOnly?: boolean;
+  ticketCreateLimit?: number; maxLinkedCardsPerUpdate?: number;
+} = {}) {
   const folder = `test/.tracker-guard-${process.pid}-${Date.now()}-${++serial}`;
   fs.mkdirSync(folder, { recursive: true });
   folders.push(folder);
@@ -114,6 +118,8 @@ function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = 
     now: clock.now,
     setTimeoutFn: clock.setTimeout as unknown as typeof setTimeout,
     clearTimeoutFn: clock.clearTimeout as unknown as typeof clearTimeout,
+    ticketCreateLimit,
+    maxLinkedCardsPerUpdate,
   });
   let run = (apply: () => void, who = actor) => guard.run(room, who, () => doc.transact(apply, 'client'));
   const count = (sql: string, ...args: (string | number | null)[]) => Number(directory.db.prepare(sql).get(...args)?.n ?? 0);
@@ -357,6 +363,16 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
+  it('does not count a recolor of 150 linked cards toward the bulk threshold', () => {
+    const f = fixture({ linked: 150 });
+    const result = f.run(() => {
+      for (let index = 0; index < 150; index++) (f.objects.get(`card-${index}`) as Y.Map<unknown>).set('color', `color-${index}`);
+    });
+    expect(result.undone).toEqual([]);
+    expect([...Array(150)].every((_, index) => (f.objects.get(`card-${index}`) as Y.Map<unknown>).get('color') === `color-${index}`)).toBe(true);
+    f.close();
+  });
+
   it('keeps the bulk refusal active while a restore window is open', () => {
     const f = fixture({ linked: 101 });
     f.guard.openRestoreWindow(f.boardId, f.user.id, { roomAccess: f.roomAccess });
@@ -474,6 +490,18 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
+  it('commits pending titles when maintenance flushes all open boards', () => {
+    const f = fixture();
+    const ticket = f.tickets.get('card-0');
+    f.run(() => card(f).set('text', 'Pending maintenance title\nBody line'));
+    expect(f.guard.hasPendingTitle(f.boardId, 'card-0')).toBe(true);
+    expect(f.guard.flushTitles()).toEqual({ committed: 1 });
+    expect(f.directory.db.prepare('SELECT title FROM tickets WHERE id = ?').get(ticket.id)?.title)
+      .toBe('Pending maintenance title');
+    expect(f.guard.hasPendingTitle(f.boardId, 'card-0')).toBe(false);
+    f.close();
+  });
+
   it('rejects an empty title immediately', () => {
     const clock = manualClock();
     const f = fixture({ clock });
@@ -491,8 +519,9 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
-  it('runs a 500-card paste inside one outer SQL transaction', () => {
-    const f = fixture({ linked: 0 });
+  it('creates 500 tickets in one update and one outer SQL transaction', () => {
+    // Raise both production caps here to time the transaction ceiling independently.
+    const f = fixture({ linked: 0, ticketCreateLimit: 500, maxLinkedCardsPerUpdate: 500 });
     let depth = 0;
     let outerTransactions = 0;
     const directory = Object.create(f.directory);
@@ -505,20 +534,26 @@ describe('tracker linked-card guard', () => {
       directory, now: f.clock.now,
       setTimeoutFn: f.clock.setTimeout as unknown as typeof setTimeout,
       clearTimeoutFn: f.clock.clearTimeout as unknown as typeof clearTimeout,
+      ticketCreateLimit: 500,
+      maxLinkedCardsPerUpdate: 500,
     });
     f.run = (apply: () => void, who = f.actor) => f.guard.run(f.room, who, () => f.doc.transact(apply, 'client'));
+    const started = process.hrtime.bigint();
     f.run(() => {
       for (let index = 0; index < 500; index++) f.put(`paste-${index}`, 'card', {
         parent: 'lane-todo', rank: `a${index}@todo`, text: `Pasted ${index}`,
       });
     });
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+    console.log(`[tracker guard timing] 500 tickets: ${elapsedMs.toFixed(1)} ms; created: ${f.count('SELECT COUNT(*) AS n FROM tickets')}`);
     expect(outerTransactions).toBe(1);
     expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(500);
+    expect(elapsedMs).toBeLessThan(5000);
     f.close();
   });
 
   it('creates at most 500 tickets from one update and sends one limit_exceeded notice', () => {
-    const f = fixture({ linked: 0 });
+    const f = fixture({ linked: 0, ticketCreateLimit: 500, maxLinkedCardsPerUpdate: 1000 });
     const result = f.run(() => {
       for (let index = 0; index < 501; index++) f.put(`paste-${index}`, 'card', {
         parent: 'lane-todo', rank: `a${index}@todo`, text: `Pasted ${index}`,
@@ -527,6 +562,34 @@ describe('tracker linked-card guard', () => {
     expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(500);
     expect(result.undone).toEqual([{ cardId: 'paste-500', reason: 'limit_exceeded' }]);
     expect(f.objects.has('paste-500')).toBe(true);
+    f.close();
+  });
+
+  it('caps auto-created tickets at 10 per user per minute across updates', () => {
+    const clock = manualClock();
+    const f = fixture({ linked: 0, clock });
+    const first = f.run(() => {
+      for (let index = 0; index < 12; index++) f.put(`capped-${index}`, 'card', {
+        parent: 'lane-todo', rank: `a${index}@todo`, text: `Capped ${index}`,
+      });
+    });
+    expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(10);
+    expect(first.undone).toEqual([{ cardId: 'capped-10', reason: 'limit_exceeded' }]);
+    expect(f.objects.has('capped-10')).toBe(true);
+    expect(f.objects.has('capped-11')).toBe(true);
+
+    const next = f.run(() => f.put('capped-later', 'card', {
+      parent: 'lane-todo', rank: 'z9@todo', text: 'Capped later',
+    }));
+    expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(10);
+    expect(next.undone).toEqual([{ cardId: 'capped-later', reason: 'limit_exceeded' }]);
+
+    clock.advance(60_001);
+    const reset = f.run(() => f.put('capped-after-window', 'card', {
+      parent: 'lane-todo', rank: 'z8@todo', text: 'Capped after window',
+    }));
+    expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(11);
+    expect(reset.undone).toEqual([]);
     f.close();
   });
 
@@ -542,6 +605,64 @@ describe('tracker linked-card guard', () => {
     samples.sort((a, b) => a - b);
     expect(samples[Math.floor(samples.length / 2)]).toBeLessThan(1);
     f.close();
+  });
+
+  it('keeps the 10k-object linked-board snapshot median under 10 ms', () => {
+    const f = fixture({ linked: 150 });
+    const objectsToAdd = 10_000 - f.objects.size;
+    for (let index = 0; index < objectsToAdd; index++) {
+      f.put(`shape-${index}`, 'shape', { x: index, y: index });
+    }
+    f.run(() => card(f).set('color', 'warmup'));
+    const samples: number[] = [];
+    for (let index = 0; index < 41; index++) {
+      const start = process.hrtime.bigint();
+      f.run(() => card(f).set('color', `snapshot-${index}`));
+      samples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
+    }
+    samples.sort((a, b) => a - b);
+    const median = samples[Math.floor(samples.length / 2)];
+    console.log(`[tracker guard timing] 10,000 objects, 150 linked cards: median ${median.toFixed(3)} ms`);
+    expect(f.objects.size).toBe(10_000);
+    expect(card(f).get('color')).toBe('snapshot-40');
+    expect(median).toBeLessThan(10);
+    f.close();
+  });
+
+  it('prunes idle per-user windows after two minutes using the injected clock', () => {
+    const clock = manualClock();
+    const f = fixture({ clock });
+    const directory = Object.create(f.directory);
+    directory.audit = () => {};
+    f.guard = createTrackerGuard({
+      directory, now: clock.now,
+      setTimeoutFn: clock.setTimeout as unknown as typeof setTimeout,
+      clearTimeoutFn: clock.clearTimeout as unknown as typeof clearTimeout,
+    });
+    f.run = (apply: () => void, who = f.actor) => f.guard.run(f.room, who, () => f.doc.transact(apply, 'client'));
+
+    for (let index = 0; index < 1024; index++) {
+      const actor = { type: 'user', id: `idle-first-${index}`, role: 'guest' } as unknown as typeof f.actor;
+      f.run(() => card(f).set('rank', `first-${index}`), actor);
+    }
+    clock.advance(120_001);
+    for (let index = 0; index < 128; index++) {
+      const actor = { type: 'user', id: `idle-second-${index}`, role: 'guest' } as unknown as typeof f.actor;
+      f.run(() => card(f).set('rank', `second-${index}`), actor);
+    }
+    expect(f.guard.pruneIdleState()).toEqual({ rateWindows: 0, rejectAudits: 0 });
+    f.close();
+  });
+
+  it('caps socket guard entries before work and resets the window with an injected clock', () => {
+    let time = 0;
+    const budget = createTrackerSocketBudget({ now: () => time, max: 2 });
+    const socket = {};
+    expect(budget.allow(socket)).toBe(true);
+    expect(budget.allow(socket)).toBe(true);
+    expect(budget.allow(socket)).toBe(false);
+    time = 60_000;
+    expect(budget.allow(socket)).toBe(true);
   });
 
   it('fails closed on a thrown directory transaction and logs no card text', () => {

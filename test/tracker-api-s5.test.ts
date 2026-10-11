@@ -17,6 +17,9 @@ const h = createHarness({
 let owner: Account;
 let editor: Account;
 let viewer: Account;
+let guest: Account;
+let limited: Account;
+let teamId: string;
 let boardId: string;
 let linkId: string;
 let live: ReturnType<typeof h.connect>;
@@ -36,12 +39,16 @@ function eventCount(ticketId: string) {
 beforeAll(async () => {
   await h.start();
   owner = await h.signInOwner();
-  const teamId = (await h.newTeam(owner.cookie)).id;
+  teamId = (await h.newTeam(owner.cookie)).id;
   editor = await h.joinTeam(owner.cookie, teamId);
   viewer = await h.joinTeam(owner.cookie, teamId);
+  guest = await h.joinTeam(owner.cookie, teamId);
+  const changed = await api(owner, 'PATCH', `/api/members/${guest.user.id}`, { role: 'guest' });
+  if (changed.status !== 200) throw new Error(`could not make an API test guest (${changed.status})`);
   boardId = await h.newBoard(owner.cookie);
   await h.share(owner.cookie, boardId, editor.user.id, 'editor');
   await h.share(owner.cookie, boardId, viewer.user.id, 'viewer');
+  await h.share(owner.cookie, boardId, guest.user.id, 'editor');
   const doc = new Y.Doc();
   put(doc, 'kanban-1', 'container', { layout: 'kanban' });
   put(doc, 'lane-todo', 'lane', { parent: 'kanban-1', name: 'To do', stage: 'todo', rank: 'a0@kanban-1' });
@@ -105,8 +112,12 @@ describe('tracker slice 5 HTTP routes', () => {
   it('opens, extends, conflicts, and closes a per-user restore window with board access checks', async () => {
     expect(await api(owner, 'POST', '/api/tracker/boards/missing-board/restore-window'))
       .toMatchObject({ status: 404, body: { error: 'not_found', message: expect.any(String) } });
-    expect(await api(viewer, 'POST', `/api/tracker/boards/${boardId}/restore-window`))
-      .toMatchObject({ status: 403, body: { error: 'forbidden', message: expect.any(String) } });
+    for (const who of [guest, viewer]) {
+      for (const method of ['POST', 'DELETE']) {
+        const result = await api(who, method, `/api/tracker/boards/${boardId}/restore-window`);
+        expect([403, 404], `${who.user.role} ${method} restore window`).toContain(result.status);
+      }
+    }
     const before = Date.now();
     const first = await api(owner, 'POST', `/api/tracker/boards/${boardId}/restore-window`);
     expect(first).toMatchObject({ status: 200, body: { expiresAt: expect.any(Number) } });
@@ -117,6 +128,17 @@ describe('tracker slice 5 HTTP routes', () => {
       .toMatchObject({ status: 409, body: { error: 'conflict', message: expect.any(String) } });
     expect(await api(owner, 'DELETE', `/api/tracker/boards/${boardId}/restore-window`))
       .toMatchObject({ status: 200, body: { closed: true, projectionPending: false } });
+  });
+
+  it('rate limits card DELETE after 60 tracker mutations in the window', async () => {
+    limited = await h.joinTeam(owner.cookie, teamId);
+    await h.share(owner.cookie, boardId, limited.user.id, 'editor');
+    for (let index = 0; index < 60; index++) {
+      const result = await api(limited, 'POST', `/api/tracker/boards/${boardId}/restore-window`);
+      expect(result.status).toBe(200);
+    }
+    expect(await api(limited, 'DELETE', `/api/tracker/links/${linkId}/cards/card-2`))
+      .toMatchObject({ status: 429, body: { error: 'rate_limited', message: expect.any(String) } });
   });
 });
 
