@@ -554,8 +554,8 @@ export function ftsAvailable(db) {
   }
 }
 
-/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean, oauthSecret?: Buffer | null }} [options] */
-export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null, oauthSecret = null } = {}) {
+/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean, oauthSecret?: Buffer | null, oauthInternals?: boolean }} [options] */
+export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null, oauthSecret = null, oauthInternals = false } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
@@ -1349,7 +1349,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
   }
 
   const tokenStore = createTokenStore({ get, all, run, transaction });
-  const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret });
+  const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret, exposeInternals: oauthInternals });
 
   return {
     close() {

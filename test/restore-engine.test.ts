@@ -175,7 +175,7 @@ describe('whole restore credential invalidation', () => {
       maxScope: 'write',
       now: h.clock.now,
     }).client!;
-    const grant = directory.createGrant({
+    const grant = directory.oauthInternals!.createGrant({
       clientId: client.clientId,
       userId: owner.id,
       scope: 'write',
@@ -183,7 +183,7 @@ describe('whole restore credential invalidation', () => {
       resource: 'https://tabula.example/mcp',
       now: h.clock.now,
     });
-    directory.issueCode({
+    directory.oauthInternals!.issueCode({
       requestId: 'restore-oauth-request',
       grantId: grant.id,
       clientId: client.clientId,
@@ -195,7 +195,7 @@ describe('whole restore credential invalidation', () => {
     });
     directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
       .run('restore-oauth-request', client.clientId, h.clock.now, h.clock.now + 10 * MIN);
-    directory.issueTokens({ grantId: grant.id, scope: 'write', now: h.clock.now });
+    directory.oauthInternals!.issueTokens({ grantId: grant.id, scope: 'write', now: h.clock.now });
     directory.db.prepare("UPDATE oauth_tokens SET replay_ciphertext = 'encrypted-test-value', replay_until = ?, replay_count = 1 WHERE kind = 'refresh'")
       .run(h.clock.now + 20_000);
     const engines = rig(h);

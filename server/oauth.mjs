@@ -78,7 +78,8 @@ export const OAUTH_GRANT_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 export const OAUTH_CODE_TTL_MS = 60 * 1000;
 export const OAUTH_REQUEST_TTL_MS = 10 * 60 * 1000;
 export const OAUTH_REPLAY_TTL_MS = 20 * 1000;
-export const OAUTH_UNUSED_CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// A real connector authorizes within minutes of registering; a short life keeps anonymous registrations from holding the cap.
+export const OAUTH_UNUSED_CLIENT_TTL_MS = 60 * 60 * 1000;
 export const OAUTH_USED_CLIENT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 export const OAUTH_CODE_RETENTION_MS = 10 * 60 * 1000;
 export const OAUTH_TOKEN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -306,7 +307,7 @@ const activeGrantClause = 'revoked_at IS NULL AND expires_at > ?';
 const chooseClient = 'SELECT * FROM oauth_clients WHERE id = ?';
 
 /** The SQL lives here so directory.mjs registers one migration and spreads one store. */
-export function createOauthStore({ get, all, run, transaction, secret = null }) {
+export function createOauthStore({ get, all, run, transaction, secret = null, exposeInternals = false }) {
   const secretKeys = secret ? deriveOAuthKeys(secret) : null;
   const requireKeys = () => {
     if (!secretKeys) throw new Error('OAuth secret is unavailable');
@@ -381,10 +382,16 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
       sweepInside(now);
       const existing = clientByFingerprintRow(fingerprint, now);
       if (existing) {
-        run('UPDATE oauth_clients SET last_used_at = ?, max_scope = ? WHERE id = ?', now, maxScope, existing.id);
-        return { client: toClient({ ...existing, last_used_at: now, max_scope: maxScope }), created: false };
+        // `max_scope` stays as first registered: name and redirect URIs are public, so a repeat registration must not move
+        // the ceiling (the real caps are applied at consent). A client that was never granted is not kept alive by repeats.
+        if (existing.last_grant_at != null) run('UPDATE oauth_clients SET last_used_at = ? WHERE id = ?', now, existing.id);
+        return { client: toClient({ ...existing, last_used_at: existing.last_grant_at != null ? now : existing.last_used_at }), created: false };
       }
-      if (countClients() >= MAX_OAUTH_CLIENTS) return { client: null, created: false, full: true };
+      if (countClients() >= MAX_OAUTH_CLIENTS) {
+        // Make room by dropping the oldest client that never got a grant, rather than refusing every real connector.
+        run('DELETE FROM oauth_clients WHERE id = (SELECT id FROM oauth_clients WHERE last_grant_at IS NULL ORDER BY created_at LIMIT 1)');
+        if (countClients() >= MAX_OAUTH_CLIENTS) return { client: null, created: false, full: true };
+      }
       const clientId = newId();
       run(
         `INSERT INTO oauth_clients (id, name, redirect_uris, fingerprint, max_scope, created_at, last_used_at, last_grant_at)
@@ -885,10 +892,9 @@ export function createOauthStore({ get, all, run, transaction, secret = null }) 
     getClientByFingerprint,
     countClients,
     purgeClients,
-    createGrant,
-    issueCode,
-    consumeCode,
-    issueTokens,
+    // These four skip consent, PKCE and the user-state checks, so they are not part of the directory API: a test can ask for
+    // them with `openDirectory(file, { oauthInternals: true })` and reach them as `directory.oauthInternals`.
+    ...(exposeInternals ? { oauthInternals: { createGrant, issueCode, consumeCode, issueTokens } } : {}),
     refresh,
     findRefreshGrant,
     revokeToken,

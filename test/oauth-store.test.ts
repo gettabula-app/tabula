@@ -7,7 +7,7 @@ import { loadConfig } from '../server/config.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 import { loadOAuthSecret } from '../server/instance-secret.mjs';
 import { createClientAwareLimiter } from '../server/limiter.mjs';
-import { OAUTH_ACCESS_TTL_MS, OAUTH_CODE_TTL_MS, OAUTH_GRANT_RETENTION_MS, OAUTH_GRANT_TTL_MS, OAUTH_MIGRATION, OAUTH_REPLAY_TTL_MS, OAUTH_SCOPES, OAUTH_UNUSED_CLIENT_TTL_MS, OAUTH_USED_CLIENT_TTL_MS, TOKEN_PREFIX_OAUTH, verifyAuthorizeEnvelope } from '../server/oauth.mjs';
+import { OAUTH_ACCESS_TTL_MS, OAUTH_CODE_TTL_MS, OAUTH_GRANT_RETENTION_MS, OAUTH_GRANT_TTL_MS, OAUTH_MIGRATION, OAUTH_REPLAY_TTL_MS, OAUTH_SCOPES, MAX_OAUTH_CLIENTS, OAUTH_UNUSED_CLIENT_TTL_MS, OAUTH_USED_CLIENT_TTL_MS, TOKEN_PREFIX_OAUTH, verifyAuthorizeEnvelope } from '../server/oauth.mjs';
 import { isWindows } from './platform';
 
 const T0 = 1_800_000_000_000;
@@ -16,7 +16,7 @@ const directories: ReturnType<typeof openDirectory>[] = [];
 const temporary: string[] = [];
 
 function directory(secret = SECRET) {
-  const value = openDirectory(':memory:', { oauthSecret: secret });
+  const value = openDirectory(':memory:', { oauthSecret: secret, oauthInternals: true });
   directories.push(value);
   return value;
 }
@@ -36,7 +36,7 @@ function grant(d: ReturnType<typeof openDirectory>, options: { scope?: 'read' | 
   return {
     person,
     registered,
-    value: d.createGrant({
+    value: d.oauthInternals!.createGrant({
       clientId: registered.clientId,
       userId: options.userId ?? person.id,
       scope: options.scope ?? 'write',
@@ -60,7 +60,7 @@ describe('OAuth store migration and persistence', () => {
     expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 16 });
 
     const fixture = grant(d);
-    const pair = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     expect(pair.accessToken).toMatch(new RegExp(`^${TOKEN_PREFIX_OAUTH}[A-Za-z0-9_-]{43}$`));
     const tokenHash = d.db.prepare("SELECT token_hash FROM oauth_tokens WHERE kind = 'access'").get()!.token_hash;
     expect(() => d.db.prepare(
@@ -80,7 +80,7 @@ describe('OAuth store migration and persistence', () => {
     const d = directory();
     const fixture = grant(d);
     const challenge = crypto.createHash('sha256').update('v'.repeat(43)).digest('base64url');
-    const issued = d.issueCode({
+    const issued = d.oauthInternals!.issueCode({
       grantId: fixture.value.id,
       clientId: fixture.registered.clientId,
       redirectUri: fixture.registered.redirectUris[0],
@@ -97,12 +97,12 @@ describe('OAuth store migration and persistence', () => {
        VALUES (?, 'duplicate-request', ?, ?, ?, ?, 'write', ?, ?)`,
     ).run(digest, fixture.value.id, fixture.registered.clientId, fixture.registered.redirectUris[0], challenge, 'https://tabula.example/mcp', T0 + 1)).toThrow(/UNIQUE/);
 
-    expect(d.consumeCode(issued.code, T0)).toMatchObject({ clientId: fixture.registered.clientId, scope: 'write' });
-    expect(d.consumeCode(issued.code, T0 + 1)).toMatchObject({ reused: true, grantId: fixture.value.id });
+    expect(d.oauthInternals!.consumeCode(issued.code, T0)).toMatchObject({ clientId: fixture.registered.clientId, scope: 'write' });
+    expect(d.oauthInternals!.consumeCode(issued.code, T0 + 1)).toMatchObject({ reused: true, grantId: fixture.value.id });
     expect(d.getGrant(fixture.value.id)?.revokedAt).toBe(T0 + 1);
 
     const another = grant(d);
-    const expires = d.issueCode({
+    const expires = d.oauthInternals!.issueCode({
       grantId: another.value.id,
       clientId: another.registered.clientId,
       redirectUri: another.registered.redirectUris[0],
@@ -111,10 +111,10 @@ describe('OAuth store migration and persistence', () => {
       resource: 'https://tabula.example/mcp',
       now: T0,
     });
-    expect(d.consumeCode(expires.code, T0 + OAUTH_CODE_TTL_MS)).toBeNull();
+    expect(d.oauthInternals!.consumeCode(expires.code, T0 + OAUTH_CODE_TTL_MS)).toBeNull();
 
     const replayed = grant(d);
-    const used = d.issueCode({
+    const used = d.oauthInternals!.issueCode({
       grantId: replayed.value.id,
       clientId: replayed.registered.clientId,
       redirectUri: replayed.registered.redirectUris[0],
@@ -123,8 +123,8 @@ describe('OAuth store migration and persistence', () => {
       resource: 'https://tabula.example/mcp',
       now: T0,
     });
-    d.consumeCode(used.code, T0);
-    expect(d.consumeCode(used.code, T0 + OAUTH_CODE_TTL_MS + 1)).toMatchObject({ reused: true, grantId: replayed.value.id });
+    d.oauthInternals!.consumeCode(used.code, T0);
+    expect(d.oauthInternals!.consumeCode(used.code, T0 + OAUTH_CODE_TTL_MS + 1)).toMatchObject({ reused: true, grantId: replayed.value.id });
     expect(d.getGrant(replayed.value.id)?.revokedAt).toBe(T0 + OAUTH_CODE_TTL_MS + 1);
   });
 
@@ -156,7 +156,7 @@ describe('OAuth store migration and persistence', () => {
   it('encrypts the replacement pair for one replay and erases it when used', () => {
     const d = directory();
     const fixture = grant(d);
-    const first = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const first = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     const rotated = d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: T0 + 1 });
     expect(rotated).toHaveProperty('accessToken');
     const cached = d.db.prepare("SELECT replay_ciphertext, replay_until FROM oauth_tokens WHERE token_hash = ?").get(
@@ -177,21 +177,56 @@ describe('OAuth store migration and persistence', () => {
     expect(d.findOauthAccessToken(rotated.accessToken, T0 + 3)).toBeNull();
   });
 
+  it('gives a replay of the old refresh token nothing once its grant was revoked', () => {
+    const d = directory();
+    const fixture = grant(d);
+    const first = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const rotated = d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: T0 + 1 });
+    expect(rotated).toHaveProperty('accessToken');
+    d.revokeGrant(fixture.value.id, 'self', T0 + 2);
+    const replay = d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: T0 + 3 });
+    expect(replay).not.toHaveProperty('accessToken');
+    expect(d.findOauthAccessToken(rotated.accessToken, T0 + 3)).toBeNull();
+  });
+
+  it('keeps a client ceiling as first registered, does not keep a never-granted client alive, and makes room when full', () => {
+    const d = directory();
+    const uris = ['https://claude.ai/api/mcp/auth_callback'];
+    const first = d.registerClient({ name: 'Claude', redirectUris: uris, maxScope: 'read', now: T0 });
+    const repeat = d.registerClient({ name: 'Claude', redirectUris: uris, maxScope: 'write', now: T0 + 1000 });
+    expect(repeat.created).toBe(false);
+    expect(repeat.client!.maxScope).toBe('read');
+    expect(d.getClient(first.client!.clientId, T0 + 1000)!.maxScope).toBe('read');
+    // repeating the registration does not extend a client that never got a grant
+    d.registerClient({ name: 'Claude', redirectUris: uris, maxScope: 'read', now: T0 + OAUTH_UNUSED_CLIENT_TTL_MS - 1 });
+    expect(d.getClient(first.client!.clientId, T0 + OAUTH_UNUSED_CLIENT_TTL_MS)).toBeNull();
+
+    const full = directory();
+    for (let i = 0; i < MAX_OAUTH_CLIENTS; i++) {
+      expect(full.registerClient({ name: `App ${i}`, redirectUris: [`https://claude.ai/cb/${i}`], now: T0 + i }).client).not.toBeNull();
+    }
+    const next = full.registerClient({ name: 'Real connector', redirectUris: ['https://claude.ai/cb/real'], now: T0 + MAX_OAUTH_CLIENTS });
+    expect(next.client).not.toBeNull();
+    expect(full.countClients()).toBe(MAX_OAUTH_CLIENTS);
+    // the oldest never-granted client was the one dropped: registering it again makes a new client
+    expect(full.registerClient({ name: 'App 0', redirectUris: ['https://claude.ai/cb/0'], now: T0 + MAX_OAUTH_CLIENTS + 1 }).created).toBe(true);
+  });
+
   it('revokes one family, all grants for a user, and all active instance grants', () => {
     const d = directory();
     const person = d.createUser({ email: 'oauth-revoke@example.com', role: 'member' })!;
     const firstClient = client(d, 'First app');
     const secondClient = client(d, 'Second app');
-    const firstGrant = d.createGrant({
+    const firstGrant = d.oauthInternals!.createGrant({
       clientId: firstClient.clientId, userId: person.id, scope: 'write',
       resource: 'https://tabula.example/mcp', now: T0,
     });
-    const secondGrant = d.createGrant({
+    const secondGrant = d.oauthInternals!.createGrant({
       clientId: secondClient.clientId, userId: person.id, scope: 'read',
       resource: 'https://tabula.example/mcp', now: T0,
     });
-    const firstPair = d.issueTokens({ grantId: firstGrant.id, scope: 'write', now: T0 });
-    const secondPair = d.issueTokens({ grantId: secondGrant.id, scope: 'read', now: T0 });
+    const firstPair = d.oauthInternals!.issueTokens({ grantId: firstGrant.id, scope: 'write', now: T0 });
+    const secondPair = d.oauthInternals!.issueTokens({ grantId: secondGrant.id, scope: 'read', now: T0 });
 
     expect(d.revokeGrantFamily(firstGrant.id, 'self', T0 + 1)).toBe(true);
     expect(d.findOauthAccessToken(firstPair.accessToken, T0 + 1)).toBeNull();
@@ -201,11 +236,11 @@ describe('OAuth store migration and persistence', () => {
 
     const otherPerson = d.createUser({ email: 'oauth-restore@example.com', role: 'member' })!;
     const otherClient = client(d, 'Restore app');
-    const otherGrant = d.createGrant({
+    const otherGrant = d.oauthInternals!.createGrant({
       clientId: otherClient.clientId, userId: otherPerson.id, scope: 'read',
       resource: 'https://tabula.example/mcp', now: T0,
     });
-    const otherPair = d.issueTokens({ grantId: otherGrant.id, scope: 'read', now: T0 });
+    const otherPair = d.oauthInternals!.issueTokens({ grantId: otherGrant.id, scope: 'read', now: T0 });
     expect(d.revokeAll('restore', T0 + 3)).toBe(1);
     expect(d.findOauthAccessToken(otherPair.accessToken, T0 + 3)).toBeNull();
   });
@@ -213,7 +248,7 @@ describe('OAuth store migration and persistence', () => {
   it('erases an expired replay cache and revokes the family on a late presentation', () => {
     const d = directory();
     const fixture = grant(d);
-    const first = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const first = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     d.refresh({ refreshToken: first.refreshToken, clientId: fixture.registered.clientId, now: T0 + 1 });
     const afterWindow = T0 + 1 + OAUTH_REPLAY_TTL_MS;
     d.cleanup(afterWindow);
@@ -229,7 +264,7 @@ describe('OAuth store migration and persistence', () => {
     const d = directory();
     const fixture = grant(d);
     const verifier = 'v'.repeat(43);
-    const code = d.issueCode({
+    const code = d.oauthInternals!.issueCode({
       grantId: fixture.value.id,
       clientId: fixture.registered.clientId,
       redirectUri: fixture.registered.redirectUris[0],
@@ -258,7 +293,7 @@ describe('OAuth store migration and persistence', () => {
   it('serializes concurrent refreshes to one replacement pair with one replay', async () => {
     const d = directory();
     const fixture = grant(d);
-    const original = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const original = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     let now = T0 + 1;
     const results = await Promise.all([
       Promise.resolve().then(() => d.refresh({ refreshToken: original.refreshToken, clientId: fixture.registered.clientId, now })),
@@ -272,7 +307,7 @@ describe('OAuth store migration and persistence', () => {
   it('permanently lowers the grant ceiling when refresh narrows scope', () => {
     const d = directory();
     const fixture = grant(d);
-    const original = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const original = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     const narrowed = d.refresh({ refreshToken: original.refreshToken, clientId: fixture.registered.clientId, scope: 'comment', now: T0 + 2 } as any);
     expect(narrowed).toMatchObject({ scope: 'comment' });
     expect(d.getGrant(fixture.value.id)?.scope).toBe('comment');
@@ -286,7 +321,7 @@ describe('OAuth store migration and persistence', () => {
   it('revokes access and refresh together through RFC 7009 token lookup', () => {
     const d = directory();
     const fixture = grant(d);
-    const pair = d.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
+    const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
     expect(d.revokeToken(pair.accessToken, fixture.registered.clientId, T0 + 1)).toMatchObject({ grantId: fixture.value.id });
     expect(d.findOauthAccessToken(pair.accessToken, T0 + 1)).toBeNull();
     expect(d.refresh({ refreshToken: pair.refreshToken, clientId: fixture.registered.clientId, now: T0 + 1 })).toMatchObject({ error: 'invalid_grant' });
@@ -298,20 +333,20 @@ describe('OAuth store migration and persistence', () => {
     const person = d.createUser({ email: 'oauth-grant-cap@example.com', role: 'member' })!;
     const firstClient = d.registerClient({ name: 'App 1', redirectUris: ['https://claude.ai/callback'], maxScope: 'read', now: T0 }).client!;
     const grantFields = { clientId: firstClient.clientId, userId: person.id, scope: 'read' as const, resource: 'https://tabula.example/mcp', now: T0 };
-    const first = d.createGrant(grantFields);
-    const replacement = d.createGrant(grantFields);
+    const first = d.oauthInternals!.createGrant(grantFields);
+    const replacement = d.oauthInternals!.createGrant(grantFields);
     expect(d.getGrant(first.id)).toMatchObject({ revokedReason: 'replaced' });
     expect(d.getGrant(replacement.id)).toMatchObject({ revokedAt: null });
-    expect(() => d.createGrant({ ...grantFields, scope: 'write' })).toThrow(/scope exceeds client maximum/);
+    expect(() => d.oauthInternals!.createGrant({ ...grantFields, scope: 'write' })).toThrow(/scope exceeds client maximum/);
 
     for (let index = 2; index <= 20; index++) {
       const client = d.registerClient({ name: `App ${index}`, redirectUris: [`https://claude.ai/${index}`], maxScope: 'read', now: T0 }).client!;
-      d.createGrant({ ...grantFields, clientId: client.clientId });
+      d.oauthInternals!.createGrant({ ...grantFields, clientId: client.clientId });
     }
     const capClient = d.registerClient({ name: 'App 21', redirectUris: ['https://claude.ai/21'], maxScope: 'read', now: T0 }).client!;
     let capError: unknown;
     try {
-      d.createGrant({ ...grantFields, clientId: capClient.clientId });
+      d.oauthInternals!.createGrant({ ...grantFields, clientId: capClient.clientId });
     } catch (error) {
       capError = error;
     }
@@ -330,25 +365,25 @@ describe('OAuth store migration and persistence', () => {
   it('revokes the grant when the user is disabled, removed or demoted to guest, and on resource change', () => {
     const d = directory();
     const disabled = grant(d);
-    const disabledPair = d.issueTokens({ grantId: disabled.value.id, scope: 'write', now: T0 });
+    const disabledPair = d.oauthInternals!.issueTokens({ grantId: disabled.value.id, scope: 'write', now: T0 });
     d.updateUser(disabled.person.id, { disabled: true });
     expect(d.findOauthAccessToken(disabledPair.accessToken, Date.now())).toBeNull();
     expect(d.getGrant(disabled.value.id)?.revokedReason).toBe('user_state');
 
     const guest = grant(d);
-    const guestPair = d.issueTokens({ grantId: guest.value.id, scope: 'write', now: T0 });
+    const guestPair = d.oauthInternals!.issueTokens({ grantId: guest.value.id, scope: 'write', now: T0 });
     d.updateUser(guest.person.id, { role: 'guest' });
     expect(d.findOauthAccessToken(guestPair.accessToken, Date.now())).toBeNull();
     expect(d.getGrant(guest.value.id)?.revokedReason).toBe('user_state');
 
     const removed = grant(d);
-    const removedPair = d.issueTokens({ grantId: removed.value.id, scope: 'write', now: T0 });
+    const removedPair = d.oauthInternals!.issueTokens({ grantId: removed.value.id, scope: 'write', now: T0 });
     d.removeUser(removed.person.id);
     expect(d.findOauthAccessToken(removedPair.accessToken, Date.now())).toBeNull();
     expect(d.getGrant(removed.value.id)).toBeNull();
 
     const changed = grant(d);
-    const changedPair = d.issueTokens({ grantId: changed.value.id, scope: 'write', now: T0 });
+    const changedPair = d.oauthInternals!.issueTokens({ grantId: changed.value.id, scope: 'write', now: T0 });
     expect(d.refresh({
       refreshToken: changedPair.refreshToken,
       clientId: changed.registered.clientId,

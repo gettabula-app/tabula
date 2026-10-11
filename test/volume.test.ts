@@ -235,7 +235,7 @@ describe('the marker file', () => {
 describe('applyVolume', () => {
   function rig() {
     const d = tmpDir();
-    const directory = openDirectory(path.join(d, 'directory.sqlite'));
+    const directory = openDirectory(path.join(d, 'directory.sqlite'), { oauthInternals: true });
     handles.push(directory);
     const user = directory.createUser({ email: 'ana@example.com', name: 'Ana', role: 'owner' });
     const session = directory.createSession(user!.id, { ttlMs: 60_000 });
@@ -247,9 +247,9 @@ describe('applyVolume', () => {
     const { d, directory, session, link } = rig();
     const owner = directory.getUserByEmail('ana@example.com')!;
     const oauthClient = directory.registerClient({ name: 'Connected app', redirectUris: ['https://claude.ai/callback'], maxScope: 'write', now: T0 }).client!;
-    const oauthGrant = directory.createGrant({ clientId: oauthClient.clientId, userId: owner.id, scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
-    directory.issueTokens({ grantId: oauthGrant.id, scope: 'write', now: T0 });
-    directory.issueCode({ requestId: 'volume-request', grantId: oauthGrant.id, clientId: oauthClient.clientId, redirectUri: oauthClient.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
+    const oauthGrant = directory.oauthInternals!.createGrant({ clientId: oauthClient.clientId, userId: owner.id, scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.oauthInternals!.issueTokens({ grantId: oauthGrant.id, scope: 'write', now: T0 });
+    directory.oauthInternals!.issueCode({ requestId: 'volume-request', grantId: oauthGrant.id, clientId: oauthClient.clientId, redirectUri: oauthClient.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'write', resource: 'https://tabula.example/mcp', now: T0 });
     directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run('volume-request', oauthClient.clientId, T0, T0 + 60_000);
     directory.db.prepare("UPDATE oauth_tokens SET replay_ciphertext = 'encrypted-test-value', replay_until = ?, replay_count = 1 WHERE kind = 'refresh'").run(T0 + 20_000);
     const board = directory.createBoard({ id: 'guest-board', ownerId: owner.id })!;
@@ -290,8 +290,8 @@ describe('applyVolume', () => {
     const { d, directory } = rig();
     const owner = directory.getUserByEmail('ana@example.com')!;
     const client = directory.registerClient({ name: 'Workspace transfer app', redirectUris: ['https://claude.ai/callback'], maxScope: 'read', now: T0 }).client!;
-    const grant = directory.createGrant({ clientId: client.clientId, userId: owner.id, scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
-    directory.issueCode({ requestId: 'operator-request', grantId: grant.id, clientId: client.clientId, redirectUri: client.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
+    const grant = directory.oauthInternals!.createGrant({ clientId: client.clientId, userId: owner.id, scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
+    directory.oauthInternals!.issueCode({ requestId: 'operator-request', grantId: grant.id, clientId: client.clientId, redirectUri: client.redirectUris[0], codeChallenge: 'c'.repeat(43), scope: 'read', resource: 'https://tabula.example/mcp', now: T0 });
     directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run('operator-request', client.clientId, T0, T0 + 60_000);
     writeMarker(d, marker());
     const plan = planVolume({ dataDir: d, env: { TABULA_ADOPT_VOLUME: 'ws_b' }, workspaceId: 'ws_b', now: T0 + 1 });

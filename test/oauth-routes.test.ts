@@ -109,6 +109,26 @@ async function authorizeAndConsent(h: Harness, cookie: string, clientId: string,
 }
 
 describe('OAuth metadata and registration routes', () => {
+  it('gives a connector no tracker tools even when the tracker is on', async () => {
+    const h = oauthHarness({ TRACKER: 'on' });
+    await h.start();
+    const owner = await h.signInOwner();
+    const client = await register(h);
+    const flow = await authorizeAndConsent(h, owner.cookie, client.client_id);
+    const exchanged = await tokenRequest(h, {
+      grant_type: 'authorization_code', code: flow.callback.get('code'), client_id: client.client_id,
+      redirect_uri: client.redirect_uris[0], code_verifier: flow.started.verifier,
+    });
+    expect(exchanged.status).toBe(200);
+    const listed = await h.call(exchanged.body.access_token, 'tools/list');
+    expect(listed.status).toBe(200);
+    const names = (listed.body.result.tools as { name: string }[]).map((tool) => tool.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => /ticket|tracker|saved_view|project|milestone/.test(name))).toEqual([]);
+    const attempt = await h.call(exchanged.body.access_token, 'tools/call', { name: 'create_ticket', arguments: { title: 'x', idempotencyKey: 'oauth-no-tracker-1' } });
+    expect(attempt.status === 200 ? Boolean(attempt.body.error ?? attempt.body.result?.isError) : attempt.status >= 400).toBe(true);
+  });
+
   it('serves RFC 9728 and RFC 8414 documents with metadata-only CORS', async () => {
     const h = oauthHarness();
     await h.start();
