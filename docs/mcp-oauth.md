@@ -1,6 +1,6 @@
 # OAuth 2.1 for the MCP endpoint
 
-Status: **design, not implemented.** Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
+Status: **slice 1 in progress.** Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
 
 ## 1. Problem and decision
 
@@ -319,12 +319,14 @@ The SPA's existing CSP (`script-src 'self'`, `frame-ancestors 'none'`, `base-uri
 
 ## 8. Gating
 
+OAuth stays off by default in slice 1; the default switches on only after slice 5 passes.
+
 | Setting | Behaviour |
 | --- | --- |
 | `TABULA_MCP` off (default) | **No change from today**: `/mcp` and token routes `404`, and now also `/.well-known/oauth-*`, `/oauth/*`, `/api/oauth/*`, `/api/me/grants`, `/api/admin/grants` `404` (`{error:'not_found'}`); no table is read; `tbo_` is not accepted anywhere. |
 | `TABULA_MCP=on`, open mode (`TABULA_AUTH` off) | There are no users, so nothing to bind a grant to: all OAuth paths `404`. The shared open-mode token keeps working unchanged. `TABULA_MCP_OAUTH` is ignored with one log line (like `TABULA_MCP_TOKEN` in accounts mode). |
-| `TABULA_MCP=on`, accounts mode | OAuth on by default. |
-| `TABULA_MCP_OAUTH=off` (new, default `on` in accounts mode) | All OAuth paths `404`; the 401 on `/mcp` goes back to plain `WWW-Authenticate: Bearer`; `tbo_` tokens are refused (`401`) **immediately**, but rows are kept, so switching back on restores existing grants until they expire. Personal tokens are unaffected. Any other value than `on`/`off` refuses startup. |
+| `TABULA_MCP=on`, accounts mode | OAuth is off unless `TABULA_MCP_OAUTH=on`. |
+| `TABULA_MCP_OAUTH=off` (new, default `off` in slice 1) | All OAuth paths `404`; the 401 on `/mcp` goes back to plain `WWW-Authenticate: Bearer`; `tbo_` tokens are refused (`401`) **immediately**, but rows are kept, so switching back on restores existing grants until they expire. Personal tokens are unaffected. Any other value than `on`/`off` refuses startup. |
 | `TABULA_BASE_URL` `http://` for a non-loopback host | already refuses startup with MCP on; OAuth inherits it (codes and tokens must not cross the network in clear text). |
 | Maintenance (restore in progress) | `503` + `retry-after: 30` on OAuth paths, like `/mcp`. |
 | Hosted read-only workspace | Registration and token refresh keep working (reads work); **creating a grant** (Allow) is refused `402 read_only`; revoking is always allowed (`readOnlyOk`). Grants are not seats and never touch the seat limit. |
@@ -401,7 +403,7 @@ Bodies are size-capped (8 KiB) and the content type is checked (`415`). Request-
 
 ### 12.1 Migration
 
-`MIGRATIONS` in `server/directory.mjs` currently has 11 entries; the new one is **migration 12**, defined in a new `server/oauth.mjs` (`OAUTH_MIGRATION`, like `TOKENS_MIGRATION` in `server/tokens.mjs`) and registered in `directory.mjs` with one spread/entry. It is **expand-only** (new tables and non-unique indexes only; `UNIQUE` is inline on brand-new tables, as in `join_codes`), declared as a plain string, so `minReader = 11`: the previous build can open and run the database after it, ignores the new tables, and (because it does not know `tbo_`) simply rejects OAuth tokens (fail closed). **Release notes and rollback runbook must state:** rollback to v4 is unsafe after this ships; the control-plane dry run reports `rollbackSafe=false`. The slice 4 changelog fragment should say: "Rollback to v4 is unsafe after migration 12 ships (`rollbackSafe=false` in the control-plane dry run); follow the rollback runbook." Do not describe v4 as a safe rollback target. The lint (`test/migrations-lint.test.ts`) must pass without an object entry.
+`MIGRATIONS` in `server/directory.mjs` currently has 15 entries; the new one is **migration 16**, defined in a new `server/oauth.mjs` (`OAUTH_MIGRATION`, like `TOKENS_MIGRATION` in `server/tokens.mjs`) and registered in `directory.mjs` with one spread/entry. It is **expand-only** (new tables and indexes only), declared as `{ sql, minReader: 11 }`, not a plain string: a plain string would set `minReader` to 15 and break rollback to v5.0.1 (generation 11). The v5.0.1 build can open and run the database after it, ignores the new tables, and (because it does not know `tbo_`) simply rejects OAuth tokens (fail closed). **Release notes and rollback runbook must state:** rollback to v4 is unsafe after this ships; the control-plane dry run reports `rollbackSafe=false`. The slice 4 changelog fragment should say: "Rollback to v4 is unsafe after migration 16 ships (`rollbackSafe=false` in the control-plane dry run); follow the rollback runbook." Do not describe v4 as a safe rollback target. The migration lint must pass.
 
 ```sql
 CREATE TABLE oauth_clients (

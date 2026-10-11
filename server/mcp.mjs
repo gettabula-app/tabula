@@ -9,6 +9,7 @@ import * as Y from 'yjs';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { clientIpOf } from './client-ip.mjs';
+import { createWindowLimiter } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
@@ -35,13 +36,11 @@ const SERVER_VERSION = '1.0.0';
 const SUPPORTED_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const LATEST_VERSION = SUPPORTED_VERSIONS[0];
 const ASSUMED_VERSION = '2025-03-26';
-const WINDOW_MS = 60_000;
 const CALLS_PER_WINDOW = 120;
 const WRITES_PER_WINDOW = 30;
 const TICKET_CREATES_PER_WINDOW = 10;
 const FAILURES_PER_WINDOW = 20;
 const TOUCH_MS = 60_000;
-const MAX_LIMITER_KEYS = 50_000;
 const BEARER_RE = /^bearer +(\S+)$/i;
 const RANK = { read: 1, comment: 2, write: 3 };
 const ROLE_RANK = { owner: 3, editor: 3, commenter: 2, viewer: 1 };
@@ -67,29 +66,6 @@ const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message, data) => ({ jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 const textResult = (text, isError = false) => ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) });
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest();
-
-// Sliding window per key, in memory (modelled on the sign-in limiter in auth.mjs).
-function createWindowLimiter(max, now) {
-  const hits = new Map();
-  const recent = (key, t) => (hits.get(key) ?? []).filter((ts) => ts > t - WINDOW_MS);
-  const retryAfter = (list, t) => Math.max(1, Math.ceil((list[0] + WINDOW_MS - t) / 1000));
-  return {
-    /** Counts one hit; returns the seconds to wait when the key was already at its limit (and then counts nothing). */
-    hit(key) {
-      const t = now();
-      const list = recent(key, t);
-      // a key in use goes to the back of the map, so the bound below forgets the key idle longest, never one that is busy
-      hits.delete(key);
-      if (list.length >= max) {
-        hits.set(key, list);
-        return retryAfter(list, t);
-      }
-      hits.set(key, [...list, t]);
-      if (hits.size > MAX_LIMITER_KEYS) hits.delete(hits.keys().next().value);
-      return 0;
-    },
-  };
-}
 
 // ---------------------------------------------------------------- tool schemas (JSON Schema, no board text in any description)
 

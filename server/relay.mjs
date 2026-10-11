@@ -258,7 +258,12 @@ if (config.authEnabled) {
     import('./api.mjs'),
     import('./cloud.mjs'),
   ]);
-  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier });
+  let oauthSecret = null;
+  if (config.mcp?.oauth) {
+    const { loadOAuthSecret } = await import('./instance-secret.mjs');
+    oauthSecret = loadOAuthSecret(DATA_DIR);
+  }
+  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -845,6 +850,22 @@ if (config.mcp) {
   mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
 }
 
+let oauthRoutes = null;
+if (config.mcp?.oauth) {
+  const { createOAuthRoutes } = await import('./oauth-routes.mjs');
+  oauthRoutes = createOAuthRoutes({ config, directory });
+  const sweepOAuth = () => {
+    const sweep = () => directory.cleanup();
+    try {
+      if (snapshotBarrier) Promise.resolve(snapshotBarrier.runWriter(sweep)).catch(() => log('OAuth cleanup failed'));
+      else sweep();
+    } catch {
+      log('OAuth cleanup failed');
+    }
+  };
+  setInterval(sweepOAuth, 10 * 60 * 1000).unref();
+}
+
 function workspaceHint(readOnly) {
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, MSG_WORKSPACE);
@@ -1032,7 +1053,18 @@ async function onRequest(req, res) {
       req.socket.destroy();
       return;
     }
-    if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
+    const oauthPath = url.pathname === '/oauth' || url.pathname.startsWith('/oauth/')
+      || url.pathname === '/.well-known/oauth' || url.pathname.startsWith('/.well-known/oauth-')
+      // no OpenID Connect (spec 1): a discovery probe gets a JSON 404, never the single-page app
+      || url.pathname.startsWith('/.well-known/openid-');
+    if (oauthPath && (!config.mcp?.oauth || !oauthRoutes)) {
+      sendJson(res, 404, { error: 'not_found' });
+    } else if (oauthPath && maintenance) {
+      res.setHeader('retry-after', '30');
+      sendJson(res, 503, { error: 'restoring' });
+    } else if (oauthPath) {
+      await runOpenWriter(() => oauthRoutes.handle(req, res));
+    } else if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
       sendJson(res, 403, { error: 'forbidden', message: 'This guest session is limited to one board' });
     } else if (url.pathname === '/mcp' && maintenance) {
       res.setHeader('retry-after', '30');

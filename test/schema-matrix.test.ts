@@ -182,20 +182,22 @@ for (const store of stores) {
 }
 
 describe('directory tracker rollback floor', () => {
-  it('keeps schema 15 readable and writable by the v5.0.1 schema 11 reader', () => {
-    expect(MIGRATIONS).toHaveLength(15);
+  it('keeps schema 16 readable and writable by the v5.0.1 schema 11 reader', () => {
+    expect(MIGRATIONS).toHaveLength(16);
     expect(MIGRATIONS[14]).toMatchObject({ minReader: 11 });
+    expect(MIGRATIONS[15]).toMatchObject({ minReader: 11 });
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const file = realDatabase(stores[0]);
     const before = snapshot(file);
     const oldReader = new DatabaseSync(file);
     try {
       const state = migrate(oldReader, MIGRATIONS.slice(0, 11), 'directory v5.0.1');
-      expect(state).toMatchObject({ version: 15, minReader: 11, legacy: false });
+      expect(state).toMatchObject({ version: 16, minReader: 11, legacy: false });
       oldReader.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('rollback-user', 'rollback@example.com', 'Rollback', 'member', 1)").run();
       oldReader.prepare("UPDATE users SET name = 'Rollback reader' WHERE id = 'rollback-user'").run();
       expect(oldReader.prepare("SELECT name FROM users WHERE id = 'rollback-user'").get()).toEqual({ name: 'Rollback reader' });
       expect(oldReader.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ticket_projection_outbox'").get()).toBeDefined();
+      expect(oldReader.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'oauth_tokens'").get()).toBeDefined();
       oldReader.prepare(
         `INSERT INTO kanban_tracker_links
           (id, board_id, kanban_id, workflow_id, created_at, created_by, idempotency_key)
@@ -232,7 +234,7 @@ describe('directory tracker rollback floor', () => {
     expect(snapshot(file)).toEqual(before);
     const readOnly = new DatabaseSync(file, { readOnly: true });
     try {
-      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 15 });
+      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 16 });
     } finally {
       readOnly.close();
     }

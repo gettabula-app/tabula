@@ -221,6 +221,11 @@ describe('access tokens in the directory', () => {
       DROP TABLE assets;
       DROP TABLE templates;
       DROP TABLE ai_keys;
+      DROP TABLE oauth_tokens;
+      DROP TABLE oauth_codes;
+      DROP TABLE oauth_grants;
+      DROP TABLE oauth_requests;
+      DROP TABLE oauth_clients;
       DROP TABLE access_tokens;
       ALTER TABLE sessions DROP COLUMN user_agent;
       PRAGMA user_version = 3;
@@ -265,9 +270,10 @@ describe('configuration', () => {
   });
 
   it('turns on per-user tokens in accounts mode and says which settings it ignores', () => {
-    expect(load({ ...accounts, MCP: 'on' }).mcp).toEqual({ mode: 'accounts', ignored: [] });
-    expect(load({ ...accounts, MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'write' }).mcp).toEqual({
+    expect(load({ ...accounts, MCP: 'on' }).mcp).toMatchObject({ mode: 'accounts', oauth: false, ignored: [] });
+    expect(load({ ...accounts, MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'write' }).mcp).toMatchObject({
       mode: 'accounts',
+      oauth: false,
       ignored: ['TABULA_MCP_TOKEN', 'TABULA_MCP_SCOPE'],
     });
   });
@@ -277,7 +283,7 @@ describe('configuration', () => {
     expect(() => load({ MCP: 'on', MCP_TOKEN: 'short' })).toThrow(/TABULA_MCP_TOKEN/);
     expect(() => load({ MCP: 'on', MCP_TOKEN: `${'a'.repeat(16)} ${'b'.repeat(16)}` })).toThrow(/without spaces/);
     expect(() => load({ MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'admin' })).toThrow(/TABULA_MCP_SCOPE/);
-    expect(load({ MCP: 'on', MCP_TOKEN: TOKEN }).mcp).toEqual({ mode: 'open', token: TOKEN, scope: 'read', ignored: [] });
+    expect(load({ MCP: 'on', MCP_TOKEN: TOKEN }).mcp).toMatchObject({ mode: 'open', token: TOKEN, scope: 'read', oauth: false, ignored: [] });
     expect(load({ MCP: 'on', MCP_TOKEN: ` ${TOKEN} `, MCP_SCOPE: 'comment' }).mcp).toMatchObject({ token: TOKEN, scope: 'comment' });
   });
 
