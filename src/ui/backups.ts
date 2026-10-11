@@ -115,12 +115,17 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     }
   }
 
+  const CHECK_ORDER: Record<TrackerCheckState, number> = { fail: 0, unknown: 1, pass: 2, na: 3 };
+  let ownerActionsOpen = false;
+
   function readinessCheckRow(check: TrackerReadinessReport['checks'][number]): HTMLElement {
+    const stateIcon = check.state === 'pass' ? icon('check', 14) : check.state === 'fail' ? icon('close', 14) : check.state === 'unknown' ? icon('timer', 14) : null;
     return h('div', { class: 'backups-readiness-row', 'data-check-id': check.id },
       h('div', { class: 'backups-readiness-name' },
         h('strong', null, trackerCheckLabel(check.id, check.label)),
-        h('span', { class: `admin-badge backups-badge backups-check-state ${check.state === 'fail' ? 'bad' : ''}` }, checkStateLabel(check.state))),
-      h('p', { class: 'backups-readiness-sentence' }, checkStateSentence(check.state)),
+        h('span', { class: `admin-badge backups-badge backups-check-state ${check.state === 'fail' ? 'bad' : ''}` }, stateIcon, h('span', null, checkStateLabel(check.state)))),
+      // the badge already says Pass; the sentence is for the checks that need a second look
+      check.state === 'fail' || check.state === 'unknown' ? h('p', { class: 'backups-readiness-sentence' }, checkStateSentence(check.state)) : null,
       check.detail === undefined ? null : h('p', { class: 'muted small backups-readiness-detail' }, check.detail));
   }
 
@@ -151,8 +156,12 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
         h('span', { class: `admin-badge backups-badge ${readiness.overall === 'no_go' ? 'bad' : ''}`, 'aria-label': `Overall readiness: ${overallLabel}` }, icon(overallIcon, 16), h('span', null, overallLabel)),
         h('p', { class: 'muted small' }, `Targets: ${readiness.targets.rpoMinutes} ${readiness.targets.rpoMinutes === 1 ? 'minute' : 'minutes'} RPO, ${readiness.targets.rtoHours} ${readiness.targets.rtoHours === 1 ? 'hour' : 'hours'} RTO, ${readiness.targets.retentionDays} days retained.`)));
       if (readiness.gate) body.push(h('p', { class: 'backups-notice backups-readiness-gate' }, gateBannerSentence(readiness.gate, Date.now())));
-      body.push(h('div', { class: 'backups-readiness-checks' }, readiness.checks.map(readinessCheckRow)));
-      body.push(epochForm(), drillRecordForm(), cutoverRecordForm());
+      body.push(h('div', { class: 'backups-readiness-checks' }, [...readiness.checks].sort((x, y) => CHECK_ORDER[x.state] - CHECK_ORDER[y.state]).map(readinessCheckRow)));
+      const owner = h('details', { class: 'backups-readiness-owner', open: ownerActionsOpen || Boolean(drillIssue || readinessActionError || epochBusy) },
+        h('summary', null, 'Owner records and actions'),
+        epochForm(), drillRecordForm(), cutoverRecordForm());
+      owner.addEventListener('toggle', () => { ownerActionsOpen = (owner as HTMLDetailsElement).open; });
+      body.push(owner);
     } else if (!readinessError && !readinessLoading) {
       body.push(h('p', { class: 'muted small', role: 'status' }, 'Loading tracker readiness…'));
     }
