@@ -1,0 +1,18 @@
+/* The chat dock (docs/chat.md, Dock): in the overlay layer above the board chrome, below popovers and dialogs. */
+.chat-dock-host { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+.chat-dock-host > * { pointer-events: auto; }
+.chat-dock, .chat-bubble { position: fixed; box-shadow: 0 10px 30px color-mix(in srgb, var(--tray) 28%, transparent); }
+.chat-dock[hidden], .chat-bubble[hidden] { display: none; }
+.chat-dock {
+  right: calc(12px + var(--safe-right)); top: calc(72px + var(--safe-top)); bottom: calc(12px + var(--safe-bottom));
+  width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md);
+}
+.chat-dock-host[data-mode='compact'] .chat-dock { top: auto; width: min(300px, calc(100vw - 24px)); height: min(440px, calc(100dvh - 96px)); }
+.chat-dock-head { display: flex; flex: none; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--tray-line); }
+.chat-dock-title { margin: 0; font-size: 15px; font-weight: 700; }
+.chat-dock-spacer { flex: 1 1 auto; }
+.chat-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.chat-bubble {
+  right: calc(12px + var(--safe-right)); bottom: calc(76px + var(--safe-bottom)); display: grid; place-items: center;
+  width: 52px; height: 52px; padding: 0; border: 0; border-radius: 50%; color: var(--tray-text);
+}
