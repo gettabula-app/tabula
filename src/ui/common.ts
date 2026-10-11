@@ -155,6 +155,16 @@ export function dialog(
   );
   back.appendChild(box);
   document.body.appendChild(back);
+  // iOS Safari: 100vh is taller than what is visible (the toolbars collapse and the keyboard opens), so the dialog is laid out in the visual viewport
+  const vv = window.visualViewport;
+  const fitVisible = () => {
+    if (!vv) return;
+    back.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+    back.style.setProperty('--vv-height', `${vv.height}px`);
+  };
+  fitVisible();
+  vv?.addEventListener('resize', fitVisible);
+  vv?.addEventListener('scroll', fitVisible);
   const self = {};
   openDialogs.push(self);
   const opener = document.activeElement as HTMLElement | null;
@@ -173,6 +183,8 @@ export function dialog(
     if (closed) return;
     closed = true;
     window.removeEventListener('keydown', onKey);
+    vv?.removeEventListener('resize', fitVisible);
+    vv?.removeEventListener('scroll', fitVisible);
     const i = openDialogs.indexOf(self);
     if (i >= 0) openDialogs.splice(i, 1);
     back.remove();
