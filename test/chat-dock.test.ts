@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stubDeps } from './chat-dock-deps';
 import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
 import { DEFAULT_DOCK, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
 
@@ -107,7 +108,7 @@ describe('the dock host', () => {
   it('shows the dock, the compact dock, the bubble or nothing, and remembers each', async () => {
     const { mod, overlay, host } = await setup();
     const { store, storage } = memory();
-    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage, deps: stubDeps().deps });
     expect(dock.mode()).toBe('closed');
     expect(shown(host)).toEqual({ dock: false, bubble: false });
     dock.dispatch('open');
@@ -125,18 +126,18 @@ describe('the dock host', () => {
   it('comes back as it was left, after a reload', async () => {
     const { mod, overlay } = await setup();
     const { storage } = memory();
-    const first = mod.mountChatDock(overlay, { userId: 'ana', storage });
+    const first = mod.mountChatDock(overlay, { userId: 'ana', storage, deps: stubDeps().deps });
     first.dispatch('compact');
     first.dispatch('minimise');
     first.setChannel('board/b1');
-    const second = mod.mountChatDock(overlay, { userId: 'ana', storage });
+    const second = mod.mountChatDock(overlay, { userId: 'ana', storage, deps: stubDeps().deps });
     expect(second.prefs()).toEqual({ mode: 'bubble', size: 'compact', channel: 'board/b1' });
     expect(overlay.querySelectorAll('.chat-dock-host')).toHaveLength(1);
   });
 
   it('opens from the bubble and reports changes', async () => {
     const { mod, overlay, host } = await setup();
-    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stubDeps().deps });
     const seen: string[] = [];
     dock.onChange((m) => seen.push(m));
     dock.dispatch('open');
@@ -148,7 +149,7 @@ describe('the dock host', () => {
 
   it('has Compact only when full size and Full size only when compact, and a Close button that closes', async () => {
     const { mod, overlay, host } = await setup();
-    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stubDeps().deps });
     dock.dispatch('open');
     const label = (name: string) => (host.querySelectorAll('.chat-dock-btn') as FakeElement[]).find((b) => b.getAttribute('aria-label') === name)!;
     expect(label('Compact').hidden).toBe(false);
@@ -163,7 +164,7 @@ describe('the dock host', () => {
   it('does not break when storage is blocked', async () => {
     const { mod, overlay } = await setup();
     const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('full'); } };
-    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: blocked });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: blocked, deps: stubDeps().deps });
     expect(() => dock.dispatch('open')).not.toThrow();
     expect(dock.mode()).toBe('open');
   });

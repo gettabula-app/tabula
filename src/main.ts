@@ -626,7 +626,7 @@ async function boot() {
   syncMentions();
   const syncDock = () => {
     const a = authState();
-    syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable());
+    syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
   };
   syncDock();
   onAuth((s) => {

@@ -67,6 +67,10 @@ export function mountChat(app: BoardApp, dock: ChatDock, tray: SideTray | null =
     boardId,
     label: 'This board',
     returnFocus: () => button,
+    presence: {
+      people: () => app.participants().map((p) => ({ id: p.user.id, name: p.user.name, color: p.user.color })),
+      onChange: (fn) => app.on('presence', fn),
+    },
     mount(panel, mountSignal) {
       const chat = openBoardChat(boardId, mountSignal);
       conversation = mountConversation({ chat, id: boardId, panel, signal: mountSignal, meId: myId, meName: myName, onView: paintBadge, objects });

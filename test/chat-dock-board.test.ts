@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stubDeps } from './chat-dock-deps';
 import { FakeEvent, installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
 
 // docs/chat.md, Dock: the board's chat in the dock. The Chat button toggles the dock, the conversation is drawn into the dock
@@ -43,9 +44,9 @@ async function setup() {
   const { mountChatDock } = await import('../src/ui/chat-dock');
   const { mountChat } = await import('../src/ui/board-chat');
   const memory = new Map<string, string>();
-  const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', storage: { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => void memory.set(k, v) } });
+  const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', deps: stubDeps().deps, storage: { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => void memory.set(k, v) } });
   const life = new AbortController();
-  const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, lifetime: life, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null as null | (() => void) };
+  const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, participants: () => [], lifetime: life, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null as null | (() => void) };
   (app as { lifetime: unknown }).lifetime = { signal: life.signal };
   const trayListeners = new Set<(tab: string | null) => void>();
   let trayTab: string | null = null;
@@ -67,7 +68,7 @@ describe('board chat in the dock', () => {
     button.click();
     expect(dock.mode()).toBe('open');
     expect(mocks.mounts).toHaveLength(1);
-    expect(mocks.mounts[0].panel).toBe(dock.body);
+    expect(mocks.mounts[0].panel).toBe(dock.conversationHost);
     expect(mocks.mounts[0].conv.setOpen).toHaveBeenLastCalledWith(true);
     expect(mocks.mounts[0].conv.focusComposer).not.toHaveBeenCalled(); // the button leaves focus where it is
     expect(button.getAttribute('aria-pressed')).toBe('true');
@@ -97,8 +98,8 @@ describe('board chat in the dock', () => {
     const { mountChatDock } = await import('../src/ui/chat-dock');
     const { mountChat } = await import('../src/ui/board-chat');
     const storage = { getItem: () => JSON.stringify({ mode: 'open', size: 'open', channel: null }), setItem: () => undefined };
-    const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', storage });
-    const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
+    const dock = mountChatDock(overlay as unknown as HTMLElement, { userId: 'u1', deps: stubDeps().deps, storage });
+    const app = { conn: { id: 'b1' }, r: { dockInset: 0, setCamera() {} }, participants: () => [], lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
     mountChat(app as never, dock);
     expect(mocks.mounts).toHaveLength(1);
     expect(mocks.mounts[0].conv.setOpen).toHaveBeenLastCalledWith(true);
@@ -144,7 +145,7 @@ describe('board chat in the dock', () => {
     expect(mocks.mounts[0].signal.aborted).toBe(false);
     life.abort();
     expect(mocks.mounts[0].signal.aborted).toBe(true);
-    expect((dock.body as unknown as FakeElement).children).toHaveLength(0);
+    expect((dock.conversationHost as unknown as FakeElement).children).toHaveLength(0);
     expect(app.toggleChat).toBeNull();
   });
 
@@ -153,7 +154,7 @@ describe('board chat in the dock', () => {
     button.click();
     const first = mocks.mounts[0];
     const { mountChat } = await import('../src/ui/board-chat');
-    const app2 = { conn: { id: 'b2' }, r: { dockInset: 0, setCamera() {} }, lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
+    const app2 = { conn: { id: 'b2' }, r: { dockInset: 0, setCamera() {} }, participants: () => [], lifetime: { signal: new AbortController().signal }, selection: [], on: () => () => undefined, store: { get: () => undefined, isShown: () => true }, flow: { isHidden: () => false }, flyToObject: () => true, toggleChat: null };
     mountChat(app2 as never, dock);
     expect(first.signal.aborted).toBe(true);
     expect(mocks.mounts).toHaveLength(2);
