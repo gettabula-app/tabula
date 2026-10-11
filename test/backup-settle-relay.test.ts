@@ -294,11 +294,12 @@ describe('the final backup of a relay that is asked to stop', { timeout: 100_000
       const tmp = `${roomFile('late-room')}.tmp`;
       for (let attempt = 0; ; attempt++) {
         try {
-          fs.rmSync(tmp, { force: true });
+          // never remove the name first: a relay save that is mid-write owns it, and taking it away between the write and the
+          // rename lets the rename move this directory onto the room file on Windows (it turned late-room.yjs into a directory)
           fs.mkdirSync(tmp);
           break;
         } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 50) throw err;
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 100) throw err;
           await sleep(10);
         }
       }

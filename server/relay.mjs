@@ -628,6 +628,11 @@ class Room {
       // The room file is only ever replaced by the complete regular file just written: if something else took the temporary
       // name meanwhile (a directory on Windows can win a rename over a file), the save fails and is retried.
       if (!fs.lstatSync(tmp).isFile()) throw Object.assign(new Error('the temporary save path is not a file'), { code: 'ENOTFILE' });
+      try {
+        if (fs.lstatSync(this.file).isDirectory()) throw Object.assign(new Error('the room file path is a directory'), { code: 'EISDIR' });
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
       renameSyncRetry(tmp, this.file);
     } catch (err) {
       // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
