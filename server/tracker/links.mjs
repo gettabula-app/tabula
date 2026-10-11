@@ -431,7 +431,7 @@ export function unlinkTrackerCard({ directory, actor, linkId, cardId, now = Date
  * cannot probe card ids or the state mapping for a ticket they cannot see.
  * @param {any} [input]
  */
-export function attachTicketToCard({ directory, actor, linkId, cardId, ticket: reference, roomAccess, now = Date.now() } = {}) {
+export function attachTicketToCard({ directory, actor, linkId, cardId, ticket: reference, roomAccess, beforeAttach = null, now = Date.now() } = {}) {
   const link = activeLink(directory, id(linkId, 'linkId'));
   const { info } = boardFor(directory, actor, link.board_id, { write: true });
   const cardKey = id(cardId, 'cardId');
@@ -464,6 +464,9 @@ export function attachTicketToCard({ directory, actor, linkId, cardId, ticket: r
   ).get(link.kanban_id, row.id);
   if (onKanban) throw conflict('This ticket is already on a card in this kanban', 'ticket');
   if (!mapped) throw new OpsError('state_not_mapped', "The ticket's state has no lane in this kanban", 'ticket');
+  // Runs after every check and before the link exists, so the board is kept before any projection can replace the card's text.
+  // If it throws, nothing is linked.
+  beforeAttach?.({ boardId: link.board_id, ticketKey: row.key, cardId: cardKey });
   const attached = directory.transaction(() => {
     const fresh = activeLink(directory, link.id);
     if (cardAlreadyLinked(db, fresh.board_id, fresh.kanban_id, cardKey)) throw conflict('This card already has a ticket', 'cardId');

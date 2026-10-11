@@ -376,6 +376,28 @@ export function createHistory({ dataDir, boardState, now = Date.now, log = conso
       return { version: view(entry), created: true };
     },
 
+    /**
+     * Keeps the board as it is now, labelled, before a server edit that replaces card text (an attached ticket). The
+     * client's undo cannot reach a server edit, so this version is the way back. It is an automatic version, so the
+     * usual retention applies (everything is kept for a day). When the newest version already has this content it is
+     * labelled instead of duplicated; a named or pre-restore one is left as it is. Returns null for a board with no saved state.
+     */
+    snapshotBefore(boardId, actor, { label } = {}) {
+      const text = cleanLabel(label);
+      const state = current(boardId);
+      if (!state) return null;
+      const entries = readIndex(boardId);
+      const newest = entries[entries.length - 1];
+      if (newest && newest.hash === state.hash) {
+        if (newest.kind === 'auto' && !newest.label) {
+          Object.assign(newest, { label: text });
+          writeIndex(boardId, entries);
+        }
+        return view(newest);
+      }
+      return view(addVersion(boardId, { kind: 'auto', label: text, ...whoOf(actor), bytes: state.bytes, objects: countObjects(state.bytes), hash: state.hash }));
+    },
+
     /** Names an unnamed version (any editor) or renames a named one (its creator or the owner). */
     rename(boardId, versionId, actor, { label, by } = {}) {
       const entry = find(boardId, versionId);
