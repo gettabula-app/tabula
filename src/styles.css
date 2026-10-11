@@ -762,3 +762,12 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 
 .phone-people[hidden] { display: none !important; }
+
+/* below 380px: Chat moves into the board menu so the board name keeps room; an unread dot stays on the menu button */
+.menu-chat-narrow { display: none; }
+@media (max-width: 379px) {
+  .top-right > .chat-toggle { display: none; }
+  .menu-chat-narrow { display: flex; }
+  .top-right:has(.chat-count.show) > button[aria-label='Menu'] { position: relative; }
+  .top-right:has(.chat-count.show) > button[aria-label='Menu']::after { content: ''; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px var(--tray); }
+}
