@@ -32,7 +32,7 @@ I3. After any restore (workspace, board copy, board history) no card carries tra
 I4. A board copy never has an active link row, and never shares a card id with another active link (`ticket_links_active_card` stays unique).
 I5. Restore never writes ticket or event text anywhere but the restored database: not into the audit log, the status record, the manifest, the readiness report or logs. Counts, ids and codes only.
 I6. The checks and the report are read-only on live data. Only the restore, the key floor and the owner's explicit actions change state.
-I7. A finding about tracker data never stops a backup from being written (a damaged copy is better than none); it makes the readiness report red and is audited. A restore refuses only on the structural conditions of 5.2.
+I7. A finding about tracker data never stops a backup from being written (a damaged copy is better than none); it makes the readiness report red and is audited. A restore refuses only on the one structural condition of 5.1.
 
 ## 4. Backup side: validate and record
 
@@ -88,7 +88,7 @@ The summary's `counters` array is the evidence the restore uses in section 6: th
 
 `restoreWorkspace` and the board-picker preview already open the staged database. Slice 7 adds, after the existing integrity and schema checks and before the swap: run `checkTrackerData` on the staged copy.
 
-- Refuse (`422 tracker_data_invalid`, nothing changed) only when a structural error makes reconcile impossible: `link_to_missing_ticket`, `duplicate_active_link` or `key_mismatch` with a count above 0 **and** the staged database has no way to repair them. Repairable findings are repaired in `prepareDatabase` (5.2) and reported in the restore record.
+- Refuse (`422 tracker_data_invalid`, nothing changed) on exactly one structural condition: `duplicate_active_link` or `link_to_missing_ticket` above 0. The foreign keys and partial unique indexes make both impossible in a database this build wrote, so they mean the file was damaged or hand-edited, and a restore must not guess which link is right. Everything else is repaired in `prepareDatabase` (5.2) and reported in the restore record: `key_mismatch` (the key is recomputed as `prefix-number`), `counter_below_max`, `link_without_board_link` (the link is marked removed), `alias_collision` (the alias row is removed and counted), `orphan_event`, `event_missing`, `outbox_stale`, `fts_missing` (5.3).
 - `counter_below_max` is repaired, never refused: the counter is raised to `max(next_number, maxNumber + 1)` and then to the floor (section 6.2).
 - Findings and the summary go into the restore record (`restore.status.last.tracker = { summary, findings, repaired }`) and into the audit row `restore.done` (counts and codes only).
 
@@ -108,7 +108,7 @@ The summary's `counters` array is the evidence the restore uses in section 6: th
 
 At the first start after a workspace restore (`recoverOnStart` has finished, rooms not yet opened), and while the gate is closed:
 
-1. For every board with an active `kanban_tracker_links` row, open the room and run `reconcileTrackerProjection` in `projection` mode (SQL and Yjs come from one barrier snapshot, so SQL is authoritative and no `sql-wins` unlinking is needed; a card missing from its board is unlinked by the existing room-load repair with a `restore` event).
+1. For every board with an active `kanban_tracker_links` row, open the room and run `reconcileTrackerProjection` in `sql-wins` mode. Only that mode unlinks a card that no longer exists on its board (with a `restore` event) and resets `parent` and `rank` to the SQL lane; on a coherent barrier snapshot the layout part is a no-op, and the unlinking covers a room file that was missing from the manifest (8.1 step 9).
 2. Drain the projection outbox.
 3. Boards are processed one at a time, at most 50 boards per second; the report counts `boardsReconciled`, `cardsStripped`, `cardsRepaired`, `unlinked`.
 4. A board that fails to open is counted `boardsFailed` and keeps the gate closed for tracker writes **on that board only** (its linked cards are read-only through the existing `read_only` guard notice). The rest open.
@@ -180,7 +180,7 @@ Today the copy is the board's Yjs document as written, plus the new board row, a
 
 ### 7.2 Board history restore (a named version applied to the live board)
 
-The client applies the old Yjs state through the normal update path, so slice 5's guard already classifies it: tracker-owned fields cannot change, a restored card that no longer matches its ticket is corrected, a card the restore deletes is unlinked with the `restore` event, a restore of more than 100 linked cards is refused whole (`bulk_change`). Slice 7 adds the **explicit server step** the architecture asks for: when `server/history.mjs` applies a restore (`applyRestore` path) it opens the restore window of `docs/tracker-s5.md` section 7 for that user and board for the duration of the apply (the window already exists: `sql-wins` mode), then runs one reconcile and closes it. No new client work. A card whose id exists in the old snapshot and whose ticket link is still active keeps its link (the link is SQL; the snapshot's fields are overwritten by SQL). A card id that the old snapshot has but that is not linked now is stripped (never bound to a ticket it was not linked to). Tests: restore of a version from before a link existed, from before a card was created, and from before a lane was mapped.
+The client applies the old state (`src/history.ts` `planRestore` and `applyRestore`) as ordinary Yjs updates, and `src/ui/history.ts` already wraps the apply in `withTrackerRestoreWindow` (the slice 5 restore window, `sql-wins` mode) when the board has linked kanbans. So the server side exists: tracker-owned fields cannot change, a restored card that no longer matches its ticket is corrected, a card the restore deletes is unlinked with the `restore` event, a restore of more than 100 linked cards is refused whole (`bulk_change`), and the window closing runs one reconcile. A card id the old snapshot has that is not linked now is stripped, never bound to a ticket it was not linked to. Slice 7 adds **tests only**, plus one server rule: the restore-window routes must refuse to open a window while the restore gate (5.5) is closed. Tests: restore of a version from before a link existed, from before a card was created, and from before a lane was mapped, each asserting the final state on a fresh client and in the saved file. Verify first that `withTrackerRestoreWindow` still covers every apply path of the history panel (including undo of a restore); a path that bypasses it is a client fix for the tech lead, named in the review.
 
 ## 8. The restore drill
 
@@ -278,7 +278,7 @@ None for the instance. `tracker.restore_gate`, `tracker.drill.last` and `tracker
 ## 13. Tests
 
 Unit (injected clocks, in-memory databases): `checkTrackerData` per finding with a mutation proof for each severity-error code; counter floor arithmetic (all five sources, the unknown case, the safety jump); gate state machine (set, floor known, reconcile done, FTS done, cleared; restart in the middle); manifest normalisation with and without the `tracker` field; the readiness aggregator (go, no_go, unknown, `na`) over a table of check states; drill record validation.
-Relay-backed (`test/backup-harness.ts`, `test/restore-harness.ts`): a workspace restore with tickets reaches the gate, clears it and reconciles two boards; the five-lost-keys case never reissues; hosted floor available and unavailable; board copy strips before the file is written and creates no link rows; history restore with the window; a staged database with a duplicate active link is repaired or refused as 5.1 says; every route 403s a member who is not owner or admin. Each guard/forgery test proves the change reached an observer before asserting the correction (docs/testing.md).
+Relay-backed (`test/backup-harness.ts`, `test/restore-harness.ts`): a workspace restore with tickets reaches the gate, clears it and reconciles two boards; the five-lost-keys case never reissues; hosted floor available and unavailable; board copy strips before the file is written and creates no link rows; history restore with the window; a staged database with a duplicate active link is refused, and one with a wrong `key_mismatch` is repaired, as 5.1 says; every route 403s a member who is not owner or admin. Each guard/forgery test proves the change reached an observer before asserting the correction (docs/testing.md).
 Drill: the scripted drill of 8.1, run by me and a haiku black-box; the production drill is devops'.
 Repeat: `npm run test:repeat -- <files> --times 15 --platform win32` for the gate and floor tests.
 
@@ -296,5 +296,6 @@ tabula-cloud (control plane): the `workspace_key_floor` table and the two calls 
 - **D1 (tech lead):** the 1000-key jump versus a new prefix epoch (section 6.4).
 - **D2 (manager, devops):** the 15 minute default interval (section 10) and the request cost on the chosen provider; whether a stopped workspace's RPO is acceptable as described.
 - **D3 (manager):** who attests the production drill and the cutover record (owner is assumed to be Johan).
+- **D5 (tech lead):** the history panel's apply paths (7.2) must all go through `withTrackerRestoreWindow`; confirm.
 - **D4:** the tabula-cloud change (6.3) belongs to another repo and another session; this contract only fixes the calls.
 - Not verified: nothing here is built or run. The cost numbers in 10 come from `docs/backups.md`, not from a measurement; the check timings in 4.1 and the reconcile rate in 5.4 are targets the tests must print and confirm.
