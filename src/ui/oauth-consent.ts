@@ -131,7 +131,7 @@ function consentPage(root: HTMLElement, envelope: string, me: Me, request: OAuth
     heading,
     account,
     h('section', { class: 'oauth-consent-destination' },
-      h('h2', null, 'Where you will be sent'),
+      h('h2', null, 'You will be sent back to'),
       h('code', { class: 'oauth-consent-host' }, host.label),
       host.verified ? h('span', { class: 'oauth-consent-badge' }, 'Verified host') : null,
       host.warning ? h('p', { class: 'oauth-consent-warning' }, host.warning) : null,
