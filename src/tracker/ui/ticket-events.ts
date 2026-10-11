@@ -87,6 +87,13 @@ export function describeEvent(event: TrackerEvent, ctx: TicketEventContext = {})
     case 'ticket.unrelated':
     case 'unrelated': return { text: `${name} removed the relation to a ticket that ${relationText(event.relation)}`, actor, icon: 'relation' };
     case 'ticket.card_linked': return { text: `${name} linked a card to this ticket`, actor, icon: 'link' };
+    case 'unlinked': {
+      const record = event as unknown as { source?: unknown; details?: unknown };
+      const reason = object(record.details).reason;
+      return record.source === 'restore' || reason === 'restore'
+        ? { text: 'Card removed from board by a restore', actor, icon: 'link' }
+        : { text: `${name} unlinked a card from this ticket`, actor, icon: 'link' };
+    }
     case 'ticket.card_unlinked': return { text: `${name} unlinked a card from this ticket`, actor, icon: 'link' };
     case 'link.pr_opened': return { text: `${name} opened PR #${label(event.number ?? to)}`, actor, icon: 'link' };
     case 'link.pr_ready': return { text: `${name} marked PR #${label(event.number ?? to)} ready for review`, actor, icon: 'link' };
