@@ -284,6 +284,8 @@ async function sweepStage() {
         });
         await sleep(1500);
         await report('link dialog', async () => { await page.evaluate(() => window.__board.linkTrackerKanban?.('sk')); await page.locator('.trk-link-modal').first().waitFor({ timeout: 8000 }); });
+        await report('container sheet (kanban as list)', async () => { await page.evaluate(() => window.__board.openKanbanList('sk')); await page.locator('.ks-sheet').first().waitFor({ timeout: 8000 }); }, '.ks-sheet', 'panel');
+        await report('tracker state picker (from the link dialog)', async () => { await page.evaluate(() => window.__board.linkTrackerKanban?.('sk')); await page.locator('.trk-link-modal button[aria-label^="Set state for"]').first().waitFor({ timeout: 8000 }); await page.evaluate(() => document.querySelector('.trk-link-modal button[aria-label^="Set state for"]').click()); await page.locator('.trk-picker').first().waitFor({ timeout: 6000 }); }, '.trk-picker', 'panel');
         await report('card dialog', async () => { await page.evaluate(() => window.__board.openCardDialog('sk-1')); await page.locator('.k-card-form').first().waitFor({ timeout: 8000 }); });
         await report('labels dialog', async () => { await page.evaluate(() => window.__board.openLabels?.()); await page.locator('.k-labels-dialog, .modal').first().waitFor({ timeout: 8000 }); });
 
