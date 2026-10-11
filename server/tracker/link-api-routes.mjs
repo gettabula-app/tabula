@@ -1,6 +1,6 @@
 import { OpsError } from './shared.mjs';
 import {
-  createTicketForCard, linkKanban, listLinks, requireTrackerBoardWrite, storeLinkIdempotencyResult, suggestMapping, unlinkKanban,
+  attachTicketToCard, createTicketForCard, linkKanban, listLinks, requireTrackerBoardWrite, storeLinkIdempotencyResult, suggestMapping, unlinkKanban,
   unlinkTrackerCard,
 } from './links.mjs';
 import {
@@ -129,6 +129,26 @@ export function createTrackerLinkRoutes({
     const boardId = result.ticket.links?.find((link) => link.kind === 'card' && link.cardId === result.cardId)?.boardId;
     const drained = drainTicketProjection({ directory, roomAccess, ...(boardId ? { boardId } : {}), ticketId: result.ticket.id, baseUrl, now: now() });
     if (!result.replayed) audit(user, 'tracker.link.card', { ticketId: result.ticket.id, cardId: result.cardId });
+    return [201, { ticket: result.ticket, cardId: result.cardId, projectionPending: drained.projectionPending }];
+  }));
+
+  routes.push(compile('POST', 'tracker/links/:id/cards/attach', {
+    trackerLink: true, trackerMutation: true, body: true,
+  }, ({ user, params, body }) => {
+    allowFields(body, new Set(['cardId', 'ticket']));
+    const result = attachTicketToCard({
+      directory, actor: actorFor(user), linkId: params.id, cardId: body.cardId, ticket: body.ticket, roomAccess, now: now(),
+      beforeAttach: ({ boardId, ticketKey }) => roomAccess?.snapshotBoard?.(boardId, user, `Before attaching ${ticketKey}`),
+    });
+    const link = directory.db.prepare('SELECT board_id FROM kanban_tracker_links WHERE id = ?').get(params.id);
+    if (link) roomAccess?.invalidateTracker?.(link.board_id);
+    if (result.replayed) return [200, { ticket: result.ticket, cardId: result.cardId, projectionPending: false }];
+    const drained = drainTicketProjection({
+      directory, roomAccess, ...(link ? { boardId: link.board_id } : {}), ticketId: result.ticket.id, baseUrl, now: now(),
+    });
+    audit(user, 'tracker.link.attach', {
+      ticketId: result.ticket.id, cardId: result.cardId, linkId: params.id, boardId: link?.board_id,
+    });
     return [201, { ticket: result.ticket, cardId: result.cardId, projectionPending: drained.projectionPending }];
   }));
 

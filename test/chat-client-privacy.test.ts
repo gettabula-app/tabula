@@ -73,7 +73,7 @@ type ChatPage = Awaited<ReturnType<typeof api.chatMessages>>;
 type PageHandler = (call: number, kind: string, ref: string, opts?: { before?: number; limit?: number }) => Promise<ChatPage>;
 
 const me = (id: string): Me => ({
-  user: { id, email: `${id}@example.test`, name: id, role: 'member' }, teams: [], chat: true,
+  user: { id, email: `${id}@example.test`, name: id, role: 'member' }, teams: [], chat: true, mcpOauth: false,
 });
 
 const message = (id: number, text = `message ${id}`, extra: Partial<ChatMessage> = {}): ChatMessage => ({

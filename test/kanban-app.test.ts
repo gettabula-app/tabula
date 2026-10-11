@@ -507,6 +507,28 @@ describe('placing templates with kanbans', () => {
     expect(count(store, 'sticky')).toBe(2);
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it('a template that starts a board is not an undo step, one added to a board is', () => {
+    const started = harness();
+    withFlow(started.app);
+    started.store.undo.clear();
+    const before = started.store.cache.size;
+    insertTemplate(started.app, kanbanTemplate(), { start: true });
+    insertCustomTemplate(started.app, custom(), { start: true });
+    const filled = started.store.cache.size;
+    expect(filled).toBeGreaterThan(before);
+    started.store.undo.undo();
+    expect(started.store.cache.size).toBe(filled);
+
+    const added = harness();
+    withFlow(added.app);
+    added.store.undo.clear();
+    const empty = added.store.cache.size;
+    insertTemplate(added.app, kanbanTemplate());
+    expect(added.store.cache.size).toBeGreaterThan(empty);
+    added.store.undo.undo();
+    expect(added.store.cache.size).toBe(empty);
+  });
 });
 
 // ---------------------------------------------------------------- slice 4: lanes and discipline

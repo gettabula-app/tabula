@@ -135,6 +135,22 @@ function sizeMarkup(raw: SizeMark, px: (v: number) => number): string {
 }
 
 export const MIN_ZOOM = 0.02;
+/** Up to this width the first view uses the phone fit. */
+export const PHONE_MAX_WIDTH = 600;
+export const PHONE_FIT_MARGIN = 16;
+/** Right edge of the tool rail: 12 px from the left edge plus its 56 px. */
+export const RAIL_RIGHT_EDGE = 68;
+
+export interface FitInsets { top: number; right: number; bottom: number; left: number }
+
+/** The camera that shows `r` inside the window minus the chrome insets and `pad` on every side, no closer than maxZoom. */
+export function fitCamera(size: { w: number; h: number }, i: FitInsets, r: Rect, pad: number, maxZoom: number): Camera {
+  const aw = Math.max(80, size.w - i.left - i.right - pad * 2);
+  const ah = Math.max(80, size.h - i.top - i.bottom - pad * 2);
+  const zoom = Math.min(maxZoom, Math.max(MIN_ZOOM, Math.min(aw / Math.max(r.w, 1), ah / Math.max(r.h, 1))));
+  const cx = i.left + pad + aw / 2, cy = i.top + pad + ah / 2;
+  return { zoom, x: r.x + r.w / 2 - cx / zoom, y: r.y + r.h / 2 - cy / zoom };
+}
 export const MAX_ZOOM = 32;
 
 /** Handles for a single selected object, in world coordinates. */
@@ -490,14 +506,30 @@ export class Renderer {
   /** Screen area covered by floating chrome; fitting keeps content clear of it. */
   insets = { top: 64, right: 16, bottom: 72, left: 80 };
 
-  private fitCam(r: Rect, pad: number, maxZoom: number): Camera {
-    const s = this.size();
-    const i = this.insets;
-    const aw = Math.max(80, s.w - i.left - i.right - pad * 2);
-    const ah = Math.max(80, s.h - i.top - i.bottom - pad * 2);
-    const zoom = Math.min(maxZoom, Math.max(MIN_ZOOM, Math.min(aw / Math.max(r.w, 1), ah / Math.max(r.h, 1))));
-    const cx = i.left + pad + aw / 2, cy = i.top + pad + ah / 2;
-    return { zoom, x: r.x + r.w / 2 - cx / zoom, y: r.y + r.h / 2 - cy / zoom };
+  private fitCam(r: Rect, pad: number, maxZoom: number, insets = this.insets): Camera {
+    return fitCamera(this.size(), insets, r, pad, maxZoom);
+  }
+
+  /**
+   * The first view of a board with content. A wide window keeps the usual breathing room; a phone fits the content between
+   * the tool rail and the right edge with a 16 px margin, because 120 px a side would leave a sliver (or cut the content).
+   */
+  fitFirst(r: Rect) {
+    const phone = this.phoneFitCam(r, 1);
+    if (phone) this.setCamera(phone);
+    else this.fit(r, 120, 1);
+  }
+
+  /** The Fit button: the whole board, animated. A phone gets the same rail-aware fit as the first view. */
+  flyToFit(r: Rect) {
+    const phone = this.phoneFitCam(r, 2);
+    if (phone) this.flyToCamera(phone);
+    else this.flyTo(r, 80, 2);
+  }
+
+  private phoneFitCam(r: Rect, maxZoom: number): Camera | null {
+    if (this.size().w > PHONE_MAX_WIDTH) return null;
+    return this.fitCam(r, PHONE_FIT_MARGIN, maxZoom, { ...this.insets, left: RAIL_RIGHT_EDGE, right: 0 });
   }
 
   /** Fit a world rect into view with padding (screen px). */

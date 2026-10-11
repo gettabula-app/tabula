@@ -12,7 +12,7 @@ import { relateTickets } from '../../server/tracker/relations.mjs';
 import { subscribeTicket } from '../../server/tracker/subscriptions.mjs';
 import { refreshTicketSearch } from '../../server/tracker/search.mjs';
 import { checkTrackerData } from '../../server/tracker/backup-check.mjs';
-import { reconcileTrackerProjection, SERVER_CARD_FIELDS } from '../../server/tracker/projection.mjs';
+import { SERVER_CARD_FIELDS } from '../../server/tracker/projection.mjs';
 import { applyRestore, openSnapshot, planRestore } from '../../src/history';
 import { Store } from '../../src/store';
 import { CREDS, KEY, envFor } from '../backup-harness';
@@ -133,24 +133,6 @@ function boardBytes(board: 1 | 2) {
   const bytes = Buffer.from(Y.encodeStateAsUpdate(doc));
   doc.destroy();
   return { bytes, kanbanId, laneId, cards };
-}
-
-function fileRoomAccess(directory: ReturnType<typeof openDirectory>, boardId: string) {
-  const file = path.join(mainDir, boardId + '.yjs');
-  const doc = docOf(fs.readFileSync(file));
-  const roomAccess = {
-    read: (_id: string, fn: (value: Y.Doc) => unknown) => fn(doc),
-    write: (_id: string, _origin: string, fn: (value: Y.Doc) => unknown) => {
-      let result: unknown;
-      doc.transact(() => { result = fn(doc); }, 'tracker-drill');
-      return result;
-    },
-  };
-  return {
-    doc,
-    roomAccess,
-    save() { fs.writeFileSync(file, Buffer.from(Y.encodeStateAsUpdate(doc))); },
-  };
 }
 
 function manifestsOf(bucket: FakeS3) {
@@ -424,40 +406,25 @@ describe('hosted tracker restore drill (runbook section 8)', () => {
     expect(secondLink.body.created).toHaveLength(12);
     state.linkIds[B2] = secondLink.body.link.id;
 
-    // The current link-card route creates a ticket and accepts no existing ticket reference. Re-point one
-    // second-board card while stopped to exercise the requested cross-board ticket link without API rate pressure.
+    // Attach an existing ticket to a card through the API: board two's first card gives up its own ticket and takes
+    // the one board one's first card already has, so one ticket sits on two boards.
+    const api = (method: string, route: string, body?: unknown) => state.client!.api(state.owner!, method, route, body);
+    const sharedCreated = firstLink.body.created.find((entry: any) => entry.cardId === boardOne.cards[0].id);
+    expect(sharedCreated).toBeTruthy();
+    state.sharedTicketId = sharedCreated.ticket.id;
+    state.sharedTicketKey = sharedCreated.ticket.key;
+    state.aliasTicketKey = state.seedTickets[0].key;
+    const detached = await api('DELETE', `/api/tracker/links/${state.linkIds[B2]}/cards/${boardTwo.cards[0].id}`);
+    expect(detached.status).toBe(200);
+    // A ticket whose state has no lane in the second kanban is refused with 422 and nothing is linked.
+    const unmapped = state.seedTickets[39];
+    expect((await api('POST', `/api/tracker/tickets/${unmapped.key}/transition`, { state: 'done' })).status).toBe(200);
+    const refused = await api('POST', `/api/tracker/links/${state.linkIds[B2]}/cards/attach`, { cardId: boardTwo.cards[0].id, ticket: unmapped.key });
+    expect(refused).toMatchObject({ status: 422, body: { error: 'state_not_mapped' } });
+    const attached = await api('POST', `/api/tracker/links/${state.linkIds[B2]}/cards/attach`, { cardId: boardTwo.cards[0].id, ticket: state.sharedTicketKey });
+    expect(attached.status).toBe(201);
     kit.closeClients();
     expect(await kit.stop(state.relay)).toBe(0);
-    const stopped = openDirectory(path.join(mainDir, 'directory.sqlite'));
-    const room = fileRoomAccess(stopped, B2);
-    try {
-      // The first card of board one already has a ticket (made by the link): board two's first card is re-pointed to it.
-      const shared = stopped.db.prepare(
-        'SELECT l.ticket_id AS id, t.key FROM ticket_links l JOIN tickets t ON t.id = l.ticket_id WHERE l.board_id = ? AND l.kanban_id = ? AND l.card_id = ? AND l.removed_at IS NULL',
-      ).get(B1, K1, boardOne.cards[0].id) as { id: string; key: string };
-      const sharedId = shared.id;
-      const row = stopped.db.prepare(
-        'SELECT id FROM ticket_links WHERE board_id = ? AND kanban_id = ? AND card_id = ? AND removed_at IS NULL',
-      ).get(B2, K2, boardTwo.cards[0].id) as { id: string };
-      stopped.db.prepare(
-        'UPDATE ticket_links SET ticket_id = ?, last_projection_seq = (SELECT updated_seq FROM tickets WHERE id = ?) WHERE id = ?',
-      ).run(sharedId, sharedId, row.id);
-      reconcileTrackerProjection({
-        directory: stopped,
-        roomAccess: room.roomAccess,
-        boardId: B2,
-        baseUrl: 'https://tabula.example.test',
-        now: Date.now(),
-        mode: 'sql-wins',
-      });
-      room.save();
-      state.sharedTicketId = shared.id;
-      state.sharedTicketKey = shared.key;
-      state.aliasTicketKey = state.seedTickets[0].key;
-    } finally {
-      room.doc.destroy();
-      stopped.close();
-    }
 
     state.relay = await start(mainDir, fake);
     state.client = kit.client(state.relay, mainDir);
