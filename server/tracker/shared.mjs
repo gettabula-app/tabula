@@ -74,6 +74,11 @@ export function cleanText(value, { path, min = 0, max, singleLine = false, trim 
   return text;
 }
 
+/** The canonical ticket title validator used by every tracker writer. */
+export function cleanTicketTitle(value, path = 'title') {
+  return cleanText(value, { path, min: 1, max: 200, singleLine: true });
+}
+
 export function validCalendarDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const ms = Date.parse(`${value}T00:00:00.000Z`);

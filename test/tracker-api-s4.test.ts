@@ -136,19 +136,10 @@ describe('tracker slice 4 HTTP routes', () => {
     live.doc.transact(() => put(live.doc, 'card-late', 'card', {
       parent: 'lane-todo', rank: 'a9@lane-todo', text: 'Late card',
     }), 'test');
-    let cardTicket: any;
-    // the late card reaches the relay through the live socket; the route answers not_found until then
-    await until(async () => {
-      cardTicket = await api(owner, 'POST', `/api/tracker/links/${linkId}/cards`, {
-        cardId: 'card-late', idempotencyKey: 'server-card-create-123',
-      });
-      return cardTicket.status !== 404;
-    });
-    expect(cardTicket.status).toBe(201);
-    expect(cardTicket.body).toMatchObject({ cardId: 'card-late', ticket: { key: 'TAB-2' }, projectionPending: false });
-    expect(await api(owner, 'POST', `/api/tracker/links/${linkId}/cards`, {
-      cardId: 'card-late', idempotencyKey: 'server-card-create-123',
-    })).toMatchObject({ status: 201, body: cardTicket.body });
+    // a card added to a mapped lane of a linked kanban gets its ticket from the relay guard (docs/tracker-s5.md 3.5)
+    await until(() => objs(live.doc).get('card-late')?.get('extKey') === 'TAB-2');
+    expect(objs(live.doc).get('card-late')?.toJSON()).toMatchObject({ extProvider: 'tabula', tracker: { title: 'Late card' } });
+    // the explicit route still exists for scripts, and answers conflict for a card that already has its ticket
     expect((await api(owner, 'POST', `/api/tracker/links/${linkId}/cards`, {
       cardId: 'card-late', idempotencyKey: 'another-card-key-123',
     })).body).toMatchObject({ error: 'conflict', path: 'cardId' });

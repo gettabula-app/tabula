@@ -59,6 +59,11 @@ function boardFor(directory, actor, boardId, { write = false } = {}) {
   return { board, boardId: boardKey, role, info };
 }
 
+/** Require an owner/editor with tracker write access for board-scoped tracker commands. */
+export function requireTrackerBoardWrite({ directory, actor, boardId } = {}) {
+  return boardFor(directory, actor, boardId, { write: true });
+}
+
 function rawObject(value, objectId) {
   if (value && typeof value.toJSON === 'function') return { ...value.toJSON(), id: objectId };
   return value && typeof value === 'object' && !Array.isArray(value) ? { ...value, id: objectId } : null;
@@ -384,6 +389,39 @@ export function unlinkKanban({ directory, actor, linkId, now = Date.now() } = {}
     for (const cardLink of cardLinks) enqueueTicketProjectionRemoval({ db, ticketLink: cardLink, now });
     const removed = db.prepare('SELECT * FROM kanban_tracker_links WHERE id = ?').get(key);
     return { link: linkView(db, removed, { cardCount: cardLinks.length }), unlinked: cardLinks.length, projectionPending: true, actorId: info.userId };
+  });
+}
+
+/** Detach one active card link while leaving its ticket and other links intact. */
+export function unlinkTrackerCard({ directory, actor, linkId, cardId, now = Date.now() } = {}) {
+  const key = id(linkId, 'linkId');
+  const cardKey = id(cardId, 'cardId');
+  const db = getDb({ directory });
+  const found = db.prepare(
+    `SELECT kl.id AS link_id, kl.board_id, kl.kanban_id
+       FROM kanban_tracker_links kl WHERE kl.id = ? AND kl.removed_at IS NULL`,
+  ).get(key);
+  if (!found) throw notFound('Kanban link not found');
+  const { info } = boardFor(directory, actor, found.board_id, { write: true });
+  return directory.transaction(() => {
+    const current = db.prepare(
+      `SELECT l.id, l.ticket_id, l.board_id, l.kanban_id, l.card_id, l.last_projection_seq,
+              t.key AS ticket_key, t.title AS ticket_title
+         FROM ticket_links l JOIN tickets t ON t.id = l.ticket_id
+        WHERE l.board_id = ? AND l.kanban_id = ? AND l.card_id = ? AND l.removed_at IS NULL`,
+    ).get(found.board_id, found.kanban_id, cardKey);
+    if (!current) throw notFound('Card is not linked to a ticket');
+    db.prepare('UPDATE ticket_links SET removed_at = ? WHERE id = ? AND removed_at IS NULL').run(now, current.id);
+    enqueueTicketProjectionRemoval({ db, ticketLink: current, title: current.ticket_title, now });
+    return {
+      ticket: getTicket({ directory, actor, key: current.ticket_id }),
+      cardId: cardKey,
+      boardId: found.board_id,
+      kanbanId: found.kanban_id,
+      linkId: key,
+      title: current.ticket_title,
+      actorId: info.userId,
+    };
   });
 }
 

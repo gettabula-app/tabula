@@ -18,7 +18,7 @@ import {
 } from '../shared/containers.mjs';
 import {
   LIMITS, OBJ_TYPES, SHAPE_KINDS, HEADS, ROUTES, DASHES, SIDES, OpsError, STICKY_COLORS,
-  addReply, addThread, aiAuthor, applyPlan, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
+  addReply, addThread, aiAuthor, applyPlan, assertLinkedCardEdit, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, newObjectId,
   listThreads, planAddKanbanLane, planCreate, planCreateKanban, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel, planDeleteKanbanLane,
   planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, planUseTemplate, resolveAnchor, summariseBoard,
   objectVisibility,
@@ -294,7 +294,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       },
       writeBoard(fn) {
         authorise(actor, boardId, 'write', 'board');
-        return roomAccess.write(boardId, origin, fn);
+        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp' });
       },
       writeComments(fn) {
         authorise(actor, boardId, 'comment', 'comments');
@@ -656,6 +656,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       throw new OpsError('conflict', 'The card is assigned to another agent', field('cardId'));
     }
     const lane = resolveCardLane(state, input, path);
+    if (lane.id !== oldLane.id) {
+      const key = input.laneId === undefined ? 'stage' : 'laneId';
+      assertLinkedCardEdit(card, key, field(key));
+    }
     if (lane.id === oldLane.id && input.afterCardId === undefined) {
       return { ops: [], result: { moved: false, card: cardOutput(doc, card, oldLane) }, audit: { count: 0, ids: [] } };
     }
@@ -1171,6 +1175,20 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           if (input.link === null) unsets.add('link');
           else if (input.link !== undefined) sets.link = input.link;
           const owner = ownerChanges(actor, card, input);
+          if (input.title !== undefined && input.title !== card.text) assertLinkedCardEdit(card, 'title', 'title');
+          if ((input.due === null && card.due !== undefined) || (input.due !== undefined && input.due !== null && input.due !== card.due)) {
+            assertLinkedCardEdit(card, 'due', 'due');
+          }
+          if (input.labels === null && card.labels !== undefined) assertLinkedCardEdit(card, 'labels', 'labels');
+          else if (input.labels !== undefined && input.labels !== null && JSON.stringify(input.labels) !== JSON.stringify(card.labels)) {
+            assertLinkedCardEdit(card, 'labels', 'labels');
+          }
+          const ownerChanged = Object.entries(owner.sets).some(([key, value]) => JSON.stringify(card[key]) !== JSON.stringify(value))
+            || owner.unsets.size > 0;
+          if (ownerChanged) {
+            const field = ['ownerId', 'ownerName', 'ownerKind'].find((key) => Object.hasOwn(input, key)) ?? 'ownerName';
+            assertLinkedCardEdit(card, field, field);
+          }
           Object.assign(sets, owner.sets);
           owner.unsets.forEach((key) => unsets.add(key));
           let changed = false;

@@ -1,4 +1,6 @@
+import { generateNKeysBetween } from 'fractional-indexing';
 import { applyPlan, planRemoveTrackerProjection, planTrackerContainerLink, planTrackerProjection } from '../board-ops.mjs';
+import { appendTicketEvent } from './events.mjs';
 import { getDb } from './shared.mjs';
 
 const PROJECTION_BATCH = 500;
@@ -44,11 +46,17 @@ function mapFor(db, linkId) {
   ).all(linkId).map((row) => [row.lane_id, row.state_key]));
 }
 
-const SERVER_CARD_FIELDS = ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+export const SERVER_CARD_FIELDS = Object.freeze(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 const TABULA_CARD_FIELDS = ['trackerId', 'tracker', 'trackerUnmappedState'];
 
 function jsonValue(value) {
   return value && typeof value.toJSON === 'function' ? value.toJSON() : value;
+}
+
+function replaceTitleLine(text, title) {
+  const value = typeof text === 'string' ? text : '';
+  const lineBreak = value.search(/\r\n|\n|\r/u);
+  return `${title}${lineBreak < 0 ? '' : value.slice(lineBreak)}`;
 }
 
 function sameJson(a, b) {
@@ -69,7 +77,7 @@ function activeTrackerLinks(db, boardId) {
        FROM ticket_links l
        JOIN kanban_tracker_links kl ON kl.board_id = l.board_id AND kl.kanban_id = l.kanban_id AND kl.removed_at IS NULL
        JOIN tickets t ON t.id = l.ticket_id
-      WHERE l.board_id = ? AND l.removed_at IS NULL ORDER BY l.kanban_id, l.card_id`,
+      WHERE l.board_id = ? AND l.removed_at IS NULL ORDER BY l.kanban_id, l.created_at, l.card_id`,
   ).all(boardId);
 }
 
@@ -89,6 +97,7 @@ function projectionForLink(db, link, baseUrl) {
     'SELECT lane_id FROM kanban_state_mappings WHERE kanban_link_id = ? AND state_id = ?',
   ).get(link.kanban_link_id, projection.stateId)?.lane_id ?? null;
   return {
+    targetLaneId,
     values: {
       extProvider: 'tabula',
       extKey: projection.ticketKey,
@@ -116,7 +125,7 @@ function projectionForLink(db, link, baseUrl) {
  * @param {any} [input]
  */
 export function reconcileTrackerProjection({
-  directory, roomAccess, boardId, baseUrl = 'http://localhost', now = Date.now(), objectIds = null, origin = null,
+  directory, roomAccess, boardId, baseUrl = 'http://localhost', now = Date.now(), objectIds = null, origin = null, mode = 'projection',
 } = {}) {
   if (origin === 'tracker-guard' || (typeof origin === 'string' && origin.startsWith('tracker-sync'))) {
     return { changed: 0, stripped: 0, repaired: 0, skipped: true };
@@ -126,8 +135,33 @@ export function reconcileTrackerProjection({
   }
 
   const db = getDb({ directory });
+  let links = activeTrackerLinks(db, boardId);
+  if (mode === 'sql-wins') {
+    if (typeof roomAccess.read !== 'function') return { changed: 0, stripped: 0, repaired: 0, skipped: true };
+    const present = roomAccess.read(boardId, (doc) => {
+      const objects = doc.getMap('objects');
+      return new Set(links.filter((link) => jsonValue(objects.get(link.card_id))?.type === 'card').map((link) => link.card_id));
+    });
+    const deleted = links.filter((link) => !present.has(link.card_id));
+    if (deleted.length) {
+      directory.transaction(() => {
+        for (const link of deleted) {
+          const removed = db.prepare(
+            'UPDATE ticket_links SET removed_at = ? WHERE board_id = ? AND kanban_id = ? AND card_id = ? AND removed_at IS NULL',
+          ).run(now, boardId, link.kanban_id, link.card_id);
+          if (!removed.changes) continue;
+          const eventSeq = appendTicketEvent({
+            db, ticketId: link.ticket_id, eventType: 'unlinked', actor: { type: 'system' }, source: 'restore',
+            createdAt: now, details: { reason: 'restore' },
+          });
+          db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, eventSeq, link.ticket_id);
+        }
+      });
+      links = activeTrackerLinks(db, boardId);
+      roomAccess.invalidateTracker?.(boardId);
+    }
+  }
   const kanbans = activeKanbanLinks(db, boardId);
-  const links = activeTrackerLinks(db, boardId);
   const linkedCards = new Map(links.map((link) => [`${link.kanban_id}\u0000${link.card_id}`, link]));
   const linksByCard = new Map(links.map((link) => [link.card_id, link]));
   const linkedContainers = new Set(kanbans.map((link) => link.kanban_id));
@@ -138,6 +172,30 @@ export function reconcileTrackerProjection({
 
   roomAccess.write(boardId, 'tracker-guard', (doc) => {
     const objects = doc.getMap('objects');
+    const sqlWinsLayout = new Map();
+    if (mode === 'sql-wins') {
+      const linkedIds = new Set(links.map((link) => link.card_id));
+      const byLane = new Map();
+      for (const link of links) {
+        const projection = projectionForLink(db, link, baseUrl);
+        const laneId = projection?.targetLaneId;
+        const lane = laneId ? jsonValue(objects.get(laneId)) : null;
+        if (!lane || lane.type !== 'lane' || lane.parent !== link.kanban_id || !objects.has(link.card_id)) continue;
+        const cards = byLane.get(laneId) ?? [];
+        cards.push({ link, projection });
+        byLane.set(laneId, cards);
+      }
+      for (const [laneId, cards] of byLane) {
+        let lastRank = null;
+        objects.forEach((value, id) => {
+          const card = jsonValue(value);
+          if (card?.type !== 'card' || card.parent !== laneId || linkedIds.has(String(id)) || typeof card.rank !== 'string') return;
+          if (lastRank === null || card.rank > lastRank) lastRank = card.rank;
+        });
+        const ranks = generateNKeysBetween(lastRank, null, cards.length);
+        cards.forEach(({ link }, index) => sqlWinsLayout.set(link.card_id, { parent: laneId, rank: ranks[index] }));
+      }
+    }
     const candidates = new Set(onlyIds ?? []);
     if (!onlyIds) {
       objects.forEach((value, id) => {
@@ -183,6 +241,15 @@ export function reconcileTrackerProjection({
           if (sameJson(json[field], value)) continue;
           object.set(field, value);
           cardChanged = true;
+        }
+        if (mode === 'sql-wins') {
+          const layout = sqlWinsLayout.get(id);
+          if (layout) {
+            if (json.parent !== layout.parent) { object.set('parent', layout.parent); cardChanged = true; }
+            if (json.rank !== layout.rank) { object.set('rank', layout.rank); cardChanged = true; }
+          }
+          const text = replaceTitleLine(json.text, projection.values.tracker.title);
+          if (text !== json.text) { object.set('text', text); cardChanged = true; }
         }
         if (cardChanged) {
           object.set('updatedAt', now);
@@ -239,9 +306,13 @@ export function enqueueTicketProjection({ db: dbArg, ticketId, eventSeq, now = D
       WHERE l.ticket_id = ? AND l.removed_at IS NULL ORDER BY l.board_id, l.kanban_id, l.card_id`,
   ).all(ticketId);
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO ticket_projection_outbox
+    `INSERT INTO ticket_projection_outbox
       (ticket_id, board_id, kanban_id, card_id, event_seq, operation, projection_json, created_at, next_attempt_at)
-     VALUES (?, ?, ?, ?, ?, 'upsert', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'upsert', ?, ?, ?)
+     ON CONFLICT (board_id, kanban_id, card_id, event_seq) DO UPDATE SET
+       ticket_id = excluded.ticket_id, operation = 'upsert', projection_json = excluded.projection_json, created_at = excluded.created_at,
+       attempts = 0, next_attempt_at = excluded.next_attempt_at, applied_at = NULL, last_error_code = NULL
+     WHERE ticket_projection_outbox.operation = 'remove'`,
   );
   for (const link of links) {
     const map = mapFor(db, link.kanban_link_id);
@@ -273,8 +344,9 @@ export function enqueueTicketProjection({ db: dbArg, ticketId, eventSeq, now = D
  * Replace the latest projection event with a durable remove; older pending snapshots cannot re-add the card.
  * @param {any} [input]
  */
-export function enqueueTicketProjectionRemoval({ db: dbArg, ticketLink, now = Date.now() } = {}) {
+export function enqueueTicketProjectionRemoval({ db: dbArg, ticketLink, title = null, now = Date.now() } = {}) {
   const db = getDb({ db: dbArg });
+  const projectionJson = typeof title === 'string' ? JSON.stringify({ title }) : null;
   const rows = db.prepare(
     `SELECT id, event_seq FROM ticket_projection_outbox
       WHERE board_id = ? AND kanban_id = ? AND card_id = ? AND ticket_id = ? ORDER BY event_seq DESC, id DESC`,
@@ -286,16 +358,16 @@ export function enqueueTicketProjectionRemoval({ db: dbArg, ticketLink, now = Da
         WHERE board_id = ? AND kanban_id = ? AND card_id = ? AND ticket_id = ? AND applied_at IS NULL`,
     ).run(now, ticketLink.board_id, ticketLink.kanban_id, ticketLink.card_id, ticketLink.ticket_id);
     db.prepare(
-      `UPDATE ticket_projection_outbox SET operation = 'remove', projection_json = NULL, created_at = ?,
+      `UPDATE ticket_projection_outbox SET operation = 'remove', projection_json = ?, created_at = ?,
              attempts = 0, next_attempt_at = ?, applied_at = NULL, last_error_code = NULL
         WHERE id = ?`,
-    ).run(now, now, rows[0].id);
+    ).run(projectionJson, now, now, rows[0].id);
   } else {
     db.prepare(
       `INSERT INTO ticket_projection_outbox
         (ticket_id, board_id, kanban_id, card_id, event_seq, operation, projection_json, created_at, next_attempt_at)
-       VALUES (?, ?, ?, ?, ?, 'remove', NULL, ?, ?)`,
-    ).run(ticketLink.ticket_id, ticketLink.board_id, ticketLink.kanban_id, ticketLink.card_id, eventSeq, now, now);
+       VALUES (?, ?, ?, ?, ?, 'remove', ?, ?, ?)`,
+    ).run(ticketLink.ticket_id, ticketLink.board_id, ticketLink.kanban_id, ticketLink.card_id, eventSeq, projectionJson, now, now);
   }
   return eventSeq;
 }
@@ -312,6 +384,24 @@ export function writeTrackerContainerUnlink({ roomAccess, boardId, kanbanId, now
   return roomAccess.write(boardId, 'tracker-sync:unlink', (doc) => applyPlan(doc, planRemoveTrackerProjection(doc, {
     containerId: kanbanId, cardIds: [], now,
   })));
+}
+
+/** Write a detached card's final title and remove its tracker fields through the relay room writer. */
+export function writeTrackerCardUnlink({ roomAccess, boardId, kanbanId, cardId, title, now = Date.now() } = {}) {
+  return roomAccess.write(boardId, 'tracker-sync:card-unlink', (doc) => {
+    const card = doc.getMap('objects').get(cardId);
+    if (card && typeof card.get === 'function' && typeof card.set === 'function') {
+      const current = typeof card.get('text') === 'string' ? card.get('text') : '';
+      const next = replaceTitleLine(current, title);
+      if (next !== current) {
+        card.set('text', next);
+        card.set('updatedAt', now);
+      }
+    }
+    return applyPlan(doc, planRemoveTrackerProjection(doc, {
+      containerId: kanbanId, cardIds: [cardId], now, removeContainer: false, requireSameKanban: false,
+    }));
+  });
 }
 
 function errorCode(error) {
@@ -382,9 +472,15 @@ export function drainTicketProjection({ directory, roomAccess, boardId = null, t
       }
 
       if (row.operation === 'remove') {
-        roomAccess.write(row.board_id, `tracker-sync:${row.event_seq}`, (doc) => applyPlan(doc, planRemoveTrackerProjection(doc, {
-          containerId: row.kanban_id, cardIds: [row.card_id], now,
-        })));
+        let removal = null;
+        try { removal = row.projection_json ? JSON.parse(row.projection_json) : null; } catch { /* old remove rows have no payload */ }
+        if (typeof removal?.title === 'string') {
+          writeTrackerCardUnlink({ roomAccess, boardId: row.board_id, kanbanId: row.kanban_id, cardId: row.card_id, title: removal.title, now });
+        } else {
+          roomAccess.write(row.board_id, `tracker-sync:${row.event_seq}`, (doc) => applyPlan(doc, planRemoveTrackerProjection(doc, {
+            containerId: row.kanban_id, cardIds: [row.card_id], now,
+          })));
+        }
       } else {
         let payload;
         try { payload = JSON.parse(row.projection_json); } catch { throw Object.assign(new Error('Invalid stored projection'), { code: 'invalid_projection' }); }
@@ -416,7 +512,7 @@ export function drainTicketProjection({ directory, roomAccess, boardId = null, t
  */
 export function retryTrackerProjectionOnRoomLoad({ directory, roomAccess, boardId, baseUrl = 'http://localhost', now = Date.now() } = {}) {
   let guardFailed = false;
-  try { reconcileTrackerProjection({ directory, roomAccess, boardId, baseUrl, now }); }
+  try { reconcileTrackerProjection({ directory, roomAccess, boardId, baseUrl, now, mode: 'sql-wins' }); }
   catch { guardFailed = true; }
   const drained = drainTicketProjection({ directory, roomAccess, boardId, baseUrl, now });
   return { ...drained, projectionPending: drained.projectionPending || guardFailed };

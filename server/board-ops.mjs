@@ -1036,6 +1036,10 @@ export function planDeleteKanbanLane(doc, kanbanId, laneId, moveCardsTo, { now =
   const state = kanbanState(doc, kanban);
   const id = idString(laneId, 'laneId');
   const lane = laneIdInState(state, id);
+  const ext = state.container.ext;
+  if (ext?.provider === 'tabula' && ext.map && Object.hasOwn(ext.map, id)) {
+    throw invalid('laneId', "Map this lane's tickets elsewhere or unlink the kanban first");
+  }
   if (state.container.locked === true) throw conflict('This kanban is locked. Unlock it to change its lanes.', 'kanbanId');
   if (lane.locked === true) throw conflict('This lane is locked. Unlock it to delete it.', 'laneId');
   let target;
@@ -1171,6 +1175,17 @@ const CREATE_KEYS = {
 };
 
 const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
+
+/** Board planners cannot make linked ticket changes; the tracker transition and patch routes own those fields. */
+export function assertLinkedCardEdit(card, field, path = field) {
+  if (card?.extProvider !== 'tabula' || typeof card.trackerId !== 'string' || !card.trackerId
+    || typeof card.extKey !== 'string' || !card.extKey) return;
+  if (field === 'text' || field === 'title' || field === 'laneId' || field === 'stage'
+    || field === 'owner' || field === 'ownerId' || field === 'ownerName' || field === 'ownerKind'
+    || field === 'due' || field === 'labels') {
+    throw invalid(path, 'Linked card: use transition_ticket / update_ticket');
+  }
+}
 
 /**
  * Validates a whole create batch against the document and returns what to write. Throws OpsError; writes nothing.
@@ -1783,6 +1798,10 @@ export function planTrackerProjection(doc, {
     tracker: fields,
   };
   output.trackerUnmappedState = targetLaneId === null || targetLaneId === undefined;
+  const text = typeof card.text === 'string' ? card.text : '';
+  const lineBreak = text.search(/\r\n|\n|\r/u);
+  const projectedText = `${fields.title}${lineBreak < 0 ? '' : text.slice(lineBreak)}`;
+  if (projectedText !== text) addSet(ops, card, 'text', projectedText);
 
   if (targetLaneId !== null && targetLaneId !== undefined) {
     const targetId = idString(targetLaneId, 'targetLaneId');
@@ -1816,14 +1835,16 @@ export function planTrackerProjection(doc, {
 /** Server-only unlink planner. Clears projection identity while leaving the card's ordinary fields and placement intact. * @param {any} doc
  * @param {any} [input]
  */
-export function planRemoveTrackerProjection(doc, { containerId, cardIds = [], now = Date.now() } = {}) {
+export function planRemoveTrackerProjection(doc, {
+  containerId, cardIds = [], now = Date.now(), removeContainer = true, requireSameKanban = true,
+} = {}) {
   const id = idString(containerId, 'containerId');
   const ids = listOf(cardIds, 'cardIds', 0, KANBAN_LIMITS.cards);
   const { get } = snapshot(doc);
   const container = get(id);
   const ops = [];
   const touched = new Set();
-  if (container?.type === 'container' && container.ext !== undefined) {
+  if (removeContainer && container?.type === 'container' && container.ext !== undefined) {
     ops.push({ op: 'unset', id, key: 'ext' });
     ops.push({ op: 'set', id, key: 'updatedAt', value: now });
     touched.add(id);
@@ -1833,9 +1854,14 @@ export function planRemoveTrackerProjection(doc, { containerId, cardIds = [], no
     const card = get(cardId);
     if (card?.type !== 'card') continue;
     const lane = get(card.parent);
-    if (lane?.type !== 'lane' || lane.parent !== id) continue;
+    if (requireSameKanban && (lane?.type !== 'lane' || lane.parent !== id)) continue;
     let changed = false;
-    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']) {
+    const provider = typeof card.extProvider === 'string' ? card.extProvider : card.ext?.provider;
+    const foreignProvider = typeof provider === 'string' && provider !== 'tabula';
+    const fields = foreignProvider
+      ? ['trackerId', 'tracker', 'trackerUnmappedState']
+      : ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+    for (const field of fields) {
       if (card[field] !== undefined) {
         ops.push({ op: 'unset', id: cardId, key: field });
         changed = true;

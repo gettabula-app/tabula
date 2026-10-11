@@ -1,6 +1,7 @@
 import { OpsError } from './shared.mjs';
 import {
-  createTicketForCard, linkKanban, listLinks, storeLinkIdempotencyResult, suggestMapping, unlinkKanban,
+  createTicketForCard, linkKanban, listLinks, requireTrackerBoardWrite, storeLinkIdempotencyResult, suggestMapping, unlinkKanban,
+  unlinkTrackerCard,
 } from './links.mjs';
 import {
   drainTicketProjection, writeTrackerContainerLink, writeTrackerContainerUnlink,
@@ -37,6 +38,24 @@ export function createTrackerLinkRoutes({
     return [200, listLinks({ directory, actor: actorFor(user), boardId, ...(kanbanId === undefined ? {} : { kanbanId }) })];
   }));
 
+  routes.push(compile('POST', 'tracker/boards/:boardId/restore-window', {
+    trackerLink: true, trackerMutation: true,
+  }, ({ user, params }) => {
+    const actor = actorFor(user);
+    const { boardId } = requireTrackerBoardWrite({ directory, actor, boardId: params.boardId });
+    if (typeof roomAccess?.openTrackerRestoreWindow !== 'function') throw new Error('Tracker restore windows are unavailable');
+    return [200, roomAccess.openTrackerRestoreWindow(boardId, user.id)];
+  }));
+
+  routes.push(compile('DELETE', 'tracker/boards/:boardId/restore-window', {
+    trackerLink: true, trackerMutation: true,
+  }, ({ user, params }) => {
+    const actor = actorFor(user);
+    const { boardId } = requireTrackerBoardWrite({ directory, actor, boardId: params.boardId });
+    if (typeof roomAccess?.closeTrackerRestoreWindow !== 'function') throw new Error('Tracker restore windows are unavailable');
+    return [200, roomAccess.closeTrackerRestoreWindow(boardId, user.id)];
+  }));
+
   routes.push(compile('GET', 'tracker/links/suggest', { trackerLink: true }, ({ user, query }) => {
     const boardId = querySingle(query, 'boardId');
     const kanbanId = querySingle(query, 'kanbanId');
@@ -53,6 +72,7 @@ export function createTrackerLinkRoutes({
       createTickets: Object.hasOwn(body, 'createTickets') ? body.createTickets : false, project: body.project, labels: body.labels,
       idempotencyKey: body.idempotencyKey, roomAccess, now: now(),
     });
+    roomAccess?.invalidateTracker?.(created.link.boardId);
     if (created.replayed) return [201, withoutReplay(created)];
 
     const linkId = created.link.id;
@@ -81,6 +101,7 @@ export function createTrackerLinkRoutes({
     trackerLink: true, trackerMutation: true,
   }, ({ user, params }) => {
     const removed = unlinkKanban({ directory, actor: actorFor(user), linkId: params.id, now: now() });
+    roomAccess?.invalidateTracker?.(removed.link.boardId);
     let projectionPending = false;
     try {
       writeTrackerContainerUnlink({ roomAccess, boardId: removed.link.boardId, kanbanId: removed.link.kanbanId, now: now() });
@@ -103,10 +124,26 @@ export function createTrackerLinkRoutes({
       directory, actor, linkId: params.id, cardId: body.cardId,
       idempotencyKey: body.idempotencyKey, roomAccess, now: now(),
     });
+    const link = directory.db.prepare('SELECT board_id FROM kanban_tracker_links WHERE id = ?').get(params.id);
+    if (link) roomAccess?.invalidateTracker?.(link.board_id);
     const boardId = result.ticket.links?.find((link) => link.kind === 'card' && link.cardId === result.cardId)?.boardId;
     const drained = drainTicketProjection({ directory, roomAccess, ...(boardId ? { boardId } : {}), ticketId: result.ticket.id, baseUrl, now: now() });
     if (!result.replayed) audit(user, 'tracker.link.card', { ticketId: result.ticket.id, cardId: result.cardId });
     return [201, { ticket: result.ticket, cardId: result.cardId, projectionPending: drained.projectionPending }];
+  }));
+
+  routes.push(compile('DELETE', 'tracker/links/:id/cards/:cardId', {
+    trackerLink: true, trackerMutation: true,
+  }, ({ user, params }) => {
+    const result = unlinkTrackerCard({ directory, actor: actorFor(user), linkId: params.id, cardId: params.cardId, now: now() });
+    roomAccess?.invalidateTracker?.(result.boardId);
+    const drained = drainTicketProjection({
+      directory, roomAccess, boardId: result.boardId, ticketId: result.ticket.id, baseUrl, now: now(),
+    });
+    audit(user, 'tracker.card.unlink', {
+      boardId: result.boardId, kanbanId: result.kanbanId, linkId: result.linkId, cardId: result.cardId, count: 1,
+    });
+    return [200, { ticket: result.ticket, cardId: result.cardId, projectionPending: drained.projectionPending }];
   }));
 
   return routes;
