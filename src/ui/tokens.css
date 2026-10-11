@@ -3,10 +3,8 @@
 
 .tokens-dialog {
   width: min(640px, 100%); border-radius: var(--radius-lg); box-shadow: none;
-  border: 1px solid var(--tray-line); border-top: 2px solid var(--tray-text);
+  border: 1px solid var(--tray-line); border-top: 1px solid var(--tray-line);
 }
-.tokens-dialog .modal-head { padding: 16px 16px 8px 24px; }
-.tokens-dialog .modal-head h2 { font: 800 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tokens-dialog .icon-btn { border-radius: var(--radius-sm); }
 .tokens-dialog .modal-body { padding: 8px 24px 24px; }
 
@@ -68,21 +66,16 @@
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all;
 }
 
-/* Buttons: compact, 32px. Default is an outline that inverts on hover; primary is the one signal fill. */
+/* Buttons stay compact at 32px; shared modal chrome provides the quiet fill and signal primary. */
 .tokens-dialog .btn-row { gap: 8px; }
 .tokens-dialog .btn {
-  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
-  font-size: 13px; font-weight: 600;
+  height: 32px; padding: 0 12px; font-size: 13px;
 }
-.tokens-dialog .btn:not(:disabled):hover { background: var(--tray-text); color: var(--tray); }
 .tokens-dialog .btn:disabled { opacity: 0.5; }
 .tokens-dialog .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
 .tokens-dialog .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
-.tokens-dialog .btn.armed { border-color: var(--danger); color: color-mix(in srgb, var(--danger) 55%, var(--tray-text)); }
-.tokens-dialog .btn.armed:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
 
 @media (max-width: 720px) {
-  .tokens-dialog .modal-head { padding-left: 16px; }
   .tokens-dialog .modal-body { padding: 8px 16px 24px; }
   .tokens-row { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
   .tokens-row .btn { justify-self: start; }
