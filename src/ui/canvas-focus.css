@@ -1,0 +1,14 @@
+/* The canvas's keyboard stand-in (docs/canvas-keyboard.md): the outline and its help are for assistive technology only. */
+.canvas-focus { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; pointer-events: none; }
+.canvas-outline-help { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.canvas-outline { margin: 0; padding: 0; list-style: none; }
+/* The ring on the current object: two rings, so it shows on any colour. 2 px of canvas ink outside, a 2 px gap of canvas colour inside it, 4 px
+   out from the object; a connector's line gets the same around a rounded box of its bounds. Keyboard use only, in the page, never in an export. */
+.canvas-ring {
+  position: absolute; left: 0; top: 0; z-index: 6; box-sizing: border-box; pointer-events: none; transform-origin: 0 0;
+  border: 2px solid var(--canvas-ink, var(--ink)); border-radius: 4px; box-shadow: inset 0 0 0 2px var(--canvas, var(--paper));
+}
+.canvas-ring.is-line { border-radius: 8px; }
+.canvas-ring[hidden] { display: none; }
+@media (forced-colors: active) { .canvas-ring { border-color: Highlight; box-shadow: none; } }
+@media print { .canvas-ring, .canvas-focus, .canvas-outline-help { display: none; } }

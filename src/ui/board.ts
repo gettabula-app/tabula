@@ -31,6 +31,7 @@ import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
 import { mountChat } from './board-chat';
 import { currentChatDock } from './chat-dock';
+import { mountCanvasFocus } from './canvas-focus';
 import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
@@ -487,6 +488,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
+  // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
+  const canvasFocus = mountCanvasFocus(app, rail);
+  app.onDestroy(() => canvasFocus.destroy());
   trackPanelTop(chrome, [topLeft, topRight]);
   const updatePanelTop = () => {
     const origin = chrome.getBoundingClientRect().top;
