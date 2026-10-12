@@ -820,7 +820,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
 
     boards: () => call<ServerBoard[]>('GET', '/api/boards'),
     /** Who else has each board open (the Boards page's "Here now"); the poll fallback and the first value. */
-    presence: () => call<{ presence: unknown[] }>('GET', '/api/boards/presence'),
+    boardsPresence: () => call<{ presence: unknown[] }>('GET', '/api/boards/presence'),
     createBoard: (board: { id: string; title?: string; teamId?: string }) =>
       call<ServerBoard>('POST', '/api/boards', board),
     updateBoard: (id: string, patch: { title?: string; teamId?: string | null }) =>
