@@ -3,7 +3,7 @@ import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unknownFeatures, type ContainerLayout } from '../shared/containers';
 import type { BaseObj, BoardMeta, ConnectorObj, Group, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
-import { boxBounds } from './geometry';
+import { boxBounds, rectContains } from './geometry';
 import { descendantsOf as walkDescendants, frameOf as findFrame, isGroup, membersBounds } from './groups';
 import { cleanColor } from '../shared/colors';
 import { customStickyColors } from './palette';
@@ -427,6 +427,23 @@ export class Store {
     let min: string | null = null;
     for (const o of this.cache.values()) if (min === null || o.z < min) min = o.z;
     return generateKeyBetween(null, min);
+  }
+
+  /**
+   * The key for a new frame covering `rect`. Frames paint among themselves by key, so a frame drawn inside another one must
+   * sit just above it (below everything else it does not sit in); drawn on empty canvas or around others it goes to the back,
+   * where a background belongs.
+   */
+  frameZFor(rect: Rect, ignore?: Id): string {
+    const frames = [...this.cache.values()].filter((o) => (o.type === 'frame' || o.type === 'tracker') && o.id !== ignore).sort(cmpZ);
+    let at = -1;
+    frames.forEach((f, i) => {
+      if (rectContains(boxBounds(f as BaseObj), rect)) at = i;
+    });
+    if (at < 0) return this.bottomZ();
+    const lo = frames[at].z;
+    const hi = frames[at + 1]?.z ?? null;
+    return generateKeyBetween(lo, hi !== null && hi > lo ? hi : null);
   }
 
   /** `n` ascending keys below everything on the board. */
