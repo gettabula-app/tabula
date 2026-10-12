@@ -95,7 +95,7 @@ describe('Admin access tokens panel', () => {
     await vi.waitFor(() => expect(textOf(root)).toContain('Claude Code'));
     expect(textOf(root)).not.toContain('No active access tokens.');
 
-    control(modal, 'Close').click();
+    control(modal, 'Close AI tool access').click();
     expect(browser.document.activeElement).toBe(create);
   });
 
