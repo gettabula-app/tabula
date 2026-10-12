@@ -10,7 +10,8 @@ import { ogKind, withOgTags } from '../server/og-tags.mjs';
 const SHELL = '<!doctype html><html><head><meta charset="utf-8" /><meta name="description" content="old" /><title>Tabula</title></head><body></body></html>';
 const relayFile = path.resolve('server/relay.mjs');
 let root = '';
-const stops: Array<() => void> = [];
+// A relay still running holds its data directory open: on Windows that makes the removal below fail with EPERM, so each is stopped and awaited first.
+const stops: Array<() => Promise<void>> = [];
 
 async function start(name: string, baseUrl?: string) {
   const started = await startRelayProcess({
@@ -25,7 +26,13 @@ async function start(name: string, baseUrl?: string) {
       ...(baseUrl ? { TABULA_BASE_URL: baseUrl } : {}),
     }),
   });
-  stops.push(() => started.proc.kill());
+  stops.push(async () => {
+    const child = started.proc;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    child.kill();
+    await exited;
+  });
   return started.port;
 }
 
@@ -41,9 +48,9 @@ beforeAll(() => {
   fs.copyFileSync(path.resolve('public/og/invite.png'), path.join(root, 'dist', 'og', 'invite.png'));
 });
 
-afterAll(() => {
-  for (const stop of stops) stop();
-  fs.rmSync(root, { recursive: true, force: true });
+afterAll(async () => {
+  await Promise.all(stops.map((stop) => stop()));
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe('link preview tags', () => {
