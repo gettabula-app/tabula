@@ -226,6 +226,8 @@ describe('access tokens in the directory', () => {
       DROP TABLE oauth_grants;
       DROP TABLE oauth_requests;
       DROP TABLE oauth_clients;
+      DROP TABLE mcp_requests;
+      DROP TABLE mcp_daily_usage;
       DROP TABLE access_tokens;
       ALTER TABLE sessions DROP COLUMN user_agent;
       PRAGMA user_version = 3;
@@ -270,12 +272,21 @@ describe('configuration', () => {
   });
 
   it('turns on per-user tokens in accounts mode and says which settings it ignores', () => {
-    expect(load({ ...accounts, MCP: 'on' }).mcp).toMatchObject({ mode: 'accounts', oauth: false, ignored: [] });
+    expect(load({ ...accounts, MCP: 'on' }).mcp).toMatchObject({ mode: 'accounts', oauth: false, dailyWrites: 2000, ignored: [] });
     expect(load({ ...accounts, MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'write' }).mcp).toMatchObject({
       mode: 'accounts',
       oauth: false,
       ignored: ['TABULA_MCP_TOKEN', 'TABULA_MCP_SCOPE'],
     });
+  });
+
+  it('parses the daily write cap as an integer from zero through one million', () => {
+    expect(load({ ...accounts, MCP: 'on', MCP_DAILY_WRITES: '0' }).mcp?.dailyWrites).toBe(0);
+    expect(load({ ...accounts, MCP: 'on', MCP_DAILY_WRITES: '1' }).mcp?.dailyWrites).toBe(1);
+    expect(load({ ...accounts, MCP: 'on', MCP_DAILY_WRITES: '1000000' }).mcp?.dailyWrites).toBe(1_000_000);
+    for (const value of ['-1', '1.5', '1000001', 'many']) {
+      expect(() => load({ MCP_DAILY_WRITES: value })).toThrow(/TABULA_MCP_DAILY_WRITES must be an integer from 0 to 1000000/);
+    }
   });
 
   it('needs a long enough shared token in open mode, and a known scope', () => {

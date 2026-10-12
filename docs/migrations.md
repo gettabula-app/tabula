@@ -28,6 +28,10 @@ Directory migration 14 adds the notification inbox and email outbox. It is an ad
 
 Directory migration 15 adds linked-kanban mappings, card links and the SQL-to-Yjs projection outbox. It is declared as `{ sql, minReader: 11 }` because a tracker schema rollback to v5.0.1 remains supported while `TABULA_TRACKER` is off in production. The migration has no board foreign keys and no user foreign keys with restrictive delete behavior. It leaves the release at directory `schema: 15` and `maxReader: 11`.
 
+Directory migration 16 adds OAuth grants, tokens and related indexes. It is expand-only and records `min_reader = 11`, preserving the schema-11 rollback floor.
+
+Directory migration 17 adds persistent MCP daily-write counters and 24-hour request retry records. It is expand-only (`{ sql, minReader: 11 }`): older readers ignore these new tables, so the existing schema-11 rollback floor remains valid.
+
 The migration lint runs in `test/migrations-lint.test.ts`. It flags SQL patterns that need review. A plain-string entry with a flagged pattern fails; make it an object and choose `minReader: n` for a breaking change or `minReader: n - 1` after review confirms it is expand-only. The lint is a review aid, so read the migration and consider behavior the patterns may not recognize.
 
 ## Reader generations and legacy databases

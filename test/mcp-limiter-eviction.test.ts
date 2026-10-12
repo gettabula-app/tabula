@@ -12,6 +12,7 @@ function fixture() {
   let time = 10_000;
   let requestId = 0;
   const tokens = new Map<string, string>();
+  const dailyUsage = new Map<string, number>();
   const user = { id: 'test-user', name: 'Test user', role: 'member' };
   const rooms = new Map([
     ['board', new Y.Doc()],
@@ -30,6 +31,16 @@ function fixture() {
       return id === 'board' ? 'editor' : null;
     },
     audit() {},
+    mcpWritesToday(actor: { kind: string; id: string }, day: string) { return dailyUsage.get(`${actor.kind}:${actor.id}:${day}`) ?? 0; },
+    addMcpWrites(actor: { kind: string; id: string }, day: string, count: number) {
+      const key = `${actor.kind}:${actor.id}:${day}`;
+      const next = (dailyUsage.get(key) ?? 0) + count;
+      dailyUsage.set(key, next);
+      return next;
+    },
+    getMcpRequest() { return null; },
+    putMcpRequest() {},
+    sweepMcp() {},
   };
   const server = createMcp({
     config: { mcp: { mode: 'accounts' } },

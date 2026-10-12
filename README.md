@@ -154,6 +154,7 @@ Tabula can let an AI tool such as Claude Code read and edit boards while people 
 | `TABULA_MCP` | `off` | `on` serves `/mcp` |
 | `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters with no spaces. Required when `TABULA_MCP=on` without accounts |
 | `TABULA_MCP_SCOPE` | `read` | Open mode only: what the shared token may do, `read`, `comment` or `write` |
+| `TABULA_MCP_DAILY_WRITES` | `2000` | Board writes per token or OAuth grant per UTC day; counts items. Set to `0` for no cap |
 
 In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
 
