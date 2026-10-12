@@ -193,6 +193,18 @@ export function openLink(url: unknown, open: (url: string, target: string, featu
   return true;
 }
 
+// ---------------------------------------------------------------- the Markdown summary
+
+/** `[Title](https://…)`, or the address alone without a title (a description is not exported). Empty when the card has no valid address. */
+export function markdownLink(o: LinkFields, escape: (text: string) => string): string {
+  const v = linkView(o);
+  if (!v.url) return '';
+  // a bracket or parenthesis in the address would end the link early
+  const url = v.url.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\[/g, '%5B').replace(/\]/g, '%5D');
+  const title = v.state === 'ok' ? escape(v.title) : '';
+  return title ? `[${title}](${url})` : url;
+}
+
 // ---------------------------------------------------------------- what the relay answers
 
 export interface Preview {

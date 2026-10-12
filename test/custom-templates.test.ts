@@ -85,6 +85,14 @@ describe('remapObjects', () => {
 describe('toTemplateContent', () => {
   const lookup = (outside: Obj) => (id: string) => (id === outside.id ? outside : undefined);
 
+  it('keeps a link card with its address and text and drops its picture and icon', () => {
+    const card = box('lk', 10, 10, { type: 'link', url: 'https://example.com/', title: 'T', description: 'D', siteName: 'S', unfurl: 'ok', image: 'a'.repeat(64), imageW: 10, imageH: 5, icon: 'b'.repeat(64) });
+    const c = toTemplateContent([card], [], { includeSteps: false });
+    expect(c.objects[0]).toMatchObject({ type: 'link', url: 'https://example.com/', title: 'T', description: 'D', siteName: 'S', unfurl: 'ok' });
+    for (const field of ['image', 'imageW', 'imageH', 'icon']) expect(c.objects[0]).not.toHaveProperty(field);
+    expect(validateContent(c)).toBeTruthy();
+  });
+
   it('moves the bounds to the origin and keeps relative geometry', () => {
     const { objs, outside, steps } = fixture();
     const c = toTemplateContent(objs, steps, { includeSteps: true }, lookup(outside));

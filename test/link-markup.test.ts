@@ -99,4 +99,13 @@ describe('the card as markup', () => {
     expect(svg.startsWith('<g transform="translate(10 20)"')).toBe(true);
     expect(svg).toContain('class="link-card"');
   });
+
+  it('is a real link in an export: an anchor with the address, a new tab, no opener or referrer, and the picture inlined', () => {
+    const svg = linkMarkup(link({ image: HASH, icon: HASH, imageW: 10, imageH: 10 }), { still: true, assetState: () => ok('data:image/png;base64,AAAA') });
+    expect(svg).toMatch(/^<a class="link-card" href="https:\/\/www\.example\.com\/page\?x=1" target="_blank" rel="noopener noreferrer"/);
+    expect(svg).toContain('<title>https://www.example.com/page?x=1</title>');
+    expect(svg).toContain('href="data:image/png;base64,AAAA"');
+    expect(svg).not.toContain('link-seg');
+    expect(linkMarkup({ ...link(), url: 'javascript:alert(1)' } as BaseObj, { still: true })).not.toContain('<a ');
+  });
 });

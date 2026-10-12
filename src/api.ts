@@ -153,6 +153,13 @@ export interface AdminUpdates {
 }
 
 /** GET and PUT /api/admin/privacy. */
+/** GET and PUT /api/admin/link-previews: whether the server fetches previews for link cards (docs/link-cards.md). `locked` is the operator's kill switch. */
+export interface AdminLinkPreviews {
+  enabled: boolean;
+  locked: boolean;
+  setting: boolean | null;
+}
+
 export interface AdminPrivacy {
   enabled: boolean;
   locked: null | 'env';
@@ -952,6 +959,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),
     adminUpdates: () => call<AdminUpdates>('GET', '/api/admin/updates'),
     setAdminUpdates: (auto: boolean) => call<AdminUpdates>('PUT', '/api/admin/updates', { auto }),
+    adminLinkPreviews: () => call<AdminLinkPreviews>('GET', '/api/admin/link-previews'),
+    setAdminLinkPreviews: (enabled: boolean) => call<AdminLinkPreviews>('PUT', '/api/admin/link-previews', { enabled }),
     adminPrivacy: () => call<AdminPrivacy>('GET', '/api/admin/privacy'),
     setAdminPrivacy: (enabled: boolean) => call<AdminPrivacy>('PUT', '/api/admin/privacy', { enabled }),
     adminPrivacyPreview: () => call<AdminPrivacyPreview>('GET', '/api/admin/privacy/preview'),

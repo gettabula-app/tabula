@@ -1,7 +1,7 @@
 // Custom templates: a saved snapshot of objects and session steps, stored as data.
 // Everything here is pure (no DOM, no Yjs) so it runs in the browser, the server and tests.
 
-import type { End, Id, Obj, ObjType, Point, Rect, Step, StepMode } from './types';
+import type { BaseObj, End, Id, Obj, ObjType, Point, Rect, Step, StepMode } from './types';
 import { isBox, isConnector } from './types';
 import { boxBounds, center, rectOfPoints } from './geometry';
 import { sanitizeSvgBody } from './markup';
@@ -133,7 +133,12 @@ export function toTemplateContent(
   opts: ToTemplateOptions,
   lookup?: (id: Id) => Obj | undefined,
 ): TemplateContent {
-  objs = leaveOutHidden(objs.filter((o) => o.type !== 'image'));
+  // a link card keeps its address, title, description and site name; its picture and icon are board assets, and a template holds none
+  objs = leaveOutHidden(objs.filter((o) => o.type !== 'image')).map((o) => {
+    if (o.type !== 'link') return o;
+    const { image: _image, imageW: _w, imageH: _h, icon: _icon, ...rest } = o as BaseObj;
+    return rest as Obj;
+  });
   const idMap = new Map<Id, Id>();
   objs.forEach((o, i) => idMap.set(o.id, `o${i + 1}`));
   const resolveOutside = (id: Id): Point | null => {

@@ -1,0 +1,18 @@
+/* The Link previews row in Admin > Privacy (docs/link-cards.md). The switch is 40 x 24: an ink track when on, an outlined graphite one when off. */
+.lp-admin { max-width: 720px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--rule); }
+.lp-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; }
+.lp-heading { margin: 0; font-size: 15px; font-weight: 700; }
+.lp-switch {
+  position: relative; flex: none; width: 40px; height: 24px; padding: 0; box-sizing: border-box; border: 1.5px solid var(--graphite); border-radius: var(--radius-md);
+  background: transparent; cursor: pointer;
+}
+.lp-switch.on { border-color: var(--ink); background: var(--ink); }
+.lp-switch:disabled { opacity: 0.55; cursor: default; }
+.lp-switch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.lp-thumb { position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--graphite); transition: transform 0.12s ease; }
+.lp-switch.on .lp-thumb { background: var(--paper); transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) { .lp-thumb { transition: none; } }
+.lp-text, .lp-locked { margin: 4px 0 0; max-width: 72ch; color: var(--graphite); font-size: 13px; line-height: 1.55; }
+.lp-note { max-width: 72ch; margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: 13px; line-height: 1.55; }
+.lp-outcome { min-height: 20px; margin: 12px 0 0; font-size: 13px; }
+.lp-outcome:empty { min-height: 0; margin: 0; }

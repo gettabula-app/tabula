@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   LETTER_COLOURS, LINK_SIZES, domainOf, layoutOf, letterColour, letterOf, linkLabel, linkTooltip, linkView, loneUrl, maskSecrets, normaliseUrl,
-  openLink, secretLooking, urlsFromList,
+  markdownLink, openLink, secretLooking, urlsFromList,
 } from '../src/link-cards';
 import { luminance } from '../src/palette';
 import { THEMES } from '../src/themes';
@@ -105,5 +105,16 @@ describe('card colours in the five themes', () => {
     expect(ratio(vars['--selection-handle-stroke'], vars['--canvas'])).toBeGreaterThanOrEqual(3);
     expect(ratio(vars['--selection-handle-stroke'], vars['--paper'])).toBeGreaterThanOrEqual(3);
     expect(ratio(vars['--ink'], vars['--canvas'])).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('the Markdown summary', () => {
+  const esc = (t: string) => t.replace(/[\\`*_[\]<>|~&]/g, '\\$&');
+  it('is [Title](address), or the address alone, with the title escaped and the address safe in a link', () => {
+    expect(markdownLink({ url: 'https://example.com/a', title: 'A *page* [x]', unfurl: 'ok' }, esc)).toBe('[A \\*page\\* \\[x\\]](https://example.com/a)');
+    expect(markdownLink({ url: 'https://example.com/a', unfurl: 'ok' }, esc)).toBe('https://example.com/a');
+    expect(markdownLink({ url: 'https://example.com/a', title: 'Not yet', unfurl: 'pending' }, esc)).toBe('https://example.com/a');
+    expect(markdownLink({ url: 'https://example.com/a_(b)[c]', title: 'T', unfurl: 'ok' }, esc)).toBe('[T](https://example.com/a_%28b%29%5Bc%5D)');
+    expect(markdownLink({ url: 'javascript:alert(1)', title: 'T', unfurl: 'ok' }, esc)).toBe('');
   });
 });

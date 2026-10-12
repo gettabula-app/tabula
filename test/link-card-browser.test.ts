@@ -390,3 +390,28 @@ describe.skipIf(!available)('the quick bar', () => {
     await page.close();
   });
 });
+
+describe.skipIf(!available)('exports', () => {
+  it('writes the card as a real link with its picture inlined in an SVG export, and as [Title](address) in the Markdown summary', async () => {
+    const { page } = await open();
+    await page.addScriptTag({ type: 'module', content: "import { exportSvgFile } from '/src/exporters.ts'; window.__exportSvgFile = exportSvgFile; window.__exp = true;" });
+    await page.waitForFunction(() => (window as any).__exp === true);
+    await paste(page, 'https://example.com/md');
+    await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].some((o: any) => o.type === 'link' && o.unfurl === 'ok'));
+    const out = await page.evaluate(async () => {
+      const app = (window as any).__board;
+      const link = [...app.store.cache.values()].find((o: any) => o.type === 'link');
+      app.store.transact(() => app.store.create({ id: 'fr1', type: 'frame', x: link.x - 40, y: link.y - 60, w: link.w + 80, h: link.h + 120, rotation: 0, z: 'f0', name: 'Reading' }));
+      app.store.transact(() => app.store.update(link.id, { parent: 'fr1' }));
+      const svg: string = await (window as any).__exportSvgFile(app, [link.id]);
+      return { svg, md: app.flow.summaryMarkdown() };
+    });
+    expect(out.svg).toMatch(/<a class="link-card" href="https:\/\/example\.com\/md" target="_blank" rel="noopener noreferrer"/);
+    expect(out.svg).toMatch(/<image href="data:image\/png;base64,/);
+    expect(out.svg).not.toContain('link-seg');
+    expect(out.svg).not.toContain('blob:');
+    expect(out.md).toContain('- [Example Domain](https://example.com/md)');
+    await page.close();
+  });
+});
+

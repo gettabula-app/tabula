@@ -9,6 +9,7 @@ import { chatAdminPanel } from './chat-admin';
 import { download } from '../exporters';
 import { backupsAdminPanel } from './backups';
 import { updatesAdminPanel } from './updates-admin';
+import { linkPreviewsAdminPanel } from './link-previews-admin';
 import { privacyAdminPanel } from './privacy-admin';
 import { PRIVACY_COPY } from './privacy-logic';
 import { fmtAgo } from './common';
@@ -706,7 +707,7 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   chat: () => chatAdminPanel({ head, loadList, change, armable, emptyLine }),
   backups: (me) => backupsAdminPanel(me, { head, loadList, change, armable, emptyLine }),
   settings: (me) => updatesAdminPanel(me),
-  privacy: (me) => privacyAdminPanel(me),
+  privacy: (me) => h('div', null, privacyAdminPanel(me), linkPreviewsAdminPanel(me)),
   audit: () => auditPanel(),
 };
 

@@ -158,5 +158,7 @@ export function linkMarkup(o: BaseObj, ctx: LinkCtx = {}): string {
   parts.push(`<rect class="link-card-edge" x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" rx="4" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   const label = escapeXml(linkLabel(o));
   const tip = escapeXml(linkTooltip(o));
+  // in a file the card is a real link: the address opens in a browser, in a new tab, without opener or referrer
+  if (ctx.still && v.url) return `<a class="link-card" href="${escapeXml(v.url)}" target="_blank" rel="noopener noreferrer" aria-label="${label}"><title>${tip}</title>${parts.join('')}</a>`;
   return `<g class="link-card" role="link" aria-label="${label}"><title>${tip}</title>${parts.join('')}</g>`;
 }
