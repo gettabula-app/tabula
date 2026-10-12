@@ -118,7 +118,7 @@ describe('loadSyncCaps and frameLimitFor', () => {
     expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0' }).maxDocBytes).toBe(0);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_SOCKETS_PER_USER: 'abc' })).toThrow(/TABULA_SYNC_MAX_SOCKETS_PER_USER/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_OTHER: '0' })).toThrow(/at least 1/);
-    expect(() => loadSyncCaps({ TABULA_SYNC_UPGRADES_PER_MINUTE: '0' })).toThrow();
+    expect(() => loadSyncCaps({ TABULA_SYNC_UPGRADES_PER_MINUTE: '0' })).toThrow(/TABULA_SYNC_UPGRADES_PER_MINUTE/);
     // the limits must nest: small <= comments <= editor <= owner <= document cap
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '10M' })).toThrow(/TABULA_SYNC_MAX_FRAME_SMALL.*TABULA_SYNC_MAX_FRAME_COMMENTS/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_COMMENTS: '100M' })).toThrow(/TABULA_SYNC_MAX_FRAME_COMMENTS.*TABULA_SYNC_MAX_FRAME_OTHER/);

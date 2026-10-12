@@ -326,7 +326,8 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     (['board', 'comments'] as const).forEach((room, i) => {
       const changed = limitOf(from, room) !== limitOf(to, room);
       expect(mine[room].closes.includes(CLOSE_ROLE_CHANGED)).toBe(changed);
-      if (!changed) expect(mine[room].provider.ws).toBe(sockets[i]);
+      // the same limit keeps the very same socket; a changed limit means a new one
+      expect(changed || mine[room].provider.ws === sockets[i]).toBe(true);
     });
     expect(stillOpen(mine)).toEqual([true, true]);
 
