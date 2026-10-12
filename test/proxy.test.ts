@@ -33,6 +33,7 @@ const startRelay = (dir: string, env: Record<string, string>) => startRelayProce
     HOST: '127.0.0.1',
     TABULA_AUTH: 'on',
     TABULA_OWNER_EMAIL: OWNER,
+    TABULA_AUTH_IP_LIMIT: '20',
     TABULA_MAIL: 'file',
     ...env,
   }),
