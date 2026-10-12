@@ -431,7 +431,7 @@
   .trk-results-count { padding-inline: 4px; }
   .trk-filter-host { min-height: 44px; }
   .trk-filter-host .trk-filter-input { width: 100%; min-height: 44px; }
-  .trk .trk-filter-suggestions { position: fixed; z-index: 21000; top: auto; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); left: 8px; width: auto; max-height: 45dvh; }
+  .trk .trk-filter-suggestions { position: fixed; z-index: 21000; top: auto; right: 8px; bottom: max(calc(64px + env(safe-area-inset-bottom)), calc(var(--trk-kb, 0px) + 8px)); left: 8px; width: auto; max-height: 45dvh; }
   .trk-my-subtabs { min-height: 44px; }
   .trk-my-subtab { min-height: 44px; }
   .trk-board-viewbar { display: none; }
@@ -446,12 +446,16 @@
   .trk-board-add { width: 44px; min-width: 44px; min-height: 44px; }
   .trk-list-grid { padding-bottom: 88px; }
   .trk-grid-header { display: none; }
-  .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 44px 58px minmax(0, 1fr) 44px !important; grid-template-rows: 30px 30px; grid-template-areas: 'select state key title priority' 'select state due title assignee'; column-gap: 5px; padding: 2px 8px; }
+  .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 36px 50px minmax(0, 1fr) 44px !important; grid-template-rows: 30px 30px; grid-template-areas: 'select state key title priority' 'select state due title assignee'; column-gap: 5px; padding: 2px 8px; }
   .trk-density-compact .trk-list-row { min-height: 64px; }
   .trk-col-priority { display: flex; grid-area: priority; }
   /* the select button lives inside the key cell: its children become the row's own grid items, so Select takes the first column and the key its own */
   .trk-col-key { display: contents; }
-  .trk-col-key > .trk-key-chip { grid-area: key; align-self: end; min-width: 0; }
+  .trk-col-key > .trk-key-chip { grid-area: key; align-self: end; min-width: 0; margin-left: -3px; }
+  /* the state button stays 44 px wide in a 36 px column (its padding overlaps the neighbours' empty edge): the glyph sits 12 px from the key */
+  .trk-col-state .trk-state-value { margin-inline: -4px; }
+  /* the floating + steps aside while the filter's suggestions are open */
+  .trk:has(.trk-filter-suggestions:not([hidden])) .trk-new-trigger { display: none; }
   .trk-col-title { grid-area: title; }
   .trk-col-state { grid-area: state; justify-content: center; }
   .trk-col-state > span:last-child { display: none; }
