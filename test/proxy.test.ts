@@ -107,6 +107,11 @@ async function startProxy(initial: ProxyOptions) {
   }
 
   const server = http.createServer((req, res) => {
+    // The hosted Fly edge keeps the operator-only API off the public address.
+    if (options.fly && new URL(req.url ?? '/', 'http://x').pathname.startsWith('/api/internal/')) {
+      res.writeHead(404).end();
+      return;
+    }
     const headers = upstreamHeaders(req);
     delete headers.connection;
     delete headers['keep-alive'];
@@ -220,8 +225,8 @@ const lastMail = (dir: string): Mail => JSON.parse(fs.readFileSync(path.join(dir
 const tokenOf = (mail: Mail) => decodeURIComponent(/token=([^\s&]+)/.exec(mail.text)![1]);
 
 /** Signs in through `b` and returns the Set-Cookie header the server sent along with the `name=value` pair a browser would send back. */
-async function signIn(b: Browser, dir: string, email = OWNER) {
-  const asked = await b('POST', '/api/auth/request', { body: { email } });
+async function signIn(b: Browser, dir: string, email = OWNER, invite?: string) {
+  const asked = await b('POST', '/api/auth/request', { body: { email, ...(invite ? { invite } : {}) } });
   if (asked.status !== 200) throw new Error(`sign-in request failed with ${asked.status}`);
   const mail = lastMail(dir);
   const verify = await b('POST', '/api/auth/verify', { body: { token: tokenOf(mail) } });
@@ -298,6 +303,11 @@ afterAll(async () => {
 });
 
 const PROXIED = { TABULA_BASE_URL: ORIGIN, TABULA_TRUST_PROXY: '1' };
+const CLIENT_IP_CLOUD = {
+  TABULA_CLOUD_TOKEN: 'c'.repeat(48),
+  TABULA_CLOUD_URL: 'http://127.0.0.1:1',
+  TABULA_CLOUD_WORKSPACE_ID: 'proxy-client-ip',
+};
 
 // ---------------------------------------------------------------- tests
 
@@ -487,6 +497,83 @@ describe('behind Fly with fly-replay (TAB-71)', { timeout: 60_000 }, () => {
     const stack = await launch({ ...PROXIED }, { fly: true });
     for (let i = 0; i < 20; i++) expect((await ask(stack, nextClient())).status).toBe(200);
     expect((await ask(stack, nextClient())).status).toBe(429);
+  });
+});
+
+describe('public client IP report (TAB-71)', { timeout: 60_000 }, () => {
+  it('gives workspace admins and owners the documented no-store report, and refuses members and anonymous callers', async () => {
+    const visitor = nextClient();
+    const stack = await launch({ ...PROXIED, ...CLIENT_IP_CLOUD, TABULA_CLIENT_IP_HEADER: 'fly-client-ip' }, { fly: true });
+    const throughFly = browser(stack.proxy.port, visitor);
+    const owner = await signIn(throughFly, stack.dir);
+
+    const team = await throughFly('POST', '/api/teams', { cookie: owner.cookie, body: { name: 'Client IP report' } });
+    expect(team.status).toBe(201);
+    const invite = await throughFly('POST', `/api/teams/${team.body.id}/invites`, { cookie: owner.cookie, body: {} });
+    expect(invite.status).toBe(201);
+    const member = await signIn(throughFly, stack.dir, nextEmail(), invite.body.token);
+
+    const publicGet = (cookie?: string) => request(stack.proxy.port, 'GET', '/api/admin/client-ip', {
+      host: HOST,
+      origin: ORIGIN,
+      ...(cookie ? { cookie } : {}),
+      'x-test-client': visitor,
+    });
+    expect((await publicGet(member.cookie)).status).toBe(403);
+
+    const promoted = await throughFly('PATCH', `/api/members/${member.user.id}`, { cookie: owner.cookie, body: { role: 'admin' } });
+    expect(promoted.status).toBe(200);
+
+    const adminReport = await publicGet(member.cookie);
+    const ownerReport = await publicGet(owner.cookie);
+    expect(adminReport.status).toBe(200);
+    expect(ownerReport.status).toBe(200);
+    expect(adminReport.headers['cache-control']).toBe('no-store');
+    expect(adminReport.body).toEqual(ownerReport.body);
+    expect(Object.keys(adminReport.body).sort()).toEqual(['address', 'header', 'seen', 'trustProxy']);
+    expect(Object.keys(adminReport.body.seen).sort()).toEqual(['connection', 'flyClientIp', 'xForwardedFor']);
+    expect(adminReport.body).toEqual({
+      address: visitor,
+      trustProxy: true,
+      header: 'fly-client-ip',
+      seen: {
+        connection: expect.stringMatching(/127\.0\.0\.1$/),
+        xForwardedFor: `${visitor}, ${REPLAY_HOP}`,
+        flyClientIp: visitor,
+      },
+    });
+    expect((await publicGet()).status).toBe(401);
+    expect((await request(stack.proxy.port, 'GET', '/api/internal/client-ip', {
+      host: HOST,
+      origin: ORIGIN,
+      authorization: `Bearer ${CLIENT_IP_CLOUD.TABULA_CLOUD_TOKEN}`,
+      'x-test-client': visitor,
+    })).status).toBe(404);
+  });
+
+  it('reports the fly-replay hop with the default x-forwarded-for setting', async () => {
+    const visitor = nextClient();
+    const stack = await launch({ ...PROXIED, ...CLIENT_IP_CLOUD, TABULA_CLIENT_IP_HEADER: 'x-forwarded-for' }, { fly: true });
+    const throughFly = browser(stack.proxy.port, visitor);
+    const owner = await signIn(throughFly, stack.dir);
+    const report = await request(stack.proxy.port, 'GET', '/api/admin/client-ip', {
+      host: HOST,
+      origin: ORIGIN,
+      cookie: owner.cookie,
+      'x-test-client': visitor,
+    });
+
+    expect(report.status).toBe(200);
+    expect(report.body).toEqual({
+      address: REPLAY_HOP,
+      trustProxy: true,
+      header: 'x-forwarded-for',
+      seen: {
+        connection: expect.stringMatching(/127\.0\.0\.1$/),
+        xForwardedFor: `${visitor}, ${REPLAY_HOP}`,
+        flyClientIp: visitor,
+      },
+    });
   });
 });
 
