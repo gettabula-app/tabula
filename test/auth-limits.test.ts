@@ -119,7 +119,7 @@ describe('sign-in request limits', () => {
 
   describe('a classroom at the default limits', () => {
     it.each([
-      ['one IPv4 address', (pupil: number) => '10.20.30.40'],
+      ['one IPv4 address', (_pupil: number) => '10.20.30.40'],
       ['one IPv6 /64', (pupil: number) => `2001:db8:77:88:${(pupil + 1).toString(16)}::${pupil + 1}`],
     ])('30 pupils on %s ask 5 times each and nobody is refused', async (_name, ipOf) => {
       const lines: string[] = [];
