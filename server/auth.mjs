@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { normaliseEmail } from './config.mjs';
 import { mailFailureDetails } from './mail-health.mjs';
+import { rateKeyOf } from './client-ip.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
 const EMAIL_LIMIT = 5;
@@ -54,7 +55,7 @@ function createLimiter(now, ipLimit) {
   return function allow(email, ip) {
     const t = now();
     sweep(t);
-    const ipKey = String(ip || 'unknown').slice(0, 64);
+    const ipKey = String(rateKeyOf(ip) || 'unknown').slice(0, 64);
     const emailHits = recent(byEmail, email, t);
     const ipHits = recent(byIp, ipKey, t);
     const emailFull = emailHits.length >= EMAIL_LIMIT;

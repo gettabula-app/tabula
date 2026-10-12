@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientIpOf, clientIpReport } from '../server/client-ip.mjs';
+import { clientIpOf, clientIpReport, clientRateKeyOf, rateKeyOf } from '../server/client-ip.mjs';
 import { loadConfig } from '../server/config.mjs';
 
 // TAB-71: the client address every rate limit counts by. Without TABULA_TRUST_PROXY=1 nothing a client sends is believed;
@@ -88,5 +88,44 @@ describe('clientIpReport', () => {
   it('reports nothing invented when there is no X-Forwarded-For', () => {
     const report = clientIpReport(req({}, '198.51.100.4'), { trustProxy: false }, { admin: true });
     expect(report).toEqual({ address: '198.51.100.4', trustProxy: false, header: null, seen: { xForwardedFor: null, flyClientIp: null, internalHops: 0 } });
+  });
+});
+
+describe('rateKeyOf', () => {
+  it('leaves IPv4 and IPv4-mapped addresses as they are', () => {
+    expect(rateKeyOf('203.0.113.7')).toBe('203.0.113.7');
+    expect(rateKeyOf('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(rateKeyOf('::FFFF:cb00:7107')).toBe('203.0.113.7');
+  });
+
+  it('maps every address of one /64 to one key, and different /64s to different keys', () => {
+    const key = rateKeyOf('2001:db8:1:2:aaaa:bbbb:cccc:dddd');
+    expect(rateKeyOf('2001:db8:1:2::1')).toBe(key);
+    expect(rateKeyOf('2001:db8:1:2:ffff:ffff:ffff:ffff')).toBe(key);
+    expect(rateKeyOf('2001:db8:1:3::1')).not.toBe(key);
+    expect(rateKeyOf('2001:db9:1:2::1')).not.toBe(key);
+  });
+
+  it('is canonical: compressed, expanded, upper-case and zone-id forms agree', () => {
+    const key = rateKeyOf('2001:db8::7');
+    expect(key).toBe('2001:db8:0:0::/64');
+    expect(rateKeyOf('2001:0DB8:0000:0000:0000:0000:0000:0007')).toBe(key);
+    expect(rateKeyOf('2001:db8:0:0::1')).toBe(key);
+    expect(rateKeyOf('2001:db8::7%eth0')).toBe(key);
+    expect(rateKeyOf('::1')).toBe('0:0:0:0::/64');
+    expect(rateKeyOf('::')).toBe('0:0:0:0::/64');
+    expect(rateKeyOf('64:ff9b::198.51.100.4')).toBe('64:ff9b:0:0::/64');
+  });
+
+  it('returns anything that is not an address unchanged, and never throws', () => {
+    for (const v of ['unknown', '', '<script>', '2001:db8::1::2', '1:2:3:4:5:6:7:8:9']) expect(rateKeyOf(v)).toBe(v);
+    expect(rateKeyOf(undefined as never)).toBe('');
+  });
+
+  it('clientRateKeyOf collapses the same address clientIpOf reports', () => {
+    const r = req({ 'fly-client-ip': '2001:db8:1:2::9' });
+    expect(clientIpOf(r, fly)).toBe('2001:db8:1:2::9');
+    expect(clientRateKeyOf(r, fly)).toBe('2001:db8:1:2::/64');
+    expect(clientRateKeyOf(req({}, '198.51.100.4'), { trustProxy: false })).toBe('198.51.100.4');
   });
 });
