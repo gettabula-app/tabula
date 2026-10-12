@@ -22,4 +22,9 @@ describe('image upload messages', () => {
   it('keeps the two placeholder labels in the same form, with a colon', () => {
     expect(IMAGE_UPLOAD_MESSAGES.tooBigLabel).toBe('Not uploaded: over 1 MB');
   });
+
+  it('words the storage-refused message as CGO approved, singular and plural', () => {
+    expect(IMAGE_UPLOAD_MESSAGES.notKept(1)).toBe('The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.');
+    expect(IMAGE_UPLOAD_MESSAGES.notKept(3)).toBe('3 images were not added: this browser could not save copies to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add them again.');
+  });
 });
