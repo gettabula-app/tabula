@@ -5,10 +5,12 @@ import * as Y from 'yjs';
 import { SimulatedCrash } from '../server/restore.mjs';
 import { CREDS, HOUR, KEY, MIN, harness, type Harness } from './backup-harness';
 import { backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, seedA } from './restore-harness';
-import { createRelayKit, sleep, until } from './drill/drill-kit';
+import { createRelayKit, sleep, until as untilWithin } from './drill/drill-kit';
 
 // Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
+// The drill kit waits 8 s by default; a real restore on a Windows runner needs far longer, and the 180 s test limit above is the real bound.
+const until = (fn: () => boolean | Promise<boolean>, ms = 90_000) => untilWithin(fn, ms);
 
 // docs/backups.md, Restoring. The relay as a child process, exactly as `npm start` runs it, next to the fake S3: a whole
 // restore over HTTP, the maintenance window, the exit code, the start that follows, and recovery from a swap that was cut off.
@@ -70,8 +72,8 @@ describe('the relay restoring a workspace', () => {
       },
     } as RegExp });
     const restoring = c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: CONFIRM });
-    // The safety backup (which now takes the snapshot barrier) comes first; 8 s was too short on a loaded CI runner. A real hang still fails, with the relay's output.
-    await until(() => staging, 45_000).catch((err) => {
+    // The safety backup (which now takes the snapshot barrier) comes first; 8 s, then 45 s, were too short on a Windows CI runner. A real hang still fails, with the relay's output.
+    await until(() => staging, 150_000).catch((err) => {
       throw new Error(`${err.message}: the restore never reached staging. Relay output: ${relay.out().slice(-1500)}`);
     });
     editor.doc.getMap('objects').set('last-edit', 'after the safety backup');
