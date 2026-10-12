@@ -45,7 +45,7 @@ import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './a
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { createLinkUnfurl, createOpenLinkRoutes } from './link-routes.mjs';
-import { clientIpOf } from './client-ip.mjs';
+import { clientRateKeyOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
 import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
@@ -454,7 +454,7 @@ const restore = createRestore({
 });
 // Images on a board (docs/images.md): the files are shared by both modes; the index of who may read which is the directory
 // database with accounts and a small JSON file without.
-const clientIp = (req) => clientIpOf(req, config);
+const clientIp = (req) => clientRateKeyOf(req, config);
 const assets = config.assets
   ? (() => {
       const dir = path.join(DATA_DIR, 'assets');

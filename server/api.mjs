@@ -31,7 +31,7 @@ import { createNotificationRoutes } from './notifications-routes.mjs';
 import { createBackupExport } from './backup-export.mjs';
 import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
-import { clientIpOf, clientIpReport } from './client-ip.mjs';
+import { clientRateKeyOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
 import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
 import { knownRedirect } from './oauth-known-clients.mjs';
@@ -570,7 +570,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     window.count++;
   }
 
-  const clientIp = (req) => clientIpOf(req, config);
+  const clientIp = (req) => clientRateKeyOf(req, config);
   const oauthDecisionLimiter = createWindowLimiter(10, now);
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
