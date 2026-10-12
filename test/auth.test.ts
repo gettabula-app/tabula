@@ -33,7 +33,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((resolve) => s.close(resolve))));
 });
 
-function setup(env: Record<string, string> = {}) {
+function setup(env: Record<string, string> = {}, notifications: unknown = null) {
   const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
@@ -44,7 +44,7 @@ function setup(env: Record<string, string> = {}) {
     },
   };
   const clock = { t: T0 };
-  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t });
+  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t, notifications: notifications as never });
   return { d, auth, sent, config, clock };
 }
 
@@ -304,6 +304,36 @@ describe('invites', () => {
     expect(c.d.getTeamRole(crew.id, result.user.id)).toBe('admin');
     expect(c.d.findInvite(invite.token, T0)).toMatchObject({ uses: 1 });
     expect(c.auth.authenticate(cookie(c, result.sessionToken))).not.toBeNull();
+  });
+
+  it('tell the inviter when a new person joins through the link, once, and not for a person already in the team', async () => {
+    const record = vi.fn<(...args: unknown[]) => void>();
+    const ping = vi.fn<(...args: unknown[]) => void>();
+    const c = setup({}, { record, ping });
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    const result = await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith({ userId: owner.id, kind: 'team_joined', actorId: result.user.id, teamId: crew.id, ref: invite.id }, { notify: false });
+    expect(ping).toHaveBeenCalledWith(owner.id);
+    await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the inviter a team_joined row in the real notification list after a new person signs in through the link', async () => {
+    const { createNotifications } = await import('../server/notifications.mjs');
+    const c = setup();
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const store = createNotifications({ directory: c.d, now: () => T0 });
+    const real = createAuth({ directory: c.d, config: c.config, mailer: { send: async (m: Mail) => { c.sent.push(m); } }, now: () => T0, notifications: store });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    await real.requestLogin({ email: 'pupil@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const joined = real.verifyLogin(lastToken(c))!;
+    const listed = store.list({ user: owner, limit: 10 });
+    expect(listed.items.map((i: { kind: string; actor: { id: string } | null }) => [i.kind, i.actor?.id])).toEqual([['team_joined', joined.user.id]]);
+    expect(listed.unread).toBe(1);
   });
 
   it('send no mail for a new address without a usable invite', async () => {
