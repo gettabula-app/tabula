@@ -6,7 +6,7 @@ Kommentarer är knutna till en plats på tavlan och används för att diskutera 
 
 ## Var du kan chatta
 
-- **Chatt på tavlan**: personerna med konto som kan öppna tavlan. Personer som har anslutit med en anslutningskod har ingen chatt. Den finns i panelen till höger på tavlan, bredvid kommentarerna. På en telefon som är smalare än 380 px öppnar du den med **Chat** i tavlans **Menu**; en punkt på knappen **Menu** visar olästa meddelanden.
+- **Chatt på tavlan**: personerna med konto som kan öppna tavlan. Personer som har anslutit med en anslutningskod har ingen chatt. Den öppnas i chattpanelen vid tavlans högra kant; kommentarerna har sin egen panel. På en telefon som är smalare än 380 px öppnar du den med **Chat** i tavlans **Menu**; en punkt på knappen **Menu** visar olästa meddelanden.
 - **Teamchatt**: teamets medlemmar. Personer som har anslutit till en tavla med en anslutningskod har ingen chatt. Arbetsytans ägare och administratörer kan läsa alla teams chattar och ta bort meddelanden, men de kan bara skriva i team de tillhör. När ett team arkiveras går det bara att läsa chatten.
 - **Chatt för arbetsytan**: alla i arbetsytan utom gäster. En administratör kan stänga av den (se [Administratörspanelen](admin.md)).
 
@@ -25,14 +25,19 @@ Välj **Chat** i det övre fältet på startsidan eller öppna adressen `#/chat`
 
 Länken **Chat** i det övre fältet visar hur många olästa meddelanden du har i alla dina kanaler. På sidan **Boards** visas antalet olästa chattmeddelanden bredvid tavlans namn.
 
-## Öppna och stänga tavlchatten
+## Chattpanelen
 
-- Välj **Chat** i det övre fältet, bredvid **Comments** (Kommentarer), eller tryck på `M`.
-- Panelen till höger har två flikar, **Comments** och **Chat**. Att växla mellan dem ändrar inget av dem.
+Chatten öppnas i en flytande panel vid skärmens högra kant. Det är samma panel på en tavla, på sidan **Boards** (Tavlor) och i spåraren, så samtalet följer med dig när du rör dig i appen.
+
+- Välj **Chat** i det övre fältet, bredvid **Comments** (Kommentarer), eller tryck på `M`. Tryck på `M` igen om du vill stänga den.
 - En bricka på knappen visar antalet olästa meddelanden. Den får en röd kontur när någon har nämnt dig.
-- Tavlan kommer ihåg om du lämnade chatten öppen. Det gäller bara dig.
+- Överst i panelen finns kanalflikar: **This board** (Den här tavlan), arbetsytan och dina team, var och en med sitt antal olästa. En knapp **+N** listar de övriga kanalerna. En rad under flikarna säger vem som är på tavlan just nu.
+- Panelen har tre storlekar. Använd knapparna i rubrikraden för att göra den **Compact** (Kompakt), **Minimise** (Minimera) den till en rund chattknapp ovanför zoomkontrollerna eller **Close** (Stäng) den. Den runda knappen visar antalet olästa i alla kanaler och har en röd kontur när någon har nämnt dig. Välj den om du vill öppna panelen igen.
+- Panelen kommer ihåg storleken du lämnade den i och kanalen du senast använde. Det gäller bara dig, på den här enheten.
+- I ett brett fönster flyttas zoomkontrollerna, snabbverktygsfältet, sessionsfältet, omröstningskortet, AI-verktygsfältet och meddelanden till vänster om den öppna panelen, och **Fit board** lämnar plats åt den. När du öppnar **Comments** läggs chattpanelen undan, och när du öppnar chattpanelen läggs **Comments** undan.
+- `Esc` stänger panelen och för dig tillbaka till knappen **Chat**. Ett meddelandefält, en meny eller en redigering använder sin första `Esc` själv.
 
-![Fliken Chat i sidopanelen i det engelska gränssnittet, med svar, en reaktion, en omnämning och objektbrickor](images/chat-tray.png)
+![Tavlachatten med svar, en reaktion, en omnämning och objektbrickor, i det engelska gränssnittet (äldre sidopanelslayout)](images/chat-tray.png)
 
 ## Läsa
 
