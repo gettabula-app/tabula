@@ -88,7 +88,7 @@ const awarenessFrame = (name: string, socket: object) => {
     awareness = new awarenessProtocol.Awareness(new Y.Doc());
     frameAwareness.set(socket, awareness);
   }
-  awareness.setLocalState({ user: { name } });
+  awareness.setLocalState({ user: { name }, marker: name });
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, 1);
   encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID]));
@@ -216,7 +216,7 @@ function harness(getPort: () => number, getDir: () => string) {
   const pair = (board: string, cookie: string): Pair => ({ board: connect(board, cookie), comments: connect(`${board}${COMMENTS}`, cookie) });
   const synced = (c: Conn) => until(() => c.provider.wsconnected && c.provider.synced);
   const pairSynced = (p: Pair) => Promise.all([synced(p.board), synced(p.comments)]);
-  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
   /** `from` sends a real document update and then awareness over its own socket; resolves to whether `to` received the update. */
   async function writes(from: Conn, to: Conn, map: string, key: string) {
