@@ -106,6 +106,23 @@ afterAll(async () => {
   if (walking) fs.rmSync((await walking).root, { recursive: true, force: true });
 });
 
+describe('the stored telemetry report', () => {
+  it('is moved aside with the old data by a workspace restore, so the restored workspace never hands out the old hour', async () => {
+    const f = await fixture();
+    try {
+      const file = path.join(f.h.dir, 'telemetry-last.json');
+      fs.writeFileSync(file, '{"schema":1}');
+      await restoreIt(f);
+      expect(fs.existsSync(file)).toBe(false);
+      const aside = listing(f.h.dir).filter((n) => n.startsWith('.pre-restore-'));
+      expect(aside).toHaveLength(1);
+      expect(fs.readFileSync(path.join(f.h.dir, aside[0], 'telemetry-last.json'), 'utf8')).toBe('{"schema":1}');
+    } finally {
+      await f.h.close();
+    }
+  });
+});
+
 describe('a crash at every boundary of the swap', () => {
   /** What the next start must make of the directory a crash at boundary `i` left. Fails the test when it is neither wholly old nor wholly new. */
   async function nextStart(dir: string, f: Fixture, points: string[], i: number) {

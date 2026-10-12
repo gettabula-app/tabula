@@ -1489,6 +1489,7 @@ const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
   cloud?.close();
+  api?.flushTelemetry?.(); // the running hour's report goes to its file: one small synchronous write, nothing to wait for
   // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
   const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());
   let saved = saveNow();

@@ -23,9 +23,9 @@ const HOUR = 3_600_000;
 type Role = 'owner' | 'admin' | 'member';
 const worlds: { close: () => Promise<void> }[] = [];
 
-async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now?: () => number; log?: (line: string) => void } = {}) {
+async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now?: () => number; log?: (line: string) => void; dir?: string } = {}) {
   const hosted = opts.hosted !== false;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-telemetry-route-'));
+  const dir = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-telemetry-route-'));
   const env = {
     TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.test', DATA_DIR: dir, TABULA_MAIL: 'file',
     ...(hosted ? { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.test', TABULA_CLOUD_WORKSPACE_ID: 'ws_telemetry' } : {}),
@@ -71,12 +71,12 @@ async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
   const world = {
-    api, config, directory, signIn, pull, call, state,
+    api, config, directory, signIn, pull, call, state, dir,
     close: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       directory.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      if (!opts.dir) fs.rmSync(dir, { recursive: true, force: true });
     },
   };
   worlds.push(world);
@@ -279,7 +279,7 @@ describe('capture timing', () => {
     expect([res.status, res.body.error]).toEqual([503, 'no_report_yet']);
   });
 
-  it('answers 503 stale_report when the whole capture window of an hour was missed', async () => {
+  it('serves the last finished hour for up to 72 hours when the capture window of later hours was missed, then answers stale_report', async () => {
     const base = startOfHour(1_800_000_000_000);
     let at = base + HOUR - 5_000;
     const w = await setup({ now: () => at });
@@ -287,8 +287,12 @@ describe('capture timing', () => {
     at = base + 2 * HOUR - 120_000; // hour B (the next one): the timer does not run in its last minute
     w.api.telemetryTick(); // not in the window: nothing
     at = base + HOUR + 120_000;
-    expect((await w.pull()).status).toBe(200); // hour A is the hour before this one: fresh
-    at = base + 2 * HOUR + 1_000; // hour B ended with no build, and the one after has just started
+    expect((await w.pull()).body.hour).toBe(base);
+    at = base + 2 * HOUR + 1_000; // hour B ended with no build: hour A is handed out again (the collector drops the duplicate)
+    expect((await w.pull()).body.hour).toBe(base);
+    at = base + 72 * HOUR + 1_000; // the collector's window: still accepted
+    expect((await w.pull()).status).toBe(200);
+    at = base + 73 * HOUR;
     const res = await w.pull();
     expect([res.status, res.body.error]).toEqual([503, 'stale_report']);
   });
@@ -304,18 +308,6 @@ describe('capture timing', () => {
     at = base + HOUR + 60_000;
     expect((await w.pull()).body.error).toBe('no_report_yet'); // nothing was built while the restore had it
     expect(lines).toEqual([]);
-  });
-
-  it('answers 503 stale_report when the stored report is older than the hour before this one, never serving a missed hour as fresh', async () => {
-    const base = startOfHour(1_800_000_000_000);
-    let at = base + HOUR - 5_000;
-    const w = await setup({ now: () => at });
-    w.api.telemetryTick();
-    at = base + HOUR + 10 * 60_000;
-    expect((await w.pull()).status).toBe(200); // the hour just finished: fresh
-    at = base + 2 * HOUR + 5_000; // a whole hour was missed (no build in it)
-    const res = await w.pull();
-    expect([res.status, res.body.error]).toEqual([503, 'stale_report']);
   });
 });
 
@@ -346,6 +338,162 @@ describe('a workspace id the report schema does not accept', () => {
     const off: string[] = [];
     await setup({ env: { TABULA_CLOUD_WORKSPACE_ID: 'qa-ws', TABULA_TELEMETRY: 'off' }, log: (line: string) => off.push(line) });
     expect(off).toEqual([]);
+  });
+});
+
+describe('a report kept across a stop', () => {
+  const startOfHour = (t: number) => t - (t % HOUR);
+  const base = startOfHour(1_800_000_000_000);
+  const dirs: string[] = [];
+  const freshDir = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-telemetry-keep-')); dirs.push(d); return d; };
+  afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
+  const stored = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8'));
+
+  it('writes the finished hour to one small file and serves it after a restart that has no report in memory', async () => {
+    const dir = freshDir();
+    let at = base + HOUR - 5_000;
+    const first = await setup({ dir, now: () => at });
+    first.api.telemetryTick();
+    at = base + HOUR + 60_000;
+    const before = await first.pull();
+    expect(before.status).toBe(200);
+    await first.close();
+    worlds.splice(worlds.indexOf(first), 1);
+    const file = fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8');
+    expect(Buffer.byteLength(file)).toBeLessThanOrEqual(256 * 1024);
+    expect(JSON.parse(file)).toEqual(before.body);
+    expect(file).not.toMatch(/@[a-z0-9.-]+\.[a-z]{2,}/iu);
+    expect(fs.readdirSync(dir).filter((name) => name.startsWith('telemetry-last'))).toEqual(['telemetry-last.json']); // no temporary file left
+    at = base + HOUR + 25 * 60_000; // the machine woke later in the next hour
+    const second = await setup({ dir, now: () => at });
+    const after = await second.pull();
+    expect([after.status, after.body]).toEqual([200, before.body]);
+  });
+
+  it('flushes the running hour when the process stops and hands it over after the hour has ended, never inside it', async () => {
+    const dir = freshDir();
+    let at = base + 20 * 60_000;
+    const first = await setup({ dir, now: () => at });
+    first.api.flushTelemetry();
+    expect(stored(dir)).toMatchObject({ hour: base, workspace: 'ws_telemetry' });
+    await first.close();
+    worlds.splice(worlds.indexOf(first), 1);
+    at = base + 40 * 60_000; // woken in the same hour: the flushed hour is still running, so there is nothing to hand out yet
+    const second = await setup({ dir, now: () => at });
+    expect((await second.pull()).body.error).toBe('no_report_yet');
+    at = base + HOUR + 3 * 60_000;
+    const res = await second.pull();
+    expect([res.status, res.body.hour]).toEqual([200, base]);
+  });
+
+  it('keeps the first report of an hour: a second stop in the same hour does not replace it', async () => {
+    const dir = freshDir();
+    let at = base + 20 * 60_000;
+    const first = await setup({ dir, now: () => at });
+    first.api.flushTelemetry();
+    const one = fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8');
+    await first.close();
+    worlds.splice(worlds.indexOf(first), 1);
+    at = base + 50 * 60_000;
+    const second = await setup({ dir, now: () => at });
+    second.api.flushTelemetry();
+    expect(fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8')).toBe(one);
+  });
+
+  it('does not flush while a restore has the workspace, or when the operator turned collection off', async () => {
+    const dir = freshDir();
+    const a = await setup({ dir, now: () => base + 20 * 60_000 });
+    a.state.restoring = true;
+    a.api.flushTelemetry();
+    expect(fs.existsSync(path.join(dir, 'telemetry-last.json'))).toBe(false);
+    const dir2 = freshDir();
+    const b = await setup({ dir: dir2, env: { TABULA_TELEMETRY: 'off' }, now: () => base + 20 * 60_000 });
+    b.api.flushTelemetry();
+    expect(fs.existsSync(path.join(dir2, 'telemetry-last.json'))).toBe(false);
+  });
+
+  it('removes a stored report at start when the operator turned collection off', async () => {
+    const dir = freshDir();
+    let at = base + 20 * 60_000;
+    const first = await setup({ dir, now: () => at });
+    first.api.flushTelemetry();
+    await first.close();
+    worlds.splice(worlds.indexOf(first), 1);
+    expect(fs.existsSync(path.join(dir, 'telemetry-last.json'))).toBe(true);
+    await setup({ dir, env: { TABULA_TELEMETRY: 'off' }, now: () => at });
+    expect(fs.existsSync(path.join(dir, 'telemetry-last.json'))).toBe(false);
+  });
+
+  it('answers stale_report when the stored hour is older than 72 hours', async () => {
+    const dir = freshDir();
+    let at = base + 20 * 60_000;
+    const first = await setup({ dir, now: () => at });
+    first.api.flushTelemetry();
+    await first.close();
+    worlds.splice(worlds.indexOf(first), 1);
+    at = base + 72 * HOUR + 60_000;
+    const second = await setup({ dir, now: () => at });
+    expect((await second.pull()).status).toBe(200);
+    at = base + 73 * HOUR;
+    const res = await second.pull();
+    expect([res.status, res.body.error]).toEqual([503, 'stale_report']);
+  });
+
+  it('never serves a stored report with feature series after the owner opted out, and rewrites the file without them', async () => {
+    const dir = freshDir();
+    const at = base + HOUR + 10 * 60_000;
+    // a report built before the opt-out, with a product series in it
+    const seed = await setup({ dir, now: () => base + 20 * 60_000 });
+    seed.api.flushTelemetry();
+    await seed.close();
+    worlds.splice(worlds.indexOf(seed), 1);
+    const report = stored(dir);
+    report.metrics.push({ name: 'chat_messages_total', labels: { kind: 'channel' }, value: 4 });
+    fs.writeFileSync(path.join(dir, 'telemetry-last.json'), JSON.stringify(report));
+    const w = await setup({ dir, now: () => at });
+    const owner = w.signIn('owner');
+    expect((await w.pull()).body.metrics.map((m: { name: string }) => m.name)).toContain('chat_messages_total'); // on: it is handed out
+    expect((await w.call(owner, 'PUT', '/api/admin/privacy', { enabled: false })).status).toBe(200);
+    const after = await w.pull();
+    expect(after.status).toBe(200);
+    for (const name of PRODUCT) expect(after.body.metrics.map((m: { name: string }) => m.name)).not.toContain(name);
+    expect(fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8')).not.toContain('chat_messages_total');
+    // a process that starts after the opt-out (the switch is saved) filters on serving too, whatever the file holds
+    fs.writeFileSync(path.join(dir, 'telemetry-last.json'), JSON.stringify(report));
+    await w.close();
+    worlds.splice(worlds.indexOf(w), 1);
+    const later = await setup({ dir, now: () => at });
+    for (const name of PRODUCT) expect((await later.pull()).body.metrics.map((m: { name: string }) => m.name)).not.toContain(name);
+  });
+
+  it('ignores a stored report of another workspace, a damaged file, and one the scrubber would change', async () => {
+    const dir = freshDir();
+    const seed = await setup({ dir, now: () => base + 20 * 60_000 });
+    seed.api.flushTelemetry();
+    await seed.close();
+    worlds.splice(worlds.indexOf(seed), 1);
+    const good = stored(dir);
+    const at = base + HOUR + 5 * 60_000;
+    for (const [label, text] of [['another workspace', JSON.stringify({ ...good, workspace: 'ws_somebodyelse' })], ['damaged', '{"hour":'], ['unknown field', JSON.stringify({ ...good, owner: 'x@example.test' })]] as const) {
+      fs.writeFileSync(path.join(dir, 'telemetry-last.json'), text);
+      const w = await setup({ dir, now: () => at });
+      const res = await w.pull();
+      expect([label, res.status, res.body.error]).toEqual([label, 503, 'no_report_yet']);
+    }
+  });
+
+  it('does nothing for an invalid workspace id: no file, no report', async () => {
+    const dir = freshDir();
+    const w = await setup({ dir, env: { TABULA_CLOUD_WORKSPACE_ID: 'qa-ws' }, now: () => base + 20 * 60_000 });
+    w.api.flushTelemetry();
+    expect(fs.existsSync(path.join(dir, 'telemetry-last.json'))).toBe(false);
+  });
+
+  it('writes nothing on a server without a control plane', async () => {
+    const dir = freshDir();
+    const w = await setup({ dir, hosted: false, env: { TABULA_TELEMETRY: 'on' }, now: () => base + 20 * 60_000 });
+    w.api.flushTelemetry();
+    expect(fs.existsSync(path.join(dir, 'telemetry-last.json'))).toBe(false);
   });
 });
 
