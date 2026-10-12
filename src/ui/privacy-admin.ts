@@ -3,7 +3,7 @@ import { ApiError, api, type AdminPrivacy, type AdminPrivacyPreview, type Me } f
 import { setSignedOut } from '../auth';
 import { dialog } from './common';
 import { h } from './dom';
-import { PRIVACY_COPY, privacyCategoryText, privacyCoversHeading, privacyEditState, privacyLastChangedBy, privacyModeIntro, privacySharingState, privacyStayOnHeading, privacyStayOnLead, privacySwitchLabel, privacyTimestamp } from './privacy-logic';
+import { PRIVACY_COPY, privacyCategoryText, privacyCoversHeading, privacyEditState, privacyHourlyNote, privacyLastChangedBy, privacyNoReport, privacyPreviewButton, privacyModeIntro, privacySharingState, privacyStayOnHeading, privacyStayOnLead, privacySwitchLabel, privacyTimestamp } from './privacy-logic';
 
 const PREVIEW_ID = 'privacy-preview-content';
 
@@ -177,7 +177,7 @@ export function privacyAdminPanel(me: Me): HTMLElement {
           h('span', null, PRIVACY_COPY.previewFailed),
           h('button', { class: 'btn', type: 'button', 'data-focus': 'preview', onclick: loadPreview }, PRIVACY_COPY.retry))
         : previewReply?.preview === null
-          ? h('p', { class: 'privacy-note', role: 'status' }, PRIVACY_COPY.noSent)
+          ? h('p', { class: 'privacy-note', role: 'status' }, privacyNoReport(saved.mode))
           : previewReply
             ? h('div', null,
               previewBuilt ? h('p', { class: 'privacy-preview-time' }, `${PRIVACY_COPY.previewBuilt}: `, h('time', { datetime: previewBuilt.iso }, previewBuilt.label)) : null,
@@ -191,7 +191,7 @@ export function privacyAdminPanel(me: Me): HTMLElement {
       h('p', { class: 'privacy-intro' }, privacyModeIntro(saved.mode)),
       toggle,
       h('p', { class: 'privacy-description' }, PRIVACY_COPY.analyticsText),
-      h('p', { id: helpId, class: 'privacy-state-note', role: 'status', 'aria-live': 'polite' }, h('strong', null, stateText), ' ', PRIVACY_COPY.hourlyNote),
+      h('p', { id: helpId, class: 'privacy-state-note', role: 'status', 'aria-live': 'polite' }, h('strong', null, stateText), ' ', privacyHourlyNote(saved.mode)),
       h('p', { id: accessId, class: 'privacy-access' }, reasonText),
       ...(lastChangedBy ? [h('p', { class: 'privacy-last-changed' }, lastChangedBy)] : []),
       h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-covers-heading' },
@@ -217,7 +217,7 @@ export function privacyAdminPanel(me: Me): HTMLElement {
             'aria-expanded': String(previewOpen),
             'aria-controls': PREVIEW_ID,
             onclick: togglePreview,
-          }, previewOpen ? PRIVACY_COPY.hidePreviewButton : PRIVACY_COPY.previewButton),
+          }, previewOpen ? PRIVACY_COPY.hidePreviewButton : privacyPreviewButton(saved.mode)),
           h('a', { class: 'privacy-doc-link', href: PRIVACY_COPY.catalogueHref }, PRIVACY_COPY.catalogue)),
         h('div', { id: PREVIEW_ID, class: 'privacy-preview', hidden: !previewOpen }, previewBody)),
       h('p', { class: 'privacy-outcome', role: outcome === PRIVACY_COPY.saveFailed ? 'alert' : 'status', 'aria-live': 'polite' }, outcome),

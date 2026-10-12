@@ -107,7 +107,7 @@ describe('telemetry privacy API', () => {
 
     const preview = await world.call(owner, 'GET', '/api/admin/privacy/preview');
     expect(preview.status).toBe(200);
-    expect(preview.body.note).toBe('Nothing has been sent');
+    expect(preview.body.note).toBe('Collected by Tabula once an hour, as shown');
     expect(preview.body.preview).toMatchObject({
       schema: 1,
       mode: 'hosted',

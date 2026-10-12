@@ -796,7 +796,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       requireAdmin(user);
       collectTelemetryGauges();
       const result = telemetryCollector.snapshot();
-      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: 'Nothing has been sent' }];
+      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: cloud ? 'Collected by Tabula once an hour, as shown' : 'Nothing has been sent' }];
     }),
     compile('PUT', 'admin/privacy', { body: true, readOnlyOk: true }, ({ user, body }) => {
       requireOwner(user);

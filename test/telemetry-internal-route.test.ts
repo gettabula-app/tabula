@@ -199,3 +199,13 @@ describe('the owner\'s and the operator\'s switches', () => {
     for (const name of ['chat_messages_total', 'ai_calls_total', 'client_sessions_total', 'ui_events_total', 'mcp_calls_total', 'oauth_events_total', 'tracker_ops_total', 'uploads_total', 'upload_bytes']) expect(names).not.toContain(name);
   });
 });
+
+describe('the preview note', () => {
+  it('says what Tabula does with the report on a hosted workspace, and that nothing is sent on a server you run', async () => {
+    const hosted = await setup();
+    expect((await hosted.call(hosted.signIn('owner'), 'GET', '/api/admin/privacy/preview')).body.note).toBe('Collected by Tabula once an hour, as shown');
+    const self = await setup({ hosted: false, env: { TABULA_TELEMETRY: 'on' } });
+    expect((await self.call(self.signIn('owner'), 'GET', '/api/admin/privacy/preview')).body.note).toBe('Nothing has been sent');
+  });
+});
+

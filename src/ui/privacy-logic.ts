@@ -20,6 +20,10 @@ export const PRIVACY_COPY = {
   disabled: 'Off',
   analyticsText: 'Sends counts and durations of feature use for this workspace to Tabula so we can see what is used and improve it. Never includes anything from your boards, comments or chat, and no names, email addresses or identifiers of people.',
   hourlyNote: 'Nothing has been sent yet: sending starts in a later version. Turning this off stops collection at once, and data that was already sent can be deleted on request.',
+  // Hosted workspaces: the hosting service collects the report once an hour (CGO-approved wording). Self-hosted servers still send nothing.
+  hourlyNoteHosted: 'Once an hour, Tabula collects the report shown below from this workspace and keeps it. Turning this off stops product analytics at once, and the report of the current hour is not collected. Operating data stays on either way. Data that was already collected can be deleted on request.',
+  noSentHosted: 'This is the report for the current hour. Each hour that ends is collected by Tabula as shown here.',
+  previewButtonHosted: "Show this hour's report",
   categories: {
     feature_counts: 'Feature-use counts and durations: boards opened, polls run, timers, AI runs, and chat message counts. Counts of device types (phone, tablet, computer), browser families and operating systems, never the browser string itself. The raw User-Agent and browser strings are read on this instance and discarded.',
     performance: 'Request counts and durations by route template, current and hourly peak connection totals, and process resource use.',
@@ -76,6 +80,19 @@ export function privacyEditState(role: UserRole, locked: 'env' | null): PrivacyE
 
 export function privacyModeIntro(mode: 'hosted' | 'self'): string {
   return mode === 'hosted' ? PRIVACY_COPY.hostedIntro : PRIVACY_COPY.selfIntro;
+}
+
+/** The note under the switch: hosted workspaces say what Tabula collects; a server you run says nothing is sent yet. */
+export function privacyHourlyNote(mode: 'hosted' | 'self'): string {
+  return mode === 'hosted' ? PRIVACY_COPY.hourlyNoteHosted : PRIVACY_COPY.hourlyNote;
+}
+
+export function privacyNoReport(mode: 'hosted' | 'self'): string {
+  return mode === 'hosted' ? PRIVACY_COPY.noSentHosted : PRIVACY_COPY.noSent;
+}
+
+export function privacyPreviewButton(mode: 'hosted' | 'self'): string {
+  return mode === 'hosted' ? PRIVACY_COPY.previewButtonHosted : PRIVACY_COPY.previewButton;
 }
 
 export function privacySwitchLabel(mode: 'hosted' | 'self'): string {
