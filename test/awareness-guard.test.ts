@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
-import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import { Awareness } from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
