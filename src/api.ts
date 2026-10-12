@@ -914,6 +914,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
     chatReact: (id: number, emoji: string, on: boolean) =>
       call<{ id: number; reactions: { emoji: string; userIds: string[] }[] }>(on ? 'PUT' : 'DELETE', `/api/chat/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    /** Who else has each board open (the Boards page's "Here now"): the first value, and the poll without chat. */
+    presenceList: () => call<{ presence: unknown[] }>('GET', '/api/boards/presence'),
+    notifications: (before?: string | null) => call<unknown>('GET', `/api/notifications${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+    notificationCounts: () => call<unknown>('GET', '/api/notifications/unread'),
+    notificationsRead: (body: { ids: string[] } | { all: true }) => call<unknown>('POST', '/api/notifications/read', body),
     chatPrefs: () => call<{ emailMentions: boolean }>('GET', '/api/me/prefs'),
     setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),

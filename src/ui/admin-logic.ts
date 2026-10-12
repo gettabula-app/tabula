@@ -97,6 +97,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
+  'linkPreviews.enabled', 'linkPreviews.disabled',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards', 'backup.tracker_findings',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
@@ -320,6 +321,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const notice = d.template === 'trial-ending' ? 'the trial-ending notice' : 'a notice';
       return `${who} sent ${notice} to ${count === null ? 'the workspace owners' : countLabel(count, 'workspace owner', 'workspace owners')}`;
     }
+    case 'linkPreviews.enabled':
+      return `${who} turned link previews on`;
+    case 'linkPreviews.disabled':
+      return `${who} turned link previews off`;
     case 'updates.auto':
       return `${who} turned automatic updates ${flag(d.to) === false ? 'off' : 'on'}`;
     case 'telemetry.enabled':
