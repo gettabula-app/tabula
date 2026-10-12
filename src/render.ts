@@ -274,6 +274,8 @@ export class Renderer {
       get: (id) => this.store.getPlaced(id),
       isHidden: (o) => this.isHidden(o),
       imageState: (o) => this.imageState(o),
+      // a link card's picture and icon are assets of this board, read through the same loader as an image object
+      linkAsset: (o, hash) => this.imageState({ ...o, asset: hash, mime: 'image/png', nw: 1, nh: 1 }),
       editingId: null,
       layout: () => this.connectorLayout(),
       containerLayout: (id) => this.store.containerLayout(id),
@@ -765,10 +767,17 @@ export class Renderer {
       if (isBox(f)) out += `<rect x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" rx="6" fill="${WIRE}" fill-opacity="0.04" stroke="${WIRE}" stroke-width="${px(2)}"/>`;
     }
 
+    // a link card under the pointer: its edge turns to ink and an "open" hint appears (docs/link-cards.md); not part of any export
+    if (ov.hover) {
+      const hovered = get(ov.hover);
+      if (hovered?.type === 'link') out += this.linkHover(hovered);
+    }
     // hover outline
     if (ov.hover && !ov.selection.includes(ov.hover)) {
       const o = get(ov.hover);
-      if (o?.type === 'group') {
+      if (o?.type === 'link') {
+        // drawn above
+      } else if (o?.type === 'group') {
         const b = this.bounds(o);
         if (b) out += this.groupOutline(b, px, 'var(--group-hover)', 1.5, undefined, true);
       } else if (o) out += this.outline(o, px(1.5), 1, 'var(--group-hover)');
@@ -974,6 +983,21 @@ export class Renderer {
     const right = b.x + b.w + (padded ? px(6) : 0);
     const top = b.y - (padded ? px(6) : 0);
     return `<g transform="translate(${right} ${top})"><circle r="${px(11)}" fill="var(--group-chip-bg)" stroke="var(--group-chip-ink)" stroke-width="${px(1.5)}"/><g transform="translate(${-px(7)} ${-px(7)}) scale(${px(14) / 24})" fill="none" stroke="var(--group-chip-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></g></g>`;
+  }
+
+  /** The hover look of a link card: an ink edge, and a 22 square "open" hint at the top right (it hides the domain of a compact card). */
+  private linkHover(raw: Obj): string {
+    if (isConnector(raw)) return '';
+    const o = safeObj(raw);
+    const c = center(o);
+    const deg = ((o.rotation || 0) * 180) / Math.PI;
+    const size = 22;
+    const gx = o.x + o.w - size - 8;
+    const gy = o.h < 72 ? o.y + (o.h - size) / 2 : o.y + 8;
+    const arrow = `<path d="M${gx + 7} ${gy + 15}L${gx + 15} ${gy + 7}M${gx + 9.5} ${gy + 7}H${gx + 15}V${gy + 12.5}" fill="none" stroke="var(--ink, #18212B)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+    return `<g class="link-hover" transform="rotate(${deg} ${c.x} ${c.y})" pointer-events="none">` +
+      `<rect x="${o.x + 0.5}" y="${o.y + 0.5}" width="${o.w - 1}" height="${o.h - 1}" rx="4" fill="none" stroke="var(--ink, #18212B)" stroke-width="1"/>` +
+      `<rect x="${gx}" y="${gy}" width="${size}" height="${size}" rx="4" fill="var(--paper, #FFFFFF)" stroke="var(--canvas-rule, #C9D1DA)"/>${arrow}</g>`;
   }
 
   private outline(raw: Obj, sw: number, opacity: number, stroke = SELECTION_WIRE) {

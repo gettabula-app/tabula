@@ -4,6 +4,7 @@ import { openLabelsDialog } from './labels-dialog';
 import { openKanbanMenu } from './kanban-menus';
 import { closeContainerSheet, openContainerSheet } from './container-sheet';
 import { addImages, pickImages } from './image-add';
+import { openLinkPopover } from './link-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
@@ -291,6 +292,12 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   imageBtn.hidden = demo || !imagesAvailable();
   if (!demo) app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
   app.onImageFiles = demo ? null : (files) => void addImages(app, files);
+  // Link cards (docs/link-cards.md): an address in a small popover; the card appears at once and its preview fills in
+  const linkBtn = h('button', { class: 'rail-btn', 'aria-label': 'Link', 'data-tip': 'Link', 'aria-haspopup': 'dialog', onclick: () => {
+    if (app.readOnly) toast("You can't add links to a board you can only view.");
+    else openLinkPopover(app, linkBtn);
+  } }, icon('link', 22));
+  linkBtn.hidden = demo;
   app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
   // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
@@ -350,6 +357,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
       trackerCommand,
       imageBtn,
+      linkBtn,
       commentBtn,
       h('hr'),
       drawerBtn('UML', 'uml', 'uml'),
@@ -662,11 +670,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // Drop .drift / .json files onto the board to import them.
   root.addEventListener('dragover', (e) => {
-    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    if (e.dataTransfer?.types.includes('Files') || e.dataTransfer?.types.includes('text/uri-list')) e.preventDefault();
   });
   root.addEventListener('drop', async (e) => {
     const files = [...(e.dataTransfer?.files ?? [])];
-    if (!files.length) return;
+    if (!files.length) {
+      // a link dragged from another tab: a card per address (docs/link-cards.md)
+      const list = e.dataTransfer?.getData('text/uri-list') ?? '';
+      if (list && !demo && app.links.dropUrls(list, app.r.clientToWorld(e.clientX, e.clientY))) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     if (app.readOnly) return;
     // pictures go on the board where they were dropped; a board file still opens as before

@@ -33,6 +33,7 @@ const TRACKER_PRIORITIES = new Set(['none', 'urgent', 'high', 'medium', 'low']);
 export const OBJ_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   kind: KINDS, route: ROUTES, startHead: HEAD_SET, endHead: HEAD_SET, dash: DASHES, align: ALIGNS, valign: VALIGNS,
   stage: STAGE_SET, wipMode: WIP_MODES, ownerKind: OWNER_KIND_SET, relation: new Set(Object.keys(RELATIONS)), view: TRACKER_VIEWS,
+  unfurl: new Set(['pending', 'ok', 'failed', 'off']),
 };
 
 /** A font is a Fontshare slug or `system`; it is used in a font-family attribute and a CSS font shorthand. */
@@ -41,13 +42,13 @@ const FONT_RE = /^[a-z0-9-]{1,64}$/;
 /** Fields that every box has: a non-finite value becomes 0. */
 const REQUIRED_NUMBERS = ['x', 'y', 'w', 'h', 'rotation'];
 /** Optional numbers: a non-finite value is dropped, so the default applies. */
-const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt'];
+const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt', 'imageW', 'imageH', 'fetchedAt'];
 /** Free text, drawn only as escaped text content or an escaped attribute: anything but a string is dropped. */
-const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'link', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z', 'trackerId', 'viewId', 'focusKey'];
+const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'link', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z', 'trackerId', 'viewId', 'focusKey', 'url', 'title', 'description', 'siteName', 'image', 'icon', 'finalUrl', 'unfurlError'];
 /** Enumerations and their sets: a value outside the set is dropped. */
 const ENUMS: [string, Set<string>][] = [
   ['dash', DASHES], ['align', ALIGNS], ['valign', VALIGNS], ['stage', STAGE_SET], ['wipMode', WIP_MODES], ['ownerKind', OWNER_KIND_SET],
-  ['relation', new Set(Object.keys(RELATIONS))], ['view', TRACKER_VIEWS],
+  ['relation', new Set(Object.keys(RELATIONS))], ['view', TRACKER_VIEWS], ['unfurl', new Set(['pending', 'ok', 'failed', 'off'])],
 ];
 
 function end(e: unknown): { kind: 'free'; x: number; y: number } | { kind: 'bound'; id: string; anchor: 'auto' | 'top' | 'right' | 'bottom' | 'left' } {
@@ -203,6 +204,14 @@ export function safeObj<T extends Obj>(o: T): T {
     else delete out.ext;
   } else delete out.ext;
   if ('link' in out && !isSafeHttpUrl(out.link)) delete out.link;
+  // a link card (docs/link-cards.md): the picture and the icon are assets by hash, and `edited` names only the two editable fields
+  if (o.type === 'link') {
+    for (const k of ['image', 'icon']) if (k in out && !(typeof out[k] === 'string' && /^[0-9a-f]{64}$/.test(out[k] as string))) delete out[k];
+    if ('edited' in out) out.edited = Array.isArray(out.edited) ? [...new Set(out.edited.filter((f) => f === 'title' || f === 'description'))] : [];
+  } else for (const k of ['url', 'title', 'description', 'siteName', 'image', 'icon', 'finalUrl', 'unfurl', 'unfurlError', 'imageW', 'imageH', 'fetchedAt', 'edited']) {
+    if (k === 'title' || k === 'description' || k === 'url') continue; // other types may carry fields of these names
+    delete out[k];
+  }
   if ('kind' in out && !(typeof out.kind === 'string' && KINDS.has(out.kind))) out.kind = 'rect';
   if ('font' in out && !(typeof out.font === 'string' && FONT_RE.test(out.font))) delete out.font;
   if ('points' in out) out.points = Array.isArray(out.points) && out.points.every(finite) ? out.points : [];

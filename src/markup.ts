@@ -16,6 +16,7 @@ import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
+import { linkMarkup } from './link-markup';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
@@ -30,6 +31,10 @@ export interface MarkupCtx {
   layout?: () => ConnectorLayout;
   /** What there is to draw for an image object: its pixels, or why not yet (src/image-loader.ts). Without it an image draws as its placeholder. */
   imageState?: (o: BaseObj) => ImageState;
+  /** The picture of a link card's preview image or icon, by asset hash: its pixels, or why not yet. */
+  linkAsset?: (o: BaseObj, hash: string) => ImageState;
+  /** An export: a link card has no moving line, and a pending preview is drawn as one that came without an image. */
+  still?: boolean;
   // Kanban (docs/kanban.md). All optional: without them a kanban draws at full detail, with nothing in progress.
   /** The layout of a container, for lane counts and where a lane's add-card row is. */
   containerLayout?: (id: string) => ContainerLayout | null;
@@ -955,6 +960,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
     case 'icon': return iconMarkup(o);
     case 'image': return imageMarkup(o, ctx);
+    case 'link': return wrapG(o, mirroredContent(o, linkMarkup(o, { assetState: ctx.linkAsset, still: ctx.still })), 1);
     case 'path': return pathMarkup(o);
     case 'container':
     case 'lane':

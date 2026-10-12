@@ -2,6 +2,7 @@ import { watchFirstFit } from './first-fit';
 import { planStep } from './z-order';
 import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
 import { BoardImages } from './board-images';
+import { LinkCards } from './link-add';
 import type { BaseObj, ConnectorObj, End, Group, Id, Obj, ObjType, Point, Rect, ShapeKind, UmlRelation, User } from './types';
 import { isConnectable } from './connectable';
 import { isBox, isConnector } from './types';
@@ -183,6 +184,8 @@ export class BoardApp {
   private disposers: (() => void)[] = [];
   /** Where the pixels of image objects come from and how new ones reach the relay (src/board-images.ts). */
   readonly images: BoardImages;
+  /** Link cards: adding them, their previews, opening and Turn into text (src/link-add.ts). */
+  readonly links: LinkCards;
   /** Set by the board UI: opens the card dialog (src/ui/card-dialog.ts), focused on one of its fields. */
   openCard: ((id: Id, focus?: CardFocus) => void) | null = null;
   /** Set by the board UI: opens the Labels dialog (src/ui/labels-dialog.ts). */
@@ -223,6 +226,7 @@ export class BoardApp {
     this.styleEdit = new StyleEdit(this.store, () => this.selectedLeaves(), (o, patch) => this.writeStyle(o, patch));
     this.r.isHidden = (o) => this.flow.isHidden(o);
     this.images = new BoardImages(this);
+    this.links = new LinkCards(this);
     this.store.undo.on('stack-item-popped', (e) => this.handleUndoStackPopped(e.type));
 
     const meta = this.store.getMeta();
@@ -914,6 +918,8 @@ export class BoardApp {
     switch (t.kind) {
       case 'select': {
         const top = this.hit(p, { locked: true });
+        // Cmd/Ctrl+click on a link card opens its address; a plain click only selects, so dragging a card never opens a tab
+        if ((e.ctrlKey || e.metaKey) && top?.type === 'link') { this.links.open(top.id); return; }
         const lockedTarget = top && this.lockedTarget(top);
         const lockedGroup = top && this.lockedGroupTarget(top);
         // a kanban's Filter, its chips, its ⋯ and its +, and a lane's ⋯: a click, never a drag (locked kanbans included,
@@ -2215,6 +2221,8 @@ export class BoardApp {
     const hit = this.hit(p);
     if (hit) {
       const selected = pick(hit, this.scope, (id) => this.store.get(id));
+      // a double click on a link card opens its address
+      if (selected?.type === 'link') { this.links.open(selected.id); return; }
       if (isGroup(selected) && selected.id !== this.scope) {
         this.enterGroup(selected.id);
         const member = pick(hit, selected.id, (id) => this.store.get(id));
@@ -2276,9 +2284,16 @@ export class BoardApp {
   private bindKeys() {
     const signal = this.lifetime.signal;
     window.addEventListener('keydown', (e) => {
+      this.links.noteKey(e);
       const tgt = e.target as HTMLElement;
       const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
+      // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
+      if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
+        e.preventDefault();
+        this.links.open(this.selection[0]);
+        return;
+      }
       if (k === 'escape') {
         const action = escapeAction({
           key: e.key,
@@ -2372,6 +2387,8 @@ export class BoardApp {
       if (k === 'enter' && this.selection.length === 1) {
         e.preventDefault();
         const type = this.store.get(this.selection[0])?.type;
+        // a link card opens its address, for every role (Cmd/Ctrl+Enter does the same)
+        if (type === 'link') { this.links.open(this.selection[0]); return; }
         if (type === 'card') this.openCardDialog(this.selection[0]);
         // a kanban opens as a list, for every role: the keyboard route to its cards (docs/kanban.md, Phone and touch)
         else if (type === 'container' && this.openKanbanList(this.selection[0])) return;
@@ -2419,6 +2436,8 @@ export class BoardApp {
       const text = e.clipboardData?.getData('text/plain') ?? '';
       if (!text) return;
       e.preventDefault();
+      // one web address becomes a link card, unless it was pasted as plain text (Cmd/Ctrl+Shift+V)
+      if (this.links.pasteUrl(text)) return;
       this.pasteText(text);
     }, { signal });
   }
@@ -2657,6 +2676,21 @@ export class BoardApp {
       return o && (!isConnector(o) || out.length === 1);
     }));
     return out;
+  }
+
+  /** Where the pointer last was on the board, in world coordinates. */
+  pointerWorld(): Point {
+    return this.lastPointer;
+  }
+
+  /** A text box of `content` whose top-left corner is `at`, sized as a paste is (up to 360 wide). */
+  textBoxAt(content: string, at: Point): BaseObj {
+    const font = this.store.getMeta().bodyFont;
+    const css = fontCss(font, 20, 400);
+    const naturalWidth = Math.max(...content.split('\n').map((line) => measure(line.trimEnd(), css)));
+    const w = Math.min(360, Math.max(8, Math.ceil(naturalWidth)));
+    const probe = { id: '', type: 'text', x: 0, y: 0, w, h: 0, rotation: 0, z: '', text: content, font } as BaseObj;
+    return this.makeObj('text', { x: at.x, y: at.y, w, h: textHeight(probe) }, { text: content });
   }
 
   pasteText(text: string) {

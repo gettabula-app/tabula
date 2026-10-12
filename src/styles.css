@@ -806,3 +806,21 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .top-right:has(.chat-count.show) > button[aria-label='Menu'] { position: relative; }
   .top-right:has(.chat-count.show) > button[aria-label='Menu']::after { content: ''; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px var(--tray); }
 }
+
+/* Link cards (docs/link-cards.md): the line along the bottom edge while the relay reads the page. It stands still for people who ask for less motion. */
+.link-seg { animation: link-slide 1.4s ease-in-out infinite alternate; }
+@keyframes link-slide { from { transform: translateX(0); } to { transform: translateX(var(--span, 100px)); } }
+@media (prefers-reduced-motion: reduce) { .link-seg { animation: none; } }
+
+/* The rail's Link popover and the secret-link warning (docs/link-cards.md). */
+.link-popover { width: 300px; }
+.link-pop { display: grid; gap: 8px; padding: 12px; }
+.link-label { color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.link-field { width: 100%; height: 36px; border-radius: var(--radius-sm); box-sizing: border-box; }
+.link-field[aria-invalid='true'] { border-color: var(--danger); }
+.link-problem, .link-hint { margin: 0; color: var(--tray-muted); font-size: 12.5px; line-height: 1.4; }
+.link-problem[hidden] { display: none; }
+.link-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.link-secret p { margin: 0 0 12px; }
+.link-secret-url { display: block; padding: 8px 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); font-size: 12.5px; word-break: break-all; }
+.link-secret-dialog .modal { width: 400px; max-width: calc(100vw - 32px); }
