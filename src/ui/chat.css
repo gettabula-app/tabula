@@ -72,7 +72,7 @@
 /* a mention: a chip with a signal underline; yours is stronger, and a message that names you gets an inset signal bar */
 .chat-mention { padding: 0 3px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--signal) 24%, transparent); border-bottom: 1.5px solid var(--signal); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
 .chat-mention.me { background: color-mix(in srgb, var(--signal) 40%, transparent); }
-.chat-msg.mention { background: color-mix(in srgb, var(--signal) 9%, transparent); box-shadow: inset 3px 0 0 var(--signal); }
+.chat-msg.mention { background: color-mix(in srgb, var(--signal) 14%, transparent); box-shadow: inset 3px 0 0 var(--signal); }
 .chat-quote {
   display: flex; gap: 8px; min-width: 0; margin: 2px 0 4px; padding-left: 8px; border-left: 2px solid var(--tray-line);
   color: var(--tray-muted); font-size: 12px; line-height: 16px;
@@ -102,7 +102,7 @@
 .chat-msg.own .chat-main { display: flex; flex-direction: column; align-items: flex-end; max-width: 82%; }
 .chat-msg.own .chat-text {
   padding: 7px 11px; border-radius: 12px 12px 4px 12px; text-align: left;
-  background: color-mix(in srgb, var(--signal) 22%, var(--tray)); border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent);
+  background: color-mix(in srgb, var(--signal) 14%, var(--tray)); border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent);
 }
 .chat-msg.own .chat-name { display: none; }
 .chat-msg.own .chat-meta { order: 9; margin: 2px 4px 0 0; }
@@ -244,7 +244,7 @@
 .chat-dock-host[data-mode='compact'] .chat-meta, .chat-dock-host[data-mode='compact'] .chat-meta.cont { display: contents; }
 .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-meta { order: 0; margin: 0; }
 .chat-dock-host[data-mode='compact'] .chat-name, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-name { display: inline; color: color-mix(in srgb, var(--c, var(--tray-text)) 55%, var(--tray-text)); font-size: 13px; }
-.chat-dock-host[data-mode='compact'] .chat-time { font-size: 11px; }
+.chat-dock-host[data-mode='compact'] .chat-time { color: var(--tray-muted); font-size: 11px; font-weight: 400; }
 .chat-dock-host[data-mode='compact'] .chat-text, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-text {
   flex: 1 1 0; min-width: 8ch; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px;
 }

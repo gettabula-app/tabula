@@ -37,7 +37,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
-                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, guest-expired, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
+                     backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, guest-expired, tracker-real-server, chat, chat-focus-pill, chat-focus-send, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-workspace-empty, chat-page-pick, chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap, review-ticket-page, review-ticket-page-phone (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
@@ -2888,6 +2888,27 @@ const STATES = {
   async chat(env) {
     await openSeedChat(env);
   },
+  // keyboard focus on one reaction pill, and on Send: the ring is the focus ring only, never a badge or pill border
+  async 'chat-focus-pill'(env) {
+    await openSeedChat(env);
+    const pill = env.page.locator('.chat-dock .chat-reaction').filter({ hasText: '👍' }).first();
+    await pill.focus();
+    await env.page.keyboard.press('Shift+Tab');
+    await env.page.keyboard.press('Tab');
+    if (!(await pill.evaluate((el) => el === document.activeElement))) throw new Error('chat-focus-pill: the pill is not focused');
+    return { keepFocus: true };
+  },
+  async 'chat-focus-send'(env) {
+    await openSeedChat(env);
+    const input = env.page.locator('.chat-dock .chat-input');
+    await input.fill('Looks good');
+    await input.focus();
+    for (let i = 0; i < 4; i++) {
+      await env.page.keyboard.press('Tab');
+      if (await env.page.evaluate(() => document.activeElement?.classList.contains('chat-send') === true)) return { keepFocus: true };
+    }
+    throw new Error('chat-focus-send: Tab did not reach Send');
+  },
   // the Chat page (TAB-132 slice 3): the list and the conversation; on a phone the list first, then a conversation
   async 'chat-page'(env) {
     await resetChatMarker(env);
@@ -4750,7 +4771,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'privacy-top': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

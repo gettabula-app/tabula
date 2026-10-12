@@ -144,4 +144,22 @@ describe.skipIf(!available)('message styling in a browser', { timeout: 200_000 }
     expect(await rows.nth(2).locator('.chat-text').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     await page.close();
   });
+
+  it('shows a focus ring on a reaction pill and on Send when reached by keyboard, and no ring on an unfocused pill or badge', async () => {
+    const page = await open('open');
+    const pill = page.locator('.chat-reaction').first();
+    const ring = (loc: ReturnType<Page['locator']>) => loc.evaluate((el) => { const c = getComputedStyle(el); return c.outlineStyle === 'none' ? 'none' : `${c.outlineStyle} ${c.outlineWidth}`; });
+    expect(await ring(pill)).toBe('none');
+    await page.locator('.chat-input').focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    for (let i = 0; i < 12 && !(await pill.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Shift+Tab');
+    expect(await ring(pill)).toBe('solid 2px');
+    await page.locator('.chat-input').fill('hello');
+    await page.locator('.chat-input').focus();
+    for (let i = 0; i < 4 && !(await page.evaluate(() => document.activeElement?.classList.contains('chat-send'))); i++) await page.keyboard.press('Tab');
+    expect(await ring(page.locator('.chat-send'))).toMatch(/^solid [1-9]/);
+    await page.close();
+  });
 });

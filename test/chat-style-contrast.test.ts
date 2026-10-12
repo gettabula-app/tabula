@@ -34,8 +34,8 @@ describe.each(THEMES.map((t) => [t.name, t.vars] as const))('chat colours in %s'
   });
 
   it('keeps text readable on the own bubble tint and on the mention row', () => {
-    expect(ratio(text, mix(signal, 0.22, tray))).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(text, mix(signal, 0.09, tray))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(text, mix(signal, 0.14, tray))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(text, mix(signal, 0.14, tray))).toBeGreaterThanOrEqual(4.5);
     expect(ratio(text, mix(signal, 0.24, tray))).toBeGreaterThanOrEqual(4.5);
   });
 
