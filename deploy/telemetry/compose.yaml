@@ -167,7 +167,7 @@ services:
     cpus: 0.25
     pids_limit: 100
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8481/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8481/healthz"]
       interval: 30s
       timeout: 5s
       retries: 5
