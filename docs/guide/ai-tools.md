@@ -2,7 +2,7 @@
 
 An access token lets an AI tool such as Claude Code work with your boards on your behalf. The tool can read boards, comment, and, if you allow it, edit them while other people watch the changes appear.
 
-> This feature must be turned on by whoever runs your Tabula server. If **AI tool access** is missing from the top bar and the board menu, ask them to enable it. It is available in workspaces with sign-in.
+> This feature must be turned on by whoever runs your Tabula server. If **AI tool access** is missing from your name menu and the board menu, ask them to enable it. It is available in workspaces with sign-in.
 
 ## What an AI tool can do
 
@@ -25,7 +25,7 @@ Two safeguards apply to every token:
 
 Admins can also select **Create a token** in the **Access tokens** section of Admin. It opens this same form and makes a token for you, and the list there refreshes.
 
-1. Choose **AI tool access** in the top bar of the **Boards** or **Templates** page, or open the board menu and choose it under **Account**.
+1. Open your name in the top bar of the **Boards** or **Templates** page and choose **AI tool access**, or open the board menu and choose it under **Account**.
 2. Select **New token**.
 3. Enter a **Name**, for example "Claude Code on my laptop".
 4. Pick an **Access** level: **Read only**, **Read and comment** or **Read and edit**. Choose the lowest level the tool needs.

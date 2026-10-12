@@ -4,7 +4,7 @@ The tool rail on the left of a board holds everything you draw with. This page c
 
 ## The tool rail
 
-Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus onto it, to see its name and shortcut. On a short window the rail scrolls, and it fades the edge that has more tools behind it.
+Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus onto it, to see its name and shortcut. In a short window the tools are more compact on a mouse or trackpad, so more of them fit. When they still do not fit, the rail scrolls: a chevron button and a thin scroll track show that there are more tools, and a small fade marks the edge that has more behind it.
 
 | Key | Tool |
 |---|---|
@@ -58,7 +58,7 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 - `Esc` or `Ctrl+Enter` (`Cmd+Enter` on Mac) finishes.
 - `Tab` finishes.
 - In shapes, notes and text boxes, `Enter` starts a new line. In frame names and connector labels, `Enter` finishes.
-- Select **Add emoji** in the small bar beside the text box to open the emoji picker: type to search, use the arrow keys or tap to choose one, and it goes in at the cursor. Recent emoji come first. Emoji made of several parts, such as flags and families, stay in one piece when a line wraps, and they come out whole in PNG and Markdown exports and for everyone else on the board.
+- Select **Add emoji**, the button in the bottom-left corner of the note you are editing, to open the emoji picker (on a note too small on screen to hold it, the button sits above or below the note): type to search, use the arrow keys or tap to choose one, and it goes in at the cursor. Recent emoji come first. Emoji made of several parts, such as flags and families, stay in one piece when a line wraps, and they come out whole in PNG and Markdown exports and for everyone else on the board.
 
 ### Alignment
 
@@ -158,7 +158,7 @@ To unlock, press and hold on the item for 0.6 seconds. A ring fills, then the it
 
 ## Layers
 
-**Layers** in the tool rail (or `Alt+L`, or **Layers** in the board menu) lists everything on the board, the item on top first. Frames come last, because they always sit behind everything else, and the items inside a frame are listed under it: click the triangle to fold a frame.
+**Layers** in the tool rail (or `Alt+L`, or **Layers** in the board menu) lists everything on the board, the item on top first. Frames come last, because they always sit behind everything else, and the items inside a frame are listed under it: click the triangle to fold a frame. A frame you draw inside another frame goes just above that frame, so it is not hidden under it.
 
 - Click an item to select it on the board; hold `Shift`, `Ctrl` or `Cmd` to add or remove items.
 - Drag an item up or down to put it above or below another one beside it. On a phone, drag it by the handle on the right. With the keyboard, `Alt+Up` and `Alt+Down` move the focused item one place.
