@@ -234,10 +234,23 @@ export async function addImages(app: BoardApp, files: (File | Blob)[], at?: Poin
   if (overLimit) toast(IMAGE_UPLOAD_MESSAGES.actionOverLimit(overLimit), 8000);
 
   const boardId = app.conn.id;
-  for (const { id, key, p } of prepared) {
-    await assetCache.put({ key, blob: p.blob, mime: p.mime, width: p.width, height: p.height, boardId, pending: true });
-    await app.images.queue.enqueue({ id: key, boardId, objectId: id, hash: p.hash, bytes: p.blob.size });
+  // An image goes on the board only once this browser has kept a copy to upload; a store that refuses it (full, blocked, a
+  // private window) must say so now, not leave an object whose upload can only fail later.
+  const kept: typeof prepared = [];
+  for (const item of prepared) {
+    const { id, key, p } = item;
+    try {
+      await assetCache.put({ key, blob: p.blob, mime: p.mime, width: p.width, height: p.height, boardId, pending: true });
+      await app.images.queue.enqueue({ id: key, boardId, objectId: id, hash: p.hash, bytes: p.blob.size });
+      kept.push(item);
+    } catch (err) {
+      console.warn('Tabula: this browser would not keep an image to upload', err);
+      await assetCache.backend.deleteBlob(key).catch(() => undefined);
+    }
   }
+  if (kept.length < prepared.length) toast(IMAGE_UPLOAD_MESSAGES.notKept(prepared.length - kept.length), 10_000);
+  if (!kept.length) return 0;
+  prepared.splice(0, prepared.length, ...kept);
 
   const sizes = prepared.map((x) => x.size);
   const centre = at ?? { x: view.x + view.w / 2, y: view.y + view.h / 2 };

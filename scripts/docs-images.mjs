@@ -19,7 +19,8 @@ import { openChat } from '../server/chat.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OWNER_EMAIL = 'maya@example.test';
 const ANA_EMAIL = 'ana@example.test';
-const NOW = Date.UTC(2026, 0, 15, 10, 0, 0);
+// A recent fixed date, so the dates in the shots look current; the browser clock and the seeded data share it.
+const NOW = Date.UTC(2026, 9, 12, 10, 0, 0);
 const SCALE = 2;
 const OPEN_USER = { id: 'docs-user', name: 'Lena Lund', color: '#D64545' };
 const ANA_USER = { name: 'Ana', color: '#E8743B' };
@@ -292,7 +293,7 @@ const seeds = {
     const z = app.store.topZs(4);
     app.store.transact(() => {
       app.store.create({ id: 'docs-note', type: 'sticky', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: z[0], fill: '#FFE16B', text: 'Sprint goals', fontSize: 18 });
-      app.store.create({ id: 'docs-box', type: 'shape', kind: 'rect', x: 240, y: 224, w: 120, h: 120, rotation: 0, z: z[1], fill: '#FFFFFF', stroke: '#18212B', strokeWidth: 2 });
+      app.store.create({ id: 'docs-box', type: 'shape', kind: 'rect', x: 240, y: 224, w: 120, h: 120, rotation: 0, z: z[1], fill: '#BFD7FF', stroke: '#18212B', strokeWidth: 2, text: 'Review', fontSize: 18 });
       app.store.create({ id: 'docs-link', type: 'connector', z: z[2], from: { kind: 'bound', id: 'docs-note', anchor: 'right' }, to: { kind: 'bound', id: 'docs-box', anchor: 'top' }, route: 'elbow', startHead: 'none', endHead: 'arrow' });
       app.store.create({ id: 'docs-text', type: 'text', x: -120, y: 360, w: 320, h: 28, rotation: 0, z: z[3], text: 'Plain text on the canvas', fontSize: 18 });
     });
@@ -490,7 +491,8 @@ const SHOTS = {
     const dialog = page.getByRole('dialog');
     await dialog.getByText('People with access').first().waitFor();
     await dialog.locator('.share-people select').first().waitFor();
-    const stableOrigin = 'http://127.0.0.1:12345';
+    // a neutral address instead of the throwaway local relay's
+    const stableOrigin = 'https://your-team.thetabula.cloud';
     await dialog.getByRole('textbox', { name: 'Board link' }).evaluate((input, origin) => {
       if (!input.value.startsWith(location.origin)) throw new Error('the board link did not use the local screenshot origin');
       input.value = input.value.replace(location.origin, origin);
@@ -511,7 +513,7 @@ const SHOTS = {
     await page.route('**/api/admin/backups', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(GUIDE_BACKUPS) }));
     await page.goto(`${acc.base}/#/admin/backups`);
     await page.waitForFunction(() => document.querySelectorAll('.backups-row').length === 3 && document.querySelectorAll('.backups-row.unreadable').length === 2);
-    await page.getByText('Protected until 2026-01-22', { exact: true }).waitFor();
+    await page.getByText(`Protected until ${new Date(NOW + 7 * 86_400_000).toISOString().slice(0, 10)}`, { exact: true }).waitFor();
     await park(page);
     await settle(page);
     await save(page, 'admin-backups', pad(await boxOf(page.locator('.admin-panel')), 12, W, H));
@@ -595,8 +597,12 @@ const SHOTS = {
     await drawer.locator('[data-id="docs-frame-note-2"][aria-level="2"]').waitFor();
     await park(page);
     await settle(page);
-    const content = union(await boxOf(drawer.locator('.drawer-head')), await boxOf(drawer.locator('.layer-row').last()));
-    await save(page, 'layers-panel', pad(content, 12, W, H));
+    // the clip ends on the bottom edge of the last listed row and is as wide as the other dialog crops (560 px), with the board beside the panel
+    const head = await boxOf(drawer.locator('.drawer-head'));
+    const last = await boxOf(drawer.locator('.layer-row', { hasText: 'Make onboarding simpler' }));
+    const x = Math.max(0, head.x - 12), y = Math.max(0, head.y - 12);
+    const clip = { x, y, width: Math.min(560, W - x), height: last.y + last.height - y };
+    await save(page, 'layers-panel', clip);
     await context.close();
   },
 };

@@ -426,4 +426,46 @@ describe('the blob cache', () => {
     await cache.clear();
     expect(await cache.backend.listBlobs()).toEqual([]);
   });
+
+  it('does not call an image lost when another tab uploaded it between the list and the read', async () => {
+    const s = setup();
+    await s.add('a');
+    // the other tab finishes the upload (bytes and record gone) just as this tab goes to read the bytes
+    const getBlob = s.backend.getBlob;
+    s.backend.getBlob = async (key) => {
+      await s.backend.deleteBlob(key);
+      await s.backend.deleteUpload(key);
+      return getBlob(key);
+    };
+    await s.queue.run('b1');
+    expect(s.onLost).not.toHaveBeenCalled();
+    expect(await s.backend.listUploads()).toEqual([]);
+    expect(s.upload).not.toHaveBeenCalled();
+  });
+
+  it('still calls an image lost when its bytes are gone and its record is not', async () => {
+    const s = setup();
+    await s.add('a');
+    await s.backend.deleteBlob('pending:a');
+    await s.queue.run('b1');
+    expect(s.onLost).toHaveBeenCalledTimes(1);
+    expect(await s.queue.state('pending:a')).toBe('lost');
+  });
+
+  it('rejects, rather than pretend, when the store refuses the bytes', async () => {
+    const s = setup();
+    s.backend.putBlob = async () => { throw new Error('quota'); };
+    await expect(s.cache.put({ key: 'pending:q', blob: blob(10), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true })).rejects.toThrow('quota');
+  });
+
+  it('keeps the bytes under the pending key when the store will not take them under the hash', async () => {
+    const s = setup();
+    await s.add('a');
+    const putBlob = s.backend.putBlob;
+    s.backend.putBlob = async (r) => { if (r.key === RESULT.hash) throw new Error('quota'); return putBlob(r); };
+    await s.queue.run('b1');
+    expect(s.apply).toHaveBeenCalledTimes(1);
+    expect(await s.backend.getBlob('pending:a')).toBeDefined();
+    expect(await s.backend.listUploads()).toEqual([]);
+  });
 });
