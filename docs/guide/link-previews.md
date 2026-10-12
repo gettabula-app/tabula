@@ -16,7 +16,7 @@ When someone adds a link card to a Tabula board (or presses **Refresh preview** 
 TabulaLinkPreview/1.0 (+https://<the Tabula server>/docs/link-previews)
 ```
 
-On a hosted workspace the address is the workspace's own, for example `https://your-team.thetabula.cloud`.
+On a hosted workspace the address is that workspace's own. `https://your-team.thetabula.cloud` is only an example of what one looks like.
 
 ## Keep Tabula out
 
@@ -29,7 +29,7 @@ Link previews make your server request web pages on people's behalf, so they are
 - **Turn them on or off** in **Admin > Privacy**, with the **Link previews** switch.
 - **`TABULA_LINK_PREVIEWS`** is the operator's setting. `off` turns previews off for good and nobody can switch them on from Admin. `on` turns them on where they are otherwise off, including on a server without accounts (where there is no Admin page). Leave it unset to let admins decide.
 - **Keep it away from your own network.** Tabula's server refuses addresses that are not on the public internet (private and local ranges, link-local, cloud metadata, multicast and similar), checks every redirect the same way, and connects only to the address it checked. If your server runs next to internal services on addresses that look public, list them in **`TABULA_LINK_PREVIEW_DENY`**: a comma-separated list of networks (for example `203.0.113.0/24`) and host names.
-- **Limits.** A person can ask for about 30 previews a minute and 300 an hour, a workspace for 2,000 an hour, and a server runs at most four at a time. A page is read at most once a day for everyone on the server, unless someone presses **Refresh preview**.
+- **Limits.** A person can ask for about 30 previews a minute and 300 an hour, a workspace for 2,000 an hour, and a server runs at most four at a time. Once read, a page is kept for a day on the server, so other cards for the same address do not read it again until then; restarting the server empties that memory. **Refresh preview** always reads it again.
 - **Guests** on a board cannot create previews.
 
 On a hosted workspace, previews are on by default, and an admin can turn them off in **Admin > Privacy**.

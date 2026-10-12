@@ -211,7 +211,7 @@ Changes to the setting are recorded in the [audit log](#audit-log) under **Priva
 
 ### Link previews
 
-Below the analytics setting, the **Privacy** tab has a **Link previews** switch. When it is on, a link card on a board shows the page's title, description and picture. Tabula's server reads the linked page once when someone adds or refreshes the card, and nobody's browser contacts the site (see [Link cards](link-cards.md#privacy)). Admins and the owner can change it.
+Below the analytics setting, the **Privacy** tab has a **Link previews** switch. When it is on, a link card on a board shows the page's title, description and picture. Tabula's server reads the linked page once when someone adds or refreshes the card, and nobody's browser contacts the site (see [Link cards](link-cards.md#privacy)). Owners and admins can both change this switch. That differs from the analytics setting above, which only the owner can change.
 
 - On a hosted workspace it is on by default.
 - On a server you run yourself it is off until you turn it on, because it makes your server request web pages on people's behalf. Read [Link previews](link-previews.md) first if your server runs next to internal services.

@@ -60,7 +60,7 @@ On a phone, **Open** stays in the bar and the rest are in the **⋯** menu.
 - **No preview.** The page could not be read: the site did not answer in time, it is not an ordinary web page, it is too large, or it needs a sign-in. Point at the card to see the reason. The card is still a working link, and **Refresh preview** tries again.
 - **Address only.** Your workspace has link previews turned off, or you are a guest on the board. The card shows the address and the domain, and **Open** works.
 
-A page that is behind a sign-in (a shared document, a company tool) cannot be read by Tabula, because Tabula does not sign in anywhere. Such a card shows the address only.
+A page that is behind a sign-in (a shared document, a company tool) cannot be read by Tabula, because Tabula does not sign in anywhere. Such a card shows **No preview** and its address.
 
 ## Privacy
 
