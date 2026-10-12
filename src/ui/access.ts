@@ -15,7 +15,7 @@ interface AccessHandlers {
 
 const TEXT: Record<Exclude<DeniedReason, 'restoring'>, string> = {
   unauthenticated: 'Your session has ended. Sign in again to keep syncing this board.',
-  no_access: "You don't have access to this board.",
+  no_access: "You don't have access to this board, or it no longer exists.",
   not_found: "This board doesn't exist on the server.",
   access_removed: 'Your access to this board was removed. Your copy on this device is still here.',
 };

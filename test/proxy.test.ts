@@ -409,7 +409,7 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
     // the close codes get through the proxy too
     expect(await within(rawSocket(server.proxy.port, board, { Origin: ORIGIN }).closed)).toBe(4401);
     expect(await within(join({ Origin: ORIGIN, Cookie: owner.cookie.replace(`${SECURE_COOKIE}=`, 'tabula_session=') }).closed)).toBe(4401);
-    expect(await within(rawSocket(server.proxy.port, 'proxied-ghost', { Origin: ORIGIN, Cookie: owner.cookie }).closed)).toBe(4404);
+    expect(await within(rawSocket(server.proxy.port, 'proxied-ghost', { Origin: ORIGIN, Cookie: owner.cookie }).closed)).toBe(4403);
   });
 
   it('syncs documents and awareness through the proxy, with the connection at the relay itself', async () => {

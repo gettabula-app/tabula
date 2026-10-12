@@ -143,7 +143,6 @@ function cleanGuestAwarenessState(state, ws) {
   safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
   return safe;
 }
-const CLOSE_NOT_FOUND = 4404;
 const CLOSE_ACCESS_REMOVED = 4410;
 // The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
 // socket that connects, until the server restarts on the restored data.
@@ -1491,8 +1490,10 @@ function authorise(req, board) {
     if (session.boardId !== board) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
     return { session, role: session.boardRole, deleted: false };
   }
+  // Missing, deleted and not-shared boards answer identically (4403 no_access), so a signed-in user cannot probe which
+  // board ids exist. Only a workspace admin may open a deleted board.
   const row = directory.getBoard(board);
-  if (!row || (row.deletedAt != null && !isWorkspaceAdmin(session.user))) return { code: CLOSE_NOT_FOUND, reason: 'board_not_found' };
+  if (!row || (row.deletedAt != null && !isWorkspaceAdmin(session.user))) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
   const role = directory.boardRole(board, session.user.id);
   if (role === null) return { code: CLOSE_FORBIDDEN, reason: 'no_access' };
   return { session, role, deleted: row.deletedAt != null };
