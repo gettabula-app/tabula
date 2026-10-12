@@ -61,7 +61,7 @@ import { OpsError } from './board-ops.mjs';
 import { analyticsChoice } from './telemetry/report.mjs';
 import {
   CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, CLOSE_ROLE_CHANGED, DENIED_FRAME_BYTES, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
-  createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter, frameLimitFor, loadSyncCaps,
+  createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter, describeSyncCaps, frameLimitFor, loadSyncCaps,
 } from './sync-caps.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -495,6 +495,7 @@ const clientIp = (req) => clientRateKeyOf(req, config);
 
 // Bounds on /sync sockets and frames (server/sync-caps.mjs, docs/capacity.md "Sync limits").
 const syncCaps = loadSyncCaps(process.env);
+log(describeSyncCaps(syncCaps));
 const syncUserSockets = createConnectionCounter(syncCaps.maxSocketsPerUser);
 const syncAddressSockets = createConnectionCounter(syncCaps.maxSocketsPerAddress);
 const syncAccountUpgrades = createUpgradeLimiter({ max: syncCaps.upgradesPerMinute });

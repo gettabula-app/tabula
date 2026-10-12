@@ -90,23 +90,38 @@ export function loadSyncCaps(env = process.env) {
     maxSocketsPerAddress: count('TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS', MAX_SOCKETS_PER_ADDRESS),
     upgradesPerMinute: count('TABULA_SYNC_UPGRADES_PER_MINUTE', UPGRADES_PER_ACCOUNT_PER_MINUTE),
     upgradesPerAddressPerMinute: count('TABULA_SYNC_UPGRADES_PER_ADDRESS_PER_MINUTE', UPGRADES_PER_ADDRESS_PER_MINUTE),
+    /** @type {string[]} what was lowered to fit the document cap, for the startup log */
+    clamped: [],
   };
+  const mib = (n) => (n >= MiB && n % MiB === 0 ? `${n / MiB} MiB` : n >= 1024 && n % 1024 === 0 ? `${n / 1024} KiB` : `${n} bytes`);
+  const names = { maxFrameOwner: 'TABULA_SYNC_MAX_FRAME_OWNER', maxFrameOther: 'TABULA_SYNC_MAX_FRAME_OTHER', maxFrameComments: 'TABULA_SYNC_MAX_FRAME_COMMENTS', maxFrameSmall: 'TABULA_SYNC_MAX_FRAME_SMALL' };
+  const label = { maxFrameOwner: 'owner', maxFrameOther: 'editor', maxFrameComments: 'comments', maxFrameSmall: 'small' };
+  const clampedNotes = [];
   // A deployment that sets only the (older, documented) document cap keeps working: frame limits left at their defaults are
   // clamped down to it, in nesting order. Only two values that were both set and contradict each other stop the relay.
+  const source = (key) => (set(names[key]) ? 'explicit' : clampedNotes.some((n) => n.key === key) ? 'clamped' : 'default');
   if (caps.maxDocBytes > 0) {
-    const clamp = (key, name, ceiling) => { if (!set(name) && caps[key] > ceiling) caps[key] = ceiling; };
-    clamp('maxFrameOwner', 'TABULA_SYNC_MAX_FRAME_OWNER', caps.maxDocBytes);
-    clamp('maxFrameOther', 'TABULA_SYNC_MAX_FRAME_OTHER', caps.maxFrameOwner);
-    clamp('maxFrameComments', 'TABULA_SYNC_MAX_FRAME_COMMENTS', caps.maxFrameOther);
-    clamp('maxFrameSmall', 'TABULA_SYNC_MAX_FRAME_SMALL', caps.maxFrameComments);
+    const clamp = (key, ceiling, why) => {
+      if (!set(names[key]) && caps[key] > ceiling) {
+        clampedNotes.push({ key, text: `effective ${label[key]} ${mib(ceiling)} (clamped from default ${mib(caps[key])} to fit ${why})` });
+        caps[key] = ceiling;
+      }
+    };
+    clamp('maxFrameOwner', caps.maxDocBytes, 'the document cap');
+    clamp('maxFrameOther', caps.maxFrameOwner, 'the owner limit');
+    clamp('maxFrameComments', caps.maxFrameOther, 'the editor limit');
+    clamp('maxFrameSmall', caps.maxFrameComments, 'the comments limit');
   }
-  if (caps.maxFrameSmall < DENIED_FRAME_BYTES) throw new Error(`TABULA_SYNC_MAX_FRAME_SMALL must be at least ${DENIED_FRAME_BYTES} bytes`);
-  const order = [['TABULA_SYNC_MAX_FRAME_SMALL', caps.maxFrameSmall], ['TABULA_SYNC_MAX_FRAME_COMMENTS', caps.maxFrameComments],
-    ['TABULA_SYNC_MAX_FRAME_OTHER', caps.maxFrameOther], ['TABULA_SYNC_MAX_FRAME_OWNER', caps.maxFrameOwner]];
+  caps.clamped = clampedNotes.map((n) => n.text);
+  if (caps.maxFrameSmall < DENIED_FRAME_BYTES) throw new Error(`TABULA_SYNC_MAX_FRAME_SMALL=${mib(caps.maxFrameSmall)} must be at least ${mib(DENIED_FRAME_BYTES)}`);
+  const order = ['maxFrameSmall', 'maxFrameComments', 'maxFrameOther', 'maxFrameOwner'];
   for (let k = 1; k < order.length; k++) {
-    if (order[k - 1][1] > order[k][1]) throw new Error(`${order[k - 1][0]} (${order[k - 1][1]}) must not be larger than ${order[k][0]} (${order[k][1]})`);
+    const lo = order[k - 1], hi = order[k];
+    if (caps[lo] > caps[hi]) throw new Error(`${names[lo]}=${mib(caps[lo])} (${source(lo)}) exceeds ${names[hi]}=${mib(caps[hi])} (${source(hi)}); the limits must nest: small <= comments <= editor <= owner`);
   }
-  if (caps.maxDocBytes > 0 && caps.maxFrameOwner > caps.maxDocBytes) throw new Error(`TABULA_SYNC_MAX_FRAME_OWNER (${caps.maxFrameOwner}) must not be larger than TABULA_SYNC_MAX_DOC_BYTES (${caps.maxDocBytes}); use 0 to turn the document cap off`);
+  if (caps.maxDocBytes > 0 && caps.maxFrameOwner > caps.maxDocBytes) {
+    throw new Error(`${names.maxFrameOwner}=${mib(caps.maxFrameOwner)} (${source('maxFrameOwner')}) exceeds TABULA_SYNC_MAX_DOC_BYTES=${mib(caps.maxDocBytes)} (explicit or default); lower the frame limit or raise the document cap (0 turns the document cap off)`);
+  }
   return caps;
 }
 
@@ -233,4 +248,11 @@ export function createDocSizeGuard({ max, measure, recheckBytes = DOC_RECHECK_BY
     get over() { return max > 0 && known !== null && known > max; },
     reset() { known = null; since = 0; },
   };
+}
+
+/** One line for the startup log: the limits in effect, and what was lowered to fit the document cap. */
+export function describeSyncCaps(caps) {
+  const fmt = (n) => (n >= 1024 * 1024 && n % (1024 * 1024) === 0 ? `${n / (1024 * 1024)} MiB` : n >= 1024 && n % 1024 === 0 ? `${n / 1024} KiB` : `${n} bytes`);
+  const base = `sync limits: frames owner ${fmt(caps.maxFrameOwner)}, editor ${fmt(caps.maxFrameOther)}, comments ${fmt(caps.maxFrameComments)}, small ${fmt(caps.maxFrameSmall)}; document ${caps.maxDocBytes ? fmt(caps.maxDocBytes) : 'no cap'}`;
+  return caps.clamped?.length ? `${base}; ${caps.clamped.join('; ')}` : base;
 }

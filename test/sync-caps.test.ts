@@ -11,7 +11,7 @@ import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
 import {
   ABUSE_CLOSE_MS, UPDATE_BURST, createConnectionCounter, createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter,
-  loadSyncCaps, frameLimitFor, MAX_FRAME_BYTES_COMMENTS, MAX_FRAME_BYTES_OTHER, MAX_FRAME_BYTES_OWNER,
+  loadSyncCaps, describeSyncCaps, frameLimitFor, MAX_FRAME_BYTES_COMMENTS, MAX_FRAME_BYTES_OTHER, MAX_FRAME_BYTES_OWNER,
 } from '../server/sync-caps.mjs';
 
 describe('createSyncFrameLimiter', () => {
@@ -130,11 +130,18 @@ describe('loadSyncCaps and frameLimitFor', () => {
     expect([only10.maxFrameOwner, only10.maxFrameOther, only10.maxFrameComments, only10.maxFrameSmall]).toEqual([10, 10, 8, 1].map((m) => m * 1024 * 1024));
     const only4 = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '4M' }); // below the editor and comments defaults
     expect([only4.maxFrameOwner, only4.maxFrameOther, only4.maxFrameComments, only4.maxFrameSmall]).toEqual([4, 4, 4, 1].map((m) => m * 1024 * 1024));
+    expect(only10.clamped).toEqual([
+      'effective owner 10 MiB (clamped from default 128 MiB to fit the document cap)',
+      'effective editor 10 MiB (clamped from default 96 MiB to fit the owner limit)',
+    ]);
+    const line = describeSyncCaps(only10);
+    expect(line).toMatch(/owner 10 MiB, editor 10 MiB, comments 8 MiB, small 1 MiB; document 10 MiB; effective owner 10 MiB \(clamped from default 128 MiB/);
+    expect(describeSyncCaps(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0' }))).toContain('document no cap');
     const off = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0' });
     expect([off.maxDocBytes, off.maxFrameOwner, off.maxFrameOther]).toEqual([0, MAX_FRAME_BYTES_OWNER, MAX_FRAME_BYTES_OTHER]);
     // both set and contradicting: the relay does not start, and the message names both
-    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M', TABULA_SYNC_MAX_FRAME_OWNER: '128M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OWNER.*TABULA_SYNC_MAX_DOC_BYTES/);
-    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '512' })).toThrow(/at least 1024/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M', TABULA_SYNC_MAX_FRAME_OWNER: '128M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OWNER=128 MiB \(explicit\) exceeds TABULA_SYNC_MAX_DOC_BYTES=100 MiB/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '512' })).toThrow(/at least 1 KiB/);
     expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0', TABULA_SYNC_MAX_FRAME_OWNER: '512M' }).maxFrameOwner).toBe(512 * 1024 * 1024);
     expect(frameLimitFor(d, { role: 'editor', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OTHER);
     expect(frameLimitFor(d, { role: 'owner', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OWNER);
