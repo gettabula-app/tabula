@@ -129,6 +129,9 @@ describe('the error table', () => {
   });
 
   it('uses the facts: room needed and free, and when to try again', () => {
+    expect(errorSentence('tracker_data_invalid', {})).toBe(
+      'We could not restore this backup: some of its tickets link to items that do not exist in it. Nothing in your workspace was changed. Choose another backup.',
+    );
     expect(errorSentence('not_enough_space', { needed: 3 * 1024 ** 3, free: 1024 ** 3 })).toBe(
       'There is not enough free disk space on the server (3 GB needed, 1 GB free). Free some space and try again.',
     );
