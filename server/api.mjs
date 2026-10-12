@@ -777,7 +777,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
   // Link previews (docs/link-cards.md): the workspace setting is read on every request, so an admin's change applies at once.
-  const linkUnfurl = createLinkUnfurl({ config, getSetting: directory.getSetting, hosted: Boolean(cloud), now, log, ...link });
+  const linkUnfurl = createLinkUnfurl({ config, getSetting: directory.getSetting, hosted: Boolean(cloud), now, log, assets: assets?.store ?? null, ...link });
   const backupExport = backupConfig?.target === 'dir' && typeof backupConfig.pullTokenSha256 === 'string'
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
@@ -1796,6 +1796,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     // ---------------------------------------------------------- link previews (docs/link-cards.md)
 
     compile('POST', 'boards/:id/unfurl', { body: true }, async ({ req, res, params, user, body }) => {
+      // v1 decision (docs/link-cards.md): a server-side fetch is never made on behalf of a join-code guest, whatever the guest's role
+      if (user.guest) throw new HttpError(403, 'guests_cannot_preview', 'Guests cannot add link previews');
       const { role } = boardFor(user, params.id);
       if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add link cards');
       // the asker going away (a closed tab) stops the fetch, unless someone else is waiting for the same address
@@ -1805,6 +1807,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       try {
         return [200, await linkUnfurl.unfurl({
           url: body.url,
+          refresh: body.refresh === true,
+          boardId: params.id,
+          userId: user.id,
           acceptLanguage: req.headers['accept-language'],
           signal: gone.signal,
           rateKeys: { person: `user:${user.id}`, workspace: 'workspace' },
@@ -1961,6 +1966,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (read && area === 'assets' && tail.length === 1) return true;
     if (read && guest.boardRole === 'editor' && area === 'versions' && (tail.length === 0 || (tail.length === 2 && tail[1] === 'state'))) return true;
     // An editor may add images to this board only; the asset store applies the same per-file and per-board quotas.
+    // The unfurl path is let through only so the route can answer a guest with its own clear code; the route refuses every guest.
+    if (method === 'POST' && area === 'unfurl' && tail.length === 0) return true;
     return method === 'POST' && guest.boardRole === 'editor' && area === 'assets' && tail.length === 0;
   }
 

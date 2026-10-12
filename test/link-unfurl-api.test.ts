@@ -6,11 +6,15 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { createApi } from '../server/api.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { isPublicLinkAddress } from '../server/link-guard.mjs';
+import { createAssetHandlers } from '../server/asset-routes.mjs';
+import { createAssetStore, createUploadLimiter } from '../server/assets.mjs';
+import { SECRET, makePng } from './image-fixtures';
 
 // docs/link-cards.md, "Fetching a preview" (slice 2a: the route, who may ask, the limits, the cache, the setting). The API runs
 // in this process behind a real HTTP server; "the web" is local HTTP servers, reached through an injected resolver and an
@@ -52,19 +56,25 @@ type Options = {
   cloud?: unknown;
   /** More local ports the guard may connect to (a second server a redirect points at). */
   ports?: number[];
+  /** Gives the world an asset store; `boardQuota` in bytes. */
+  assets?: { boardQuota?: number };
+  limits?: Record<string, number>;
 };
 
-async function setup({ env = {}, web, resolve = () => ['127.0.0.1'], now = Date.now, cloud = null, ports = [] }: Options) {
+async function setup({ env = {}, web, resolve = () => ['127.0.0.1'], now = Date.now, cloud = null, ports = [], assets = undefined, limits = undefined }: Options) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'link-unfurl-'));
   const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: dir, TABULA_MAIL: 'file', ...env }, () => {});
   const directory = openDirectory(path.join(dir, 'directory.sqlite'));
   const auth = createAuth({ directory, config, mailer: { send: async () => {} } });
+  const store = assets ? createAssetStore({ dir: path.join(dir, 'assets'), index: directory, limits: { maxBytes: 10 * 1024 * 1024, boardQuota: assets.boardQuota ?? 50 * 1024 * 1024, totalQuota: 0 } }) : null;
   const lookups: string[] = [];
   const logged: string[] = [];
   const api = createApi({
     directory, auth, config, roomExists: () => false, events: new EventEmitter(), mailer: { send: async () => {} }, now, cloud: cloud as never,
+    ...(store ? { assets: { store, handlers: createAssetHandlers({ store, limiter: createUploadLimiter() }) } as never } : {}),
     log: (...args: unknown[]) => logged.push(args.join(' ')),
     link: {
+      ...(limits ? { limits } : {}),
       fetchOptions: {
         lookup: async (host: string) => {
           lookups.push(host);
@@ -111,7 +121,7 @@ async function setup({ env = {}, web, resolve = () => ['127.0.0.1'], now = Date.
   };
   const unfurl = (who: { cookie: string } | null, board: string, url: unknown, headers: Record<string, string> = {}) => call(who, 'POST', `/api/boards/${board}/unfurl`, { url }, headers);
   const target = (p = '/') => `http://preview.test:${web.port}${p}`;
-  return { base, config, directory, call, signIn, boardWith, unfurl, target, lookups, logged };
+  return { store, base, config, directory, call, signIn, boardWith, unfurl, target, lookups, logged };
 }
 
 describe('who may ask', () => {
@@ -136,6 +146,26 @@ describe('who may ask', () => {
     expect((await w.unfurl(stranger, board, w.target('/e'))).status).toBe(404);
     expect((await w.unfurl(null, board, w.target('/f'))).status).toBe(401);
     expect(web.hits).toEqual(['/a', '/b']);
+  });
+});
+
+describe('guests', () => {
+  it('refuses a join-code guest of every role with its own code, and fetches nothing', async () => {
+    const web = await startWeb();
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on', TABULA_JOIN_CODES: 'on' } });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    for (const role of ['editor', 'commenter']) {
+      const code = w.directory.createJoinCode({ boardId: board, createdBy: owner.user.id, codeHash: `h-${role}`, role, createdAt: Date.now(), expiresAt: Date.now() + 3_600_000, maxUses: 5 });
+      const token = `guest-token-${role}`;
+      w.directory.createGuestSession(code!.id, { tokenHash: createHash('sha256').update(token).digest('hex'), name: 'Guest' });
+      const guest = { cookie: `${w.config.cookieName}=${token}` };
+      const res = await w.unfurl(guest, board, w.target('/g'));
+      expect([role, res.status, res.body.error]).toEqual([role, 403, 'guests_cannot_preview']);
+      // a guest of this board may not ask about another board either
+      expect((await w.unfurl(guest, w.boardWith(owner, null), w.target('/g'))).status).toBe(403);
+    }
+    expect(web.hits).toEqual([]);
   });
 });
 
@@ -222,7 +252,7 @@ describe('the address', () => {
       expect([bad, res.status]).toEqual([bad, 400]);
     }
     const creds = await w.unfurl(owner, board, 'https://user:pass@example.com/');
-    expect([creds.status, creds.body.error, creds.body.message]).toEqual([400, 'credentials_in_url', "Addresses with a user name or password can't be added"]);
+    expect([creds.status, creds.body.error, creds.body.message]).toEqual([400, 'credentials_in_url', "Addresses that contain a user name or password cannot be added."]);
     expect(web.hits).toEqual([]);
   });
 
@@ -456,3 +486,171 @@ async function until(fn: () => boolean, ms = 5000) {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
+
+// ---------------------------------------------------------------- slice 2b: preview images and icons
+
+const png = (w = 4, h = 3) => makePng({ width: w, height: h });
+const withImages = (images: Record<string, () => Buffer | { status: number; location?: string }>, head = '<meta property="og:image" content="/p.png"><link rel="icon" href="/i.png">') =>
+  (req: IncomingMessage, res: ServerResponse) => {
+    const url = req.url ?? '';
+    if (url === '/page') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(`<head><title>Pics</title>${head}</head>`);
+      return;
+    }
+    const made = images[url]?.();
+    if (!made) { res.writeHead(404).end(); return; }
+    if (Buffer.isBuffer(made)) { res.writeHead(200, { 'content-type': 'image/png' }); res.end(made); return; }
+    res.writeHead(made.status, made.location ? { location: made.location } : {}).end();
+  };
+
+describe('preview images and icons', () => {
+  it('stores the image and the icon as assets of the board, stripped, and answers their hashes and size', async () => {
+    const web = await startWeb(withImages({ '/p.png': () => png(40, 30), '/i.png': () => makePng({ width: 16, height: 16, text: true }) }));
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: {} });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ title: 'Pics', imageW: 40, imageH: 30 });
+    const image = w.store!.read(board, res.body.image);
+    const icon = w.store!.read(board, res.body.icon);
+    expect([image?.row.mime, icon?.row.width]).toEqual(['image/png', 16]);
+    expect(icon!.bytes.includes(Buffer.from(SECRET))).toBe(false); // the metadata is stripped like an upload's
+    expect(w.directory.getAsset(board, res.body.image)?.createdBy).toBe(owner.user.id);
+  });
+
+  it('sends the image and icon addresses through the guard on every hop, and fetches nothing from a refused one', async () => {
+    const hidden = await startWeb(() => { throw new Error('must not be reached'); });
+    const web = await startWeb(withImages({
+      '/p.png': () => ({ status: 302, location: `http://private.test:${hidden.port}/secret.png` }),
+      '/i.png': () => ({ status: 302, location: `http://good.test:${web_port()}/i2.png` }),
+      '/i2.png': () => png(8, 8),
+    }));
+    function web_port() { return web.port; }
+    const w = await setup({
+      web,
+      ports: [hidden.port],
+      env: { TABULA_LINK_PREVIEWS: 'on' },
+      assets: {},
+      resolve: (host) => (host === 'private.test' ? ['10.0.0.7'] : ['127.0.0.1']),
+    });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect(res.status).toBe(200);
+    expect(res.body.image).toBeNull(); // the redirect to a private address was refused
+    expect(res.body.icon).toMatch(/^[0-9a-f]{64}$/); // a redirect to a public one was followed
+    expect(hidden.hits).toEqual([]);
+    // page, image, its refused hop, icon, its second hop: every one resolved
+    expect(w.lookups).toEqual(expect.arrayContaining(['preview.test', 'private.test', 'good.test']));
+    expect(w.lookups.filter((h) => h === 'private.test')).toHaveLength(1);
+  });
+
+  it('refuses an image address that is private to begin with, without any lookup of a literal address', async () => {
+    const web = await startWeb(withImages({}, '<meta property="og:image" content="http://169.254.169.254/latest/p.png"><link rel="icon" href="http://10.1.2.3/f.ico">'));
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: {} });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect([res.status, res.body.title, res.body.image, res.body.icon]).toEqual([200, 'Pics', null, null]);
+    expect(w.lookups).toEqual(['preview.test']);
+  });
+
+  it('keeps the text when the image is not an image, too large or an unsupported type', async () => {
+    const web = await startWeb(withImages({ '/p.png': () => Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), '/i.png': () => Buffer.alloc(300 * 1024, 1) }));
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: {} });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect([res.status, res.body.title, res.body.image, res.body.icon]).toEqual([200, 'Pics', null, null]);
+  });
+
+  it('drops an image that would pass the board quota and keeps the text', async () => {
+    const web = await startWeb(withImages({ '/p.png': () => png(40, 30), '/i.png': () => png(4, 4) }));
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: { boardQuota: 1 } });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect([res.status, res.body.title, res.body.image, res.body.icon]).toEqual([200, 'Pics', null, null]);
+    expect(w.store!.boardBytes(board)).toBe(0);
+  });
+
+  it('gives a second board the same images without fetching again, and re-fetches when the first board lost them', async () => {
+    const web = await startWeb(withImages({ '/p.png': () => png(40, 30), '/i.png': () => png(4, 4) }));
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: {} });
+    const a = w.signIn('owner');
+    const b = w.signIn('member');
+    const one = w.boardWith(a, null);
+    const two = w.boardWith(b, null);
+    const first = await w.unfurl(a, one, w.target('/page'));
+    const second = await w.unfurl(b, two, w.target('/page'));
+    expect(second.body.image).toBe(first.body.image);
+    expect(web.hits).toEqual(['/page', '/p.png', '/i.png']);
+    expect(w.store!.read(two, second.body.image)?.row.createdBy).toBe(b.user.id);
+    // the source's rows and files go away: the next board fetches the page again instead of answering with images it cannot give
+    for (const board of [one, two]) { w.directory.deleteAsset(board, first.body.image); w.directory.deleteAsset(board, first.body.icon); }
+    const three = w.boardWith(a, null);
+    const third = await w.unfurl(a, three, w.target('/page'));
+    expect(third.status).toBe(200);
+    expect(web.hits.filter((u) => u === '/page')).toHaveLength(2);
+    expect(w.store!.read(three, third.body.image)).not.toBeNull();
+  });
+
+  it('shares five seconds between the image and the icon, and stops them when the asker goes', async () => {
+    let imageClosed = false;
+    const web = await startWeb((req, res) => {
+      if (req.url === '/page') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<head><title>Slow</title><meta property="og:image" content="/p.png"></head>'); return; }
+      req.socket.on('close', () => { imageClosed = true; });
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.write(Buffer.alloc(8));
+    });
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, assets: {}, limits: { imageDeadlineMs: 300 } });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const t0 = Date.now();
+    const res = await w.unfurl(owner, board, w.target('/page'));
+    expect([res.status, res.body.title, res.body.image]).toEqual([200, 'Slow', null]);
+    expect(Date.now() - t0).toBeLessThan(3000);
+    await until(() => imageClosed);
+  });
+});
+
+describe('the limits that were fixed constants', () => {
+  it('stops at the hourly person limit, the workspace limit and four fetches in flight', async () => {
+    let t = 9_000_000;
+    const web = await startWeb();
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, now: () => t, limits: { personPerMinute: 1000, personPerHour: 3, workspacePerHour: 5, inFlight: 4 } });
+    const a = w.signIn('owner');
+    const b = w.signIn('member');
+    const board = w.boardWith(a, b, 'editor');
+    for (let i = 0; i < 3; i++) expect((await w.unfurl(a, board, w.target('/same'))).status).toBe(200);
+    const hourly = await w.unfurl(a, board, w.target('/same'));
+    expect([hourly.status, hourly.body.error]).toEqual([429, 'rate_limited']);
+    expect(Number(hourly.headers.get('retry-after'))).toBeGreaterThan(60);
+    // another person still has the workspace budget: 3 used by a, 2 left
+    for (let i = 0; i < 2; i++) expect((await w.unfurl(b, board, w.target('/same'))).status).toBe(200);
+    const shared = await w.unfurl(b, board, w.target('/same'));
+    expect([shared.status, shared.body.error]).toEqual([429, 'rate_limited']);
+    t += 3_600_001;
+    expect((await w.unfurl(a, board, w.target('/same'))).status).toBe(200);
+  });
+
+  it('refuses a fifth fetch while four are in flight', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const webs = [await startWeb(), await startWeb(), await startWeb(), await startWeb(), await startWeb()];
+    for (const x of webs) x.handler = (_req, res) => { void gate.then(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(PAGE); }); };
+    const w = await setup({ web: webs[0], ports: webs.slice(1).map((x) => x.port), env: { TABULA_LINK_PREVIEWS: 'on' }, limits: { inFlight: 4 } });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const hosts = ['a.test', 'b.test', 'c.test', 'd.test', 'e.test'];
+    const calls = webs.slice(0, 4).map((x, i) => w.unfurl(owner, board, `http://${hosts[i]}:${x.port}/`));
+    await until(() => webs.slice(0, 4).every((x) => x.hits.length === 1));
+    const fifth = await w.unfurl(owner, board, `http://${hosts[4]}:${webs[4].port}/`);
+    expect([fifth.status, fifth.body.error]).toEqual([429, 'rate_limited']);
+    expect(fifth.body.message).toBe('Previews are busy right now. Try again in a moment.');
+    release();
+    for (const call of await Promise.all(calls)) expect(call.status).toBe(200);
+  });
+});

@@ -433,7 +433,7 @@ if (assets) {
 }
 const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: assets.handlers, clientIp }) : null;
 // link previews in open mode exist only with TABULA_LINK_PREVIEWS=on (docs/link-cards.md); accounts mode wires its own in api.mjs
-const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpenLinkRoutes({ linkUnfurl: createLinkUnfurl({ config, log: console.error }), clientIp }) : null;
+const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpenLinkRoutes({ linkUnfurl: createLinkUnfurl({ config, log: console.error, assets: assets?.store ?? null }), clientIp }) : null;
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
