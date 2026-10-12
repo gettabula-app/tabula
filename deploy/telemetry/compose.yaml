@@ -176,6 +176,38 @@ services:
       retries: 5
       start_period: 10s
 
+  # The public TLS door (optional; compose profile "door", switched on with COMPOSE_PROFILES=door in .env). Only the addresses in DOOR_ALLOW reach the
+  # collector, through the same two routes as the loopback door; every other request is a 403. Published on one explicit public address (DOOR_BIND).
+  # Docker publishes ports around ufw, so the allow-list in Caddyfile.door is the control; the host firewall is a second layer (docs/telemetry-door.md).
+  door:
+    <<: *service
+    profiles: ["door"]
+    image: caddy:2.8.4-alpine
+    environment:
+      DOOR_HOST: ${DOOR_HOST:-door.invalid}
+      DOOR_ALLOW: ${DOOR_ALLOW:-127.0.0.1}
+    volumes:
+      - ./Caddyfile.door:/etc/caddy/Caddyfile:ro
+      - ${TELEMETRY_DATA:-/srv/telemetry}/door:/data
+    tmpfs: ["/config:size=4m"]
+    read_only: true
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - "${DOOR_BIND:-127.0.0.1}:80:80"
+      - "${DOOR_BIND:-127.0.0.1}:443:443"
+    depends_on:
+      collector: { condition: service_healthy }
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 100
+    healthcheck:
+      # Caddy's own listener inside the container (not published): the door's public sites answer 403 to the container itself.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 networks:
   telemetry:
     driver: bridge

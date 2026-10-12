@@ -1,0 +1,44 @@
+# The public TLS door of the telemetry stack (compose profile "door"). The control plane (Fly) posts its hourly forwarded reports here.
+# Everything is closed by default: only the address(es) in DOOR_ALLOW (the control plane's static Fly egress address) get through, and only to
+# POST /v1/telemetry and GET /healthz. Every other client, method or path gets 403. A certificate comes from Let's Encrypt (HTTP-01 on port 80);
+# the host name in DOOR_HOST must resolve to this server before the first start. No client header is trusted: the peer address is the TCP peer.
+{
+	admin off
+}
+
+# Health check of the container itself (not published; compose's healthcheck calls it).
+:8082 {
+	bind 127.0.0.1
+	respond "ok" 200
+}
+
+# Port 80 answers nothing except the ACME challenge (which Caddy serves itself before any route here).
+http://{$DOOR_HOST} {
+	respond "forbidden" 403
+}
+
+{$DOOR_HOST} {
+	@report {
+		remote_ip {$DOOR_ALLOW}
+		method POST
+		path /v1/telemetry
+	}
+	@health {
+		remote_ip {$DOOR_ALLOW}
+		method GET
+		path /healthz
+	}
+	handle @report {
+		request_body {
+			max_size 300KB
+		}
+		reverse_proxy collector:8481
+	}
+	handle @health {
+		reverse_proxy collector:8481
+	}
+	handle {
+		respond "forbidden" 403
+	}
+	header -Server
+}
