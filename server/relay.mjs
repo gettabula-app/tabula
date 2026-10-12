@@ -1763,10 +1763,19 @@ if (config.slowRequestMs > 0) {
   }, 60_000).unref();
 }
 
+// 127.x.x.x, ::1 and localhost only reach this computer.
+function isLoopbackHost(host) {
+  const h = String(host).trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+}
+
 server.listen(PORT, HOST, () => {
   backup?.start();
   restore?.start();
   // The people in a restored workspace (or on an adopted copy) are not the ones the control plane last heard about.
   if (recovery.action === 'completed' || volumeAdopted) events.emit('usage-changed');
+  if (!config.authEnabled && !isLoopbackHost(HOST)) {
+    log(`WARNING: open mode (no accounts, no Origin check, unlimited rooms) is listening on ${HOST}, not only on this computer. Use it on localhost or a trusted LAN only; for anything else set TABULA_AUTH=on (docs/accounts.md).`);
+  }
   log(`Tabula relay on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}  (data: ${DATA_DIR})${config.authEnabled ? '  (accounts mode)' : ''}${cloud ? '  (hosted workspace)' : ''}${backup ? '  (backups on)' : ''}`);
 });
