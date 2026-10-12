@@ -16,8 +16,10 @@ Chatt för team och arbetsytor finns på sidan **Chat page** (chattsidan). Chatt
 
 Välj **Chat** i det övre fältet på startsidan eller öppna adressen `#/chat`.
 
+Kanallistan och den öppna konversationen är mörka paneler, som chattpanelen på en tavla. På en telefon är listan och konversationen en skärm var.
+
 - Listan till vänster innehåller **Workspace** (Arbetsyta), **Teams** (Team), **Other teams** (Andra team) (team du kan läsa som administratör utan att tillhöra dem) och **Boards** (Tavlor) (tavlor vars chatt har haft ett meddelande under de senaste 14 dagarna).
-- En bricka på en rad visar antalet olästa meddelanden. Den får en röd kontur om någon har nämnt dig.
+- En bricka på en rad visar antalet olästa meddelanden. Om någon har nämnt dig står ett @ före antalet.
 - Välj en rad för att läsa chatten. Samtalet till höger fungerar som på en tavla, och adressen ändras så att du kan komma tillbaka till det.
 - När du öppnar sidan visas kanalen där du har blivit nämnd, eller den med flest olästa meddelanden.
 - På en telefon visas listan på en skärm och samtalet på en annan. **All channels** (Alla kanaler) (eller webbläsarens bakåtknapp) tar dig tillbaka till listan.
@@ -49,10 +51,13 @@ Meddelandena visas i en uppdaterad lista, med de äldsta överst.
 
 - Rulla uppåt för att läsa äldre meddelanden. Din plats ligger kvar när äldre eller nyare meddelanden kommer in.
 - **Jump to latest** (Hoppa till senaste) tar dig längst ned om du har rullat därifrån.
+- Varje person har en färgad ruta. Dina egna meddelanden ligger till höger som pratbubblor, och ett meddelande som nämner dig är markerat.
 - Flera meddelanden från samma person inom fem minuter grupperas. Datumrader skiljer dagarna åt.
 - Raden **New messages** (Nya meddelanden) visar var du slutade läsa. Den flyttas när det senaste meddelandet syns på skärmen.
 - **edited** (redigerat) markerar ett meddelande som författaren har ändrat. Ett borttaget meddelande visas som **Message deleted** (Meddelandet har tagits bort) eller **Message removed by a moderator** (Meddelandet har tagits bort av en moderator), så att svaren fortfarande går att förstå.
 - Ett svar visar ett citat på en rad av meddelandet det svarar på.
+- Reaktioner visas som små brickor under meddelandet. Håll pekaren över ett meddelande för att se **React** (Reagera), **Reply** (Svara) och **More** (Mer).
+- Den kompakta chatten visar en rad per meddelande. En tom chatt säger vem som kan läsa den och vad du kan göra.
 - Webblänkar (`http` och `https`) öppnas i en ny flik. Meddelanden visas alltid som vanlig text.
 
 ## Skriva
