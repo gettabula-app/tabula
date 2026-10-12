@@ -21,7 +21,7 @@ The central decision, in one paragraph: **a container's children are placed by a
 - **Phone**: the board is still a canvas, and a container opens in a **list sheet** with lane tabs, a card list and a **Move to** menu. The sheet is DOM, so it is also the keyboard and screen reader route to cards.
 - **CSV export** of cards (one row per card, formula-safe). Cards also appear in SVG, PNG, JSON, `.drift` and the Markdown summary with no extra work beyond the layout call.
 - **MCP**: reads show the structure; new tools add and move cards; `create_objects` stays as it is.
-- **Later, not now**: a Linear or Jira link. The model leaves room for it and [Linear and Jira later](#linear-and-jira-later) says how.
+- **Later, not now**: a Linear link or a link to another tracker. The model leaves room for it and [Linear and other trackers later](#linear-and-other-trackers-later) says how.
 
 ## Decisions and why
 
@@ -29,7 +29,7 @@ The central decision, in one paragraph: **a container's children are placed by a
 2. **Derived geometry, not stored coordinates.** Frames store coordinates and move their children by rewriting every child's `x` and `y` while you drag. For a column of cards that is the wrong shape of data: inserting a card in the middle means rewriting everything below it, concurrently, from several machines that each believe a different height. Deriving positions from order removes the whole class. It also makes a container cheap to move (one write) and to resize.
 3. **A rank per child, not an array on the parent.** An array of child ids on the lane is one value: two people adding cards at once overwrite each other, and a card moved while the array is rewritten can vanish from both lists. A `rank` on each card is a field of its own object, which merges. The cost is that order is recovered by sorting (cheap at these sizes) and that equal ranks can happen, which the tie-break and the repair handle.
 4. **Do not write while dragging.** Today a move writes every frame, merged into one write per animation frame, and the undo manager splits a long drag into several steps when you pause more than 350 ms. A card drag instead draws a **ghost** in the renderer's overlay, with the insertion line, and writes once on release. One drag, one transaction, one undo step, nothing for other people to flicker on. (Optionally the ghost is shared; see [Seeing others drag](#seeing-others-drag).)
-5. **Status is the lane.** A separate `status` field on a card would have to agree with its lane, and it would not, the first time two people moved it. The lane has a `stage` (to do, doing, done) for the things that need a meaning (done styling, overdue, the CSV, a Linear or Jira mapping).
+5. **Status is the lane.** A separate `status` field on a card would have to agree with its lane, and it would not, the first time two people moved it. The lane has a `stage` (to do, doing, done) for the things that need a meaning (done styling, overdue, the CSV, a Linear or other tracker mapping).
 6. **Labels are board data, not per-card strings.** A label has a name and a colour and is shared, so renaming "Bug" renames it everywhere. Cards hold label ids.
 7. **Filters dim, they do not hide.** The layout is shared state. A hiding filter would make each person's column a different height and their drop index different from the one written. Dimming keeps one layout. A "hide the rest" toggle is a v2 that maps indexes explicitly.
 8. **Server rules are role rules, as for every other object.** The relay accepts Yjs updates from editors without looking inside them (`server/relay.mjs:325-336`), so WIP limits and owner rules are not enforced on direct client writes. The MCP card tools validate their own writes, including WIP limits and token-bound agent owners.
@@ -262,7 +262,7 @@ The MCP endpoint has dedicated card tools; `create_objects` still accepts only `
 - **AI features** (TAB-97, `docs/ai.md`): *Summarise* and *Cluster* read the board through the AI reader and see cards as text with their lane, so they can describe columns and overdue dates. These AI features never receive existing card owners. A proposal may set an owner name. This is separate from MCP: an external model using a read token can call `list_kanban_cards`, which exposes owner names and agent owner ids.
 - Limits and the audit rows follow the existing MCP rules; new audit sentences are not needed (the board writes are not audited individually today).
 
-## Linear and Jira later
+## Linear and other trackers later
 
 Not built here, but the model must not make it hard.
 
@@ -332,13 +332,13 @@ Browser (the Chrome checklist in the slice, not in CI): drag across lanes, reord
 - Nested containers, a kanban inside a lane, sub-tasks and checklists inside a card.
 - Multiple owners, estimates and story points, priorities, custom fields, card templates, recurring tasks, reminders and notifications (due dates do not email anyone).
 - Time tracking, burn-down charts and cumulative flow diagrams, though `updatedAt` and the history make a later version possible.
-- CSV import, and Trello or Jira file import.
+- CSV import, and file import from other tools.
 - Archived cards (**Delete** is the only removal; an **Archive lane** is an easy follow-up).
 - Swim-lane rows inside a kanban (that is TAB-142's container).
 - Private writing on cards, and hiding a card from some viewers.
 - A shared, saved filter ("view").
 - Real-time drag preview for everyone is optional (slice 2), and the "hide the rest" filter mode is v2.
-- The Linear and Jira link.
+- The Linear and other tracker link.
 - Cards as the target of the AI Generate feature.
 
 ## Slices
@@ -350,7 +350,7 @@ Browser (the Chrome checklist in the slice, not in CI): drag across lanes, reord
 5. **Phone sheet, templates and export.** The list sheet with **Move to…**, the four templates and the validator and whitelist changes, saving custom templates with stripping, CSV export, the Markdown summary, themes and reduced motion checks at 390 px.
 6. **MCP, AI and docs.** The reader changes, `create_kanban`, `add_cards`, `move_cards`, `update_cards`, the `containerId` filter, `docs/mcp.md`, `docs/ai.md`, the user guide page and the CHANGELOG.
 
-Slices 1 to 3 are a usable kanban; 4 and 5 are what makes it safe for a team; 6 lets agents work the board. The Linear and Jira link, tables, grids and timelines are separate specs on top of slice 1.
+Slices 1 to 3 are a usable kanban; 4 and 5 are what makes it safe for a team; 6 lets agents work the board. The Linear and other tracker link, tables, grids and timelines are separate specs on top of slice 1.
 
 ## Files
 
@@ -394,7 +394,7 @@ The model is designed so that each of these is a layout function, a lane or cell
 13. **Limits** (2,000 cards per board, 500 per lane, 20 lanes) are drafted from the sizes the renderer and Yjs handle comfortably. Are they too low for your largest expected use?
 14. **CSV for Excel.** The file starts with a byte order mark so Excel reads UTF-8; some tools dislike it. Offer a setting, or keep one format?
 15. **Shared code folder.** `shared/` is new and the Docker image must copy it. Is that the right way to avoid two copies of the layout, or should the server call the client build?
-16. **Linear and Jira.** Which first, and one way or two? And does the integration belong to the workspace admin (drafted) or to each person with their own token?
+16. **Linear and other trackers.** Which first, and one way or two? And does the integration belong to the workspace admin (drafted) or to each person with their own token?
 17. **Order of work.** The kanban slices are drafted before tables, grids and timelines. Are those three needed sooner, which would put more weight on slice 1 and less on cards?
 
 ## Visual design
