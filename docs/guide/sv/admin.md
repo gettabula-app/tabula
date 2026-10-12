@@ -131,7 +131,7 @@ Granskningsloggen har filtret **Chat** (Chatt). Det visar ändringar i de här i
 
 Avsnittet **Backups** är till för arbetsytans ägare. Säkerhetskopior är kopior av allt i arbetsytan. De lagras separat från servern och krypteras innan de skickas iväg. Här kan du se hur det går och återställa en tavla eller hela arbetsytan.
 
-Avsnittet visas för alla ägare. När säkerhetskopior är avstängda står det **Not set up** (Inte konfigurerat). På en server du själv kör länkar sidan hit: aktivera säkerhetskopior med inställningarna nedan och starta sedan om servern.
+Bara ägare ser fliken **Backups** (Säkerhetskopior). Den ligger mellan **Chat** (Chatt) och **Settings** (Inställningar). Administratörer som inte är ägare ser den inte, och dess adress visar dem **Overview** (Översikt). När säkerhetskopior är avstängda står det **Not set up** (Inte konfigurerat). På en server du själv kör länkar sidan hit: aktivera säkerhetskopior med inställningarna nedan och starta sedan om servern.
 
 ### Aktivera säkerhetskopior
 
@@ -159,7 +159,7 @@ Nedanför finns listan, med de nyaste först. Varje rad visar tidpunkten (UTC oc
 - **Protected until** (Skyddad till) ett visst datum: säkerhetskopian kan inte tas bort vid den vanliga rensningen före det datumet. En säkerhetskopia som du återställer och säkerhetskopian som tas före en helåterställning skyddas i sju dagar.
 - **Unreadable** (Kan inte läsas) och orsaken: säkerhetskopian är grå och kan inte öppnas, till exempel om den krypterades med en nyckel som servern saknar eller om integritetskontrollen misslyckades.
 
-Listan visar högst 200 säkerhetskopior. Välj **Details** (Detaljer) på en rad för att öppna säkerhetskopian.
+Listan visar högst 200 säkerhetskopior. Välj **Details** (Detaljer) på en rad för att öppna säkerhetskopian. Använd **Back to the backup** (Tillbaka till säkerhetskopian) för att gå tillbaka från skärmarna nedan.
 
 ### En säkerhetskopia
 
@@ -170,9 +170,9 @@ Säkerhetskopian öppnas på samma plats. Här ser du när den skapades, Tabulas
 
 ### Återställ en tavla som kopia
 
-Sök bland säkerhetskopians tavlor efter titel eller team, välj en och välj **Make a copy** (Skapa en kopia). Den nya tavlan får namnet **Restored:** (Återställd:) följt av den gamla titeln och datumet. Du äger den, och den saknar versionshistorik. Tavlan du har nu påverkas inte. En länk till den nya tavlan visas när kopian är klar.
+Sök bland säkerhetskopians tavlor efter titel eller team (bara de 500 senast redigerade tavlorna listas), välj en och välj **Make a copy** (Skapa en kopia). Den nya tavlan får namnet **Restored:** (Återställd:) följt av den gamla titeln och datumet. Du äger den, och den saknar versionshistorik. Tavlan du har nu påverkas inte. En länk till den nya tavlan visas när kopian är klar.
 
-Kopian placeras i tavlans ursprungliga team om teamet fortfarande finns och du tillhör det. Annars placeras den i ditt personliga utrymme, och sidan talar om det. Du kan skapa fler kopior från samma säkerhetskopia. Om en hostad arbetsyta är skrivskyddad är knappen inaktiverad och förklarar varför.
+Kopian placeras i tavlans ursprungliga team om teamet fortfarande finns och du tillhör det. Annars placeras den i ditt personliga utrymme, och sidan talar om det. En tavla utan sparat innehåll i säkerhetskopian kan inte kopieras. Du kan skapa fler kopior från samma säkerhetskopia. Om en hostad arbetsyta är skrivskyddad är knappen inaktiverad och förklarar varför.
 
 ### Återställ hela arbetsytan
 
@@ -190,45 +190,9 @@ När servern godkänner åtgärden visar hela fönstret **Restoring…** (Åters
 
 Om något misslyckas före bytet ändras inget, och sidan förklarar det med tydliga ord, till exempel att diskutrymmet inte räcker eller att säkerhetskopian av de aktuella uppgifterna misslyckades. Om hela arbetsytan inte kan återställas startar servern igen med de data som fanns före återställningen.
 
-![Fliken Säkerhetskopior med statusrutan och listan över säkerhetskopior, en skyddad och två som inte kan läsas](images/admin-backups.png)
-
-## Säkerhetskopior
-
-Bara ägare ser fliken **Backups**. Den finns mellan **AI** och granskningsloggen. Administratörer som inte är ägare ser den inte, och adressen visar dem **Overview**.
-
-Om säkerhetskopior inte är aktiverade står det **Not set up**. På en egen server länkar fliken till installationsanvisningarna och personen som sköter servern.
-
-När säkerhetskopior är aktiverade visar fliken:
-
-- **Status**: när den senaste säkerhetskopian togs och om den lyckades, hur många i följd som har misslyckats, när nästa ska tas, hur ofta de tas, nyckelns korta id och hur mycket lagring som används. En mening beskriver vad som hände med den senaste återställningen.
-- **All backups** (Alla säkerhetskopior): de nyaste först, med tidpunkt, antal filer, storlek och nyckel. En säkerhetskopia visas som **Protected** (Skyddad) med ett datum medan den inte kan tas bort, till exempel efter en återställning. En säkerhetskopia som servern inte kan läsa är gråmarkerad med orsaken och går inte att öppna. Bara de nyaste säkerhetskopiorna visas.
-
-Välj en säkerhetskopia för att se detaljerna: appversion, antal, nyckel, ledigt diskutrymme och hur länge de aktuella uppgifterna skulle sparas efter en återställning. Använd **Back to the backup** (Tillbaka till säkerhetskopian) för att gå tillbaka från skärmarna nedan.
-
-### Återställ en tavla som kopia
-
-Använd det här alternativet för att få tillbaka en tavla utan att påverka något annat.
-
-1. Öppna en säkerhetskopia och leta reda på tavlan under **Boards in this backup** (Tavlor i den här säkerhetskopian). Använd **Search the boards of this backup** (Sök bland tavlorna i den här säkerhetskopian) för att filtrera listan. Bara de 500 senast redigerade tavlorna visas.
-2. Välj tavlan och välj sedan **Make a copy**.
-3. Ett meddelande visar **The copy is ready** (Kopian är klar) och en länk till den nya tavlan.
-
-Kopian är en ny tavla med namnet **Restored: <title> <date>**. Den befintliga tavlan ändras inte. Kopian placeras i tavlans ursprungliga team om teamet fortfarande finns och du tillhör det. Annars placeras den i ditt personliga utrymme, och meddelandet talar om det. Kopian saknar versionshistorik. En tavla utan sparat innehåll i säkerhetskopian kan inte kopieras. I en skrivskyddad, hostad arbetsyta är **Make a copy** inaktiverad och förklarar varför.
-
-### Återställ hela arbetsytan
-
-Använd det här bara om du vill återställa allt till ett tidigare läge: personer, team, tavlor, historik och inställningar.
-
-1. Öppna en säkerhetskopia och välj **Restore the whole workspace**.
-2. Läs **What will happen** (Vad händer). Först skapas en säkerhetskopia av de aktuella uppgifterna. Om det misslyckas ändras inget. Arbetsytan är otillgänglig i ungefär en minut medan servern startar om, och alla loggas ut. Aktuella data flyttas åt sidan, inte tas bort, och sparas under den tid som visas.
-3. Skriv ordet som visas för att bekräfta (`RESTORE`). **Restore this backup** är inaktiverad tills du skriver exakt rätt ord och så länge det inte finns tillräckligt med diskutrymme.
-4. Välj **Restore this backup**. Fönstret visar **Restoring…** och läses in igen när arbetsytan är igång. Om det tar längre tid än väntat står det på skärmen, och där finns alternativet **Check again**.
-
-Alla som har en öppen tavla ser **Restoring…** i statusbrickan. Tavlan läses in igen när arbetsytan är igång. Alla loggar in igen efteråt.
-
 > Gör en provåterställning innan du behöver en. En säkerhetskopia som du aldrig har återställt har inte bevisats fungera.
 
-<!-- screenshot: fliken Säkerhetskopior med statusen och listan över säkerhetskopior -->
+![Fliken Säkerhetskopior med statusrutan och listan över säkerhetskopior, en skyddad och två som inte kan läsas](images/admin-backups.png)
 
 ## Privacy
 
