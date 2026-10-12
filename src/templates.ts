@@ -132,12 +132,28 @@ export class Builder {
 
   step(title: string, instructions: string, mode: StepMode, minutes?: number, frameId?: Id, votesPerPerson?: number) {
     this.steps.push({ id: newId(), title, instructions, mode, durationSec: minutes ? minutes * 60 : undefined, frameId, votesPerPerson });
+    this.settleMinutes();
   }
 
-  /** Title + subtitle above the template. */
+  /** The subtitle that said "about {minutes} minutes" and is waiting for the steps, so it can never disagree with the session bar. */
+  private timed: { obj: BaseObj; template: string }[] = [];
+
+  /** The session bar adds up the steps' durations; the header says the same number. The steps are the truth. */
+  private settleMinutes() {
+    const total = Math.round(this.steps.reduce((sum, s) => sum + (s.durationSec ?? 0), 0) / 60);
+    for (const t of this.timed) t.obj.text = t.template.replace('{minutes}', String(total));
+  }
+
+  /** Title + subtitle above the template. A subtitle may say "about {minutes} minutes": the steps fill the number in. */
   header(title: string, subtitle: string, w: number) {
     this.text(title, 0, -150, w, 40, 700);
+    const before = this.objs.length;
     this.text(subtitle, 0, -88, Math.min(w, 760), 17, 400, undefined, '#5B6672');
+    const obj = this.objs[before] as BaseObj | undefined;
+    if (obj && subtitle.includes('{minutes}')) {
+      this.timed.push({ obj, template: subtitle });
+      this.settleMinutes();
+    }
   }
 
   /** Equal columns inside an outer frame. Returns column frame ids. */
@@ -204,7 +220,7 @@ export const TEMPLATES: TemplateDef[] = [
   {
     id: 'start-stop-continue', name: 'Start / Stop / Continue', category: 'Retrospective',
     description: 'Decide what the team should begin, drop and keep doing.',
-    build: (b) => retroLayout(b, 'Start / Stop / Continue', 'Sprint retrospective, about 40 minutes', [
+    build: (b) => retroLayout(b, 'Start / Stop / Continue', 'Sprint retrospective, about {minutes} minutes', [
       { name: 'Start', hint: 'What should we begin doing?', fill: TINT.mint },
       { name: 'Stop', hint: 'What is slowing us down that we should drop?', fill: TINT.peach },
       { name: 'Continue', hint: 'What is working that we should keep?', fill: TINT.sky },
@@ -213,7 +229,7 @@ export const TEMPLATES: TemplateDef[] = [
   {
     id: '4ls', name: '4Ls', category: 'Retrospective',
     description: 'Liked, Learned, Lacked, Longed for — a balanced look back.',
-    build: (b) => retroLayout(b, '4Ls retrospective', 'Liked, learned, lacked, longed for, about 45 minutes', [
+    build: (b) => retroLayout(b, '4Ls retrospective', 'Liked, learned, lacked, longed for, about {minutes} minutes', [
       { name: 'Liked', hint: 'What did you enjoy?', fill: TINT.mint },
       { name: 'Learned', hint: 'What did you learn?', fill: TINT.sky },
       { name: 'Lacked', hint: 'What was missing?', fill: TINT.peach },
@@ -223,7 +239,7 @@ export const TEMPLATES: TemplateDef[] = [
   {
     id: 'mad-sad-glad', name: 'Mad / Sad / Glad', category: 'Retrospective',
     description: 'Surface how the sprint felt before deciding what to change.',
-    build: (b) => retroLayout(b, 'Mad / Sad / Glad', 'Feelings-first retrospective, about 40 minutes', [
+    build: (b) => retroLayout(b, 'Mad / Sad / Glad', 'Feelings-first retrospective, about {minutes} minutes', [
       { name: 'Mad', hint: 'What frustrated you?', fill: TINT.peach },
       { name: 'Sad', hint: 'What disappointed you?', fill: TINT.sky },
       { name: 'Glad', hint: 'What made you happy?', fill: TINT.mint },
@@ -234,7 +250,7 @@ export const TEMPLATES: TemplateDef[] = [
     description: 'What pushes us forward, holds us back, and what risks lie ahead.',
     build: (b) => {
       const w = 1400;
-      b.header('Sailboat retrospective', 'Wind, anchors, rocks and the island we are sailing to, about 45 minutes', w);
+      b.header('Sailboat retrospective', 'Wind, anchors, rocks and the island we are sailing to, about {minutes} minutes', w);
       const outer = b.frame('Sailboat', 0, 0, w, 820, TINT.sky);
       const island = b.frame('Island: our goal', 980, 40, 380, 300, TINT.mint, outer);
       b.text('Where are we heading?', 1004, 64, 330, 15, 400, island, '#5B6672');
@@ -255,7 +271,7 @@ export const TEMPLATES: TemplateDef[] = [
     description: 'Eight fast sketches in eight minutes, then share and vote.',
     build: (b) => {
       const cell = 300, gap = 20, w = cell * 4 + gap * 3 + 64;
-      b.header('Crazy 8s', 'Fold your thinking into 8 sketches, one minute each, about 25 minutes', w);
+      b.header('Crazy 8s', 'Fold your thinking into 8 sketches, one minute each, about {minutes} minutes', w);
       const outer = b.frame('Crazy 8s', 0, 0, w, cell * 2 + gap + 64, TINT.mist);
       for (let i = 0; i < 8; i++) {
         const x = 32 + (i % 4) * (cell + gap), y = 32 + Math.floor(i / 4) * (cell + gap);
@@ -272,7 +288,7 @@ export const TEMPLATES: TemplateDef[] = [
     description: 'Generate ideas silently, cluster them into themes, vote on themes.',
     build: (b) => {
       const w = 1500;
-      b.header('Brainstorm', 'Write ideas, then group them into themes, about 35 minutes', w);
+      b.header('Brainstorm', 'Write ideas, then group them into themes, about {minutes} minutes', w);
       const prompt = b.shape('rounded', 'How might we …?', 0, 0, w, 120, TINT.butter, undefined, { fontSize: 28, fontWeight: 700, stroke: 'none' });
       void prompt;
       const ideas = b.frame('Ideas', 0, 180, 700, 760, '#FFFFFF');
@@ -310,7 +326,7 @@ export const TEMPLATES: TemplateDef[] = [
     id: 'impact-effort', name: 'Impact / Effort matrix', category: 'Prioritisation',
     description: 'Place ideas by impact and effort to find quick wins.',
     build: (b) => {
-      const outer = grid2x2(b, 'Impact / Effort', 'Place each item by how much it helps and how hard it is, about 30 minutes', [
+      const outer = grid2x2(b, 'Impact / Effort', 'Place each item by how much it helps and how hard it is, about {minutes} minutes', [
         { name: 'Quick wins', hint: 'High impact, low effort — do these first.', fill: TINT.mint },
         { name: 'Big bets', hint: 'High impact, high effort — plan these.', fill: TINT.sky },
         { name: 'Fill-ins', hint: 'Low impact, low effort — do if there is time.', fill: TINT.butter },
@@ -333,7 +349,7 @@ export const TEMPLATES: TemplateDef[] = [
         { name: 'Won’t have (this time)', hint: 'Agreed out of scope for now.', fill: TINT.mist },
       ];
       const w = 4 * 320 + 3 * 32 + 64;
-      b.header('MoSCoW prioritisation', 'Agree what is in and out for the release, about 30 minutes', w);
+      b.header('MoSCoW prioritisation', 'Agree what is in and out for the release, about {minutes} minutes', w);
       const outer = b.frame('MoSCoW', 0, 0, w, 720, '#FFFFFF');
       b.columns(outer, cols, 32, 32, 320, 656);
       b.step('List requirements', 'Write each requirement on a note in Could have.', 'write', 5, outer);
@@ -346,7 +362,7 @@ export const TEMPLATES: TemplateDef[] = [
     description: 'Lay out the user journey, break it into stories, slice releases.',
     build: (b) => {
       const w = 1680;
-      b.header('User story map', 'Backbone of activities, tasks under them, releases as horizontal slices, about 60 minutes', w);
+      b.header('User story map', 'Backbone of activities, tasks under them, releases as horizontal slices, about {minutes} minutes', w);
       const outer = b.frame('Story map', 0, 0, w, 1040, TINT.mist);
       const acts = b.frame('Activities (backbone)', 32, 32, w - 64, 200, '#FFFFFF', outer);
       ['Discover', 'Sign up', 'Set up', 'Use', 'Share'].forEach((a, i) => b.sticky(a, 56 + i * 320, 64, ST.orange, acts, 140));
@@ -368,7 +384,7 @@ export const TEMPLATES: TemplateDef[] = [
     build: (b) => {
       const stages = ['Discover', 'Consider', 'Buy', 'Use', 'Advocate'];
       const colW = 280, gap = 16, x0 = 200, w = x0 + stages.length * (colW + gap) + 16;
-      b.header('Customer journey map', 'Walk one persona through each stage, about 60 minutes', w);
+      b.header('Customer journey map', 'Walk one persona through each stage, about {minutes} minutes', w);
       const outer = b.frame('Journey', 0, 0, w, 1140, '#FFFFFF');
       stages.forEach((s, i) => b.shape('terminator', s, x0 + i * (colW + gap), 32, colW, 64, '#18212B', outer, { textColor: '#FFFFFF', stroke: 'none', fontWeight: 600 }));
       const rows: [string, string][] = [['Actions', TINT.sky], ['Thoughts', TINT.lilac], ['Feelings', TINT.butter], ['Pain points', TINT.peach], ['Opportunities', TINT.mint]];
@@ -390,7 +406,7 @@ export const TEMPLATES: TemplateDef[] = [
     id: 'empathy', name: 'Empathy map', category: 'Discovery',
     description: 'What a user says, thinks, does and feels.',
     build: (b) => {
-      const outer = grid2x2(b, 'Empathy map', 'Build shared understanding of one user, about 30 minutes', [
+      const outer = grid2x2(b, 'Empathy map', 'Build shared understanding of one user, about {minutes} minutes', [
         { name: 'Says', hint: 'Quotes and things they told us.', fill: TINT.sky },
         { name: 'Thinks', hint: 'What occupies their mind?', fill: TINT.lilac },
         { name: 'Does', hint: 'Actions and behaviour we observed.', fill: TINT.mint },
@@ -406,7 +422,7 @@ export const TEMPLATES: TemplateDef[] = [
     id: 'swot', name: 'SWOT', category: 'Strategy',
     description: 'Strengths, weaknesses, opportunities and threats.',
     build: (b) => {
-      const outer = grid2x2(b, 'SWOT analysis', 'Internal strengths and weaknesses, external opportunities and threats, about 40 minutes', [
+      const outer = grid2x2(b, 'SWOT analysis', 'Internal strengths and weaknesses, external opportunities and threats, about {minutes} minutes', [
         { name: 'Strengths', hint: 'What do we do well?', fill: TINT.mint },
         { name: 'Weaknesses', hint: 'Where are we weak?', fill: TINT.peach },
         { name: 'Opportunities', hint: 'What could we take advantage of?', fill: TINT.sky },
@@ -424,7 +440,7 @@ export const TEMPLATES: TemplateDef[] = [
     description: 'Imagine the project failed, find out why, prevent it.',
     build: (b) => {
       const w = 1560;
-      b.header('Pre-mortem', 'It is six months from now and the project has failed. Why?, about 45 minutes', w);
+      b.header('Pre-mortem', 'It is six months from now and the project has failed. Why?, about {minutes} minutes', w);
       const outer = b.frame('Pre-mortem', 0, 0, w, 760, TINT.mist);
       const [causes, groups, mitig] = b.columns(outer, [
         { name: 'Why it failed', hint: 'Every reason you can imagine, one per note.', fill: TINT.peach },
@@ -444,7 +460,7 @@ export const TEMPLATES: TemplateDef[] = [
     build: (b) => {
       const u = 340, v = 300, gap = 16, pad = 24;
       const w = pad * 2 + 5 * u + 4 * gap, h = pad * 2 + 3 * v + 2 * gap;
-      b.header('Business Model Canvas', 'Describe one business model on one page, fill customers first, about 90 minutes', w);
+      b.header('Business Model Canvas', 'Describe one business model on one page, fill customers first, about {minutes} minutes', w);
       const outer = b.frame('Business Model Canvas', 0, 0, w, h, TINT.mist);
       const blk = canvasBlocks(b, outer, [
         { name: 'Key partners', hint: 'Who are our key partners and suppliers? Which activities do they perform for us?', fill: TINT.lilac, c: 0, r: 0, rs: 2 },
@@ -473,7 +489,7 @@ export const TEMPLATES: TemplateDef[] = [
     build: (b) => {
       const u = 340, v = 300, gap = 16, pad = 24;
       const w = pad * 2 + 5 * u + 4 * gap, h = pad * 2 + 3 * v + 2 * gap;
-      b.header('Lean Canvas', 'Test an idea on one page, start with the problem, about 60 minutes', w);
+      b.header('Lean Canvas', 'Test an idea on one page, start with the problem, about {minutes} minutes', w);
       const outer = b.frame('Lean Canvas', 0, 0, w, h, TINT.mist);
       const blk = canvasBlocks(b, outer, [
         { name: 'Problem', hint: 'Top three problems. Existing alternatives: how are they solved today?', fill: TINT.peach, c: 0, r: 0, rs: 2 },
@@ -502,7 +518,7 @@ export const TEMPLATES: TemplateDef[] = [
       const stages = ['Awareness', 'Sign up', 'Service delivery', 'Follow-up'];
       const colW = 320, gap = 16, x0 = 200, w = x0 + stages.length * (colW + gap) + 16;
       const rowH = 176;
-      b.header('Service Blueprint', 'Map one service end to end, front and back, about 90 minutes', w);
+      b.header('Service Blueprint', 'Map one service end to end, front and back, about {minutes} minutes', w);
       const rows: { name: string; fill: string }[] = [
         { name: 'Physical evidence', fill: TINT.butter },
         { name: 'Customer actions', fill: TINT.sky },
