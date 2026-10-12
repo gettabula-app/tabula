@@ -18,7 +18,7 @@ interface Relay {
   stop: () => Promise<void>;
 }
 
-async function startRelay(name: string, framing?: string): Promise<Relay> {
+async function startRelay(name: string, framing?: string, baseUrl?: string): Promise<Relay> {
   const started = await startRelayProcess({
     entry: relayFile,
     cwd: root,
@@ -29,6 +29,7 @@ async function startRelay(name: string, framing?: string): Promise<Relay> {
       DIST_DIR: path.join(root, 'dist'),
       DATA_DIR: path.join(root, `data-${name}`),
       ...(framing === undefined ? {} : { TABULA_DEV_ALLOW_FRAMING: framing }),
+      ...(baseUrl === undefined ? {} : { TABULA_BASE_URL: baseUrl }),
     }),
   });
   const relay: Relay = {
@@ -133,6 +134,24 @@ describe('relay: framing', () => {
       const headers = await headersOf(relay.port, '/');
       expect(directives(headers['content-security-policy'])).toContain("frame-ancestors 'none'");
       await relay.stop();
+    }
+  });
+
+  it('sends HSTS when served over https, on the app shell, a 404 and API JSON, without includeSubDomains or preload', async () => {
+    const relay = await startRelay('hsts-on', undefined, 'https://acme.thetabula.cloud');
+    for (const p of ['/', '/api/health', '/docs/nope', '/icons/nope.json']) {
+      const headers = await headersOf(relay.port, p);
+      expect([p, headers['strict-transport-security']]).toEqual([p, 'max-age=31536000']);
+    }
+    const json = await headersOf(relay.port, '/api/health');
+    expect(String(json['content-type'])).toContain('application/json');
+  });
+
+  it('sends no HSTS over http or the default localhost base URL', async () => {
+    for (const [name, base] of [['hsts-off-default', undefined], ['hsts-off-http', 'http://localhost:5173']] as const) {
+      const relay = await startRelay(name, undefined, base);
+      expect((await headersOf(relay.port, '/'))['strict-transport-security']).toBeUndefined();
+      expect((await headersOf(relay.port, '/api/health'))['strict-transport-security']).toBeUndefined();
     }
   });
 });
