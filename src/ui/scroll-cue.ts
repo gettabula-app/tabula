@@ -44,3 +44,49 @@ export function trackMoreY(el: HTMLElement): () => void {
   update();
   return update;
 }
+
+/** One page of the rail's tools: the visible height less one item, so the item at the edge stays in view as a landmark. */
+export function railPageStep(clientHeight: number, itemHeight: number): number {
+  return Math.max(itemHeight, clientHeight - itemHeight);
+}
+
+/**
+ * The cue for a tool rail that has to scroll: a chevron button between the tools and Undo/Redo, and a thin track with a
+ * thumb beside the tools. Both exist only while the tools overflow, and follow the scroll and the window's height. The
+ * chevron scrolls one page and turns into an up chevron at the end.
+ */
+export function mountRailScrollCue(rail: HTMLElement, tools: HTMLElement, chevron: HTMLButtonElement, track: HTMLElement, thumb: HTMLElement): () => void {
+  const update = () => {
+    const overflow = tools.scrollHeight - tools.clientHeight > 1;
+    chevron.hidden = !overflow;
+    track.hidden = !overflow;
+    if (!overflow) return;
+    const atEnd = tools.scrollTop + tools.clientHeight >= tools.scrollHeight - 1;
+    const dir = atEnd ? 'up' : 'down';
+    if (chevron.dataset.dir !== dir) {
+      chevron.dataset.dir = dir;
+      const label = dir === 'up' ? 'Scroll tools up' : 'Scroll tools down';
+      chevron.setAttribute('aria-label', label);
+      chevron.setAttribute('data-tip', label);
+    }
+    const trackHeight = tools.clientHeight;
+    const thumbHeight = Math.max(16, Math.round((tools.clientHeight / tools.scrollHeight) * trackHeight));
+    const range = tools.scrollHeight - tools.clientHeight;
+    track.style.top = `${tools.offsetTop}px`;
+    track.style.height = `${trackHeight}px`;
+    thumb.style.height = `${thumbHeight}px`;
+    thumb.style.transform = `translateY(${Math.round((tools.scrollTop / range) * (trackHeight - thumbHeight))}px)`;
+  };
+  chevron.addEventListener('click', () => {
+    const item = tools.querySelector<HTMLElement>('button')?.offsetHeight || 34;
+    const step = railPageStep(tools.clientHeight, item);
+    tools.scrollBy({ top: chevron.dataset.dir === 'up' ? -step : step });
+  });
+  tools.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+  observer?.observe(tools);
+  observer?.observe(rail);
+  update();
+  return update;
+}

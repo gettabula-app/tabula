@@ -249,8 +249,8 @@ export class Renderer {
     this.root.setAttribute('role', 'main');
     this.svg = document.createElementNS(SVGNS, 'svg') as SVGSVGElement;
     this.svg.classList.add('canvas');
-    this.svg.setAttribute('role', 'application');
-    this.svg.setAttribute('aria-label', 'Whiteboard canvas');
+    // the picture is for the eyes: the canvas's outline (ui/canvas-focus.ts) stands for it in the accessibility tree
+    this.svg.setAttribute('aria-hidden', 'true');
     this.svg.innerHTML = `<defs>${SVG_DEFS}</defs><defs class="grid-defs"></defs><rect class="grid-bg" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)"/><g class="world"><g class="objects"></g><g class="group-dim-layer"></g><g class="overlay"></g><g class="k-ghost-layer"></g></g>`;
     this.gridDefs = this.svg.querySelector('.grid-defs')!;
     this.gridRect = this.svg.querySelector('.grid-bg')!;

@@ -17,7 +17,6 @@ import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
 import { leaveOutWithheld } from '../private-select';
 import { openChatNotifications } from './chat-prefs';
-import { rovingRadios } from './focus-scope';
 import { dialog, field, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
@@ -32,6 +31,7 @@ import { openQuickPoll } from './polls';
 import { mountComments } from './comments';
 import { mountChat } from './board-chat';
 import { currentChatDock } from './chat-dock';
+import { mountCanvasFocus } from './canvas-focus';
 import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
@@ -47,13 +47,16 @@ import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
-import { authState, chatAvailable, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
+import { authState, chatAvailable, imagesAvailable, onAuth, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
-import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
+import { CANVAS_INK, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
-import { THEMES, getStoredTheme, setTheme } from '../themes';
+import { themeRadioGroup } from './theme-menu';
+import { openProfileDialog } from './profile-dialog';
+import { trackerEnabled as trackerAllowed } from '../tracker-gate';
+import { navigateTrackerPath } from '../route';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
 import { aiBarFor, aiBarShown, glyph, mountAiBar, onAiBarChange } from './ai-bar';
@@ -67,7 +70,7 @@ import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
 import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
-import { trackMoreY } from './scroll-cue';
+import { mountRailScrollCue, trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -82,8 +85,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const demo = opts.demo === true || DEMO;
   let trackerStore: TrackerStore | null = null;
   const trackerEnabled = () => {
-    const auth = authState();
-    return !scratch && !demo && (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+    return !scratch && !demo && trackerAllowed(authState());
   };
   app.linkTrackerKanban = (kanbanId) => {
     const store = trackerStore;
@@ -370,7 +372,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
-  if (railTools) trackMoreY(railTools);
+  if (railTools) {
+    trackMoreY(railTools);
+    // and a chevron and a thin track say so out loud, while the tools overflow (docs/design: the rail in a short window)
+    const chevron = h('button', { class: 'rail-more', type: 'button', hidden: true, 'data-dir': 'down', 'aria-label': 'Scroll tools down', 'data-tip': 'Scroll tools down' }, icon('chevron', 16));
+    const thumb = h('span', { class: 'rail-track-thumb' });
+    const track = h('div', { class: 'rail-track', hidden: true, 'aria-hidden': 'true' }, thumb);
+    rail.insertBefore(chevron, rail.querySelector('.rail-end'));
+    rail.append(track);
+    mountRailScrollCue(rail, railTools, chevron, track, thumb);
+  }
   const syncRail = () => {
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
@@ -486,6 +497,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
+  // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
+  const canvasFocus = mountCanvasFocus(app, rail);
+  app.onDestroy(() => canvasFocus.destroy());
   trackPanelTop(chrome, [topLeft, topRight]);
   const updatePanelTop = () => {
     const origin = chrome.getBoundingClientRect().top;
@@ -796,23 +810,6 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     if (f) importInto(app, f);
   });
   const sel = app.selection.length ? app.selection : undefined;
-  const themeRows = THEMES.map((t) => {
-    const check = h('span', { class: 'theme-check' });
-    const row = h('button', { class: 'menu-item theme-item', role: 'radio', 'aria-checked': 'false', onclick: () => { setTheme(t.id); paintThemes(); } },
-      h('div', { class: 'theme-preview', 'aria-hidden': 'true', style: `--c:${t.vars['--canvas']};--t:${t.vars['--tray']};--a:${t.vars['--signal']}` }),
-      h('span', null, t.name),
-      check);
-    return { id: t.id, row, check };
-  });
-  const paintThemes = () => {
-    const current = getStoredTheme();
-    for (const r of themeRows) {
-      const on = r.id === current;
-      r.row.setAttribute('aria-checked', String(on));
-      r.check.replaceChildren(on ? icon('check', 16) : '');
-    }
-  };
-  paintThemes();
   const auth = authState();
   const account = auth.mode === 'signed-in' ? [
     h('div', { class: 'list-label' }, 'Account'),
@@ -842,8 +839,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     auth.me.chat ? item('chat', 'Chat notifications', () => openChatNotifications()) : null,
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
-  const themeGroup = h('div', { role: 'radiogroup', 'aria-label': 'Theme' }, themeRows.map((r) => r.row));
-  rovingRadios(themeGroup);
+  const themeGroup = themeRadioGroup();
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
   if (app.commentsVisible) showComments.append(icon('check', 16));
   // First in the menu: it is not a board action, and the person who is lost looks at the top. A quiet accent (the icon and a heavier label) in styles.css marks it.
@@ -853,8 +849,14 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     : null;
   // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
   const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
+  // The tracker is a workspace screen: not for the demo, a scratch board or a guest, and only when /api/me says the workspace has it.
+  const tracker = !DEMO && !demo && !scratch && trackerAllowed(auth)
+    ? item('layers', 'Tracker', () => { navigateTrackerPath({ kind: 'view', view: 'all' }); })
+    : null;
   const pop = popover(anchor, h('div', { class: 'menu' },
     guide,
+    tracker,
+    tracker ? h('hr', { class: 'menu-sep' }) : null,
     chatNarrow,
     account,
     h('div', { class: 'list-label' }, 'Board'),
@@ -931,48 +933,11 @@ function openShare(app: BoardApp) {
 }
 
 function openProfile(app: BoardApp) {
-  const u = { ...app.user };
-  const name = h('input', { class: 'input', value: u.name, 'aria-label': 'Your name', maxlength: '40' });
-  const colors = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Colour' }, ...USER_COLORS.map((c) => {
-    const b = h('button', { class: `swatch${c === u.color ? ' on' : ''}`, style: `--c:${c}`, 'aria-label': colorName(c), role: 'radio', 'aria-checked': String(c === u.color), 'data-tip': colorName(c), onclick: () => {
-      u.color = c;
-      colors.querySelectorAll('.swatch').forEach((x) => {
-        x.classList.remove('on');
-        x.setAttribute('aria-checked', 'false');
-      });
-      b.classList.add('on');
-      b.setAttribute('aria-checked', 'true');
-    } });
-    return b;
-  }));
-  rovingRadios(colors);
-  const accountName = authState().mode === 'signed-in';
-  dialog('Your name and colour', h('div', { class: 'stack' },
-    h('p', { class: 'muted' }, accountName
-      ? 'Your name comes from your account and is shown next to your cursor and on the notes you write. The colour is stored on this device.'
-      : 'Shown next to your cursor and on the notes you write.'),
-    field('Name', name), field('Colour', colors),
-  ), [{ label: 'Cancel' }, {
-    label: 'Save', primary: true, onClick: async () => {
-      const auth = authState();
-      const typed = name.value.trim();
-      if (auth.mode === 'signed-in' && typed && typed !== u.name) {
-        try {
-          const updated = await api.updateMe(typed);
-          await setSignedIn({ ...auth.me, user: updated });
-          u.name = updated.name;
-        } catch (err) {
-          toast(err instanceof Error ? err.message : 'Could not save your name.');
-          return false;
-        }
-      } else {
-        u.name = typed || u.name;
-      }
-      Object.assign(app.user, u);
-      saveUser(app.user);
-      app.conn.awareness.setLocalStateField('user', app.user);
-    },
-  }]);
+  openProfileDialog(app.user, (u) => {
+    Object.assign(app.user, u);
+    saveUser(app.user);
+    app.conn.awareness.setLocalStateField('user', app.user);
+  });
 }
 
 function openSettings(app: BoardApp, demo = false) {

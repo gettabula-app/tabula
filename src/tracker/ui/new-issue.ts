@@ -280,13 +280,14 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
     h('div', { class: 'trk-new-description-head' }, h('span', null, 'Description'), previewButton),
     description, preview,
     propertyBar,
-    createReason,
     error,
     h('div', { class: 'trk-new-actions' },
       h('span', { class: 'trk-create-hint', 'aria-hidden': 'true' }, '⌘↵'),
       h('button', { class: 'trk-small-button', type: 'button', onclick: () => closeDialog() }, 'Cancel'),
       anotherButton, createButton,
     ),
+    // offline: one line under the buttons that cannot be pressed, saying why
+    createReason,
   );
   body.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key.toLowerCase() === 'p' && event.shiftKey && (event.metaKey || event.ctrlKey)) {

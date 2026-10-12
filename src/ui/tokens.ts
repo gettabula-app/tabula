@@ -436,7 +436,7 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   });
   return h('div', { class: 'admin-token-panel' },
     h('div', { class: 'admin-token-create' },
-      h('p', { class: 'muted admin-note' }, 'Connect AI tools like Claude Code to this workspace over MCP.'),
+      h('p', { class: 'muted admin-note' }, 'Connect AI tools like Claude Code to this workspace over MCP. Members create their own tokens from their account menu.'),
       h('div', { class: 'btn-row' }, create, appActions)),
     box);
 }

@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, chat-dock-home, chat-dock-sheet, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-menu-open, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, canvas-keyboard, emoji-corner, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-keyboard, chat-dock-bubble, chat-dock-home, chat-dock-sheet, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, rail-short-720, rail-short-700, rail-short-560, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -1196,6 +1196,77 @@ async function dockShown(page) {
   if (await expand.isVisible()) await expand.click();
 }
 
+async function keyboardRing(env, objectId, { zoom, image = false } = {}) {
+  const page = env.page;
+  await openSeedBoard(env);
+  await page.keyboard.press('Escape');
+  if (image) {
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.create({ id: 'kb-image', type: 'image', x: 700, y: 620, w: 260, h: 170, z: 'zz', rotation: 0, updatedAt: 1, alt: 'Team photo' }));
+    });
+  }
+  if (zoom) await page.evaluate((z) => { const app = window.__board; app.setSelection([]); app.zoomTo(z); }, zoom);
+  await page.evaluate((id) => { const app = window.__board; app.r.setCamera({ x: 0, y: 0 }); const o = app.store.get(id); if (o) { const b = app.r.contentBounds([id]); const s = app.r.size(); const z = app.r.cam.zoom; app.r.setCamera({ x: b.x + b.w / 2 - s.w / 2 / z, y: b.y + b.h / 2 - s.h / 2 / z }); } }, objectId);
+  await page.locator('.canvas-focus').focus();
+  // walk to the object in reading order
+  for (let i = 0; i < 60; i++) {
+    const at = await page.evaluate(() => document.querySelector('.canvas-focus').getAttribute('aria-activedescendant') ?? '');
+    if (at.endsWith(`-${objectId}`)) break;
+    await page.keyboard.press(i === 0 ? 'Home' : 'PageDown');
+  }
+  await page.waitForFunction((id) => {
+    const at = document.querySelector('.canvas-focus').getAttribute('aria-activedescendant') ?? '';
+    const ring = document.querySelector('.canvas-ring');
+    if (!at.endsWith(`-${id}`) || !ring || ring.hidden) return false;
+    const b = ring.getBoundingClientRect();
+    return b.width > 8 && b.height > 8 && b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+  }, objectId, { timeout: 10_000 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const r = await page.evaluate((id) => {
+    const app = window.__board;
+    const ring = document.querySelector('.canvas-ring');
+    const style = getComputedStyle(ring);
+    const rb = ring.getBoundingClientRect();
+    const root = app.r.root.getBoundingClientRect();
+    const ob = app.r.contentBounds([id]);
+    const a = app.r.toScreen({ x: ob.x, y: ob.y });
+    const z = app.r.toScreen({ x: ob.x + ob.w, y: ob.y + ob.h });
+    return {
+      zoom: Number(app.r.cam.zoom.toFixed(2)), border: parseFloat(style.borderTopWidth), shadow: style.boxShadow, line: ring.classList.contains('is-line'),
+      offsetLeft: Number((root.left + a.x - rb.left).toFixed(1)), offsetTop: Number((root.top + a.y - rb.top).toFixed(1)),
+      offsetRight: Number((rb.right - (root.left + z.x)).toFixed(1)), offsetBottom: Number((rb.bottom - (root.top + z.y)).toFixed(1)),
+    };
+  }, objectId);
+  console.log(`canvas-keyboard ${objectId} ${JSON.stringify(r)}`);
+  if (r.border !== 2) throw new Error(`canvas-keyboard: the ring line is ${r.border} px, not 2 px`);
+  if (!/inset/.test(r.shadow) || !/2px/.test(r.shadow)) throw new Error(`canvas-keyboard: the inner gap is not 2 px (${r.shadow})`);
+  // a straight connector line is thinner than the ring's minimum box, which grows evenly around it (4 px or more)
+  for (const k of ['offsetLeft', 'offsetTop', 'offsetRight', 'offsetBottom']) if (r.line ? r[k] < 3.5 : Math.abs(r[k] - 4) > 1) throw new Error(`canvas-keyboard: the ring is ${r[k]} px from the object (${k}), not 4 px, at zoom ${r.zoom}`);
+  return { noPark: true };
+}
+
+async function railShortWindow(env, height) {
+  const { page } = env;
+  await page.setViewportSize({ width: page.viewportSize().width, height });
+  await openSeedBoard(env);
+  await page.waitForTimeout(300);
+  const result = await page.evaluate(() => {
+    const tools = document.querySelector('.rail-tools');
+    const more = document.querySelector('.rail-more');
+    const track = document.querySelector('.rail-track');
+    const first = tools.querySelector('.rail-btn').getBoundingClientRect();
+    return {
+      viewport: `${innerWidth}x${innerHeight}`, button: Math.round(first.width), overflow: tools.scrollHeight - tools.clientHeight > 1,
+      chevron: !more.hidden, label: more.getAttribute('aria-label'), track: !track.hidden,
+    };
+  });
+  console.log(`rail-short ${JSON.stringify(result)}`);
+  if (result.overflow !== result.chevron || result.overflow !== result.track) throw new Error(`rail-short: chevron and track must show exactly while the tools overflow ${JSON.stringify(result)}`);
+  if (height <= 720 && result.button !== 30 && !env.touch) throw new Error(`rail-short: tools are ${result.button}px, not 30px, at ${height}px high`);
+  if (height === 720 && result.overflow) throw new Error('rail-short: the rail scrolls at 720px high; the compact rail should fit');
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -1203,6 +1274,21 @@ const STATES = {
     await page.locator('.trk-list-row').first().waitFor();
     if (!(await page.locator('.trk-fullscreen-strip').isVisible())) throw new Error('tracker-fullscreen: full-screen board strip is missing');
     await assertTrackerLayout(page);
+  },
+  // The "..." menu of the full-screen tracker (docs: tracker entry points): theme switch, workspace links, name and Sign out.
+  async 'tracker-menu-open'({ page, base, width }) {
+    await openTrackerMockShell(page, base);
+    const button = page.getByRole('button', { name: 'Menu', exact: true });
+    await button.click();
+    await page.locator('.trk-account-menu').waitFor();
+    if ((await button.getAttribute('aria-expanded')) !== 'true') throw new Error('tracker-menu-open: the Menu button does not say it is expanded');
+    const fit = await page.evaluate(() => {
+      const r = document.querySelector('.trk-account-pop').getBoundingClientRect();
+      const strip = document.querySelector('.trk-fullscreen-strip').getBoundingClientRect();
+      return { left: r.left, right: r.right, bottom: r.bottom, stripHeight: strip.height, w: innerWidth, h: innerHeight };
+    });
+    if (fit.left < 0 || fit.right > fit.w || fit.bottom > fit.h) throw new Error(`tracker-menu-open: the menu leaves the ${width}px window (${JSON.stringify(fit)})`);
+    if (fit.stripHeight > 60) throw new Error(`tracker-menu-open: the strip is ${fit.stripHeight}px high, not one row`);
   },
   async 'tracker-all-issues'({ page, base }) {
     await openTrackerMockShell(page, base);
@@ -1338,6 +1424,8 @@ const STATES = {
     const probeError = await addTrackerContrastProbe(page, 'new-issue');
     if (probeError) throw new Error(`tracker-new-issue: ${probeError}`);
     await assertComputedTextContrast(page, 'tracker-new-issue', ['.trk-new-issue .trk-inline-error', '.trk-new-issue .trk-create-reason']);
+    // the probe showed both messages to measure them: put the dialog back as a person sees it before anything went wrong
+    await page.evaluate(() => document.querySelectorAll('.trk-new-issue .trk-inline-error, .trk-new-issue .trk-create-reason').forEach((el) => { el.hidden = true; }));
     return { noPark: true };
   },
   async 'tracker-phone'({ page, base, width }) {
@@ -2939,6 +3027,37 @@ const STATES = {
     if (!r.scrimOk) throw new Error(`chat-dock-sheet: the scrim does not cover the screen (${r.scrimColour})`);
     if (r.small) throw new Error(`chat-dock-sheet: ${r.small} header buttons or chips under 44 px`);
   },
+  // The keyboard path with real key presses (desktop and the phone sheet): Enter on Chat moves into the message box, the first Esc
+  // (the box lets go) leaves focus in the dock, the second Esc closes it and lands on the Chat button; the sheet closes like the panel.
+  async 'chat-dock-keyboard'(env) {
+    const { page } = env;
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    // start closed: a dock left open by an earlier state is closed first
+    if (await page.locator('.chat-dock:not([hidden])').count()) await page.getByRole('button', { name: 'Close chat', exact: true }).click();
+    if (await page.locator('.chat-bubble:not([hidden])').count()) { await page.locator('.chat-bubble').click(); await page.getByRole('button', { name: 'Close chat', exact: true }).click(); }
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement;
+      return { inDock: !!a?.closest?.('.chat-dock'), tag: a?.tagName, cls: a?.className?.toString().slice(0, 40), toggle: !!a?.closest?.('.chat-toggle'), shown: !!document.querySelector('.chat-dock:not([hidden])') };
+    });
+    await page.locator('.chat-toggle').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('.chat-dock:not([hidden])').waitFor();
+    await page.waitForTimeout(500);
+    const opened = await where();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const first = await where();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const second = await where();
+    console.log(`chat-dock-keyboard ${JSON.stringify({ opened, first, second })}`);
+    if (!opened.inDock) throw new Error(`chat-dock-keyboard: Enter on Chat leaves focus outside the dock (${opened.tag} ${opened.cls})`);
+    if (!first.shown || !first.inDock) throw new Error(`chat-dock-keyboard: the first Esc leaves focus outside the dock (${first.tag} ${first.cls}, shown ${first.shown})`);
+    if (second.shown) throw new Error('chat-dock-keyboard: the second Esc does not close the dock');
+    if (!second.toggle) throw new Error(`chat-dock-keyboard: after closing, focus is on ${second.tag} ${second.cls}, not the Chat button`);
+  },
   async 'chat-dock-compact'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
@@ -2998,6 +3117,10 @@ const STATES = {
     console.log(`rail-scroll-cue ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`rail-scroll-cue: ${JSON.stringify(result.failures)}`);
   },
+  // The rail in a short window (designer's option A): compressed on a mouse, a chevron and a track while the tools overflow.
+  async 'rail-short-720'(env) { await railShortWindow(env, 720); },
+  async 'rail-short-700'(env) { await railShortWindow(env, 700); },
+  async 'rail-short-560'(env) { await railShortWindow(env, 560); },
   // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
   async 'top-bars-320'(env) {
     await openSeedBoard(env);
@@ -3346,6 +3469,105 @@ const STATES = {
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
   },
+  // the Add emoji button sits inside the note, bottom-left, 8 px from its edges (a note big enough on screen to hold it), and the
+  // text keeps clear of it; a note with three lines of text shows that the text does not run under the button
+  async 'emoji-corner'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.scope = null;
+      app.store.transact(() => app.store.update('seed-note-1', { text: 'Reviews were fast, and the new\nhandover note made the\nwhole sprint easier' }));
+      app.setSelection(['seed-note-1']);
+      app.zoomToSelection();
+    });
+    await page.waitForTimeout(180);
+    // a note about 200 px a side on screen
+    await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('seed-note-1');
+      app.zoomTo(200 / o.w);
+    });
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.locator('.edit-bar.show').waitFor();
+    await page.waitForTimeout(250);
+    const r = await page.evaluate(() => {
+      const app = window.__board;
+      const a = app.r.toScreen({ x: app.store.get('seed-note-1').x, y: app.store.get('seed-note-1').y });
+      const o = app.store.get('seed-note-1');
+      const z = app.r.cam.zoom;
+      const root = app.r.root.getBoundingClientRect();
+      const note = { left: root.left + a.x, bottom: root.top + a.y + o.h * z, width: o.w * z, height: o.h * z };
+      const bar = document.querySelector('.edit-bar.show');
+      const box = bar.getBoundingClientRect();
+      const ta = document.querySelector('.text-editor');
+      const range = document.createRange();
+      range.selectNodeContents(ta);
+      return { side: bar.dataset.side, left: box.left - note.left, bottom: note.bottom - box.bottom, button: [box.width, box.height], note: [note.width, note.height].map(Math.round), padBottom: getComputedStyle(ta).paddingBottom };
+    });
+    console.log(`emoji-corner ${JSON.stringify(r)}`);
+    const min = env.width <= 500 ? 43.5 : 31.5; // a finger gets 44 px, a mouse 32 px
+    if (r.side !== 'corner') throw new Error(`emoji-corner: the button is ${r.side}, not in the corner (note ${r.note})`);
+    if (Math.abs(r.left - 8) > 1 || Math.abs(r.bottom - 8) > 1) throw new Error(`emoji-corner: the gap is ${Math.round(r.left)} px from the left and ${Math.round(r.bottom)} px from the bottom, not 8 px`);
+    if (r.button[0] < min || r.button[1] < min) throw new Error(`emoji-corner: the button is ${r.button.map(Math.round)}, under ${Math.round(min)} px`);
+    if (!(parseFloat(r.padBottom) > 0)) throw new Error('emoji-corner: the text area has no bottom padding for the button');
+  },
+  // The canvas for the keyboard (docs/canvas-keyboard.md, slice 1): the ring on the current object must be painted, non-empty and inside the
+  // window before the shot, and read at least 3:1 against the theme's canvas (and its inner gap against the ink). The state keeps focus on
+  // the canvas (noPark) so the screenshot shows the ring.
+  async 'canvas-keyboard'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    await page.locator('.canvas-focus').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => {
+      const ring = document.querySelector('.canvas-ring');
+      if (!ring || ring.hidden) return false;
+      const b = ring.getBoundingClientRect();
+      return b.width > 8 && b.height > 8 && b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+    }, null, { timeout: 10_000 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const r = await page.evaluate(() => {
+      const ring = document.querySelector('.canvas-ring');
+      const target = document.querySelector('.canvas-focus');
+      const style = getComputedStyle(ring);
+      const root = getComputedStyle(document.documentElement);
+      const parse = (c) => {
+        const m = c.trim().match(/^#([0-9a-f]{6})$/i);
+        if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+        const n = (c.match(/[\d.]+/g) ?? []).map(Number);
+        return n.slice(0, 3).map((v) => (c.startsWith('color(') ? Math.round(v * 255) : v));
+      };
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const contrast = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+      const ink = parse(style.borderTopColor);
+      const canvas = parse(root.getPropertyValue('--canvas'));
+      const box = ring.getBoundingClientRect();
+      return {
+        current: target.getAttribute('aria-activedescendant'), options: document.querySelectorAll('.canvas-outline [role=option]').length,
+        box: [box.left, box.top, box.width, box.height].map(Math.round), width: parseFloat(style.borderTopWidth),
+        ratio: Number(contrast(ink, canvas).toFixed(2)), svgHidden: document.querySelector('svg.canvas').getAttribute('aria-hidden'),
+        inSvg: !!ring.closest('svg'), focused: document.activeElement === target,
+      };
+    });
+    console.log(`canvas-keyboard ${JSON.stringify(r)}`);
+    if (!r.current || !r.focused) throw new Error(`canvas-keyboard: no current object or focus left the canvas ${JSON.stringify(r)}`);
+    if (r.svgHidden !== 'true') throw new Error('canvas-keyboard: the picture is not hidden from assistive technology');
+    if (r.options < 1) throw new Error('canvas-keyboard: the outline is empty');
+    if (r.inSvg) throw new Error('canvas-keyboard: the ring is inside the SVG, so it would be exported');
+    if (r.ratio < 3) throw new Error(`canvas-keyboard: the ring is ${r.ratio}:1 against the canvas, under 3:1`);
+    return { noPark: true };
+  },
+  // The ring on other kinds and at other zooms (docs/canvas-keyboard.md): 2 px of ink and a 2 px gap, 4 px out, whatever the zoom
+  async 'canvas-keyboard-sticky'(env) { return keyboardRing(env, 'seed-note-1'); },
+  async 'canvas-keyboard-shape'(env) { return keyboardRing(env, 'seed-rect'); },
+  async 'canvas-keyboard-connector'(env) { return keyboardRing(env, 'seed-conn-1'); },
+  async 'canvas-keyboard-image'(env) { return keyboardRing(env, 'kb-image', { image: true }); },
+  async 'canvas-keyboard-zoom25'(env) { return keyboardRing(env, 'seed-note-1', { zoom: 0.25 }); },
+  async 'canvas-keyboard-zoom200'(env) { return keyboardRing(env, 'seed-note-1', { zoom: 2 }); },
+  async 'canvas-keyboard-frame47'(env) { return keyboardRing(env, 'seed-frame-bad', { zoom: 0.47 }); },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);
   },
@@ -4486,7 +4708,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

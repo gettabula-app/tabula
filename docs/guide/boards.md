@@ -4,7 +4,7 @@ The **Boards** page lists your boards and is where you create, open, import and 
 
 ## The Boards page
 
-The top bar has the **Tabula** wordmark (click it to return here) and the links **Boards** and **Templates**. If your workspace uses sign-in, you also see your name and **Sign out**. Workspace owners and admins also see **Admin**.
+The top bar has the **Tabula** wordmark (click it to return here) and the links **Boards** and **Templates**. If your workspace uses sign-in, you also see your name, which is the account menu: your name and colour, **AI tool access** (if your administrator turned on AI tools), **Your AI key** (if you may use your own), chat notifications and **Sign out**. Workspace owners and admins also see **Admin**, and workspaces that have the tracker show a **Tracker** link.
 
 Below the top bar:
 

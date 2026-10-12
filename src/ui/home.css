@@ -48,7 +48,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .topbar-end { display: flex; align-items: center; gap: 16px; margin-left: auto; min-width: 0; }
 .topbar-me { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.home { max-width: 1120px; margin: 0 auto; padding: 48px 24px; display: grid; gap: 48px; }
+.home { max-width: 1120px; margin: 0 auto; padding: 48px calc(24px + var(--safe-right, env(safe-area-inset-right, 0px))) 48px calc(24px + var(--safe-left, env(safe-area-inset-left, 0px))); display: grid; gap: 48px; }
 .home > * { min-width: 0; }
 
 .home-title { margin: 0; font: 800 40px/1 var(--display); letter-spacing: -0.03em; }
@@ -118,7 +118,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .board-actions .icon-btn:not(:disabled):hover { border-color: var(--danger); background: transparent; color: var(--danger); }
 
 /* Template thumbnails: the objects drawn small in a 16:10 box, flush with the top edge of the card or tile. */
-.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); border-radius: var(--radius-xs) var(--radius-xs) 0 0; }
+.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 .tpl-thumb svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 
 /* Templates strip on the home page. */
@@ -142,6 +142,8 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-toolbar .home-search { flex: 0 1 320px; width: 100%; margin-top: 0; }
 .tpl-count { margin: 0 0 24px; padding-top: 12px; border-top: 2px solid var(--ink); }
 .tpl-results > .home-empty { border-top: 0; }
+/* an empty section in the Templates page is a quiet line, not a table edge */
+.tpl-section > .home-empty { padding: 4px 0 16px; border: 0; color: var(--graphite); font-size: 14px; }
 .tpl-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .tpl-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; height: 100%; padding: 24px;
@@ -210,7 +212,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .topbar-end { gap: 12px; }
   .topbar-me { max-width: 40vw; }
 
-  .home { gap: 40px; padding: 32px 16px 40px; }
+  .home { gap: 40px; padding: 32px calc(16px + var(--safe-right, env(safe-area-inset-right, 0px))) 40px calc(16px + var(--safe-left, env(safe-area-inset-left, 0px))); }
   .home-search { max-width: none; margin-top: 24px; }
   .tpl-toolbar { margin-top: 24px; }
   .tpl-toolbar .home-search { flex-basis: 100%; }
@@ -234,3 +236,8 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .save-tpl { grid-template-columns: minmax(0, 1fr); }
   .save-tpl-preview { order: -1; }
 }
+
+/* the name opens the account menu when there is something in it */
+.topbar-me-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: inherit; }
+.topbar-me-btn::after { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.topbar-me-btn:hover { text-decoration: underline; }

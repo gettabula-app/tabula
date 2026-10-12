@@ -2,6 +2,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, Id, Obj, Poll, Rect, Step, Vote } from './types';
 import { isBox, isConnector } from './types';
 import { newId, type FlowState } from './store';
+import { stepViewBounds } from './step-view';
 import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 import { mdText } from './md-text';
@@ -126,7 +127,7 @@ export class Flow {
       const frame = step?.frameId ? this.app.store.get(step.frameId) : undefined;
       if (local && step && isBox(frame)) {
         const bounds = boxBounds(frame);
-        this.app.r.flyTo(bounds, 72, 1.2);
+        this.app.r.flyTo(stepViewBounds(frame, this.app.store.cache.values()), 72, 1.2);
         this.onLocalStep?.(step, bounds);
       }
     }

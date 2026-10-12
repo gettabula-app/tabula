@@ -137,6 +137,13 @@ export function navigateTrackerPath(target: TrackerPathRoute, mode: 'push' | 're
   return true;
 }
 
+/** Leave a path route (the tracker) for a hash page such as `#/` or `#/admin`: the path goes back to `/` and the router runs once. */
+export function navigateAppHash(hash: string): void {
+  if (typeof window === 'undefined') return;
+  window.history.pushState(null, '', '/' + hash);
+  window.dispatchEvent(new Event('popstate'));
+}
+
 export type TrackerRouteResult = { resolvedKey?: string; dispose?: () => void };
 export type TrackerRouteHandler = (target: TrackerPathRoute) => void | TrackerRouteResult | Promise<void | TrackerRouteResult>;
 

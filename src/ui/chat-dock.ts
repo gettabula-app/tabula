@@ -130,16 +130,19 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: (e: MouseEvent) => { dispatch('open'); if (e.detail === 0) dock.focusComposer(); } }, icon('chat', 22), bubbleCount);
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
   panel.setAttribute('tabindex', '-1');
+  // The message box stops its keys from travelling up, so its Esc is seen here in the capture phase; once it has let go of focus (the
+  // event is done by the next task), focus stays in the dock and the next Esc closes it from here.
   panel.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (e.defaultPrevented) {
-      // the message box (or an edit, or a menu) used this Esc and let go of focus: keep it in the dock, so the next Esc closes it from here
-      queueMicrotask(() => {
-        const active = document.activeElement;
-        if (isShown() && (!active || active === document.body)) panel.focus({ preventScroll: true });
-      });
-      return;
-    }
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (e.defaultPrevented && isShown() && (!active || active === document.body)) panel.focus({ preventScroll: true });
+    });
+  }, true);
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // a menu, an edit or the message box used this Esc: the capture listener above keeps focus in the dock
+    if (e.defaultPrevented) return;
     e.preventDefault();
     dispatch('close');
     opener()?.focus();
@@ -193,6 +196,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
   let watchLife: AbortController | null = null;
   let mounted: { key: string; abort: AbortController; conv: Conversation } | null = null;
+  let focusWanted = false;
   const isShown = () => !suppressed && (prefs.mode === 'open' || prefs.mode === 'compact');
 
   const channels = () => dockChannels(entries, board?.ctx.boardId ?? null);
@@ -282,6 +286,11 @@ export function mountChatDock(overlay: HTMLElement, opts: {
         conv = deps.mount({ chat, id: `${now.kind}-${now.ref}`, panel: conversationHost, signal: abort.signal, meId: userId, meName: userName, workspace: now.kind === 'workspace' });
       }
       mounted = { key: now.key, abort, conv };
+      if (focusWanted) {
+        focusWanted = false;
+        const active = document.activeElement;
+        if (!active || active === document.body || active === panel) conv.focusComposer();
+      }
     }
     mounted?.conv.setOpen(isShown() && !!now && mounted.key === now.key);
     const attachedLabel = board && now?.attached ? ` · ${board.ctx.label}` : now ? ` · ${now.label}` : '';
@@ -379,6 +388,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     const hadFocus = isShown() && !!document.activeElement && panel.contains(document.activeElement);
     prefs = nextDock(prefs, event);
     if (prefs.mode === 'closed') openKey = null; // the next opening chooses again
+    if (!isShown()) focusWanted = false;
     saveDock(userId, prefs, opts.storage);
     paint();
     syncWatch();
@@ -443,7 +453,13 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       };
     },
     focusComposer() {
-      mounted?.conv.focusComposer();
+      // the conversation may not be drawn yet (the channel list is still loading): focus waits in the dock and moves to the message box
+      // once it is there, unless the person has gone elsewhere
+      if (mounted) mounted.conv.focusComposer();
+      else if (isShown()) {
+        focusWanted = true;
+        panel.focus({ preventScroll: true });
+      }
     },
     destroy() {
       window.removeEventListener('resize', publishInset);

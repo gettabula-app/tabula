@@ -1,6 +1,6 @@
 # Keyboard and screen readers
 
-You can use most of Tabula without a mouse, and a screen reader hears what changes on the board. This page covers what works, and what does not yet.
+You can use most of Tabula without a mouse, and a screen reader hears what changes on the board and what is on it. This page covers what works, and what does not yet.
 
 ## Moving around
 
@@ -31,9 +31,17 @@ Messages that appear on screen for a few seconds, such as **Locked**, are announ
 - In a high contrast mode, colour swatches keep their colours and the chosen option is outlined.
 - You can zoom the page with your browser. On a phone, pinching the toolbars zooms the page. Pinching the board itself zooms the board.
 
+## The board from the keyboard
+
+`Tab` goes into the board once, and the next `Tab` leaves it, so you never have to press `Tab` once for each object. Inside the board, a visible ring marks the current object, and a screen reader says what it is (a note, a frame, a picture or a connector, its words and its place in the list).
+
+- Arrow keys move to the nearest object in that direction.
+- `Page Down` and `Page Up` move to the next and previous object in reading order, and `Home` and `End` go to the first and last.
+- Nothing on the board changes while you move around.
+
 ## What does not work yet
 
-The board itself is not yet operable from the keyboard. You cannot select, move, resize or connect objects that already exist with the keyboard, and a screen reader does not read what is on the board. You can create objects with the tool shortcuts and, once something is selected, nudge it with the arrow keys, edit its text with `Enter`, duplicate, delete and change its stacking. This is planned.
+You cannot yet select, move, resize or connect existing objects with the keyboard; selecting and editing from the keyboard come next. You can create objects with the tool shortcuts and, once something is selected, nudge it with the arrow keys, edit its text with `Enter`, duplicate, delete and change its stacking.
 
 ## Related
 
