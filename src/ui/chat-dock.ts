@@ -6,7 +6,7 @@ import { mountConversation, type Conversation, type ConversationOptions } from '
 import { badgeText, channelHash, type ChannelKind } from './chat-logic';
 import { channelKey, dockChannels, hereLine, pickChannel, splitChips, type DockChannel } from './chat-dock-channels';
 import { popover } from './common';
-import { dockInset, loadDock, nextDock, saveDock, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
+import { dockInset, loadDock, nextDock, saveDock, sheetDragMinimises, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
 
 /** What a board page offers the dock: its own chat (with object links) and who is on it. */
 export interface DockBoard {
@@ -144,7 +144,41 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     dispatch('close');
     opener()?.focus();
   });
-  const el = h('div', { class: 'chat-dock-host' }, panel, bubble);
+  // On a phone the open dock is a bottom sheet: a scrim behind it, a handle that minimises it (a tap, or a drag down), and the sheet
+  // rides above the soft keyboard (--dock-kb, --dock-vh from the visual viewport).
+  const scrim = h('div', { class: 'chat-dock-scrim', 'aria-hidden': 'true', hidden: true, onclick: () => dispatch('minimise') });
+  const handle = h('button', { class: 'chat-dock-handle', type: 'button', 'aria-label': 'Minimise chat', 'data-tip': 'Minimise chat' }, h('span', { 'aria-hidden': 'true' }));
+  handle.addEventListener('click', () => { if (!dragged) dispatch('minimise'); });
+  let dragged = false;
+  let dragFrom: number | null = null;
+  handle.addEventListener('pointerdown', (e) => { dragFrom = e.clientY; dragged = false; handle.setPointerCapture?.(e.pointerId); });
+  handle.addEventListener('pointermove', (e) => {
+    if (dragFrom === null) return;
+    const dy = Math.max(0, e.clientY - dragFrom);
+    if (dy > 6) dragged = true;
+    panel.style.transform = dy ? `translateY(${dy}px)` : '';
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (dragFrom === null) return;
+    const dy = e.clientY - dragFrom;
+    dragFrom = null;
+    panel.style.transform = '';
+    if (dragged && sheetDragMinimises(dy)) dispatch('minimise');
+    setTimeout(() => { dragged = false; });
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  panel.prepend(handle);
+  const el = h('div', { class: 'chat-dock-host' }, scrim, panel, bubble);
+  const publishViewport = () => {
+    const vv = window.visualViewport;
+    const lift = vv ? Math.max(0, window.innerHeight - (vv.offsetTop + vv.height)) : 0;
+    el.style.setProperty('--dock-kb', `${Math.round(lift)}px`);
+    el.style.setProperty('--dock-vh', `${Math.round(vv ? vv.height : window.innerHeight)}px`);
+  };
+  window.visualViewport?.addEventListener('resize', publishViewport);
+  window.visualViewport?.addEventListener('scroll', publishViewport);
+  publishViewport();
   overlay.append(el);
 
   let suppressed = false;
@@ -331,6 +365,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     publishInset();
     el.dataset.mode = prefs.mode;
     el.hidden = suppressed;
+    scrim.hidden = !isShown();
     panel.hidden = !isShown();
     bubble.hidden = suppressed || prefs.mode !== 'bubble';
     expand.hidden = prefs.mode !== 'compact';
@@ -412,6 +447,8 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     },
     destroy() {
       window.removeEventListener('resize', publishInset);
+      window.visualViewport?.removeEventListener('resize', publishViewport);
+      window.visualViewport?.removeEventListener('scroll', publishViewport);
       document.documentElement.style.removeProperty('--dock-inset');
       delete document.documentElement.dataset.dockInset;
       offBadge();

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubDeps } from './chat-dock-deps';
 import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
-import { DEFAULT_DOCK, dockHiddenOn, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
+import { DEFAULT_DOCK, SHEET_DRAG_MINIMISE, dockHiddenOn, sheetDragMinimises, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
 
 // docs/chat.md, Dock: the state machine and what is remembered (pure), then the host in the overlay layer.
 
@@ -48,6 +48,14 @@ describe('how far the dock reaches in', () => {
     expect(dockInset('closed', 1280)).toBe(0);
     expect(dockInset('open', 899)).toBe(0);
     expect(dockInset('open', 900)).toBe(372);
+  });
+});
+
+describe('the phone sheet', () => {
+  it('a drag down of 80 px or more minimises it; less snaps back', () => {
+    expect(sheetDragMinimises(SHEET_DRAG_MINIMISE - 1)).toBe(false);
+    expect(sheetDragMinimises(SHEET_DRAG_MINIMISE)).toBe(true);
+    expect(sheetDragMinimises(-40)).toBe(false);
   });
 });
 
@@ -174,6 +182,37 @@ describe('the dock host', () => {
     const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: blocked, deps: stubDeps().deps });
     expect(() => dock.dispatch('open')).not.toThrow();
     expect(dock.mode()).toBe('open');
+  });
+
+  it('has a scrim and a handle that minimise it, shown only while it is open', async () => {
+    const { mod, overlay, host } = await setup();
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stubDeps().deps });
+    const scrim = host.querySelector('.chat-dock-scrim') as FakeElement;
+    expect(scrim.hidden).toBe(true);
+    dock.dispatch('open');
+    expect(scrim.hidden).toBe(false);
+    scrim.click();
+    expect(dock.mode()).toBe('bubble');
+    expect(scrim.hidden).toBe(true);
+    dock.dispatch('open');
+    (host.querySelector('.chat-dock-handle') as FakeElement).click();
+    expect(dock.mode()).toBe('bubble');
+    expect((host.querySelector('.chat-dock-handle') as FakeElement).getAttribute('aria-label')).toBe('Minimise chat');
+  });
+
+  it('rides above the soft keyboard: the sheet is lifted by what the keyboard covers', async () => {
+    const { mod, overlay, host } = await setup();
+    const listeners: Record<string, () => void> = {};
+    const vv = { height: 500, offsetTop: 0, addEventListener: (n: string, fn: () => void) => { listeners[n] = fn; }, removeEventListener: () => undefined };
+    (window as unknown as { visualViewport: unknown; innerHeight: number }).visualViewport = vv;
+    (window as unknown as { innerHeight: number }).innerHeight = 800;
+    mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stubDeps().deps });
+    const el = host.querySelector('.chat-dock-host') as FakeElement;
+    expect(el.style.getPropertyValue('--dock-kb')).toBe('300px');
+    expect(el.style.getPropertyValue('--dock-vh')).toBe('500px');
+    vv.height = 800;
+    listeners.resize();
+    expect(el.style.getPropertyValue('--dock-kb')).toBe('0px');
   });
 
   it('can be suppressed on a page: hidden, no room taken, no socket, and back as it was afterwards', async () => {
