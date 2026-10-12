@@ -499,6 +499,10 @@ describe('accounts mode server', () => {
       const me = await api(person.cookie, 'GET', '/api/me');
       expect(me.body.teams).toEqual([{ id: team.id, name: 'Invite crew', role: 'member' }]);
 
+      // the inviter hears about it, also for a person who is new to the workspace
+      const heard = await api(owner.cookie, 'GET', '/api/notifications');
+      expect(heard.body.items.filter((i: Body) => i.kind === 'team_joined' && i.actor?.id === person.user.id)).toHaveLength(1);
+
       const invites = await api(owner.cookie, 'GET', `/api/teams/${team.id}/invites`);
       expect(invites.body).toEqual([{ id: created.body.id, role: 'member', expiresAt: created.body.expiresAt, uses: 1, maxUses: null }]);
       expect(JSON.stringify(invites.body)).not.toContain(created.body.token);

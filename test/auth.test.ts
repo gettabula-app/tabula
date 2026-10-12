@@ -321,6 +321,21 @@ describe('invites', () => {
     expect(record).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the inviter a team_joined row in the real notification list after a new person signs in through the link', async () => {
+    const { createNotifications } = await import('../server/notifications.mjs');
+    const c = setup();
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const store = createNotifications({ directory: c.d, now: () => T0 });
+    const real = createAuth({ directory: c.d, config: c.config, mailer: { send: async (m: Mail) => { c.sent.push(m); } }, now: () => T0, notifications: store });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    await real.requestLogin({ email: 'pupil@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const joined = real.verifyLogin(lastToken(c))!;
+    const listed = store.list({ user: owner, limit: 10 });
+    expect(listed.items.map((i: { kind: string; actor: { id: string } | null }) => [i.kind, i.actor?.id])).toEqual([['team_joined', joined.user.id]]);
+    expect(listed.unread).toBe(1);
+  });
+
   it('send no mail for a new address without a usable invite', async () => {
     const { c, team: crew, owner } = await invited();
     const sentBefore = c.sent.length;
