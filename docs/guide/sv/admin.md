@@ -230,11 +230,24 @@ Alla som har en öppen tavla ser **Restoring…** i statusbrickan. Tavlan läses
 
 <!-- screenshot: fliken Säkerhetskopior med statusen och listan över säkerhetskopior -->
 
+## Privacy
+
+Fliken **Privacy** (Integritet) visar vad Tabula samlar in om hur arbetsytan används, och låter ägaren ändra det. Administratörer kan läsa den; bara ägaren kan ändra inställningen.
+
+- På en hostad arbetsyta är **Product analytics** (Produktanalys) på som standard, och ägaren kan stänga av det. Det skickar antal och varaktigheter för användning av funktioner till Tabula så att vi kan se vad som används och förbättra det, till exempel öppnade tavlor, genomförda omröstningar, timers, AI-körningar och antal chattmeddelanden, samt grova klasser av enhet, webbläsare och operativsystem. Driftdata finns kvar oavsett. Vi behöver den för att köra, säkerhetskopiera och laga din arbetsyta: antal och varaktigheter för förfrågningar, antal anslutningar, resursanvändning, arbetsytans storlek samt resultat av säkerhetskopieringar och återställningar.
+- På en server du kör själv är den avstängd som standard. Reglaget heter **Send telemetry to Tabula** (Skicka telemetri till Tabula). När det är på förbereder din server rapporten en gång i timmen åt Tabula och åt ingen annan. När du slår på det får du först bekräfta.
+- Allt du skriver eller laddar upp skickas aldrig: rubriker, text, kommentarer, chatt, filnamn, söktext och AI-prompter. Det gäller även allt som identifierar en person (namn, e-postadresser, id:n, IP-adresser, webbläsarsträngar), adresserna till ditt innehåll, felmeddelandetexter och uppgifter om ditt eget nätverk.
+- **Show what would be sent** (Visa vad som skulle skickas) öppnar den exakta rapport som din arbetsyta skulle bygga, med en knapp **Copy** (Kopiera). Fliken visar också när en rapport senast förbereddes och vem som senast ändrade inställningen.
+- Den här versionen förbereder bara rapporten. Inget har skickats än, och skickandet börjar i en senare version. Om du stänger av reglaget upphör insamlingen direkt.
+- Om den som driver din server har ställt in miljövariabeln `TABULA_TELEMETRY` är reglaget låst, och fliken säger det.
+
+Ändringar av inställningen registreras i [granskningsloggen](#granskningslogg) under **Privacy**.
+
 ## Granskningslogg
 
 En lista över ändringar, med de nyaste först. Varje post är formulerad som en mening, till exempel vem som ändrade någons roll. Åtgärder som systemet utför självt, som meddelandet till arbetsytans ägare om att provperioden snart tar slut, visas med **System** (Systemet) som avsändare. Säkerhetskopior och återställningar beskrivs också i meningar, med säkerhetskopians datum. Håll pekaren över en post för att se det underliggande åtgärdsnamnet.
 
-- Filtrera efter **All** (Alla), **Members** (Medlemmar), **Teams**, **Boards**, **Templates** (Mallar), **Invites** (Inbjudningar), **Sign-ins** (Inloggningar), **Sessions**, **AI**, **AI tool access** (Åtkomst till AI-verktyg), **Images** (Bilder), **Chat**, **Backups** eller **Restores** (Återställningar). Filtret **AI** visar ändringar av AI-inställningarna och när nycklar läggs till, testas eller tas bort. **AI tool access** visar när åtkomsttoken skapas och återkallas (med deras namn, aldrig deras hemligheter). **Backups** visar automatiska säkerhetskopieringar (och misslyckanden, samt hur många skadade eller saknade filer som återställdes vid en körning) och när en ägare tittade på dem. **Restores** visar helåterställningar, kopior av tavlor och när de gamla data från en återställning togs bort, med datumet för säkerhetskopian de kom från.
+- Filtrera efter **All** (Alla), **Members** (Medlemmar), **Teams**, **Boards**, **Templates** (Mallar), **Invites** (Inbjudningar), **Sign-ins** (Inloggningar), **Sessions**, **AI**, **AI tool access** (Åtkomst till AI-verktyg), **Images** (Bilder), **Chat**, **Privacy**, **Backups** eller **Restores** (Återställningar). Filtret **AI** visar ändringar av AI-inställningarna och när nycklar läggs till, testas eller tas bort. **AI tool access** visar när åtkomsttoken skapas och återkallas (med deras namn, aldrig deras hemligheter). **Backups** visar automatiska säkerhetskopieringar (och misslyckanden, samt hur många skadade eller saknade filer som återställdes vid en körning) och när en ägare tittade på dem. **Restores** visar helåterställningar, kopior av tavlor och när de gamla data från en återställning togs bort, med datumet för säkerhetskopian de kom från.
 - Välj **Load more** (Läs in fler) för att gå längre tillbaka.
 
 Poster utan en person visas som utförda av systemet, till exempel när en hostad arbetsyta låses eller låses upp.
